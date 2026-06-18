@@ -1,0 +1,25 @@
+node_modules
+dist
+dist-ssr
+*.local
+
+# Environment files 
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.log
+
+idea.md
+CLAUDE.md
+TODOS.md
+DECISIONS.md
+DESIGN.md
+PRODUCT.md
+UI.md
+docs/archive/idea-original.md

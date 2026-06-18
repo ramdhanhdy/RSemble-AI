@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Adaptive Fusion — 3 UI Variations</title>
+
+<!--
+  =============================================================================
+  ADAPTIVE FUSION — UI REALIGNMENT
+  Focus: ONE pipeline → Input · Rubric · Fanout(N models) · Judge
+         then a SINGLE fork chosen per run:  RANK  |  FUSE
+  The mode toggle is the only "switch" in the whole product.
+
+  Design system (kept from DESIGN.md — it serves a tool, not a platform):
+    Canvas #0a0a0a · Surface #121212 · Border #262626
+    Accent cyan-400 (active flow) · emerald/amber/rose (semantic)
+    Geist-like sans + mono (Inter + JetBrains Mono as CDN stand-ins)
+    Compact density, 4px base, snappy motion, no decorative gradients.
+  Production swaps Inter → Geist; tokens are identical.
+  =============================================================================
+-->
+
+<!-- Tailwind CDN (rapid styling, per brief) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
+
+<!-- Geist stand-ins -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  /* Industrial scrollbar — recedes into the canvas. */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #0a0a0a; }
+  ::-webkit-scrollbar-thumb { background: #262626; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+  /* Section divider between variations. */
+  .var-rule {
+    background-image: repeating-linear-gradient(90deg, #262626 0 8px, transparent 8px 16px);
+  }
+</style>
+</head>
+
+<body class="bg-zinc-950 text-zinc-100 antialiased selection:bg-cyan-500/30">
+
+<!-- =============================================================================
+     0. ANALYSIS — what stays, what gets stripped (sets the frame for all 3)
+     ============================================================================= -->
+<header class="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur sticky top-0 z-50">
+  <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="size-2 rounded-full bg-cyan-400 shadow-[0_0_10px] shadow-cyan-400/60"></span>
+      <span class="font-mono text-sm tracking-tight text-zinc-100">adaptive_fusion</span>
+      <span class="text-xs text-zinc-500 font-mono">/ ui realignment</span>
+    </div>
+    <span class="text-xs text-zinc-500 font-mono hidden sm:block">3 variations · pick one</span>
+  </div>
+</header>
+
+<section class="max-w-6xl mx-auto px-6 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight">One pipeline. Two finish lines.</h1>
+  <p class="mt-2 text-sm text-zinc-400 max-w-2xl leading-relaxed">
+    The existing studio UI (node canvas, inspector drawer, Frankenstein picker, routing profiles,
+    task-preset library, strategy variants) is <span class="text-zinc-200">platform chrome</span> that
+    obscures the job. All three variations below share the same spine and expose only the Rank / Fuse fork.
+  </p>
+
+  <div class="mt-6 grid sm:grid-cols-2 gap-3 text-sm">
+    <!-- KEEP -->
+    <div class="rounded-md border border-emerald-500/30 bg-emerald-500/[0.04] p-4">
+      <div class="flex items-center gap-2 text-emerald-400 font-mono text-xs uppercase tracking-wider">
+        <span>+</span> Keep — serves the spine or a fork
+      </div>
+      <ul class="mt-3 space-y-1.5 text-zinc-300 font-mono text-[13px]">
+        <li>· Prompt input + rubric</li>
+        <li>· Multi-model fanout (pipeline.ts — the gold)</li>
+        <li>· Judge: scores · consensus · contradictions</li>
+        <li>· RANK result (leaderboard + recommendation)</li>
+        <li>· FUSE result (one merged answer)</li>
+        <li>· Scorecard — feeds Rank over time</li>
+      </ul>
+    </div>
+    <!-- CUT -->
+    <div class="rounded-md border border-rose-500/30 bg-rose-500/[0.04] p-4">
+      <div class="flex items-center gap-2 text-rose-400 font-mono text-xs uppercase tracking-wider">
+        <span>−</span> Cut — deviation, not focus
+      </div>
+      <ul class="mt-3 space-y-1.5 text-zinc-300 font-mono text-[13px]">
+        <li>· Node-based canvas + connected blocks</li>
+        <li>· 340px reactive inspector drawer</li>
+        <li>· "Frankenstein" manual snippet picker</li>
+        <li>· Routing profiles · task-preset library</li>
+        <li>· Strategy variants (pragmatic/rigorous/creative)</li>
+        <li>· "Orcha Studio / orchestration engine" framing</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="max-w-6xl mx-auto px-6"><div class="h-px var-rule"></div></div>
+
+
+<!-- =============================================================================
+     VARIATION A — LINEAR FLOW (guided stepper)
+     Paradigm: a wizard. Task → Models → Run → Result, top to bottom.
+     WHY: removes the studio entirely. A single column, one decision at a time.
+          The mode switch lives in the header and decides the destination of
+          step ③. Best when the user wants the fastest path input→verdict.
+     Shown in: RANK mode (Fuse swaps step ③ for a single merged document).
+     ============================================================================= -->
+<section class="max-w-6xl mx-auto px-6 py-12">
+  <div class="flex items-baseline justify-between mb-6">
+    <div>
+      <span class="font-mono text-xs text-cyan-400 uppercase tracking-widest">Variation A</span>
+      <h2 class="text-xl font-semibold tracking-tight mt-1">Linear Flow</h2>
+    </div>
+    <span class="font-mono text-xs text-zinc-500">guided · single-column · fastest path</span>
+  </div>
+
+  <!-- The mock lives in a framed "device" so it reads as an app surface. -->
+  <div class="rounded-lg border border-zinc-800 bg-zinc-900 overflow-hidden shadow-2xl shadow-black/40">
+
+    <!-- App bar: identity + GLOBAL mode toggle (the only switch in the product) -->
+    <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800 bg-zinc-950/50">
+      <div class="flex items-center gap-2">
+        <span class="size-1.5 rounded-full bg-cyan-400"></span>
+        <span class="font-mono text-sm">Adaptive Fusion</span>
+      </div>
+      <!-- Segmented Rank/Fuse control — the product's core mechanism, always visible. -->
+      <div class="flex items-center rounded-md border border-zinc-800 bg-zinc-950 p-0.5 text-xs font-mono">
+        <button class="px-3 py-1.5 rounded bg-cyan-500 text-zinc-950 font-semibold">Rank</button>
+        <button class="px-3 py-1.5 rounded text-zinc-400 hover:text-zinc-200">Fuse</button>
+      </div>
+    </div>
+
+    <!-- Single centered column — no canvas, no inspector, no left/right panels. -->
+    <div class="max-w-2xl mx-auto px-6 py-8 space-y-8">
+
+      <!-- Step 1: Task -->
+      <div>
+        <div class="flex items-center gap-2 mb-2">
+          <span class="font-mono text-[11px] text-zinc-500 size-5 grid place-items-center rounded-sm border border-zinc-800">1</span>
+          <label for="a-task" class="text-sm font-medium">Task</label>
+        </div>
+        <textarea id="a-task" rows="3" class="w-full resize-none rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500">Write a 600-word article explaining why Rust's borrow checker improves long-term code quality, aimed at intermediate developers.</textarea>
+      </div>
+
+      <!-- Step 2: Models + rubric (collapsed — rubric is optional, demoted from a full inspector). -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-[11px] text-zinc-500 size-5 grid place-items-center rounded-sm border border-zinc-800">2</span>
+            <span class="text-sm font-medium">Models</span>
+            <span class="font-mono text-xs text-zinc-500">4 enabled</span>
+          </div>
+          <button class="font-mono text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1">Rubric <span class="text-zinc-600">▸</span></button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <!-- Model chips: toggle on/off. No provider catalogue browsing, no roles (draft/critic/verifier) — all slots are equal fanout participants. -->
+          <span class="px-2.5 py-1 rounded-md border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-xs">Claude 3.7 Sonnet</span>
+          <span class="px-2.5 py-1 rounded-md border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-xs">DeepSeek R1</span>
+          <span class="px-2.5 py-1 rounded-md border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-xs">GPT-4o</span>
+          <span class="px-2.5 py-1 rounded-md border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-xs">Gemini 2.5 Flash</span>
+          <span class="px-2.5 py-1 rounded-md border border-zinc-800 text-zinc-500 font-mono text-xs hover:text-zinc-300">+ add</span>
+        </div>
+      </div>
+
+      <!-- Run: the spine executes fanout → judge. Result format depends on header toggle. -->
+      <button class="w-full rounded-md bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-semibold text-sm py-2.5 transition-colors flex items-center justify-center gap-2">
+        Run pipeline
+        <span class="font-mono text-xs text-zinc-900/60">4 models · ~6s</span>
+      </button>
+
+      <!-- Step 3: Result. RANK surface = leaderboard. This panel is what Fuse mode replaces. -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="font-mono text-[11px] text-zinc-500 size-5 grid place-items-center rounded-sm border border-zinc-800">3</span>
+          <span class="text-sm font-medium">Result — Ranked</span>
+        </div>
+
+        <!-- Verdict callout: the actual decision the Rank mode exists to produce. -->
+        <div class="rounded-md border border-emerald-500/30 bg-emerald-500/[0.05] px-4 py-3 mb-4 flex items-center gap-3">
+          <span class="text-emerald-400 font-mono text-xs">RECOMMEND</span>
+          <span class="text-sm text-zinc-100"><span class="font-semibold">Claude 3.7 Sonnet</span> for this task — highest rubric fit (4.6/5).</span>
+        </div>
+
+        <!-- Leaderboard: scores as bars for instant scan. -->
+        <div class="rounded-md border border-zinc-800 divide-y divide-zinc-800 overflow-hidden">
+          <div class="flex items-center gap-3 px-3 py-2.5">
+            <span class="font-mono text-xs text-zinc-500 w-4">1</span>
+            <span class="font-mono text-sm w-40">Claude 3.7 Sonnet</span>
+            <div class="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden"><div class="h-full bg-emerald-400" style="width:92%"></div></div>
+            <span class="font-mono text-sm text-emerald-400 w-8 text-right">4.6</span>
+          </div>
+          <div class="flex items-center gap-3 px-3 py-2.5">
+            <span class="font-mono text-xs text-zinc-500 w-4">2</span>
+            <span class="font-mono text-sm w-40">GPT-4o</span>
+            <div class="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden"><div class="h-full bg-cyan-400" style="width:84%"></div></div>
+            <span class="font-mono text-sm text-zinc-300 w-8 text-right">4.2</span>
+          </div>
+          <div class="flex items-center gap-3 px-3 py-2.5">
+            <span class="font-mono text-xs text-zinc-500 w-4">3</span>
+            <span class="font-mono text-sm w-40">DeepSeek R1</span>
+            <div class="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden"><div class="h-full bg-cyan-400" style="width:80%"></div></div>
+            <span class="font-mono text-sm text-zinc-300 w-8 text-right">4.0</span>
+          </div>
+          <div class="flex items-center gap-3 px-3 py-2.5">
+            <span class="font-mono text-xs text-zinc-500 w-4">4</span>
+            <span class="font-mono text-sm w-40 text-zinc-400">Gemini 2.5 Flash</span>
+            <div class="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden"><div class="h-full bg-amber-400" style="width:68%"></div></div>
+            <span class="font-mono text-sm text-amber-400 w-8 text-right">3.4</span>
+          </div>
+        </div>
+
+        <!-- Judge's qualitative breakdown: consensus / contradictions — compressed, no separate "analysis" tab. -->
+        <div class="mt-3 grid sm:grid-cols-2 gap-2 text-xs">
+          <div class="rounded-md border border-zinc-800 p-3">
+            <div class="text-zinc-500 font-mono uppercase text-[10px] mb-1">Consensus</div>
+            <p class="text-zinc-300 leading-relaxed">All four framed ownership vs. lifetime; three cited real refactor case studies.</p>
+          </div>
+          <div class="rounded-md border border-zinc-800 p-3">
+            <div class="text-amber-400 font-mono uppercase text-[10px] mb-1">Contradiction</div>
+            <p class="text-zinc-300 leading-relaxed">R1 argued GC languages are equally safe long-term; the others disagreed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mt-3 text-xs text-zinc-500 font-mono">↑ Fuse mode swaps step ③ for a single merged Markdown article. Nothing else changes.</p>
+</section>
+
+<div class="max-w-6xl mx-auto px-6"><div class="h-px var-rule"></div></div>
+
+
+<!-- =============================================================================
+     VARIATION B — SPLIT WORKSPACE (IDE-like)
+     Paradigm: command on the left, output on the right. No scroll, full viewport.
+     WHY: built for the iterative tinkerer who re-edits the task and re-runs.
+          The studio's "canvas + inspector" is collapsed into a plain 2-pane
+          editor — power-user density without the orchestration metaphor.
+     Shown in: FUSE mode (Rank swaps the right pane for the leaderboard above).
+     ============================================================================= -->
+<section class="max-w-6xl mx-auto px-6 py-12">
+  <div class="flex items-baseline justify-between mb-6">
+    <div>
+      <span class="font-mono text-xs text-cyan-400 uppercase tracking-widest">Variation B</span>
+      <h2 class="text-xl font-semibold tracking-tight mt-1">Split Workspace</h2>
+    </div>
+    <span class="font-mono text-xs text-zinc-500">IDE-like · tinker & re-run · no canvas</span>
+  </div>
+
+  <div class="rounded-lg border border-zinc-800 bg-zinc-900 overflow-hidden shadow-2xl shadow-black/40 h-[560px] flex flex-col">
+
+    <!-- Top bar: identity + run status + mode toggle. -->
+    <div class="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-950/50 shrink-0">
+      <div class="flex items-center gap-3">
+        <span class="size-1.5 rounded-full bg-cyan-400"></span>
+        <span class="font-mono text-sm">Adaptive Fusion</span>
+        <span class="font-mono text-xs text-zinc-600">·</span>
+        <span class="font-mono text-xs text-emerald-400 flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-emerald-400"></span>fused · 5.8s</span>
+      </div>
+      <div class="flex items-center rounded-md border border-zinc-800 bg-zinc-950 p-0.5 text-xs font-mono">
+        <button class="px-3 py-1.5 rounded text-zinc-400 hover:text-zinc-200">Rank</button>
+        <button class="px-3 py-1.5 rounded bg-cyan-500 text-zinc-950 font-semibold">Fuse</button>
+      </div>
+    </div>
+
+    <!-- The two panes. No node graph, no 5-step block diagram. -->
+    <div class="flex-1 grid grid-cols-2 min-h-0">
+
+      <!-- LEFT: the command (task, models, rubric) — everything you edit. -->
+      <div class="border-r border-zinc-800 overflow-y-auto p-4 space-y-5 bg-zinc-900">
+        <div>
+          <label class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">Task</label>
+          <textarea rows="4" class="mt-1.5 w-full resize-none rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-[13px] text-zinc-100 focus:outline-none focus:ring-1 focus:ring-cyan-500">Write a 600-word article explaining why Rust's borrow checker improves long-term code quality, aimed at intermediate developers.</textarea>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">Models</span>
+            <span class="font-mono text-[10px] text-zinc-600">4 / 4</span>
+          </div>
+          <div class="mt-1.5 space-y-1">
+            <!-- Compact list with live status — fits density without an inspector. -->
+            <div class="flex items-center gap-2 px-2 py-1.5 rounded border border-cyan-500/30 bg-cyan-500/[0.06]">
+              <span class="size-1.5 rounded-full bg-emerald-400"></span>
+              <span class="font-mono text-xs flex-1">Claude 3.7 Sonnet</span>
+              <span class="font-mono text-xs text-emerald-400">4.6</span>
+            </div>
+            <div class="flex items-center gap-2 px-2 py-1.5 rounded border border-zinc-800">
+              <span class="size-1.5 rounded-full bg-emerald-400"></span>
+              <span class="font-mono text-xs flex-1">GPT-4o</span>
+              <span class="font-mono text-xs text-zinc-400">4.2</span>
+            </div>
+            <div class="flex items-center gap-2 px-2 py-1.5 rounded border border-zinc-800">
+              <span class="size-1.5 rounded-full bg-emerald-400"></span>
+              <span class="font-mono text-xs flex-1">DeepSeek R1</span>
+              <span class="font-mono text-xs text-zinc-400">4.0</span>
+            </div>
+            <div class="flex items-center gap-2 px-2 py-1.5 rounded border border-zinc-800">
+              <span class="size-1.5 rounded-full bg-emerald-400"></span>
+              <span class="font-mono text-xs flex-1">Gemini 2.5 Flash</span>
+              <span class="font-mono text-xs text-zinc-400">3.4</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rubric as an inline editable block, not a dedicated inspector tab. -->
+        <details class="rounded-md border border-zinc-800">
+          <summary class="px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-zinc-400 cursor-pointer hover:text-zinc-200">Rubric · 3 criteria</summary>
+          <div class="px-3 pb-3 space-y-1.5 text-xs text-zinc-400 font-mono">
+            <div>· Technical accuracy (w 0.40)</div>
+            <div>· Audience fit (w 0.35)</div>
+            <div>· Concrete examples (w 0.25)</div>
+          </div>
+        </details>
+
+        <button class="w-full rounded-md bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-semibold text-sm py-2">Re-run</button>
+      </div>
+
+      <!-- RIGHT: the output. FUSE surface = one merged document. This is what Rank mode replaces. -->
+      <div class="overflow-y-auto bg-zinc-950">
+        <div class="px-4 py-2.5 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-zinc-950/90 backdrop-blur">
+          <span class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">Fused answer · markdown</span>
+          <button class="font-mono text-[10px] text-zinc-500 hover:text-zinc-200">copy</button>
+        </div>
+        <article class="p-5 text-[13px] leading-relaxed text-zinc-300 prose-invert max-w-none">
+          <h3 class="text-base font-semibold text-zinc-100 mb-2">Why Rust's Borrow Checker Pays Off</h3>
+          <p class="mb-3">The borrow checker is often experienced as a wall early on, but its real value shows up months later: it converts an entire class of bugs — use-after-free, double-free, data races — into compile-time errors. That trade is the whole argument.</p>
+          <p class="mb-3">Three threads emerged consistently across the candidate drafts. First, <span class="text-zinc-100">ownership</span> makes resource lifetimes explicit in the type system rather than in comments. Second, refactoring becomes safer because the compiler proves the change is sound. Third, long-term maintenance cost drops sharply once the codebase compiles.</p>
+          <p class="text-zinc-400 italic text-xs border-l-2 border-cyan-500/50 pl-3">A useful analogy surfaced from one model: think of the checker as a strict librarian — annoying at checkout, indispensable when the shelves stay organized.</p>
+        </article>
+      </div>
+    </div>
+  </div>
+  <p class="mt-3 text-xs text-zinc-500 font-mono">↑ Rank mode swaps the right pane for the leaderboard + recommendation. The left "command" pane is identical in both modes.</p>
+</section>
+
+<div class="max-w-6xl mx-auto px-6"><div class="h-px var-rule"></div></div>
+
+
+<!-- =============================================================================
+     VARIATION C — COMMAND BAR + CARDS (comparison dashboard)
+     Paradigm: one prominent command bar on top, fanout cards in the middle,
+               mode-specific verdict at the bottom. Everything visible at once.
+     WHY: comparison-first. The user wants to SEE the raw candidates that fed
+          the verdict — not a black box. Keeps fanout transparent while the
+          Rank/Fuse toggle decides the final surface. No canvas needed.
+     Shown in: RANK mode (Fuse replaces the verdict band with the merged article).
+     ============================================================================= -->
+<section class="max-w-6xl mx-auto px-6 py-12">
+  <div class="flex items-baseline justify-between mb-6">
+    <div>
+      <span class="font-mono text-xs text-cyan-400 uppercase tracking-widest">Variation C</span>
+      <h2 class="text-xl font-semibold tracking-tight mt-1">Command Bar + Cards</h2>
+    </div>
+    <span class="font-mono text-xs text-zinc-500">comparison-first · transparent fanout · everything at once</span>
+  </div>
+
+  <div class="rounded-lg border border-zinc-800 bg-zinc-900 overflow-hidden shadow-2xl shadow-black/40">
+
+    <!-- Command bar: prompt + mode toggle + run, all on one line. The whole input layer is one row. -->
+    <div class="p-4 border-b border-zinc-800 bg-zinc-950/50 space-y-3">
+      <div class="flex items-center gap-2">
+        <span class="size-1.5 rounded-full bg-cyan-400"></span>
+        <span class="font-mono text-sm">Adaptive Fusion</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="flex-1 flex items-center rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 focus-within:ring-1 focus-within:ring-cyan-500">
+          <span class="text-cyan-400 font-mono text-sm mr-2">▸</span>
+          <input type="text" value="Write a 600-word article on why Rust's borrow checker improves long-term code quality…" class="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none" />
+        </div>
+        <div class="flex items-center rounded-md border border-zinc-800 bg-zinc-950 p-0.5 text-xs font-mono">
+          <button class="px-3 py-2 rounded bg-cyan-500 text-zinc-950 font-semibold">Rank</button>
+          <button class="px-3 py-2 rounded text-zinc-400 hover:text-zinc-200">Fuse</button>
+        </div>
+        <button class="rounded-md bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-semibold text-sm px-4 py-2.5">Run</button>
+      </div>
+      <!-- Inline config row — models + rubric as compact controls, not a drawer. -->
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-mono text-[10px] uppercase text-zinc-600 mr-1">models</span>
+        <span class="font-mono text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-300">Claude 3.7</span>
+        <span class="font-mono text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-300">DeepSeek R1</span>
+        <span class="font-mono text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-300">GPT-4o</span>
+        <span class="font-mono text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-300">Gemini 2.5 Flash</span>
+        <span class="font-mono text-[10px] text-zinc-600 ml-auto">rubric: 3 criteria ▸</span>
+      </div>
+    </div>
+
+    <!-- Fanout cards: the raw candidates stay visible so the verdict is never a black box. -->
+    <div class="p-4 border-b border-zinc-800">
+      <div class="font-mono text-[10px] uppercase tracking-wider text-zinc-500 mb-3">Candidates · fanout</div>
+      <div class="grid grid-cols-4 gap-3">
+        <!-- Winner card gets the accent ring; this is the Rank verdict made visible at the candidate layer. -->
+        <div class="rounded-md border border-emerald-500/40 bg-emerald-500/[0.04] p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-mono text-xs text-zinc-200">Claude 3.7</span>
+            <span class="font-mono text-xs text-emerald-400">4.6</span>
+          </div>
+          <p class="text-[11px] text-zinc-400 leading-snug line-clamp-3">The borrow checker converts use-after-free and data races into compile errors…</p>
+        </div>
+        <div class="rounded-md border border-zinc-800 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-mono text-xs text-zinc-300">GPT-4o</span>
+            <span class="font-mono text-xs text-zinc-400">4.2</span>
+          </div>
+          <p class="text-[11px] text-zinc-500 leading-snug line-clamp-3">Ownership makes resource lifetimes explicit rather than leaving them in comments…</p>
+        </div>
+        <div class="rounded-md border border-zinc-800 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-mono text-xs text-zinc-300">DeepSeek R1</span>
+            <span class="font-mono text-xs text-zinc-400">4.0</span>
+          </div>
+          <p class="text-[11px] text-zinc-500 leading-snug line-clamp-3">Argued that GC languages can be equally safe, with caveats around long-term cost…</p>
+        </div>
+        <div class="rounded-md border border-zinc-800 p-3 opacity-70">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-mono text-xs text-zinc-400">Gemini 2.5</span>
+            <span class="font-mono text-xs text-amber-400">3.4</span>
+          </div>
+          <p class="text-[11px] text-zinc-500 leading-snug line-clamp-3">Offered a library-books analogy for ownership; thinner on technical depth…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Verdict band: RANK surface. The final decision, derived from the cards above. -->
+    <div class="p-4 bg-zinc-950/40">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">Verdict — ranked</span>
+          <span class="font-mono text-[10px] text-emerald-400">recommended</span>
+        </div>
+        <span class="font-mono text-[10px] text-zinc-600">historical: Claude leads 7 of last 10 article tasks ▸</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="rounded-md border border-emerald-500/40 bg-emerald-500/[0.06] px-4 py-3">
+          <div class="font-mono text-[10px] uppercase text-emerald-400/80">use for this task</div>
+          <div class="text-base font-semibold text-zinc-100 mt-0.5">Claude 3.7 Sonnet</div>
+          <div class="font-mono text-xs text-zinc-400">4.6 / 5 · best audience fit & examples</div>
+        </div>
+        <div class="flex-1 grid grid-cols-3 gap-2 text-xs">
+          <div class="rounded border border-zinc-800 px-2.5 py-1.5 font-mono text-zinc-400">2 · GPT-4o <span class="text-zinc-200 float-right">4.2</span></div>
+          <div class="rounded border border-zinc-800 px-2.5 py-1.5 font-mono text-zinc-400">3 · DeepSeek R1 <span class="text-zinc-200 float-right">4.0</span></div>
+          <div class="rounded border border-zinc-800 px-2.5 py-1.5 font-mono text-zinc-400">4 · Gemini <span class="text-zinc-200 float-right">3.4</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mt-3 text-xs text-zinc-500 font-mono">↑ Fuse mode replaces the "Verdict" band with the single merged article. The command bar + candidate cards stay identical.</p>
+</section>
+
+<footer class="max-w-6xl mx-auto px-6 py-10 text-center">
+  <div class="h-px var-rule mb-6"></div>
+  <p class="font-mono text-xs text-zinc-600">
+    All three share one spine · differ only in layout paradigm · the Rank/Fuse toggle is the sole switch in each.
+  </p>
+  <p class="font-mono text-xs text-zinc-700 mt-1">A = guided · B = workspace · C = comparison</p>
+</footer>
+
+</body>
+</html>

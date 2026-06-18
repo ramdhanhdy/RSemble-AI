@@ -1,0 +1,191 @@
+// =============================================================================
+// RankResult — the RANK output surface.
+//
+// This is the decision Rank mode exists to produce. Four regions, per UI.md §4:
+//   4.1  Recommendation callout (emerald) — the actual verdict.
+//   4.2  Leaderboard — sorted by weightedScore, tier-colored bars.
+//   4.3  Judge breakdown — consensus (zinc) + contradiction (amber) cards.
+//   4.4  Historical callback — one-liner (optional, surfaced only here).
+// =============================================================================
+
+import { Crown } from "lucide-react";
+import type { StudioState } from "../studio-engine";
+import type { Candidate } from "../studio-data";
+
+function tier(score: number): { bar: string; text: string } {
+  if (score >= 4.0) return { bar: "bg-emerald-400", text: "text-emerald-400" };
+  if (score >= 3.0) return { bar: "bg-cyan-400", text: "text-cyan-400" };
+  return { bar: "bg-amber-400", text: "text-amber-400" };
+}
+
+export function RankResult({ state }: { state: StudioState }) {
+  const ranked = [...state.candidates]
+    .filter((c) => c.status === "done")
+    .sort((a, b) => b.weightedScore - a.weightedScore);
+  const winner = ranked[0];
+  const breakdown = state.consensus;
+
+  return (
+    <div className="flex flex-1 flex-col gap-4">
+      {/* 4.1 Recommendation callout */}
+      {winner ? <Recommendation winner={winner} /> : <NoRankedState />}
+
+      {/* 4.2 Leaderboard */}
+      {ranked.length > 0 && <Leaderboard ranked={ranked} />}
+
+      {/* 4.3 Judge breakdown */}
+      {breakdown && <Breakdown breakdown={breakdown} />}
+
+      {/* 4.4 Historical callback — surfaced only in Rank mode, one line */}
+      <HistoricalLine winner={winner?.model} />
+    </div>
+  );
+}
+
+// ---- 4.1 recommendation -----------------------------------------------------
+
+function Recommendation({ winner }: { winner: Candidate }) {
+  return (
+    <div className="rounded-md border border-emerald-500/40 bg-emerald-500/[0.06] px-4 py-3">
+      <div className="flex items-center gap-2">
+        <Crown size={13} className="text-emerald-400" />
+        <span className="font-mono text-xs uppercase tracking-wider text-emerald-400">
+          Recommend
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-zinc-100">
+        Use <span className="font-semibold">{winner.model}</span> for this kind of task —{" "}
+        <span className="text-zinc-400">highest rubric fit</span>{" "}
+        <span className={`font-mono ${tier(winner.weightedScore).text}`}>
+          {winner.weightedScore.toFixed(1)}/5
+        </span>
+      </p>
+    </div>
+  );
+}
+
+function NoRankedState() {
+  return (
+    <div className="rounded-md border border-dashed border-zinc-800 py-10 text-center text-sm text-zinc-500">
+      No candidates to rank yet.
+    </div>
+  );
+}
+
+// ---- 4.2 leaderboard --------------------------------------------------------
+
+function Leaderboard({ ranked }: { ranked: Candidate[] }) {
+  const top = ranked[0]?.weightedScore ?? 5;
+  return (
+    <div>
+      <div className="mb-1.5 font-mono text-xs uppercase tracking-wider text-zinc-500">
+        Leaderboard
+      </div>
+      <div className="overflow-hidden rounded-md border border-zinc-800 divide-y divide-zinc-800">
+        {ranked.map((c, i) => {
+          const t = tier(c.weightedScore);
+          const widthPct = Math.max(8, (c.weightedScore / 5) * 100);
+          const isWinner = i === 0;
+          return (
+            <div
+              key={c.id}
+              className={`flex items-center gap-3 px-3 py-2.5 ${
+                isWinner ? "bg-emerald-500/[0.04] ring-1 ring-inset ring-emerald-500/30" : ""
+              }`}
+            >
+              <span className="w-4 font-mono text-xs text-zinc-500">{i + 1}</span>
+              <span className="w-44 truncate font-mono text-sm" title={`${c.provider} · ${c.model}`}>
+                {c.model}
+              </span>
+              <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+                <div
+                  className={`h-full ${t.bar} ${isWinner ? "shadow-[0_0_6px] shadow-emerald-400/40" : ""}`}
+                  style={{ width: `${widthPct}%` }}
+                />
+              </div>
+              <span className={`w-9 text-right font-mono text-sm ${t.text}`}>
+                {c.weightedScore.toFixed(1)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-1 font-mono text-sm text-zinc-600">
+        bars scaled to 5.0 · top score this run: {top.toFixed(1)}
+      </p>
+    </div>
+  );
+}
+
+// ---- 4.3 judge breakdown (consensus / contradiction) -------------------------
+
+function Breakdown({
+  breakdown,
+}: {
+  breakdown: NonNullable<StudioState["consensus"]>;
+}) {
+  const { consensus, contradictions } = breakdown;
+  if (consensus.length === 0 && contradictions.length === 0) return null;
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <BreakdownCard
+        tone="zinc"
+        title="Consensus"
+        items={consensus}
+        empty="No shared points identified."
+      />
+      <BreakdownCard
+        tone="amber"
+        title="Contradiction"
+        items={contradictions}
+        empty="No direct disagreements."
+      />
+    </div>
+  );
+}
+
+function BreakdownCard({
+  tone,
+  title,
+  items,
+  empty,
+}: {
+  tone: "zinc" | "amber";
+  title: string;
+  items: string[];
+  empty: string;
+}) {
+  const accent = tone === "amber" ? "text-amber-400" : "text-zinc-400";
+  return (
+    <div className="rounded-md border border-zinc-800 p-3">
+      <div className={`mb-1.5 font-mono text-xs uppercase tracking-wider ${accent}`}>
+        {title}
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm leading-relaxed text-zinc-600">{empty}</p>
+      ) : (
+        <ul className="space-y-1">
+          {items.map((item, i) => (
+            <li key={i} className="flex gap-1.5 text-sm leading-relaxed text-zinc-300">
+              <span className={`mt-1.5 size-1 shrink-0 rounded-full ${tone === "amber" ? "bg-amber-400" : "bg-zinc-500"}`} />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ---- 4.4 historical callback (one line) -------------------------------------
+
+function HistoricalLine({ winner }: { winner?: string }) {
+  // The scorecard earns its keep ONLY here as a one-liner; it is not a dashboard.
+  // Until a persistent scorecard is wired (deferred), this stays an honest stub.
+  if (!winner) return null;
+  return (
+    <p className="font-mono text-sm text-zinc-600">
+      historical scorecard · pending — will show “{winner} leads N of last M tasks” once runs accumulate.
+    </p>
+  );
+}
