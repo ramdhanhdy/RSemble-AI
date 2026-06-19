@@ -8,7 +8,7 @@
 //   4.4  Historical callback — one-liner (optional, surfaced only here).
 // =============================================================================
 
-import { Crown } from "lucide-react";
+import { Crown, GitMerge } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 import { FailedCandidates } from "./FailedCandidates";
@@ -20,17 +20,39 @@ function tier(score: number): { bar: string; text: string } {
   return { bar: "bg-amber-400", text: "text-amber-400" };
 }
 
-export function RankResult({ state }: { state: StudioState }) {
+export function RankResult({
+  state,
+  onFuse,
+}: {
+  state: StudioState;
+  /** Flip to Fuse mode and synthesize one merged answer from this run's
+   *  candidates. Drives the existing fusion path — no new pipeline logic. */
+  onFuse?: () => void;
+}) {
   const ranked = [...state.candidates]
     .filter((c) => c.status === "done")
     .sort((a, b) => b.weightedScore - a.weightedScore);
   const winner = ranked[0];
   const breakdown = state.consensus;
+  const canFuse = onFuse != null && ranked.length >= 2 && !state.running;
 
   return (
     <div className="flex flex-1 flex-col gap-4">
       {/* 4.1 Recommendation callout */}
       {winner ? <Recommendation winner={winner} /> : <NoRankedState />}
+
+      {/* Fuse action — the Rank→Fuse capability surfaced where the user is looking,
+          not buried in the header toggle. Drives the same fusion path as the toggle. */}
+      {canFuse && (
+        <button
+          type="button"
+          onClick={onFuse}
+          className="flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/[0.06] py-2.5 text-sm font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/[0.12] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400"
+        >
+          <GitMerge size={15} />
+          Fuse these {ranked.length} candidates into one answer
+        </button>
+      )}
 
       {/* 4.2 Leaderboard */}
       {ranked.length > 0 && <Leaderboard ranked={ranked} />}

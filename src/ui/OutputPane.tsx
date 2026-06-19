@@ -14,7 +14,14 @@ import type { Candidate } from "../studio-data";
 import { RankResult } from "./RankResult";
 import { FuseResult } from "./FuseResult";
 
-export function OutputPane({ state }: { state: StudioState }) {
+export function OutputPane({
+  state,
+  onFuse,
+}: {
+  state: StudioState;
+  /** Pass-through from AdaptiveFusion: fuse the current run's candidates. */
+  onFuse?: () => void;
+}) {
   const hasRun = state.candidates.length > 0 || state.running;
   const hint = state.mode === "rank" ? "leaderboard + recommendation" : "merged answer";
 
@@ -70,7 +77,7 @@ export function OutputPane({ state }: { state: StudioState }) {
         !state.running &&
         !state.insufficient &&
         !stageError &&
-        state.mode === "rank" && <RankResult state={state} />}
+        state.mode === "rank" && <RankResult state={state} onFuse={onFuse} />}
       {hasRun &&
         !state.running &&
         !state.insufficient &&

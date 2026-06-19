@@ -1,43 +1,46 @@
 # Adaptive Fusion
 
-> Put multiple AI models on the same task at once, then choose your finish:
-> **Rank** them, or **Fuse** them into one answer.
+Put multiple AI models on the same task at once, then choose your finish:
+**Rank** which one to use, or **Fuse** them into one answer.
 
-One pipeline. Two finish lines. The Rank/Fuse toggle is the only switch in the product.
-
-The full product direction, scope, and IN/OUT boundary live in
-**[PRODUCT.md](./PRODUCT.md)** — that file is the source of truth. If anything here
-conflicts with it, PRODUCT.md wins.
-
----
-
-## What it does
+One pipeline, two finish modes — a single toggle decides the outcome per run.
 
 ```
-Input → Rubric → Fanout (N models in parallel) → Judge
+Task → Rubric → Fanout (N models in parallel) → Judge
                                                        │
                                     ┌─────────────────┴──────────────────┐
                                   RANK                               FUSE
-                          "Use Claude for this."           "Here's the merged answer."
+                          "Use this model."                "Here's the merged answer."
 ```
 
-- **Up through Judge**, the pipeline is identical for both modes.
-- At the fork you pick, per run:
-  - **RANK** — stop at Judge. Promote scores to the headline result: a leaderboard +
-    a single recommendation of which model to use for this kind of task.
-  - **FUSE** — continue into the synthesizer. Return one merged Markdown answer,
-    visibly stronger than any single model's draft.
+Built for the recurring question: *"which model is actually best for this kind of
+task?"* Run several models on a real task, get a defensible ranking — or fuse the
+strongest material from all of them into a single, stronger answer.
 
----
+## Features
+
+- **Multi-model fanout** — run several models on the same task in parallel
+- **Configurable model roster** — pick from the live OpenRouter catalog, or type any
+  slug directly (so brand-new models work before they're cataloged)
+- **Configurable judge** — set the model that scores candidates and synthesizes fusion
+- **Rubric-driven judging** — define what "good" means; the judge scores each
+  candidate and reports consensus, contradictions, and unique insights
+- **Rank mode** — leaderboard with tier-colored scores, a recommendation callout, and
+  every candidate's full answer rendered as Markdown
+- **Fuse mode** — one merged answer synthesized from all candidates, with each source
+  expandable to read what it contributed
+- **Live pipeline** — stream each model's generation token-by-token, watch the
+  Generating → Judging → Fusing stages advance, and fuse a finished rank run with one
+  click
+- **Responsive** — two-pane workspace on desktop, stacked on tablet, output-first with
+  a command drawer on mobile
+- **Accessible** — keyboard-navigable, focus-visible throughout, reduced-motion aware
 
 ## Stack
 
-- React 18 + TypeScript
-- Vite 5
-- Tailwind CSS 3
-- lucide-react
+React 18 · TypeScript · Vite 5 · Tailwind CSS 3 · lucide-react
 
-## Getting started
+## Quick start
 
 ```bash
 npm install
@@ -47,79 +50,71 @@ npm run dev
 
 Open the printed local URL (default http://localhost:5173).
 
-## OpenRouter setup (live LLM calls)
+## OpenRouter setup
 
-This app calls real models through [OpenRouter](https://openrouter.ai). The browser
-reads the key at build time from a Vite env var.
+Adaptive Fusion calls real models through [OpenRouter](https://openrouter.ai).
 
 1. Get a key at https://openrouter.ai/keys
 2. Create a `.env` file at the project root:
-
    ```bash
    VITE_OPENROUTER_KEY=sk-or-v1-...
    ```
+3. Restart `npm run dev` (Vite reads env vars only at startup)
 
-3. Restart `npm run dev` (Vite only reads env vars at startup).
+If no key is present, the app loads but shows a banner and live runs are disabled.
 
-If no key is present the app still loads but shows a banner and live runs are disabled.
+> **Local/personal use only.** With build-time `VITE_` vars the key is embedded in
+> the client bundle. For a shared deployment, move the OpenRouter calls behind a
+> server proxy.
 
-> **Note:** with build-time `VITE_` vars the key is embedded in the client bundle, so
-> this setup is intended for **local/personal use only**. For a shared deployment,
-> move the calls behind a server proxy instead.
-
-### Models
+## Models
 
 Model slots use OpenRouter slugs (e.g. `z-ai/glm-5.2`). When a key is configured the
 full live catalog is fetched for autocomplete in the **+ add** combobox; you can also
-type any valid slug directly (e.g. a brand-new model not yet in the catalog). All
-slots are equal fanout participants — there are no roles (draft/critic/verifier) in
-this product. The Judge/Fusion model is separately configurable in the Command pane.
+type any valid slug directly (e.g. a brand-new model not yet in the catalog). All slots
+are equal fanout participants — there are no roles (draft/critic/verifier). The
+Judge/Fusion model is separately configurable in the command pane.
 
----
+## How a run works
 
-## UI direction — Split Workspace (Variation B)
+1. **Task** — describe the job in the command pane
+2. **Models** — enable the models you want to compare (or add new ones)
+3. **Rubric** *(optional)* — add criteria so "good" is explicit for the judge
+4. **Run pipeline** — candidates stream in as each model generates
+5. **Rank** — get a leaderboard + recommendation; expand any candidate's full answer
+6. **Fuse** — flip the toggle (or click *Fuse these candidates*) to synthesize one
+   merged answer from the run
 
-The rebuild target is a two-pane IDE-like layout:
-
-- **Left pane (command):** task input, models, a collapsed optional rubric. Identical
-  in both modes.
-- **Right pane (output):** RANK → leaderboard + recommendation. FUSE → one merged
-  document.
-- **Header:** identity, run status, and the **Rank/Fuse toggle** (the sole switch).
-
-The interactive mock with all three explored variations is in
-**[ui-variations.html](./ui-variations.html)**; Variation B is the chosen one.
-
-> **Current state:** `src/OrchaStudio.tsx` is the *prior* studio UI (node canvas +
-> inspector + Frankenstein picker + scorecard dashboard) and does **not** yet reflect
-> the focused direction. It is scheduled for rebuild per `TODOS.md`. The valuable,
-> reusable pipeline logic (`src/lib/pipeline.ts`, `src/studio-data.ts`) is kept and
-> will be re-housed in the new two-pane component.
-
----
+Rank and Fuse share the same spine and fork only at the finish — so you can start in
+either mode and switch per run.
 
 ## Project structure
 
 ```
 .
-├── PRODUCT.md          # ← source of truth: what this product is & is not
-├── DESIGN.md           # visual system (color/type/spacing/motion)
-├── CLAUDE.md           # agent operating rules (points to PRODUCT.md)
-├── ui-variations.html  # the 3 UI explorations (Variation B chosen)
+├── PRODUCT.md          # what this product is & is not (source of truth)
+├── DESIGN.md           # visual system (color / type / spacing / motion)
+├── UI.md               # interaction spec (Split Workspace)
+├── DECISIONS.md        # dated log of scope decisions
 └── src/
-    ├── OrchaStudio.tsx # prior studio UI — pending rebuild
-    ├── studio-data.ts  # domain types + seed state   (kept)
-    ├── main.tsx        # entry point
-    ├── index.css       # Tailwind layers + scrollbar styling
+    ├── AdaptiveFusion.tsx   # root — shell + pipeline orchestration
+    ├── studio-engine.ts     # state + reducer
+    ├── studio-data.ts       # domain types + seeds
+    ├── ui/                  # Command pane, Output pane, and result components
     └── lib/
-        ├── openrouter.ts  # OpenRouter client   (kept)
-        └── pipeline.ts    # prompt/fanout/judge/fusion logic — THE GOLD (kept)
+        ├── openrouter.ts    # OpenRouter client (incl. streaming)
+        └── pipeline.ts      # prompt construction, fanout, judge, fusion
 ```
 
----
+## Documentation
+
+- **[PRODUCT.md](./PRODUCT.md)** — the product's direction and scope (source of truth)
+- **[DESIGN.md](./DESIGN.md)** — the visual system
+- **[UI.md](./UI.md)** — the interaction spec
+- **[DECISIONS.md](./DECISIONS.md)** — why the scope is what it is
 
 ## Working on this project
 
-Read **[PRODUCT.md](./PRODUCT.md)** first. The scope fence there (IN/OUT) is the
-contract. If a feature isn't in the IN table, it's a scope decision, not a TODO —
-add it via `DECISIONS.md`, not by quietly building it.
+Read [PRODUCT.md](./PRODUCT.md) first — its scope fence (IN/OUT) is the contract.
+Anything outside the IN table is a scope decision that belongs in DECISIONS.md, not a
+quiet addition.

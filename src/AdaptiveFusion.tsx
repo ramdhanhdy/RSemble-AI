@@ -216,20 +216,24 @@ export default function AdaptiveFusion() {
   // Flipping to Rank never costs a call (Judge already ran). Flipping to Fuse
   // after a completed run triggers a synthesizer pass the first time only —
   // re-switching is free for that run because fusionStatus is then "done".
+  // Fuse the current (finished) run's candidates. Shared by the header toggle
+  // (when switched to fuse) and the "Fuse these candidates" action in RankResult.
+  // Fires AFTER a run completes, so stateRef is fully synced — safe to read the
+  // done candidates here (unlike the post-fanout path, which threads them directly).
+  const triggerFusion = useCallback(() => {
+    const s = stateRef.current;
+    const done = s.candidates.filter((c) => c.status === "done");
+    if (done.length >= 2 && !s.running && s.fusionStatus === "idle") {
+      void runFusion(done, s);
+    }
+  }, [runFusion]);
+
   const handleModeChange = useCallback(
     (mode: Mode) => {
       dispatch({ type: "SET_MODE", mode });
-      if (mode === "fuse") {
-        const s = stateRef.current;
-        // The toggle fires AFTER a run completes, so stateRef has fully synced —
-        // safe to read the done candidates here (unlike the post-fanout path).
-        const done = s.candidates.filter((c) => c.status === "done");
-        if (done.length > 0 && !s.running && s.fusionStatus === "idle") {
-          void runFusion(done, s);
-        }
-      }
+      if (mode === "fuse") triggerFusion();
     },
-    [runFusion]
+    [triggerFusion]
   );
 
   return (
@@ -261,7 +265,7 @@ export default function AdaptiveFusion() {
         </section>
 
         <section aria-label="Output" className="min-h-0 overflow-y-auto">
-          <OutputPane state={state} />
+          <OutputPane state={state} onFuse={triggerFusion} />
         </section>
       </div>
 
