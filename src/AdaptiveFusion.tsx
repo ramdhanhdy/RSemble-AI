@@ -16,6 +16,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type Candidate, type Mode } from "./studio-data";
 import {
   chatCompletion,
+  chatCompletionStream,
   errorMessage,
   hasApiKey,
   listModels,
@@ -107,7 +108,11 @@ export default function AdaptiveFusion() {
     const results = await Promise.all(
       jobs.map(async (job): Promise<Candidate | null> => {
         try {
-          const content = await chatCompletion({
+          // Stream the candidate generation so prose appears token-by-token in
+          // the UI. Accumulate locally, dispatch deltas for live display, then
+          // commit the final result + segments.
+          let content = "";
+          for await (const delta of chatCompletionStream({
             model: job.slug,
             messages: draftMessages({
               systemPrompt: s.systemPrompt,
@@ -115,7 +120,10 @@ export default function AdaptiveFusion() {
               rubric: s.rubric,
             }),
             temperature: s.temperature,
-          });
+          })) {
+            content += delta;
+            dispatch({ type: "CANDIDATE_DELTA", id: job.id, delta });
+          }
           const segments = splitSegments(content, job.id);
           const summary = summarize(content);
           dispatch({ type: "CANDIDATE_RESULT", id: job.id, segments, summary });
@@ -134,7 +142,17 @@ export default function AdaptiveFusion() {
     const done = results.filter((r): r is Candidate => r !== null);
     dispatch({ type: "FANOUT_END", count: done.length });
 
-    if (done.length === 0) return;
+    // Minimum-candidate gate. Ranking or fusing a single survivor is degenerate:
+    // there's nothing to rank against and nothing to merge. Show an explicit
+    // terminal state instead of silently producing a meaningless result.
+    if (done.length < 2) {
+      dispatch({
+        type: "INSUFFICIENT_CANDIDATES",
+        done: done.length,
+        failed: jobs.length - done.length,
+      });
+      return;
+    }
 
     // Auto-advance to Judge, then to Fusion when in Fuse mode. Pass the materialized
     // `done` candidates directly — do not re-read stateRef for them.

@@ -40,6 +40,9 @@ export interface Candidate {
   segments: CandidateSegment[];
   status: CandidateStatus;
   errorMessage?: string;
+  /** Accumulated streaming text during generation (fanout). Empty once segments
+   *  are set on completion — read this for live display while status === "pending". */
+  streamingText?: string;
 }
 
 export interface ModelSlot {

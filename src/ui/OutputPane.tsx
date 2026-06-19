@@ -7,6 +7,7 @@
 // changes when the toggle flips — the command pane is unaffected.
 // =============================================================================
 
+import { useEffect, useState } from "react";
 import { Loader2, RotateCcw } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
@@ -33,6 +34,9 @@ export function OutputPane({ state }: { state: StudioState }) {
           {/* Stage progress strip — at-a-glance read of where the pipeline is.
               Generating → Judging → (Fusing, fuse mode only). */}
           <StageProgress state={state} />
+          {/* When the judge/fusion stage is active, show a richer banner: a live
+              timer + what's being compared. Turns the wait into intentional UI. */}
+          <StageBanner state={state} />
           {/* Live candidate stream — transparent during the run, not a black box.
               Each model shows its real-time status and, once done, its summary +
               a truncated excerpt so you can see what it actually generated. */}
@@ -44,7 +48,15 @@ export function OutputPane({ state }: { state: StudioState }) {
         </div>
       )}
 
-      {hasRun && !state.running && stageError && (
+      {hasRun && !state.running && state.insufficient && (
+        <InsufficientState
+          done={state.insufficient.done}
+          failed={state.insufficient.failed}
+          mode={state.mode}
+        />
+      )}
+
+      {hasRun && !state.running && !state.insufficient && stageError && (
         <ErrorState
           message={
             state.mode === "rank"
@@ -54,8 +66,46 @@ export function OutputPane({ state }: { state: StudioState }) {
         />
       )}
 
-      {hasRun && !state.running && !stageError && state.mode === "rank" && <RankResult state={state} />}
-      {hasRun && !state.running && !stageError && state.mode === "fuse" && <FuseResult state={state} />}
+      {hasRun &&
+        !state.running &&
+        !state.insufficient &&
+        !stageError &&
+        state.mode === "rank" && <RankResult state={state} />}
+      {hasRun &&
+        !state.running &&
+        !state.insufficient &&
+        !stageError &&
+        state.mode === "fuse" && <FuseResult state={state} />}
+    </div>
+  );
+}
+
+/** Terminal state when too few candidates survived to rank or fuse. */
+function InsufficientState({
+  done,
+  failed,
+  mode,
+}: {
+  done: number;
+  failed: number;
+  mode: "rank" | "fuse";
+}) {
+  const verb = mode === "fuse" ? "fuse" : "rank";
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/[0.04] py-10 px-6 text-center">
+      <p className="font-mono text-xs uppercase tracking-wider text-amber-400">Stopped</p>
+      <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-300">
+        Only <span className="font-semibold text-zinc-100">{done} of {done + failed}</span> candidate(s)
+        succeeded — need at least <span className="font-semibold text-zinc-100">2</span> to {verb}.
+      </p>
+      {failed > 0 && (
+        <p className="mt-1 font-mono text-sm text-zinc-500">
+          {failed} candidate{failed === 1 ? "" : "s"} failed during generation.
+        </p>
+      )}
+      <p className="mt-3 font-mono text-sm text-zinc-600">
+        Check the model slugs in the command pane and re-run.
+      </p>
     </div>
   );
 }
@@ -107,12 +157,66 @@ function StageProgress({ state }: { state: StudioState }) {
   );
 }
 
+/**
+ * Banner shown when the Judge or Fusion stage is active. Gives the wait meaning:
+ * a live elapsed timer + a plain-language sentence about what's happening. The
+ * judge's output is JSON, so we don't stream it (unreadable mid-stream) — the
+ * timer + context is the liveness signal.
+ */
+function StageBanner({ state }: { state: StudioState }) {
+  const fanoutDone =
+    state.candidates.length > 0 && state.candidates.every((c) => c.status !== "pending");
+  const judging = state.judgeStatus === "running" || (fanoutDone && state.judgeStatus === "idle");
+  const fusing = state.mode === "fuse" && state.fusionStatus === "running";
+  const active = judging || fusing;
+
+  const seconds = useElapsedSeconds(active);
+
+  if (!active) return null;
+
+  const doneCount = state.candidates.filter((c) => c.status === "done").length;
+  const stage = fusing ? "Fusing" : "Judging";
+  const verb = fusing
+    ? "merging the strongest material from all candidates into one answer"
+    : `comparing ${doneCount} candidate${doneCount === 1 ? "" : "s"} against the rubric and scoring each`;
+
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2">
+      <Loader2 size={13} className="animate-spin text-cyan-400" />
+      <span className="text-sm text-zinc-300">
+        <span className="font-mono text-cyan-300">{stage}</span> · {verb}.
+      </span>
+      <span className="ml-auto font-mono text-sm tabular-nums text-zinc-500">{seconds}s</span>
+    </div>
+  );
+}
+
+/** Tick a seconds counter while `active` is true; reset to 0 when it goes false. */
+function useElapsedSeconds(active: boolean): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setSeconds(0);
+      return;
+    }
+    setSeconds(0);
+    const id = window.setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return seconds;
+}
+
 /** One card in the live candidate stream during a run. */
 function LiveCandidateCard({ candidate }: { candidate: Candidate }) {
   const excerpt =
     candidate.segments.length > 0
       ? candidate.segments[0].text
       : candidate.summary || "";
+  // While streaming, show the live text (tail-trimmed so the newest tokens stay
+  // visible and the card doesn't grow unbounded). A blinking cursor signals liveness.
+  const streaming = candidate.streamingText ?? "";
+  const streamingTail = streaming.length > 600 ? "…" + streaming.slice(-600) : streaming;
+
   return (
     <li className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2">
       <div className="flex items-center gap-2">
@@ -134,6 +238,12 @@ function LiveCandidateCard({ candidate }: { candidate: Candidate }) {
           {candidate.status === "pending" ? "generating" : candidate.status}
         </span>
       </div>
+      {candidate.status === "pending" && streamingTail.length > 0 && (
+        <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-400">
+          {streamingTail}
+          <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-cyan-400/70 align-middle" />
+        </p>
+      )}
       {candidate.status === "done" && excerpt.length > 0 && (
         <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-zinc-400">{excerpt}</p>
       )}

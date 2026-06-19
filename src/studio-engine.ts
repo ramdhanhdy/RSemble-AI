@@ -50,6 +50,9 @@ export interface StudioState {
   fusionStatus: StageStatus;
   fusionError: string | null;
   fusedText: string | null;
+  /** Terminal state set when too few candidates succeeded to rank/fuse (need ≥2).
+   *  `{done, failed}` describes how the fanout ended. Null when not applicable. */
+  insufficient: { done: number; failed: number } | null;
 
   // --- background learning loop (RANK-mode only, optional surface) ---
   qualityRating: number;
@@ -74,8 +77,10 @@ export type Action =
   // --- pipeline ---
   | { type: "FANOUT_START"; candidates: Candidate[] }
   | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string }
+  | { type: "CANDIDATE_DELTA"; id: string; delta: string }
   | { type: "CANDIDATE_FAILED"; id: string; error: string }
   | { type: "FANOUT_END"; count: number }
+  | { type: "INSUFFICIENT_CANDIDATES"; done: number; failed: number }
   | { type: "JUDGE_START" }
   | { type: "JUDGE_RESULT"; consensus: ConsensusBreakdown; scoresById: Record<string, number> }
   | { type: "JUDGE_FAILED"; error: string }
@@ -163,6 +168,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         fusedText: null,
         fusionStatus: "idle",
         fusionError: null,
+        insufficient: null,
         audit: logAudit(state.audit, `Fanout started across ${action.candidates.length} candidate(s).`),
       };
 
@@ -171,7 +177,19 @@ export function reducer(state: StudioState, action: Action): StudioState {
         ...state,
         candidates: state.candidates.map((c) =>
           c.id === action.id
-            ? { ...c, status: "done", segments: action.segments, summary: action.summary }
+            ? { ...c, status: "done", segments: action.segments, summary: action.summary, streamingText: "" }
+            : c
+        ),
+      };
+
+    case "CANDIDATE_DELTA":
+      // Append a streamed token chunk to the candidate's in-progress text. Used
+      // only during fanout; on completion CANDIDATE_RESULT clears streamingText.
+      return {
+        ...state,
+        candidates: state.candidates.map((c) =>
+          c.id === action.id
+            ? { ...c, streamingText: (c.streamingText ?? "") + action.delta }
             : c
         ),
       };
@@ -183,6 +201,20 @@ export function reducer(state: StudioState, action: Action): StudioState {
           c.id === action.id ? { ...c, status: "error", errorMessage: action.error } : c
         ),
         audit: logAudit(state.audit, `Candidate ${action.id} failed: ${action.error}`),
+      };
+
+    case "INSUFFICIENT_CANDIDATES":
+      // Terminal: too few candidates survived to rank or fuse (need ≥2). Stop the
+      // run and record why, so the UI can show an honest outcome instead of a
+      // degenerate single-candidate "merged" result.
+      return {
+        ...state,
+        running: false,
+        insufficient: { done: action.done, failed: action.failed },
+        audit: logAudit(
+          state.audit,
+          `Stopped: only ${action.done} candidate(s) succeeded (${action.failed} failed) — need at least 2.`
+        ),
       };
 
     case "FANOUT_END":
@@ -276,6 +308,7 @@ export const initialState: StudioState = {
   fusionStatus: "idle",
   fusionError: null,
   fusedText: null,
+  insufficient: null,
   qualityRating: 0,
   audit: [],
 };

@@ -13,10 +13,12 @@
 // =============================================================================
 
 import { useState } from "react";
-import { Check, ChevronRight, Copy } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 import { Markdown } from "./Markdown";
+import { FailedCandidates } from "./FailedCandidates";
+import { CandidateAnswer } from "./CandidateAnswer";
 
 export function FuseResult({ state }: { state: StudioState }) {
   const [copied, setCopied] = useState(false);
@@ -66,35 +68,28 @@ export function FuseResult({ state }: { state: StudioState }) {
         <Markdown text={text} />
       </article>
 
-      {/* 5.3 Per-candidate scores (collapsed) */}
-      <SourceScores candidates={state.candidates} />
+      {/* 5.3 Source answers — each candidate's full text, expandable */}
+      <SourceAnswers candidates={state.candidates} />
+
+      {/* 5.4 Failed candidates — kept visible so a partial run is honest */}
+      <FailedCandidates candidates={state.candidates} />
     </div>
   );
 }
 
-function SourceScores({ candidates }: { candidates: Candidate[] }) {
-  const done = candidates.filter((c) => c.status === "done" && c.weightedScore > 0);
+function SourceAnswers({ candidates }: { candidates: Candidate[] }) {
+  const done = candidates
+    .filter((c) => c.status === "done")
+    .sort((a, b) => b.weightedScore - a.weightedScore);
   if (done.length === 0) return null;
   return (
-    <details className="rounded-md border border-zinc-800">
-      <summary className="flex min-h-[40px] cursor-pointer list-none items-center gap-2 px-3 py-2 hover:bg-zinc-900">
-        <ChevronRight size={13} className="text-zinc-500 transition-transform [details[open]_&]:rotate-90" />
-        <span className="font-mono text-xs uppercase tracking-wider text-zinc-500">
-          What fed this fusion · {done.length} candidates
-        </span>
-      </summary>
-      <ul className="border-t border-zinc-800 px-3 py-2">
-        {done
-          .sort((a, b) => b.weightedScore - a.weightedScore)
-          .map((c) => (
-            <li key={c.id} className="flex items-center justify-between py-0.5 font-mono text-sm">
-              <span className="truncate text-zinc-300" title={c.provider}>
-                {c.model}
-              </span>
-              <span className="text-zinc-500">{c.weightedScore.toFixed(1)}/5</span>
-            </li>
-          ))}
-      </ul>
-    </details>
+    <div className="flex flex-col gap-2">
+      <div className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+        What fed this fusion · {done.length} candidates · click to read
+      </div>
+      {done.map((c) => (
+        <CandidateAnswer key={c.id} candidate={c} />
+      ))}
+    </div>
   );
 }

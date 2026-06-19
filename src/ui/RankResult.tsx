@@ -11,6 +11,8 @@
 import { Crown } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
+import { FailedCandidates } from "./FailedCandidates";
+import { CandidateAnswer } from "./CandidateAnswer";
 
 function tier(score: number): { bar: string; text: string } {
   if (score >= 4.0) return { bar: "bg-emerald-400", text: "text-emerald-400" };
@@ -36,8 +38,23 @@ export function RankResult({ state }: { state: StudioState }) {
       {/* 4.3 Judge breakdown */}
       {breakdown && <Breakdown breakdown={breakdown} />}
 
+      {/* 4.3b Full answers — each candidate's complete generated text, expandable */}
+      {ranked.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+            Full answers · click to read
+          </div>
+          {ranked.map((c, i) => (
+            <CandidateAnswer key={c.id} candidate={c} rank={i + 1} defaultOpen={i === 0} />
+          ))}
+        </div>
+      )}
+
       {/* 4.4 Historical callback — surfaced only in Rank mode, one line */}
       <HistoricalLine winner={winner?.model} />
+
+      {/* 4.5 Failed candidates — kept visible so a partial run is honest */}
+      <FailedCandidates candidates={state.candidates} />
     </div>
   );
 }
