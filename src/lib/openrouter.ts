@@ -51,7 +51,7 @@ export async function chatCompletion(opts: ChatOptions): Promise<string> {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
         // HTTP-Referer is set automatically by the browser; only X-Title is settable here.
-        "X-Title": "Adaptive Fusion",
+        "X-Title": "RSemble AI",
       },
       body: JSON.stringify({
         model: opts.model,
@@ -111,7 +111,7 @@ export async function* chatCompletionStream(
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
-        "X-Title": "Adaptive Fusion",
+        "X-Title": "RSemble AI",
       },
       body: JSON.stringify({
         model: opts.model,

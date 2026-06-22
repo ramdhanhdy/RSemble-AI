@@ -1,5 +1,5 @@
 // =============================================================================
-// Adaptive Fusion — Core domain types and seed state
+// RSemble AI — Core domain types and seed state
 //
 // See PRODUCT.md (source of truth) and UI.md (interaction spec). This module
 // holds ONLY the domain model + constants + seeds. The state engine (reducer)
@@ -105,4 +105,4 @@ export const SEED_SCORECARD: ScorecardRow[] = [];
 
 export const INITIAL_PROMPT = "";
 
-export const SCORE_STORAGE_KEY = "adaptivefusion.qualityScores.v1";
+export const SCORE_STORAGE_KEY = "rsemble.qualityScores.v1";

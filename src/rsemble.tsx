@@ -1,14 +1,10 @@
 // =============================================================================
-// Adaptive Fusion — root component (Split Workspace shell, Variation B)
+// RSemble AI — root component (Split Workspace shell, Variation B)
 //
-// See PRODUCT.md (source of truth) and UI.md (interaction spec).
-//
-// Phase 1 scope: the shell + header + the Rank/Fuse toggle (the sole switch).
-// The left Command pane and right Output pane are wired in as placeholders for
-// this phase; their full implementations land in later phases (TODOS.md
-// Phase 2 & 3). The pipeline orchestration (runFanout/runJudge/runFusion) is
-// lifted verbatim from the prior component and reused unchanged — only the UI
-// around it is new.
+// Owns the shell layout (header + two-pane workspace), the pipeline
+// orchestration (runFanout → runJudge → runFusion), and the Rank/Fuse mode
+// handling. UI components live in ./ui; pipeline helpers in ./lib/pipeline;
+// state + reducer in ./studio-engine. See PRODUCT.md and UI.md.
 // =============================================================================
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -49,7 +45,7 @@ import { OutputPane } from "./ui/OutputPane";
 // Root
 // =============================================================================
 
-export default function AdaptiveFusion() {
+export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   // Mobile command drawer (<768px). On md+ the command pane is inline, so this
@@ -178,7 +174,7 @@ export default function AdaptiveFusion() {
       const { breakdown, scoresById, unmatchedScores } = parseJudge(content, done);
       if (unmatchedScores.length > 0) {
         console.warn(
-          "[Adaptive Fusion] judge returned scores whose labels could not be matched to candidates:",
+          "[RSemble AI] judge returned scores whose labels could not be matched to candidates:",
           unmatchedScores,
           "Matched scores:",
           scoresById

@@ -67,7 +67,7 @@ export function Header({
           </button>
         )}
         <span className="size-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px] shadow-cyan-400/60" />
-        <span className="font-mono text-sm">Adaptive Fusion</span>
+        <span className="font-mono text-sm">RSemble AI</span>
       </div>
 
       <div className="flex items-center gap-4">

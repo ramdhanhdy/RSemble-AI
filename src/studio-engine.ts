@@ -1,5 +1,5 @@
 // =============================================================================
-// Adaptive Fusion — state engine
+// RSemble AI — state engine
 //
 // Slimmed from the prior studio reducer: the studio-only fields are gone and a
 // single `mode: "rank" | "fuse"` field added (the header toggle's state, and the
