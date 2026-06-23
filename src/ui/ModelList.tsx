@@ -82,7 +82,7 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
 function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch<Action> }) {
   return (
     <li
-      className={`group flex items-center gap-2 rounded-lg border px-2 py-2 font-mono text-sm transition-all ease-out duration-150 hover:shadow-sm ${
+      className={`group flex items-center gap-2 rounded-lg border px-2 py-2 font-mono text-sm transition-[background-color,border-color,box-shadow] ease-out duration-150 hover:shadow-sm ${
         slot.enabled
           ? "border-cyan-500/40 bg-cyan-500/[0.06] text-zinc-200 hover:border-cyan-500/60 hover:bg-cyan-500/[0.10]"
           : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/40 hover:text-zinc-400"

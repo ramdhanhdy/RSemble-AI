@@ -283,7 +283,7 @@ function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
     { label: "Task", note: "describe what you need" },
     { label: "Models", note: "pick 2+ to compare" },
     { label: "Judge", note: "scores each response" },
-    { label: finish, note: finishDesc.split(" ").slice(0, 4).join(" ") + "…" },
+    { label: finish, note: mode === "rank" ? "score & rank models" : "merge into one answer" },
   ];
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 px-8 py-12 text-center">

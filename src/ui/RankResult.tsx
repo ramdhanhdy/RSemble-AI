@@ -72,8 +72,7 @@ export function RankResult({
         </div>
       )}
 
-      {/* 4.4 Historical callback — surfaced only in Rank mode, one line */}
-      {/* Deferred: persistent scorecard across runs. Remove stub until implemented. */}
+      {/* 4.4 Historical scorecard — deferred until persistent scorecard is implemented. */}
 
       {/* 4.5 Failed candidates — kept visible so a partial run is honest */}
       <FailedCandidates candidates={state.candidates} />
