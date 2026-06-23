@@ -288,9 +288,9 @@ function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 px-8 py-12 text-center">
       {/* Pipeline flow diagram */}
-      <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
+      <div className="mb-6 flex flex-wrap items-start justify-center gap-2">
         {steps.map((step, i) => (
-          <div key={step.label} className="flex items-center gap-2">
+          <div key={step.label} className="flex items-start gap-2">
             <div className="flex flex-col items-center gap-1">
               <div
                 className={`flex h-10 items-center rounded-lg border px-3 font-mono text-sm ${
@@ -303,7 +303,11 @@ function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
               </div>
               <span className="max-w-[80px] text-xs text-zinc-600">{step.note}</span>
             </div>
-            {i < steps.length - 1 && <span className="text-zinc-700">→</span>}
+            {i < steps.length - 1 && (
+              <div className="flex h-10 items-center">
+                <span className="text-zinc-700">→</span>
+              </div>
+            )}
           </div>
         ))}
       </div>
