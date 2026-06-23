@@ -173,12 +173,14 @@ export default function RSemble() {
       });
       const { breakdown, scoresById, unmatchedScores } = parseJudge(content, done);
       if (unmatchedScores.length > 0) {
-        console.warn(
-          "[RSemble AI] judge returned scores whose labels could not be matched to candidates:",
-          unmatchedScores,
-          "Matched scores:",
-          scoresById
-        );
+        if (import.meta.env.DEV) {
+          console.warn(
+            "[RSemble AI] judge returned scores whose labels could not be matched to candidates:",
+            unmatchedScores,
+            "Matched scores:",
+            scoresById
+          );
+        }
       }
       dispatch({ type: "JUDGE_RESULT", consensus: breakdown, scoresById });
     } catch (err) {

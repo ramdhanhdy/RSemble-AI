@@ -28,7 +28,7 @@ function inline(text: string, keyBase: string): JSX.Element[] {
       );
     } else if (tok.startsWith("`")) {
       nodes.push(
-        <code key={`${keyBase}-c${i}`} className="rounded bg-zinc-800 px-1 py-0.5 font-mono text-[0.85em] text-cyan-300">
+        <code key={`${keyBase}-c${i}`} className="rounded bg-zinc-800 px-1 py-1 font-mono text-xs text-cyan-300">
           {tok.slice(1, -1)}
         </code>
       );
@@ -67,7 +67,7 @@ export function Markdown({ text }: { text: string }) {
       blocks.push(
         <pre
           key={key++}
-          className="my-3 overflow-x-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 font-mono text-[13px] leading-relaxed text-zinc-300"
+          className="my-3 overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-sm leading-relaxed text-zinc-300"
         >
           {buf.join("\n")}
         </pre>
@@ -87,9 +87,9 @@ export function Markdown({ text }: { text: string }) {
       const level = h[1].length;
       const cls =
         level === 1
-          ? "mt-4 mb-2 text-lg font-semibold text-zinc-100"
+          ? "mt-4 mb-2 text-base font-semibold text-zinc-100"
           : level === 2
-            ? "mt-4 mb-2 text-base font-semibold text-zinc-100"
+            ? "mt-4 mb-2 text-sm font-semibold text-zinc-100"
             : "mt-3 mb-1 text-sm font-semibold text-zinc-200";
       blocks.push(
         <p key={key++} className={cls}>
@@ -110,7 +110,7 @@ export function Markdown({ text }: { text: string }) {
       blocks.push(
         <blockquote
           key={key++}
-          className="my-2 border-l-2 border-cyan-500/40 pl-3 text-[13px] italic text-zinc-400"
+          className="my-2 border-l-2 border-cyan-500/40 pl-3 text-sm italic text-zinc-400"
         >
           {inline(buf.join(" "), `q${key}`)}
         </blockquote>
@@ -126,7 +126,7 @@ export function Markdown({ text }: { text: string }) {
         i += 1;
       }
       blocks.push(
-        <ul key={key++} className="my-2 list-disc space-y-1 pl-5 text-[13px] text-zinc-300">
+        <ul key={key++} className="my-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
           {items.map((it, idx) => (
             <li key={idx}>{inline(it, `ul${key}-${idx}`)}</li>
           ))}
@@ -143,7 +143,7 @@ export function Markdown({ text }: { text: string }) {
         i += 1;
       }
       blocks.push(
-        <ol key={key++} className="my-2 list-decimal space-y-1 pl-5 text-[13px] text-zinc-300">
+        <ol key={key++} className="my-2 list-decimal space-y-1 pl-5 text-sm text-zinc-300">
           {items.map((it, idx) => (
             <li key={idx}>{inline(it, `ol${key}-${idx}`)}</li>
           ))}
@@ -168,7 +168,7 @@ export function Markdown({ text }: { text: string }) {
       i += 1;
     }
     blocks.push(
-      <p key={key++} className="my-2 text-[13px] leading-relaxed text-zinc-300">
+      <p key={key++} className="my-2 text-sm leading-relaxed text-zinc-300">
         {inline(buf.join(" "), `p${key}`)}
       </p>
     );

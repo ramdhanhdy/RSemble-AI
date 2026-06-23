@@ -57,7 +57,7 @@ export function CandidateAnswer({
 
   return (
     <div
-      className={`rounded-md border bg-zinc-900 ${
+      className={`rounded-lg border bg-zinc-900 ${
         rank === 1 ? "border-emerald-500/30" : "border-zinc-800"
       }`}
     >
@@ -65,7 +65,7 @@ export function CandidateAnswer({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full min-h-[44px] items-center gap-3 px-3 py-2.5 text-left hover:bg-zinc-800/50"
+        className="flex w-full min-h-[44px] items-center gap-3 px-3 py-3 text-left hover:bg-zinc-800/50"
       >
         <ChevronRight
           size={14}
@@ -73,7 +73,7 @@ export function CandidateAnswer({
         />
         {rank != null && (
           <span
-            className={`grid size-5 shrink-0 place-items-center rounded-sm font-mono text-xs ${
+            className={`grid size-5 shrink-0 place-items-center rounded font-mono text-xs ${
               rank === 1 ? "bg-emerald-500/20 text-emerald-300" : "bg-zinc-800 text-zinc-400"
             }`}
           >

@@ -49,7 +49,7 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
         )}
       </div>
 
-      <ul className="mt-1.5 space-y-1">
+      <ul className="mt-2 space-y-1">
         {slots.map((slot) => (
           <SlotRow key={slot.id} slot={slot} dispatch={dispatch} />
         ))}
@@ -82,10 +82,10 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
 function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch<Action> }) {
   return (
     <li
-      className={`group flex items-center gap-2 rounded border px-2 py-1.5 font-mono text-sm ${
+      className={`group flex items-center gap-2 rounded-lg border px-2 py-2 font-mono text-sm transition-[background-color,border-color,box-shadow] ease-out duration-150 hover:shadow-sm ${
         slot.enabled
-          ? "border-cyan-500/40 bg-cyan-500/[0.06] text-zinc-200"
-          : "border-zinc-800 text-zinc-500"
+          ? "border-cyan-500/40 bg-cyan-500/[0.06] text-zinc-200 hover:border-cyan-500/60 hover:bg-cyan-500/[0.10]"
+          : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/40 hover:text-zinc-400"
       }`}
     >
       <button
@@ -93,7 +93,7 @@ function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch
         onClick={() => dispatch({ type: "TOGGLE_SLOT", id: slot.id })}
         aria-pressed={slot.enabled}
         aria-label={slot.enabled ? `Disable ${slot.model}` : `Enable ${slot.model}`}
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border ${
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
           slot.enabled ? "border-emerald-400 bg-emerald-400 text-zinc-950" : "border-zinc-600 text-transparent"
         }`}
       >
@@ -101,7 +101,7 @@ function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch
       </button>
       <span className="flex-1 truncate" title={slot.slug}>
         {slot.model}
-        <span className="ml-1.5 text-zinc-600">{slot.slug}</span>
+        <span className="ml-2 text-zinc-600">{slot.slug}</span>
       </span>
       <button
         type="button"
@@ -160,10 +160,10 @@ function AddModelCombobox({
   };
 
   return (
-    <div className="mt-1.5 rounded-md border border-zinc-700 bg-zinc-900 p-2">
+    <div className="mt-2 rounded-lg border border-zinc-700 bg-zinc-900 p-2">
       <label
         htmlFor="model-search"
-        className="flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500"
+        className="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950 px-2 py-2 focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500"
       >
         <span className="sr-only">Search models</span>
         <Search size={13} className="text-zinc-500" />
@@ -198,7 +198,7 @@ function AddModelCombobox({
 
       {/* Live catalog matches */}
       {hasCatalog && matches.length > 0 && (
-        <ul className="mt-1.5 max-h-48 overflow-y-auto rounded border border-zinc-800">
+        <ul className="mt-2 max-h-48 overflow-y-auto rounded border border-zinc-800">
           {matches.map((m) => {
             const taken = takenSlugs.has(m.id);
             return (
@@ -207,11 +207,11 @@ function AddModelCombobox({
                   type="button"
                   disabled={taken}
                   onClick={() => commit(m.id, m.name)}
-                  className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left font-mono text-sm text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex w-full items-center justify-between gap-2 px-2 py-2 text-left font-mono text-sm text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span className="truncate">
                     {m.name}
-                    <span className="ml-1.5 text-zinc-600">{m.id}</span>
+                    <span className="ml-2 text-zinc-600">{m.id}</span>
                   </span>
                   {taken && <span className="shrink-0 text-zinc-600">added</span>}
                 </button>
@@ -221,7 +221,7 @@ function AddModelCombobox({
         </ul>
       )}
       {hasCatalog && matches.length === 0 && query.trim().length > 0 && (
-        <p className="px-1 py-1.5 font-mono text-sm text-zinc-600">No catalog match — add as raw slug below.</p>
+        <p className="px-1 py-2 font-mono text-sm text-zinc-600">No catalog match — add as raw slug below.</p>
       )}
 
       {/* Manual raw-slug entry — works even with no catalog (no key) */}
@@ -230,13 +230,13 @@ function AddModelCombobox({
           type="button"
           onClick={() => commit(trimmed)}
           aria-label={`Add slug ${trimmed}`}
-          className="mt-1.5 flex min-h-[36px] w-full items-center justify-center gap-1.5 rounded border border-cyan-500/40 bg-cyan-500/[0.06] py-1.5 font-mono text-sm text-cyan-300 hover:bg-cyan-500/[0.12]"
+          className="mt-2 flex min-h-[36px] w-full items-center justify-center gap-2 rounded border border-cyan-500/40 bg-cyan-500/[0.06] py-2 font-mono text-sm text-cyan-300 hover:bg-cyan-500/[0.12]"
         >
           <Plus size={13} /> add slug <span className="text-cyan-200">{trimmed}</span>
         </button>
       ) : (
         query.trim().length > 0 && (
-          <p className="mt-1.5 px-1 font-mono text-sm text-zinc-600">
+          <p className="mt-2 px-1 font-mono text-sm text-zinc-600">
             Enter a slug as <span className="text-zinc-400">provider/model</span>
             {takenSlugs.has(trimmed) && " · already added"}
           </p>

@@ -42,6 +42,22 @@ body {
   background-color: transparent;
 }
 
+/* Custom animations: ease-out timing, 400ms duration (replaces Tailwind's
+   linear 1s spin and 2s ease-in-out pulse). Per Round 2 constraint library. */
+@keyframes spin-ease {
+  to { transform: rotate(360deg); }
+}
+.animate-spin-ease {
+  animation: spin-ease 0.4s ease-out infinite;
+}
+@keyframes pulse-ease {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.3; }
+}
+.animate-pulse-ease {
+  animation: pulse-ease 0.4s ease-out infinite;
+}
+
 /* Respect reduced-motion preferences (DESIGN.md: minimal-functional motion). */
 @media (prefers-reduced-motion: reduce) {
   *,

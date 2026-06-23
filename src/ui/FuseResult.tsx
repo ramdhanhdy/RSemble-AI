@@ -37,7 +37,7 @@ export function FuseResult({ state }: { state: StudioState }) {
 
   if (!text) {
     return (
-      <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-zinc-800 py-10 text-center text-sm text-zinc-500">
+      <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-zinc-800 py-10 text-center text-sm text-zinc-500">
         {state.fusionStatus === "error"
           ? `Fusion failed — ${state.fusionError ?? "unknown error"}`
           : "Fusion has not run for this run yet."}
@@ -64,7 +64,7 @@ export function FuseResult({ state }: { state: StudioState }) {
       </div>
 
       {/* 5.2 Merged document */}
-      <article className="flex-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-900 p-4 scroll-thin">
+      <article className="flex-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900 p-4 scroll-thin">
         <Markdown text={text} />
       </article>
 

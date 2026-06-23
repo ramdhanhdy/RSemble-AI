@@ -47,7 +47,7 @@ export function RankResult({
         <button
           type="button"
           onClick={onFuse}
-          className="flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/[0.06] py-2.5 text-sm font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/[0.12] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400"
+          className="flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/[0.06] py-3 text-sm font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/[0.12] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400"
         >
           <GitMerge size={15} />
           Fuse these {ranked.length} candidates into one answer
@@ -72,8 +72,7 @@ export function RankResult({
         </div>
       )}
 
-      {/* 4.4 Historical callback — surfaced only in Rank mode, one line */}
-      <HistoricalLine winner={winner?.model} />
+      {/* 4.4 Historical scorecard — deferred until persistent scorecard is implemented. */}
 
       {/* 4.5 Failed candidates — kept visible so a partial run is honest */}
       <FailedCandidates candidates={state.candidates} />
@@ -85,7 +84,7 @@ export function RankResult({
 
 function Recommendation({ winner }: { winner: Candidate }) {
   return (
-    <div className="rounded-md border border-emerald-500/40 bg-emerald-500/[0.06] px-4 py-3">
+    <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/[0.06] px-4 py-3">
       <div className="flex items-center gap-2">
         <Crown size={13} className="text-emerald-400" />
         <span className="font-mono text-xs uppercase tracking-wider text-emerald-400">
@@ -105,7 +104,7 @@ function Recommendation({ winner }: { winner: Candidate }) {
 
 function NoRankedState() {
   return (
-    <div className="rounded-md border border-dashed border-zinc-800 py-10 text-center text-sm text-zinc-500">
+    <div className="rounded-lg border border-dashed border-zinc-800 py-10 text-center text-sm text-zinc-500">
       No candidates to rank yet.
     </div>
   );
@@ -117,10 +116,10 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
   const top = ranked[0]?.weightedScore ?? 5;
   return (
     <div>
-      <div className="mb-1.5 font-mono text-xs uppercase tracking-wider text-zinc-500">
+      <div className="mb-2 font-mono text-xs uppercase tracking-wider text-zinc-500">
         Leaderboard
       </div>
-      <div className="overflow-hidden rounded-md border border-zinc-800 divide-y divide-zinc-800">
+      <div className="overflow-hidden rounded-lg border border-zinc-800 divide-y divide-zinc-800">
         {ranked.map((c, i) => {
           const t = tier(c.weightedScore);
           const widthPct = Math.max(8, (c.weightedScore / 5) * 100);
@@ -128,7 +127,7 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
           return (
             <div
               key={c.id}
-              className={`flex items-center gap-3 px-3 py-2.5 ${
+              className={`flex items-center gap-3 px-3 py-3 ${
                 isWinner ? "bg-emerald-500/[0.04] ring-1 ring-inset ring-emerald-500/30" : ""
               }`}
             >
@@ -136,7 +135,7 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
               <span className="w-44 truncate font-mono text-sm" title={`${c.provider} · ${c.model}`}>
                 {c.model}
               </span>
-              <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+              <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-zinc-800">
                 <div
                   className={`h-full ${t.bar} ${isWinner ? "shadow-[0_0_6px] shadow-emerald-400/40" : ""}`}
                   style={{ width: `${widthPct}%` }}
@@ -196,8 +195,8 @@ function BreakdownCard({
 }) {
   const accent = tone === "amber" ? "text-amber-400" : "text-zinc-400";
   return (
-    <div className="rounded-md border border-zinc-800 p-3">
-      <div className={`mb-1.5 font-mono text-xs uppercase tracking-wider ${accent}`}>
+    <div className="rounded-lg border border-zinc-800 p-3">
+      <div className={`mb-2 font-mono text-xs uppercase tracking-wider ${accent}`}>
         {title}
       </div>
       {items.length === 0 ? (
@@ -205,26 +204,13 @@ function BreakdownCard({
       ) : (
         <ul className="space-y-1">
           {items.map((item, i) => (
-            <li key={i} className="flex gap-1.5 text-sm leading-relaxed text-zinc-300">
-              <span className={`mt-1.5 size-1 shrink-0 rounded-full ${tone === "amber" ? "bg-amber-400" : "bg-zinc-500"}`} />
+            <li key={i} className="flex gap-2 text-sm leading-relaxed text-zinc-300">
+              <span className={`mt-2 size-1 shrink-0 rounded-full ${tone === "amber" ? "bg-amber-400" : "bg-zinc-500"}`} />
               <span>{item}</span>
             </li>
           ))}
         </ul>
       )}
     </div>
-  );
-}
-
-// ---- 4.4 historical callback (one line) -------------------------------------
-
-function HistoricalLine({ winner }: { winner?: string }) {
-  // The scorecard earns its keep ONLY here as a one-liner; it is not a dashboard.
-  // Until a persistent scorecard is wired (deferred), this stays an honest stub.
-  if (!winner) return null;
-  return (
-    <p className="font-mono text-sm text-zinc-600">
-      historical scorecard · pending — will show “{winner} leads N of last M tasks” once runs accumulate.
-    </p>
   );
 }

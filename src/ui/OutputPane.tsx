@@ -8,7 +8,7 @@
 // =============================================================================
 
 import { useEffect, useState } from "react";
-import { Loader2, RotateCcw } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 import { RankResult } from "./RankResult";
@@ -99,7 +99,7 @@ function InsufficientState({
 }) {
   const verb = mode === "fuse" ? "fuse" : "rank";
   return (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/[0.04] py-10 px-6 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/[0.04] py-10 px-6 text-center">
       <p className="font-mono text-xs uppercase tracking-wider text-amber-400">Stopped</p>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-300">
         Only <span className="font-semibold text-zinc-100">{done} of {done + failed}</span> candidate(s)
@@ -141,12 +141,12 @@ function StageProgress({ state }: { state: StudioState }) {
   }
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-2">
       {steps.map((step, i) => (
-        <div key={step.label} className="flex items-center gap-1.5">
+        <div key={step.label} className="flex items-center gap-2">
           {i > 0 && <span className="text-zinc-700">→</span>}
           <span
-            className={`flex items-center gap-1.5 rounded px-2 py-1 font-mono text-xs ${
+            className={`flex items-center gap-2 rounded px-2 py-1 font-mono text-xs ${
               step.state === "active"
                 ? "bg-cyan-500/15 text-cyan-300"
                 : step.state === "done"
@@ -154,8 +154,8 @@ function StageProgress({ state }: { state: StudioState }) {
                   : "text-zinc-600"
             }`}
           >
-            {step.state === "active" && <Loader2 size={11} className="animate-spin" />}
-            {step.state === "done" && <span className="size-1.5 rounded-full bg-emerald-400" />}
+            {step.state === "active" && <Loader2 size={11} className="animate-spin-ease" />}
+            {step.state === "done" && <span className="size-2 rounded-full bg-emerald-400" />}
             {step.label}
           </span>
         </div>
@@ -188,8 +188,8 @@ function StageBanner({ state }: { state: StudioState }) {
     : `comparing ${doneCount} candidate${doneCount === 1 ? "" : "s"} against the rubric and scoring each`;
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2">
-      <Loader2 size={13} className="animate-spin text-cyan-400" />
+    <div className="flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2">
+      <Loader2 size={13} className="animate-spin-ease text-cyan-400" />
       <span className="text-sm text-zinc-300">
         <span className="font-mono text-cyan-300">{stage}</span> · {verb}.
       </span>
@@ -225,11 +225,11 @@ function LiveCandidateCard({ candidate }: { candidate: Candidate }) {
   const streamingTail = streaming.length > 600 ? "…" + streaming.slice(-600) : streaming;
 
   return (
-    <li className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2">
+    <li className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2">
       <div className="flex items-center gap-2">
-        {candidate.status === "pending" && <Loader2 size={12} className="animate-spin text-zinc-500" />}
-        {candidate.status === "done" && <span className="size-1.5 rounded-full bg-emerald-400" />}
-        {candidate.status === "error" && <span className="size-1.5 rounded-full bg-rose-400" />}
+        {candidate.status === "pending" && <Loader2 size={12} className="animate-spin-ease text-zinc-500" />}
+        {candidate.status === "done" && <span className="size-2 rounded-full bg-emerald-400" />}
+        {candidate.status === "error" && <span className="size-2 rounded-full bg-rose-400" />}
         <span className="flex-1 truncate font-mono text-sm text-zinc-200" title={candidate.provider}>
           {candidate.model}
         </span>
@@ -246,16 +246,16 @@ function LiveCandidateCard({ candidate }: { candidate: Candidate }) {
         </span>
       </div>
       {candidate.status === "pending" && streamingTail.length > 0 && (
-        <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-400">
+        <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-400">
           {streamingTail}
-          <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-cyan-400/70 align-middle" />
+          <span className="ml-1 inline-block h-4 w-2 animate-pulse-ease bg-cyan-400/70 align-middle" />
         </p>
       )}
       {candidate.status === "done" && excerpt.length > 0 && (
-        <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-zinc-400">{excerpt}</p>
+        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-zinc-400">{excerpt}</p>
       )}
       {candidate.status === "error" && candidate.errorMessage && (
-        <p className="mt-1.5 text-sm leading-relaxed text-rose-400/80">{candidate.errorMessage}</p>
+        <p className="mt-2 text-sm leading-relaxed text-rose-400/80">{candidate.errorMessage}</p>
       )}
     </li>
   );
@@ -274,13 +274,49 @@ function PaneLabel({ index, title, hint }: { index: string; title: string; hint:
 }
 
 function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
+  const finish = mode === "rank" ? "Rank" : "Fuse";
+  const finishDesc =
+    mode === "rank"
+      ? "Score every model against your rubric, get a ranked leaderboard with a recommendation."
+      : "Merge the strongest material from all candidates into one synthesized answer.";
+  const steps = [
+    { label: "Task", note: "describe what you need" },
+    { label: "Models", note: "pick 2+ to compare" },
+    { label: "Judge", note: "scores each response" },
+    { label: finish, note: mode === "rank" ? "score & rank models" : "merge into one answer" },
+  ];
   return (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-dashed border-zinc-800 py-16 text-center">
-      <RotateCcw size={20} className="text-zinc-700" />
-      <p className="mt-3 text-sm text-zinc-500">
-        {mode === "rank"
-          ? "Run the pipeline to see the ranking."
-          : "Run the pipeline to fuse a merged answer."}
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 px-8 py-12 text-center">
+      {/* Pipeline flow diagram */}
+      <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
+        {steps.map((step, i) => (
+          <div key={step.label} className="flex items-center gap-2">
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className={`flex h-10 items-center rounded-lg border px-3 font-mono text-sm ${
+                  i === steps.length - 1
+                    ? "border-cyan-500/40 bg-cyan-500/[0.08] text-cyan-300"
+                    : "border-zinc-700 bg-zinc-900 text-zinc-300"
+                }`}
+              >
+                {step.label}
+              </div>
+              <span className="max-w-[80px] text-xs text-zinc-600">{step.note}</span>
+            </div>
+            {i < steps.length - 1 && <span className="text-zinc-700">→</span>}
+          </div>
+        ))}
+      </div>
+      <p className="max-w-sm text-sm leading-relaxed text-zinc-400">
+        Compare responses from multiple models side-by-side, then{" "}
+        <span className="font-semibold text-zinc-200">
+          {mode === "rank" ? "pick the best" : "merge them into one"}
+        </span>
+        .
+      </p>
+      <p className="mt-2 text-sm leading-relaxed text-zinc-600">{finishDesc}</p>
+      <p className="mt-4 font-mono text-xs uppercase tracking-wider text-zinc-700">
+        Configure the command pane and run ↑
       </p>
     </div>
   );
@@ -288,7 +324,7 @@ function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/[0.04] py-10 px-6 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/[0.04] py-10 px-6 text-center">
       <p className="font-mono text-xs uppercase tracking-wider text-rose-400">Error</p>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-300">{message}</p>
       <p className="mt-2 font-mono text-sm text-zinc-600">
