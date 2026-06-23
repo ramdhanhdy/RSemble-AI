@@ -26,7 +26,7 @@ export function TaskInput({
         value={prompt}
         onChange={(e) => dispatch({ type: "SET_PROMPT", value: e.target.value })}
         placeholder="Describe the task — e.g. write a 600-word article on…"
-        className="mt-1.5 w-full resize-none rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+        className="mt-2 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
       />
     </div>
   );

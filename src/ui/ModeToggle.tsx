@@ -43,7 +43,7 @@ export function ModeToggle({
     <div
       role="radiogroup"
       aria-label="Finish mode"
-      className="flex items-center rounded-md border border-zinc-800 bg-zinc-900 p-0.5 font-mono text-sm"
+      className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900 p-1 font-mono text-sm"
     >
       {OPTIONS.map((opt, i) => {
         const active = mode === opt.value;
@@ -59,7 +59,7 @@ export function ModeToggle({
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(opt.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={`min-h-[36px] rounded px-3 py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${
+            className={`min-h-[36px] rounded px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${
               active
                 ? "bg-cyan-500 font-semibold text-zinc-950"
                 : "text-zinc-400 hover:text-zinc-200"

@@ -53,7 +53,7 @@ export function Header({
 }) {
   const status = statusText(state);
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-900/50 px-4 backdrop-blur-sm">
       <div className="flex items-center gap-2">
         {/* Mobile drawer toggle — visible only <768px (DESIGN.md responsive). */}
         {onOpenCommand && (
@@ -66,16 +66,16 @@ export function Header({
             <Menu size={18} />
           </button>
         )}
-        <span className="size-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px] shadow-cyan-400/60" />
-        <span className="font-mono text-sm">RSemble AI</span>
+        <span className="size-2 rounded-full bg-cyan-400 shadow-[0_0_8px] shadow-cyan-400/60" />
+        <span className="text-base font-semibold tracking-tight">RSemble AI</span>
       </div>
 
       <div className="flex items-center gap-4">
         <span
-          className={`hidden items-center gap-1.5 font-mono text-sm sm:flex ${toneText[status.tone]}`}
+          className={`hidden items-center gap-2 font-mono text-sm sm:flex ${toneText[status.tone]}`}
           aria-live="polite"
         >
-          <span className={`size-1.5 rounded-full ${toneDot[status.tone]}`} />
+          <span className={`size-2 rounded-full ${toneDot[status.tone]}`} />
           {status.label}
         </span>
         {children}

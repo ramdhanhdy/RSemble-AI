@@ -44,8 +44,8 @@ export function JudgeConfig({ criticModel, models, dispatch }: JudgeConfigProps)
       </div>
 
       {!editing && (
-        <div className="mt-1.5 flex items-center gap-2 rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-sm text-zinc-200">
-          <span className="size-1.5 shrink-0 rounded-full bg-cyan-400" />
+        <div className="mt-2 flex items-center gap-2 rounded border border-zinc-800 bg-zinc-900 px-2 py-2 font-mono text-sm text-zinc-200">
+          <span className="size-2 shrink-0 rounded-full bg-cyan-400" />
           <span className="flex-1 truncate" title={criticModel}>
             {criticModel}
           </span>
@@ -97,10 +97,10 @@ function JudgeCombobox({
   const slugValid = trimmed.length > 0 && trimmed.includes("/");
 
   return (
-    <div className="mt-1.5 rounded-md border border-zinc-700 bg-zinc-900 p-2">
+    <div className="mt-2 rounded-lg border border-zinc-700 bg-zinc-900 p-2">
       <label
         htmlFor="judge-search"
-        className="flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500"
+        className="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950 px-2 py-2 focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500"
       >
         <span className="sr-only">Judge model</span>
         <Search size={13} className="text-zinc-500" />
@@ -135,7 +135,7 @@ function JudgeCombobox({
 
       {/* Live catalog matches */}
       {hasCatalog && matches.length > 0 && (
-        <ul className="mt-1.5 max-h-48 overflow-y-auto rounded border border-zinc-800">
+        <ul className="mt-2 max-h-48 overflow-y-auto rounded border border-zinc-800">
           {matches.map((m) => {
             const selected = m.id === current;
             return (
@@ -143,11 +143,11 @@ function JudgeCombobox({
                 <button
                   type="button"
                   onClick={() => onCommit(m.id)}
-                  className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left font-mono text-sm text-zinc-300 hover:bg-zinc-800"
+                  className="flex w-full items-center justify-between gap-2 px-2 py-2 text-left font-mono text-sm text-zinc-300 hover:bg-zinc-800"
                 >
                   <span className="truncate">
                     {m.name}
-                    <span className="ml-1.5 text-zinc-600">{m.id}</span>
+                    <span className="ml-2 text-zinc-600">{m.id}</span>
                   </span>
                   {selected && <Check size={13} className="shrink-0 text-cyan-400" />}
                 </button>
@@ -157,7 +157,7 @@ function JudgeCombobox({
         </ul>
       )}
       {hasCatalog && matches.length === 0 && query.trim().length > 0 && (
-        <p className="px-1 py-1.5 font-mono text-sm text-zinc-600">No catalog match — commit the slug below.</p>
+        <p className="px-1 py-2 font-mono text-sm text-zinc-600">No catalog match — commit the slug below.</p>
       )}
 
       {/* Manual raw-slug commit */}
@@ -166,14 +166,14 @@ function JudgeCombobox({
           type="button"
           onClick={() => onCommit(trimmed)}
           aria-label={`Set judge to ${trimmed}`}
-          className="mt-1.5 flex min-h-[36px] w-full items-center justify-center gap-1.5 rounded border border-cyan-500/40 bg-cyan-500/[0.06] py-1.5 font-mono text-sm text-cyan-300 hover:bg-cyan-500/[0.12]"
+          className="mt-2 flex min-h-[36px] w-full items-center justify-center gap-2 rounded border border-cyan-500/40 bg-cyan-500/[0.06] py-2 font-mono text-sm text-cyan-300 hover:bg-cyan-500/[0.12]"
         >
           <Check size={13} /> set judge <span className="text-cyan-200">{trimmed}</span>
         </button>
       ) : (
         query.trim().length > 0 &&
         !slugValid && (
-          <p className="mt-1.5 px-1 font-mono text-sm text-zinc-600">
+          <p className="mt-2 px-1 font-mono text-sm text-zinc-600">
             Enter a slug as <span className="text-zinc-400">provider/model</span>
           </p>
         )

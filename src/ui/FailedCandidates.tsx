@@ -16,7 +16,7 @@ export function FailedCandidates({ candidates }: { candidates: Candidate[] }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-md border border-rose-500/25 bg-rose-500/[0.03]">
+    <div className="rounded-lg border border-rose-500/25 bg-rose-500/[0.03]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -37,11 +37,11 @@ export function FailedCandidates({ candidates }: { candidates: Candidate[] }) {
           {failed.map((c) => (
             <li key={c.id} className="py-1">
               <div className="flex items-center gap-2 font-mono text-sm">
-                <span className="size-1.5 shrink-0 rounded-full bg-rose-400" />
+                <span className="size-2 shrink-0 rounded-full bg-rose-400" />
                 <span className="text-zinc-300">{c.model}</span>
               </div>
               {c.errorMessage && (
-                <p className="mt-0.5 pl-3.5 text-sm leading-relaxed text-rose-400/70">
+                <p className="mt-1 pl-4 text-sm leading-relaxed text-rose-400/70">
                   {c.errorMessage}
                 </p>
               )}

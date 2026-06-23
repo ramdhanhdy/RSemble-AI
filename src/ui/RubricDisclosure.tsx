@@ -36,7 +36,7 @@ export function RubricDisclosure({
   const enabledCount = rubric.filter((c) => c.enabled).length;
 
   return (
-    <div className="rounded-md border border-zinc-800">
+    <div className="rounded-lg border border-zinc-800">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -88,7 +88,7 @@ function CriterionRow({
 }) {
   const inputId = useId();
   return (
-    <li className="group flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5">
+    <li className="group flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950 px-2 py-2">
       <input
         id={inputId}
         type="checkbox"
@@ -137,12 +137,12 @@ function AddCriterion({ dispatch }: { dispatch: React.Dispatch<Action> }) {
   };
 
   return (
-    <div className="mt-2 flex items-center gap-1.5">
+    <div className="mt-2 flex items-center gap-2">
       <select
         value={kind}
         onChange={(e) => setKind(e.target.value as RubricKind)}
         aria-label="New criterion kind"
-        className="min-h-[36px] rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-xs uppercase text-zinc-300 focus:border-cyan-500 focus:outline-none"
+        className="min-h-[36px] rounded border border-zinc-800 bg-zinc-950 px-2 py-2 font-mono text-xs uppercase text-zinc-300 focus:border-cyan-500 focus:outline-none"
       >
         {KINDS.map((k) => (
           <option key={k} value={k}>
@@ -161,7 +161,7 @@ function AddCriterion({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         }}
         placeholder="Add a criterion (e.g. audience fit)…"
         aria-label="New criterion label"
-        className="min-h-[36px] flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-sm text-zinc-100 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none"
+        className="min-h-[36px] flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-2 font-mono text-sm text-zinc-100 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none"
       />
       <button
         type="button"
