@@ -192,12 +192,21 @@ export default function RSemble() {
     if (done.length === 0) return;
     dispatch({ type: "FUSION_START" });
     try {
+      // Read judge scores from state — JUDGE_RESULT already dispatched by now.
+      const scored = stateRef.current.candidates;
+      const scoresById: Record<string, number> = {};
+      for (const c of scored) {
+        if (c.weightedScore > 0) scoresById[c.id] = c.weightedScore;
+      }
+      const hasScores = Object.keys(scoresById).length > 0;
+
       const content = await chatCompletion({
         model: seed.criticModel,
         messages: fusionMessages({
           prompt: seed.prompt,
           rubric: seed.rubric,
           candidates: done,
+          scores: hasScores ? scoresById : undefined,
         }),
         temperature: 0.3,
       });

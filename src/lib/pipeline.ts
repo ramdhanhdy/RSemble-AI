@@ -214,21 +214,69 @@ export function parseJudge(text: string, candidates: Candidate[]): JudgeResult {
 
 // ---- Fusion ------------------------------------------------------------------
 
+/** Top-K candidates to feed the fuser (matches LLM-Blender's recommendation). */
+const FUSION_TOP_K = 3;
+
+/** Minimum score spread required to add a priority instruction to the fuser.
+ *  When scores are clustered within this threshold, the candidates are treated
+ *  as comparable quality and no ordering bias is applied. */
+const FUSION_SPREAD_THRESHOLD = 0.5;
+
 export function fusionMessages(opts: {
   prompt: string;
   rubric: RubricCriterion[];
   candidates: Candidate[];
+  /** Judge scores by candidate id. When present, only the top-K candidates
+   *  are sent to the fuser, ordered by descending score. The fuser never sees
+   *  the raw numbers — only the ordering and a qualitative priority instruction
+   *  (reward-hacking defense). */
+  scores?: Record<string, number>;
 }): ChatMessage[] {
-  // Fusion runs on the full candidate answers only — no hand-picked snippets
-  // (the Frankenstein picker is OUT, PRODUCT.md §5).
-  const sources = opts.candidates.map((c) => `### ${c.model}\n${candidateFullText(c)}`).join("\n\n");
+  let ranked: Candidate[];
+
+  if (opts.scores && Object.keys(opts.scores).length > 0) {
+    // Sort by score descending, take top-K.
+    ranked = [...opts.candidates]
+      .sort((a, b) => (opts.scores![b.id] ?? 0) - (opts.scores![a.id] ?? 0))
+      .slice(0, FUSION_TOP_K);
+  } else {
+    ranked = opts.candidates;
+  }
+
+  // Minimum-spread guard: if scores are clustered, don't mislead the fuser
+  // with a "Candidate A is strongest" instruction — they're comparable.
+  let hasSpread = false;
+  if (opts.scores) {
+    const scores = ranked.map((c) => opts.scores![c.id] ?? 0);
+    const spread = Math.max(...scores) - Math.min(...scores);
+    hasSpread = spread >= FUSION_SPREAD_THRESHOLD;
+  }
+
+  // Present candidates in descending-score order as "Candidate A / B / C"
+  // WITHOUT raw weights (reward-hacking defense).
+  const sources = ranked
+    .map(
+      (c, i) =>
+        `### Candidate ${LETTERS[i]} — ${c.model}\n${candidateFullText(c)}`
+    )
+    .join("\n\n");
+
+  const priorityInstruction = hasSpread
+    ? `The candidates above are ordered by quality (Candidate A is strongest). ` +
+      `Build your answer primarily from Candidate A. Incorporate material from ` +
+      `later candidates only when it adds something Candidate A lacks.\n\n`
+    : `The candidates above are of comparable quality. ` +
+      `Synthesize freely across all of them.\n\n`;
 
   const system =
-    `You are a senior synthesizer. Merge the strongest material from multiple candidate answers into a single, ` +
-    `coherent, production-grade final answer. Remove redundancy and resolve contradictions sensibly. ` +
+    `You are a senior synthesizer. Merge the strongest material from multiple ` +
+    `candidate answers into a single, coherent, production-grade final answer. ` +
+    `Remove redundancy and resolve contradictions sensibly. ` +
     `Honor the user's rubric. Return the final answer in clean Markdown.`;
   const user =
-    `User task:\n${opts.prompt}\n\nRubric:\n${rubricText(opts.rubric)}\n\nCandidate answers:\n${sources}`;
+    `User task:\n${opts.prompt}\n\nRubric:\n${rubricText(opts.rubric)}\n\n` +
+    priorityInstruction +
+    `Candidate answers:\n${sources}`;
   return [
     { role: "system", content: system },
     { role: "user", content: user },
