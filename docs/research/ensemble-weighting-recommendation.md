@@ -242,22 +242,7 @@ weighting — the judge scores are ignored. The state engine
 
 ### Step-by-step implementation
 
-**1. Add a softmax + top-K helper in `pipeline.ts`:**
-
-```typescript
-/**
- * Convert judge scores to softmax weights with temperature.
- * Lower τ concentrates weight on the top scorer; higher τ flattens.
- */
-function softmaxWeights(scores: number[], temperature: number): number[] {
-  const maxScore = Math.max(...scores); // numerical stability
-  const exps = scores.map(s => Math.exp((s - maxScore) / temperature));
-  const sum = exps.reduce((a, b) => a + b, 0);
-  return exps.map(e => e / sum);
-}
-```
-
-**2. Modify `fusionMessages()` to accept scores and filter to top-K:**
+**1. Modify `fusionMessages()` to accept scores and filter to top-K (✅ implemented):**
 
 The function signature currently takes `{ prompt, rubric, candidates }`. Add an
 optional `scores?: Record<string, number>` (the `scoresById` map from
@@ -319,7 +304,7 @@ export function fusionMessages(opts: {
 }
 ```
 
-**3. Wire the scores through in the pipeline caller.**
+**2. Wire the scores through in the pipeline caller.**
 
 Wherever `fusionMessages()` is called (the Fuse-mode branch after `JUDGE_RESULT`),
 pass the `scoresById` map from the judge result. The caller already has this data
@@ -327,7 +312,7 @@ pass the `scoresById` map from the judge result. The caller already has this dat
 `weightedScore` to each candidate. Pass either the `scoresById` map or read
 `candidate.weightedScore` directly.
 
-**4. Add a temperature setting to the UI (optional, low priority).**
+**3. Add a temperature setting to the UI (optional, low priority).**
 
 The temperature τ is the single tunable parameter. Exposing it as a slider
 (default 0.7, range 0.3–1.5) in the Fuse-mode controls lets users adjust how
@@ -356,8 +341,7 @@ aggressively the fuser prioritizes the top candidate. This is a nice-to-have;
   "Fuse after Rank," which is just Fuse mode with the scores wired through.
 - The UI (`RankResult.tsx`, the leaderboard) is unchanged for v1.
 
-The implementation is approximately **30–40 lines of changes in `pipeline.ts`**
-(softmax helper + modified `fusionMessages`) plus a one-line change at the call
+The implementation is approximately **20–25 lines of changes in `pipeline.ts`**
 site to pass `scoresById`. No new dependencies, no new models, no training.
 
 ---
@@ -366,7 +350,7 @@ site to pass `scoresById`. No new dependencies, no new models, no training.
 
 If the project's bottleneck turns out to be **judge bias** (the judge
 systematically favors verbose, formatted, or same-family outputs), the
-softmax-weighted approach doesn't fix the root cause — it just weights by the
+score-weighted approach doesn't fix the root cause — it just weights by the
 biased scores. The principled fix, per Report 2, is to add an independent ranker
 and fuse rankings via RRF.
 
