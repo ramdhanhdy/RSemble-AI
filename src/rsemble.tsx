@@ -17,7 +17,7 @@ import type { ProviderId } from "./lib/providers/types";
 import { Header, type ConnectionState } from "./ui/Header";
 
 import { type Action, type StudioState, initialState, reducer } from "./studio-engine";
-import { IconRail } from "./ui/IconRail";
+
 import { useDialogA11y } from "./ui/useDialogA11y";
 import { useResizableSplit } from "./ui/useResizableSplit";
 import { ModeToggle } from "./ui/ModeToggle";
@@ -279,7 +279,6 @@ export default function RSemble() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-canvas p-2 text-text antialiased">
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-edge bg-shell">
-        <IconRail activeId="command" focusMode={focusMode} onToggleFocusMode={() => setFocusMode((v) => !v)} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Header
             state={state}
