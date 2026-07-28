@@ -170,7 +170,7 @@ describe("bridge — static endpoints", () => {
     try {
       const res = await fetch(`${url}/health`);
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ status: "ok" });
+      expect(await res.json()).toEqual({ status: "ok", service: "rsemble-codex-bridge" });
     } finally {
       await closeServer(server);
     }

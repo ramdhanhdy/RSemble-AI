@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -p name -c cyan,yellow \"npm:dev:web\" \"npm:dev:bridge\"",
-    "dev:web": "vite",
-    "dev:web-only": "vite",
+    "dev": "concurrently --kill-others-on-fail -p name -c cyan,yellow \"npm:dev:web\" \"npm:dev:bridge\"",
+    "dev:web": "vite --strictPort",
+    "dev:web-only": "vite --strictPort",
     "dev:bridge": "tsx server/codex-bridge/index.ts",
     "build": "tsc -b && vite build",
     "test": "vitest run",

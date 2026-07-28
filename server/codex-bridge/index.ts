@@ -6,6 +6,7 @@ import { getAuthStatus } from "./auth.js";
 import { CODEX_MODELS } from "./models.js";
 import { handleCompletions, type CompletionRequestBody } from "./responses.js";
 import { handleUmansProxy } from "./umans.js";
+import { BRIDGE_SERVICE, listenOrReuseBridge } from "./startup.js";
 
 const PORT = Number.parseInt(process.env.RSEMBLE_CODEX_BRIDGE_PORT || "8787", 10);
 const HOST = "127.0.0.1";
@@ -134,7 +135,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
     }
 
     if (req.method === "GET" && pathName === "/health") {
-      sendJson(res, 200, { status: "ok" });
+      sendJson(res, 200, { status: "ok", service: BRIDGE_SERVICE });
       return;
     }
 
@@ -197,7 +198,22 @@ const invokedDirectly = (() => {
 
 if (invokedDirectly) {
   const server = createBridgeServer();
-  server.listen(PORT, HOST, () => {
-    console.log(`[Codex Bridge] Listening on http://${HOST}:${PORT}`);
-  });
+  void listenOrReuseBridge(server, HOST, PORT)
+    .then((result) => {
+      if (result === "listening") {
+        console.log(`[Codex Bridge] Listening on http://${HOST}:${PORT}`);
+      } else {
+        console.log(`[Codex Bridge] Reusing existing bridge on http://${HOST}:${PORT}`);
+      }
+    })
+    .catch((error: Error & { code?: string }) => {
+      if (error.code === "EADDRINUSE") {
+        console.error(
+          `[Codex Bridge] Port ${PORT} is occupied by a service that is not a compatible RSemble bridge.`,
+        );
+      } else {
+        console.error(`[Codex Bridge] Failed to listen on http://${HOST}:${PORT}:`, error);
+      }
+      process.exitCode = 1;
+    });
 }

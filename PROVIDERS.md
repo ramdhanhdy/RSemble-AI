@@ -156,10 +156,10 @@ thin re-export for one phase, then remove.
 // package.json (illustrative)
 {
   "scripts": {
-    "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:bridge\"",
-    "dev:web": "vite",
+    "dev": "concurrently --kill-others-on-fail \"npm:dev:web\" \"npm:dev:bridge\"",
+    "dev:web": "vite --strictPort",
     "dev:bridge": "tsx server/codex-bridge/index.ts",
-    "dev:web-only": "vite",          // OpenRouter + Gemini without Codex
+    "dev:web-only": "vite --strictPort", // OpenRouter + Gemini without Codex
     "build": "tsc -b && vite build"
   }
 }
