@@ -7,7 +7,7 @@
 // changes when the toggle flips — the command pane is unaffected.
 // =============================================================================
 
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, RotateCw } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import { BrandAvatar } from "./brand-icons";
@@ -19,6 +19,10 @@ import { LeaderboardPreviewCard, PipelineRail, WhatYouGetRow, computeStages } fr
 import { useRunClock, elapsedSeconds } from "./useRunClock";
 
 import { getRunCountCached, getRunsCached, type RunHistoryEntry } from "../lib/history-cache";
+
+export function scrollLiveTranscriptToEnd(transcript: { scrollTop: number; readonly scrollHeight: number }): void {
+  transcript.scrollTop = transcript.scrollHeight;
+}
 
 /** Extract the slug portion from a composite key ("providerId:slug" → "slug").
  *  Tolerates legacy bare-slug keys (no colon → returns as-is). */
@@ -212,7 +216,7 @@ function StageBanner({ state }: { state: StudioState }) {
   );
 }
 
-const LiveCandidateCard = memo(function LiveCandidateCard({
+export const LiveCandidateCard = memo(function LiveCandidateCard({
   candidate,
   onRetry,
   now = Date.now(),
@@ -235,9 +239,16 @@ const LiveCandidateCard = memo(function LiveCandidateCard({
       : elapsedSeconds(candidate.startedAt, now)
     : 0;
   const active = candidate.status === "pending";
+  const transcriptRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (active && streamingTail && transcriptRef.current) {
+      scrollLiveTranscriptToEnd(transcriptRef.current);
+    }
+  }, [active, streamingTail]);
 
   return (
-    <li className={`rounded-md border bg-card px-3 py-2 ${
+    <li className={`flex min-h-0 flex-col rounded-md border bg-card px-3 py-2 ${
       candidate.status === "error" ? "border-error/40" : "border-edge"
     }`}>
       <div className="flex items-center gap-2">
@@ -265,7 +276,7 @@ const LiveCandidateCard = memo(function LiveCandidateCard({
         </span>
       </div>
       {active && streamingTail.length > 0 && (
-        <p className="fade-mask-bottom mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-text-secondary">
+        <p ref={transcriptRef} className="mt-2 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-text-secondary scroll-thin">
           {streamingTail}
           <span className="ml-1 inline-block h-4 w-2 animate-pulse-ease bg-accent/70 align-middle" />
         </p>

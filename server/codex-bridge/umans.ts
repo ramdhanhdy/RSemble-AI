@@ -1,15 +1,13 @@
 // =============================================================================
-// Umans upstream proxy
-// api.code.umans.ai sends no CORS headers, so the web app cannot call it
-// directly. Routes /umans/* → https://api.code.umans.ai/*, forwarding the
-// caller's Authorization header and streaming SSE responses back.
+// Hardened OpenAI-compatible upstream proxy
+// Used for APIs that do not permit credentialed browser CORS requests.
 // =============================================================================
 import { once } from "node:events";
 import type http from "node:http";
 
-const UPSTREAM = "https://api.code.umans.ai";
+const UMANS_UPSTREAM = "https://api.code.umans.ai";
 
-/** Default timeout for upstream Umans requests. */
+/** Default timeout for proxied upstream requests. */
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 60_000;
 
 export interface UmansProxyDeps {
@@ -17,6 +15,12 @@ export interface UmansProxyDeps {
   upstreamTimeoutMs?: number;
   /** Maximum bytes accepted before rejecting the proxy request. */
   maxBodyBytes?: number;
+}
+
+export interface OpenAIProxyDeps extends UmansProxyDeps {
+  upstream: string;
+  routePrefix: string;
+  providerLabel: string;
 }
 
 function readBody(req: http.IncomingMessage, res: http.ServerResponse, maxBytes: number): Promise<string | null> {
@@ -63,15 +67,15 @@ function sendJson(res: http.ServerResponse, status: number, payload: unknown): v
   res.end(JSON.stringify(payload));
 }
 
-export async function handleUmansProxy(
+export async function handleOpenAICompatibleProxy(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   pathName: string,
-  deps: UmansProxyDeps = {},
+  deps: OpenAIProxyDeps,
 ): Promise<void> {
   const timeoutMs = deps.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS;
   const maxBodyBytes = deps.maxBodyBytes ?? 1 * 1024 * 1024;
-  const upstreamUrl = `${UPSTREAM}${pathName.replace(/^\/umans/, "")}`;
+  const upstreamUrl = `${deps.upstream}${pathName.replace(new RegExp(`^/${deps.routePrefix}`), "")}`;
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   let body: string | undefined;
   try {
@@ -94,26 +98,30 @@ export async function handleUmansProxy(
     upstream = await fetch(upstreamUrl, {
       method: req.method,
       headers: {
-        Authorization: req.headers.authorization ?? "",
+        Authorization: typeof req.headers.authorization === "string" ? req.headers.authorization : "",
         "Content-Type": req.headers["content-type"] ?? "application/json",
         Accept: req.headers.accept ?? "application/json",
+        "X-Title": "RSemble AI",
       },
       body,
       signal: ctrl.signal,
     });
+    // Bound connection/response-header latency, not the full SSE lifetime.
+    clearTimeout(timeout);
   } catch (err) {
     clearTimeout(timeout);
     if (err instanceof Error && err.name === "AbortError") {
-      if (res.writableEnded) return; // client went away
+      if (res.writableEnded) return;
       sendJson(res, 504, {
         error: {
-          message: `Upstream Umans request timed out after ${timeoutMs}ms.`,
+          message: `Upstream ${deps.providerLabel} request timed out after ${timeoutMs}ms.`,
           type: "upstream_timeout",
         },
       });
       return;
     }
-    sendJson(res, 502, { error: { message: "Could not reach api.code.umans.ai." } });
+    const host = new URL(deps.upstream).host;
+    sendJson(res, 502, { error: { message: `Could not reach ${host}.` } });
     return;
   }
 
@@ -130,15 +138,26 @@ export async function handleUmansProxy(
   try {
     for await (const chunk of upstream.body) {
       const ok = res.write(chunk);
-      if (!ok) {
-        await once(res, "drain");
-      }
+      if (!ok) await once(res, "drain");
     }
   } catch {
-    // Client disconnected mid-stream or upstream aborted after headers sent —
-    // cannot change the response now; just end it.
+    // Client disconnected or upstream aborted after headers were sent.
   } finally {
     clearTimeout(timeout);
     res.end();
   }
+}
+
+export function handleUmansProxy(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  pathName: string,
+  deps: UmansProxyDeps = {},
+): Promise<void> {
+  return handleOpenAICompatibleProxy(req, res, pathName, {
+    ...deps,
+    upstream: UMANS_UPSTREAM,
+    routePrefix: "umans",
+    providerLabel: "Umans",
+  });
 }

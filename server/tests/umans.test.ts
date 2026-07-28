@@ -42,6 +42,7 @@ function upstreamWithChunks(chunks: string[], status = 200): Response {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -104,6 +105,31 @@ describe("handleUmansProxy — timeout", () => {
     const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
     expect(body.error.type).toBe("upstream_timeout");
     vi.useRealTimers();
+  });
+
+  it("clears the response timeout after upstream headers arrive", async () => {
+    vi.useFakeTimers();
+    let upstreamSignal: AbortSignal | undefined;
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) => {
+        upstreamSignal = init?.signal ?? undefined;
+        return Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller;
+          },
+        }), { headers: { "Content-Type": "text/event-stream" } }));
+      }),
+    );
+    const res = makeRes();
+    const promise = handleUmansProxy(makeReq("POST", "{}"), res, "/umans/v1/chat/completions", {
+      upstreamTimeoutMs: 5_000,
+    });
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(upstreamSignal?.aborted).toBe(false);
+    streamController?.close();
+    await promise;
   });
 });
 

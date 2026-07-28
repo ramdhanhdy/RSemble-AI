@@ -44,6 +44,20 @@ export const geminiProvider: LLMProvider = {
   id: "gemini",
   label: "Gemini",
 
+  async testConnection(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness> {
+    const candidateKey = apiKey.trim();
+    if (!candidateKey) return { ok: false, reason: "Enter a Gemini API key first." };
+    try {
+      const res = await fetch(`${BASE_URL}/models?key=${encodeURIComponent(candidateKey)}`, { signal });
+      if (res.ok) return { ok: true };
+      const body = await res.json().catch(() => null) as { error?: { message?: string } } | null;
+      return { ok: false, reason: body?.error?.message ?? `Gemini returned HTTP ${res.status}.` };
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      return { ok: false, reason: "Network error reaching Gemini." };
+    }
+  },
+
   readiness(): ProviderReadiness {
     const key = getApiKey();
     if (key.length > 0) {

@@ -3,6 +3,7 @@
 // =============================================================================
 import http from "node:http";
 import { getAuthStatus } from "./auth.js";
+import { handleClinePassProxy } from "./clinepass.js";
 import { CODEX_MODELS } from "./models.js";
 import { handleCompletions, type CompletionRequestBody } from "./responses.js";
 import { handleUmansProxy } from "./umans.js";
@@ -120,7 +121,12 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
     const url = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
     const pathName = url.pathname;
 
-    if (pathName.startsWith("/umans/")) {
+    const proxyHandler = pathName.startsWith("/umans/")
+      ? handleUmansProxy
+      : pathName.startsWith("/clinepass/")
+        ? handleClinePassProxy
+        : null;
+    if (proxyHandler) {
       if (req.method !== "GET" && req.method !== "POST") {
         res.setHeader("Allow", "GET, POST, OPTIONS");
         sendJson(res, 405, { error: { message: `Method not allowed: ${req.method}`, type: "method_not_allowed" } });
@@ -130,7 +136,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
         sendJson(res, 415, { error: { message: "Content-Type must be application/json.", type: "unsupported_media_type" } });
         return;
       }
-      void handleUmansProxy(req, res, pathName, { maxBodyBytes });
+      void proxyHandler(req, res, `${pathName}${url.search}`, { maxBodyBytes });
       return;
     }
 

@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { Check, RefreshCw, X, Zap } from "lucide-react";
+import { Check, Loader2, RefreshCw, X, Zap } from "lucide-react";
 import { listProviders } from "../lib/providers/registry";
 import type { ProviderId, ProviderReadiness } from "../lib/providers/types";
 import { useDialogA11y } from "./useDialogA11y";
@@ -59,7 +59,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
   {
     id: "clinepass",
     label: "ClinePass",
-    description: "Open-weight models via Cline API. Set VITE_CLINEPASS_KEY in .env or below.",
+    description: "OpenAI-compatible Cline API via the local bridge, required because the API blocks credentialed browser CORS requests. Set VITE_CLINEPASS_KEY in .env or below.",
     placeholder: "cline-...",
     keyHint: "VITE_CLINEPASS_KEY",
   },
@@ -73,8 +73,14 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
   },
 ];
 
+const TEST_CONNECTION_TIMEOUT_MS = 12_000;
+
 function keyStorageId(providerId: ProviderId): string {
   return `rsemble.key.${providerId}`;
+}
+
+function readinessMessage(status: ProviderReadiness): string {
+  return status.ok ? "Connection verified." : status.reason;
 }
 
 export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModalProps) {
@@ -96,6 +102,8 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
     umans: "",
   });
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [testingProvider, setTestingProvider] = useState<ProviderId | null>(null);
+  const [testResults, setTestResults] = useState<Partial<Record<ProviderId, ProviderReadiness>>>({});
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogA11y(isOpen, onClose, dialogRef);
 
@@ -131,6 +139,40 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
     void fetchStatuses();
     onRefresh();
     setTimeout(() => setSavedMessage(null), 3000);
+  };
+
+  const handleKeyChange = (providerId: ProviderId, value: string) => {
+    setKeys((prev) => ({ ...prev, [providerId]: value }));
+    setTestResults((prev) => ({ ...prev, [providerId]: undefined }));
+  };
+
+  const handleTest = async (providerId: ProviderId, label: string) => {
+    if (testingProvider !== null) return;
+    const provider = listProviders().find((item) => item.id === providerId);
+    if (!provider?.testConnection) {
+      setTestResults((prev) => ({ ...prev, [providerId]: { ok: false, reason: "Connection testing is not supported." } }));
+      return;
+    }
+    setTestingProvider(providerId);
+    setTestResults((prev) => ({ ...prev, [providerId]: { ok: false, reason: "Testing..." } }));
+    const ctrl = new AbortController();
+    const timeout = window.setTimeout(() => ctrl.abort(), TEST_CONNECTION_TIMEOUT_MS);
+    try {
+      const result = await provider.testConnection(keys[providerId], ctrl.signal);
+      setTestResults((prev) => ({ ...prev, [providerId]: result }));
+      if (result.ok) setSavedMessage(`${label} connection verified. Save the key to use it.`);
+    } catch (err) {
+      const result: ProviderReadiness = {
+        ok: false,
+        reason: err instanceof DOMException && err.name === "AbortError"
+          ? "Connection test timed out after 12 seconds."
+          : err instanceof Error ? err.message : String(err),
+      };
+      setTestResults((prev) => ({ ...prev, [providerId]: result }));
+    } finally {
+      window.clearTimeout(timeout);
+      setTestingProvider(null);
+    }
   };
 
   return (
@@ -191,7 +233,8 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
                   </div>
                 )}
                 {d.keyHint ? (
-                  <div className="mt-2.5 flex items-center gap-2">
+                  <div className="mt-2.5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <label htmlFor={`key-${d.id}`} className="sr-only">
                       {d.label} API key
                     </label>
@@ -200,16 +243,39 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
                       type="password"
                       placeholder={d.placeholder}
                       value={keys[d.id]}
-                      onChange={(e) => setKeys((prev) => ({ ...prev, [d.id]: e.target.value }))}
-                      className="min-h-[44px] flex-1 rounded-sm border border-edge bg-panel px-2.5 py-2 font-mono text-xs text-text placeholder-text-muted focus:border-accent focus:outline-none"
+                      onChange={(e) => handleKeyChange(d.id, e.target.value)}
+                      disabled={testingProvider === d.id}
+                      className="min-h-[44px] min-w-0 flex-1 rounded-sm border border-edge bg-panel px-2.5 py-2 font-mono text-xs text-text placeholder-text-muted focus:border-accent focus:outline-none"
                     />
-                    <button
-                      type="button"
-                      onClick={() => handleSave(d.id, d.label)}
-                      className="rounded border border-accent/40 bg-accent/10 px-3 py-1.5 font-mono text-xs text-accent hover:bg-accent/20"
-                    >
-                      Save
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        aria-label={`Test ${d.label} connection`}
+                        onClick={() => void handleTest(d.id, d.label)}
+                        disabled={testingProvider !== null}
+                        className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded border border-edge-bright bg-card px-3 font-mono text-xs text-text hover:bg-card-hover disabled:cursor-wait disabled:opacity-60 sm:flex-none"
+                      >
+                        {testingProvider === d.id ? <Loader2 size={12} className="animate-spin-ease" /> : <Zap size={12} />}
+                        Test
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSave(d.id, d.label)}
+                        disabled={testingProvider === d.id}
+                        className="min-h-[44px] flex-1 rounded border border-accent/40 bg-accent/10 px-3 font-mono text-xs text-accent hover:bg-accent/20 disabled:cursor-wait disabled:opacity-60 sm:flex-none"
+                      >
+                        Save
+                      </button>
+                    </div>
+                    </div>
+                    {testResults[d.id] && (
+                      <p
+                        role="status"
+                        className={`mt-2 font-mono text-xs ${testResults[d.id]?.ok ? "text-success" : "text-error"}`}
+                      >
+                        {readinessMessage(testResults[d.id]!)}
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="mt-2.5 flex justify-end">

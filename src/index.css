@@ -70,10 +70,6 @@ body {
   animation: bg-march 1.2s linear infinite;
 }
 
-.fade-mask-bottom {
-  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
-}
 
 /* Custom animations: ease-out timing, 400ms duration (replaces Tailwind's
    linear 1s spin and 2s ease-in-out pulse). Per Round 2 constraint library. */

@@ -75,6 +75,26 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
     id,
     label,
 
+    async testConnection(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness> {
+      const candidateKey = apiKey.trim();
+      if (!candidateKey) return { ok: false, reason: `Enter a ${label} API key first.` };
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl}${modelsPath}`, {
+          headers: buildHeaders(candidateKey),
+          signal,
+        });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") throw err;
+        return { ok: false, reason: `Network error reaching ${label}. Check the endpoint or local bridge.` };
+      }
+      if (!res.ok) {
+        const error = await parseError(res, id);
+        return { ok: false, reason: error.message };
+      }
+      return { ok: true };
+    },
+
     readiness(): ProviderReadiness {
       const key = getApiKey();
       if (key.length > 0) return { ok: true };
@@ -103,6 +123,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
             messages: opts.messages,
             temperature: opts.temperature,
             max_tokens: opts.maxTokens,
+            stream: false,
           }),
           signal: opts.signal,
         });

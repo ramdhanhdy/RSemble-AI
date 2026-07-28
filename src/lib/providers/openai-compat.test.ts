@@ -79,3 +79,42 @@ describe("createOpenAICompatProvider — error preservation", () => {
     expect((err as ProviderError).message).toContain("500");
   });
 });
+
+describe("createOpenAICompatProvider — connection verification", () => {
+  it("tests an unsaved key against the authenticated model endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "model-1" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider(config);
+
+    await expect(provider.testConnection!("candidate-key")).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.code.umans.ai/v1/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: expect.stringContaining("candidate-key") }),
+      }),
+    );
+  });
+
+  it("returns the provider error when the key is rejected", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "invalid api key" } }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+
+    await expect(provider.testConnection!("bad-key")).resolves.toEqual({
+      ok: false,
+      reason: "invalid api key",
+    });
+  });
+});

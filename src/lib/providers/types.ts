@@ -35,6 +35,9 @@ export interface LLMProvider {
   /** Sync/async check: credentials + (for Codex) bridge reachability. */
   readiness(signal?: AbortSignal): ProviderReadiness | Promise<ProviderReadiness>;
 
+  /** Verify an unsaved credential against a harmless authenticated endpoint. */
+  testConnection?(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness>;
+
   chatCompletion(opts: ChatOptions): Promise<string>;
 
   /**

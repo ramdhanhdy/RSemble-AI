@@ -257,6 +257,45 @@ describe("bridge — browser credential-route policy", () => {
       await closeServer(server);
     }
   });
+
+  it("applies origin and JSON-body policy to ClinePass routes", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer();
+    try {
+      const hostile = await rawRequest(url, "/clinepass/api/v1/models", "GET", undefined, {
+        Origin: "https://attacker.example",
+      });
+      expect(hostile.status).toBe(403);
+
+      const simplePost = await rawRequest(url, "/clinepass/api/v1/chat/completions", "POST", "{}", {
+        Origin: "http://localhost:5173",
+        "Content-Type": "text/plain",
+      });
+      expect(simplePost.status).toBe(415);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("preserves query parameters on proxied ClinePass requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"data":[]}', { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer();
+    try {
+      const res = await rawRequest(url, "/clinepass/api/v1/models?limit=5", "GET");
+      expect(res.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.cline.bot/api/v1/models?limit=5",
+        expect.any(Object),
+      );
+    } finally {
+      await closeServer(server);
+    }
+  });
 });
 
 describe("bridge — Umans request safety", () => {

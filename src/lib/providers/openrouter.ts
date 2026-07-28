@@ -27,6 +27,23 @@ export const openrouterProvider: LLMProvider = {
   id: "openrouter",
   label: "OpenRouter",
 
+  async testConnection(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness> {
+    const candidateKey = apiKey.trim();
+    if (!candidateKey) return { ok: false, reason: "Enter an OpenRouter API key first." };
+    try {
+      const res = await fetch(`${BASE_URL}/key`, {
+        headers: { Authorization: ["Bearer", candidateKey].join(" ") },
+        signal,
+      });
+      if (res.ok) return { ok: true };
+      const body = await res.json().catch(() => null) as { error?: { message?: string } } | null;
+      return { ok: false, reason: body?.error?.message ?? `OpenRouter returned HTTP ${res.status}.` };
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      return { ok: false, reason: "Network error reaching OpenRouter." };
+    }
+  },
+
   readiness(): ProviderReadiness {
     const key = getApiKey();
     if (key.length > 0) {
