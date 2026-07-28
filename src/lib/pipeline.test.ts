@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseJudge, judgeMessages, fusionMessages, splitSegments, buildFanoutJobs } from "./pipeline";
+import { parseJudge, judgeMessages, fusionMessages, splitSegments, buildFanoutJobs, isUsableCandidate, checkFusionEligibility } from "./pipeline";
 import type { Candidate } from "../studio-data";
 import type { ProviderId } from "./providers/types";
 
@@ -231,6 +231,104 @@ describe("judgeMessages — judge instruction", () => {
     expect(empty).toEqual(baseline);
     expect(whitespace).toEqual(baseline);
     expect(omitted).toEqual(baseline);
+  });
+});
+
+describe("isUsableCandidate — content eligibility", () => {
+  it("accepts a done candidate with non-empty segments", () => {
+    const c = makeCandidate("c1", "ModelA", "openrouter", "model-a");
+    expect(isUsableCandidate(c)).toBe(true);
+  });
+
+  it("rejects a candidate with status error", () => {
+    const c: Candidate = { ...makeCandidate("c1", "ModelA", "openrouter", "model-a"), status: "error" };
+    expect(isUsableCandidate(c)).toBe(false);
+  });
+
+  it("rejects a candidate with status pending", () => {
+    const c: Candidate = { ...makeCandidate("c1", "ModelA", "openrouter", "model-a"), status: "pending" };
+    expect(isUsableCandidate(c)).toBe(false);
+  });
+
+  it("rejects a done candidate with no segments", () => {
+    const c: Candidate = { ...makeCandidate("c1", "ModelA", "openrouter", "model-a"), segments: [] };
+    expect(isUsableCandidate(c)).toBe(false);
+  });
+
+  it("rejects a done candidate whose only segment is empty/whitespace", () => {
+    const c: Candidate = {
+      ...makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      segments: [{ id: "s0", text: "   \n\t " }],
+    };
+    expect(isUsableCandidate(c)).toBe(false);
+  });
+});
+
+describe("checkFusionEligibility — fusion guard", () => {
+  it("returns ok with usable candidates when ≥2 have content", () => {
+    const candidates = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      makeCandidate("c2", "ModelB", "umans", "model-b"),
+    ];
+    const result = checkFusionEligibility(candidates);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.usable).toHaveLength(2);
+      expect(result.usable.map((c) => c.id)).toEqual(["c1", "c2"]);
+    }
+  });
+
+  it("returns not-ok with done/failed counts when only 1 candidate has content", () => {
+    const candidates: Candidate[] = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      { ...makeCandidate("c2", "ModelB", "umans", "model-b"), status: "error", errorMessage: "boom" },
+    ];
+    const result = checkFusionEligibility(candidates);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.done).toBe(1);
+      expect(result.failed).toBe(1);
+      expect(result.reason).toContain("2");
+    }
+  });
+
+  it("counts empty-content done candidates as failed, not done", () => {
+    const candidates: Candidate[] = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      { ...makeCandidate("c2", "ModelB", "umans", "model-b"), segments: [] },
+    ];
+    const result = checkFusionEligibility(candidates);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.done).toBe(1);
+      expect(result.failed).toBe(1);
+    }
+  });
+
+  it("returns not-ok when all candidates failed", () => {
+    const candidates: Candidate[] = [
+      { ...makeCandidate("c1", "ModelA", "openrouter", "model-a"), status: "error", segments: [] },
+      { ...makeCandidate("c2", "ModelB", "umans", "model-b"), status: "error", segments: [] },
+    ];
+    const result = checkFusionEligibility(candidates);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.done).toBe(0);
+      expect(result.failed).toBe(2);
+    }
+  });
+
+  it("returns ok with 2 usable when 3 configured and 1 failed (3→2 partial)", () => {
+    const candidates: Candidate[] = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      makeCandidate("c2", "ModelB", "umans", "model-b"),
+      { ...makeCandidate("c3", "ModelC", "gemini", "model-c"), status: "error", segments: [], errorMessage: "down" },
+    ];
+    const result = checkFusionEligibility(candidates);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.usable).toHaveLength(2);
+    }
   });
 });
 

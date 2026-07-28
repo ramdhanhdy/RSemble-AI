@@ -96,6 +96,50 @@ export function candidateFullText(candidate: Candidate): string {
   return candidate.segments.map((s) => s.text).join("\n\n");
 }
 
+// ---- Candidate eligibility --------------------------------------------------
+
+/**
+ * A candidate is usable for judge/fusion only when it has genuinely completed
+ * (status "done") AND produced non-empty content. Truncated, aborted, empty,
+ * or errored candidates must never reach the judge/fusion input — including
+ * them would poison the synthesized result with missing or garbage text.
+ */
+export function isUsableCandidate(candidate: Candidate): boolean {
+  if (candidate.status !== "done") return false;
+  const text = candidateFullText(candidate).trim();
+  return text.length > 0;
+}
+
+export type FusionEligibility =
+  | { ok: true; usable: Candidate[] }
+  | { ok: false; done: number; failed: number; reason: string };
+
+/**
+ * Shared eligibility guard for every fusion entry point (button, shortcut,
+ * palette, automatic post-judge path). Fusion is available only with at least
+ * two successful candidate responses that produced real content. The guard
+ * returns a typed result so callers can show actionable feedback instead of
+ * silently doing nothing.
+ *
+ * Candidates whose status is "done" but whose content is empty/whitespace
+ * (truncated or aborted returns) are counted as failed — they cannot
+ * contribute to a meaningful fusion.
+ */
+export function checkFusionEligibility(candidates: Candidate[]): FusionEligibility {
+  const usable = candidates.filter(isUsableCandidate);
+  const total = candidates.length;
+  const failed = total - usable.length;
+  if (usable.length < 2) {
+    return {
+      ok: false,
+      done: usable.length,
+      failed,
+      reason: `Need at least 2 successful candidates with content to fuse — only ${usable.length} of ${total} usable.`,
+    };
+  }
+  return { ok: true, usable };
+}
+
 // ---- Judge -------------------------------------------------------------------
 
 interface RawJudgeResponse {

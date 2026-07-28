@@ -65,10 +65,13 @@ function makeDeps(state: StudioState) {
       };
     }
     if (a.type === "FANOUT_END") stateRef.current = { ...stateRef.current };
-    if (a.type === "INSUFFICIENT_CANDIDATES") stateRef.current = { ...stateRef.current, running: false };
+    if (a.type === "INSUFFICIENT_CANDIDATES") stateRef.current = { ...stateRef.current, running: false, insufficient: { done: a.done, failed: a.failed } };
     if (a.type === "JUDGE_START") stateRef.current = { ...stateRef.current, judgeStatus: "running" };
     if (a.type === "JUDGE_RESULT") stateRef.current = { ...stateRef.current, judgeStatus: "done" };
     if (a.type === "JUDGE_FAILED") stateRef.current = { ...stateRef.current, running: false, judgeStatus: "error" };
+    if (a.type === "FUSION_START") stateRef.current = { ...stateRef.current, fusionStatus: "running" };
+    if (a.type === "FUSION_RESULT") stateRef.current = { ...stateRef.current, running: false, fusionStatus: "done", fusedText: a.text };
+    if (a.type === "FUSION_FAILED") stateRef.current = { ...stateRef.current, running: false, fusionStatus: "error" };
     if (a.type === "ABORT_RUN") stateRef.current = { ...stateRef.current, running: false, aborted: true };
   };
   const deps: RunControllerDeps = {
@@ -94,6 +97,12 @@ function stateWithSlots(slots: StudioState["slots"], mode: "rank" | "fuse" = "ra
 const TWO_SLOTS: StudioState["slots"] = [
   { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
   { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
+];
+
+const THREE_SLOTS: StudioState["slots"] = [
+  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+  { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
+  { id: "s3", providerId: "gemini", provider: "Gemini", model: "C", slug: "model-c", enabled: true },
 ];
 
 async function* streamOf(text: string): AsyncGenerator<string, void, unknown> {
@@ -405,5 +414,216 @@ describe("run-controller — judge instruction threading", () => {
     const judgeText = JSON.stringify(judgeCall.messages);
     // The instruction suffix marker must NOT appear when the instruction is empty.
     expect(judgeText).not.toContain("Additional judge instruction");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Partial-failure fusion — one failed candidate must not poison the run.
+// Eligibility depends on how many successful candidates remain.
+// ---------------------------------------------------------------------------
+
+describe("run-controller — partial candidate failures", () => {
+  it("fuses the 2 successes when 3 configured and 1 failed (3→2 partial fusion)", async () => {
+    const state = stateWithSlots(THREE_SLOTS, "fuse");
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new Error("provider B exploded"); })
+      .mockImplementationOnce(() => streamOf("answer C"));
+    chatCompletionMock
+      .mockResolvedValueOnce(JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+        { label: "A", score: 4.0 }, { label: "C", score: 3.5 },
+      ] }))
+      .mockResolvedValueOnce("fused A+C");
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    // One candidate failed but the run continued past it.
+    expect(types).toContain("CANDIDATE_FAILED");
+    // The run did NOT stop with INSUFFICIENT_CANDIDATES — 2 succeeded.
+    expect(types).not.toContain("INSUFFICIENT_CANDIDATES");
+    // Judge ran on the 2 usable candidates, then fusion ran.
+    expect(types).toContain("JUDGE_START");
+    expect(types).toContain("FUSION_START");
+    expect(types).toContain("FUSION_RESULT");
+    // The fusion prompt must NOT include the failed candidate's text.
+    const fusionCall = chatCompletionMock.mock.calls[1][0];
+    const fusionText = JSON.stringify(fusionCall.messages);
+    expect(fusionText).not.toContain("provider B exploded");
+    // The fusion prompt must include the two successful candidates' text.
+    expect(fusionText).toContain("answer A");
+    expect(fusionText).toContain("answer C");
+    // The run terminated cleanly (not stuck running).
+    expect(deps.stateRef.current.running).toBe(false);
+  });
+
+  it("does NOT fuse when 2 configured and 1 failed (2→1 insufficient) and explains why", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new Error("provider B exploded"); });
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("CANDIDATE_FAILED");
+    expect(types).toContain("INSUFFICIENT_CANDIDATES");
+    expect(types).not.toContain("JUDGE_START");
+    expect(types).not.toContain("FUSION_START");
+    // The failed candidate is still visibly reported (not silently dropped).
+    expect(deps.stateRef.current.running).toBe(false);
+    const insufficient = deps.stateRef.current.insufficient;
+    expect(insufficient).toEqual({ done: 1, failed: 1 });
+  });
+
+  it("does NOT fuse when all candidates failed (all-fail) and terminates deterministically", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock.mockImplementation(() => { throw new Error("all providers down"); });
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("CANDIDATE_FAILED");
+    expect(types).toContain("INSUFFICIENT_CANDIDATES");
+    expect(types).not.toContain("JUDGE_START");
+    expect(types).not.toContain("FUSION_START");
+    expect(deps.stateRef.current.running).toBe(false);
+    expect(deps.stateRef.current.insufficient).toEqual({ done: 0, failed: 2 });
+  });
+
+  it("rank mode degrades gracefully with a single valid candidate (no stuck running)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new Error("provider B exploded"); });
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("INSUFFICIENT_CANDIDATES");
+    expect(types).not.toContain("JUDGE_START");
+    expect(deps.stateRef.current.running).toBe(false);
+  });
+
+  it("does not include empty-content done candidates in judge/fusion input", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    // One candidate returns empty string (truncated/aborted), the other real content.
+    // With only 1 usable candidate, the run must stop with INSUFFICIENT_CANDIDATES.
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf(""))
+      .mockImplementationOnce(() => streamOf("answer B"));
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("INSUFFICIENT_CANDIDATES");
+    expect(types).not.toContain("JUDGE_START");
+    expect(types).not.toContain("FUSION_START");
+    expect(deps.stateRef.current.running).toBe(false);
+  });
+
+  it("judge failure in fuse mode does not proceed to fusion and terminates cleanly", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockRejectedValueOnce(new Error("judge unavailable"));
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_START");
+    expect(types).toContain("JUDGE_FAILED");
+    expect(types).not.toContain("FUSION_START");
+    expect(deps.stateRef.current.running).toBe(false);
+    expect(deps.stateRef.current.judgeStatus).toBe("error");
+  });
+
+  it("triggerFusion shows actionable feedback (INSUFFICIENT_CANDIDATES) instead of silent no-op when <2 usable", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    state.running = false;
+    state.candidates = [
+      {
+        id: "cand-s1", model: "A", provider: "OpenRouter", providerId: "openrouter", slug: "model-a",
+        accent: "indigo", strategy: "Parallel model", summary: "good", scores: {}, weightedScore: 0,
+        segments: [{ id: "a", text: "real answer" }], status: "done",
+      },
+      {
+        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
+        accent: "emerald", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
+        segments: [], status: "error", errorMessage: "failed",
+      },
+    ];
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    controller.triggerFusion(true);
+
+    // Give async dispatch a chance to flush.
+    await new Promise((r) => setTimeout(r, 10));
+
+    const types = dispatched.map((a) => a.type);
+    // The guard must dispatch INSUFFICIENT_CANDIDATES so the user sees why
+    // fusion did not happen — NOT a silent no-op.
+    expect(types).toContain("INSUFFICIENT_CANDIDATES");
+    expect(types).not.toContain("FUSION_START");
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+  });
+
+  it("triggerFusion fuses when ≥2 usable candidates exist (successful partial fusion via button)", async () => {
+    const state = stateWithSlots(THREE_SLOTS, "fuse");
+    state.running = false;
+    state.candidates = [
+      {
+        id: "cand-s1", model: "A", provider: "OpenRouter", providerId: "openrouter", slug: "model-a",
+        accent: "indigo", strategy: "Parallel model", summary: "good", scores: {}, weightedScore: 0,
+        segments: [{ id: "a", text: "answer A" }], status: "done",
+      },
+      {
+        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
+        accent: "emerald", strategy: "Parallel model", summary: "ok", scores: {}, weightedScore: 0,
+        segments: [{ id: "b", text: "answer B" }], status: "done",
+      },
+      {
+        id: "cand-s3", model: "C", provider: "Gemini", providerId: "gemini", slug: "model-c",
+        accent: "violet", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
+        segments: [], status: "error", errorMessage: "gemini provider crashed",
+      },
+    ];
+    chatCompletionMock.mockResolvedValueOnce("fused A+B");
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    controller.triggerFusion(true);
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("FUSION_START");
+    expect(types).toContain("FUSION_RESULT");
+    expect(types).not.toContain("INSUFFICIENT_CANDIDATES");
+    // The fusion prompt must exclude the failed candidate.
+    const fusionCall = chatCompletionMock.mock.calls[0][0];
+    const fusionText = JSON.stringify(fusionCall.messages);
+    expect(fusionText).not.toContain("gemini provider crashed");
+    expect(fusionText).toContain("answer A");
+    expect(fusionText).toContain("answer B");
+  });
+
+  it("triggerFusion is a no-op while a run is in progress (no provider call, no dispatch)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    state.running = true;
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    controller.triggerFusion(true);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    // No fusion-related dispatches while running.
+    const fusionDispatches = dispatched.filter(
+      (a) => a.type === "FUSION_START" || a.type === "INSUFFICIENT_CANDIDATES" || a.type === "FUSION_RESULT",
+    );
+    expect(fusionDispatches).toHaveLength(0);
   });
 });

@@ -214,6 +214,13 @@ export default function RSemble() {
     [triggerFusion],
   );
 
+  // The Rank→Fuse button in RankResult must switch to Fuse mode so the Output
+  // pane renders the fused result, then trigger fusion. This mirrors the header
+  // toggle and the palette "Toggle mode" command — all share handleModeChange.
+  const handleFuseFromRank = useCallback(() => {
+    handleModeChange("fuse");
+  }, [handleModeChange]);
+
   // ---------------------------------------------------------------------------
   // Action shortcuts (extracted)
   // ---------------------------------------------------------------------------
@@ -328,7 +335,7 @@ export default function RSemble() {
             )}
 
             <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
-              <OutputPane state={state} onFuse={triggerFusion} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} />
+              <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} />
             </section>
           </div>
         </div>

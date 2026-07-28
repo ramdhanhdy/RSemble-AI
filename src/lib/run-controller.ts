@@ -17,6 +17,8 @@ import {
   parseJudge,
   splitSegments,
   summarize,
+  isUsableCandidate,
+  checkFusionEligibility,
 } from "./pipeline";
 import type { StudioState, Action } from "../studio-engine";
 import type { StreamDeltaBuffer } from "./stream-buffer";
@@ -121,7 +123,10 @@ export function createRunController(deps: RunControllerDeps) {
       }),
     );
     if (runEpochRef.current !== epoch) return;
-    const done = results.filter((r): r is Candidate => r !== null);
+    // Only candidates with genuine content (status "done" + non-empty text) are
+    // usable for judge/fusion. Empty, truncated, aborted, or errored candidates
+    // must never reach the judge — including them would poison the comparison.
+    const done = results.filter((r): r is Candidate => r !== null).filter(isUsableCandidate);
     dispatch({ type: "FANOUT_END", count: done.length });
 
     if (done.length < 2) {
@@ -348,7 +353,9 @@ export function createRunController(deps: RunControllerDeps) {
 
     if (!updatedCandidate) return;
     const snapshot = s.candidates.map((c) => c.id === candidate.id ? updatedCandidate! : c);
-    const done = snapshot.filter((c) => c.status === "done");
+    // Only candidates with genuine content are usable for the judge. This
+    // matches the runFanout guard so retry uses the same eligibility rule.
+    const done = snapshot.filter(isUsableCandidate);
     if (done.length >= 2) {
       const judgeResult = await runJudge(done, s, epoch);
       if (judgeResult.ok && s.mode === "fuse") {
@@ -358,19 +365,34 @@ export function createRunController(deps: RunControllerDeps) {
       dispatch({
         type: "INSUFFICIENT_CANDIDATES",
         done: done.length,
-        failed: snapshot.filter((c) => c.status === "error").length,
+        failed: snapshot.filter((c) => !isUsableCandidate(c)).length,
       });
     }
   };
 
   const triggerFusion = (force = false) => {
     const s = stateRef.current;
-    const done = s.candidates.filter((c) => c.status === "done");
-    if (done.length >= 2 && !s.running && !s.aborted && (force || s.fusionStatus === "idle")) {
-      const epoch = ++runEpochRef.current;
-      const scoresById = Object.fromEntries(done.map((c) => [c.id, c.weightedScore]));
-      void runFusion(done, s, epoch, scoresById);
+    if (s.running) return;
+
+    // Shared eligibility guard — same rule as every fusion entry point. This
+    // must not silently do nothing: when there are too few usable candidates,
+    // dispatch INSUFFICIENT_CANDIDATES so the UI surfaces an honest outcome.
+    const eligibility = checkFusionEligibility(s.candidates);
+    if (!eligibility.ok) {
+      if (!force && s.fusionStatus === "done") return;
+      dispatch({
+        type: "INSUFFICIENT_CANDIDATES",
+        done: eligibility.done,
+        failed: eligibility.failed,
+      });
+      return;
     }
+    if (!force && s.fusionStatus === "done") return;
+    if (s.aborted) return;
+
+    const epoch = ++runEpochRef.current;
+    const scoresById = Object.fromEntries(eligibility.usable.map((c) => [c.id, c.weightedScore]));
+    void runFusion(eligibility.usable, s, epoch, scoresById);
   };
 
   return {

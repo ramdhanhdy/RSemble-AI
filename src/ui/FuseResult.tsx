@@ -21,6 +21,7 @@ import { useMemo, useState, type JSX } from "react";
 import { Check, Copy, FileDown, Hash, Loader2, RefreshCw } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
+import { isUsableCandidate } from "../lib/pipeline";
 import { Markdown } from "./Markdown";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
@@ -37,7 +38,7 @@ export function FuseResult({ state, onRefuse }: FuseResultProps) {
   const text = state.fusedText;
 
   const doneCandidates = useMemo(
-    () => state.candidates.filter((c) => c.status === "done" && c.segments.length > 0),
+    () => state.candidates.filter(isUsableCandidate),
     [state.candidates],
   );
 
