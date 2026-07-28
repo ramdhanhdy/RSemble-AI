@@ -214,3 +214,33 @@ describe("reducer — ABORT_RUN clears running", () => {
     expect(aborted.errorMessage).toBe("Aborted");
   });
 });
+
+describe("reducer — judge custom instruction", () => {
+  it("initial state starts with an empty judgeInstruction", () => {
+    expect(initialState.judgeInstruction).toBe("");
+  });
+
+  it("SET_JUDGE_INSTRUCTION stores the value in state", () => {
+    const next = reducer(initialState, {
+      type: "SET_JUDGE_INSTRUCTION",
+      value: "Prefer concise answers.",
+    });
+    expect(next.judgeInstruction).toBe("Prefer concise answers.");
+  });
+
+  it("SET_JUDGE_INSTRUCTION overwrites a prior instruction", () => {
+    const s: StudioState = { ...initialState, judgeInstruction: "old note" };
+    const next = reducer(s, { type: "SET_JUDGE_INSTRUCTION", value: "new note" });
+    expect(next.judgeInstruction).toBe("new note");
+  });
+
+  it("RESET_SESSION clears the judgeInstruction back to empty", () => {
+    const s: StudioState = {
+      ...initialState,
+      judgeInstruction: "prefer brevity",
+      candidates: [makeCandidate("c1", "openrouter", "model-a")],
+    };
+    const next = reducer(s, { type: "RESET_SESSION" });
+    expect(next.judgeInstruction).toBe("");
+  });
+});

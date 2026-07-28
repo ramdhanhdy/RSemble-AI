@@ -154,7 +154,7 @@ export function createRunController(deps: RunControllerDeps) {
       const criticProvider = getProvider(seed.critic.providerId);
       const content = await criticProvider.chatCompletion({
         model: seed.critic.model,
-        messages: judgeMessages(seed.prompt, seed.rubric, done),
+        messages: judgeMessages(seed.prompt, seed.rubric, done, seed.judgeInstruction),
         temperature: 0.1,
         signal: judgeCtrl.signal,
       });
@@ -223,6 +223,7 @@ export function createRunController(deps: RunControllerDeps) {
           prompt: seed.prompt,
           rubric: seed.rubric,
           candidates: done,
+          judgeInstruction: seed.judgeInstruction,
         }),
         temperature: 0.3,
         signal: fusionCtrl.signal,

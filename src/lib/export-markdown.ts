@@ -12,6 +12,12 @@ export function buildExportMarkdown(s: StudioState): string | null {
 
   const lines: string[] = [`# RSemble AI — Export`, ``, `## Task`, ``, s.prompt, ``];
 
+  // Record how the result was judged when a custom judge instruction was
+  // applied — enough context to understand the ranking/fusion afterwards.
+  if (s.judgeInstruction.trim().length > 0) {
+    lines.push(`## Judge Instruction`, ``, s.judgeInstruction.trim(), ``);
+  }
+
   if (s.mode === "fuse" && s.fusedText) {
     lines.push(`## Fused Answer`, ``, s.fusedText, ``);
   } else {

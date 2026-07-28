@@ -349,3 +349,61 @@ describe("run-controller — guarded paths", () => {
     expect(dispatched.map((a) => a.type)).not.toContain("FUSION_START");
   });
 });
+
+describe("run-controller — judge instruction threading", () => {
+  it("passes state.judgeInstruction into the judge prompt (rank path)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    state.judgeInstruction = "Penalize any answer that hedges.";
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValue(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [] }),
+    );
+    const { deps } = makeDeps(state);
+    await createRunController(deps).runFanout();
+
+    expect(chatCompletionMock).toHaveBeenCalledTimes(1);
+    const judgeCall = chatCompletionMock.mock.calls[0][0];
+    const judgeText = JSON.stringify(judgeCall.messages);
+    expect(judgeText).toContain("Penalize any answer that hedges.");
+  });
+
+  it("passes state.judgeInstruction into the fusion prompt (fuse path)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    state.judgeInstruction = "Lean toward concrete examples.";
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    // judge call then fusion call
+    chatCompletionMock
+      .mockResolvedValueOnce(
+        JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+          { label: "A", score: 4.0 }, { label: "B", score: 3.0 },
+        ] }),
+      )
+      .mockResolvedValueOnce("fused answer");
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).runFanout();
+
+    expect(dispatched.map((a) => a.type)).toContain("FUSION_RESULT");
+    expect(chatCompletionMock).toHaveBeenCalledTimes(2);
+    // The second completion call is the fusion call — its messages must carry
+    // the judge instruction.
+    const fusionCall = chatCompletionMock.mock.calls[1][0];
+    const fusionText = JSON.stringify(fusionCall.messages);
+    expect(fusionText).toContain("Lean toward concrete examples.");
+  });
+
+  it("omits the judge-instruction suffix from the judge prompt when state.judgeInstruction is empty", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    // judgeInstruction defaults to "" via initialState
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValue(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [] }),
+    );
+    const { deps } = makeDeps(state);
+    await createRunController(deps).runFanout();
+
+    const judgeCall = chatCompletionMock.mock.calls[0][0];
+    const judgeText = JSON.stringify(judgeCall.messages);
+    // The instruction suffix marker must NOT appear when the instruction is empty.
+    expect(judgeText).not.toContain("Additional judge instruction");
+  });
+});

@@ -44,6 +44,10 @@ export interface StudioState {
   temperature: number;
   systemPrompt: string;
   critic: CriticRef;
+  /** Optional custom instruction applied to every judge/fusion path, separate
+   *  from the task prompt and weighted rubric. Empty string = no instruction
+   *  (prompts stay byte-identical to the pre-instruction baseline). */
+  judgeInstruction: string;
 
   // --- live pipeline execution state ---
   candidates: Candidate[];
@@ -82,6 +86,7 @@ export type Action =
   | { type: "SET_SYSTEM_PROMPT"; value: string }
   | { type: "SET_CRITIC"; critic: CriticRef }
   | { type: "SET_CRITIC_MODEL"; value: string }
+  | { type: "SET_JUDGE_INSTRUCTION"; value: string }
   // --- pipeline ---
   | { type: "FANOUT_START"; candidates: Candidate[] }
   | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
@@ -204,6 +209,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
       // fields when the provider changes; SET_CRITIC_MODEL is only for model-only
       // edits within the same provider).
       return { ...state, critic: { providerId: state.critic.providerId, model: action.value } };
+
+    case "SET_JUDGE_INSTRUCTION":
+      return { ...state, judgeInstruction: action.value };
 
     case "FANOUT_START":
       return {
@@ -416,6 +424,7 @@ export const initialState: StudioState = {
   temperature: 0.4,
   systemPrompt: SYSTEM_PROMPT_DEFAULT,
   critic: DEFAULT_CRITIC_REF,
+  judgeInstruction: "",
   candidates: [],
   running: false,
   models: [],

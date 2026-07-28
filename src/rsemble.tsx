@@ -528,7 +528,12 @@ function CommandPane({
         slots={state.slots}
         models={state.models}
       />
-      <JudgeConfig critic={state.critic} models={state.models} dispatch={dispatch} />
+      <JudgeConfig
+        critic={state.critic}
+        models={state.models}
+        dispatch={dispatch}
+        judgeInstruction={state.judgeInstruction}
+      />
       <RunButton
         running={state.running}
         canRun={canRun}

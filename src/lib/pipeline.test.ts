@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseJudge, judgeMessages, splitSegments, buildFanoutJobs } from "./pipeline";
+import { parseJudge, judgeMessages, fusionMessages, splitSegments, buildFanoutJobs } from "./pipeline";
 import type { Candidate } from "../studio-data";
 import type { ProviderId } from "./providers/types";
 
@@ -200,5 +200,81 @@ describe("judgeMessages — provider-scoped labels", () => {
     expect(msgs[0].role).toBe("system");
     expect(msgs[1].content).toContain("ModelA");
     expect(msgs[1].content).toContain("ModelB");
+  });
+});
+
+describe("judgeMessages — judge instruction", () => {
+  it("embeds a non-empty judge instruction into the judge prompt", () => {
+    const candidates = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      makeCandidate("c2", "ModelB", "umans", "model-b"),
+    ];
+    const instruction = "Prefer concise answers and penalize hedging.";
+    const msgs = judgeMessages("test prompt", [], candidates, instruction);
+    expect(msgs).toHaveLength(2);
+    // The instruction must reach the judge. It should appear in either system
+    // or user content — we assert on the joined text so the test is robust to
+    // placement, but require it to be present.
+    const joined = msgs.map((m) => m.content).join("\n");
+    expect(joined).toContain(instruction);
+  });
+
+  it("empty judge instruction produces a byte-identical prompt to the no-arg call", () => {
+    const candidates = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      makeCandidate("c2", "ModelB", "umans", "model-b"),
+    ];
+    const baseline = judgeMessages("test prompt", [], candidates);
+    const empty = judgeMessages("test prompt", [], candidates, "");
+    const whitespace = judgeMessages("test prompt", [], candidates, "   \n\t  ");
+    const omitted = judgeMessages("test prompt", [], candidates, undefined);
+    expect(empty).toEqual(baseline);
+    expect(whitespace).toEqual(baseline);
+    expect(omitted).toEqual(baseline);
+  });
+});
+
+describe("fusionMessages — judge instruction", () => {
+  it("embeds a non-empty judge instruction into the fusion prompt", () => {
+    const candidates = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      makeCandidate("c2", "ModelB", "umans", "model-b"),
+    ];
+    const instruction = "Lean toward concrete examples and short sentences.";
+    const msgs = fusionMessages({
+      prompt: "test prompt",
+      rubric: [],
+      candidates,
+      judgeInstruction: instruction,
+    });
+    expect(msgs).toHaveLength(2);
+    const joined = msgs.map((m) => m.content).join("\n");
+    expect(joined).toContain(instruction);
+  });
+
+  it("empty/whitespace judge instruction produces a byte-identical fusion prompt to omitting it", () => {
+    const candidates = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+      makeCandidate("c2", "ModelB", "umans", "model-b"),
+    ];
+    const baseline = fusionMessages({
+      prompt: "test prompt",
+      rubric: [],
+      candidates,
+    });
+    const empty = fusionMessages({
+      prompt: "test prompt",
+      rubric: [],
+      candidates,
+      judgeInstruction: "",
+    });
+    const whitespace = fusionMessages({
+      prompt: "test prompt",
+      rubric: [],
+      candidates,
+      judgeInstruction: "  \n ",
+    });
+    expect(empty).toEqual(baseline);
+    expect(whitespace).toEqual(baseline);
   });
 });

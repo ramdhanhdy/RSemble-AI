@@ -11,6 +11,7 @@ const baseState: StudioState = {
   temperature: 0.4,
   systemPrompt: "",
   critic: { providerId: "openrouter", model: "x" },
+  judgeInstruction: "",
   candidates: [],
   running: false,
   models: [],
@@ -119,5 +120,56 @@ describe("buildExportMarkdown", () => {
     expect(md).toContain("- agree on X");
     expect(md).toContain("**Contradictions:**");
     expect(md).toContain("- disagree on Y");
+  });
+
+  it("records the judge custom instruction when present", () => {
+    const s: StudioState = {
+      ...baseState,
+      judgeInstruction: "Prefer concise answers and penalize hedging.",
+      candidates: [
+        {
+          id: "c1",
+          model: "M1",
+          provider: "P1",
+          providerId: "openrouter",
+          slug: "a/b",
+          accent: "indigo",
+          strategy: "s",
+          summary: "sum",
+          scores: {},
+          weightedScore: 4.5,
+          segments: [{ id: "s1", text: "answer one" }],
+          status: "done",
+        },
+      ],
+    };
+    const md = buildExportMarkdown(s);
+    expect(md).toContain("Judge Instruction");
+    expect(md).toContain("Prefer concise answers and penalize hedging.");
+  });
+
+  it("omits the judge instruction section when the instruction is empty", () => {
+    const s: StudioState = {
+      ...baseState,
+      judgeInstruction: "",
+      candidates: [
+        {
+          id: "c1",
+          model: "M1",
+          provider: "P1",
+          providerId: "openrouter",
+          slug: "a/b",
+          accent: "indigo",
+          strategy: "s",
+          summary: "sum",
+          scores: {},
+          weightedScore: 4.5,
+          segments: [{ id: "s1", text: "answer one" }],
+          status: "done",
+        },
+      ],
+    };
+    const md = buildExportMarkdown(s);
+    expect(md).not.toContain("Judge Instruction");
   });
 });

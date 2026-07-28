@@ -151,7 +151,8 @@ function normalizeLabel(
 export function judgeMessages(
   prompt: string,
   rubric: RubricCriterion[],
-  candidates: Candidate[]
+  candidates: Candidate[],
+  judgeInstruction?: string,
 ): ChatMessage[] {
   const labelled = candidates
     .map((c, i) => `### Candidate ${LETTERS[i]} — ${c.model}\n${candidateFullText(c)}`)
@@ -163,13 +164,25 @@ export function judgeMessages(
     `Respond with ONLY a JSON object of this exact shape:\n` +
     `{"consensus": string[], "contradictions": string[], "uniqueInsights": [{"source": "A", "insight": "..."}], ` +
     `"scores": [{"label": "A", "score": 4.5, "rationale": "..."}]}\n` +
-    `Use the candidate letter labels (A, B, C, ...) for "source" and "label".`;
+    `Use the candidate letter labels (A, B, C, ...) for "source" and "label".` +
+    renderJudgeInstruction(judgeInstruction);
   const user =
     `User task:\n${prompt}\n\nRubric:\n${rubricText(rubric)}\n\nCandidates:\n${labelled}`;
   return [
     { role: "system", content: system },
     { role: "user", content: user },
   ];
+}
+
+/**
+ * Render an optional judge custom instruction into a system-prompt suffix.
+ * Returns an empty string for empty/whitespace-only input so the prompt stays
+ * byte-identical to the pre-instruction baseline (backward compatibility).
+ */
+function renderJudgeInstruction(judgeInstruction?: string): string {
+  const trimmed = (judgeInstruction ?? "").trim();
+  if (trimmed.length === 0) return "";
+  return `\n\nAdditional judge instruction (follow in addition to the rubric, but never let it replace this JSON output contract):\n${trimmed}`;
 }
 
 export function parseJudge(text: string, candidates: Candidate[]): JudgeResult {
@@ -220,6 +233,7 @@ export function fusionMessages(opts: {
   prompt: string;
   rubric: RubricCriterion[];
   candidates: Candidate[];
+  judgeInstruction?: string;
 }): ChatMessage[] {
   // Fusion runs on the full candidate answers only — no hand-picked snippets
   // (the Frankenstein picker is OUT, PRODUCT.md §5).
@@ -228,7 +242,8 @@ export function fusionMessages(opts: {
   const system =
     `You are a senior synthesizer. Merge the strongest material from multiple candidate answers into a single, ` +
     `coherent, production-grade final answer. Remove redundancy and resolve contradictions sensibly. ` +
-    `Honor the user's rubric. Return the final answer in clean Markdown.`;
+    `Honor the user's rubric. Return the final answer in clean Markdown.` +
+    renderJudgeInstruction(opts.judgeInstruction);
   const user =
     `User task:\n${opts.prompt}\n\nRubric:\n${rubricText(opts.rubric)}\n\nCandidate answers:\n${sources}`;
   return [
