@@ -16,32 +16,32 @@ export function FailedCandidates({ candidates }: { candidates: Candidate[] }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-lg border border-rose-500/25 bg-rose-500/[0.03]">
+    <div className="rounded-lg border border-error/40 bg-error/[0.08]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full min-h-[40px] items-center gap-2 px-3 py-2 text-left hover:bg-rose-500/[0.05]"
+        className="flex w-full min-h-[40px] items-center gap-2 px-3 py-2 text-left hover:bg-error/[0.05]"
       >
         <ChevronRight
           size={13}
-          className={`text-rose-400/70 transition-transform ${open ? "rotate-90" : ""}`}
+          className={`text-error/70 transition-transform ${open ? "rotate-90" : ""}`}
         />
-        <span className="font-mono text-xs uppercase tracking-wider text-rose-400">
+        <span className="font-mono text-xs uppercase tracking-wider text-error">
           {failed.length} candidate{failed.length === 1 ? "" : "s"} failed
         </span>
-        <span className="ml-auto font-mono text-sm text-zinc-500">not included in result</span>
+        <span className="ml-auto font-mono text-sm text-text-muted">not included in result</span>
       </button>
       {open && (
-        <ul className="border-t border-rose-500/20 px-3 py-2">
+        <ul className="border-t border-error/20 px-3 py-2">
           {failed.map((c) => (
             <li key={c.id} className="py-1">
               <div className="flex items-center gap-2 font-mono text-sm">
-                <span className="size-2 shrink-0 rounded-full bg-rose-400" />
-                <span className="text-zinc-300">{c.model}</span>
+                <span className="size-2 shrink-0 rounded-full bg-error" />
+                <span className="text-text">{c.model}</span>
               </div>
               {c.errorMessage && (
-                <p className="mt-1 pl-4 text-sm leading-relaxed text-rose-400/70">
+                <p className="mt-1 pl-4 text-sm leading-relaxed text-error/70">
                   {c.errorMessage}
                 </p>
               )}

@@ -15,6 +15,9 @@ dist-ssr
 .DS_Store
 *.log
 
+# Local coding-agent configuration
+WATCHDOG.yml
+
 idea.md
 CLAUDE.md
 TODOS.md
@@ -25,3 +28,12 @@ UI.md
 docs/archive/idea-original.md
 dist-check/
 dist-fixed/
+
+# Local browser QA profiles and superseded root captures
+.chrome-review*/
+ui-review-*.png
+
+# Generated TypeScript build metadata/config output
+*.tsbuildinfo
+vitest.config.js
+vitest.config.d.ts

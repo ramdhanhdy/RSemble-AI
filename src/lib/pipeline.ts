@@ -8,8 +8,8 @@
 // rubric and the synthesizer's judgment only (PRODUCT.md §5).
 // =============================================================================
 
-import type { ChatMessage } from "./openrouter";
-import { extractJson } from "./openrouter";
+import type { ChatMessage, ProviderId } from "./providers/types";
+import { extractJson } from "./llm-utils";
 import {
   CANDIDATE_ACCENTS,
   type Candidate,
@@ -23,6 +23,7 @@ const LETTERS = "ABCDEFGH".split("");
 
 export interface FanoutJob {
   id: string;
+  providerId: ProviderId;
   slug: string;
   displayName: string;
   provider: string;
@@ -48,6 +49,7 @@ export function buildFanoutJobs(slots: ModelSlot[]): FanoutJob[] {
   const enabled = slots.filter((s) => s.enabled);
   return enabled.map((s, i) => ({
     id: `cand-${s.id}`,
+    providerId: s.providerId ?? "openrouter",
     slug: s.slug,
     displayName: s.model,
     provider: s.provider,

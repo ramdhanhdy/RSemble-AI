@@ -10,7 +10,7 @@
 // =============================================================================
 
 import {
-  DEFAULT_CRITIC_SLUG,
+  DEFAULT_CRITIC_REF,
   INITIAL_PROMPT,
   SEED_RUBRIC,
   SEED_SLOTS,
@@ -24,7 +24,7 @@ import {
   type RubricCriterion,
   type RubricKind,
 } from "./studio-data";
-import type { OpenRouterModel } from "./lib/openrouter";
+import type { CatalogModel, CriticRef } from "./lib/providers/types";
 
 export type StageStatus = "idle" | "running" | "done" | "error";
 
@@ -38,12 +38,12 @@ export interface StudioState {
   slots: ModelSlot[];
   temperature: number;
   systemPrompt: string;
-  criticModel: string;
+  critic: CriticRef;
 
   // --- live pipeline execution state ---
   candidates: Candidate[];
   running: boolean;
-  models: OpenRouterModel[];
+  models: CatalogModel[];
   judgeStatus: StageStatus;
   judgeError: string | null;
   consensus: ConsensusBreakdown | null;
@@ -53,7 +53,7 @@ export interface StudioState {
   /** Terminal state set when too few candidates succeeded to rank/fuse (need ≥2).
    *  `{done, failed}` describes how the fanout ended. Null when not applicable. */
   insufficient: { done: number; failed: number } | null;
-
+  aborted: boolean;
   // --- background learning loop (RANK-mode only, optional surface) ---
   qualityRating: number;
   audit: AuditEntry[];
@@ -66,6 +66,7 @@ export type Action =
   | { type: "SET_PROMPT"; value: string }
   | { type: "TOGGLE_RUBRIC"; id: string }
   | { type: "ADD_RUBRIC"; label: string; kind: RubricKind }
+  | { type: "SET_RUBRIC_WEIGHT"; id: string; weight: number }
   | { type: "REMOVE_RUBRIC"; id: string }
   | { type: "ADD_SLOT"; slot: ModelSlot }
   | { type: "REMOVE_SLOT"; id: string }
@@ -73,12 +74,13 @@ export type Action =
   | { type: "TOGGLE_SLOT"; id: string }
   | { type: "SET_TEMPERATURE"; value: number }
   | { type: "SET_SYSTEM_PROMPT"; value: string }
+  | { type: "SET_CRITIC"; critic: CriticRef }
   | { type: "SET_CRITIC_MODEL"; value: string }
   // --- pipeline ---
   | { type: "FANOUT_START"; candidates: Candidate[] }
-  | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string }
+  | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
   | { type: "CANDIDATE_DELTA"; id: string; delta: string }
-  | { type: "CANDIDATE_FAILED"; id: string; error: string }
+  | { type: "CANDIDATE_FAILED"; id: string; error: string; finishedAt: number }
   | { type: "FANOUT_END"; count: number }
   | { type: "INSUFFICIENT_CANDIDATES"; done: number; failed: number }
   | { type: "JUDGE_START" }
@@ -87,9 +89,15 @@ export type Action =
   | { type: "FUSION_START" }
   | { type: "FUSION_RESULT"; text: string }
   | { type: "FUSION_FAILED"; error: string }
-  | { type: "SET_MODELS"; models: OpenRouterModel[] }
+  | { type: "SET_MODELS"; models: CatalogModel[] }
   | { type: "SET_RATING"; value: number }
-  | { type: "RESET_SESSION" };
+  | { type: "RESET_SESSION" }
+  | { type: "ABORT_RUN" }
+  // --- single-candidate retry ---
+  | { type: "RETRY_CANDIDATE_START"; id: string }
+  | { type: "RETRY_CANDIDATE_DELTA"; id: string; delta: string }
+  | { type: "RETRY_CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
+  | { type: "RETRY_CANDIDATE_FAILED"; id: string; error: string; finishedAt: number };
 
 let auditSeq = 0;
 const logAudit = (audit: AuditEntry[], message: string): AuditEntry[] => {
@@ -128,6 +136,13 @@ export function reducer(state: StudioState, action: Action): StudioState {
       };
       return { ...state, rubric: [...state.rubric, criterion] };
     }
+    case "SET_RUBRIC_WEIGHT":
+      return {
+        ...state,
+        rubric: state.rubric.map((c) =>
+          c.id === action.id ? { ...c, weight: action.weight } : c
+        ),
+      };
 
     case "REMOVE_RUBRIC":
       return { ...state, rubric: state.rubric.filter((c) => c.id !== action.id) };
@@ -154,8 +169,15 @@ export function reducer(state: StudioState, action: Action): StudioState {
     case "SET_SYSTEM_PROMPT":
       return { ...state, systemPrompt: action.value };
 
+    case "SET_CRITIC":
+      return { ...state, critic: action.critic };
+
     case "SET_CRITIC_MODEL":
-      return { ...state, criticModel: action.value };
+      // Preserve the current critic's providerId — the model id changed but the
+      // provider didn't (the JudgeConfig combobox dispatches SET_CRITIC with both
+      // fields when the provider changes; SET_CRITIC_MODEL is only for model-only
+      // edits within the same provider).
+      return { ...state, critic: { providerId: state.critic.providerId, model: action.value } };
 
     case "FANOUT_START":
       return {
@@ -169,6 +191,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         fusionStatus: "idle",
         fusionError: null,
         insufficient: null,
+        aborted: false,
         audit: logAudit(state.audit, `Fanout started across ${action.candidates.length} candidate(s).`),
       };
 
@@ -177,7 +200,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         ...state,
         candidates: state.candidates.map((c) =>
           c.id === action.id
-            ? { ...c, status: "done", segments: action.segments, summary: action.summary, streamingText: "" }
+            ? { ...c, status: "done", segments: action.segments, summary: action.summary, streamingText: "", finishedAt: action.finishedAt, tokensIn: action.tokensIn, tokensOut: action.tokensOut }
             : c
         ),
       };
@@ -198,7 +221,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         candidates: state.candidates.map((c) =>
-          c.id === action.id ? { ...c, status: "error", errorMessage: action.error } : c
+          c.id === action.id ? { ...c, status: "error", errorMessage: action.error, finishedAt: action.finishedAt } : c
         ),
         audit: logAudit(state.audit, `Candidate ${action.id} failed: ${action.error}`),
       };
@@ -247,9 +270,12 @@ export function reducer(state: StudioState, action: Action): StudioState {
       };
 
     case "JUDGE_FAILED":
+      // Terminal in ALL modes. Even in Fuse mode, a judge failure stops the run —
+      // the pipeline does not proceed to fusion with unscored candidates, and the
+      // error must be reachable in the UI (not hidden behind a stuck "running" state).
       return {
         ...state,
-        running: state.mode === "fuse" ? state.running : false,
+        running: false,
         judgeStatus: "error",
         judgeError: action.error,
         audit: logAudit(state.audit, `AI judge failed: ${action.error}`),
@@ -286,6 +312,70 @@ export function reducer(state: StudioState, action: Action): StudioState {
     case "RESET_SESSION":
       return { ...initialState, models: state.models, mode: state.mode };
 
+    case "ABORT_RUN":
+      return {
+        ...state,
+        running: false,
+        aborted: true,
+        candidates: state.candidates.map((c) =>
+          c.status === "pending" ? { ...c, status: "error", errorMessage: "Aborted", finishedAt: Date.now() } : c
+        ),
+        judgeStatus: state.judgeStatus === "running" ? "idle" : state.judgeStatus,
+        fusionStatus: state.fusionStatus === "running" ? "idle" : state.fusionStatus,
+        audit: logAudit(state.audit, "Run aborted by user."),
+      };
+
+    case "RETRY_CANDIDATE_START":
+      // Mark the candidate as pending again and clear prior error/segments.
+      // Set running so the UI shows the retry in progress.
+      return {
+        ...state,
+        running: true,
+        judgeStatus: "idle",
+        judgeError: null,
+        consensus: null,
+        fusionStatus: "idle",
+        fusionError: null,
+        fusedText: null,
+        insufficient: null,
+        candidates: state.candidates.map((c) =>
+          c.id === action.id
+            ? { ...c, status: "pending", errorMessage: undefined, segments: [], summary: "", streamingText: "", scores: {}, weightedScore: 0, startedAt: Date.now(), finishedAt: undefined }
+            : c
+        ),
+        audit: logAudit(state.audit, `Retrying candidate ${action.id}.`),
+      };
+
+    case "RETRY_CANDIDATE_DELTA":
+      return {
+        ...state,
+        candidates: state.candidates.map((c) =>
+          c.id === action.id
+            ? { ...c, streamingText: (c.streamingText ?? "") + action.delta }
+            : c
+        ),
+      };
+
+    case "RETRY_CANDIDATE_RESULT":
+      return {
+        ...state,
+        candidates: state.candidates.map((c) =>
+          c.id === action.id
+            ? { ...c, status: "done", segments: action.segments, summary: action.summary, streamingText: "", finishedAt: action.finishedAt, tokensIn: action.tokensIn, tokensOut: action.tokensOut }
+            : c
+        ),
+      };
+
+    case "RETRY_CANDIDATE_FAILED":
+      return {
+        ...state,
+        running: false,
+        candidates: state.candidates.map((c) =>
+          c.id === action.id ? { ...c, status: "error", errorMessage: action.error, finishedAt: action.finishedAt } : c
+        ),
+        audit: logAudit(state.audit, `Retry of candidate ${action.id} failed: ${action.error}`),
+      };
+
     default:
       return state;
   }
@@ -298,17 +388,18 @@ export const initialState: StudioState = {
   slots: SEED_SLOTS,
   temperature: 0.4,
   systemPrompt: SYSTEM_PROMPT_DEFAULT,
-  criticModel: DEFAULT_CRITIC_SLUG,
+  critic: DEFAULT_CRITIC_REF,
   candidates: [],
   running: false,
   models: [],
   judgeStatus: "idle",
   judgeError: null,
   consensus: null,
+  insufficient: null,
+  aborted: false,
+  qualityRating: 0,
   fusionStatus: "idle",
   fusionError: null,
   fusedText: null,
-  insufficient: null,
-  qualityRating: 0,
   audit: [],
 };

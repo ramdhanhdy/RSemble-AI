@@ -19,13 +19,16 @@ const OPTIONS: { value: Mode; label: string }[] = [
 export function ModeToggle({
   mode,
   onChange,
+  disabled = false,
 }: {
   mode: Mode;
   onChange: (mode: Mode) => void;
+  disabled?: boolean;
 }) {
   const radiosRef = useRef<(HTMLButtonElement | null)[]>([]);
 
   const onKeyDown = (e: React.KeyboardEvent, index: number) => {
+    if (disabled) return;
     if (e.key === "ArrowRight" || e.key === "ArrowDown") {
       e.preventDefault();
       const next = OPTIONS[(index + 1) % OPTIONS.length];
@@ -43,7 +46,7 @@ export function ModeToggle({
     <div
       role="radiogroup"
       aria-label="Finish mode"
-      className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900 p-1 font-mono text-sm"
+      className="flex items-center rounded-md border border-edge bg-panel p-1 font-mono text-sm"
     >
       {OPTIONS.map((opt, i) => {
         const active = mode === opt.value;
@@ -56,13 +59,14 @@ export function ModeToggle({
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={disabled}
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(opt.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={`min-h-[36px] rounded px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${
+            className={`min-h-[44px] rounded-sm px-2 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 ${
               active
-                ? "bg-cyan-500 font-semibold text-zinc-950"
-                : "text-zinc-400 hover:text-zinc-200"
+                ? "bg-accent/15 font-semibold text-accent"
+                : "text-text-secondary hover:text-text"
             }`}
           >
             {opt.label}

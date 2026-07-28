@@ -6,6 +6,10 @@
 // actually emit: headings, bold/italic/inline-code, unordered & ordered lists,
 // blockquotes, fenced code blocks, and paragraphs. If it proves insufficient,
 // swapping to react-markdown is a drop-in and stays in scope as polish.
+//
+// `blockDecorator` (optional) wraps each rendered block — used by FuseResult to
+// attach a provenance gutter tick beside every paragraph. When omitted, blocks
+// render bare (the CandidateAnswer path).
 // =============================================================================
 
 import { type JSX } from "react";
@@ -22,13 +26,13 @@ function inline(text: string, keyBase: string): JSX.Element[] {
     const tok = m[0];
     if (tok.startsWith("**")) {
       nodes.push(
-        <strong key={`${keyBase}-b${i}`} className="font-semibold text-zinc-100">
+        <strong key={`${keyBase}-b${i}`} className="font-semibold text-text">
           {tok.slice(2, -2)}
         </strong>
       );
     } else if (tok.startsWith("`")) {
       nodes.push(
-        <code key={`${keyBase}-c${i}`} className="rounded bg-zinc-800 px-1 py-1 font-mono text-xs text-cyan-300">
+        <code key={`${keyBase}-c${i}`} className="rounded bg-card-hover px-1 py-1 font-mono text-xs text-accent">
           {tok.slice(1, -1)}
         </code>
       );
@@ -46,11 +50,19 @@ function inline(text: string, keyBase: string): JSX.Element[] {
   return nodes;
 }
 
-export function Markdown({ text }: { text: string }) {
+export function Markdown({
+  text,
+  blockDecorator,
+}: {
+  text: string;
+  blockDecorator?: (block: JSX.Element, plainText: string, index: number) => JSX.Element;
+}) {
   const lines = text.split("\n");
-  const blocks: JSX.Element[] = [];
+  const blocks: { el: JSX.Element; text: string }[] = [];
   let i = 0;
   let key = 0;
+
+  const push = (el: JSX.Element, plain: string) => blocks.push({ el, text: plain });
 
   while (i < lines.length) {
     const line = lines[i];
@@ -64,13 +76,14 @@ export function Markdown({ text }: { text: string }) {
         i += 1;
       }
       i += 1; // skip closing fence
-      blocks.push(
+      push(
         <pre
           key={key++}
-          className="my-3 overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-sm leading-relaxed text-zinc-300"
+          className="my-3 overflow-x-auto rounded-lg border border-edge bg-canvas p-3 font-mono text-sm leading-relaxed text-text"
         >
           {buf.join("\n")}
-        </pre>
+        </pre>,
+        buf.join("\n"),
       );
       continue;
     }
@@ -87,14 +100,15 @@ export function Markdown({ text }: { text: string }) {
       const level = h[1].length;
       const cls =
         level === 1
-          ? "mt-4 mb-2 text-base font-semibold text-zinc-100"
+          ? "mt-4 mb-2 text-base font-semibold text-text"
           : level === 2
-            ? "mt-4 mb-2 text-sm font-semibold text-zinc-100"
-            : "mt-3 mb-1 text-sm font-semibold text-zinc-200";
-      blocks.push(
+            ? "mt-4 mb-2 text-sm font-semibold text-text"
+            : "mt-3 mb-1 text-sm font-semibold text-text";
+      push(
         <p key={key++} className={cls}>
           {inline(h[2], `h${key}`)}
-        </p>
+        </p>,
+        h[2],
       );
       i += 1;
       continue;
@@ -107,13 +121,14 @@ export function Markdown({ text }: { text: string }) {
         buf.push(lines[i].replace(/^\s*>\s?/, ""));
         i += 1;
       }
-      blocks.push(
+      push(
         <blockquote
           key={key++}
-          className="my-2 border-l-2 border-cyan-500/40 pl-3 text-sm italic text-zinc-400"
+          className="my-2 border-l-2 border-accent/40 pl-3 text-sm italic text-text-secondary"
         >
           {inline(buf.join(" "), `q${key}`)}
-        </blockquote>
+        </blockquote>,
+        buf.join(" "),
       );
       continue;
     }
@@ -125,12 +140,13 @@ export function Markdown({ text }: { text: string }) {
         items.push(lines[i].replace(/^\s*[-*+]\s+/, ""));
         i += 1;
       }
-      blocks.push(
-        <ul key={key++} className="my-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+      push(
+        <ul key={key++} className="my-2 list-disc space-y-1 pl-5 text-sm text-text">
           {items.map((it, idx) => (
             <li key={idx}>{inline(it, `ul${key}-${idx}`)}</li>
           ))}
-        </ul>
+        </ul>,
+        items.join(" "),
       );
       continue;
     }
@@ -142,12 +158,13 @@ export function Markdown({ text }: { text: string }) {
         items.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
         i += 1;
       }
-      blocks.push(
-        <ol key={key++} className="my-2 list-decimal space-y-1 pl-5 text-sm text-zinc-300">
+      push(
+        <ol key={key++} className="my-2 list-decimal space-y-1 pl-5 text-sm text-text">
           {items.map((it, idx) => (
             <li key={idx}>{inline(it, `ol${key}-${idx}`)}</li>
           ))}
-        </ol>
+        </ol>,
+        items.join(" "),
       );
       continue;
     }
@@ -167,12 +184,19 @@ export function Markdown({ text }: { text: string }) {
       buf.push(lines[i]);
       i += 1;
     }
-    blocks.push(
-      <p key={key++} className="my-2 text-sm leading-relaxed text-zinc-300">
+    push(
+      <p key={key++} className="my-2 text-sm leading-relaxed text-text">
         {inline(buf.join(" "), `p${key}`)}
-      </p>
+      </p>,
+      buf.join(" "),
     );
   }
 
-  return <div className="max-w-none">{blocks}</div>;
+  return (
+    <div className="max-w-none">
+      {blocks.map(({ el, text: t }, idx) =>
+        blockDecorator ? blockDecorator(el, t, idx) : el,
+      )}
+    </div>
+  );
 }

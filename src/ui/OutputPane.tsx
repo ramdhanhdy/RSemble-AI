@@ -7,31 +7,59 @@
 // changes when the toggle flips — the command pane is unaffected.
 // =============================================================================
 
-import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { memo, useState } from "react";
+import { AlertCircle, Loader2, RotateCw } from "lucide-react";
 import type { StudioState } from "../studio-engine";
+import { BrandAvatar } from "./brand-icons";
 import type { Candidate } from "../studio-data";
 import { RankResult } from "./RankResult";
+import { CompareView } from "./CompareView";
 import { FuseResult } from "./FuseResult";
+import { LeaderboardPreviewCard, PipelineRail, WhatYouGetRow, computeStages } from "./PipelineRail";
+import { useRunClock, elapsedSeconds } from "./useRunClock";
+
+import { getRunCountCached, getRunsCached, type RunHistoryEntry } from "../lib/history-cache";
+
+/** Extract the slug portion from a composite key ("providerId:slug" → "slug").
+ *  Tolerates legacy bare-slug keys (no colon → returns as-is). */
+function slugFromKey(key: string): string {
+  const idx = key.indexOf(":");
+  return idx >= 0 ? key.slice(idx + 1) : key;
+}
 
 export function OutputPane({
   state,
   onFuse,
+  onRefuse,
+  onRetryCandidate,
 }: {
   state: StudioState;
   /** Pass-through from AdaptiveFusion: fuse the current run's candidates. */
   onFuse?: () => void;
+  /** Re-run fusion on the current run's candidates (Re-fuse action). */
+  onRefuse?: () => void;
+  onRetryCandidate?: (candidate: Candidate) => void;
 }) {
+  const [compareMode, setCompareMode] = useState(false);
   const hasRun = state.candidates.length > 0 || state.running;
   const hint = state.mode === "rank" ? "leaderboard + recommendation" : "merged answer";
+  const liveNow = useRunClock(state.running);
 
+  // In fuse mode, a judge failure is also a terminal error — the pipeline
+  // stopped before fusion ran. Surface judge errors alongside fusion errors.
   const stageError =
     state.mode === "rank"
       ? state.judgeStatus === "error"
-      : state.fusionStatus === "error";
+      : state.judgeStatus === "error" || state.fusionStatus === "error";
+  const stageErrorMessage =
+    state.mode === "rank"
+      ? state.judgeError ?? "Judge failed."
+      : state.judgeStatus === "error"
+        ? state.judgeError ?? "Judge failed."
+        : state.fusionError ?? "Fusion failed.";
 
   return (
-    <div className="flex h-full flex-col gap-4 p-5">
+    <div className="flex h-full flex-col gap-4 p-4 sm:p-5">
       <PaneLabel index="02" title="Output" hint={hint} />
 
       {!hasRun && <EmptyState mode={state.mode} />}
@@ -40,16 +68,16 @@ export function OutputPane({
         <div className="flex flex-1 flex-col gap-3">
           {/* Stage progress strip — at-a-glance read of where the pipeline is.
               Generating → Judging → (Fusing, fuse mode only). */}
-          <StageProgress state={state} />
+          <PipelineRail mode={state.mode} stages={computeStages(state)} />
           {/* When the judge/fusion stage is active, show a richer banner: a live
               timer + what's being compared. Turns the wait into intentional UI. */}
           <StageBanner state={state} />
           {/* Live candidate stream — transparent during the run, not a black box.
               Each model shows its real-time status and, once done, its summary +
               a truncated excerpt so you can see what it actually generated. */}
-          <ul className="flex flex-1 flex-col gap-2 overflow-y-auto scroll-thin">
+          <ul className="grid flex-1 grid-cols-1 gap-2 overflow-y-auto scroll-thin xl:grid-cols-2 2xl:grid-cols-3">
             {state.candidates.map((c) => (
-              <LiveCandidateCard key={c.id} candidate={c} />
+              <LiveCandidateCard key={c.id} candidate={c} onRetry={state.running ? undefined : onRetryCandidate} now={liveNow} />
             ))}
           </ul>
         </div>
@@ -60,16 +88,18 @@ export function OutputPane({
           done={state.insufficient.done}
           failed={state.insufficient.failed}
           mode={state.mode}
+          onRetry={onRetryCandidate ? () => {
+            const failedCandidates = state.candidates.filter((c) => c.status === "error");
+            if (failedCandidates.length > 0) onRetryCandidate(failedCandidates[0]);
+          } : undefined}
         />
       )}
 
       {hasRun && !state.running && !state.insufficient && stageError && (
         <ErrorState
-          message={
-            state.mode === "rank"
-              ? state.judgeError ?? "Judge failed."
-              : state.fusionError ?? "Fusion failed."
-          }
+          message={stageErrorMessage}
+          candidates={state.candidates}
+          onRetryCandidate={onRetryCandidate}
         />
       )}
 
@@ -77,12 +107,28 @@ export function OutputPane({
         !state.running &&
         !state.insufficient &&
         !stageError &&
-        state.mode === "rank" && <RankResult state={state} onFuse={onFuse} />}
+        !state.aborted &&
+        state.mode === "rank" && (
+          compareMode ? (
+            <CompareView
+              candidates={state.candidates}
+              rubric={state.rubric}
+              onClose={() => setCompareMode(false)}
+            />
+          ) : (
+            <RankResult state={state} onFuse={onFuse} onCompare={() => setCompareMode(true)} />
+          )
+        )}
       {hasRun &&
         !state.running &&
         !state.insufficient &&
         !stageError &&
-        state.mode === "fuse" && <FuseResult state={state} />}
+        !state.aborted &&
+        state.mode === "fuse" && <FuseResult state={state} onRefuse={onRefuse} />}
+
+      {hasRun && !state.running && state.aborted && (
+        <AbortedState candidates={state.candidates} />
+      )}
     </div>
   );
 }
@@ -92,25 +138,36 @@ function InsufficientState({
   done,
   failed,
   mode,
+  onRetry,
 }: {
   done: number;
   failed: number;
   mode: "rank" | "fuse";
+  onRetry?: () => void;
 }) {
   const verb = mode === "fuse" ? "fuse" : "rank";
   return (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/[0.04] py-10 px-6 text-center">
-      <p className="font-mono text-xs uppercase tracking-wider text-amber-400">Stopped</p>
-      <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-300">
-        Only <span className="font-semibold text-zinc-100">{done} of {done + failed}</span> candidate(s)
-        succeeded — need at least <span className="font-semibold text-zinc-100">2</span> to {verb}.
+    <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-warning/40 bg-warning/[0.08] py-10 px-6 text-center">
+      <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-warning">Stopped</p>
+      <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">
+        Only <span className="font-semibold text-text">{done} of {done + failed}</span> candidate(s)
+        succeeded — need at least <span className="font-semibold text-text">2</span> to {verb}.
       </p>
       {failed > 0 && (
-        <p className="mt-1 font-mono text-sm text-zinc-500">
+        <p className="mt-1 font-mono text-sm text-text-muted">
           {failed} candidate{failed === 1 ? "" : "s"} failed during generation.
         </p>
       )}
-      <p className="mt-3 font-mono text-sm text-zinc-600">
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-4 flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-accent/40 bg-accent/[0.06] px-6 font-mono text-sm text-accent hover:bg-accent/[0.12]"
+        >
+          <RotateCw size={14} /> Retry failed candidate
+        </button>
+      )}
+      <p className="mt-3 font-mono text-sm text-text-muted">
         Check the model slugs in the command pane and re-run.
       </p>
     </div>
@@ -120,50 +177,6 @@ function InsufficientState({
 // ---- shared chrome ----------------------------------------------------------
 
 /** Three-step pipeline progress indicator (Generating → Judging → [Fusing]). */
-function StageProgress({ state }: { state: StudioState }) {
-  const fanoutDone = state.candidates.length > 0 && state.candidates.every((c) => c.status !== "pending");
-  const judging = state.judgeStatus === "running" || (fanoutDone && state.judgeStatus === "idle");
-  const fusing = state.mode === "fuse" && state.fusionStatus === "running";
-
-  type Step = { label: string; state: "done" | "active" | "pending" };
-  const steps: Step[] = [
-    { label: "Generating", state: fanoutDone && !judging ? "done" : !fanoutDone ? "active" : "done" },
-    {
-      label: "Judging",
-      state: judging ? "active" : state.judgeStatus === "done" ? "done" : "pending",
-    },
-  ];
-  if (state.mode === "fuse") {
-    steps.push({
-      label: "Fusing",
-      state: fusing ? "active" : state.fusionStatus === "done" ? "done" : "pending",
-    });
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      {steps.map((step, i) => (
-        <div key={step.label} className="flex items-center gap-2">
-          {i > 0 && <span className="text-zinc-700">→</span>}
-          <span
-            className={`flex items-center gap-2 rounded px-2 py-1 font-mono text-xs ${
-              step.state === "active"
-                ? "bg-cyan-500/15 text-cyan-300"
-                : step.state === "done"
-                  ? "text-emerald-400"
-                  : "text-zinc-600"
-            }`}
-          >
-            {step.state === "active" && <Loader2 size={11} className="animate-spin-ease" />}
-            {step.state === "done" && <span className="size-2 rounded-full bg-emerald-400" />}
-            {step.label}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /**
  * Banner shown when the Judge or Fusion stage is active. Gives the wait meaning:
  * a live elapsed timer + a plain-language sentence about what's happening. The
@@ -176,8 +189,9 @@ function StageBanner({ state }: { state: StudioState }) {
   const judging = state.judgeStatus === "running" || (fanoutDone && state.judgeStatus === "idle");
   const fusing = state.mode === "fuse" && state.fusionStatus === "running";
   const active = judging || fusing;
-
-  const seconds = useElapsedSeconds(active);
+  const now = useRunClock(active);
+  const stageStart = state.candidates[0]?.startedAt;
+  const seconds = active ? elapsedSeconds(stageStart, now) : 0;
 
   if (!active) return null;
 
@@ -188,151 +202,275 @@ function StageBanner({ state }: { state: StudioState }) {
     : `comparing ${doneCount} candidate${doneCount === 1 ? "" : "s"} against the rubric and scoring each`;
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2">
-      <Loader2 size={13} className="animate-spin-ease text-cyan-400" />
-      <span className="text-sm text-zinc-300">
-        <span className="font-mono text-cyan-300">{stage}</span> · {verb}.
+    <div className="flex items-center gap-2 rounded-md border border-accent/20 bg-accent/[0.04] px-3 py-2">
+      <Loader2 size={13} className="animate-spin-ease text-accent" />
+      <span className="text-sm text-text-secondary">
+        <span className="font-mono text-accent">{stage}</span> · {verb}.
       </span>
-      <span className="ml-auto font-mono text-sm tabular-nums text-zinc-500">{seconds}s</span>
+      <span className="ml-auto font-mono text-sm tabular-nums text-text-muted">{seconds}s</span>
     </div>
   );
 }
 
-/** Tick a seconds counter while `active` is true; reset to 0 when it goes false. */
-function useElapsedSeconds(active: boolean): number {
-  const [seconds, setSeconds] = useState(0);
-  useEffect(() => {
-    if (!active) {
-      setSeconds(0);
-      return;
-    }
-    setSeconds(0);
-    const id = window.setInterval(() => setSeconds((s) => s + 1), 1000);
-    return () => window.clearInterval(id);
-  }, [active]);
-  return seconds;
-}
-
-/** One card in the live candidate stream during a run. */
-function LiveCandidateCard({ candidate }: { candidate: Candidate }) {
+const LiveCandidateCard = memo(function LiveCandidateCard({
+  candidate,
+  onRetry,
+  now = Date.now(),
+}: {
+  candidate: Candidate;
+  onRetry?: (candidate: Candidate) => void;
+  /** Shared run clock timestamp. Only consulted for in-flight candidates; done
+   *  or errored cards use finishedAt. Defaults to render time for terminal cards. */
+  now?: number;
+}) {
   const excerpt =
     candidate.segments.length > 0
       ? candidate.segments[0].text
       : candidate.summary || "";
-  // While streaming, show the live text (tail-trimmed so the newest tokens stay
-  // visible and the card doesn't grow unbounded). A blinking cursor signals liveness.
   const streaming = candidate.streamingText ?? "";
   const streamingTail = streaming.length > 600 ? "…" + streaming.slice(-600) : streaming;
+  const elapsed = candidate.startedAt
+    ? candidate.finishedAt
+      ? Math.round((candidate.finishedAt - candidate.startedAt) / 1000)
+      : elapsedSeconds(candidate.startedAt, now)
+    : 0;
+  const active = candidate.status === "pending";
 
   return (
-    <li className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2">
+    <li className={`rounded-md border bg-card px-3 py-2 ${
+      candidate.status === "error" ? "border-error/40" : "border-edge"
+    }`}>
       <div className="flex items-center gap-2">
-        {candidate.status === "pending" && <Loader2 size={12} className="animate-spin-ease text-zinc-500" />}
-        {candidate.status === "done" && <span className="size-2 rounded-full bg-emerald-400" />}
-        {candidate.status === "error" && <span className="size-2 rounded-full bg-rose-400" />}
-        <span className="flex-1 truncate font-mono text-sm text-zinc-200" title={candidate.provider}>
+        {active && <Loader2 size={12} className="animate-spin-ease text-accent" />}
+        {candidate.status === "done" && <span className="size-2 rounded-full bg-success" />}
+        {candidate.status === "error" && <span className="size-2 rounded-full bg-error" />}
+        <BrandAvatar slug={candidate.slug} size={24} />
+        <span className="flex-1 truncate font-mono text-sm text-text" title={candidate.provider}>
           {candidate.model}
         </span>
+        {candidate.tokensOut != null && candidate.tokensOut > 0 && (
+          <span className="font-mono text-xs tabular-nums text-text-muted">{candidate.tokensOut} tok</span>
+        )}
+        <span className="font-mono text-xs tabular-nums text-text-muted">{elapsed}s</span>
         <span
-          className={`font-mono text-xs uppercase tracking-wider ${
+          className={`font-mono text-[11px] uppercase tracking-wider ${
             candidate.status === "done"
-              ? "text-emerald-400"
+              ? "text-success"
               : candidate.status === "error"
-                ? "text-rose-400"
-                : "text-zinc-500"
+                ? "text-error"
+                : "text-text-secondary"
           }`}
         >
           {candidate.status === "pending" ? "generating" : candidate.status}
         </span>
       </div>
-      {candidate.status === "pending" && streamingTail.length > 0 && (
-        <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-400">
+      {active && streamingTail.length > 0 && (
+        <p className="fade-mask-bottom mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-text-secondary">
           {streamingTail}
-          <span className="ml-1 inline-block h-4 w-2 animate-pulse-ease bg-cyan-400/70 align-middle" />
+          <span className="ml-1 inline-block h-4 w-2 animate-pulse-ease bg-accent/70 align-middle" />
         </p>
       )}
       {candidate.status === "done" && excerpt.length > 0 && (
-        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-zinc-400">{excerpt}</p>
+        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-text-secondary">{excerpt}</p>
       )}
       {candidate.status === "error" && candidate.errorMessage && (
-        <p className="mt-2 text-sm leading-relaxed text-rose-400/80">{candidate.errorMessage}</p>
+        <div className="mt-2 flex items-center gap-2">
+          <p className="flex-1 text-sm leading-relaxed text-error/80">{candidate.errorMessage}</p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={() => onRetry(candidate)}
+              aria-label={`Retry ${candidate.model}`}
+              className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-sm border border-edge px-3 font-mono text-xs text-text-secondary hover:border-accent/50 hover:text-accent"
+            >
+              <RotateCw size={13} /> Retry
+            </button>
+          )}
+        </div>
       )}
     </li>
   );
-}
+});
 
 function PaneLabel({ index, title, hint }: { index: string; title: string; hint: string }) {
   return (
-    <div className="flex items-baseline justify-between">
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-xs text-zinc-600">{index}</span>
-        <span className="text-sm font-medium">{title}</span>
+    <div className="flex items-baseline justify-between gap-2">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-xs font-semibold tabular-nums text-accent">{index}</span>
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">{title}</span>
       </div>
-      <span className="font-mono text-xs uppercase tracking-wider text-zinc-600">{hint}</span>
+      <span className="font-mono text-[11px] uppercase tracking-wider text-text-muted">{hint}</span>
     </div>
   );
 }
 
 function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
-  const finish = mode === "rank" ? "Rank" : "Fuse";
-  const finishDesc =
-    mode === "rank"
-      ? "Score every model against your rubric, get a ranked leaderboard with a recommendation."
-      : "Merge the strongest material from all candidates into one synthesized answer.";
-  const steps = [
-    { label: "Task", note: "describe what you need" },
-    { label: "Models", note: "pick 2+ to compare" },
-    { label: "Judge", note: "scores each response" },
-    { label: finish, note: mode === "rank" ? "score & rank models" : "merge into one answer" },
-  ];
+  const hasHistory = getRunCountCached() > 0;
   return (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 px-8 py-12 text-center">
-      {/* Pipeline flow diagram */}
-      <div className="mb-6 flex flex-wrap items-start justify-center gap-2">
-        {steps.map((step, i) => (
-          <div key={step.label} className="flex items-start gap-2">
-            <div className="flex flex-col items-center gap-1">
-              <div
-                className={`flex h-10 items-center rounded-lg border px-3 font-mono text-sm ${
-                  i === steps.length - 1
-                    ? "border-cyan-500/40 bg-cyan-500/[0.08] text-cyan-300"
-                    : "border-zinc-700 bg-zinc-900 text-zinc-300"
-                }`}
-              >
-                {step.label}
-              </div>
-              <span className="max-w-[80px] text-xs text-zinc-600">{step.note}</span>
-            </div>
-            {i < steps.length - 1 && (
-              <div className="flex h-10 items-center">
-                <span className="text-zinc-700">→</span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      <p className="max-w-sm text-sm leading-relaxed text-zinc-400">
+    // On mobile the content is taller than the viewport, so start at the top of
+    // the scroll origin (justify-start) instead of centering content above it.
+    // sm+ has room to center.
+    <div className="flex flex-1 flex-col items-center justify-start gap-6 overflow-y-auto px-4 py-6 text-center scroll-thin sm:justify-center sm:gap-8 sm:px-6 sm:py-10">
+      <PipelineRail mode={mode} />
+      <p className="max-w-sm text-sm leading-relaxed text-text-secondary">
         Compare responses from multiple models side-by-side, then{" "}
-        <span className="font-semibold text-zinc-200">
+        <span className="font-semibold text-text">
           {mode === "rank" ? "pick the best" : "merge them into one"}
         </span>
         .
       </p>
-      <p className="mt-2 text-sm leading-relaxed text-zinc-600">{finishDesc}</p>
-      <p className="mt-4 font-mono text-xs uppercase tracking-wider text-zinc-700">
-        Configure the command pane and run ↑
+      {/* The static preview/benefit cards are desktop space-fillers — hide on
+          mobile so the rail + guidance fit the first viewport without scrolling. */}
+      <div className="hidden sm:contents">
+        <LeaderboardPreviewCard />
+        {hasHistory ? <RecentRuns /> : <WhatYouGetRow />}
+      </div>
+      <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+        Configure the command pane, then Run pipeline
       </p>
     </div>
   );
 }
 
-function ErrorState({ message }: { message: string }) {
+/** Recent runs list — shown once the user has at least one completed run in
+ *  history. Replaces the static "What you get" 3-up row so the empty state
+ *  becomes a live surface: the rail + preview stay, but the bottom half now
+ *  reflects actual past activity. Rows are read-only (config reload is a
+ *  future phase, so there is intentionally no click affordance). */
+function RecentRuns() {
+  const runs = getRunsCached(3);
   return (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/[0.04] py-10 px-6 text-center">
-      <p className="font-mono text-xs uppercase tracking-wider text-rose-400">Error</p>
-      <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-300">{message}</p>
-      <p className="mt-2 font-mono text-sm text-zinc-600">
-        Fix the issue and re-run from the command pane.
+    <div className="w-full max-w-3xl rounded-md border border-edge bg-card p-3 text-left">
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+          Recent runs
+        </span>
+        <span className="font-mono text-[11px] uppercase tracking-wider text-text-muted">
+          {runs.length} of {getRunCountCached()}
+        </span>
+      </div>
+      <ul className="mt-2 flex flex-col gap-1">
+        {runs.map((run) => (
+          <RecentRunRow key={`${run.timestamp}`} run={run} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function RecentRunRow({ run }: { run: RunHistoryEntry }) {
+  const winnerStats = run.stats[run.winner];
+  const score = winnerStats?.score;
+  // Read-only history row. Config reload is not implemented, so this is NOT a
+  // button — a clickable affordance that does nothing on activation is a no-op
+  // control (and fails "no advertised action is a no-op").
+  return (
+    <li
+      className="flex w-full min-h-[44px] items-center gap-3 rounded-sm px-2 py-1.5"
+      title={run.taskExcerpt}
+    >
+      <BrandAvatar slug={slugFromKey(run.winner)} size={24} />
+      <span className="flex-1 truncate text-sm text-text">{run.taskExcerpt}</span>
+      {score != null && (
+        <span className="font-mono text-sm tabular-nums text-accent">{score.toFixed(1)}/5</span>
+      )}
+      <span className="font-mono text-xs tabular-nums text-text-muted">{formatRelativeTime(run.timestamp)}</span>
+    </li>
+  );
+}
+
+/** Compact relative-time formatter: "2m ago", "1h ago", "3d ago". Falls back
+ *  to a date string for anything older than a week. */
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diffMs = now - timestamp;
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  const wk = Math.floor(day / 7);
+  if (wk < 5) return `${wk}w ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function ErrorState({
+  message,
+  candidates,
+  onRetryCandidate,
+}: {
+  message: string;
+  candidates: Candidate[];
+  onRetryCandidate?: (candidate: Candidate) => void;
+}) {
+  const done = candidates.filter((c) => c.status === "done");
+  const failed = candidates.filter((c) => c.status === "error");
+  return (
+    <div className="flex flex-1 flex-col gap-3 overflow-y-auto scroll-thin">
+      <div className="flex flex-col items-center justify-center rounded-md border border-error/40 bg-error/[0.08] py-8 px-6 text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-error">Error</p>
+        <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">{message}</p>
+        <p className="mt-2 font-mono text-sm text-text-muted">
+          Fix the issue and re-run from the command pane.
+        </p>
+      </div>
+      {done.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+            Generated candidates · {done.length} completed
+          </div>
+          <ul className="grid grid-cols-1 gap-2 xl:grid-cols-2 2xl:grid-cols-3">
+            {done.map((c) => (
+              <LiveCandidateCard key={c.id} candidate={c} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {failed.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+            Failed candidates · {failed.length} errored
+          </div>
+          <ul className="grid grid-cols-1 gap-2 xl:grid-cols-2 2xl:grid-cols-3">
+            {failed.map((c) => (
+              <LiveCandidateCard key={c.id} candidate={c} onRetry={onRetryCandidate} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AbortedState({ candidates }: { candidates: import("../studio-data").Candidate[] }) {
+  const done = candidates.filter((c) => c.status === "done");
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-md border border-edge bg-card py-10 px-6 text-center">
+      <AlertCircle size={24} className="text-text-secondary" />
+      <div>
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary">Aborted</p>
+        <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">
+          Run stopped. {done.length > 0
+            ? `${done.length} candidate${done.length === 1 ? "" : "s"} completed before abort — partial results are preserved below.`
+            : "No candidates completed before abort."}
+        </p>
+      </div>
+      {done.length > 0 && (
+        <ul className="w-full max-w-md space-y-1 text-left">
+          {done.map((c) => (
+            <li key={c.id} className="flex items-center gap-2 rounded-sm border border-edge bg-panel px-3 py-2">
+              <span className="size-2 shrink-0 rounded-full bg-success" />
+              <span className="flex-1 truncate font-mono text-sm text-text" title={c.model}>{c.model}</span>
+              <span className="font-mono text-xs text-text-muted">{c.summary.slice(0, 60)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="font-mono text-sm text-text-muted">
+        Run again from the command pane to start fresh.
       </p>
     </div>
   );

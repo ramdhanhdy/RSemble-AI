@@ -47,24 +47,47 @@ npm run dev
 
 Open the printed local URL (default http://localhost:5173).
 
-### OpenRouter key
+### Provider Setup
 
-RSemble AI calls real models through [OpenRouter](https://openrouter.ai).
+RSemble AI supports multiple AI providers: **OpenRouter**, **ChatGPT Subscription (via Codex bridge)**, and **Gemini AI Studio**.
 
-1. Get a key at https://openrouter.ai/keys
-2. Create a `.env` file at the project root:
+#### 1. OpenRouter
 
+1. Get a key at [https://openrouter.ai/keys](https://openrouter.ai/keys).
+2. Add to `.env`:
    ```bash
    VITE_OPENROUTER_KEY=sk-or-v1-...
    ```
 
-3. Restart `npm run dev` — Vite reads env vars only at startup.
+#### 2. ChatGPT Subscription (Codex Bridge)
 
-Without a key the app still loads, shows a banner, and disables live runs.
+Use your ChatGPT subscription entitlements locally without Platform API key billing.
 
-> **Local/personal use only.** Build-time `VITE_` vars are embedded in the client bundle.
-> For a shared deployment, move the OpenRouter calls behind a server proxy.
+1. Authenticate with Codex CLI:
+   ```bash
+   npx @openai/codex login
+   ```
+2. Start RSemble with the local bridge:
+   ```bash
+   npm run dev:bridge
+   ```
+   *(Or run `npm run dev` to launch Vite)*
+3. The bridge listens on `127.0.0.1:8787` and reads credentials from `~/.codex/auth.json` (or `%USERPROFILE%\.codex\auth.json`).
 
+**Troubleshooting:**
+- **Bridge unreachable:** Ensure `npm run dev:bridge` is running.
+- **Not logged in:** Run `npx @openai/codex login` in terminal and restart bridge.
+- **Port 8787 in use:** Set `RSEMBLE_CODEX_BRIDGE_PORT=8788` in `.env` and `VITE_CODEX_BRIDGE_URL=http://127.0.0.1:8788`.
+
+#### 3. Gemini (Google AI Studio)
+
+1. Get a key at [https://aistudio.google.com](https://aistudio.google.com).
+2. Add to `.env`:
+   ```bash
+   VITE_GEMINI_KEY=AIzaSy...
+   ```
+
+> **Local/personal use only.** Build-time `VITE_` vars and local bridge are embedded for local execution.
 ## How a run works
 
 1. **Describe the task** in the command pane.

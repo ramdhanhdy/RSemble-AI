@@ -12,53 +12,62 @@
 // =============================================================================
 
 import { useMemo, useRef, useState } from "react";
-import { Check, Pencil, Search, X } from "lucide-react";
+import { Check, ChevronRight, Search, X } from "lucide-react";
 import type { Action } from "../studio-engine";
-import type { OpenRouterModel } from "../lib/openrouter";
+import type { CatalogModel, ProviderId } from "../lib/providers/types";
+import { BrandAvatar } from "./brand-icons";
 
 interface JudgeConfigProps {
-  criticModel: string;
-  models: OpenRouterModel[]; // live catalog (empty if no key / fetch failed)
+  critic: { providerId: ProviderId; model: string };
+  models: CatalogModel[];
   dispatch: React.Dispatch<Action>;
 }
 
-export function JudgeConfig({ criticModel, models, dispatch }: JudgeConfigProps) {
+const PROVIDER_BADGE: Record<ProviderId, string> = {
+  openrouter: "OpenRouter",
+  "chatgpt-codex": "ChatGPT",
+  gemini: "Gemini",
+  commandcode: "CommandCode",
+  clinepass: "ClinePass",
+  umans: "Umans",
+};
+
+export function JudgeConfig({ critic, models, dispatch }: JudgeConfigProps) {
   const [editing, setEditing] = useState(false);
+  // TODO(phase-2): adjacent gear button → judge settings popover (temperature,
+  // system prompt — both already in state) per spec §4.4.
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-xs uppercase tracking-wider text-zinc-500">
-          Judge <span className="normal-case text-zinc-600">· also fuses</span>
-        </span>
-        {!editing && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            aria-label="Change judge model"
-            className="flex min-h-[28px] items-center gap-1 font-mono text-sm text-zinc-400 hover:text-zinc-100"
-          >
-            <Pencil size={12} /> edit
-          </button>
-        )}
-      </div>
+      <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+        Judge model <span className="text-xs normal-case tracking-normal">· also fuses</span>
+      </span>
 
       {!editing && (
-        <div className="mt-2 flex items-center gap-2 rounded border border-zinc-800 bg-zinc-900 px-2 py-2 font-mono text-sm text-zinc-200">
-          <span className="size-2 shrink-0 rounded-full bg-cyan-400" />
-          <span className="flex-1 truncate" title={criticModel}>
-            {criticModel}
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label={`Change judge model, current: ${critic.model}`}
+          className="mt-2 flex min-h-[44px] w-full items-center gap-2.5 rounded-md border border-edge bg-card px-2.5 py-1.5 text-left hover:border-edge-bright hover:bg-card-hover"
+        >
+          <BrandAvatar slug={critic.model} size={28} />
+          <span dir="rtl" className="min-w-0 flex-1 truncate font-mono text-sm text-text" title={critic.model}>
+            {`‎${critic.model}`}
           </span>
-        </div>
+          <span className="shrink-0 rounded-sm border border-edge px-1 text-[11px] uppercase tracking-wide text-text-secondary">
+            {PROVIDER_BADGE[critic.providerId]}
+          </span>
+          <ChevronRight size={14} className="shrink-0 text-text-muted" />
+        </button>
       )}
 
       {editing && (
         <JudgeCombobox
           models={models}
-          current={criticModel}
+          current={critic.model}
           onCancel={() => setEditing(false)}
-          onCommit={(slug) => {
-            dispatch({ type: "SET_CRITIC_MODEL", value: slug });
+          onCommit={(model, providerId) => {
+            dispatch({ type: "SET_CRITIC", critic: { providerId, model } });
             setEditing(false);
           }}
         />
@@ -75,35 +84,60 @@ function JudgeCombobox({
   onCancel,
   onCommit,
 }: {
-  models: OpenRouterModel[];
+  models: CatalogModel[];
   current: string;
   onCancel: () => void;
-  onCommit: (slug: string) => void;
+  onCommit: (slug: string, providerId: ProviderId) => void;
 }) {
+  const [selectedProvider, setSelectedProvider] = useState<ProviderId>("openrouter");
   const [query, setQuery] = useState(current);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const providerModels = useMemo(() => {
+    return models.filter((m) => m.providerId === selectedProvider);
+  }, [models, selectedProvider]);
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const pool = models.length > 0 ? models : [];
+    const pool = providerModels.length > 0 ? providerModels : [];
     if (q.length === 0) return pool.slice(0, 8);
     return pool
       .filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
       .slice(0, 8);
-  }, [query, models]);
+  }, [query, providerModels]);
 
-  const hasCatalog = models.length > 0;
+  const hasCatalog = providerModels.length > 0;
   const trimmed = query.trim();
-  const slugValid = trimmed.length > 0 && trimmed.includes("/");
-
+  const slugValid =
+    trimmed.length > 0 &&
+    (selectedProvider === "openrouter" || selectedProvider === "commandcode" || selectedProvider === "clinepass"
+      ? trimmed.includes("/")
+      : true) &&
+    trimmed !== current;
   return (
-    <div className="mt-2 rounded-lg border border-zinc-700 bg-zinc-900 p-2">
-      <label
-        htmlFor="judge-search"
-        className="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950 px-2 py-2 focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500"
-      >
-        <span className="sr-only">Judge model</span>
-        <Search size={13} className="text-zinc-500" />
+    <div className="mt-2 rounded-md border border-edge-bright bg-card p-2">
+      <div className="mb-2 flex items-center gap-1 rounded-sm bg-panel p-1 font-mono text-xs">
+        {(["openrouter", "chatgpt-codex", "gemini", "commandcode", "clinepass", "umans"] as const).map((p) => {
+          const active = selectedProvider === p;
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setSelectedProvider(p)}
+              className={`min-h-[44px] flex-1 rounded-sm px-1 text-center text-[11px] uppercase tracking-wide transition-colors ${
+                active ? "bg-accent/15 font-semibold text-accent" : "text-text-secondary hover:text-text"
+              }`}
+            >
+              {PROVIDER_BADGE[p]}
+            </button>
+          );
+        })}
+      </div>
+      <label htmlFor="judge-search" className="sr-only">
+        Judge model
+      </label>
+      <div className="flex items-center gap-1 rounded-sm border border-edge bg-panel px-2 py-1 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
+        <Search size={13} className="shrink-0 text-text-muted" />
         <input
           id="judge-search"
           ref={inputRef}
@@ -114,42 +148,42 @@ function JudgeCombobox({
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              if (slugValid) onCommit(trimmed);
+              if (slugValid) onCommit(trimmed, selectedProvider);
             } else if (e.key === "Escape") {
               onCancel();
             }
           }}
           placeholder="Search catalog or type a slug (provider/model)…"
           aria-label="Search the model catalog or enter a judge slug"
-          className="flex-1 bg-transparent font-mono text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none"
+          className="min-h-[44px] flex-1 bg-transparent font-mono text-sm text-text placeholder-text-muted focus:outline-none"
         />
         <button
           type="button"
           onClick={onCancel}
           aria-label="Cancel edit"
-          className="flex h-7 w-7 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text"
         >
           <X size={13} />
         </button>
-      </label>
+      </div>
 
       {/* Live catalog matches */}
       {hasCatalog && matches.length > 0 && (
-        <ul className="mt-2 max-h-48 overflow-y-auto rounded border border-zinc-800">
+        <ul className="mt-2 max-h-48 overflow-y-auto rounded-sm border border-edge scroll-thin">
           {matches.map((m) => {
             const selected = m.id === current;
             return (
               <li key={m.id}>
                 <button
                   type="button"
-                  onClick={() => onCommit(m.id)}
-                  className="flex w-full items-center justify-between gap-2 px-2 py-2 text-left font-mono text-sm text-zinc-300 hover:bg-zinc-800"
+                  onClick={() => onCommit(m.id, m.providerId)}
+                  className="flex min-h-[44px] w-full items-center justify-between gap-2 px-2 py-2 text-left font-mono text-sm text-text-secondary hover:bg-card-hover"
                 >
-                  <span className="truncate">
+                  <span className="min-w-0 truncate">
                     {m.name}
-                    <span className="ml-2 text-zinc-600">{m.id}</span>
+                    <span className="ml-2 text-text-muted">{m.id}</span>
                   </span>
-                  {selected && <Check size={13} className="shrink-0 text-cyan-400" />}
+                  {selected && <Check size={13} className="shrink-0 text-accent" />}
                 </button>
               </li>
             );
@@ -157,24 +191,29 @@ function JudgeCombobox({
         </ul>
       )}
       {hasCatalog && matches.length === 0 && query.trim().length > 0 && (
-        <p className="px-1 py-2 font-mono text-sm text-zinc-600">No catalog match — commit the slug below.</p>
+        <p className="px-1 py-2 font-mono text-sm text-text-muted">No catalog match — commit the slug below.</p>
       )}
 
       {/* Manual raw-slug commit */}
       {slugValid && trimmed !== current ? (
         <button
           type="button"
-          onClick={() => onCommit(trimmed)}
+          onClick={() => onCommit(trimmed, selectedProvider)}
           aria-label={`Set judge to ${trimmed}`}
-          className="mt-2 flex min-h-[36px] w-full items-center justify-center gap-2 rounded border border-cyan-500/40 bg-cyan-500/[0.06] py-2 font-mono text-sm text-cyan-300 hover:bg-cyan-500/[0.12]"
+          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/[0.06] py-2 font-mono text-sm text-accent hover:bg-accent/[0.12]"
         >
-          <Check size={13} /> set judge <span className="text-cyan-200">{trimmed}</span>
+          <Check size={13} /> set judge
+          <span className="max-w-[55%] truncate" title={trimmed}>
+            {trimmed}
+          </span>
         </button>
       ) : (
         query.trim().length > 0 &&
         !slugValid && (
-          <p className="mt-2 px-1 font-mono text-sm text-zinc-600">
-            Enter a slug as <span className="text-zinc-400">provider/model</span>
+          <p className="mt-2 px-1 font-mono text-sm text-text-muted">
+            {selectedProvider === "openrouter"
+              ? "Enter a slug as provider/model"
+              : "Enter a model id (e.g. gpt-5.6-sol)"}
           </p>
         )
       )}

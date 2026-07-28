@@ -3,31 +3,73 @@
 // prompt is non-empty. Executes fanout → Judge (+ fusion if Fuse). Per UI.md §3.4.
 // =============================================================================
 
-import { Loader2 } from "lucide-react";
+import { Play, Square } from "lucide-react";
+import { estimateRunCost, estimateRunTime } from "../lib/cost";
 
 export function RunButton({
   running,
   canRun,
+  hasPrompt,
   enabledCount,
+  enabledSlugs,
+  prompt,
   onClick,
+  onAbort,
 }: {
   running: boolean;
   canRun: boolean;
+  hasPrompt: boolean;
   enabledCount: number;
+  enabledSlugs: string[];
+  prompt: string;
   onClick: () => void;
+  onAbort: () => void;
 }) {
+  const cost = hasPrompt && enabledCount > 0 ? estimateRunCost(prompt, enabledSlugs) : null;
+  const time = enabledCount > 0 ? estimateRunTime(enabledSlugs) : 0;
+
+  const costStr = cost?.totalCostUsd != null ? `~$${cost.totalCostUsd.toFixed(2)}` : null;
+  const timeStr = time > 0 ? `~${time}s` : null;
+  const forecast = costStr && timeStr ? `${costStr} · ${timeStr}` : costStr ?? timeStr;
+
+  const caption = running
+    ? "Click to stop"
+    : !hasPrompt
+      ? "Enter a task to run"
+      : enabledCount === 0
+        ? "Enable at least one model"
+        : canRun
+          ? `${enabledCount} model${enabledCount === 1 ? "" : "s"} · 1 judge${forecast ? ` · ${forecast}` : ""}`
+          : "Waiting for provider connections";
+
+  const look = running
+    ? "bg-gradient-to-br from-accent to-[#14b8a6] text-on-accent saturate-50"
+    : canRun
+      ? "bg-gradient-to-br from-accent to-[#14b8a6] text-on-accent hover:-translate-y-0.5 hover:shadow-cta active:translate-y-0"
+      : "border border-edge bg-card text-text-secondary opacity-70 cursor-not-allowed";
+
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={!canRun}
-      // min-h-[44px] guarantees the DESIGN.md touch target even with short labels.
-      className="mt-auto inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-zinc-950 transition-[transform,background-color,box-shadow] ease-out duration-200 hover:scale-[1.02] hover:bg-cyan-400 hover:shadow-lg hover:shadow-cyan-500/20 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400 disabled:cursor-not-allowed disabled:bg-cyan-500/20 disabled:text-cyan-300/80 disabled:shadow-none disabled:ring-1 disabled:ring-cyan-500/20"
+      onClick={running ? onAbort : onClick}
+      disabled={!canRun && !running}
+      className={`mt-auto flex min-h-[64px] w-full items-center gap-3 rounded-md px-4 text-left transition-[transform,box-shadow,background-color] ease-out duration-150 ${look}`}
     >
-      {running && <Loader2 size={15} className="animate-spin-ease" />}
-      {running ? "Running…" : "Run pipeline"}
-      {!running && enabledCount > 0 && (
-        <span className="font-mono text-sm text-zinc-900/60">{enabledCount} models</span>
+      {running ? (
+        <Square size={16} className="shrink-0" />
+      ) : (
+        <Play size={16} className="shrink-0" />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">{running ? "Stop run" : "Run pipeline"}</span>
+        <span className={`mt-0.5 block truncate text-xs tabular-nums ${canRun || running ? "text-on-accent/80" : ""}`}>
+          {caption}
+        </span>
+      </span>
+      {canRun && !running && (
+        <kbd className="flex shrink-0 items-center gap-1 rounded-sm bg-black/25 px-1.5 py-0.5 font-mono text-xs text-white/90">
+          ⌘ Enter
+        </kbd>
       )}
     </button>
   );

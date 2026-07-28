@@ -15,15 +15,18 @@
 // aria-labels; touch targets ≥44px on the action buttons. Per DESIGN.md.
 // =============================================================================
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Plus, Search, Trash2, X } from "lucide-react";
 import type { Action } from "../studio-engine";
 import type { ModelSlot } from "../studio-data";
-import type { OpenRouterModel } from "../lib/openrouter";
+import type { CatalogModel, ProviderId } from "../lib/providers/types";
+import { BrandAvatar } from "./brand-icons";
+import { getModelTelemetryCached, modelKey } from "../lib/history-cache";
+import { pricingFor } from "../lib/cost";
 
 interface ModelListProps {
   slots: ModelSlot[];
-  models: OpenRouterModel[]; // live catalog (empty if no key / fetch failed)
+  models: CatalogModel[]; // live catalog (empty if no key / fetch failed)
   dispatch: React.Dispatch<Action>;
 }
 
@@ -31,30 +34,36 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
   const [adding, setAdding] = useState(false);
   const enabledCount = slots.filter((s) => s.enabled).length;
 
+  useEffect(() => {
+    const onAddModel = () => setAdding(true);
+    window.addEventListener("rsemble:add-model", onAddModel);
+    return () => window.removeEventListener("rsemble:add-model", onAddModel);
+  }, []);
+
   return (
     <div>
       <div className="flex items-center justify-between">
-        <span className="font-mono text-xs uppercase tracking-wider text-zinc-500">
-          Models <span className="normal-case text-zinc-600">· {enabledCount} enabled</span>
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+          Models <span className="text-xs normal-case tracking-normal text-accent">· {enabledCount} selected</span>
         </span>
         {!adding && (
           <button
             type="button"
             onClick={() => setAdding(true)}
             aria-label="Add a model"
-            className="flex min-h-[28px] items-center gap-1 font-mono text-sm text-zinc-400 hover:text-zinc-100"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text"
           >
-            <Plus size={13} /> add
+            <Plus size={13} /> Add model
           </button>
         )}
       </div>
 
-      <ul className="mt-2 space-y-1">
+      <ul className={`mt-2 space-y-2 ${slots.length > 0 && enabledCount === 0 ? "opacity-60" : ""}`}>
         {slots.map((slot) => (
           <SlotRow key={slot.id} slot={slot} dispatch={dispatch} />
         ))}
         {slots.length === 0 && !adding && (
-          <li className="rounded border border-dashed border-zinc-800 px-2 py-2 text-center font-mono text-sm text-zinc-600">
+          <li className="rounded-md border border-dashed border-edge px-2 py-2 text-center font-mono text-sm text-text-muted">
             No models — add one to run
           </li>
         )}
@@ -63,7 +72,7 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
       {adding && (
         <AddModelCombobox
           models={models}
-          takenSlugs={new Set(slots.map((s) => s.slug))}
+          takenKeys={new Set(slots.map((s) => modelKey(s.providerId, s.slug)))}
           onCancel={() => setAdding(false)}
           onAdd={(slot) => {
             dispatch({ type: "ADD_SLOT", slot });
@@ -77,15 +86,15 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
 
 // -----------------------------------------------------------------------------
 // Slot row — toggle on/off, remove
-// -----------------------------------------------------------------------------
-
 function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch<Action> }) {
+  const providerBadge = PROVIDER_LABELS[slot.providerId] ?? "OpenRouter";
+  const telemetry = getModelTelemetryCached(modelKey(slot.providerId, slot.slug));
+  const pricing = pricingFor(slot.slug);
+
   return (
     <li
-      className={`group flex items-center gap-2 rounded-lg border px-2 py-2 font-mono text-sm transition-[background-color,border-color,box-shadow] ease-out duration-150 hover:shadow-sm ${
-        slot.enabled
-          ? "border-cyan-500/40 bg-cyan-500/[0.06] text-zinc-200 hover:border-cyan-500/60 hover:bg-cyan-500/[0.10]"
-          : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/40 hover:text-zinc-400"
+      className={`flex items-center gap-2 rounded-md border bg-card px-2 py-1.5 transition-[background-color,border-color] ease-out duration-150 ${
+        slot.enabled ? "border-accent/50" : "border-edge hover:border-edge-bright"
       }`}
     >
       <button
@@ -93,24 +102,71 @@ function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch
         onClick={() => dispatch({ type: "TOGGLE_SLOT", id: slot.id })}
         aria-pressed={slot.enabled}
         aria-label={slot.enabled ? `Disable ${slot.model}` : `Enable ${slot.model}`}
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
-          slot.enabled ? "border-emerald-400 bg-emerald-400 text-zinc-950" : "border-zinc-600 text-transparent"
-        }`}
+        className="flex h-11 w-11 shrink-0 items-center justify-center"
       >
-        <Check size={12} strokeWidth={3} />
+        <span
+          className={`flex h-5 w-5 items-center justify-center rounded-sm border transition-[background-color,border-color] ease-out duration-100 ${
+            slot.enabled ? "border-accent bg-accent text-on-accent" : "border-edge-bright text-transparent"
+          }`}
+        >
+          <Check
+            size={12}
+            strokeWidth={3}
+            className={`transition-transform ease-out duration-100 ${slot.enabled ? "scale-100" : "scale-75"}`}
+          />
+        </span>
       </button>
-      <span className="flex-1 truncate" title={slot.slug}>
-        {slot.model}
-        <span className="ml-2 text-zinc-600">{slot.slug}</span>
+      <BrandAvatar slug={slot.slug} size={32} />
+      <span className="min-w-0 flex-1">
+        <span
+          className={`block truncate text-sm font-semibold ${slot.enabled ? "text-text" : "text-text-secondary"}`}
+          title={slot.model}
+        >
+          {slot.model}
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5">
+          <span className="shrink-0 rounded-sm border border-edge px-1 text-[11px] uppercase tracking-wide text-text-secondary">
+            {providerBadge}
+          </span>
+          <span dir="rtl" className="min-w-0 truncate font-mono text-xs text-text-muted" title={slot.slug}>
+            {`‎${slot.slug}`}
+          </span>
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-text-muted">
+          {telemetry && telemetry.runCount >= 3 ? (
+            <>
+              <span>★ {(telemetry.winRate * 100).toFixed(0)}% win</span>
+              <span aria-hidden>·</span>
+              <span>{telemetry.avgScore.toFixed(1)} avg</span>
+              <span aria-hidden>·</span>
+              {pricing ? (
+                <span>${pricing.inputPerM.toFixed(2)}/M</span>
+              ) : (
+                <span>— no pricing</span>
+              )}
+              <span aria-hidden>·</span>
+              <span>~{Math.round(telemetry.avgLatencyMs / 1000)}s avg</span>
+            </>
+          ) : (
+            <>
+              {pricing ? (
+                <span>${pricing.inputPerM.toFixed(2)}/M</span>
+              ) : (
+                <span>— no pricing</span>
+              )}
+              <span aria-hidden>·</span>
+              <span>— no history yet</span>
+            </>
+          )}
+        </span>
       </span>
       <button
         type="button"
         onClick={() => dispatch({ type: "REMOVE_SLOT", id: slot.id })}
         aria-label={`Remove ${slot.model}`}
-        // Icon-only control: padded to a comfortable touch target, focus-visible via global CSS.
-        className="flex h-7 w-7 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-rose-400 focus-visible:text-rose-400"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-error"
       >
-        <Trash2 size={13} />
+        <Trash2 size={14} />
       </button>
     </li>
   );
@@ -120,39 +176,60 @@ function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch
 // AddModelCombobox — live-catalog autocomplete + manual raw-slug entry
 // -----------------------------------------------------------------------------
 
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  openrouter: "OpenRouter",
+  "chatgpt-codex": "ChatGPT",
+  gemini: "Gemini",
+  commandcode: "CommandCode",
+  clinepass: "ClinePass",
+  umans: "Umans",
+};
+
 function AddModelCombobox({
   models,
-  takenSlugs,
+  takenKeys,
   onCancel,
   onAdd,
 }: {
-  models: OpenRouterModel[];
-  takenSlugs: Set<string>;
+  models: CatalogModel[];
+  takenKeys: Set<string>;
   onCancel: () => void;
   onAdd: (slot: ModelSlot) => void;
 }) {
+  const [selectedProvider, setSelectedProvider] = useState<ProviderId>("openrouter");
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const providerModels = useMemo(() => {
+    return models.filter((m) => m.providerId === selectedProvider);
+  }, [models, selectedProvider]);
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const pool = models.length > 0 ? models : [];
-    if (q.length === 0) return pool.slice(0, 8); // first 8 of catalog when empty
+    const pool = providerModels.length > 0 ? providerModels : [];
+    if (q.length === 0) return pool.slice(0, 8);
     return pool
       .filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
       .slice(0, 8);
-  }, [query, models]);
+  }, [query, providerModels]);
 
-  const hasCatalog = models.length > 0;
+  const hasCatalog = providerModels.length > 0;
   const trimmed = query.trim();
-  const manualSlugValid = trimmed.length > 0 && trimmed.includes("/") && !takenSlugs.has(trimmed);
+  const candidateKey = modelKey(selectedProvider, trimmed);
+  const manualSlugValid =
+    trimmed.length > 0 &&
+    (selectedProvider === "openrouter" || selectedProvider === "commandcode" || selectedProvider === "clinepass"
+      ? trimmed.includes("/")
+      : true) &&
+    !takenKeys.has(candidateKey);
 
   const commit = (slug: string, name?: string) => {
-    const provider = slug.split("/")[0] ?? "custom";
-    const model = name ?? slug.split("/").slice(1).join("/") ?? slug;
+    const providerLabel = PROVIDER_LABELS[selectedProvider] ?? "OpenRouter";
+    const model = name ?? (slug.includes("/") ? slug.split("/").slice(1).join("/") : slug);
     onAdd({
       id: `slot-${Date.now()}`,
-      provider: provider.charAt(0).toUpperCase() + provider.slice(1),
+      providerId: selectedProvider,
+      provider: providerLabel,
       model,
       slug,
       enabled: true,
@@ -160,13 +237,29 @@ function AddModelCombobox({
   };
 
   return (
-    <div className="mt-2 rounded-lg border border-zinc-700 bg-zinc-900 p-2">
-      <label
-        htmlFor="model-search"
-        className="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950 px-2 py-2 focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500"
-      >
-        <span className="sr-only">Search models</span>
-        <Search size={13} className="text-zinc-500" />
+    <div className="mt-2 rounded-md border border-edge-bright bg-card p-2">
+      <div className="mb-2 flex items-center gap-1 rounded-sm bg-panel p-1 font-mono text-xs">
+        {(["openrouter", "chatgpt-codex", "gemini", "commandcode", "clinepass", "umans"] as const).map((p) => {
+          const active = selectedProvider === p;
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setSelectedProvider(p)}
+              className={`min-h-[44px] flex-1 rounded-sm px-1 text-center text-[11px] uppercase tracking-wide transition-colors ${
+                active ? "bg-accent/15 font-semibold text-accent" : "text-text-secondary hover:text-text"
+              }`}
+            >
+              {PROVIDER_LABELS[p]}
+            </button>
+          );
+        })}
+      </div>
+      <label htmlFor="model-search" className="sr-only">
+        Search models
+      </label>
+      <div className="flex items-center gap-1 rounded-sm border border-edge bg-panel px-2 py-1 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
+        <Search size={13} className="shrink-0 text-text-muted" />
         <input
           id="model-search"
           ref={inputRef}
@@ -184,36 +277,36 @@ function AddModelCombobox({
           }}
           placeholder={hasCatalog ? "Search catalog or type a slug (provider/model)…" : "Type a slug (provider/model)…"}
           aria-label="Search the model catalog or enter a slug"
-          className="flex-1 bg-transparent font-mono text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none"
+          className="min-h-[44px] flex-1 bg-transparent font-mono text-sm text-text placeholder-text-muted focus:outline-none"
         />
         <button
           type="button"
           onClick={onCancel}
           aria-label="Cancel add"
-          className="flex h-7 w-7 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text"
         >
           <X size={13} />
         </button>
-      </label>
+      </div>
 
       {/* Live catalog matches */}
       {hasCatalog && matches.length > 0 && (
-        <ul className="mt-2 max-h-48 overflow-y-auto rounded border border-zinc-800">
+        <ul className="mt-2 max-h-48 overflow-y-auto rounded-sm border border-edge scroll-thin">
           {matches.map((m) => {
-            const taken = takenSlugs.has(m.id);
+            const taken = takenKeys.has(modelKey(m.providerId, m.id));
             return (
               <li key={m.id}>
                 <button
                   type="button"
                   disabled={taken}
                   onClick={() => commit(m.id, m.name)}
-                  className="flex w-full items-center justify-between gap-2 px-2 py-2 text-left font-mono text-sm text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex min-h-[44px] w-full items-center justify-between gap-2 px-2 py-2 text-left font-mono text-sm text-text-secondary hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <span className="truncate">
+                  <span className="min-w-0 truncate">
                     {m.name}
-                    <span className="ml-2 text-zinc-600">{m.id}</span>
+                    <span className="ml-2 text-text-muted">{m.id}</span>
                   </span>
-                  {taken && <span className="shrink-0 text-zinc-600">added</span>}
+                  {taken && <span className="shrink-0 text-text-muted">added</span>}
                 </button>
               </li>
             );
@@ -221,7 +314,7 @@ function AddModelCombobox({
         </ul>
       )}
       {hasCatalog && matches.length === 0 && query.trim().length > 0 && (
-        <p className="px-1 py-2 font-mono text-sm text-zinc-600">No catalog match — add as raw slug below.</p>
+        <p className="px-1 py-2 font-mono text-sm text-text-muted">No catalog match — add as raw slug below.</p>
       )}
 
       {/* Manual raw-slug entry — works even with no catalog (no key) */}
@@ -230,15 +323,18 @@ function AddModelCombobox({
           type="button"
           onClick={() => commit(trimmed)}
           aria-label={`Add slug ${trimmed}`}
-          className="mt-2 flex min-h-[36px] w-full items-center justify-center gap-2 rounded border border-cyan-500/40 bg-cyan-500/[0.06] py-2 font-mono text-sm text-cyan-300 hover:bg-cyan-500/[0.12]"
+          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/[0.06] py-2 font-mono text-sm text-accent hover:bg-accent/[0.12]"
         >
-          <Plus size={13} /> add slug <span className="text-cyan-200">{trimmed}</span>
+          <Plus size={13} /> add slug
+          <span className="max-w-[55%] truncate" title={trimmed}>
+            {trimmed}
+          </span>
         </button>
       ) : (
         query.trim().length > 0 && (
-          <p className="mt-2 px-1 font-mono text-sm text-zinc-600">
-            Enter a slug as <span className="text-zinc-400">provider/model</span>
-            {takenSlugs.has(trimmed) && " · already added"}
+          <p className="mt-2 px-1 font-mono text-sm text-text-muted">
+            Enter a slug as <span className="text-text-secondary">provider/model</span>
+            {takenKeys.has(candidateKey) && " · already added"}
           </p>
         )
       )}

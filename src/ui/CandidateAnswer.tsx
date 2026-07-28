@@ -15,18 +15,18 @@ import type { Candidate } from "../studio-data";
 import { Markdown } from "./Markdown";
 
 function tierColor(score: number): string {
-  if (score >= 4.0) return "text-emerald-400";
-  if (score >= 3.0) return "text-cyan-400";
-  return "text-amber-400";
+  if (score >= 4.0) return "text-success";
+  if (score >= 3.0) return "text-accent";
+  return "text-warning";
 }
 
 const ACCENT_DOT: Record<string, string> = {
   indigo: "bg-indigo-400",
-  emerald: "bg-emerald-400",
+  emerald: "bg-success",
   violet: "bg-violet-400",
-  amber: "bg-amber-400",
+  amber: "bg-warning",
   sky: "bg-sky-400",
-  rose: "bg-rose-400",
+  rose: "bg-error",
   teal: "bg-teal-400",
 };
 
@@ -57,31 +57,31 @@ export function CandidateAnswer({
 
   return (
     <div
-      className={`rounded-lg border bg-zinc-900 ${
-        rank === 1 ? "border-emerald-500/30" : "border-zinc-800"
+      className={`rounded-lg border bg-card ${
+        rank === 1 ? "border-success/30" : "border-edge"
       }`}
     >
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full min-h-[44px] items-center gap-3 px-3 py-3 text-left hover:bg-zinc-800/50"
+        className="flex w-full min-h-[44px] items-center gap-3 px-3 py-3 text-left hover:bg-card-hover/50"
       >
         <ChevronRight
           size={14}
-          className={`shrink-0 text-zinc-500 transition-transform ${open ? "rotate-90" : ""}`}
+          className={`shrink-0 text-text-muted transition-transform ${open ? "rotate-90" : ""}`}
         />
         {rank != null && (
           <span
             className={`grid size-5 shrink-0 place-items-center rounded font-mono text-xs ${
-              rank === 1 ? "bg-emerald-500/20 text-emerald-300" : "bg-zinc-800 text-zinc-400"
+              rank === 1 ? "bg-success/20 text-success" : "bg-card-hover text-text-secondary"
             }`}
           >
             {rank}
           </span>
         )}
-        <span className={`size-2 shrink-0 rounded-full ${ACCENT_DOT[candidate.accent] ?? "bg-zinc-500"}`} />
-        <span className="flex-1 truncate font-mono text-sm text-zinc-100" title={candidate.provider}>
+        <span className={`size-2 shrink-0 rounded-full ${ACCENT_DOT[candidate.accent] ?? "bg-text-muted"}`} />
+        <span className="flex-1 truncate font-mono text-sm text-text" title={candidate.provider}>
           {candidate.model}
         </span>
         {candidate.weightedScore > 0 && (
@@ -92,22 +92,22 @@ export function CandidateAnswer({
       </button>
 
       {open && (
-        <div className="border-t border-zinc-800 px-3 py-3">
+        <div className="border-t border-edge px-3 py-3">
           <div className="mb-2 flex justify-end">
             <button
               type="button"
               onClick={copy}
               aria-label={copied ? "Copied" : `Copy ${candidate.model} answer`}
-              className="flex min-h-[28px] items-center gap-1 font-mono text-sm text-zinc-500 hover:text-zinc-200"
+              className="flex min-h-[44px] items-center gap-1 rounded-sm px-2 font-mono text-sm text-text-secondary hover:text-text"
             >
-              {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+              {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
               {copied ? "copied" : "copy"}
             </button>
           </div>
           {text.length > 0 ? (
             <Markdown text={text} />
           ) : (
-            <p className="font-mono text-sm text-zinc-600">(empty response)</p>
+            <p className="font-mono text-sm text-text-muted">(empty response)</p>
           )}
         </div>
       )}
