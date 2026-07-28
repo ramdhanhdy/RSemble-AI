@@ -5,6 +5,7 @@ import type { StudioState } from "../studio-engine";
 const baseState: StudioState = {
   mode: "rank",
   prompt: "Write a haiku",
+  exampleIndex: -1,
   rubric: [],
   slots: [],
   temperature: 0.4,

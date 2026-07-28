@@ -518,7 +518,7 @@ function CommandPane({
         }
       />
 
-      <TaskInput prompt={state.prompt} dispatch={dispatch} />
+      <TaskInput prompt={state.prompt} exampleIndex={state.exampleIndex} dispatch={dispatch} />
       <ModelList slots={state.slots} models={state.models} dispatch={dispatch} />
       <RubricDisclosure
         rubric={state.rubric}
