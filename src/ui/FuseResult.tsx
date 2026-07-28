@@ -228,7 +228,7 @@ function ProvenanceTick({ color, candidate }: { color: string; candidate: Candid
 
 function SourceAnswers({ candidates }: { candidates: Candidate[] }) {
   const done = candidates
-    .filter((c) => c.status === "done")
+    .filter(isUsableCandidate)
     .sort((a, b) => b.weightedScore - a.weightedScore);
   if (done.length === 0) return null;
   return (

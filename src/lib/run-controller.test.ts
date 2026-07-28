@@ -296,7 +296,9 @@ describe("run-controller — guarded paths", () => {
       },
     ];
     chatStreamMock.mockImplementation(() => streamOf("retried answer"));
-    chatCompletionMock.mockResolvedValue(JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [] }));
+    chatCompletionMock.mockResolvedValue(JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+      { label: "A", score: 4.0 }, { label: "B", score: 3.0 },
+    ] }));
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
 
@@ -311,7 +313,9 @@ describe("run-controller — guarded paths", () => {
   it("records deterministic nonzero candidate latency and token metadata from local fanout results", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("four token answer"));
-    chatCompletionMock.mockResolvedValue(JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [] }));
+    chatCompletionMock.mockResolvedValue(JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+      { label: "A", score: 4.0 }, { label: "B", score: 3.0 },
+    ] }));
     vi.spyOn(Date, "now")
       .mockReturnValueOnce(1_000)
       .mockReturnValueOnce(1_000)
@@ -348,7 +352,9 @@ describe("run-controller — guarded paths", () => {
       stateRef.current = { ...stateRef.current, mode: "fuse" };
       yield "answer";
     })());
-    chatCompletionMock.mockResolvedValue(JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [] }));
+    chatCompletionMock.mockResolvedValue(JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+      { label: "A", score: 4.0 }, { label: "B", score: 3.0 },
+    ] }));
 
     await createRunController(deps).runFanout();
 
@@ -405,7 +411,9 @@ describe("run-controller — judge instruction threading", () => {
     // judgeInstruction defaults to "" via initialState
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
     chatCompletionMock.mockResolvedValue(
-      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [] }),
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+        { label: "A", score: 4.0 }, { label: "B", score: 3.0 },
+      ] }),
     );
     const { deps } = makeDeps(state);
     await createRunController(deps).runFanout();
@@ -413,7 +421,7 @@ describe("run-controller — judge instruction threading", () => {
     const judgeCall = chatCompletionMock.mock.calls[0][0];
     const judgeText = JSON.stringify(judgeCall.messages);
     // The instruction suffix marker must NOT appear when the instruction is empty.
-    expect(judgeText).not.toContain("Additional judge instruction");
+    expect(judgeText).not.toContain("ADDITIONAL JUDGE INSTRUCTION");
   });
 });
 
@@ -625,5 +633,168 @@ describe("run-controller — partial candidate failures", () => {
       (a) => a.type === "FUSION_START" || a.type === "INSUFFICIENT_CANDIDATES" || a.type === "FUSION_RESULT",
     );
     expect(fusionDispatches).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Judge JSON contract — malformed/partial/duplicate judge output must route
+// through the visible JUDGE_FAILED path, never silently produce zero scores.
+// ---------------------------------------------------------------------------
+
+describe("run-controller — judge contract failures", () => {
+  it("dispatches JUDGE_FAILED in rank mode when judge returns empty scores array", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValue(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [] }),
+    );
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_START");
+    expect(types).toContain("JUDGE_FAILED");
+    expect(types).not.toContain("JUDGE_RESULT");
+    expect(stateRef.current.running).toBe(false);
+    expect(stateRef.current.judgeStatus).toBe("error");
+  });
+
+  it("dispatches JUDGE_FAILED in rank mode when judge returns scores with missing candidates", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValue(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+        { label: "A", score: 4.0 },
+      ] }),
+    );
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_FAILED");
+    expect(types).not.toContain("JUDGE_RESULT");
+    expect(stateRef.current.judgeStatus).toBe("error");
+  });
+
+  it("dispatches JUDGE_FAILED and does NOT proceed to fusion when judge returns duplicate scores (fuse mode)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValueOnce(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+        { label: "A", score: 4.0 },
+        { label: "A", score: 2.0 },
+        { label: "B", score: 3.0 },
+      ] }),
+    );
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_START");
+    expect(types).toContain("JUDGE_FAILED");
+    expect(types).not.toContain("JUDGE_RESULT");
+    // Fusion must NOT proceed when the judge output is contract-invalid.
+    expect(types).not.toContain("FUSION_START");
+    expect(types).not.toContain("FUSION_RESULT");
+    expect(stateRef.current.running).toBe(false);
+    expect(stateRef.current.judgeStatus).toBe("error");
+    expect(stateRef.current.fusionStatus).not.toBe("done");
+  });
+
+  it("dispatches JUDGE_FAILED when judge returns non-array scores", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValueOnce(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: { A: 4.0, B: 3.0 } }),
+    );
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_FAILED");
+    expect(types).not.toContain("FUSION_START");
+    expect(stateRef.current.judgeStatus).toBe("error");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Partial-failure visibility integration — proves the UI surfaces have the
+// data they need to show failed model identity/error (2→1) and that empty
+// done candidates are visibly unusable (not silently successful).
+// ---------------------------------------------------------------------------
+
+describe("run-controller — partial-failure UI visibility", () => {
+  it("2→1 insufficient: failed candidate's model and error are available in state for the UI", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new Error("rate limit exceeded"); });
+    const { deps, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    // The pipeline must stop with INSUFFICIENT_CANDIDATES, and the candidate
+    // state must retain the failed model's identity and error message so
+    // InsufficientState can render them.
+    expect(stateRef.current.insufficient).toEqual({ done: 1, failed: 1 });
+    const failed = stateRef.current.candidates.find((c) => c.status === "error");
+    expect(failed).toBeDefined();
+    expect(failed!.model).toBe("B");
+    expect(failed!.errorMessage).toContain("rate limit exceeded");
+    // The successful candidate is also retained.
+    const done = stateRef.current.candidates.find((c) => c.status === "done");
+    expect(done).toBeDefined();
+    expect(done!.model).toBe("A");
+  });
+
+  it("3→2 partial fusion: failed candidate remains visible in state after fusion succeeds", async () => {
+    const state = stateWithSlots(THREE_SLOTS, "fuse");
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new Error("provider B exploded"); })
+      .mockImplementationOnce(() => streamOf("answer C"));
+    chatCompletionMock
+      .mockResolvedValueOnce(JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+        { label: "A", score: 4.0 }, { label: "C", score: 3.5 },
+      ] }))
+      .mockResolvedValueOnce("fused A+C");
+    const { deps, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    // Fusion succeeded — the fused text is present.
+    expect(stateRef.current.fusedText).toBe("fused A+C");
+    expect(stateRef.current.fusionStatus).toBe("done");
+    // The failed candidate is still in state (not silently dropped) so the
+    // UI's FailedCandidates component can show it.
+    const failed = stateRef.current.candidates.find((c) => c.status === "error");
+    expect(failed).toBeDefined();
+    expect(failed!.model).toBe("B");
+    expect(failed!.errorMessage).toContain("provider B exploded");
+  });
+
+  it("empty-content done candidate is counted as failed, not done, in INSUFFICIENT_CANDIDATES", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    // One candidate returns empty string (truncated/aborted), the other real content.
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf(""))
+      .mockImplementationOnce(() => streamOf("answer B"));
+    const { deps, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    // The empty candidate must be counted as failed (not done) so the UI
+    // shows it as unusable, not as a silent success.
+    expect(stateRef.current.insufficient).toEqual({ done: 1, failed: 1 });
+    // The empty candidate is still in state with status "done" but empty content.
+    const empty = stateRef.current.candidates.find(
+      (c) => c.status === "done" && c.segments.map((s) => s.text).join("").trim().length === 0,
+    );
+    expect(empty).toBeDefined();
+    expect(empty!.model).toBe("A");
   });
 });

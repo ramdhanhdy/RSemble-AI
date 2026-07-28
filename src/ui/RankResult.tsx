@@ -34,7 +34,7 @@ export function RankResult({
   onCompare?: () => void;
 }) {
   const ranked = [...state.candidates]
-    .filter((c) => c.status === "done")
+    .filter(isUsableCandidate)
     .sort((a, b) => b.weightedScore - a.weightedScore);
   const winner = ranked[0];
   const runnerUp = ranked[1];

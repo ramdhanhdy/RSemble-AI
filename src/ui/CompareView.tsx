@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback } from "react";
 import { Lock, Unlock, X, Columns2 } from "lucide-react";
 import type { Candidate, RubricCriterion } from "../studio-data";
+import { isUsableCandidate } from "../lib/pipeline";
 import { Markdown } from "./Markdown";
 import { BrandAvatar } from "./brand-icons";
 
@@ -19,7 +20,7 @@ export function CompareView({
   rubric: RubricCriterion[];
   onClose: () => void;
 }) {
-  const done = candidates.filter((c) => c.status === "done");
+  const done = candidates.filter(isUsableCandidate);
   const [synced, setSynced] = useState(true);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const scrollRefs = useRef<Map<string, HTMLDivElement>>(new Map());

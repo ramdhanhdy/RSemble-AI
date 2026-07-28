@@ -12,6 +12,7 @@ import { AlertCircle, Loader2, RotateCw } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import { BrandAvatar } from "./brand-icons";
 import type { Candidate } from "../studio-data";
+import { isUsableCandidate } from "../lib/pipeline";
 import { RankResult } from "./RankResult";
 import { CompareView } from "./CompareView";
 import { FuseResult } from "./FuseResult";
@@ -92,10 +93,8 @@ export function OutputPane({
           done={state.insufficient.done}
           failed={state.insufficient.failed}
           mode={state.mode}
-          onRetry={onRetryCandidate ? () => {
-            const failedCandidates = state.candidates.filter((c) => c.status === "error");
-            if (failedCandidates.length > 0) onRetryCandidate(failedCandidates[0]);
-          } : undefined}
+          candidates={state.candidates}
+          onRetryCandidate={onRetryCandidate}
         />
       )}
 
@@ -137,19 +136,24 @@ export function OutputPane({
   );
 }
 
-/** Terminal state when too few candidates survived to rank or fuse. */
-function InsufficientState({
+/** Terminal state when too few candidates survived to rank or fuse.
+ *  Shows WHICH candidates failed (model name + error), not just an aggregate
+ *  count, and offers per-candidate retry when a callback is available. */
+export function InsufficientState({
   done,
   failed,
   mode,
-  onRetry,
+  candidates,
+  onRetryCandidate,
 }: {
   done: number;
   failed: number;
   mode: "rank" | "fuse";
-  onRetry?: () => void;
+  candidates: Candidate[];
+  onRetryCandidate?: (candidate: Candidate) => void;
 }) {
   const verb = mode === "fuse" ? "fuse" : "rank";
+  const failedCandidates = candidates.filter((c) => c.status === "error");
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-warning/40 bg-warning/[0.08] py-10 px-6 text-center">
       <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-warning">Stopped</p>
@@ -162,14 +166,36 @@ function InsufficientState({
           {failed} candidate{failed === 1 ? "" : "s"} failed during generation.
         </p>
       )}
-      {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-4 flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-accent/40 bg-accent/[0.06] px-6 font-mono text-sm text-accent hover:bg-accent/[0.12]"
-        >
-          <RotateCw size={14} /> Retry failed candidate
-        </button>
+      {/* Per-candidate failure detail — model name + error, not just a count.
+          This is the core fix: the aggregate count hid WHICH model failed and
+          WHY, leaving the user unable to act on the specific failure. */}
+      {failedCandidates.length > 0 && (
+        <ul className="mt-4 flex w-full max-w-md flex-col gap-2 text-left">
+          {failedCandidates.map((c) => (
+            <li key={c.id} className="flex items-start gap-2 rounded-sm border border-error/30 bg-error/[0.06] px-3 py-2">
+              <span className="mt-1 size-2 shrink-0 rounded-full bg-error" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <BrandAvatar slug={c.slug} size={18} />
+                  <span className="truncate font-mono text-sm text-text" title={c.provider}>{c.model}</span>
+                </div>
+                {c.errorMessage && (
+                  <p className="mt-1 text-sm leading-relaxed text-error/80">{c.errorMessage}</p>
+                )}
+              </div>
+              {onRetryCandidate && (
+                <button
+                  type="button"
+                  onClick={() => onRetryCandidate(c)}
+                  aria-label={`Retry ${c.model}`}
+                  className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-sm border border-edge px-3 font-mono text-xs text-text-secondary hover:border-accent/50 hover:text-accent"
+                >
+                  <RotateCw size={13} /> Retry
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
       <p className="mt-3 font-mono text-sm text-text-muted">
         Check the model slugs in the command pane and re-run.
@@ -239,6 +265,10 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
       : elapsedSeconds(candidate.startedAt, now)
     : 0;
   const active = candidate.status === "pending";
+  // A done candidate with no content is unusable — it completed the transport
+  // (status "done") but produced empty/truncated text. Show it honestly as
+  // unusable rather than a silent success.
+  const unusable = candidate.status === "done" && !isUsableCandidate(candidate);
   const transcriptRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
@@ -249,12 +279,13 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
 
   return (
     <li className={`flex min-h-0 flex-col rounded-md border bg-card px-3 py-2 ${
-      candidate.status === "error" ? "border-error/40" : "border-edge"
+      candidate.status === "error" || unusable ? "border-warning/40" : "border-edge"
     }`}>
       <div className="flex items-center gap-2">
         {active && <Loader2 size={12} className="animate-spin-ease text-accent" />}
-        {candidate.status === "done" && <span className="size-2 rounded-full bg-success" />}
+        {candidate.status === "done" && !unusable && <span className="size-2 rounded-full bg-success" />}
         {candidate.status === "error" && <span className="size-2 rounded-full bg-error" />}
+        {unusable && <AlertCircle size={12} className="text-warning" />}
         <BrandAvatar slug={candidate.slug} size={24} />
         <span className="flex-1 truncate font-mono text-sm text-text" title={candidate.provider}>
           {candidate.model}
@@ -265,14 +296,16 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
         <span className="font-mono text-xs tabular-nums text-text-muted">{elapsed}s</span>
         <span
           className={`font-mono text-[11px] uppercase tracking-wider ${
-            candidate.status === "done"
-              ? "text-success"
-              : candidate.status === "error"
-                ? "text-error"
-                : "text-text-secondary"
+            unusable
+              ? "text-warning"
+              : candidate.status === "done"
+                ? "text-success"
+                : candidate.status === "error"
+                  ? "text-error"
+                  : "text-text-secondary"
           }`}
         >
-          {candidate.status === "pending" ? "generating" : candidate.status}
+          {active ? "generating" : unusable ? "unusable" : candidate.status}
         </span>
       </div>
       {active && streamingTail.length > 0 && (
@@ -281,8 +314,25 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
           <span className="ml-1 inline-block h-4 w-2 animate-pulse-ease bg-accent/70 align-middle" />
         </p>
       )}
-      {candidate.status === "done" && excerpt.length > 0 && (
+      {candidate.status === "done" && excerpt.length > 0 && !unusable && (
         <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-text-secondary">{excerpt}</p>
+      )}
+      {unusable && (
+        <div className="mt-2 flex items-center gap-2">
+          <p className="flex-1 text-sm leading-relaxed text-warning/80">
+            Completed but produced no content — response was empty or truncated.
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={() => onRetry(candidate)}
+              aria-label={`Retry ${candidate.model}`}
+              className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-sm border border-edge px-3 font-mono text-xs text-text-secondary hover:border-accent/50 hover:text-accent"
+            >
+              <RotateCw size={13} /> Retry
+            </button>
+          )}
+        </div>
       )}
       {candidate.status === "error" && candidate.errorMessage && (
         <div className="mt-2 flex items-center gap-2">
