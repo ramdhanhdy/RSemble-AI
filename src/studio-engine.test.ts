@@ -81,6 +81,7 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
     const state = runningStateWithCandidates([c1, c2], "rank");
     const next = reducer(state, {
       type: "JUDGE_RESULT",
+      mode: "rank",
       consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
       scoresById: { c1: 4.5, c2: 3.2 },
     });
@@ -101,11 +102,40 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
     ], "fuse");
     const next = reducer(state, {
       type: "JUDGE_RESULT",
+      mode: "fuse",
       consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
       scoresById: { c1: 4.0, c2: 3.5 },
     });
     expect(next.running).toBe(true);
     expect(next.judgeStatus).toBe("done");
+  });
+
+  it("uses captured RANK mode when the current UI mode changed to FUSE", () => {
+    const state = runningStateWithCandidates([
+      makeCandidate("c1", "openrouter", "model-a"),
+      makeCandidate("c2", "umans", "model-b"),
+    ], "fuse");
+    const next = reducer(state, {
+      type: "JUDGE_RESULT",
+      mode: "rank",
+      consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
+      scoresById: { c1: 4, c2: 3 },
+    });
+    expect(next.running).toBe(false);
+  });
+
+  it("uses captured FUSE mode when the current UI mode changed to RANK", () => {
+    const state = runningStateWithCandidates([
+      makeCandidate("c1", "openrouter", "model-a"),
+      makeCandidate("c2", "umans", "model-b"),
+    ], "rank");
+    const next = reducer(state, {
+      type: "JUDGE_RESULT",
+      mode: "fuse",
+      consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
+      scoresById: { c1: 4, c2: 3 },
+    });
+    expect(next.running).toBe(true);
   });
 });
 

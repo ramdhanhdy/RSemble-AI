@@ -10,11 +10,13 @@ import { addRun, clearHistory } from "./run-history";
 
 // Mock localStorage for node environment (same pattern as run-history.test.ts).
 const store: Record<string, string> = {};
+let getItemMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   for (const key of Object.keys(store)) delete store[key];
+  getItemMock = vi.fn((key: string) => store[key] ?? null);
   vi.stubGlobal("localStorage", {
-    getItem: (key: string) => store[key] ?? null,
+    getItem: getItemMock,
     setItem: (key: string, value: string) => {
       store[key] = value;
     },
@@ -94,6 +96,29 @@ describe("history-cache", () => {
     expect(getModelTelemetryCached(key)?.runCount).toBe(1);
     invalidateHistoryCache();
     expect(getModelTelemetryCached(key)?.runCount).toBe(2);
+  });
+
+  it("uses one shared storage snapshot across different model telemetry and summary reads", () => {
+    const a = modelKey("openrouter", "a/b");
+    const b = modelKey("umans", "b");
+    addRun({
+      taskExcerpt: "shared snapshot",
+      models: [a, b],
+      stats: {
+        [a]: { score: 4, latencyMs: 100, costUsd: null },
+        [b]: { score: 3, latencyMs: 200, costUsd: 0.01 },
+      },
+      winner: a,
+      timestamp: 1,
+    });
+    invalidateHistoryCache();
+    getItemMock.mockClear();
+
+    expect(getModelTelemetryCached(a)?.avgScore).toBe(4);
+    expect(getModelTelemetryCached(b)?.avgScore).toBe(3);
+    expect(getRunCountCached()).toBe(1);
+    expect(getRunsCached()).toHaveLength(1);
+    expect(getItemMock).toHaveBeenCalledTimes(1);
   });
 
   it("re-exports modelKey", () => {

@@ -168,7 +168,7 @@ export function createRunController(deps: RunControllerDeps) {
           scoresById,
         );
       }
-      dispatch({ type: "JUDGE_RESULT", consensus: breakdown, scoresById });
+      dispatch({ type: "JUDGE_RESULT", mode: seed.mode, consensus: breakdown, scoresById });
       if (seed.mode === "rank") {
         const scored = done.map((c) => ({
           c,

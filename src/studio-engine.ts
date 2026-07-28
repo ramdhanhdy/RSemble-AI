@@ -84,7 +84,7 @@ export type Action =
   | { type: "FANOUT_END"; count: number }
   | { type: "INSUFFICIENT_CANDIDATES"; done: number; failed: number }
   | { type: "JUDGE_START" }
-  | { type: "JUDGE_RESULT"; consensus: ConsensusBreakdown; scoresById: Record<string, number> }
+  | { type: "JUDGE_RESULT"; mode: Mode; consensus: ConsensusBreakdown; scoresById: Record<string, number> }
   | { type: "JUDGE_FAILED"; error: string }
   | { type: "FUSION_START" }
   | { type: "FUSION_RESULT"; text: string }
@@ -260,7 +260,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       // pipeline continues to fusion, so `running` stays true.
       return {
         ...state,
-        running: state.mode === "fuse" ? state.running : false,
+        running: action.mode === "fuse" ? state.running : false,
         judgeStatus: "done",
         consensus: action.consensus,
         candidates: state.candidates.map((c) =>
