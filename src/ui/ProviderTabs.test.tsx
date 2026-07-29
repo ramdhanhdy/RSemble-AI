@@ -101,7 +101,7 @@ describe("ProviderTabs — shared by both selectors", () => {
 
   it("the JudgeCombobox renders the shared provider tabs", () => {
     const html = renderToStaticMarkup(
-      <JudgeCombobox models={models} current="some-model" onCancel={noop} onCommit={noop} />,
+      <JudgeCombobox models={models} current="some-model" initialProvider="openrouter" onCancel={noop} onCommit={noop} />,
     );
     expect(html).toContain('role="group"');
     expect(html).toContain('aria-pressed');

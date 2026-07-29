@@ -1,6 +1,9 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { JudgeConfig } from "./JudgeConfig";
+import { JudgeConfig, JudgeCombobox } from "./JudgeConfig";
 import type { Action } from "../studio-engine";
 import type { CatalogModel } from "../lib/providers/types";
 
@@ -55,5 +58,197 @@ describe("JudgeConfig — judge custom instruction input", () => {
     const match = html.match(/<(textarea)[^>]*id="judge-instruction"[^>]*>/);
     expect(match).not.toBeNull();
     expect(match![0]).toMatch(/min-h-\[44px\]|h-11/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JudgeCombobox — provider switch, initial provider, and clear-X (run-recovery spec §6)
+// ---------------------------------------------------------------------------
+
+(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+
+interface Harness {
+  container: HTMLDivElement;
+  root: ReturnType<typeof createRoot>;
+  $: (s: string) => HTMLElement | null;
+  $$: (s: string) => HTMLElement[];
+  byText: (t: string) => HTMLElement | undefined;
+}
+
+function render(node: React.ReactNode): Harness {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(node);
+  });
+  return {
+    container,
+    root,
+    $: (s) => container.querySelector<HTMLElement>(s),
+    $$: (s) => [...container.querySelectorAll<HTMLElement>(s)],
+    byText: (t) =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === t),
+  };
+}
+
+function cleanup(h: Harness) {
+  act(() => h.root.unmount());
+  h.container.remove();
+}
+
+function typeInto(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  )!.set!;
+  setter.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+const GEMINI_MODELS: CatalogModel[] = [
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", providerId: "gemini" },
+];
+
+describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
+  it("opens on the current Judge provider, not always OpenRouter", () => {
+    const dispatched: Action[] = [];
+    const h = render(
+      <JudgeConfig
+        critic={{ providerId: "gemini", model: "gemini-3.1-pro-preview" }}
+        models={GEMINI_MODELS}
+        dispatch={(a) => dispatched.push(a)}
+        judgeInstruction=""
+      />,
+    );
+    try {
+      // Open the editor.
+      const changeBtn = h.$('button[aria-label^="Change judge model"]') as HTMLButtonElement;
+      act(() => changeBtn.click());
+
+      const geminiTab = h.byText("Gemini")!;
+      const openrouterTab = h.byText("OpenRouter")!;
+      expect(geminiTab.getAttribute("aria-pressed")).toBe("true");
+      expect(openrouterTab.getAttribute("aria-pressed")).toBe("false");
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("switching providers clears the current query and focuses the input", () => {
+    const h = render(
+      <JudgeCombobox
+        models={GEMINI_MODELS}
+        current="gemini-3.1-pro-preview"
+        initialProvider="gemini"
+        onCancel={() => {}}
+        onCommit={() => {}}
+      />,
+    );
+    try {
+      const input = h.$("input#judge-search") as HTMLInputElement;
+      // The editor opens with an empty query (full catalog visible); type a
+      // Gemini id, then switch providers and assert it is cleared + focused.
+      typeInto(input, "gemini-3.1-pro-preview");
+      expect(input.value).toBe("gemini-3.1-pro-preview");
+
+      const openrouterTab = h.byText("OpenRouter")!;
+      act(() => openrouterTab.click());
+
+      const after = h.$("input#judge-search") as HTMLInputElement;
+      expect(after.value).toBe("");
+      expect(document.activeElement).toBe(after);
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("X clears a non-empty query without dispatching SET_CRITIC or closing", () => {
+    const dispatched: Action[] = [];
+    const h = render(
+      <JudgeConfig
+        critic={{ providerId: "openrouter", model: "z-ai/glm-5.2" }}
+        models={NO_MODELS}
+        dispatch={(a) => dispatched.push(a)}
+        judgeInstruction=""
+      />,
+    );
+    try {
+      const changeBtn = h.$('button[aria-label^="Change judge model"]') as HTMLButtonElement;
+      act(() => changeBtn.click());
+
+      const input = h.$("input#judge-search") as HTMLInputElement;
+      typeInto(input, "openai/gpt-4o");
+
+      const xBtn = h.$('button[aria-label="Clear judge model search"]') as HTMLButtonElement;
+      expect(xBtn).not.toBeNull();
+      act(() => xBtn.click());
+
+      // Still open (input present), cleared, no SET_CRITIC dispatched.
+      const after = h.$("input#judge-search") as HTMLInputElement;
+      expect(after).not.toBeNull();
+      expect(after.value).toBe("");
+      expect(dispatched.filter((a) => a.type === "SET_CRITIC")).toHaveLength(0);
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("X on an empty query closes the editor", () => {
+    const h = render(
+      <JudgeConfig
+        critic={{ providerId: "openrouter", model: "z-ai/glm-5.2" }}
+        models={NO_MODELS}
+        dispatch={noop}
+        judgeInstruction=""
+      />,
+    );
+    try {
+      const changeBtn = h.$('button[aria-label^="Change judge model"]') as HTMLButtonElement;
+      act(() => changeBtn.click());
+      expect(h.$("input#judge-search")).not.toBeNull();
+
+      const xEmpty = h.$('button[aria-label="Cancel judge edit"]') as HTMLButtonElement;
+      expect(xEmpty).not.toBeNull();
+      act(() => xEmpty.click());
+
+      // Editor closed: the combobox input is gone, the change button returns.
+      expect(h.$("input#judge-search")).toBeNull();
+      expect(h.$('button[aria-label^="Change judge model"]')).not.toBeNull();
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("committing a catalog model dispatches exactly one SET_CRITIC with provider + exact slug", () => {
+    const dispatched: Action[] = [];
+    const h = render(
+      <JudgeConfig
+        critic={{ providerId: "gemini", model: "old-model" }}
+        models={GEMINI_MODELS}
+        dispatch={(a) => dispatched.push(a)}
+        judgeInstruction=""
+      />,
+    );
+    try {
+      const changeBtn = h.$('button[aria-label^="Change judge model"]') as HTMLButtonElement;
+      act(() => changeBtn.click());
+
+      // Click the catalog model row (button containing the model id).
+      const catalogBtn = h.$$("button").find((b) =>
+        b.textContent?.includes("gemini-3.6-flash"),
+      ) as HTMLButtonElement;
+      expect(catalogBtn).toBeTruthy();
+      act(() => catalogBtn.click());
+
+      const setCritic = dispatched.filter((a) => a.type === "SET_CRITIC");
+      expect(setCritic).toHaveLength(1);
+      expect(setCritic[0]).toMatchObject({
+        type: "SET_CRITIC",
+        critic: { providerId: "gemini", model: "gemini-3.6-flash" },
+      });
+    } finally {
+      cleanup(h);
+    }
   });
 });

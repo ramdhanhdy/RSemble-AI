@@ -229,11 +229,33 @@ export function AddModelCombobox({
     });
   };
 
+  // Provider IDs are separate namespaces — a slug typed under one provider must
+  // never leak into another. Switching clears the query and refocuses so the
+  // user can enter the new provider's native id without manual backspacing
+  // (run-recovery spec §6.1). The input is a persistent element, so focusing
+  // synchronously is safe and deterministic.
+  const handleProviderChange = (p: ProviderId) => {
+    setSelectedProvider(p);
+    setQuery("");
+    inputRef.current?.focus();
+  };
+
+  // Context-sensitive clear-or-cancel (spec §6.2): clear text first while the
+  // selector stays open; close only when there is nothing left to clear.
+  const handleClearOrCancel = () => {
+    if (query.length > 0) {
+      setQuery("");
+      inputRef.current?.focus();
+    } else {
+      onCancel();
+    }
+  };
+
   return (
     <div className="mt-2 rounded-md border border-edge-bright bg-card p-2">
       <ProviderTabs
         value={selectedProvider}
-        onChange={setSelectedProvider}
+        onChange={handleProviderChange}
         ariaLabel="Candidate model providers"
       />
       <label htmlFor="model-search" className="sr-only">
@@ -262,8 +284,8 @@ export function AddModelCombobox({
         />
         <button
           type="button"
-          onClick={onCancel}
-          aria-label="Cancel add"
+          onClick={handleClearOrCancel}
+          aria-label={query.length > 0 ? "Clear model search" : "Cancel add model"}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text"
         >
           <X size={13} />

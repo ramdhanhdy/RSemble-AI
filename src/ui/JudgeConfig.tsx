@@ -59,6 +59,7 @@ export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: Judg
         <JudgeCombobox
           models={models}
           current={critic.model}
+          initialProvider={critic.providerId}
           onCancel={() => setEditing(false)}
           onCommit={(model, providerId) => {
             dispatch({ type: "SET_CRITIC", critic: { providerId, model } });
@@ -97,17 +98,40 @@ export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: Judg
 export function JudgeCombobox({
   models,
   current,
+  initialProvider,
   onCancel,
   onCommit,
 }: {
   models: CatalogModel[];
   current: string;
+  /** The provider tab to open on — must match the current Judge's provider so
+   *  editing never silently opens on a different provider (spec §6.1). */
+  initialProvider: ProviderId;
   onCancel: () => void;
   onCommit: (slug: string, providerId: ProviderId) => void;
 }) {
-  const [selectedProvider, setSelectedProvider] = useState<ProviderId>("openrouter");
-  const [query, setQuery] = useState(current);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderId>(initialProvider);
+  const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Provider IDs are separate namespaces — switching clears the query and
+  // refocuses (spec §6.1). The input is a persistent element, so synchronous
+  // focus is safe and deterministic.
+  const handleProviderChange = (p: ProviderId) => {
+    setSelectedProvider(p);
+    setQuery("");
+    inputRef.current?.focus();
+  };
+
+  // Clear text first; close only when there is nothing left to clear (spec §6.2).
+  const handleClearOrCancel = () => {
+    if (query.length > 0) {
+      setQuery("");
+      inputRef.current?.focus();
+    } else {
+      onCancel();
+    }
+  };
 
   const providerModels = useMemo(() => {
     return models.filter((m) => m.providerId === selectedProvider);
@@ -134,7 +158,7 @@ export function JudgeCombobox({
     <div className="mt-2 rounded-md border border-edge-bright bg-card p-2">
       <ProviderTabs
         value={selectedProvider}
-        onChange={setSelectedProvider}
+        onChange={handleProviderChange}
         ariaLabel="Judge model providers"
       />
       <label htmlFor="judge-search" className="sr-only">
@@ -163,8 +187,8 @@ export function JudgeCombobox({
         />
         <button
           type="button"
-          onClick={onCancel}
-          aria-label="Cancel edit"
+          onClick={handleClearOrCancel}
+          aria-label={query.length > 0 ? "Clear judge model search" : "Cancel judge edit"}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text"
         >
           <X size={13} />
