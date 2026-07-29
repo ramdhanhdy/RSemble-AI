@@ -489,9 +489,23 @@ in depth on shared machines).
 | Generate | `generateContent` (non-stream) for judge/fusion |
 | Stream | `streamGenerateContent` (SSE or chunked) for fanout — map to text deltas |
 | Message map | `system` → `systemInstruction`; `user`/`assistant` → `contents[]` with roles `user` / `model` |
-| Model ids | e.g. `gemini-2.0-flash`, `gemini-2.5-pro` (verify against live ListModels) |
-| Catalog | Prefer ListModels; fallback curated list if unauthenticated list is limited |
+| Model ids | e.g. `gemini-3.6-flash`, `gemini-3.1-pro-preview` (verify against live ListModels) |
+| Catalog | Prefer ListModels — filtered to generation-capable `gemini*` records, deterministic recency order; single curated fallback constant for no-key/empty/failure paths |
 | Errors | Map Google error payload → `ProviderError` |
+
+**Catalog normalization (UI discovery).** A live ListModels record is selectable
+when its normalized ID (one `models/` prefix strip) starts with `gemini` AND
+`supportedGenerationMethods` is absent or includes `generateContent` — embedding-only
+records never enter candidate or Judge pickers. The picker order is deterministic
+recency, not upstream order: explicit `-latest` aliases first, then numeric Gemini
+generations descending (3.x before 2.x regardless of stability suffixes like
+`pro`/`flash`/`preview`), then unversioned/legacy IDs, with a case-insensitive ID
+tie-break. Exact provider-native IDs are preserved — ordering never rewrites an ID,
+and duplicates collapse to one entry. One exported fallback constant serves no-key,
+empty-response, and recoverable-failure paths; it starts with current Gemini 3
+models (e.g. `gemini-3.6-flash`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`)
+and is returned as a fresh copy per call. Abort semantics are unchanged — an aborted
+list request never silently resolves to the fallback.
 
 **CORS.** If browser calls to Google are blocked, options in order:
 
