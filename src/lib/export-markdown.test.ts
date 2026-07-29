@@ -24,6 +24,7 @@ const baseState: StudioState = {
   fusedText: null,
   insufficient: null,
   aborted: false,
+  runContext: null,
   qualityRating: 0,
   audit: [],
 };

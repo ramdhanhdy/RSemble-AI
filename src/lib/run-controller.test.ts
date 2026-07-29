@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type React from "react";
 import { createRunController, type RunControllerDeps } from "./run-controller";
 import { initialState, type Action, type StudioState } from "../studio-engine";
+import type { Candidate } from "../studio-data";
 import type { StreamDeltaBuffer } from "./stream-buffer";
-import { ProviderError } from "./providers/types";
+import { ProviderError, type ProviderId } from "./providers/types";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -11,14 +12,10 @@ import { ProviderError } from "./providers/types";
 
 const chatStreamMock = vi.fn();
 const chatCompletionMock = vi.fn();
+const getProviderMock = vi.fn();
 
 vi.mock("./providers/registry", () => ({
-  getProvider: () => ({
-    id: "openrouter",
-    label: "OpenRouter",
-    chatCompletionStream: chatStreamMock,
-    chatCompletion: chatCompletionMock,
-  }),
+  getProvider: (...args: unknown[]) => getProviderMock(...args),
 }));
 
 vi.mock("./run-history", () => ({
@@ -48,7 +45,7 @@ function makeDeps(state: StudioState) {
   const dispatch: React.Dispatch<Action> = (a) => {
     dispatched.push(a);
     // Minimal reducer emulation for the flags the controller checks.
-    if (a.type === "FANOUT_START") stateRef.current = { ...stateRef.current, running: true, candidates: a.candidates };
+    if (a.type === "FANOUT_START") stateRef.current = { ...stateRef.current, running: true, candidates: a.candidates, runContext: a.context };
     if (a.type === "CANDIDATE_RESULT") {
       stateRef.current = {
         ...stateRef.current,
@@ -67,8 +64,10 @@ function makeDeps(state: StudioState) {
     }
     if (a.type === "FANOUT_END") stateRef.current = { ...stateRef.current };
     if (a.type === "INSUFFICIENT_CANDIDATES") stateRef.current = { ...stateRef.current, running: false, insufficient: { done: a.done, failed: a.failed } };
-    if (a.type === "JUDGE_START") stateRef.current = { ...stateRef.current, judgeStatus: "running" };
-    if (a.type === "JUDGE_RESULT") stateRef.current = { ...stateRef.current, judgeStatus: "done", judgeReport: a.report };
+    // Mirrors the real reducer's standalone active-stage transition (spec §5.4):
+    // running + cleared stale terminal artifacts, runContext retained.
+    if (a.type === "JUDGE_START") stateRef.current = { ...stateRef.current, running: true, judgeStatus: "running", judgeError: null, judgeReport: null, consensus: null, insufficient: null, fusionStatus: "idle", fusionError: null, fusedText: null };
+    if (a.type === "JUDGE_RESULT") stateRef.current = { ...stateRef.current, running: a.mode === "fuse" ? stateRef.current.running : false, judgeStatus: "done", judgeReport: a.report };
     if (a.type === "JUDGE_FAILED") stateRef.current = { ...stateRef.current, running: false, judgeStatus: "error" };
     if (a.type === "FUSION_START") stateRef.current = { ...stateRef.current, fusionStatus: "running" };
     if (a.type === "FUSION_RESULT") stateRef.current = { ...stateRef.current, running: false, fusionStatus: "done", fusedText: a.text };
@@ -140,6 +139,13 @@ function judgeResponse(
 beforeEach(() => {
   chatStreamMock.mockReset();
   chatCompletionMock.mockReset();
+  getProviderMock.mockReset();
+  getProviderMock.mockImplementation(() => ({
+    id: "openrouter",
+    label: "OpenRouter",
+    chatCompletionStream: chatStreamMock,
+    chatCompletion: chatCompletionMock,
+  }));
 });
 
 afterEach(() => {
@@ -977,5 +983,276 @@ describe("run-controller — judge report threading", () => {
     const entry = addRunMock.mock.calls[0][0] as { models: string[]; winner: string };
     expect(entry.models).toEqual(["openrouter:model-a", "umans:model-b"]);
     expect(entry.winner).toBe("openrouter:model-a");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// retryJudge — Judge-only recovery over retained candidates (run-recovery spec §5)
+// ---------------------------------------------------------------------------
+
+function doneCandidate(id: string, providerId: ProviderId, slug: string, text: string): Candidate {
+  return {
+    id,
+    model: slug,
+    provider: providerId,
+    providerId,
+    slug,
+    accent: "A",
+    strategy: "Parallel model",
+    summary: `summary of ${slug}`,
+    scores: {},
+    weightedScore: 0,
+    segments: [{ id: `${id}-seg-1`, text }],
+    status: "done",
+    startedAt: 1_000,
+    finishedAt: 2_000,
+    tokensIn: 11,
+    tokensOut: 22,
+  };
+}
+
+/** Post-failure state: Judge errored after two candidates completed. The command
+ *  pane has since been EDITED (prompt/rubric) and the Judge model swapped, so
+ *  tests can prove the retry uses the frozen context + current critic. */
+function judgeRetryState(mode: "rank" | "fuse" = "rank"): StudioState {
+  return {
+    ...initialState,
+    mode,
+    running: false,
+    judgeStatus: "error",
+    judgeError: "judge exploded",
+    prompt: "EDITED_TASK_MARKER",
+    rubric: [
+      { id: "rx", kind: "goal", label: "EDITED_RUBRIC_MARKER", description: "edited", enabled: true, weight: 0.9 },
+    ],
+    critic: { providerId: "gemini", model: "gemini-3.1-pro-preview" },
+    judgeInstruction: "CURRENT_INSTRUCTION_MARKER",
+    runContext: {
+      prompt: "ORIGINAL_TASK_MARKER",
+      rubric: [
+        { id: "r1", kind: "goal", label: "RETAINED_RUBRIC_MARKER", description: "retained", enabled: true, weight: 0.5 },
+      ],
+    },
+    candidates: [
+      doneCandidate("cand-1", "openrouter", "model-a", "answer from model A"),
+      doneCandidate("cand-2", "umans", "model-b", "answer from model B"),
+    ],
+  };
+}
+
+/** Valid judge payload for retry tests — per-evaluation criterionScores must
+ *  exact-match the retained rubric's enabled criteria (r1), or the strict
+ *  parser rejects the response. */
+function retryJudgeResponse(scores: Array<readonly [string, number]>): string {
+  return JSON.stringify({
+    consensus: [],
+    contradictions: [],
+    uniqueInsights: [],
+    evaluations: scores.map(([label, score]) => ({
+      label,
+      score,
+      position: `Position ${label}`,
+      rationale: `Evidence ${label}`,
+      strengths: [`Strength ${label}`],
+      deductions: [],
+      missedRequirements: [],
+      criterionScores: [{ criterionId: "r1", score, rationale: `Rubric evidence ${label}` }],
+    })),
+    comparisons: [],
+  });
+}
+
+describe("run-controller — retryJudge (Judge-only recovery)", () => {
+  it("makes exactly one Judge completion call and zero candidate stream calls", async () => {
+    const state = judgeRetryState();
+    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(chatCompletionMock).toHaveBeenCalledTimes(1);
+    expect(chatStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("judges against the retained run context and current instruction, not edited command values", async () => {
+    const state = judgeRetryState();
+    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    const judgeText = JSON.stringify(chatCompletionMock.mock.calls[0][0].messages);
+    expect(judgeText).toContain("ORIGINAL_TASK_MARKER");
+    expect(judgeText).toContain("RETAINED_RUBRIC_MARKER");
+    expect(judgeText).toContain("CURRENT_INSTRUCTION_MARKER");
+    expect(judgeText).not.toContain("EDITED_TASK_MARKER");
+    expect(judgeText).not.toContain("EDITED_RUBRIC_MARKER");
+  });
+
+  it("uses the current critic provider/model for the new Judge attempt", async () => {
+    const state = judgeRetryState();
+    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(getProviderMock).toHaveBeenCalledWith("gemini");
+    expect(chatCompletionMock.mock.calls[0][0].model).toBe("gemini-3.1-pro-preview");
+  });
+
+  it("leaves candidate text and metadata byte-for-byte unchanged", async () => {
+    const state = judgeRetryState();
+    const before = structuredClone(state.candidates);
+    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    const mutatingTypes = new Set([
+      "FANOUT_START", "CANDIDATE_RESULT", "CANDIDATE_FAILED", "CANDIDATE_DELTA",
+      "RETRY_CANDIDATE_START", "RETRY_CANDIDATE_RESULT", "RETRY_CANDIDATE_FAILED", "RETRY_CANDIDATE_DELTA",
+    ]);
+    expect(dispatched.some((a) => mutatingTypes.has(a.type))).toBe(false);
+    expect(stateRef.current.candidates).toEqual(before);
+  });
+
+  it("dispatches JUDGE_START then JUDGE_RESULT on a valid Rank retry", async () => {
+    const state = judgeRetryState("rank");
+    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(dispatched.map((a) => a.type)).toEqual(["JUDGE_START", "JUDGE_RESULT"]);
+  });
+
+  it("writes exactly one run-history entry on success — not zero, not two", async () => {
+    const state = judgeRetryState("rank");
+    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    const { addRun } = await import("./run-history");
+    expect(addRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("on invalid Judge output: JUDGE_FAILED, candidates preserved, retry stays available", async () => {
+    const state = judgeRetryState();
+    const before = structuredClone(state.candidates);
+    chatCompletionMock.mockResolvedValueOnce("not valid judge output");
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.retryJudge();
+
+    expect(dispatched.map((a) => a.type)).toEqual(["JUDGE_START", "JUDGE_FAILED"]);
+    expect(stateRef.current.candidates).toEqual(before);
+
+    // A second attempt with a valid response succeeds against the same candidates.
+    chatCompletionMock.mockResolvedValueOnce(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    await controller.retryJudge();
+    expect(dispatched.map((a) => a.type)).toEqual(["JUDGE_START", "JUDGE_FAILED", "JUDGE_START", "JUDGE_RESULT"]);
+    expect(chatCompletionMock).toHaveBeenCalledTimes(2);
+    expect(stateRef.current.candidates).toEqual(before);
+  });
+
+  it("fuse mode continues to Fusion with the new scores after a valid retry", async () => {
+    const state = judgeRetryState("fuse");
+    chatCompletionMock
+      .mockResolvedValueOnce(retryJudgeResponse([["A", 4.5], ["B", 3.0]]))
+      .mockResolvedValueOnce("fused answer");
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(dispatched.map((a) => a.type)).toEqual(["JUDGE_START", "JUDGE_RESULT", "FUSION_START", "FUSION_RESULT"]);
+    expect(chatCompletionMock).toHaveBeenCalledTimes(2);
+    const fusionText = JSON.stringify(chatCompletionMock.mock.calls[1][0].messages);
+    expect(fusionText).toContain("answer from model A");
+    expect(fusionText).toContain("answer from model B");
+    expect(fusionText).toContain("CURRENT_INSTRUCTION_MARKER");
+
+    // The single history entry (written after fusion) carries the new judge scores.
+    const { addRun } = await import("./run-history");
+    const addRunMock = addRun as unknown as ReturnType<typeof vi.fn>;
+    expect(addRunMock).toHaveBeenCalledTimes(1);
+    const entry = addRunMock.mock.calls[0][0] as { stats: Record<string, { score: number }> };
+    expect(entry.stats["openrouter:model-a"].score).toBe(4.5);
+    expect(entry.stats["umans:model-b"].score).toBe(3.0);
+  });
+
+  it("dispatches INSUFFICIENT_CANDIDATES and makes no Judge call with fewer than two usable candidates", async () => {
+    const state = judgeRetryState();
+    state.candidates = [
+      doneCandidate("cand-1", "openrouter", "model-a", "answer from model A"),
+      { ...doneCandidate("cand-2", "umans", "model-b", ""), status: "error", errorMessage: "boom", segments: [] },
+    ];
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(dispatched.map((a) => a.type)).toEqual(["INSUFFICIENT_CANDIDATES"]);
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+  });
+
+  it("missing run context makes no Judge call and fails truthfully (full rerun required)", async () => {
+    const state = judgeRetryState();
+    state.runContext = null;
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    const failure = dispatched.find((a) => a.type === "JUDGE_FAILED");
+    expect(failure).toBeDefined();
+    if (failure?.type === "JUDGE_FAILED") {
+      expect(failure.error).toMatch(/run context|re-run/i);
+    }
+  });
+
+  it("abort during Judge retry prevents late JUDGE_RESULT and FUSION_START", async () => {
+    const state = judgeRetryState("fuse");
+    chatCompletionMock.mockImplementation(
+      (opts: { signal?: AbortSignal }) =>
+        new Promise<string>((_, reject) => {
+          opts.signal?.addEventListener("abort", () =>
+            reject(new DOMException("The operation was aborted.", "AbortError")),
+          );
+        }),
+    );
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    const retryPromise = controller.retryJudge();
+    await new Promise((r) => setTimeout(r, 10));
+    controller.abortRun();
+    await retryPromise;
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_START");
+    expect(types).toContain("ABORT_RUN");
+    expect(types).not.toContain("JUDGE_RESULT");
+    expect(types).not.toContain("FUSION_START");
+  });
+
+  it("is a no-op while another stage is running", async () => {
+    const state = judgeRetryState();
+    state.running = true;
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(dispatched).toHaveLength(0);
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(chatStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when the run was explicitly aborted", async () => {
+    const state = judgeRetryState();
+    state.aborted = true;
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(dispatched).toHaveLength(0);
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when the Judge has not failed", async () => {
+    const state = judgeRetryState();
+    state.judgeStatus = "done";
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(dispatched).toHaveLength(0);
+    expect(chatCompletionMock).not.toHaveBeenCalled();
   });
 });

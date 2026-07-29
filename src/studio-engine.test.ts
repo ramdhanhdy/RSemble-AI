@@ -429,6 +429,7 @@ describe("reducer — stale reports are cleared correctly", () => {
     const next = reducer(state, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
+      context: { prompt: state.prompt, rubric: state.rubric },
     });
     expect(next.judgeReport).toBeNull();
   });
@@ -507,9 +508,132 @@ describe("reducer — FANOUT_START clears fusion state (regression)", () => {
     const next = reducer(state, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
+      context: { prompt: state.prompt, rubric: state.rubric },
     });
     expect(next.fusionStatus).toBe("idle");
     expect(next.fusedText).toBeNull();
     expect(next.fusionError).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Run evaluation context + Judge-only retry stage state (run-recovery spec §5)
+// ---------------------------------------------------------------------------
+
+describe("reducer — retained run evaluation context", () => {
+  // initialState.rubric is an empty seed — context tests need a real rubric.
+  const testRubric = (): StudioState["rubric"] => [
+    { id: "r1", kind: "goal", label: "Correctness", description: "Is it right?", enabled: true, weight: 0.5 },
+    { id: "r2", kind: "metric", label: "Clarity", description: "Is it clear?", enabled: true, weight: 0.3 },
+  ];
+
+  it("FANOUT_START stores a deep-copied current-run evaluation context", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const rubric = testRubric();
+    const next = reducer(initialState, {
+      type: "FANOUT_START",
+      candidates: [{ ...c1, status: "pending" }],
+      context: { prompt: "original task", rubric },
+    });
+    expect(next.runContext).not.toBeNull();
+    expect(next.runContext?.prompt).toBe("original task");
+    expect(next.runContext?.rubric).toEqual(rubric);
+    // Deep copy: the stored rubric must not alias the payload's array or items.
+    expect(next.runContext?.rubric).not.toBe(rubric);
+    for (let i = 0; i < rubric.length; i++) {
+      expect(next.runContext?.rubric[i]).not.toBe(rubric[i]);
+    }
+  });
+
+  it("mutating the command rubric after fanout does not mutate the stored run rubric", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const rubric = testRubric();
+    const started = reducer({ ...initialState, rubric }, {
+      type: "FANOUT_START",
+      candidates: [{ ...c1, status: "pending" }],
+      context: { prompt: "original task", rubric },
+    });
+    const edited = reducer(started, { type: "SET_RUBRIC_WEIGHT", id: "r1", weight: 0.99 });
+    expect(edited.rubric[0].weight).toBe(0.99);
+    const stored = edited.runContext?.rubric.find((r) => r.id === "r1");
+    expect(stored?.weight).toBe(0.5);
+  });
+
+  it("RESET_SESSION clears the retained run context", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const started = reducer(initialState, {
+      type: "FANOUT_START",
+      candidates: [{ ...c1, status: "pending" }],
+      context: { prompt: "original task", rubric: initialState.rubric },
+    });
+    expect(started.runContext).not.toBeNull();
+    const reset = reducer(started, { type: "RESET_SESSION" });
+    expect(reset.runContext).toBeNull();
+  });
+
+  it("a new fanout replaces the previous context", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const first = reducer(initialState, {
+      type: "FANOUT_START",
+      candidates: [{ ...c1, status: "pending" }],
+      context: { prompt: "task one", rubric: initialState.rubric },
+    });
+    const second = reducer(first, {
+      type: "FANOUT_START",
+      candidates: [{ ...c1, status: "pending" }],
+      context: { prompt: "task two", rubric: initialState.rubric },
+    });
+    expect(second.runContext?.prompt).toBe("task two");
+  });
+});
+
+describe("reducer — JUDGE_START as a standalone active-stage transition", () => {
+  const judgeErrorState = (mode: "rank" | "fuse" = "rank"): StudioState => ({
+    ...initialState,
+    mode,
+    running: false,
+    candidates: [
+      { ...makeCandidate("c1", "openrouter", "model-a"), status: "done" },
+      { ...makeCandidate("c2", "umans", "model-b"), status: "done" },
+    ],
+    judgeStatus: "error",
+    judgeError: "judge exploded",
+    judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
+    consensus: { consensus: ["shared"], contradictions: [], uniqueInsights: [] },
+    insufficient: { done: 2, failed: 1 },
+    runContext: { prompt: "original task", rubric: initialState.rubric },
+  });
+
+  it("sets running: true when the previous state is a Judge error", () => {
+    const next = reducer(judgeErrorState(), { type: "JUDGE_START" });
+    expect(next.running).toBe(true);
+    expect(next.judgeStatus).toBe("running");
+  });
+
+  it("clears judgeError, stale report, consensus, and insufficient state", () => {
+    const next = reducer(judgeErrorState(), { type: "JUDGE_START" });
+    expect(next.judgeError).toBeNull();
+    expect(next.judgeReport).toBeNull();
+    expect(next.consensus).toBeNull();
+    expect(next.insufficient).toBeNull();
+  });
+
+  it("in Fuse mode, retry start clears stale Fusion error and result", () => {
+    const state: StudioState = {
+      ...judgeErrorState("fuse"),
+      fusionStatus: "error",
+      fusionError: "fusion exploded",
+      fusedText: "stale fused text",
+    };
+    const next = reducer(state, { type: "JUDGE_START" });
+    expect(next.fusionStatus).toBe("idle");
+    expect(next.fusionError).toBeNull();
+    expect(next.fusedText).toBeNull();
+  });
+
+  it("retains the run context for the new Judge attempt", () => {
+    const state = judgeErrorState();
+    const next = reducer(state, { type: "JUDGE_START" });
+    expect(next.runContext).toBe(state.runContext);
   });
 });

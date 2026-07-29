@@ -32,6 +32,18 @@ import { EXAMPLE_TASKS, nextExampleIndex } from "./lib/test-cases";
 
 export type StageStatus = "idle" | "running" | "done" | "error";
 
+/** Frozen evaluation inputs captured at fanout start (run-recovery spec §5.2).
+ *  A Judge-only retry re-judges the retained candidate outputs against THESE
+ *  prompt/rubric values — not whatever the command pane currently shows — while
+ *  the Judge provider/model, judge instruction, and mode stay live. Deep-copied
+ *  by the reducer so later command edits cannot mutate the snapshot. Current-
+ *  session only: cleared on reset, replaced on every new fanout. Never carries
+ *  provider secrets or candidate outputs. */
+export interface RunEvaluationContext {
+  prompt: string;
+  rubric: RubricCriterion[];
+}
+
 export interface StudioState {
   // --- the sole switch ---
   mode: Mode;
@@ -69,6 +81,10 @@ export interface StudioState {
    *  `{done, failed}` describes how the fanout ended. Null when not applicable. */
   insufficient: { done: number; failed: number } | null;
   aborted: boolean;
+  /** Frozen prompt/rubric snapshot for the current run, captured at FANOUT_START.
+   *  Enables Judge-only retry against the exact generation context the retained
+   *  candidates answered. Null before the first run and after RESET_SESSION. */
+  runContext: RunEvaluationContext | null;
   // --- background learning loop (RANK-mode only, optional surface) ---
   qualityRating: number;
   audit: AuditEntry[];
@@ -94,7 +110,7 @@ export type Action =
   | { type: "SET_CRITIC_MODEL"; value: string }
   | { type: "SET_JUDGE_INSTRUCTION"; value: string }
   // --- pipeline ---
-  | { type: "FANOUT_START"; candidates: Candidate[] }
+  | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext }
   | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
   | { type: "CANDIDATE_DELTA"; id: string; delta: string }
   | { type: "CANDIDATE_FAILED"; id: string; error: string; finishedAt: number }
@@ -256,6 +272,13 @@ export function reducer(state: StudioState, action: Action): StudioState {
         fusionError: null,
         insufficient: null,
         aborted: false,
+        // Snapshot the generation context for Judge-only recovery. Deep-copied
+        // here (defense in depth) so neither the caller's payload nor later
+        // command-pane edits can mutate what a Judge retry evaluates against.
+        runContext: {
+          prompt: action.context.prompt,
+          rubric: action.context.rubric.map((c) => ({ ...c })),
+        },
         audit: logAudit(state.audit, `Fanout started across ${action.candidates.length} candidate(s).`),
       };
 
@@ -317,7 +340,24 @@ export function reducer(state: StudioState, action: Action): StudioState {
       };
 
     case "JUDGE_START":
-      return { ...state, judgeStatus: "running", judgeError: null };
+      // Active-stage transition for BOTH the normal fanout → judge handoff and a
+      // standalone Judge-only retry (run-recovery spec §5.4). Sets running so the
+      // UI shows the pipeline as active, and clears every stale terminal artifact
+      // — a retry must not render the previous error, report, consensus, or
+      // insufficient/fusion residue while the new attempt is in flight. The run
+      // context is retained: it is the retry's frozen evaluation input.
+      return {
+        ...state,
+        running: true,
+        judgeStatus: "running",
+        judgeError: null,
+        judgeReport: null,
+        consensus: null,
+        insufficient: null,
+        fusionStatus: "idle",
+        fusionError: null,
+        fusedText: null,
+      };
 
     case "JUDGE_RESULT":
       // Terminal for RANK mode (the run ends after judging). In FUSE mode the
@@ -484,6 +524,7 @@ export const initialState: StudioState = {
   judgeReport: null,
   insufficient: null,
   aborted: false,
+  runContext: null,
   qualityRating: 0,
   fusionStatus: "idle",
   fusionError: null,

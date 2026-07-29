@@ -60,7 +60,14 @@ export function createRunController(deps: RunControllerDeps) {
       status: "pending",
       startedAt: Date.now(),
     }));
-    dispatch({ type: "FANOUT_START", candidates: placeholders });
+    // Capture the frozen evaluation context for Judge-only recovery (spec §5.2):
+    // the prompt/rubric the candidates are ABOUT to answer. The reducer deep-copies
+    // the payload, so later command-pane edits cannot mutate the snapshot.
+    dispatch({
+      type: "FANOUT_START",
+      candidates: placeholders,
+      context: { prompt: s.prompt, rubric: s.rubric.map((c) => ({ ...c })) },
+    });
 
     const results = await Promise.all(
       jobs.map(async (job): Promise<Candidate | null> => {
@@ -370,6 +377,51 @@ export function createRunController(deps: RunControllerDeps) {
     }
   };
 
+  /**
+   * Judge-only recovery (run-recovery spec §5): re-judge the retained, already-
+   * generated candidates after a Judge failure — without re-running the fanout.
+   * The evaluation context (prompt/rubric) comes from the frozen run snapshot;
+   * the Judge provider/model, judge instruction, and mode come from CURRENT
+   * state so the user can fix whatever made the Judge fail before retrying.
+   */
+  const retryJudge = async (): Promise<void> => {
+    const s = stateRef.current;
+    // Availability mirrors spec §5.1: terminal Judge error, no stage active, run
+    // not aborted, context retained. The UI gates the button on the same rules.
+    if (s.running || s.aborted || s.judgeStatus !== "error") return;
+
+    const done = s.candidates.filter(isUsableCandidate);
+    if (done.length < 2) {
+      dispatch({
+        type: "INSUFFICIENT_CANDIDATES",
+        done: done.length,
+        failed: s.candidates.length - done.length,
+      });
+      return;
+    }
+
+    const ctx = s.runContext;
+    if (!ctx) {
+      // Never judge retained answers against edited command inputs — that would
+      // silently score old candidates under new generation context.
+      dispatch({
+        type: "JUDGE_FAILED",
+        error:
+          "Cannot retry the Judge: the original run context is no longer available. Re-run the full pipeline from the command pane.",
+      });
+      return;
+    }
+
+    const epoch = ++runEpochRef.current;
+    abortControllersRef.current.clear();
+    // Frozen prompt/rubric; live critic, judgeInstruction, and mode.
+    const seed: StudioState = { ...s, prompt: ctx.prompt, rubric: ctx.rubric };
+    const judgeResult = await runJudge(done, seed, epoch);
+    if (judgeResult.ok && seed.mode === "fuse") {
+      await runFusion(done, seed, epoch, judgeResult.scoresById);
+    }
+  };
+
   const triggerFusion = (force = false) => {
     const s = stateRef.current;
     if (s.running) return;
@@ -401,6 +453,7 @@ export function createRunController(deps: RunControllerDeps) {
     runFusion,
     abortRun,
     retryCandidate,
+    retryJudge,
     triggerFusion,
   };
 }
