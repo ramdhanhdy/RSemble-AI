@@ -10,7 +10,7 @@
 
 import { Crown, GitMerge, Columns2 } from "lucide-react";
 import type { StudioState } from "../studio-engine";
-import type { Candidate, ConsensusBreakdown } from "../studio-data";
+import type { Candidate, ConsensusBreakdown, JudgeReport, CandidateEvaluation, JudgeComparison } from "../studio-data";
 import { isUsableCandidate } from "../lib/pipeline";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
@@ -39,6 +39,7 @@ export function RankResult({
   const winner = ranked[0];
   const runnerUp = ranked[1];
   const breakdown = state.consensus;
+  const report = state.judgeReport;
   // The Fuse button is shown only when ≥2 candidates have genuine content
   // (matches the run-controller eligibility guard). An empty-content "done"
   // candidate does not count — clicking would be a silent no-op.
@@ -58,7 +59,7 @@ export function RankResult({
     <div className="flex flex-1 flex-col gap-4">
       {/* 4.1 Recommendation callout */}
       {winner ? (
-        <Recommendation winner={winner} ranked={ranked} consensus={breakdown} />
+        <Recommendation winner={winner} ranked={ranked} consensus={breakdown} report={report} />
       ) : (
         <NoRankedState />
       )}
@@ -103,6 +104,17 @@ export function RankResult({
         <CriterionMatrix ranked={ranked} criteria={criteria} />
       )}
 
+      {/* 4.2b Blind evaluation key — revealed only after judging completes. */}
+      {report && <BlindKey report={report} ranked={ranked} />}
+
+      {/* 4.2c Score explanations — one per ranked candidate. */}
+      {report && <ScoreExplanations report={report} ranked={ranked} />}
+
+      {/* 4.2d Same-conclusion comparisons — only when the judge reported any. */}
+      {report && report.comparisons.length > 0 && (
+        <ComparisonsSection comparisons={report.comparisons} ranked={ranked} />
+      )}
+
       {/* 4.3 Judge breakdown */}
       {breakdown && <Breakdown breakdown={breakdown} />}
 
@@ -130,12 +142,17 @@ function Recommendation({
   winner,
   ranked,
   consensus,
+  report,
 }: {
   winner: Candidate;
   ranked: Candidate[];
   consensus: ConsensusBreakdown | null;
+  report: JudgeReport | null;
 }) {
-  const whyLine = buildWhyItWon(winner, ranked, consensus);
+  // Prefer the judge's actual winner rationale (decision evidence) over the
+  // fabricated heuristic line — a real explanation beats a generic one.
+  const judgeWhy = report?.evaluationsById[winner.id]?.rationale;
+  const whyLine = judgeWhy ?? buildWhyItWon(winner, ranked, consensus);
   return (
     <div className="rounded-lg border border-success/50 bg-success/[0.10] px-4 py-3">
       <div className="flex items-center gap-2">
@@ -431,6 +448,239 @@ function BreakdownCard({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ---- 4.2b–4.2d Blind evaluation surfaces ------------------------------------
+
+/** Resolve the model display name for a judge report entry by candidate id. */
+function modelFor(candidateId: string, ranked: Candidate[]): string {
+  const c = ranked.find((x) => x.id === candidateId);
+  return c ? c.model : candidateId;
+}
+
+/** Provider display name for disambiguating duplicate model names. */
+function providerFor(candidateId: string, ranked: Candidate[]): string | null {
+  const c = ranked.find((x) => x.id === candidateId);
+  return c ? c.provider : null;
+}
+
+/** True when two or more ranked candidates share the same model display name. */
+function hasDuplicateModelNames(ranked: Candidate[]): boolean {
+  const names = new Set<string>();
+  for (const c of ranked) {
+    if (names.has(c.model)) return true;
+    names.add(c.model);
+  }
+  return false;
+}
+
+/**
+ * The blind evaluation key — the post-judgment reveal of which model wore which
+ * label (DECISIONS.md #6). Shown ONLY after judging, in label order (not rank).
+ * Labels describe judge-time identity and are never reassigned by score sorting.
+ */
+function BlindKey({ report, ranked }: { report: JudgeReport; ranked: Candidate[] }) {
+  const dup = hasDuplicateModelNames(ranked);
+  return (
+    <div>
+      <div className="mb-2 font-mono text-xs uppercase tracking-wider text-text-muted">
+        Blind evaluation key
+      </div>
+      <p className="mb-2 text-xs text-text-muted">
+        Judged anonymously; identities revealed after scoring.
+      </p>
+      <div className="overflow-hidden rounded-lg border border-edge divide-y divide-edge">
+        {report.labelMap.map((entry) => {
+          const model = modelFor(entry.candidateId, ranked);
+          const provider = providerFor(entry.candidateId, ranked);
+          const showProvider = dup && provider;
+          return (
+            <div key={entry.candidateId} className="flex items-baseline gap-2 px-3 py-2">
+              <span className="w-20 shrink-0 font-mono text-xs text-text-secondary">
+                Candidate {entry.label}
+              </span>
+              <span className="truncate font-mono text-sm text-text">
+                {model}
+                {showProvider && (
+                  <span className="text-text-muted"> · {provider}</span>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** One explanation entry per ranked candidate — winner open by default. */
+function ScoreExplanations({ report, ranked }: { report: JudgeReport; ranked: Candidate[] }) {
+  if (ranked.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-2 font-mono text-xs uppercase tracking-wider text-text-muted">
+        Score explanations
+      </div>
+      <div className="flex flex-col gap-2">
+        {ranked.map((c, i) => {
+          const evaluation = report.evaluationsById[c.id];
+          if (!evaluation) return null;
+          return (
+            <ExplanationCard
+              key={c.id}
+              candidate={c}
+              evaluation={evaluation}
+              defaultOpen={i === 0}
+              showProvider={hasDuplicateModelNames(ranked)}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A single candidate's judge explanation. Header shows model + judge-time blind
+ * label, overall score, position, and the always-visible one-line rationale.
+ * Strengths, deductions, missed requirements, and criterion rationales live in
+ * a native <details> disclosure — keyboard accessible, no forced-open mobile.
+ */
+function ExplanationCard({
+  candidate,
+  evaluation,
+  defaultOpen,
+  showProvider,
+}: {
+  candidate: Candidate;
+  evaluation: CandidateEvaluation;
+  defaultOpen: boolean;
+  showProvider: boolean;
+}) {
+  const t = tier(evaluation.overallScore);
+  return (
+    <div className="rounded-lg border border-edge p-3">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="font-mono text-sm text-text">
+          {candidate.model}
+          {showProvider && (
+            <span className="text-text-muted"> · {candidate.provider}</span>
+          )}
+        </span>
+        <span className="font-mono text-xs text-text-muted">
+          (Candidate {evaluation.blindLabel})
+        </span>
+        <span className={`ml-auto font-mono text-sm ${t.text}`}>
+          {evaluation.overallScore.toFixed(1)}/5
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-text-muted">{evaluation.position}</p>
+      <p className="mt-1 text-sm leading-relaxed text-text">
+        <span className="text-text-secondary">Why: </span>
+        {evaluation.rationale}
+      </p>
+      <details className="mt-2" open={defaultOpen}>
+        <summary className="cursor-pointer font-mono text-xs uppercase tracking-wider text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+          Details
+        </summary>
+        <div className="mt-2 flex flex-col gap-3 border-t border-edge pt-3 text-sm">
+          <DisclosureList title="Strengths" items={evaluation.strengths} />
+          {evaluation.deductions.length > 0 && (
+            <div>
+              <div className="mb-1 font-mono text-xs uppercase tracking-wider text-text-muted">
+                Deductions
+              </div>
+              <ul className="space-y-1">
+                {evaluation.deductions.map((d, i) => (
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-text">
+                    <span
+                      className={`mt-0.5 shrink-0 font-mono text-[11px] uppercase ${
+                        d.severity === "major" ? "text-warning" : "text-text-secondary"
+                      }`}
+                    >
+                      {d.severity === "major" ? "Major" : "Minor"}
+                    </span>
+                    <span>{d.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {evaluation.missedRequirements.length > 0 && (
+            <DisclosureList title="Missed requirements" items={evaluation.missedRequirements} />
+          )}
+          {evaluation.criterionScores.length > 0 && (
+            <div>
+              <div className="mb-1 font-mono text-xs uppercase tracking-wider text-text-muted">
+                Criterion scores
+              </div>
+              <ul className="space-y-1">
+                {evaluation.criterionScores.map((cs) => (
+                  <li key={cs.criterionId} className="text-sm leading-relaxed text-text">
+                    <span className={`font-mono ${tier(cs.score).text}`}>
+                      {cs.label}: {cs.score.toFixed(1)}/5
+                    </span>
+                    <span className="text-text-secondary"> — {cs.rationale}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/** A titled bullet list, rendered only when non-empty. */
+function DisclosureList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-1 font-mono text-xs uppercase tracking-wider text-text-muted">
+        {title}
+      </div>
+      <ul className="space-y-1">
+        {items.map((item, i) => (
+          <li key={i} className="flex gap-2 text-sm leading-relaxed text-text">
+            <span className="mt-2 size-1 shrink-0 rounded-full bg-text-muted" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Same-conclusion comparisons — why similarly positioned answers scored apart. */
+function ComparisonsSection({
+  comparisons,
+  ranked,
+}: {
+  comparisons: JudgeComparison[];
+  ranked: Candidate[];
+}) {
+  return (
+    <div>
+      <div className="mb-2 font-mono text-xs uppercase tracking-wider text-text-muted">
+        Same-conclusion comparisons
+      </div>
+      <div className="space-y-2">
+        {comparisons.map((cmp, i) => {
+          const a = modelFor(cmp.candidateIds[0], ranked);
+          const b = modelFor(cmp.candidateIds[1], ranked);
+          return (
+            <div key={i} className="rounded-lg border border-edge p-3 text-sm leading-relaxed text-text">
+              <span className="font-mono text-text-secondary">
+                Candidate {cmp.blindLabels[0]} ({a}) vs Candidate {cmp.blindLabels[1]} ({b}):
+              </span>{" "}
+              {cmp.reason}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
