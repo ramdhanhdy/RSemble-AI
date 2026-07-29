@@ -252,6 +252,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         judgeError: null,
         judgeReport: null,
         fusedText: null,
+        fusionStatus: "idle",
         fusionError: null,
         insufficient: null,
         aborted: false,
@@ -354,6 +355,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         judgeReport: null,
         audit: logAudit(state.audit, `AI judge failed: ${action.error}`),
       };
+
     case "FUSION_START":
       return { ...state, fusionStatus: "running", fusionError: null };
 

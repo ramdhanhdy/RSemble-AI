@@ -491,3 +491,25 @@ describe("reducer — initial state has a null judgeReport", () => {
     expect(initialState.judgeReport).toBeNull();
   });
 });
+
+describe("reducer — FANOUT_START clears fusion state (regression)", () => {
+  it("a new run resets fusionStatus/fusedText so a stale 'done' fusion cannot suppress the next run", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const state: StudioState = {
+      ...initialState,
+      mode: "fuse",
+      running: false,
+      candidates: [c1],
+      fusionStatus: "done",
+      fusedText: "stale fused text",
+      fusionError: "stale error",
+    };
+    const next = reducer(state, {
+      type: "FANOUT_START",
+      candidates: [{ ...c1, status: "pending" }],
+    });
+    expect(next.fusionStatus).toBe("idle");
+    expect(next.fusedText).toBeNull();
+    expect(next.fusionError).toBeNull();
+  });
+});
