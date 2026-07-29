@@ -71,6 +71,16 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     placeholder: "sk-...",
     keyHint: "VITE_UMANS_KEY",
   },
+  {
+    id: "9router",
+    label: "9Router",
+    subtitle: "via 127.0.0.1:8787 → 9Router",
+    description:
+      "Local/remote routing gateway with 9Router-managed models and fallback. The API key is optional — leave blank when 9Router auth is disabled.",
+    placeholder: "sk-... (optional)",
+    keyHint: "VITE_9ROUTER_KEY",
+    bridgeHint: "1. Start 9Router separately\n2. Configure providers in its dashboard\n3. Bridge forwards to RSEMBLE_9ROUTER_URL",
+  },
 ];
 
 const TEST_CONNECTION_TIMEOUT_MS = 12_000;

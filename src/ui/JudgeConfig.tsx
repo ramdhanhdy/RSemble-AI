@@ -142,7 +142,7 @@ function JudgeCombobox({
   return (
     <div className="mt-2 rounded-md border border-edge-bright bg-card p-2">
       <div className="mb-2 flex items-center gap-1 rounded-sm bg-panel p-1 font-mono text-xs">
-        {(["openrouter", "chatgpt-codex", "gemini", "commandcode", "clinepass", "umans"] as const).map((p) => {
+        {(["openrouter", "chatgpt-codex", "gemini", "commandcode", "clinepass", "umans", "9router"] as const).map((p) => {
           const active = selectedProvider === p;
           return (
             <button
