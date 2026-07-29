@@ -27,9 +27,9 @@ Task → Rubric → Compare (N models in parallel) → Judge
 
 1. **Command**: User describes task + optional rubric criteria.
 2. **Fanout**: N enabled candidate slots stream responses in parallel.
-3. **Judge**: Single judge model scores candidates against the rubric and breaks down consensus and contradictions.
+3. **Judge**: Single judge model scores candidates against the rubric and breaks down consensus and contradictions. Judging is **blind**: candidates reach the judge only as `Candidate A/B/C…` in randomized order — never with RSemble-supplied model/provider identity — and every accepted score carries a structured explanation (position, rationale, strengths, deductions, missed requirements, criterion scores). A score without an explanation is rejected as a visible judge failure, never an opaque ranking.
 4. **Finish**:
-   - **Rank**: Leaderboard with recommendation callout, tier scores, and candidate prose.
+   - **Rank**: Leaderboard with recommendation callout, tier scores, and candidate prose. After judging completes, the blind-label mapping is revealed (Candidate A → model) and each ranked entry shows its judge explanation; materially similar positions with score gaps get a comparative explanation. The recommendation line quotes the judge's actual winner rationale.
    - **Fuse**: Single merged document synthesized from candidate strengths.
 
 ---
@@ -47,7 +47,7 @@ Task → Rubric → Compare (N models in parallel) → Judge
   - Umans (`umans`)
   - 9Router (`9router`) — a local/remote routing gateway with 9Router-managed models and fallback; one requested model ID produces one candidate, regardless of internal fallback
 - **Localhost Node Codex bridge**: Lightweight 127.0.0.1 process that also serves as an allowlisted proxy for compatible providers (e.g. 9Router). The bridge forwards only approved method/path pairs to server-configured upstreams; it is not a general-purpose proxy.
-- **Rubric-driven judging**: Configurable judge model evaluates candidates and outputs consensus/contradictions.
+- **Rubric-driven blind judging**: Configurable judge model evaluates anonymized candidates and outputs consensus/contradictions plus a per-candidate score explanation. The judge receives no RSemble-supplied model/provider metadata; the label mapping is resolved only after judging and is auditable in the UI and Markdown export.
 - **Rank & Fuse finishes**: The single mode toggle in the header switches between Rank and Fuse.
 
 ### OUT Scope (§5 Scope Fence)
