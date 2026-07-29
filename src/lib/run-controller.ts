@@ -172,8 +172,8 @@ export function createRunController(deps: RunControllerDeps) {
         signal: judgeCtrl.signal,
       });
       if (runEpochRef.current !== epoch) return { ok: false };
-      const { breakdown, scoresById } = parseJudge(content, blindSet, seed.rubric, done);
-      dispatch({ type: "JUDGE_RESULT", mode: seed.mode, consensus: breakdown, scoresById });
+      const { breakdown, scoresById, report } = parseJudge(content, blindSet, seed.rubric, done);
+      dispatch({ type: "JUDGE_RESULT", mode: seed.mode, consensus: breakdown, scoresById, report });
       if (seed.mode === "rank") {
         const scored = done.map((c) => ({
           c,

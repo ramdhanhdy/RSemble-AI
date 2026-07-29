@@ -18,6 +18,7 @@ const baseState: StudioState = {
   judgeStatus: "idle",
   judgeError: null,
   consensus: null,
+  judgeReport: null,
   fusionStatus: "idle",
   fusionError: null,
   fusedText: null,

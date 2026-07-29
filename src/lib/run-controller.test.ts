@@ -68,7 +68,7 @@ function makeDeps(state: StudioState) {
     if (a.type === "FANOUT_END") stateRef.current = { ...stateRef.current };
     if (a.type === "INSUFFICIENT_CANDIDATES") stateRef.current = { ...stateRef.current, running: false, insufficient: { done: a.done, failed: a.failed } };
     if (a.type === "JUDGE_START") stateRef.current = { ...stateRef.current, judgeStatus: "running" };
-    if (a.type === "JUDGE_RESULT") stateRef.current = { ...stateRef.current, judgeStatus: "done" };
+    if (a.type === "JUDGE_RESULT") stateRef.current = { ...stateRef.current, judgeStatus: "done", judgeReport: a.report };
     if (a.type === "JUDGE_FAILED") stateRef.current = { ...stateRef.current, running: false, judgeStatus: "error" };
     if (a.type === "FUSION_START") stateRef.current = { ...stateRef.current, fusionStatus: "running" };
     if (a.type === "FUSION_RESULT") stateRef.current = { ...stateRef.current, running: false, fusionStatus: "done", fusedText: a.text };
@@ -905,5 +905,77 @@ describe("run-controller — 9Router integration", () => {
 
     const judgeResult = dispatched.find((a) => a.type === "JUDGE_RESULT");
     expect(judgeResult).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Judge report threading — the resolved report reaches state keyed by
+// candidate IDs, the weighted leaderboard score equals the judge overall,
+// abort/stale epochs never publish a report, and run history is unchanged.
+// ---------------------------------------------------------------------------
+
+describe("run-controller — judge report threading", () => {
+  it("dispatches JUDGE_RESULT carrying a report whose evaluations are keyed by candidate IDs", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).runFanout();
+
+    const result = dispatched.find(
+      (a): a is Extract<Action, { type: "JUDGE_RESULT" }> => a.type === "JUDGE_RESULT",
+    );
+    expect(result).toBeDefined();
+    // Report present, evaluations keyed by candidate id, not blind label.
+    expect(result!.report).toBeDefined();
+    const ids = Object.keys(result!.report.evaluationsById).sort();
+    expect(ids).toEqual(["cand-s1", "cand-s2"]);
+    // The weightedScore stored on each candidate equals the judge overall.
+    const ev = result!.report.evaluationsById["cand-s1"];
+    expect(ev.overallScore).toBe(4.0);
+  });
+
+  it("does not dispatch a report after abort (epoch bumped)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    const { deps, dispatched } = makeDeps(state);
+
+    let resolveStream: (() => void) | undefined;
+    chatStreamMock.mockImplementation(
+      (opts: { signal?: AbortSignal }) =>
+        (async function* () {
+          await new Promise<void>((resolve) => {
+            resolveStream = resolve;
+            opts.signal?.addEventListener("abort", () => resolve());
+          });
+          if (opts.signal?.aborted) {
+            throw new DOMException("aborted", "AbortError");
+          }
+          yield "late answer";
+        })(),
+    );
+    const controller = createRunController(deps);
+    const runPromise = controller.runFanout();
+    await new Promise((r) => setTimeout(r, 10));
+    controller.abortRun();
+    resolveStream?.();
+    await runPromise;
+
+    expect(dispatched.some((a) => a.type === "JUDGE_RESULT")).toBe(false);
+    expect(dispatched.some((a) => a.type === "JUDGE_FAILED")).toBe(false);
+  });
+
+  it("keeps run-history score and winner recording unchanged (provider-scoped keys)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps } = makeDeps(state);
+    await createRunController(deps).runFanout();
+
+    const { addRun } = await import("./run-history");
+    const addRunMock = addRun as unknown as ReturnType<typeof vi.fn>;
+    expect(addRunMock).toHaveBeenCalledTimes(1);
+    const entry = addRunMock.mock.calls[0][0] as { models: string[]; winner: string };
+    expect(entry.models).toEqual(["openrouter:model-a", "umans:model-b"]);
+    expect(entry.winner).toBe("openrouter:model-a");
   });
 });

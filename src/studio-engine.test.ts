@@ -84,6 +84,7 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
       mode: "rank",
       consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
       scoresById: { c1: 4.5, c2: 3.2 },
+      report: makeReport([]),
     });
     // In rank mode, running clears after judge
     expect(next.running).toBe(false);
@@ -105,6 +106,7 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
       mode: "fuse",
       consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
       scoresById: { c1: 4.0, c2: 3.5 },
+      report: makeReport([]),
     });
     expect(next.running).toBe(true);
     expect(next.judgeStatus).toBe("done");
@@ -120,6 +122,7 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
       mode: "rank",
       consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
       scoresById: { c1: 4, c2: 3 },
+      report: makeReport([]),
     });
     expect(next.running).toBe(false);
   });
@@ -134,6 +137,7 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
       mode: "fuse",
       consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
       scoresById: { c1: 4, c2: 3 },
+      report: makeReport([]),
     });
     expect(next.running).toBe(true);
   });
@@ -276,5 +280,214 @@ describe("reducer — RESET_SESSION preserves model selection", () => {
     expect(next.prompt).toBe(initialState.prompt);
     expect(next.candidates).toEqual([]);
     expect(next.consensus).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Judge report threading — JUDGE_RESULT stores the resolved report; stale
+// reports are cleared on new run / retry / reset / judge failure; Rank/Fuse
+// toggle preserves the report; criterion scores populate Candidate.scores.
+// ---------------------------------------------------------------------------
+
+import type { JudgeReport, JudgeComparison, JudgeCriterionScore } from "./studio-data";
+
+function makeReport(
+  entries: Array<{ id: string; label: string; score: number; criterionScores?: JudgeCriterionScore[] }>,
+  comparisons: JudgeComparison[] = [],
+): JudgeReport {
+  return {
+    labelMap: entries.map((e) => ({ label: e.label, candidateId: e.id })),
+    evaluationsById: Object.fromEntries(
+      entries.map((e) => [
+        e.id,
+        {
+          candidateId: e.id,
+          blindLabel: e.label,
+          overallScore: e.score,
+          position: `pos ${e.label}`,
+          rationale: `why ${e.label}`,
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: e.criterionScores ?? [],
+        },
+      ]),
+    ),
+    comparisons,
+  };
+}
+
+describe("reducer — JUDGE_RESULT stores the judge report", () => {
+  it("stores judgeReport with evaluations keyed by candidate IDs, not blind labels", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const c2 = makeCandidate("c2", "umans", "model-b");
+    const state = runningStateWithCandidates([c1, c2], "rank");
+    const report = makeReport([
+      { id: "c1", label: "B", score: 4.5 },
+      { id: "c2", label: "A", score: 3.2 },
+    ]);
+    const next = reducer(state, {
+      type: "JUDGE_RESULT",
+      mode: "rank",
+      consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
+      scoresById: { c1: 4.5, c2: 3.2 },
+      report,
+    });
+    expect(next.judgeReport).toBe(report);
+    expect(next.judgeReport?.evaluationsById["c1"].blindLabel).toBe("B");
+    expect(next.judgeReport?.evaluationsById["c2"].blindLabel).toBe("A");
+  });
+
+  it("populates Candidate.scores from criterion scores, keyed by criterion display label", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const c2 = makeCandidate("c2", "umans", "model-b");
+    const state = runningStateWithCandidates([c1, c2], "rank");
+    const report = makeReport([
+      {
+        id: "c1",
+        label: "A",
+        score: 4.5,
+        criterionScores: [
+          { criterionId: "commercial-reasoning", label: "Commercial reasoning", score: 4.7, rationale: "r" },
+          { criterionId: "constraint-awareness", label: "Constraint awareness", score: 3.9, rationale: "r" },
+        ],
+      },
+      { id: "c2", label: "B", score: 3.2 },
+    ]);
+    const next = reducer(state, {
+      type: "JUDGE_RESULT",
+      mode: "rank",
+      consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
+      scoresById: { c1: 4.5, c2: 3.2 },
+      report,
+    });
+    const scored = next.candidates.find((c) => c.id === "c1")!;
+    expect(scored.scores).toEqual({
+      "Commercial reasoning": 4.7,
+      "Constraint awareness": 3.9,
+    });
+    // Candidates without criterion scores keep an empty scores map (not wiped
+    // with invented dimensions).
+    const unscored = next.candidates.find((c) => c.id === "c2")!;
+    expect(unscored.scores).toEqual({});
+  });
+
+  it("does not populate criterion scores when no rubric is enabled (no invention)", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const state = runningStateWithCandidates([c1], "rank");
+    const report = makeReport([{ id: "c1", label: "A", score: 4.5, criterionScores: [] }]);
+    const next = reducer(state, {
+      type: "JUDGE_RESULT",
+      mode: "rank",
+      consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
+      scoresById: { c1: 4.5 },
+      report,
+    });
+    const scored = next.candidates.find((c) => c.id === "c1")!;
+    expect(scored.scores).toEqual({});
+  });
+
+  it("disambiguates duplicate criterion display labels by appending the criterion id", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const state = runningStateWithCandidates([c1], "rank");
+    // Two criteria share the display label "Reasoning".
+    const report = makeReport([
+      {
+        id: "c1",
+        label: "A",
+        score: 4.5,
+        criterionScores: [
+          { criterionId: "commercial", label: "Reasoning", score: 4.7, rationale: "r" },
+          { criterionId: "logical", label: "Reasoning", score: 4.1, rationale: "r" },
+        ],
+      },
+    ]);
+    const next = reducer(state, {
+      type: "JUDGE_RESULT",
+      mode: "rank",
+      consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
+      scoresById: { c1: 4.5 },
+      report,
+    });
+    const scores = next.candidates.find((c) => c.id === "c1")!.scores;
+    expect(Object.keys(scores).sort()).toEqual(["Reasoning (commercial)", "Reasoning (logical)"]);
+    expect(scores["Reasoning (commercial)"]).toBe(4.7);
+    expect(scores["Reasoning (logical)"]).toBe(4.1);
+  });
+});
+
+describe("reducer — stale reports are cleared correctly", () => {
+  it("FANOUT_START clears a prior judgeReport", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const state: StudioState = {
+      ...initialState,
+      running: false,
+      candidates: [c1],
+      judgeStatus: "done",
+      judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
+    };
+    const next = reducer(state, {
+      type: "FANOUT_START",
+      candidates: [{ ...c1, status: "pending" }],
+    });
+    expect(next.judgeReport).toBeNull();
+  });
+
+  it("RESET_SESSION clears the judgeReport", () => {
+    const state: StudioState = {
+      ...initialState,
+      candidates: [makeCandidate("c1", "openrouter", "model-a")],
+      judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
+    };
+    const next = reducer(state, { type: "RESET_SESSION" });
+    expect(next.judgeReport).toBeNull();
+  });
+
+  it("RETRY_CANDIDATE_START clears the stale judgeReport (retry invalidates the prior judgment)", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const state: StudioState = {
+      ...initialState,
+      running: false,
+      candidates: [c1],
+      judgeStatus: "done",
+      judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
+    };
+    const next = reducer(state, { type: "RETRY_CANDIDATE_START", id: "c1" });
+    expect(next.judgeReport).toBeNull();
+  });
+
+  it("JUDGE_FAILED clears any stale report so a half-populated report is never retained", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const state: StudioState = {
+      ...initialState,
+      running: true,
+      candidates: [c1],
+      judgeStatus: "running",
+      judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
+    };
+    const next = reducer(state, { type: "JUDGE_FAILED", error: "judge down" });
+    expect(next.judgeReport).toBeNull();
+  });
+});
+
+describe("reducer — Rank/Fuse toggle preserves the report", () => {
+  it("SET_MODE does not discard the judgeReport", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const state: StudioState = {
+      ...initialState,
+      mode: "rank",
+      candidates: [c1],
+      judgeStatus: "done",
+      judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
+    };
+    const next = reducer(state, { type: "SET_MODE", mode: "fuse" });
+    expect(next.mode).toBe("fuse");
+    expect(next.judgeReport).not.toBeNull();
+  });
+});
+
+describe("reducer — initial state has a null judgeReport", () => {
+  it("initialState.judgeReport is null", () => {
+    expect(initialState.judgeReport).toBeNull();
   });
 });

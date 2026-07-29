@@ -20,6 +20,7 @@ import {
   type Candidate,
   type CandidateSegment,
   type ConsensusBreakdown,
+  type JudgeReport,
   type Mode,
   type ModelSlot,
   type RubricCriterion,
@@ -57,6 +58,10 @@ export interface StudioState {
   judgeStatus: StageStatus;
   judgeError: string | null;
   consensus: ConsensusBreakdown | null;
+  /** Current run's resolved blind judge report — the audit trail for every
+   *  score (label map, per-candidate evaluations, comparisons). Cleared on new
+   *  fanout / retry / reset / judge failure; preserved across Rank/Fuse toggle. */
+  judgeReport: JudgeReport | null;
   fusionStatus: StageStatus;
   fusionError: string | null;
   fusedText: string | null;
@@ -96,7 +101,7 @@ export type Action =
   | { type: "FANOUT_END"; count: number }
   | { type: "INSUFFICIENT_CANDIDATES"; done: number; failed: number }
   | { type: "JUDGE_START" }
-  | { type: "JUDGE_RESULT"; mode: Mode; consensus: ConsensusBreakdown; scoresById: Record<string, number> }
+  | { type: "JUDGE_RESULT"; mode: Mode; consensus: ConsensusBreakdown; scoresById: Record<string, number>; report: JudgeReport }
   | { type: "JUDGE_FAILED"; error: string }
   | { type: "FUSION_START" }
   | { type: "FUSION_RESULT"; text: string }
@@ -122,6 +127,29 @@ const logAudit = (audit: AuditEntry[], message: string): AuditEntry[] => {
   return [entry, ...audit].slice(0, 40);
 };
 
+/**
+ * Populate a candidate's `scores` map from the judge's per-criterion scores.
+ * Keys by the criterion's display label; when two or more criteria share a
+ * label, EVERY entry in that collision group is suffixed with its criterion id
+ * so the criterion matrix/leaderboard keys are unambiguous (spec §5.5).
+ * Returns an empty map when no criterion scores exist — never invents dimensions.
+ */
+function criterionScoresToMap(
+  criterionScores: { criterionId: string; label: string; score: number }[],
+): Record<string, number> {
+  const labelCounts = new Map<string, number>();
+  for (const cs of criterionScores) {
+    labelCounts.set(cs.label, (labelCounts.get(cs.label) ?? 0) + 1);
+  }
+  const out: Record<string, number> = {};
+  for (const cs of criterionScores) {
+    const key = (labelCounts.get(cs.label) ?? 0) > 1
+      ? `${cs.label} (${cs.criterionId})`
+      : cs.label;
+    out[key] = cs.score;
+  }
+  return out;
+}
 export function reducer(state: StudioState, action: Action): StudioState {
   switch (action.type) {
     case "SET_MODE":
@@ -222,8 +250,8 @@ export function reducer(state: StudioState, action: Action): StudioState {
         consensus: null,
         judgeStatus: "idle",
         judgeError: null,
+        judgeReport: null,
         fusedText: null,
-        fusionStatus: "idle",
         fusionError: null,
         insufficient: null,
         aborted: false,
@@ -292,15 +320,25 @@ export function reducer(state: StudioState, action: Action): StudioState {
 
     case "JUDGE_RESULT":
       // Terminal for RANK mode (the run ends after judging). In FUSE mode the
-      // pipeline continues to fusion, so `running` stays true.
+      // pipeline continues to fusion, so `running` stays true. The resolved
+      // blind report is stored so every score traces to a structured explanation;
+      // criterion scores populate Candidate.scores (display-label keyed, with
+      // id disambiguation for collisions) so the criterion matrix is functional.
+      const evalById = action.report.evaluationsById;
       return {
         ...state,
         running: action.mode === "fuse" ? state.running : false,
         judgeStatus: "done",
         consensus: action.consensus,
-        candidates: state.candidates.map((c) =>
-          action.scoresById[c.id] != null ? { ...c, weightedScore: action.scoresById[c.id] } : c
-        ),
+        judgeReport: action.report,
+        candidates: state.candidates.map((c) => {
+          const score = action.scoresById[c.id];
+          const ev = evalById[c.id];
+          const scores = ev ? criterionScoresToMap(ev.criterionScores) : (c.scores ?? {});
+          return score != null
+            ? { ...c, weightedScore: score, scores }
+            : c;
+        }),
         audit: logAudit(state.audit, "AI judge evaluation complete."),
       };
 
@@ -313,9 +351,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
         running: false,
         judgeStatus: "error",
         judgeError: action.error,
+        judgeReport: null,
         audit: logAudit(state.audit, `AI judge failed: ${action.error}`),
       };
-
     case "FUSION_START":
       return { ...state, fusionStatus: "running", fusionError: null };
 
@@ -377,6 +415,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         judgeStatus: "idle",
         judgeError: null,
         consensus: null,
+        judgeReport: null,
         fusionStatus: "idle",
         fusionError: null,
         fusedText: null,
@@ -440,6 +479,7 @@ export const initialState: StudioState = {
   judgeStatus: "idle",
   judgeError: null,
   consensus: null,
+  judgeReport: null,
   insufficient: null,
   aborted: false,
   qualityRating: 0,
