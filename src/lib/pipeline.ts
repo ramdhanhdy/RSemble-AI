@@ -12,6 +12,7 @@ import type { ChatMessage, ProviderId } from "./providers/types";
 import { extractJson } from "./llm-utils";
 import {
   CANDIDATE_ACCENTS,
+  type BlindCandidate,
   type Candidate,
   type CandidateSegment,
   type ConsensusBreakdown,
@@ -138,6 +139,58 @@ export function checkFusionEligibility(candidates: Candidate[]): FusionEligibili
     };
   }
   return { ok: true, usable };
+}
+
+// ---- Blind evaluation --------------------------------------------------------
+
+export interface BlindCandidateSet {
+  /** Judge-facing candidates in label order: label + id + content only. */
+  candidates: BlindCandidate[];
+  /** Judge-time label → internal candidate ID, in label order. */
+  labelMap: Array<{ label: string; candidateId: string }>;
+}
+
+/**
+ * Build the blind packet for one judge run: eligible candidates are shuffled
+ * with the injected random source, then assigned labels A, B, C, … in shuffled
+ * order. Shuffling BEFORE labelling reduces positional bias (DECISIONS.md #6).
+ *
+ * The packet carries only { label, candidateId, content } — no model names,
+ * providers, slugs, order, latency, tokens, or cost. The input candidates are
+ * never mutated, and the label map is constructed exactly once per run so
+ * labels stay stable regardless of any later score sorting.
+ *
+ * Throws BEFORE the judge network call when the candidate count is
+ * unsupported — a label must never be silently reused.
+ */
+export function createBlindCandidateSet(
+  candidates: Candidate[],
+  random: () => number = Math.random,
+): BlindCandidateSet {
+  if (candidates.length === 0) {
+    throw new Error("Cannot judge blindly: no eligible candidates to label.");
+  }
+  if (candidates.length > LETTERS.length) {
+    throw new Error(
+      `Cannot judge ${candidates.length} candidates blindly: at most ${LETTERS.length} distinct labels ` +
+        `(A–${LETTERS[LETTERS.length - 1]}) are supported. Disable ${candidates.length - LETTERS.length} model slot(s) and re-run.`,
+    );
+  }
+  // Fisher–Yates over indices — original array untouched.
+  const order = candidates.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const blind: BlindCandidate[] = order.map((candIdx, labelIdx) => ({
+    label: LETTERS[labelIdx],
+    candidateId: candidates[candIdx].id,
+    content: candidateFullText(candidates[candIdx]),
+  }));
+  return {
+    candidates: blind,
+    labelMap: blind.map(({ label, candidateId }) => ({ label, candidateId })),
+  };
 }
 
 // ---- Judge -------------------------------------------------------------------

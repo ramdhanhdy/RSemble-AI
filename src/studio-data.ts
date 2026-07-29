@@ -84,6 +84,66 @@ export interface ConsensusBreakdown {
   uniqueInsights: { source: string; insight: string }[];
 }
 
+// ---- Judge explainability (blind evaluation) ----------------------------------
+// See docs/specs/judge-explainability/judge-explainability-spec.md and
+// DECISIONS.md #6. The judge never sees RSemble-supplied model/provider identity;
+// the blind label map is resolved only after a valid judge result is parsed.
+
+/** A candidate stripped of all RSemble-supplied identity for blind judging. */
+export interface BlindCandidate {
+  /** Blind label seen by the judge, e.g. "A" (rendered as "Candidate A"). */
+  label: string;
+  /** Internal candidate ID — retained locally, never sent to the judge. */
+  candidateId: string;
+  /** The candidate's answer text, passed unchanged. */
+  content: string;
+}
+
+/** One weakness the judge says materially lowered the score. */
+export interface JudgeDeduction {
+  severity: "minor" | "major";
+  reason: string;
+}
+
+/** Per-criterion judge result, resolved to the rubric's display label after parsing. */
+export interface JudgeCriterionScore {
+  criterionId: string;
+  label: string;
+  score: number;
+  rationale: string;
+}
+
+/** Structured score explanation for one candidate. `candidateId` is resolved; */
+export interface CandidateEvaluation {
+  candidateId: string;
+  /** Judge-time blind label — identity at judge time, not rank order. */
+  blindLabel: string;
+  overallScore: number;
+  position: string;
+  /** Concise decision evidence — explicitly not chain-of-thought. */
+  rationale: string;
+  strengths: string[];
+  deductions: JudgeDeduction[];
+  missedRequirements: string[];
+  criterionScores: JudgeCriterionScore[];
+}
+
+/** Why two materially similar positions received different scores. */
+export interface JudgeComparison {
+  candidateIds: [string, string];
+  blindLabels: [string, string];
+  reason: string;
+}
+
+/** The current run's resolved judge report — the audit trail for every score. */
+export interface JudgeReport {
+  /** Judge-time label → internal candidate ID, in label order. */
+  labelMap: Array<{ label: string; candidateId: string }>;
+  /** Evaluations keyed by resolved candidate ID. */
+  evaluationsById: Record<string, CandidateEvaluation>;
+  comparisons: JudgeComparison[];
+}
+
 /** Accent keys cycled across live candidates for visual distinction. */
 export const CANDIDATE_ACCENTS = ["indigo", "emerald", "violet", "amber", "sky", "rose", "teal"];
 

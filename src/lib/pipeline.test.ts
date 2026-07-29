@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseJudge, judgeMessages, fusionMessages, splitSegments, buildFanoutJobs, isUsableCandidate, checkFusionEligibility } from "./pipeline";
+import { parseJudge, judgeMessages, fusionMessages, splitSegments, buildFanoutJobs, isUsableCandidate, checkFusionEligibility, createBlindCandidateSet } from "./pipeline";
 import type { Candidate } from "../studio-data";
 import type { ProviderId } from "./providers/types";
 
@@ -578,5 +578,111 @@ describe("parseJudge — contract validation", () => {
     expect(result.scoresById["c1"]).toBe(4.5);
     expect(result.scoresById["c2"]).toBe(3.2);
     expect(result.breakdown.consensus).toEqual(["point 1"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createBlindCandidateSet — the blind packet the judge sees. No RSemble-supplied
+// model/provider identity may survive; the label map must be lossless.
+// ---------------------------------------------------------------------------
+
+describe("createBlindCandidateSet — blind packet", () => {
+  function contentCandidate(id: string, text: string): Candidate {
+    return {
+      ...makeCandidate(id, `Name-${id}`, "openrouter", `slug-${id}`),
+      segments: [{ id: `${id}-s0`, text }],
+    };
+  }
+
+  it("excludes every RSemble-supplied identity field from the blind candidates", () => {
+    const candidates = [
+      contentCandidate("c1", "First answer text"),
+      contentCandidate("c2", "Second answer text"),
+    ];
+    const set = createBlindCandidateSet(candidates, () => 0.999);
+    for (const blind of set.candidates) {
+      expect(Object.keys(blind).sort()).toEqual(["candidateId", "content", "label"]);
+    }
+    const packet = JSON.stringify(set.candidates);
+    expect(packet).not.toContain("Name-c1");
+    expect(packet).not.toContain("Name-c2");
+    expect(packet).not.toContain("openrouter");
+    expect(packet).not.toContain("slug-c1");
+    expect(packet).not.toContain("slug-c2");
+    // Answer text passes through unchanged.
+    expect(packet).toContain("First answer text");
+    expect(packet).toContain("Second answer text");
+  });
+
+  it("assigns each eligible candidate exactly one unique label and maps back losslessly", () => {
+    const candidates = [
+      contentCandidate("c1", "one"),
+      contentCandidate("c2", "two"),
+      contentCandidate("c3", "three"),
+    ];
+    const set = createBlindCandidateSet(candidates, () => 0.999);
+    const labels = set.candidates.map((b) => b.label);
+    expect(new Set(labels).size).toBe(3);
+    expect(labels).toEqual(["A", "B", "C"]);
+    // Every candidate id appears exactly once in the map.
+    const mappedIds = set.labelMap.map((m) => m.candidateId).sort();
+    expect(mappedIds).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("shuffles before assigning labels, controllable via the injected random source", () => {
+    const candidates = [
+      contentCandidate("c1", "one"),
+      contentCandidate("c2", "two"),
+      contentCandidate("c3", "three"),
+    ];
+    // () => 0 always picks index 0 in Fisher–Yates → order [1, 2, 0].
+    const shuffled = createBlindCandidateSet(candidates, () => 0);
+    expect(shuffled.labelMap).toEqual([
+      { label: "A", candidateId: "c2" },
+      { label: "B", candidateId: "c3" },
+      { label: "C", candidateId: "c1" },
+    ]);
+    // () => 0.999 always picks the last index → identity order.
+    const identity = createBlindCandidateSet(candidates, () => 0.999);
+    expect(identity.labelMap).toEqual([
+      { label: "A", candidateId: "c1" },
+      { label: "B", candidateId: "c2" },
+      { label: "C", candidateId: "c3" },
+    ]);
+  });
+
+  it("defaults to a built-in random source that still produces a valid permutation", () => {
+    const candidates = [
+      contentCandidate("c1", "one"),
+      contentCandidate("c2", "two"),
+      contentCandidate("c3", "three"),
+      contentCandidate("c4", "four"),
+    ];
+    const set = createBlindCandidateSet(candidates);
+    expect(set.labelMap).toHaveLength(4);
+    expect(new Set(set.labelMap.map((m) => m.label)).size).toBe(4);
+    expect(set.labelMap.map((m) => m.candidateId).sort()).toEqual(["c1", "c2", "c3", "c4"]);
+  });
+
+  it("rejects more candidates than supported labels before any network call", () => {
+    const candidates = Array.from({ length: 9 }, (_, i) =>
+      contentCandidate(`c${i + 1}`, `answer ${i + 1}`),
+    );
+    expect(() => createBlindCandidateSet(candidates, () => 0.5)).toThrow(/at most 8/i);
+  });
+
+  it("rejects an empty candidate set", () => {
+    expect(() => createBlindCandidateSet([], () => 0.5)).toThrow();
+  });
+
+  it("does not mutate the input candidates or their order", () => {
+    const candidates = [
+      contentCandidate("c1", "one"),
+      contentCandidate("c2", "two"),
+      contentCandidate("c3", "three"),
+    ];
+    const snapshot = JSON.parse(JSON.stringify(candidates));
+    createBlindCandidateSet(candidates, () => 0);
+    expect(candidates).toEqual(snapshot);
   });
 });
