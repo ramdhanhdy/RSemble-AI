@@ -16,6 +16,7 @@ import { Check, ChevronRight, Search, X } from "lucide-react";
 import type { Action } from "../studio-engine";
 import type { CatalogModel, ProviderId } from "../lib/providers/types";
 import { BrandAvatar } from "./brand-icons";
+import { ProviderTabs, PROVIDER_LABELS } from "./ProviderTabs";
 
 interface JudgeConfigProps {
   critic: { providerId: ProviderId; model: string };
@@ -24,16 +25,6 @@ interface JudgeConfigProps {
   /** Optional custom instruction applied to the judge/fusion model. */
   judgeInstruction: string;
 }
-
-const PROVIDER_BADGE: Record<ProviderId, string> = {
-  openrouter: "OpenRouter",
-  "chatgpt-codex": "ChatGPT",
-  gemini: "Gemini",
-  commandcode: "CommandCode",
-  clinepass: "ClinePass",
-  umans: "Umans",
-  "9router": "9Router",
-};
 
 export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: JudgeConfigProps) {
   const [editing, setEditing] = useState(false);
@@ -58,7 +49,7 @@ export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: Judg
             {`‎${critic.model}`}
           </span>
           <span className="shrink-0 rounded-sm border border-edge px-1 text-[11px] uppercase tracking-wide text-text-secondary">
-            {PROVIDER_BADGE[critic.providerId]}
+            {PROVIDER_LABELS[critic.providerId]}
           </span>
           <ChevronRight size={14} className="shrink-0 text-text-muted" />
         </button>
@@ -103,7 +94,7 @@ export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: Judg
 
 // ---- combobox (single-slug variant) -----------------------------------------
 
-function JudgeCombobox({
+export function JudgeCombobox({
   models,
   current,
   onCancel,
@@ -141,23 +132,11 @@ function JudgeCombobox({
     trimmed !== current;
   return (
     <div className="mt-2 rounded-md border border-edge-bright bg-card p-2">
-      <div className="mb-2 flex items-center gap-1 rounded-sm bg-panel p-1 font-mono text-xs">
-        {(["openrouter", "chatgpt-codex", "gemini", "commandcode", "clinepass", "umans", "9router"] as const).map((p) => {
-          const active = selectedProvider === p;
-          return (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setSelectedProvider(p)}
-              className={`min-h-[44px] flex-1 rounded-sm px-1 text-center text-[11px] uppercase tracking-wide transition-colors ${
-                active ? "bg-accent/15 font-semibold text-accent" : "text-text-secondary hover:text-text"
-              }`}
-            >
-              {PROVIDER_BADGE[p]}
-            </button>
-          );
-        })}
-      </div>
+      <ProviderTabs
+        value={selectedProvider}
+        onChange={setSelectedProvider}
+        ariaLabel="Judge model providers"
+      />
       <label htmlFor="judge-search" className="sr-only">
         Judge model
       </label>

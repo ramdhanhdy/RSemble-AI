@@ -23,6 +23,7 @@ import type { CatalogModel, ProviderId } from "../lib/providers/types";
 import { BrandAvatar } from "./brand-icons";
 import { getModelTelemetryCached, modelKey } from "../lib/history-cache";
 import { pricingFor } from "../lib/cost";
+import { ProviderTabs, PROVIDER_LABELS } from "./ProviderTabs";
 
 interface ModelListProps {
   slots: ModelSlot[];
@@ -176,17 +177,8 @@ function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch
 // AddModelCombobox — live-catalog autocomplete + manual raw-slug entry
 // -----------------------------------------------------------------------------
 
-const PROVIDER_LABELS: Record<ProviderId, string> = {
-  openrouter: "OpenRouter",
-  "chatgpt-codex": "ChatGPT",
-  gemini: "Gemini",
-  commandcode: "CommandCode",
-  clinepass: "ClinePass",
-  umans: "Umans",
-  "9router": "9Router",
-};
 
-function AddModelCombobox({
+export function AddModelCombobox({
   models,
   takenKeys,
   onCancel,
@@ -239,23 +231,11 @@ function AddModelCombobox({
 
   return (
     <div className="mt-2 rounded-md border border-edge-bright bg-card p-2">
-      <div className="mb-2 flex items-center gap-1 rounded-sm bg-panel p-1 font-mono text-xs">
-        {(["openrouter", "chatgpt-codex", "gemini", "commandcode", "clinepass", "umans", "9router"] as const).map((p) => {
-          const active = selectedProvider === p;
-          return (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setSelectedProvider(p)}
-              className={`min-h-[44px] flex-1 rounded-sm px-1 text-center text-[11px] uppercase tracking-wide transition-colors ${
-                active ? "bg-accent/15 font-semibold text-accent" : "text-text-secondary hover:text-text"
-              }`}
-            >
-              {PROVIDER_LABELS[p]}
-            </button>
-          );
-        })}
-      </div>
+      <ProviderTabs
+        value={selectedProvider}
+        onChange={setSelectedProvider}
+        ariaLabel="Candidate model providers"
+      />
       <label htmlFor="model-search" className="sr-only">
         Search models
       </label>
