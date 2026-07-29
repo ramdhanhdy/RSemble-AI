@@ -98,12 +98,14 @@ function cleanup(h: Harness) {
 }
 
 function typeInto(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    "value",
-  )!.set!;
-  setter.call(input, value);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 }
 
 const GEMINI_MODELS: CatalogModel[] = [
