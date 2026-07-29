@@ -14,8 +14,13 @@ import {
   CANDIDATE_ACCENTS,
   type BlindCandidate,
   type Candidate,
+  type CandidateEvaluation,
   type CandidateSegment,
   type ConsensusBreakdown,
+  type JudgeComparison,
+  type JudgeCriterionScore,
+  type JudgeDeduction,
+  type JudgeReport,
   type ModelSlot,
   type RubricCriterion,
 } from "../studio-data";
@@ -32,12 +37,20 @@ export interface FanoutJob {
   strategyLabel: string;
 }
 
-/** Render the enabled rubric as a compact instruction block. */
-export function rubricText(rubric: RubricCriterion[]): string {
+/**
+ * Render the enabled rubric as a compact instruction block. `withIds` prefixes
+ * each line with the stable criterion ID — used for the judge-facing block so
+ * the judge can key criterionScores by criterion ID (spec §5.5).
+ */
+export function rubricText(rubric: RubricCriterion[], opts?: { withIds?: boolean }): string {
   const enabled = rubric.filter((c) => c.enabled);
   if (enabled.length === 0) return "(no explicit rubric provided — use your best judgment)";
   return enabled
-    .map((c) => `- [${c.kind}] ${c.label} (weight ${c.weight.toFixed(2)}): ${c.description}`)
+    .map(
+      (c) =>
+        `- ${opts?.withIds ? `[id: ${c.id}] ` : ""}[${c.kind}] ${c.label} ` +
+        `(weight ${c.weight.toFixed(2)}): ${c.description}`,
+    )
     .join("\n");
 }
 
@@ -196,31 +209,29 @@ export function createBlindCandidateSet(
 // ---- Judge -------------------------------------------------------------------
 
 interface RawJudgeResponse {
-  consensus?: string[];
-  contradictions?: string[];
-  uniqueInsights?: { source?: string; insight?: string }[];
-  scores?: { label?: string; score?: number; rationale?: string }[];
+  consensus?: unknown;
+  contradictions?: unknown;
+  uniqueInsights?: unknown;
+  evaluations?: unknown;
+  comparisons?: unknown;
 }
 
 export interface JudgeResult {
   breakdown: ConsensusBreakdown;
   scoresById: Record<string, number>;
-  /** Judge score entries whose label we could not match to a candidate. Surfaced
-   *  rather than silently dropped, so a parse failure is visible, not invisible. */
-  unmatchedScores: { label: string; score: number }[];
+  /** The resolved blind report: label map, per-candidate explanations, and
+   *  same-conclusion comparisons. Every accepted score has its explanation. */
+  report: JudgeReport;
 }
 
 /**
- * Normalize a judge-produced label to a candidate letter (A, B, C, …). Models are
- * told to use bare letters but routinely return "Candidate B", "B)", "B.", the
- * model name, or surrounding prose. This extracts the letter when possible and
- * falls back to a model-name match. Returns null if nothing matches.
+ * Normalize a judge-produced label to a blind letter (A, B, C, …). Tolerates
+ * the bare letter and common wrappers ("Candidate B", "B)", "B.", "B:", "(B)").
+ * There is deliberately NO model-name fallback: a properly blinded judge does
+ * not know model identities, so a model name is never a valid score identifier
+ * (spec §7). Returns null when nothing matches.
  */
-function normalizeLabel(
-  raw: string,
-  letters: string[],
-  labelToModel: Record<string, string>
-): string | null {
+function normalizeBlindLabel(raw: string, letters: string[]): string | null {
   const cleaned = raw.trim();
   if (cleaned.length === 0) return null;
 
@@ -229,18 +240,8 @@ function normalizeLabel(
   if (letters.includes(upper)) return upper;
 
   // 2) Letter embedded in common wrappers: "Candidate B", "B)", "B.", "B:", "(B)".
-  const m = cleaned.match(/\b([A-H])\b/);
+  const m = cleaned.match(/\b([A-H])\b/i);
   if (m && letters.includes(m[1].toUpperCase())) return m[1].toUpperCase();
-
-  // 3) Model name match (case-insensitive substring either way) — handles a judge
-  //    that labels scores by model name instead of letter.
-  const lower = cleaned.toLowerCase();
-  for (const letter of letters) {
-    const modelName = labelToModel[letter]?.toLowerCase();
-    if (modelName && (lower.includes(modelName) || modelName.includes(lower))) {
-      return letter;
-    }
-  }
 
   return null;
 }
@@ -248,12 +249,15 @@ function normalizeLabel(
 export function judgeMessages(
   prompt: string,
   rubric: RubricCriterion[],
-  candidates: Candidate[],
+  blindCandidates: BlindCandidate[],
   judgeInstruction?: string,
 ): ChatMessage[] {
-  const labelled = candidates
-    .map((c, i) => `### Candidate ${LETTERS[i]} — ${c.model}\n${candidateFullText(c)}`)
+  // Bare blind headings — no model names, providers, slugs, or run metadata
+  // (DECISIONS.md #6). Candidate answer text passes through unchanged.
+  const labelled = blindCandidates
+    .map((c) => `### Candidate ${c.label}\n${c.content}`)
     .join("\n\n");
+  const hasRubric = rubric.some((c) => c.enabled);
 
   // The custom instruction is UNTRUSTED DATA. It is placed BEFORE the
   // non-negotiable JSON output contract and explicitly delimited, so a
@@ -264,16 +268,34 @@ export function judgeMessages(
 
   const system =
     `You are an impartial evaluation judge. Compare the candidate answers against the user's task and rubric. ` +
-    `Identify shared consensus points, direct contradictions between candidates, and insights unique to a single candidate. ` +
-    `Also score each candidate from 1.0 to 5.0 on overall rubric satisfaction.\n` +
+    `The candidates are anonymized: you see only blind labels (Candidate A, Candidate B, ...) and their answer text. ` +
+    `You do not know which model produced which answer — do not speculate about candidate identities.\n` +
+    `Identify shared consensus points, direct contradictions between candidates, and insights unique to a single candidate.\n` +
+    `For EVERY candidate, return one structured evaluation:\n` +
+    `- score: overall rubric satisfaction from 1.0 to 5.0.\n` +
+    `- position: one sentence naming the candidate's main recommendation or answer.\n` +
+    `- rationale: one concise sentence of decision evidence — the decisive qualities and omissions that determined the score. ` +
+    `This is an evaluation summary, never chain-of-thought; do not narrate step-by-step reasoning.\n` +
+    `- strengths: one or two concise strengths.\n` +
+    `- deductions: weaknesses that materially lowered the score, each tagged "minor" or "major" (empty array when none).\n` +
+    `- missedRequirements: task or rubric requirements the candidate failed to address (empty array when none).\n` +
+    (hasRubric
+      ? `- criterionScores: exactly one entry per rubric criterion listed below, keyed by its criterion ID, each scored 1.0–5.0 with a concise rationale.\n`
+      : `- criterionScores: an empty array — no explicit rubric is enabled, so do not invent scoring dimensions.\n`) +
+    `When two candidates reach materially similar conclusions or recommendations but their overall scores differ by at least 0.5, ` +
+    `return one comparison per such pair explaining what created the difference (for example quantification, evidence quality, ` +
+    `constraint awareness, falsifiability, feasibility, or task compliance). If no pair qualifies, return an empty comparisons array.` +
     instructionBlock +
     `\n\nRespond with ONLY a JSON object of this exact shape:\n` +
     `{"consensus": string[], "contradictions": string[], "uniqueInsights": [{"source": "A", "insight": "..."}], ` +
-    `"scores": [{"label": "A", "score": 4.5, "rationale": "..."}]}\n` +
-    `Use the candidate letter labels (A, B, C, ...) for "source" and "label". ` +
+    `"evaluations": [{"label": "A", "score": 4.5, "position": "...", "rationale": "...", "strengths": ["..."], ` +
+    `"deductions": [{"severity": "minor", "reason": "..."}], "missedRequirements": [], ` +
+    `"criterionScores": [{"criterionId": "...", "score": 4.5, "rationale": "..."}]}], ` +
+    `"comparisons": [{"labels": ["A", "B"], "reason": "..."}]}\n` +
+    `Use the candidate blind labels (A, B, C, ...) for "source", "label", and comparison "labels". ` +
     `Output JSON and nothing else — no prose, no code fences, no commentary.`;
   const user =
-    `User task:\n${prompt}\n\nRubric:\n${rubricText(rubric)}\n\nCandidates:\n${labelled}`;
+    `User task:\n${prompt}\n\nRubric:\n${rubricText(rubric, { withIds: true })}\n\nCandidates:\n${labelled}`;
   return [
     { role: "system", content: system },
     { role: "user", content: user },
@@ -299,136 +321,321 @@ function renderJudgeInstruction(judgeInstruction?: string): string {
   );
 }
 
-export function parseJudge(text: string, candidates: Candidate[]): JudgeResult {
+/**
+ * Parse and strictly validate a blind judge response, then resolve every blind
+ * label to an internal candidate ID. Any contract violation throws a
+ * descriptive Error so the caller routes it through the visible JUDGE_FAILED
+ * path — an unexplained or partially mapped score never enters state (spec §7).
+ *
+ * `blindSet` is the precomputed blind packet (labels + label map); `rubric`
+ * decides the criterion contract (enabled criteria must each be scored exactly
+ * once; a no-rubric run rejects invented criterion results). `candidates` is
+ * used ONLY to resolve display names for consensus/insight prose — never for
+ * label matching.
+ */
+export function parseJudge(
+  text: string,
+  blindSet: BlindCandidateSet,
+  rubric: RubricCriterion[],
+  candidates: Candidate[],
+): JudgeResult {
   const raw = extractJson<RawJudgeResponse>(text);
-  const letters = LETTERS.slice(0, candidates.length);
-  const labelToModel: Record<string, string> = {};
+  const letters = blindSet.candidates.map((c) => c.label);
   const labelToId: Record<string, string> = {};
-  candidates.forEach((c, i) => {
-    labelToModel[letters[i]] = c.model;
-    labelToId[letters[i]] = c.id;
-  });
+  for (const m of blindSet.labelMap) labelToId[m.label] = m.candidateId;
+  const idToModel: Record<string, string> = {};
+  for (const c of candidates) idToModel[c.id] = c.model;
+  const enabledCriteria = rubric.filter((c) => c.enabled);
 
-  // ---- Contract validation ------------------------------------------------
-  // Syntactically valid JSON that is structurally incomplete or invalid must
-  // NOT silently produce a zero-score result. The judge's output is only
-  // accepted when it has the expected arrays and exactly one valid, unique
-  // score for every eligible candidate. A failure here throws so the caller
-  // (run-controller) routes it through the existing JUDGE_FAILED path.
-  validateJudgeShape(raw, letters, labelToModel);
-
-  const breakdown: ConsensusBreakdown = {
-    consensus: (raw.consensus ?? []).filter(Boolean),
-    contradictions: (raw.contradictions ?? []).filter(Boolean),
-    uniqueInsights: (raw.uniqueInsights ?? [])
-      .map((u) => {
-        const letter = u.source ? normalizeLabel(u.source, letters, labelToModel) : null;
-        return {
-          source: letter ? labelToModel[letter] : u.source ?? "Unknown",
-          insight: u.insight ?? "",
-        };
-      })
-      .filter((u) => u.insight.length > 0),
-  };
+  const consensus = requireStringArray(raw.consensus, "consensus");
+  const contradictions = requireStringArray(raw.contradictions, "contradictions");
+  const uniqueInsights = parseUniqueInsights(raw.uniqueInsights, letters, labelToId, idToModel);
+  const evaluations = parseEvaluations(raw.evaluations, letters, labelToId, enabledCriteria);
+  const comparisons = parseComparisons(raw.comparisons, letters, labelToId);
 
   const scoresById: Record<string, number> = {};
-  // validateJudgeShape guarantees every score label matches a candidate, every
-  // score is numeric and within 1.0–5.0, and there is exactly one score per
-  // candidate (no missing, no duplicates, no unmatched/extra). So the
-  // post-validation loop only needs to map validated scores to candidate ids.
-  // Scores are used as-is — never clamped.
-  (raw.scores ?? []).forEach((s) => {
-    const letter = s.label ? normalizeLabel(s.label, letters, labelToModel) : null;
-    if (letter) {
-      const id = labelToId[letter];
-      if (id) scoresById[id] = s.score as number;
-    }
-  });
+  const evaluationsById: Record<string, CandidateEvaluation> = {};
+  for (const ev of evaluations) {
+    scoresById[ev.candidateId] = ev.overallScore;
+    evaluationsById[ev.candidateId] = ev;
+  }
 
-  // unmatchedScores is always empty now: validateJudgeShape throws on any label
-  // that does not match a candidate, so no unmatched scores can survive to here.
-  const unmatchedScores: { label: string; score: number }[] = [];
+  const report: JudgeReport = {
+    labelMap: blindSet.labelMap,
+    evaluationsById,
+    comparisons,
+  };
 
-  return { breakdown, scoresById, unmatchedScores };
+  // Scores are used as-is — never clamped. The report and scoresById always
+  // agree because both come from the same validated evaluations.
+  return { breakdown: { consensus, contradictions, uniqueInsights }, scoresById, report };
 }
 
 /**
- * Validate the parsed judge response against the required contract before it
- * is accepted. Throws a descriptive Error when the shape is structurally
- * invalid so the caller routes it through the visible JUDGE_FAILED path
- * instead of silently accepting a zero-score or incomplete result.
- *
- * Requirements (strict contract):
- * - consensus, contradictions must be arrays (if present)
- * - uniqueInsights must be an array (if present)
- * - scores must be an array
- * - every score entry must have a numeric `score`
- * - every score entry's label MUST match a candidate (no unmatched/extra labels)
- * - every score must fall within the documented 1.0–5.0 range (no clamping)
- * - there must be exactly one score per eligible candidate (no missing, no duplicates)
+ * Validate one top-level array-of-strings field. All top-level arrays are
+ * required by the contract (spec §7); empty strings are dropped, non-string
+ * elements are a contract violation.
  */
-function validateJudgeShape(
-  raw: RawJudgeResponse,
+function requireStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Judge output invalid: '${field}' must be an array.`);
+  }
+  return value.map((v, i) => {
+    if (typeof v !== "string") {
+      throw new Error(`Judge output invalid: '${field}[${i}]' must be a string.`);
+    }
+    return v;
+  }).filter((v) => v.trim().length > 0);
+}
+
+/** One optional array-of-strings field: absent → [], present → validated. */
+function optionalStringArray(value: unknown, field: string): string[] {
+  if (value == null) return [];
+  return requireStringArray(value, field);
+}
+
+/** A score must be a finite number within the documented 1.0–5.0 range. Never clamped. */
+function requireScore(value: unknown, where: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Judge output invalid: ${where} is missing a finite numeric score (got ${JSON.stringify(value)}).`);
+  }
+  if (value < 1.0 || value > 5.0) {
+    throw new Error(
+      `Judge output invalid: ${where} score ${value} is outside the documented 1.0–5.0 range.`,
+    );
+  }
+  return value;
+}
+
+function requireNonEmptyString(value: unknown, where: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Judge output invalid: ${where} must be a non-empty string.`);
+  }
+  return value.trim();
+}
+
+function parseUniqueInsights(
+  value: unknown,
   letters: string[],
-  labelToModel: Record<string, string>,
-): void {
-  if (raw.consensus != null && !Array.isArray(raw.consensus)) {
-    throw new Error("Judge output invalid: 'consensus' must be an array.");
-  }
-  if (raw.contradictions != null && !Array.isArray(raw.contradictions)) {
-    throw new Error("Judge output invalid: 'contradictions' must be an array.");
-  }
-  if (raw.uniqueInsights != null && !Array.isArray(raw.uniqueInsights)) {
+  labelToId: Record<string, string>,
+  idToModel: Record<string, string>,
+): ConsensusBreakdown["uniqueInsights"] {
+  if (!Array.isArray(value)) {
     throw new Error("Judge output invalid: 'uniqueInsights' must be an array.");
   }
-  if (!Array.isArray(raw.scores)) {
-    throw new Error("Judge output invalid: 'scores' must be an array.");
+  return value.map((u, i) => {
+    if (u == null || typeof u !== "object") {
+      throw new Error(`Judge output invalid: 'uniqueInsights[${i}]' must be an object.`);
+    }
+    const entry = u as { source?: unknown; insight?: unknown };
+    const insight = requireNonEmptyString(entry.insight, `uniqueInsights[${i}].insight`);
+    const sourceRaw = requireNonEmptyString(entry.source, `uniqueInsights[${i}].source`);
+    const letter = normalizeBlindLabel(sourceRaw, letters);
+    if (!letter) {
+      // A blind judge cannot cite model names or unknown labels as sources.
+      throw new Error(
+        `Judge output invalid: uniqueInsights[${i}] source ${JSON.stringify(entry.source)} is not a blind label (expected one of ${letters.join(", ")}).`,
+      );
+    }
+    const id = labelToId[letter];
+    return { source: idToModel[id] ?? `Candidate ${letter}`, insight };
+  });
+}
+
+function parseDeductions(value: unknown, where: string): JudgeDeduction[] {
+  const items = value == null ? [] : value;
+  if (!Array.isArray(items)) {
+    throw new Error(`Judge output invalid: ${where}.deductions must be an array.`);
   }
-  if (raw.scores.length === 0) {
-    throw new Error("Judge output invalid: 'scores' is empty — no candidate was scored.");
+  return items.map((d, i) => {
+    if (d == null || typeof d !== "object") {
+      throw new Error(`Judge output invalid: ${where}.deductions[${i}] must be an object.`);
+    }
+    const entry = d as { severity?: unknown; reason?: unknown };
+    if (entry.severity !== "minor" && entry.severity !== "major") {
+      throw new Error(
+        `Judge output invalid: ${where}.deductions[${i}].severity must be "minor" or "major" (got ${JSON.stringify(entry.severity)}).`,
+      );
+    }
+    return {
+      severity: entry.severity,
+      reason: requireNonEmptyString(entry.reason, `${where}.deductions[${i}].reason`),
+    };
+  });
+}
+
+function parseCriterionScores(
+  value: unknown,
+  where: string,
+  enabledCriteria: RubricCriterion[],
+): JudgeCriterionScore[] {
+  const items = value == null ? [] : value;
+  if (!Array.isArray(items)) {
+    throw new Error(`Judge output invalid: ${where}.criterionScores must be an array.`);
+  }
+  const parsed = items.map((cs, i) => {
+    if (cs == null || typeof cs !== "object") {
+      throw new Error(`Judge output invalid: ${where}.criterionScores[${i}] must be an object.`);
+    }
+    const entry = cs as { criterionId?: unknown; score?: unknown; rationale?: unknown };
+    const criterionId = requireNonEmptyString(entry.criterionId, `${where}.criterionScores[${i}].criterionId`);
+    return {
+      criterionId,
+      score: requireScore(entry.score, `${where}.criterionScores[${i}]`),
+      rationale: requireNonEmptyString(entry.rationale, `${where}.criterionScores[${i}].rationale`),
+    };
+  });
+
+  if (enabledCriteria.length === 0) {
+    // No-rubric run: the judge must not invent hidden scoring dimensions.
+    if (parsed.length > 0) {
+      throw new Error(
+        `Judge output invalid: ${where}.criterionScores must be empty — no rubric criteria are enabled, but ${parsed.length} criterion result(s) were returned.`,
+      );
+    }
+    return [];
   }
 
-  // Every score entry must have a numeric score, a matching label, and a
-  // value within the documented 1.0–5.0 range. Unmatched labels and
-  // out-of-range scores are contract violations, not soft warnings — they
-  // throw so the caller routes through JUDGE_FAILED. Scores are never clamped.
-  const scoredLetters = new Set<string>();
-  for (const s of raw.scores) {
-    if (s == null || typeof s.score !== "number" || Number.isNaN(s.score)) {
+  // Enabled-rubric run: exactly one result per enabled criterion ID.
+  const seen = new Set<string>();
+  const resolved: JudgeCriterionScore[] = [];
+  for (const cs of parsed) {
+    const criterion = enabledCriteria.find((c) => c.id === cs.criterionId);
+    if (!criterion) {
       throw new Error(
-        `Judge output invalid: score entry is missing a numeric 'score' value (got ${JSON.stringify(s)}).`,
+        `Judge output invalid: ${where}.criterionScores references unknown or disabled criterion ${JSON.stringify(cs.criterionId)}.`,
       );
     }
-    // Range check — the documented rubric scale is 1.0 to 5.0. Do NOT clamp.
-    if (s.score < 1.0 || s.score > 5.0) {
+    if (seen.has(cs.criterionId)) {
       throw new Error(
-        `Judge output invalid: score ${s.score} for label ${JSON.stringify(s.label)} is outside the documented 1.0–5.0 range.`,
+        `Judge output invalid: ${where}.criterionScores has a duplicate result for criterion ${JSON.stringify(cs.criterionId)}.`,
       );
     }
-    // Label match check — every score label must resolve to a candidate.
-    const letter = s.label ? normalizeLabel(s.label, letters, labelToModel) : null;
+    seen.add(cs.criterionId);
+    resolved.push({ criterionId: criterion.id, label: criterion.label, score: cs.score, rationale: cs.rationale });
+  }
+  for (const criterion of enabledCriteria) {
+    if (!seen.has(criterion.id)) {
+      throw new Error(
+        `Judge output invalid: ${where}.criterionScores is missing a result for criterion ${JSON.stringify(criterion.id)}.`,
+      );
+    }
+  }
+  return resolved;
+}
+
+/**
+ * Validate the evaluations array: exactly one fully explained evaluation per
+ * blind candidate — no missing, duplicate, extra, or model-name labels, and
+ * every score carries its structured explanation.
+ */
+function parseEvaluations(
+  value: unknown,
+  letters: string[],
+  labelToId: Record<string, string>,
+  enabledCriteria: RubricCriterion[],
+): CandidateEvaluation[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Judge output invalid: 'evaluations' must be an array.");
+  }
+  if (value.length === 0) {
+    throw new Error("Judge output invalid: 'evaluations' is empty — no candidate was scored.");
+  }
+
+  const seen = new Set<string>();
+  const evaluations: CandidateEvaluation[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const ev = value[i];
+    const where = `evaluations[${i}]`;
+    if (ev == null || typeof ev !== "object") {
+      throw new Error(`Judge output invalid: ${where} must be an object.`);
+    }
+    const entry = ev as {
+      label?: unknown;
+      score?: unknown;
+      position?: unknown;
+      rationale?: unknown;
+      strengths?: unknown;
+      deductions?: unknown;
+      missedRequirements?: unknown;
+      criterionScores?: unknown;
+    };
+    const labelRaw = requireNonEmptyString(entry.label, `${where}.label`);
+    const letter = normalizeBlindLabel(labelRaw, letters);
     if (!letter) {
       throw new Error(
-        `Judge output invalid: score label ${JSON.stringify(s.label)} does not match any candidate (expected one of ${letters.join(", ")}).`,
+        `Judge output invalid: ${where} label ${JSON.stringify(entry.label)} does not match any candidate (expected one of ${letters.join(", ")}).`,
       );
     }
-    // Duplicate check — exactly one score per candidate.
-    if (scoredLetters.has(letter)) {
-      throw new Error(
-        `Judge output invalid: duplicate score for candidate ${letter}.`,
-      );
+    if (seen.has(letter)) {
+      throw new Error(`Judge output invalid: duplicate evaluation for candidate ${letter}.`);
     }
-    scoredLetters.add(letter);
+    seen.add(letter);
+
+    const strengths = optionalStringArray(entry.strengths, `${where}.strengths`);
+    if (strengths.length === 0) {
+      // Every accepted score must carry decision evidence (spec §5.3, §13.5).
+      throw new Error(`Judge output invalid: ${where}.strengths must list at least one strength.`);
+    }
+
+    evaluations.push({
+      candidateId: labelToId[letter],
+      blindLabel: letter,
+      overallScore: requireScore(entry.score, where),
+      position: requireNonEmptyString(entry.position, `${where}.position`),
+      rationale: requireNonEmptyString(entry.rationale, `${where}.rationale`),
+      strengths,
+      deductions: parseDeductions(entry.deductions, where),
+      missedRequirements: optionalStringArray(entry.missedRequirements, `${where}.missedRequirements`),
+      criterionScores: parseCriterionScores(entry.criterionScores, where, enabledCriteria),
+    });
   }
 
-  // Every eligible candidate must have a score (no missing labels).
+  // Every eligible candidate must have exactly one evaluation (no missing).
   for (const letter of letters) {
-    if (!scoredLetters.has(letter)) {
-      throw new Error(
-        `Judge output invalid: candidate ${letter} (${labelToModel[letter]}) has no score.`,
-      );
+    if (!seen.has(letter)) {
+      throw new Error(`Judge output invalid: candidate ${letter} has no evaluation.`);
     }
   }
+  return evaluations;
+}
+
+function parseComparisons(
+  value: unknown,
+  letters: string[],
+  labelToId: Record<string, string>,
+): JudgeComparison[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Judge output invalid: 'comparisons' must be an array.");
+  }
+  return value.map((cmp, i) => {
+    const where = `comparisons[${i}]`;
+    if (cmp == null || typeof cmp !== "object") {
+      throw new Error(`Judge output invalid: ${where} must be an object.`);
+    }
+    const entry = cmp as { labels?: unknown; reason?: unknown };
+    if (!Array.isArray(entry.labels) || entry.labels.length !== 2) {
+      throw new Error(`Judge output invalid: ${where}.labels must be an array of exactly two blind labels.`);
+    }
+    const pair = entry.labels.map((l, j) => {
+      const raw = requireNonEmptyString(l, `${where}.labels[${j}]`);
+      const letter = normalizeBlindLabel(raw, letters);
+      if (!letter) {
+        throw new Error(
+          `Judge output invalid: ${where}.labels[${j}] ${JSON.stringify(l)} is not a blind label (expected one of ${letters.join(", ")}).`,
+        );
+      }
+      return letter;
+    }) as [string, string];
+    if (pair[0] === pair[1]) {
+      throw new Error(`Judge output invalid: ${where} must compare two distinct candidates (got ${pair[0]} twice).`);
+    }
+    return {
+      candidateIds: [labelToId[pair[0]], labelToId[pair[1]]],
+      blindLabels: pair,
+      reason: requireNonEmptyString(entry.reason, `${where}.reason`),
+    };
+  });
 }
 
 // ---- Fusion ------------------------------------------------------------------

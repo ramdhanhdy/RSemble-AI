@@ -11,6 +11,7 @@ import { addRun, modelKey } from "./run-history";
 import { invalidateHistoryCache } from "./history-cache";
 import {
   buildFanoutJobs,
+  createBlindCandidateSet,
   draftMessages,
   fusionMessages,
   judgeMessages,
@@ -29,10 +30,14 @@ export interface RunControllerDeps {
   runEpochRef: React.MutableRefObject<number>;
   abortControllersRef: React.MutableRefObject<Set<AbortController>>;
   streamBuffer: StreamDeltaBuffer;
+  /** Random source for the blind-label shuffle (spec §5.1). Tests inject a
+   *  deterministic source to control the permutation; defaults to Math.random. */
+  random?: () => number;
 }
 
 export function createRunController(deps: RunControllerDeps) {
   const { stateRef, dispatch, runEpochRef, abortControllersRef, streamBuffer } = deps;
+  const random = deps.random ?? Math.random;
 
   const runFanout = async () => {
     const s = stateRef.current;
@@ -156,23 +161,18 @@ export function createRunController(deps: RunControllerDeps) {
     const judgeCtrl = new AbortController();
     abortControllersRef.current.add(judgeCtrl);
     try {
+      // Blind judging (DECISIONS.md #6): the label map is constructed exactly
+      // once per judge run — it stays stable regardless of later score sorting.
+      const blindSet = createBlindCandidateSet(done, random);
       const criticProvider = getProvider(seed.critic.providerId);
       const content = await criticProvider.chatCompletion({
         model: seed.critic.model,
-        messages: judgeMessages(seed.prompt, seed.rubric, done, seed.judgeInstruction),
+        messages: judgeMessages(seed.prompt, seed.rubric, blindSet.candidates, seed.judgeInstruction),
         temperature: 0.1,
         signal: judgeCtrl.signal,
       });
       if (runEpochRef.current !== epoch) return { ok: false };
-      const { breakdown, scoresById, unmatchedScores } = parseJudge(content, done);
-      if (unmatchedScores.length > 0 && import.meta.env.DEV) {
-        console.warn(
-          "[RSemble AI] judge returned scores whose labels could not be matched to candidates:",
-          unmatchedScores,
-          "Matched scores:",
-          scoresById,
-        );
-      }
+      const { breakdown, scoresById } = parseJudge(content, blindSet, seed.rubric, done);
       dispatch({ type: "JUDGE_RESULT", mode: seed.mode, consensus: breakdown, scoresById });
       if (seed.mode === "rank") {
         const scored = done.map((c) => ({
