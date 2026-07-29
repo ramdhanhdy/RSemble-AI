@@ -174,3 +174,154 @@ describe("buildExportMarkdown", () => {
     expect(md).not.toContain("Judge Instruction");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Blind judge audit trail — exports include the blind key, score explanations,
+// criterion details, and comparisons. Mappings are auditable (label → model).
+// ---------------------------------------------------------------------------
+
+function makeCandidate(id: string, model: string, provider: string, score: number) {
+  return {
+    id,
+    model,
+    provider,
+    providerId: "openrouter" as const,
+    slug: `${provider}/${model}`,
+    accent: "indigo",
+    strategy: "s",
+    summary: "sum",
+    scores: {},
+    weightedScore: score,
+    segments: [{ id: `${id}-s0`, text: `answer for ${model}` }],
+    status: "done" as const,
+  };
+}
+
+function makeReport(entries: Array<{
+  id: string;
+  label: string;
+  score: number;
+  position?: string;
+  rationale?: string;
+  strengths?: string[];
+  deductions?: { severity: "minor" | "major"; reason: string }[];
+  missedRequirements?: string[];
+  criterionScores?: { criterionId: string; label: string; score: number; rationale: string }[];
+}>, comparisons: { candidateIds: [string, string]; blindLabels: [string, string]; reason: string }[] = []) {
+  return {
+    labelMap: entries.map((e) => ({ label: e.label, candidateId: e.id })),
+    evaluationsById: Object.fromEntries(
+      entries.map((e) => [
+        e.id,
+        {
+          candidateId: e.id,
+          blindLabel: e.label,
+          overallScore: e.score,
+          position: e.position ?? `pos ${e.label}`,
+          rationale: e.rationale ?? `why ${e.label}`,
+          strengths: e.strengths ?? ["s"],
+          deductions: e.deductions ?? [],
+          missedRequirements: e.missedRequirements ?? [],
+          criterionScores: e.criterionScores ?? [],
+        },
+      ]),
+    ),
+    comparisons,
+  };
+}
+
+describe("buildExportMarkdown — blind judge audit trail", () => {
+  it("exports blind evaluation key, explanations, and comparisons", () => {
+    const s: StudioState = {
+      ...baseState,
+      mode: "rank",
+      candidates: [
+        makeCandidate("c1", "Kimi K3", "MoonshotAI", 5.0),
+        makeCandidate("c2", "Qwen 3.7 Flash", "Qwen", 3.5),
+      ],
+      judgeReport: makeReport(
+        [
+          {
+            id: "c1", label: "B", score: 5.0,
+            position: "Fix onboarding reliability first",
+            rationale: "Strong quantified comparison with credible early decision gates.",
+            strengths: ["Quantifies the revenue exposure"],
+            deductions: [{ severity: "minor", reason: "The adoption threshold is underspecified" }],
+            missedRequirements: [],
+            criterionScores: [
+              { criterionId: "commercial-reasoning", label: "Commercial reasoning", score: 4.8, rationale: "Uses supplied commercial evidence." },
+            ],
+          },
+          { id: "c2", label: "A", score: 3.5 },
+        ],
+        [
+          {
+            candidateIds: ["c1", "c2"],
+            blindLabels: ["B", "A"],
+            reason: "Both recommend reliability, but B quantifies the downside.",
+          },
+        ],
+      ),
+    };
+    const md = buildExportMarkdown(s)!;
+    expect(md).toContain("## Blind Evaluation Key");
+    expect(md).toContain("Candidate B: Kimi K3 (MoonshotAI)");
+    expect(md).toContain("Candidate A: Qwen 3.7 Flash (Qwen)");
+    expect(md).toContain("## Score Explanations");
+    expect(md).toContain("### Kimi K3 (Candidate B) — 5.0/5");
+    expect(md).toContain("Position: Fix onboarding reliability first");
+    expect(md).toContain("Why this score: Strong quantified comparison");
+    expect(md).toContain("- Quantifies the revenue exposure");
+    expect(md).toContain("Minor: The adoption threshold is underspecified");
+    expect(md).toContain("Commercial reasoning: 4.8/5 — Uses supplied commercial evidence.");
+    expect(md).toContain("## Same-Conclusion Comparisons");
+    expect(md).toContain("Candidate B (Kimi K3) vs Candidate A (Qwen 3.7 Flash): Both recommend reliability, but B quantifies the downside.");
+  });
+
+  it("omits empty optional sections (no inert headings)", () => {
+    const s: StudioState = {
+      ...baseState,
+      mode: "rank",
+      candidates: [makeCandidate("c1", "M1", "P1", 4.0)],
+      judgeReport: makeReport([
+        { id: "c1", label: "A", score: 4.0, strengths: ["good"], deductions: [], missedRequirements: [], criterionScores: [] },
+      ]),
+    };
+    const md = buildExportMarkdown(s)!;
+    expect(md).not.toContain("Missed requirements:");
+    expect(md).not.toContain("Deductions:");
+    expect(md).not.toContain("Criterion scores:");
+    expect(md).not.toContain("## Same-Conclusion Comparisons");
+  });
+
+  it("escapes markdown-sensitive text in judge rationale", () => {
+    const s: StudioState = {
+      ...baseState,
+      mode: "rank",
+      candidates: [makeCandidate("c1", "M1", "P1", 4.0)],
+      judgeReport: makeReport([
+        {
+          id: "c1", label: "A", score: 4.0,
+          rationale: "First line.\n## Injected heading\nLast line.",
+        },
+      ]),
+    };
+    const md = buildExportMarkdown(s)!;
+    // A line-leading "## " inside judge text is escaped so it cannot inject a
+    // real Markdown heading into the exported document.
+    expect(md).not.toContain("\n## Injected heading\n");
+    expect(md).toContain("\\## Injected heading");
+  });
+
+  it("exports legacy/current states without a report safely during transition", () => {
+    const s: StudioState = {
+      ...baseState,
+      mode: "rank",
+      candidates: [makeCandidate("c1", "M1", "P1", 4.5)],
+      judgeReport: null,
+    };
+    const md = buildExportMarkdown(s)!;
+    expect(md).toContain("## Ranked Candidates");
+    expect(md).toContain("M1 — 4.5/5");
+  });
+});
