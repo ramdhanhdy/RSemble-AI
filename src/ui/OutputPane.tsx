@@ -137,8 +137,12 @@ export function OutputPane({
 }
 
 /** Terminal state when too few candidates survived to rank or fuse.
- *  Shows WHICH candidates failed (model name + error), not just an aggregate
- *  count, and offers per-candidate retry when a callback is available. */
+ *  Shows WHICH candidates were non-usable (model name + truthful reason), not
+ *  just an aggregate count, and offers per-candidate retry when a callback is
+ *  available. A candidate is non-usable when it errored during generation OR
+ *  completed the transport (status "done") but produced empty/whitespace
+ *  content (truncated/aborted return). Both classes must be shown so the user
+ *  can act on every unusable model, not just the errored ones. */
 export function InsufficientState({
   done,
   failed,
@@ -153,7 +157,10 @@ export function InsufficientState({
   onRetryCandidate?: (candidate: Candidate) => void;
 }) {
   const verb = mode === "fuse" ? "fuse" : "rank";
-  const failedCandidates = candidates.filter((c) => c.status === "error");
+  // Non-usable = errored candidates AND done-but-empty candidates. The legacy
+  // behaviour filtered on status==="error" only, silently omitting empty done
+  // candidates from the actionable per-candidate list.
+  const nonUsable = candidates.filter((c) => !isUsableCandidate(c));
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-warning/40 bg-warning/[0.08] py-10 px-6 text-center">
       <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-warning">Stopped</p>
@@ -166,35 +173,40 @@ export function InsufficientState({
           {failed} candidate{failed === 1 ? "" : "s"} failed during generation.
         </p>
       )}
-      {/* Per-candidate failure detail — model name + error, not just a count.
-          This is the core fix: the aggregate count hid WHICH model failed and
-          WHY, leaving the user unable to act on the specific failure. */}
-      {failedCandidates.length > 0 && (
+      {/* Per-candidate failure detail — model name + truthful reason, not just a
+          count. This is the core fix: the aggregate count hid WHICH model was
+          non-usable and WHY, leaving the user unable to act on the specific
+          failure. Both errored and empty-done candidates are listed here. */}
+      {nonUsable.length > 0 && (
         <ul className="mt-4 flex w-full max-w-md flex-col gap-2 text-left">
-          {failedCandidates.map((c) => (
-            <li key={c.id} className="flex items-start gap-2 rounded-sm border border-error/30 bg-error/[0.06] px-3 py-2">
-              <span className="mt-1 size-2 shrink-0 rounded-full bg-error" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <BrandAvatar slug={c.slug} size={18} />
-                  <span className="truncate font-mono text-sm text-text" title={c.provider}>{c.model}</span>
+          {nonUsable.map((c) => {
+            const isEmptyDone = c.status === "done";
+            const reason = isEmptyDone
+              ? "Completed but produced no content — response was empty or truncated."
+              : c.errorMessage || "Candidate failed during generation.";
+            return (
+              <li key={c.id} className="flex items-start gap-2 rounded-sm border border-error/30 bg-error/[0.06] px-3 py-2">
+                <span className="mt-1 size-2 shrink-0 rounded-full bg-error" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <BrandAvatar slug={c.slug} size={18} />
+                    <span className="truncate font-mono text-sm text-text" title={c.provider}>{c.model}</span>
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-error/80">{reason}</p>
                 </div>
-                {c.errorMessage && (
-                  <p className="mt-1 text-sm leading-relaxed text-error/80">{c.errorMessage}</p>
+                {onRetryCandidate && (
+                  <button
+                    type="button"
+                    onClick={() => onRetryCandidate(c)}
+                    aria-label={`Retry ${c.model}`}
+                    className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-sm border border-edge px-3 font-mono text-xs text-text-secondary hover:border-accent/50 hover:text-accent"
+                  >
+                    <RotateCw size={13} /> Retry
+                  </button>
                 )}
-              </div>
-              {onRetryCandidate && (
-                <button
-                  type="button"
-                  onClick={() => onRetryCandidate(c)}
-                  aria-label={`Retry ${c.model}`}
-                  className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-sm border border-edge px-3 font-mono text-xs text-text-secondary hover:border-accent/50 hover:text-accent"
-                >
-                  <RotateCw size={13} /> Retry
-                </button>
-              )}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
       <p className="mt-3 font-mono text-sm text-text-muted">

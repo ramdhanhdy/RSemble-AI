@@ -147,3 +147,74 @@ describe("LiveCandidateCard — empty done candidate is visibly unusable", () =>
     expect(html).toContain("unusable");
   });
 });
+
+// ---------------------------------------------------------------------------
+// InsufficientState — terminal insufficient state must show EVERY non-usable
+// candidate, including done-but-empty ones, with model identity, a truthful
+// reason, and an actionable retry where supported. The legacy behaviour built
+// the per-candidate detail/retry list only from status=error, so an empty
+// status=done candidate was silently omitted from the actionable list.
+// Regression scenario: 2 configured -> one text success + one empty done.
+// ---------------------------------------------------------------------------
+
+function makeEmptyDoneCandidate(id: string, model: string): Candidate {
+  return {
+    id,
+    model,
+    provider: "Test",
+    providerId: "openrouter",
+    slug: `slug-${id}`,
+    accent: "amber",
+    strategy: "Parallel model",
+    summary: "",
+    scores: {},
+    weightedScore: 0,
+    segments: [],
+    status: "done",
+    startedAt: 100,
+    finishedAt: 200,
+  };
+}
+
+describe("InsufficientState — empty done candidate visibility (2 configured -> 1 success + 1 empty done)", () => {
+  it("shows the empty-done candidate with model name and a truthful empty-output reason", () => {
+    const success = makeDoneCandidate("c1", "Claude");
+    const empty = makeEmptyDoneCandidate("c2", "GPT-5");
+    const html = renderToStaticMarkup(
+      <InsufficientState done={1} failed={1} mode="fuse" candidates={[success, empty]} />,
+    );
+    // The empty-done candidate must appear in the actionable list, identified by
+    // its model name (not silently omitted because status !== "error").
+    expect(html).toContain("GPT-5");
+    // A truthful reason for the non-usable state must be shown — something that
+    // communicates empty/no content, not a generic "check slugs" hint alone.
+    expect(html).toMatch(/empty|no content|unusable|truncated/i);
+  });
+
+  it("renders a retry button for the empty-done candidate when onRetryCandidate is provided", () => {
+    const success = makeDoneCandidate("c1", "Claude");
+    const empty = makeEmptyDoneCandidate("c2", "GPT-5");
+    const html = renderToStaticMarkup(
+      <InsufficientState
+        done={1}
+        failed={1}
+        mode="fuse"
+        candidates={[success, empty]}
+        onRetryCandidate={() => {}}
+      />,
+    );
+    expect(html).toContain("Retry");
+    expect(html).toContain("GPT-5");
+    // The retry button must reference the empty-done model so it is actionable.
+    expect(html).toContain('aria-label="Retry GPT-5"');
+  });
+
+  it("does not render a retry button for the empty-done candidate when no callback is provided", () => {
+    const success = makeDoneCandidate("c1", "Claude");
+    const empty = makeEmptyDoneCandidate("c2", "GPT-5");
+    const html = renderToStaticMarkup(
+      <InsufficientState done={1} failed={1} mode="fuse" candidates={[success, empty]} />,
+    );
+    expect(html).not.toContain("Retry");
+  });
+});

@@ -79,7 +79,7 @@ describe("parseJudge — score matching", () => {
     expect(result.scoresById["c2"]).toBe(3.1);
   });
 
-  it("records unmatched scores instead of silently dropping them", () => {
+  it("rejects an unmatched/extra score label instead of silently recording it", () => {
     const candidates = [
       makeCandidate("c1", "ModelA", "openrouter", "model-a"),
     ];
@@ -92,14 +92,13 @@ describe("parseJudge — score matching", () => {
         { label: "Z", score: 2.0 },
       ],
     });
-    const result = parseJudge(judgeText, candidates);
-    expect(result.scoresById["c1"]).toBe(4.0);
-    expect(result.unmatchedScores).toHaveLength(1);
-    expect(result.unmatchedScores[0].label).toBe("Z");
-    expect(result.unmatchedScores[0].score).toBe(2.0);
+    // Strict contract: any score label that does not match a candidate is a
+    // contract violation. It must throw (→ JUDGE_FAILED), never be silently
+    // recorded as an unmatched score and accepted.
+    expect(() => parseJudge(judgeText, candidates)).toThrow();
   });
 
-  it("clamps scores to 0-5 range", () => {
+  it("rejects a score above the documented 5.0 maximum (no clamping)", () => {
     const candidates = [
       makeCandidate("c1", "ModelA", "openrouter", "model-a"),
     ];
@@ -111,8 +110,24 @@ describe("parseJudge — score matching", () => {
         { label: "A", score: 10 },
       ],
     });
-    const result = parseJudge(judgeText, candidates);
-    expect(result.scoresById["c1"]).toBe(5);
+    // Out-of-range scores must NOT be clamped to 5 — they are a contract
+    // violation and must throw (→ JUDGE_FAILED).
+    expect(() => parseJudge(judgeText, candidates)).toThrow();
+  });
+
+  it("rejects a score below the documented 1.0 minimum (no clamping)", () => {
+    const candidates = [
+      makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+    ];
+    const judgeText = JSON.stringify({
+      consensus: [],
+      contradictions: [],
+      uniqueInsights: [],
+      scores: [
+        { label: "A", score: 0 },
+      ],
+    });
+    expect(() => parseJudge(judgeText, candidates)).toThrow();
   });
 
   it("throws on malformed JSON (caller catches and dispatches JUDGE_FAILED)", () => {

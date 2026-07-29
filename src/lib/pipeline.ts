@@ -279,19 +279,22 @@ export function parseJudge(text: string, candidates: Candidate[]): JudgeResult {
   };
 
   const scoresById: Record<string, number> = {};
-  const unmatchedScores: { label: string; score: number }[] = [];
+  // validateJudgeShape guarantees every score label matches a candidate, every
+  // score is numeric and within 1.0–5.0, and there is exactly one score per
+  // candidate (no missing, no duplicates, no unmatched/extra). So the
+  // post-validation loop only needs to map validated scores to candidate ids.
+  // Scores are used as-is — never clamped.
   (raw.scores ?? []).forEach((s) => {
-    if (typeof s.score !== "number") return;
-    const score = Math.max(0, Math.min(5, s.score));
     const letter = s.label ? normalizeLabel(s.label, letters, labelToModel) : null;
     if (letter) {
       const id = labelToId[letter];
-      if (id) scoresById[id] = score;
-    } else if (s.label) {
-      // Record instead of dropping silently — a failed match is a signal, not noise.
-      unmatchedScores.push({ label: s.label, score });
+      if (id) scoresById[id] = s.score as number;
     }
   });
+
+  // unmatchedScores is always empty now: validateJudgeShape throws on any label
+  // that does not match a candidate, so no unmatched scores can survive to here.
+  const unmatchedScores: { label: string; score: number }[] = [];
 
   return { breakdown, scoresById, unmatchedScores };
 }
@@ -302,11 +305,13 @@ export function parseJudge(text: string, candidates: Candidate[]): JudgeResult {
  * invalid so the caller routes it through the visible JUDGE_FAILED path
  * instead of silently accepting a zero-score or incomplete result.
  *
- * Requirements:
+ * Requirements (strict contract):
  * - consensus, contradictions must be arrays (if present)
  * - uniqueInsights must be an array (if present)
  * - scores must be an array
  * - every score entry must have a numeric `score`
+ * - every score entry's label MUST match a candidate (no unmatched/extra labels)
+ * - every score must fall within the documented 1.0–5.0 range (no clamping)
  * - there must be exactly one score per eligible candidate (no missing, no duplicates)
  */
 function validateJudgeShape(
@@ -330,31 +335,40 @@ function validateJudgeShape(
     throw new Error("Judge output invalid: 'scores' is empty — no candidate was scored.");
   }
 
-  // Every score entry must have a numeric score.
+  // Every score entry must have a numeric score, a matching label, and a
+  // value within the documented 1.0–5.0 range. Unmatched labels and
+  // out-of-range scores are contract violations, not soft warnings — they
+  // throw so the caller routes through JUDGE_FAILED. Scores are never clamped.
+  const scoredLetters = new Set<string>();
   for (const s of raw.scores) {
-    if (s == null || typeof s.score !== "number") {
+    if (s == null || typeof s.score !== "number" || Number.isNaN(s.score)) {
       throw new Error(
         `Judge output invalid: score entry is missing a numeric 'score' value (got ${JSON.stringify(s)}).`,
       );
     }
-  }
-
-  // Exactly one score per eligible candidate: map letters to scores and
-  // detect missing or duplicate scores.
-  const scoredLetters = new Set<string>();
-  for (const s of raw.scores) {
-    const letter = s.label ? normalizeLabel(s.label, letters, labelToModel) : null;
-    if (letter) {
-      if (scoredLetters.has(letter)) {
-        throw new Error(
-          `Judge output invalid: duplicate score for candidate ${letter}.`,
-        );
-      }
-      scoredLetters.add(letter);
+    // Range check — the documented rubric scale is 1.0 to 5.0. Do NOT clamp.
+    if (s.score < 1.0 || s.score > 5.0) {
+      throw new Error(
+        `Judge output invalid: score ${s.score} for label ${JSON.stringify(s.label)} is outside the documented 1.0–5.0 range.`,
+      );
     }
+    // Label match check — every score label must resolve to a candidate.
+    const letter = s.label ? normalizeLabel(s.label, letters, labelToModel) : null;
+    if (!letter) {
+      throw new Error(
+        `Judge output invalid: score label ${JSON.stringify(s.label)} does not match any candidate (expected one of ${letters.join(", ")}).`,
+      );
+    }
+    // Duplicate check — exactly one score per candidate.
+    if (scoredLetters.has(letter)) {
+      throw new Error(
+        `Judge output invalid: duplicate score for candidate ${letter}.`,
+      );
+    }
+    scoredLetters.add(letter);
   }
 
-  // Every eligible candidate must have a score.
+  // Every eligible candidate must have a score (no missing labels).
   for (const letter of letters) {
     if (!scoredLetters.has(letter)) {
       throw new Error(

@@ -719,6 +719,72 @@ describe("run-controller — judge contract failures", () => {
     expect(types).not.toContain("FUSION_START");
     expect(stateRef.current.judgeStatus).toBe("error");
   });
+
+  // Strict-contract regressions: an extra/unmatched score label is a contract
+  // violation. It must route through JUDGE_FAILED and must never start Fusion.
+  it("dispatches JUDGE_FAILED in rank mode when judge returns an unmatched/extra score label", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValue(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+        { label: "A", score: 4.0 },
+        { label: "B", score: 3.0 },
+        { label: "Z", score: 2.0 },
+      ] }),
+    );
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_FAILED");
+    expect(types).not.toContain("JUDGE_RESULT");
+    expect(stateRef.current.judgeStatus).toBe("error");
+  });
+
+  it("dispatches JUDGE_FAILED and does NOT proceed to fusion when judge returns an unmatched/extra score label (fuse mode)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValueOnce(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+        { label: "A", score: 4.0 },
+        { label: "B", score: 3.0 },
+        { label: "Z", score: 2.0 },
+      ] }),
+    );
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_FAILED");
+    expect(types).not.toContain("JUDGE_RESULT");
+    expect(types).not.toContain("FUSION_START");
+    expect(types).not.toContain("FUSION_RESULT");
+    expect(stateRef.current.running).toBe(false);
+    expect(stateRef.current.judgeStatus).toBe("error");
+    expect(stateRef.current.fusionStatus).not.toBe("done");
+  });
+
+  it("dispatches JUDGE_FAILED when a judge score is outside the documented 1.0–5.0 range (no clamping)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock.mockImplementation(() => streamOf("some answer"));
+    chatCompletionMock.mockResolvedValueOnce(
+      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], scores: [
+        { label: "A", score: 10 },
+        { label: "B", score: 3.0 },
+      ] }),
+    );
+    const { deps, dispatched, stateRef } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_FAILED");
+    expect(types).not.toContain("JUDGE_RESULT");
+    expect(types).not.toContain("FUSION_START");
+    expect(stateRef.current.judgeStatus).toBe("error");
+  });
 });
 
 // ---------------------------------------------------------------------------
