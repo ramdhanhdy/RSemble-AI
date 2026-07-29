@@ -21,6 +21,8 @@ interface JudgeConfigProps {
   critic: { providerId: ProviderId; model: string };
   models: CatalogModel[];
   dispatch: React.Dispatch<Action>;
+  /** Optional custom instruction applied to the judge/fusion model. */
+  judgeInstruction: string;
 }
 
 const PROVIDER_BADGE: Record<ProviderId, string> = {
@@ -32,7 +34,7 @@ const PROVIDER_BADGE: Record<ProviderId, string> = {
   umans: "Umans",
 };
 
-export function JudgeConfig({ critic, models, dispatch }: JudgeConfigProps) {
+export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: JudgeConfigProps) {
   const [editing, setEditing] = useState(false);
   // TODO(phase-2): adjacent gear button → judge settings popover (temperature,
   // system prompt — both already in state) per spec §4.4.
@@ -72,6 +74,28 @@ export function JudgeConfig({ critic, models, dispatch }: JudgeConfigProps) {
           }}
         />
       )}
+
+      {/* Optional custom instruction for the judge/fusion model — separate
+          from the task prompt and weighted rubric. Empty = no instruction
+          (prompts stay unchanged). */}
+      <label
+        htmlFor="judge-instruction"
+        className="mt-3 block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+      >
+        Judge instruction <span className="normal-case tracking-normal">· optional</span>
+      </label>
+      <textarea
+        id="judge-instruction"
+        value={judgeInstruction}
+        onChange={(e) => dispatch({ type: "SET_JUDGE_INSTRUCTION", value: e.target.value })}
+        placeholder="e.g. “Prefer concise answers and penalize hedging.” Applied on top of the rubric, never overriding the scored JSON contract."
+        aria-label="Optional judge instruction"
+        rows={2}
+        className="mt-1.5 min-h-[44px] w-full resize-y rounded-md border border-edge bg-card px-2.5 py-1.5 text-sm text-text placeholder-text-muted focus:border-edge-bright focus:outline-none focus:ring-1 focus:ring-accent"
+      />
+      <p className="mt-1 text-[11px] text-text-muted">
+        Optional guidance applied to every judge &amp; fusion pass. Leave blank to keep prompts unchanged.
+      </p>
     </div>
   );
 }

@@ -11,6 +11,7 @@
 import { Crown, GitMerge, Columns2 } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import type { Candidate, ConsensusBreakdown } from "../studio-data";
+import { isUsableCandidate } from "../lib/pipeline";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
 import { BrandAvatar } from "./brand-icons";
@@ -33,12 +34,15 @@ export function RankResult({
   onCompare?: () => void;
 }) {
   const ranked = [...state.candidates]
-    .filter((c) => c.status === "done")
+    .filter(isUsableCandidate)
     .sort((a, b) => b.weightedScore - a.weightedScore);
   const winner = ranked[0];
   const runnerUp = ranked[1];
   const breakdown = state.consensus;
-  const canFuse = onFuse != null && ranked.length >= 2 && !state.running;
+  // The Fuse button is shown only when ≥2 candidates have genuine content
+  // (matches the run-controller eligibility guard). An empty-content "done"
+  // candidate does not count — clicking would be a silent no-op.
+  const canFuse = onFuse != null && ranked.filter(isUsableCandidate).length >= 2 && !state.running;
 
   const margin = winner && runnerUp ? winner.weightedScore - runnerUp.weightedScore : null;
   const isCloseCall = margin != null && margin > 0 && margin <= 0.2;

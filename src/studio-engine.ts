@@ -11,6 +11,7 @@
 
 import {
   DEFAULT_CRITIC_REF,
+  INITIAL_EXAMPLE_INDEX,
   INITIAL_PROMPT,
   SEED_RUBRIC,
   SEED_SLOTS,
@@ -25,6 +26,7 @@ import {
   type RubricKind,
 } from "./studio-data";
 import type { CatalogModel, CriticRef } from "./lib/providers/types";
+import { EXAMPLE_TASKS, nextExampleIndex } from "./lib/test-cases";
 
 export type StageStatus = "idle" | "running" | "done" | "error";
 
@@ -34,11 +36,18 @@ export interface StudioState {
 
   // --- command (left pane, identical in both modes) ---
   prompt: string;
+  /** Index of the last curated example loaded by the "Try an example" control.
+   *  `-1` means none loaded yet. Drives rotation via `nextExampleIndex`. */
+  exampleIndex: number;
   rubric: RubricCriterion[];
   slots: ModelSlot[];
   temperature: number;
   systemPrompt: string;
   critic: CriticRef;
+  /** Optional custom instruction applied to every judge/fusion path, separate
+   *  from the task prompt and weighted rubric. Empty string = no instruction
+   *  (prompts stay byte-identical to the pre-instruction baseline). */
+  judgeInstruction: string;
 
   // --- live pipeline execution state ---
   candidates: Candidate[];
@@ -64,6 +73,7 @@ export type Action =
   | { type: "SET_MODE"; mode: Mode }
   // --- command ---
   | { type: "SET_PROMPT"; value: string }
+  | { type: "LOAD_EXAMPLE"; force?: boolean }
   | { type: "TOGGLE_RUBRIC"; id: string }
   | { type: "ADD_RUBRIC"; label: string; kind: RubricKind }
   | { type: "SET_RUBRIC_WEIGHT"; id: string; weight: number }
@@ -76,6 +86,7 @@ export type Action =
   | { type: "SET_SYSTEM_PROMPT"; value: string }
   | { type: "SET_CRITIC"; critic: CriticRef }
   | { type: "SET_CRITIC_MODEL"; value: string }
+  | { type: "SET_JUDGE_INSTRUCTION"; value: string }
   // --- pipeline ---
   | { type: "FANOUT_START"; candidates: Candidate[] }
   | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
@@ -117,6 +128,26 @@ export function reducer(state: StudioState, action: Action): StudioState {
 
     case "SET_PROMPT":
       return { ...state, prompt: action.value };
+
+    case "LOAD_EXAMPLE": {
+      // Guard against silently destroying meaningful USER text. Filling is
+      // allowed without `force` only when:
+      //   - the current prompt is empty/whitespace, OR
+      //   - the current prompt is still the previously-loaded example (i.e. the
+      //     user clicked "Try an example" again without editing it) — this is a
+      //     deliberate rotation, not a silent overwrite.
+      // Any other non-empty text (user-typed) requires `force: true`, which the
+      // UI's confirm-replace affordance supplies after a second click.
+      const isBlank = state.prompt.trim().length === 0;
+      const isUneditedExample =
+        state.exampleIndex >= 0 &&
+        EXAMPLE_TASKS[state.exampleIndex]?.prompt === state.prompt;
+      if (!isBlank && !isUneditedExample && !action.force) return state;
+      const index = nextExampleIndex(state.exampleIndex);
+      const task = EXAMPLE_TASKS[index];
+      if (!task) return state;
+      return { ...state, prompt: task.prompt, exampleIndex: index };
+    }
 
     case "TOGGLE_RUBRIC":
       return {
@@ -178,6 +209,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
       // fields when the provider changes; SET_CRITIC_MODEL is only for model-only
       // edits within the same provider).
       return { ...state, critic: { providerId: state.critic.providerId, model: action.value } };
+
+    case "SET_JUDGE_INSTRUCTION":
+      return { ...state, judgeInstruction: action.value };
 
     case "FANOUT_START":
       return {
@@ -384,11 +418,13 @@ export function reducer(state: StudioState, action: Action): StudioState {
 export const initialState: StudioState = {
   mode: "rank",
   prompt: INITIAL_PROMPT,
+  exampleIndex: INITIAL_EXAMPLE_INDEX,
   rubric: SEED_RUBRIC,
   slots: SEED_SLOTS,
   temperature: 0.4,
   systemPrompt: SYSTEM_PROMPT_DEFAULT,
   critic: DEFAULT_CRITIC_REF,
+  judgeInstruction: "",
   candidates: [],
   running: false,
   models: [],

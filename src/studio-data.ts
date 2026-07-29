@@ -143,4 +143,11 @@ export const SEED_SCORECARD: ScorecardRow[] = [];
 
 export const INITIAL_PROMPT = "";
 
+/**
+ * Initial example index. `-1` means no curated example has been loaded yet, so
+ * the first `LOAD_EXAMPLE` action fills the first example (index 0). See
+ * `nextExampleIndex` in lib/test-cases.ts.
+ */
+export const INITIAL_EXAMPLE_INDEX = -1;
+
 export const SCORE_STORAGE_KEY = "rsemble.qualityScores.v1";
