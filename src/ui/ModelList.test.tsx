@@ -178,3 +178,102 @@ describe("AddModelCombobox — provider switch and clear-X semantics", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// AddModelCombobox — complete catalog scrolling (no eight-item cutoff) (spec §8.4)
+// ---------------------------------------------------------------------------
+
+function geminiCatalog(n: number): CatalogModel[] {
+  // Ordered newest-first, simulating the adapter's recency output.
+  return Array.from({ length: n }, (_, i) => ({
+    id: `gemini-3.${n - i}-flash`,
+    name: `Gemini 3.${n - i} Flash`,
+    providerId: "gemini" as const,
+  }));
+}
+
+describe("AddModelCombobox — complete catalog (no slice cutoff)", () => {
+  it("renders every catalog entry on an empty query, not just the first eight", () => {
+    const models = geminiCatalog(12);
+    const h = render(
+      <AddModelCombobox models={models} takenKeys={new Set()} onCancel={() => {}} onAdd={() => {}} />,
+    );
+    try {
+      // Switch to the Gemini provider tab (default is OpenRouter).
+      act(() => h.byText("Gemini")!.click());
+      const catalogBtns = h.$$("ul button");
+      // All 12 entries render — the old .slice(0, 8) would have shown 8.
+      expect(catalogBtns.length).toBe(12);
+      // First item is the newest ordered entry supplied (models[0]).
+      expect(catalogBtns[0].textContent).toContain(models[0].id);
+      // Items 9 and 12 (1-indexed) exist in the scrollable list.
+      expect(catalogBtns[8].textContent).toContain(models[8].id);
+      expect(catalogBtns[11].textContent).toContain(models[11].id);
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("keeps the bounded-height overflow list class", () => {
+    const models = geminiCatalog(12);
+    const h = render(
+      <AddModelCombobox models={models} takenKeys={new Set()} onCancel={() => {}} onAdd={() => {}} />,
+    );
+    try {
+      act(() => h.byText("Gemini")!.click());
+      const list = h.$("ul")!;
+      expect(list.className).toContain("max-h-48");
+      expect(list.className).toContain("overflow-y-auto");
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("a search can return every matching item, including ones near the bottom", () => {
+    const models = geminiCatalog(12);
+    const h = render(
+      <AddModelCombobox models={models} takenKeys={new Set()} onCancel={() => {}} onAdd={() => {}} />,
+    );
+    try {
+      act(() => h.byText("Gemini")!.click());
+      const input = h.$("input#model-search") as HTMLInputElement;
+      // Search for a bottom-of-list model.
+      typeInto(input, models[11].id);
+      const matches = h.$$("ul button");
+      expect(matches.length).toBe(1);
+      expect(matches[0].textContent).toContain(models[11].id);
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("a nonmatching manual slug can still be committed exactly", () => {
+    const models = geminiCatalog(12);
+    let added: ModelSlot | null = null;
+    const h = render(
+      <AddModelCombobox
+        models={models}
+        takenKeys={new Set()}
+        onCancel={() => {}}
+        onAdd={(slot) => {
+          added = slot;
+        }}
+      />,
+    );
+    try {
+      act(() => h.byText("Gemini")!.click());
+      const input = h.$("input#model-search") as HTMLInputElement;
+      typeInto(input, "gemini-custom-fake");
+      const addSlugBtn = h.$$("button").find((b) =>
+        b.getAttribute("aria-label")?.startsWith("Add slug "),
+      ) as HTMLButtonElement;
+      expect(addSlugBtn).toBeTruthy();
+      act(() => addSlugBtn.click());
+      expect(added).not.toBeNull();
+      expect(added!.slug).toBe("gemini-custom-fake");
+      expect(added!.providerId).toBe("gemini");
+    } finally {
+      cleanup(h);
+    }
+  });
+});

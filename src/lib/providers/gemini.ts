@@ -40,6 +40,77 @@ function mapMessagesToGemini(messages: ChatMessage[]) {
   return { systemInstruction, contents };
 }
 
+/** Single fallback catalog for no-key, empty-response, and recoverable-failure
+ *  paths (spec §8.3). Starts with current Gemini 3 models. Returned as a fresh
+ *  copy per call so callers cannot mutate the module constant. */
+const GEMINI_FALLBACK_MODELS: readonly CatalogModel[] = [
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", providerId: "gemini" },
+  { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (Preview)", providerId: "gemini" },
+  { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", providerId: "gemini" },
+];
+
+function fallbackGeminiCatalog(): CatalogModel[] {
+  return GEMINI_FALLBACK_MODELS.map((m) => ({ ...m }));
+}
+
+/** A live record is selectable when supportedGenerationMethods is absent OR
+ *  includes generateContent — embedding-only records never enter a picker
+ *  (spec §8.1). */
+function supportsGenerateContent(item: { supportedGenerationMethods?: unknown }): boolean {
+  const methods = item.supportedGenerationMethods;
+  return !Array.isArray(methods) || methods.includes("generateContent");
+}
+
+function geminiVersion(id: string): { major: number; minor: number } | null {
+  const m = id.match(/gemini-(\d+)\.(\d+)/i);
+  return m ? { major: Number(m[1]), minor: Number(m[2]) } : null;
+}
+
+function isLatestAlias(id: string): boolean {
+  return /-latest$/i.test(id);
+}
+
+/** Deterministic recency order (spec §8.2): -latest aliases first, then numeric
+ *  generations descending (stability suffixes never place 2.x ahead of 3.x),
+ *  then unversioned/legacy, with a case-insensitive id tie-break. */
+function compareGeminiModelIds(a: string, b: string): number {
+  const aLatest = isLatestAlias(a);
+  const bLatest = isLatestAlias(b);
+  if (aLatest !== bLatest) return aLatest ? -1 : 1;
+  const av = geminiVersion(a);
+  const bv = geminiVersion(b);
+  if (av && bv) {
+    if (av.major !== bv.major) return bv.major - av.major;
+    if (av.minor !== bv.minor) return bv.minor - av.minor;
+    return a.localeCompare(b, undefined, { sensitivity: "base" });
+  }
+  if (av && !bv) return -1;
+  if (!av && bv) return 1;
+  return a.localeCompare(b, undefined, { sensitivity: "base" });
+}
+
+/** Filter to generation-capable gemini* ids, strip the `models/` prefix once,
+ *  deduplicate (first metadata occurrence supplies the display name), and sort
+ *  by deterministic recency. Exact provider-native ids are preserved — ordering
+ *  never rewrites an id (spec §8.2). */
+function normalizeGeminiCatalog(items: unknown[]): CatalogModel[] {
+  const seen = new Set<string>();
+  const out: CatalogModel[] = [];
+  for (const m of items) {
+    const item = m as { name?: string; displayName?: string; supportedGenerationMethods?: unknown };
+    const rawId = (item.name ?? "").trim();
+    if (!rawId) continue;
+    const id = rawId.startsWith("models/") ? rawId.slice(7) : rawId;
+    if (!id.startsWith("gemini")) continue;
+    if (!supportsGenerateContent(item)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, name: item.displayName ?? id, providerId: "gemini" });
+  }
+  out.sort((a, b) => compareGeminiModelIds(a.id, b.id));
+  return out;
+}
+
 export const geminiProvider: LLMProvider = {
   id: "gemini",
   label: "Gemini",
@@ -232,13 +303,7 @@ export const geminiProvider: LLMProvider = {
 
   async listModels(signal?: AbortSignal): Promise<CatalogModel[]> {
     const key = getApiKey();
-    if (!key) {
-      return [
-        { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", providerId: "gemini" },
-        { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (Preview)", providerId: "gemini" },
-        { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", providerId: "gemini" },
-      ];
-    }
+    if (!key) return fallbackGeminiCatalog();
 
     try {
       const res = await fetch(`${BASE_URL}/models?key=${key}`, { signal });
@@ -247,27 +312,13 @@ export const geminiProvider: LLMProvider = {
       }
       const data = await res.json();
       const arr: unknown[] = Array.isArray(data?.models) ? data.models : [];
-      const list: CatalogModel[] = arr
-        .map((m) => {
-          const item = m as { name?: string; displayName?: string; supportedGenerationMethods?: string[] };
-          const rawId = item.name ?? "";
-          const id = rawId.startsWith("models/") ? rawId.slice(7) : rawId;
-          const name = item.displayName ?? id;
-          return { id, name, providerId: "gemini" as const };
-        })
-        .filter((m) => m.id.startsWith("gemini"));
-
-      return list.length > 0
-        ? list
-        : [
-            { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", providerId: "gemini" },
-            { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (Preview)", providerId: "gemini" },
-          ];
-    } catch {
-      return [
-        { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", providerId: "gemini" },
-        { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (Preview)", providerId: "gemini" },
-      ];
+      const list = normalizeGeminiCatalog(arr);
+      return list.length > 0 ? list : fallbackGeminiCatalog();
+    } catch (err) {
+      // Preserve abort semantics (spec §9): an aborted list request must
+      // propagate, not silently resolve to the fallback.
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      return fallbackGeminiCatalog();
     }
   },
 };

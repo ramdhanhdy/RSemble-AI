@@ -200,10 +200,10 @@ export function AddModelCombobox({
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     const pool = providerModels.length > 0 ? providerModels : [];
-    if (q.length === 0) return pool.slice(0, 8);
-    return pool
-      .filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
-      .slice(0, 8);
+    if (q.length === 0) return pool;
+    return pool.filter(
+      (m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
+    );
   }, [query, providerModels]);
 
   const hasCatalog = providerModels.length > 0;

@@ -252,3 +252,100 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// JudgeCombobox — complete catalog scrolling (no eight-item cutoff) (spec §8.4)
+// ---------------------------------------------------------------------------
+
+function geminiCatalogForJudge(n: number): CatalogModel[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `gemini-3.${n - i}-flash`,
+    name: `Gemini 3.${n - i} Flash`,
+    providerId: "gemini" as const,
+  }));
+}
+
+describe("JudgeCombobox — complete catalog (no slice cutoff)", () => {
+  it("renders every catalog entry on an empty query, not just the first eight", () => {
+    const models = geminiCatalogForJudge(12);
+    const h = render(
+      <JudgeCombobox
+        models={models}
+        current="old-model"
+        initialProvider="gemini"
+        onCancel={() => {}}
+        onCommit={() => {}}
+      />,
+    );
+    try {
+      const catalogBtns = h.$$("ul button");
+      expect(catalogBtns.length).toBe(12);
+      expect(catalogBtns[0].textContent).toContain(models[0].id);
+      expect(catalogBtns[8].textContent).toContain(models[8].id);
+      expect(catalogBtns[11].textContent).toContain(models[11].id);
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("keeps the bounded-height overflow list class", () => {
+    const models = geminiCatalogForJudge(12);
+    const h = render(
+      <JudgeCombobox models={models} current="old" initialProvider="gemini" onCancel={() => {}} onCommit={() => {}} />,
+    );
+    try {
+      const list = h.$("ul")!;
+      expect(list.className).toContain("max-h-48");
+      expect(list.className).toContain("overflow-y-auto");
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("a search can return every matching item, including ones near the bottom", () => {
+    const models = geminiCatalogForJudge(12);
+    const h = render(
+      <JudgeCombobox models={models} current="old" initialProvider="gemini" onCancel={() => {}} onCommit={() => {}} />,
+    );
+    try {
+      const input = h.$("input#judge-search") as HTMLInputElement;
+      typeInto(input, models[11].id);
+      const matches = h.$$("ul button");
+      expect(matches.length).toBe(1);
+      expect(matches[0].textContent).toContain(models[11].id);
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("a nonmatching manual slug can still be committed exactly", () => {
+    const models = geminiCatalogForJudge(12);
+    const dispatched: Action[] = [];
+    const h = render(
+      <JudgeConfig
+        critic={{ providerId: "gemini", model: "old-model" }}
+        models={models}
+        dispatch={(a) => dispatched.push(a)}
+        judgeInstruction=""
+      />,
+    );
+    try {
+      act(() => h.$('button[aria-label^="Change judge model"]')!.click());
+      const input = h.$("input#judge-search") as HTMLInputElement;
+      typeInto(input, "gemini-custom-fake");
+      const setJudgeBtn = h.$$("button").find((b) =>
+        b.getAttribute("aria-label")?.startsWith("Set judge to "),
+      ) as HTMLButtonElement;
+      expect(setJudgeBtn).toBeTruthy();
+      act(() => setJudgeBtn.click());
+      const setCritic = dispatched.filter((a) => a.type === "SET_CRITIC");
+      expect(setCritic).toHaveLength(1);
+      expect(setCritic[0]).toMatchObject({
+        type: "SET_CRITIC",
+        critic: { providerId: "gemini", model: "gemini-custom-fake" },
+      });
+    } finally {
+      cleanup(h);
+    }
+  });
+});
