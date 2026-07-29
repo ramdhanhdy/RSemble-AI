@@ -183,6 +183,7 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   commandcode: "CommandCode",
   clinepass: "ClinePass",
   umans: "Umans",
+  "9router": "9Router",
 };
 
 function AddModelCombobox({

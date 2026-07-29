@@ -91,6 +91,7 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
     commandcode: { ok: false, reason: "Loading..." },
     clinepass: { ok: false, reason: "Loading..." },
     umans: { ok: false, reason: "Loading..." },
+    "9router": { ok: false, reason: "Loading..." },
   });
 
   const [keys, setKeys] = useState<Record<ProviderId, string>>({
@@ -100,6 +101,7 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
     commandcode: "",
     clinepass: "",
     umans: "",
+    "9router": "",
   });
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [testingProvider, setTestingProvider] = useState<ProviderId | null>(null);

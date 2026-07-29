@@ -231,6 +231,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         }
         const data = await res.json();
         const arr: unknown[] = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
+        const seen = new Set<string>();
         return arr
           .map((m) => {
             const model = m as { id?: string; name?: string };
@@ -241,6 +242,11 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
             };
           })
           .filter((m) => m.id.length > 0)
+          .filter((m) => {
+            if (seen.has(m.id)) return false;
+            seen.add(m.id);
+            return true;
+          })
           .sort((a, b) => a.id.localeCompare(b.id));
       } catch {
         return [];

@@ -110,6 +110,7 @@ export default function RSemble() {
     commandcode: isProviderReadySync("commandcode"),
     clinepass: isProviderReadySync("clinepass"),
     umans: false,
+    "9router": false,
   });
 
   const [catalogError, setCatalogError] = useState<string | null>(null);

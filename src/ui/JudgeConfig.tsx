@@ -32,6 +32,7 @@ const PROVIDER_BADGE: Record<ProviderId, string> = {
   commandcode: "CommandCode",
   clinepass: "ClinePass",
   umans: "Umans",
+  "9router": "9Router",
 };
 
 export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: JudgeConfigProps) {

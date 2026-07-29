@@ -7,6 +7,7 @@ import { clinepassProvider } from "./clinepass";
 import { commandcodeProvider } from "./commandcode";
 import { geminiProvider } from "./gemini";
 import { openrouterProvider } from "./openrouter";
+import { nineRouterProvider } from "./nine-router";
 import { umansProvider } from "./umans";
 import type { LLMProvider, ProviderId, ProviderReadiness } from "./types";
 
@@ -17,6 +18,7 @@ const providers: Record<ProviderId, LLMProvider> = {
   commandcode: commandcodeProvider,
   clinepass: clinepassProvider,
   umans: umansProvider,
+  "9router": nineRouterProvider,
 };
 
 export function getProvider(id: ProviderId): LLMProvider {
@@ -35,6 +37,7 @@ export function listProviders(): LLMProvider[] {
     providers.commandcode,
     providers.clinepass,
     providers.umans,
+    providers["9router"],
   ];
 }
 

@@ -16,6 +16,7 @@ const PROVIDER_IDS: Record<ProviderId, true> = {
   commandcode: true,
   clinepass: true,
   umans: true,
+  "9router": true,
 };
 
 export interface CommandPreferences {

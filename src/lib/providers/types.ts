@@ -2,7 +2,7 @@
 // Provider contracts and shared interfaces
 // =============================================================================
 
-export type ProviderId = "openrouter" | "chatgpt-codex" | "gemini" | "commandcode" | "clinepass" | "umans";
+export type ProviderId = "openrouter" | "chatgpt-codex" | "gemini" | "commandcode" | "clinepass" | "umans" | "9router";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
