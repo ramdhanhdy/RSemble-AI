@@ -13,9 +13,9 @@
 ## 1. One sentence
 
 **RSemble keeps one pipeline; each model slot routes through a pluggable
-provider adapter (OpenRouter, ChatGPT-via-Codex, Gemini AI Studio, and future
-peers) instead of a single hard-wired OpenRouter client.**
-
+provider adapter (OpenRouter, ChatGPT-via-Codex, Gemini AI Studio, CommandCode,
+ClinePass, Umans, 9Router, and future peers) instead of a single hard-wired
+OpenRouter client.**
 ---
 
 ## 2. Why this exists
@@ -81,6 +81,14 @@ It is infrastructure for one auth method, not a second product surface.
 | `openrouter` | OpenRouter | `VITE_OPENROUTER_KEY` (or settings store) | `https://openrouter.ai/api/v1` chat completions + SSE | Live `GET /models` |
 | `chatgpt-codex` | ChatGPT (Codex) | Codex login → `~/.codex/auth.json` (via local bridge) | Local bridge → Codex Responses backend | Bridge `GET /v1/models` (plan-eligible) |
 | `gemini` | Gemini | Google AI Studio API key | `generativelanguage.googleapis.com` | ListModels API and/or curated fallback |
+| `commandcode` | CommandCode | `VITE_COMMANDCODE_KEY` | OpenAI-compatible | Live `GET /models` |
+| `clinepass` | ClinePass | `VITE_CLINEPASS_KEY` | OpenAI-compatible | Live `GET /models` |
+| `umans` | Umans | `VITE_UMANS_KEY` | OpenAI-compatible via local bridge | Live `GET /models` |
+| `9router` | 9Router | `VITE_9ROUTER_KEY` (optional) | OpenAI-compatible via RSemble bridge → `RSEMBLE_9ROUTER_URL` | Live `GET /v1/models` |
+
+**9Router** is a routing gateway: one requested model ID produces one RSemble
+candidate, regardless of 9Router's internal fallback. RSemble does not reproduce
+9Router's control plane (accounts, combos, quota, pricing).
 
 **Future peers** (not scheduled): any adapter implementing `LLMProvider`. Do not
 name or stub vendors in code until requested.
@@ -118,11 +126,9 @@ name or stub vendors in code until requested.
 ├─────────────────────────────────────────────────────────────┤
 │  Provider registry                                          │
 │    getProvider(id) → LLMProvider                            │
-├──────────────┬─────────────────────┬────────────────────────┤
-│ openrouter   │ chatgpt-codex       │ gemini                 │
-│ (browser→OR) │ (browser→localhost  │ (browser→Google)       │
-│              │   bridge→Codex)     │                        │
-└──────────────┴─────────────────────┴────────────────────────┘
+│ openrouter   │ chatgpt-codex       │ gemini    │ 9router               │
+│ (browser→OR) │ (browser→localhost  │(browser→  │ (browser→bridge→      │
+│              │   bridge→Codex)     │ Google)   │  9Router upstream)    │
 ```
 
 ### 6.2 Target file layout
@@ -175,7 +181,7 @@ can run `dev:web-only`. Default `dev` starts both for convenience.
 ### 7.1 Types (`src/lib/providers/types.ts`)
 
 ```ts
-export type ProviderId = "openrouter" | "chatgpt-codex" | "gemini";
+export type ProviderId = "openrouter" | "chatgpt-codex" | "gemini" | "commandcode" | "clinepass" | "umans" | "9router";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -235,7 +241,7 @@ export class ProviderError extends Error {
 ### 7.2 Registry rules
 
 - `getProvider(id: ProviderId): LLMProvider` — throws if unknown id.
-- `listProviders(): LLMProvider[]` — stable order: openrouter, chatgpt-codex, gemini.
+- `listProviders(): LLMProvider[]` — stable order: openrouter, chatgpt-codex, gemini, commandcode, clinepass, umans, 9router.
 - No singleton mutable "current provider." Routing is **per slot / per judge**.
 - Adapters must not import React or studio state.
 
@@ -496,6 +502,25 @@ in depth on shared machines).
 
 Do not block Phase 3 on a full proxy if direct browser access works for the builder.
 
+
+### 8.4 9Router (`9router`)
+
+| Item | Spec |
+|---|---|
+| Browser base | `VITE_CODEX_BRIDGE_URL`, default `http://127.0.0.1:8787` |
+| Bridge routes | `GET /9router/v1/models`, `POST /9router/v1/chat/completions` (exact path allowlist only) |
+| Upstream | `RSEMBLE_9ROUTER_URL`, default `http://127.0.0.1:20128`; `http:`/`https:` only; trailing slashes stripped |
+| Auth | `VITE_9ROUTER_KEY` / `rsemble.key.9router`; **optional** — blank key omits Authorization header entirely |
+| Readiness | Async catalog probe (`GET /v1/models`); not key-length based |
+| Catalog | `data[].id` → `CatalogModel` with `providerId: "9router"`; IDs are opaque (namespaced, aliases, combos round-trip unchanged) |
+| Model discovery | Duplicate IDs deduplicated; deterministic case-insensitive sort |
+| Chat | `POST /v1/chat/completions` (OpenAI-compatible, non-stream + SSE) |
+| Errors | 401 → auth required/invalid; 400 → model not in catalog; 503 → all routes unavailable; surfaced via `ProviderError` |
+| Security | `redirect: "manual"` (no cross-origin credential forwarding); POST JSON-only + body-limited; no management endpoints exposed |
+
+9Router is a **routing provider**: one requested model ID produces one RSemble
+candidate. RSemble does not perform a second fallback — 9Router owns internal
+retry, account rotation, and combo resolution.
 ---
 
 ## 9. Configuration
@@ -505,8 +530,13 @@ Do not block Phase 3 on a full proxy if direct browser access works for the buil
 | Variable | Used by | Notes |
 |---|---|---|
 | `VITE_OPENROUTER_KEY` | Web → OpenRouter | Existing |
-| `VITE_GEMINI_KEY` | Web → Gemini | New |
+| `VITE_GEMINI_KEY` | Web → Gemini | Existing |
+| `VITE_COMMANDCODE_KEY` | Web → CommandCode | Existing |
+| `VITE_CLINEPASS_KEY` | Web → ClinePass | Existing |
+| `VITE_UMANS_KEY` | Web → Umans | Existing |
+| `VITE_9ROUTER_KEY` | Web → 9Router (bridge) | Optional — blank when 9Router auth disabled |
 | `VITE_CODEX_BRIDGE_URL` | Web → bridge | Default `http://127.0.0.1:8787` |
+| `RSEMBLE_9ROUTER_URL` | Bridge → 9Router upstream | Default `http://127.0.0.1:20128`; `http:`/`https:` only |
 | `RSEMBLE_CODEX_BRIDGE_PORT` | Bridge | Default `8787` |
 | `RSEMBLE_BRIDGE_SECRET` | Bridge + web | Optional |
 | `CODEX_HOME` | Bridge | Optional Codex override |
@@ -543,7 +573,7 @@ turn the command pane into a platform console.
 
 - Each row shows **provider badge** (short label or muted text) + model name.
 - **Add model** flow:
-  1. Choose provider (segmented control or select): OpenRouter | ChatGPT | Gemini.
+  1. Choose provider (segmented control or select): OpenRouter | ChatGPT | Gemini | CommandCode | ClinePass | Umans | 9Router.
   2. Search that provider's catalog (if ready) or enter native model id manually.
 - Manual entry validation:
   - OpenRouter: prefer `org/model` (keep today's hint).
