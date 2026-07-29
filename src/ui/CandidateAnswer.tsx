@@ -5,8 +5,8 @@
 // rendered (Markdown, identical to the merged result) — not just its score.
 // Shared component keeps Rank and Fuse consistent.
 //
-// Header: rank badge · model · score · accent dot · chevron.
-// Body:   the candidate's full text via <Markdown />, with a copy affordance.
+// Header: rank badge · model · score · accent dot · chevron · copy (when open).
+// Body:   the candidate's full text via <Markdown />.
 // =============================================================================
 
 import { useState } from "react";
@@ -61,49 +61,51 @@ export function CandidateAnswer({
         rank === 1 ? "border-success/30" : "border-edge"
       }`}
     >
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full min-h-[44px] items-center gap-3 px-3 py-3 text-left hover:bg-card-hover/50"
-      >
-        <ChevronRight
-          size={14}
-          className={`shrink-0 text-text-muted transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        {rank != null && (
-          <span
-            className={`grid size-5 shrink-0 place-items-center rounded font-mono text-xs ${
-              rank === 1 ? "bg-success/20 text-success" : "bg-card-hover text-text-secondary"
-            }`}
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex flex-1 min-h-[44px] items-center gap-3 px-3 py-3 text-left hover:bg-card-hover/50"
+        >
+          <ChevronRight
+            size={14}
+            className={`shrink-0 text-text-muted transition-transform ${open ? "rotate-90" : ""}`}
+          />
+          {rank != null && (
+            <span
+              className={`grid size-5 shrink-0 place-items-center rounded font-mono text-xs ${
+                rank === 1 ? "bg-success/20 text-success" : "bg-card-hover text-text-secondary"
+              }`}
+            >
+              {rank}
+            </span>
+          )}
+          <span className={`size-2 shrink-0 rounded-full ${ACCENT_DOT[candidate.accent] ?? "bg-text-muted"}`} />
+          <span className="flex-1 truncate font-mono text-sm text-text" title={candidate.provider}>
+            {candidate.model}
+          </span>
+          {candidate.weightedScore > 0 && (
+            <span className={`shrink-0 font-mono text-sm ${tierColor(candidate.weightedScore)}`}>
+              {candidate.weightedScore.toFixed(1)}
+            </span>
+          )}
+        </button>
+        {open && (
+          <button
+            type="button"
+            onClick={copy}
+            aria-label={copied ? "Copied" : `Copy ${candidate.model} answer`}
+            className="flex shrink-0 items-center gap-1 rounded-sm px-3 py-2 font-mono text-sm text-text-secondary hover:text-text"
           >
-            {rank}
-          </span>
+            {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+            {copied ? "copied" : "copy"}
+          </button>
         )}
-        <span className={`size-2 shrink-0 rounded-full ${ACCENT_DOT[candidate.accent] ?? "bg-text-muted"}`} />
-        <span className="flex-1 truncate font-mono text-sm text-text" title={candidate.provider}>
-          {candidate.model}
-        </span>
-        {candidate.weightedScore > 0 && (
-          <span className={`shrink-0 font-mono text-sm ${tierColor(candidate.weightedScore)}`}>
-            {candidate.weightedScore.toFixed(1)}
-          </span>
-        )}
-      </button>
+      </div>
 
       {open && (
         <div className="border-t border-edge px-3 py-3">
-          <div className="mb-2 flex justify-end">
-            <button
-              type="button"
-              onClick={copy}
-              aria-label={copied ? "Copied" : `Copy ${candidate.model} answer`}
-              className="flex min-h-[44px] items-center gap-1 rounded-sm px-2 font-mono text-sm text-text-secondary hover:text-text"
-            >
-              {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
-              {copied ? "copied" : "copy"}
-            </button>
-          </div>
           {text.length > 0 ? (
             <Markdown text={text} />
           ) : (

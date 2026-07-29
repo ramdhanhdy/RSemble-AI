@@ -7,8 +7,8 @@
 // changes when the toggle flips — the command pane is unaffected.
 // =============================================================================
 
-import { memo, useEffect, useRef, useState } from "react";
-import { AlertCircle, Loader2, RotateCw } from "lucide-react";
+import { memo, useState } from "react";
+import { AlertCircle, ArrowDown, Check, Copy, Loader2, RotateCw } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import { BrandAvatar } from "./brand-icons";
 import type { Candidate } from "../studio-data";
@@ -18,6 +18,7 @@ import { CompareView } from "./CompareView";
 import { FuseResult } from "./FuseResult";
 import { LeaderboardPreviewCard, PipelineRail, WhatYouGetRow, computeStages } from "./PipelineRail";
 import { useRunClock, elapsedSeconds } from "./useRunClock";
+import { useStickToBottom } from "./useStickToBottom";
 
 import { getRunCountCached, getRunsCached, type RunHistoryEntry } from "../lib/history-cache";
 
@@ -31,6 +32,9 @@ function slugFromKey(key: string): string {
   const idx = key.indexOf(":");
   return idx >= 0 ? key.slice(idx + 1) : key;
 }
+
+/** After this many ms with no text, the waiting caption adopts a warning tone. */
+const FIRST_TOKEN_PATIENCE_MS = 15_000;
 
 export function OutputPane({
   state,
@@ -78,9 +82,10 @@ export function OutputPane({
               timer + what's being compared. Turns the wait into intentional UI. */}
           <StageBanner state={state} />
           {/* Live candidate stream — transparent during the run, not a black box.
-              Each model shows its real-time status and, once done, its summary +
-              a truncated excerpt so you can see what it actually generated. */}
-          <ul className="grid flex-1 grid-cols-1 gap-2 overflow-y-auto scroll-thin xl:grid-cols-2 2xl:grid-cols-3">
+              Each model shows its full real-time transcript (scrollable) while
+              streaming and after completion. min-h-0 lets the grid flex item
+              shrink so each card gets a bounded, scrollable body. */}
+          <ul className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto scroll-thin xl:grid-cols-2 2xl:grid-cols-3">
             {state.candidates.map((c) => (
               <LiveCandidateCard key={c.id} candidate={c} onRetry={state.running ? undefined : onRetryCandidate} now={liveNow} />
             ))}
@@ -265,12 +270,13 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
    *  or errored cards use finishedAt. Defaults to render time for terminal cards. */
   now?: number;
 }) {
-  const excerpt =
+  // Single continuous source: segments once CANDIDATE_RESULT fires (streamingText
+  // is cleared at that same moment), otherwise the accumulated stream. Continuous
+  // across completion — no flicker, no content loss, no tail window.
+  const liveText =
     candidate.segments.length > 0
-      ? candidate.segments[0].text
-      : candidate.summary || "";
-  const streaming = candidate.streamingText ?? "";
-  const streamingTail = streaming.length > 600 ? "…" + streaming.slice(-600) : streaming;
+      ? candidate.segments.map((s) => s.text).join("\n\n")
+      : (candidate.streamingText ?? "");
   const elapsed = candidate.startedAt
     ? candidate.finishedAt
       ? Math.round((candidate.finishedAt - candidate.startedAt) / 1000)
@@ -281,16 +287,28 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
   // (status "done") but produced empty/truncated text. Show it honestly as
   // unusable rather than a silent success.
   const unusable = candidate.status === "done" && !isUsableCandidate(candidate);
-  const transcriptRef = useRef<HTMLParagraphElement>(null);
+  const showTranscript = liveText.length > 0 && !unusable;
+  const waiting = active && liveText.length === 0;
+  const elapsedMs = candidate.startedAt ? (candidate.finishedAt ?? now) - candidate.startedAt : 0;
+  const impatient = waiting && elapsedMs >= FIRST_TOKEN_PATIENCE_MS;
 
-  useEffect(() => {
-    if (active && streamingTail && transcriptRef.current) {
-      scrollLiveTranscriptToEnd(transcriptRef.current);
+  const { ref: transcriptRef, onScroll, pinned, jumpToLatest } =
+    useStickToBottom<HTMLParagraphElement>(liveText);
+  const [copied, setCopied] = useState(false);
+
+  const copy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(liveText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
     }
-  }, [active, streamingTail]);
+  };
 
   return (
-    <li className={`flex min-h-0 flex-col rounded-md border bg-card px-3 py-2 ${
+    <li className={`relative flex min-h-0 flex-col rounded-md border bg-card px-3 py-2 ${
       candidate.status === "error" || unusable ? "border-warning/40" : "border-edge"
     }`}>
       <div className="flex items-center gap-2">
@@ -320,15 +338,64 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
           {active ? "generating" : unusable ? "unusable" : candidate.status}
         </span>
       </div>
-      {active && streamingTail.length > 0 && (
-        <p ref={transcriptRef} className="mt-2 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-text-secondary scroll-thin">
-          {streamingTail}
-          <span className="ml-1 inline-block h-4 w-2 animate-pulse-ease bg-accent/70 align-middle" />
+
+      {/* Full-text scrollable transcript — streaming and done share one body so
+          completion doesn't shrink the visible text. Stick-to-bottom only while
+          the user is already at the end; scroll up to read mid-stream. */}
+      {showTranscript && (
+        <p
+          ref={transcriptRef}
+          onScroll={onScroll}
+          className="mt-2 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-text-secondary scroll-thin"
+        >
+          {liveText}
+          {active && (
+            <span className="ml-1 inline-block h-4 w-2 animate-pulse-ease bg-accent/70 align-middle" />
+          )}
         </p>
       )}
-      {candidate.status === "done" && excerpt.length > 0 && !unusable && (
-        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-text-secondary">{excerpt}</p>
+
+      {/* Jump-to-latest — only while streaming and the user has scrolled away. */}
+      {active && showTranscript && !pinned && (
+        <button
+          type="button"
+          onClick={jumpToLatest}
+          className="absolute bottom-2 right-2 flex items-center gap-1 rounded-sm border border-edge bg-card px-2 py-1 font-mono text-xs text-text-secondary shadow-sm hover:border-accent/50 hover:text-accent"
+        >
+          <ArrowDown size={12} /> Jump to latest
+        </button>
       )}
+
+      {/* Pre-first-token waiting state — an explicit signal, not a blank card. */}
+      {waiting && (
+        <div className="mt-2 flex min-h-0 flex-1 flex-col gap-1.5">
+          <div className="h-3 w-full animate-pulse rounded-sm bg-edge/30" />
+          <div className="h-3 w-4/5 animate-pulse rounded-sm bg-edge/30" />
+          <div className="h-3 w-3/5 animate-pulse rounded-sm bg-edge/30" />
+          <p className="mt-auto pt-2 font-mono text-xs text-text-muted">
+            {impatient
+              ? "still waiting — model may be thinking before it emits text"
+              : `waiting for first token · ${elapsed}s`}
+          </p>
+        </div>
+      )}
+
+      {/* Done footer — copy affordance so a finished answer can be lifted during
+          the judge stage without waiting for the run to end. */}
+      {candidate.status === "done" && !unusable && (
+        <div className="mt-2 flex items-center justify-end">
+          <button
+            type="button"
+            onClick={copy}
+            aria-label={copied ? "Copied" : `Copy ${candidate.model} answer`}
+            className="flex min-h-[36px] items-center gap-1 rounded-sm px-2 font-mono text-xs text-text-secondary hover:text-text"
+          >
+            {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+            {copied ? "copied" : "copy"}
+          </button>
+        </div>
+      )}
+
       {unusable && (
         <div className="mt-2 flex items-center gap-2">
           <p className="flex-1 text-sm leading-relaxed text-warning/80">

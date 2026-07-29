@@ -244,3 +244,37 @@ describe("reducer — judge custom instruction", () => {
     expect(next.judgeInstruction).toBe("");
   });
 });
+
+describe("reducer — RESET_SESSION preserves model selection", () => {
+  it("keeps slots and critic while clearing run output", () => {
+    const customSlots = [
+      {
+        id: "mine",
+        providerId: "gemini" as const,
+        provider: "Gemini",
+        model: "Pro",
+        slug: "gemini-2.5-pro",
+        enabled: true,
+      },
+    ];
+    const customCritic = { providerId: "umans" as const, model: "judge-x" };
+    const s: StudioState = {
+      ...initialState,
+      slots: customSlots,
+      critic: customCritic,
+      prompt: "a task",
+      candidates: [makeCandidate("c1", "openrouter", "model-a")],
+      consensus: {
+        consensus: ["x"],
+        contradictions: [],
+        uniqueInsights: [],
+      },
+    };
+    const next = reducer(s, { type: "RESET_SESSION" });
+    expect(next.slots).toEqual(customSlots);
+    expect(next.critic).toEqual(customCritic);
+    expect(next.prompt).toBe(initialState.prompt);
+    expect(next.candidates).toEqual([]);
+    expect(next.consensus).toBeNull();
+  });
+});

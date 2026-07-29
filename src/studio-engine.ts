@@ -26,6 +26,7 @@ import {
   type RubricKind,
 } from "./studio-data";
 import type { CatalogModel, CriticRef } from "./lib/providers/types";
+import { loadStoredCritic, loadStoredSlots } from "./lib/preferences";
 import { EXAMPLE_TASKS, nextExampleIndex } from "./lib/test-cases";
 
 export type StageStatus = "idle" | "running" | "done" | "error";
@@ -344,7 +345,15 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return { ...state, qualityRating: action.value };
 
     case "RESET_SESSION":
-      return { ...initialState, models: state.models, mode: state.mode };
+      // Keep mode, catalog, and the user's model roster/judge — reset only clears
+      // the current run/output, not command configuration the user chose.
+      return {
+        ...initialState,
+        models: state.models,
+        mode: state.mode,
+        slots: state.slots,
+        critic: state.critic,
+      };
 
     case "ABORT_RUN":
       return {
@@ -420,10 +429,10 @@ export const initialState: StudioState = {
   prompt: INITIAL_PROMPT,
   exampleIndex: INITIAL_EXAMPLE_INDEX,
   rubric: SEED_RUBRIC,
-  slots: SEED_SLOTS,
+  slots: loadStoredSlots() ?? SEED_SLOTS,
   temperature: 0.4,
   systemPrompt: SYSTEM_PROMPT_DEFAULT,
-  critic: DEFAULT_CRITIC_REF,
+  critic: loadStoredCritic() ?? DEFAULT_CRITIC_REF,
   judgeInstruction: "",
   candidates: [],
   running: false,

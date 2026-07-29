@@ -69,6 +69,9 @@ export async function* readSseChatStream(
         buffer = buffer.slice(nl + 1);
         if (line.length === 0 || !line.startsWith("data:")) continue;
         const payload = line.slice(5).trim();
+        if (import.meta.env && import.meta.env.DEV) {
+          console.debug("[sse]", payload.slice(0, 200));
+        }
         if (payload === "[DONE]") {
           sawDone = true;
           if (!yieldedAny) {

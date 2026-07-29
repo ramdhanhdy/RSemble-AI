@@ -129,13 +129,6 @@ export function Header({
           <HelpCircle size={16} />
         </button>
         {children}
-        {/* Decorative avatar chip — desktop only; redundant chrome at <sm. */}
-        <span
-          className="hidden h-9 w-9 items-center justify-center rounded-md border border-edge bg-raised font-mono text-xs font-semibold text-text-secondary sm:flex"
-          aria-hidden="true"
-        >
-          RS
-        </span>
       </div>
 
       {state.running && (

@@ -38,6 +38,105 @@ describe("LiveCandidateCard streaming transcript", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Step 1 — done card shows the FULL joined segments text, not a 2-line clamp.
+// ---------------------------------------------------------------------------
+
+describe("LiveCandidateCard — done card renders full text (no line-clamp)", () => {
+  it("shows every paragraph including the last, with no line-clamp-2 class", () => {
+    const doneWithParagraphs: Candidate = {
+      id: "done-full",
+      model: "Done Model",
+      provider: "Test",
+      providerId: "openrouter",
+      slug: "test/done",
+      accent: "emerald",
+      strategy: "",
+      summary: "",
+      scores: {},
+      weightedScore: 0,
+      segments: [
+        { id: "s1", text: "First paragraph with opening thoughts." },
+        { id: "s2", text: "Second paragraph elaborating the argument." },
+        { id: "s3", text: "Third paragraph with the conclusion and final remarks." },
+      ],
+      status: "done",
+      startedAt: 100,
+      finishedAt: 200,
+      tokensOut: 318,
+    };
+    const html = renderToStaticMarkup(<LiveCandidateCard candidate={doneWithParagraphs} now={200} />);
+
+    expect(html).toContain("Third paragraph with the conclusion");
+    expect(html).toContain("First paragraph with opening thoughts");
+    expect(html).not.toContain("line-clamp-2");
+    expect(html).toContain("overflow-y-auto");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 1 — streaming card shows the FIRST and LAST chars (no 600-char tail
+// truncation, no leading ellipsis).
+// ---------------------------------------------------------------------------
+
+describe("LiveCandidateCard — streaming card shows full text (no tail window)", () => {
+  it("renders the first and last characters of a 2000-char stream with no ellipsis prefix", () => {
+    const head = "STARTMARKER" + "A".repeat(989);
+    const tail = "B".repeat(989) + "ENDMARKER";
+    const streaming2k: Candidate = {
+      ...candidate,
+      id: "stream-2k",
+      streamingText: head + tail,
+    };
+    const html = renderToStaticMarkup(<LiveCandidateCard candidate={streaming2k} now={2_000} />);
+
+    expect(html).toContain("STARTMARKER");
+    expect(html).toContain("ENDMARKER");
+    // No leading ellipsis from the old tail-window slice.
+    expect(html).not.toContain("\u2026");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 3 — active candidate with no text shows a waiting caption; with text
+// it does not.
+// ---------------------------------------------------------------------------
+
+describe("LiveCandidateCard — waiting state", () => {
+  it("shows a 'waiting for first token' caption when active with no text", () => {
+    const waiting: Candidate = {
+      ...candidate,
+      id: "waiting-1",
+      streamingText: "",
+      segments: [],
+      status: "pending",
+      startedAt: 1000,
+    };
+    const html = renderToStaticMarkup(<LiveCandidateCard candidate={waiting} now={2_000} />);
+    expect(html).toContain("waiting for first token");
+  });
+
+  it("does not show the waiting caption when active with text", () => {
+    const html = renderToStaticMarkup(<LiveCandidateCard candidate={candidate} now={2_000} />);
+    expect(html).not.toContain("waiting for first token");
+  });
+
+  it("swaps to the 'still waiting' caption after the patience threshold", () => {
+    const waiting: Candidate = {
+      ...candidate,
+      id: "waiting-slow",
+      streamingText: "",
+      segments: [],
+      status: "pending",
+      startedAt: 1000,
+    };
+    // 16s elapsed → past the 15s FIRST_TOKEN_PATIENCE_MS threshold.
+    const html = renderToStaticMarkup(<LiveCandidateCard candidate={waiting} now={17_000} />);
+    expect(html).toContain("still waiting");
+    expect(html).not.toContain("waiting for first token");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // InsufficientState — terminal 2→1 state must show WHICH model failed and WHY,
 // not just an aggregate count. Each failed candidate's model name and error
 // message must be visible, and a per-candidate retry must be available.

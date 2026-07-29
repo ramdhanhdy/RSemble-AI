@@ -36,6 +36,7 @@ import { StreamDeltaBuffer } from "./lib/stream-buffer";
 import { createRunController } from "./lib/run-controller";
 import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
+import { saveCommandPreferences } from "./lib/preferences";
 import { useActionShortcuts } from "./ui/useActionShortcuts";
 
 export default function RSemble() {
@@ -64,6 +65,11 @@ export default function RSemble() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // Persist model roster + judge so a reload keeps the user's selection.
+  useEffect(() => {
+    saveCommandPreferences({ slots: state.slots, critic: state.critic });
+  }, [state.slots, state.critic]);
   const runEpochRef = useRef(0);
   const abortControllersRef = useRef<Set<AbortController>>(new Set());
 
@@ -491,8 +497,7 @@ function FocusStrip({
 }
 
 // =============================================================================
-// Command pane — full implementation (Phase 2). Composes the four command
-// components: TaskInput · ModelList · RubricDisclosure · RunButton.
+// components: TaskInput · ModelList · JudgeConfig · RubricDisclosure · RunButton.
 // =============================================================================
 
 function CommandPane({
@@ -515,7 +520,7 @@ function CommandPane({
       <PaneLabel
         index="01"
         title="Command"
-        hint="Define your task, select models, set the rubric, and choose a judge."
+        hint="Define your task, select models, choose a judge, and set the rubric."
         action={
           <ResetButton
             hasRun={hasRun}
@@ -527,6 +532,12 @@ function CommandPane({
 
       <TaskInput prompt={state.prompt} exampleIndex={state.exampleIndex} dispatch={dispatch} />
       <ModelList slots={state.slots} models={state.models} dispatch={dispatch} />
+      <JudgeConfig
+        critic={state.critic}
+        models={state.models}
+        dispatch={dispatch}
+        judgeInstruction={state.judgeInstruction}
+      />
       <RubricDisclosure
         rubric={state.rubric}
         dispatch={dispatch}
@@ -534,12 +545,6 @@ function CommandPane({
         candidates={state.candidates}
         slots={state.slots}
         models={state.models}
-      />
-      <JudgeConfig
-        critic={state.critic}
-        models={state.models}
-        dispatch={dispatch}
-        judgeInstruction={state.judgeInstruction}
       />
       <RunButton
         running={state.running}
