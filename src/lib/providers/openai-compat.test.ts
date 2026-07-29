@@ -118,3 +118,168 @@ describe("createOpenAICompatProvider — connection verification", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Optional-key mode (apiKeyRequired: false) and models-probe readiness
+// ---------------------------------------------------------------------------
+
+const optionalKeyConfig = {
+  ...config,
+  apiKeyRequired: false,
+  readinessProbe: "models" as const,
+};
+
+describe("createOpenAICompatProvider — optional-key mode", () => {
+  it("calls /models with no Authorization header when key is blank", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_UMANS_API_KEY", "");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "m1" }] }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider(optionalKeyConfig);
+
+    await provider.listModels!();
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+  });
+
+  it("testConnection(\"\") probes /models and may succeed", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_UMANS_API_KEY", "");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: [{ id: "m1" }] }), { status: 200, headers: { "Content-Type": "application/json" } }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(optionalKeyConfig);
+    await expect(provider.testConnection!("")).resolves.toEqual({ ok: true });
+  });
+
+  it("a nonblank key produces exactly Authorization: Bearer <key>", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    ));
+    const provider = createOpenAICompatProvider(optionalKeyConfig);
+    await provider.testConnection!("sk-[REDACTED]");
+    const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer sk-[REDACTED]");
+  });
+
+  it("completion works without a key in optional-key mode", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_UMANS_API_KEY", "");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ choices: [{ message: { content: "hello" } }] }), { status: 200 }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(optionalKeyConfig);
+    const result = await provider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    expect(result).toBe("hello");
+  });
+});
+
+describe("createOpenAICompatProvider — models-probe readiness", () => {
+  it("returns ok when /models succeeds with a valid data array", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_UMANS_API_KEY", "");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    ));
+    const provider = createOpenAICompatProvider(optionalKeyConfig);
+    await expect(provider.readiness()).resolves.toEqual({ ok: true });
+  });
+
+  it("returns a 401 reason when authentication is rejected", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "rejected-key",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "invalid key" } }), { status: 401 }),
+    ));
+    const provider = createOpenAICompatProvider(optionalKeyConfig);
+    const result = await provider.readiness();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("401");
+  });
+
+  it("returns a network reason when fetch throws", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_UMANS_API_KEY", "");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ENOTFOUND")));
+    const provider = createOpenAICompatProvider(optionalKeyConfig);
+    const result = await provider.readiness();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/reach|network|connection/i);
+  });
+
+  it("returns a malformed-catalog reason when response has no data/models array", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_UMANS_API_KEY", "");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ unexpected: true }), { status: 200 }),
+    ));
+    const provider = createOpenAICompatProvider(optionalKeyConfig);
+    const result = await provider.readiness();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/malformed|catalog/i);
+  });
+});
+
+describe("createOpenAICompatProvider — default remains key-required", () => {
+  it("readiness is sync and returns not-ok when no key is set", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_UMANS_API_KEY", "");
+    const provider = createOpenAICompatProvider(config);
+    const result = provider.readiness();
+    expect(result).not.toBeInstanceOf(Promise);
+    const resolved = await result;
+    expect(resolved.ok).toBe(false);
+  });
+
+  it("chatCompletion throws when no key is set (default mode)", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "",
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_UMANS_API_KEY", "");
+    const provider = createOpenAICompatProvider(config);
+    await expect(provider.chatCompletion({ model: "m", messages: [] })).rejects.toBeInstanceOf(ProviderError);
+  });
+});

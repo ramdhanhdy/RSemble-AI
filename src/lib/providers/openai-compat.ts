@@ -24,6 +24,10 @@ export interface OpenAICompatConfig {
   modelsPath: string;
   completionsPath: string;
   extraHeaders?: Record<string, string>;
+  /** When false, a blank API key is accepted (e.g. 9Router with auth disabled). Default: true. */
+  apiKeyRequired?: boolean;
+  /** How readiness is established: "credential" (sync key check) or "models" (async /models probe). Default: "credential". */
+  readinessProbe?: "credential" | "models";
 }
 
 function getKey(envKey: string, storageKey: string): string {
@@ -37,19 +41,24 @@ function getKey(envKey: string, storageKey: string): string {
 }
 
 export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvider {
-  const { id, label, baseUrl, envKey, storageKey, modelsPath, completionsPath, extraHeaders } = config;
+  const {
+    id, label, baseUrl, envKey, storageKey, modelsPath, completionsPath, extraHeaders,
+    apiKeyRequired = true,
+    readinessProbe = "credential",
+  } = config;
 
   function getApiKey(): string {
     return getKey(envKey, storageKey);
   }
 
   function buildHeaders(apiKey: string): Record<string, string> {
-    return {
-      Authorization: `Bearer ${apiKey}`,
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "X-Title": "RSemble AI",
       ...(extraHeaders ?? {}),
     };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    return headers;
   }
 
   async function parseError(res: Response, providerId: ProviderId): Promise<ProviderError> {
@@ -71,19 +80,24 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
     );
   }
 
+  /** Shared model-catalog probe — used by testConnection, async readiness, and listModels. */
+  async function probeModels(key: string, signal?: AbortSignal): Promise<Response> {
+    return fetch(`${baseUrl}${modelsPath}`, {
+      headers: buildHeaders(key),
+      signal,
+    });
+  }
+
   return {
     id,
     label,
 
     async testConnection(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness> {
       const candidateKey = apiKey.trim();
-      if (!candidateKey) return { ok: false, reason: `Enter a ${label} API key first.` };
+      if (!candidateKey && apiKeyRequired) return { ok: false, reason: `Enter a ${label} API key first.` };
       let res: Response;
       try {
-        res = await fetch(`${baseUrl}${modelsPath}`, {
-          headers: buildHeaders(candidateKey),
-          signal,
-        });
+        res = await probeModels(candidateKey, signal);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") throw err;
         return { ok: false, reason: `Network error reaching ${label}. Check the endpoint or local bridge.` };
@@ -95,7 +109,34 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
       return { ok: true };
     },
 
-    readiness(): ProviderReadiness {
+    readiness(): ProviderReadiness | Promise<ProviderReadiness> {
+      if (readinessProbe === "models") {
+        return (async (): Promise<ProviderReadiness> => {
+          const key = getApiKey();
+          if (!key && apiKeyRequired) {
+            return { ok: false, reason: `Missing ${envKey}. Add it to a .env file or the Connections panel.` };
+          }
+          let res: Response;
+          try {
+            res = await probeModels(key);
+          } catch {
+            return { ok: false, reason: `Could not reach ${label}. Check the endpoint or local bridge.` };
+          }
+          if (!res.ok) {
+            if (res.status === 401) return { ok: false, reason: `${label} authentication rejected (HTTP 401).` };
+            return { ok: false, reason: `${label} returned HTTP ${res.status}.` };
+          }
+          try {
+            const data = await res.json();
+            const hasArray = Array.isArray(data?.data) || Array.isArray(data?.models);
+            if (!hasArray) return { ok: false, reason: `${label} returned a malformed catalog response.` };
+            return { ok: true };
+          } catch {
+            return { ok: false, reason: `${label} returned a malformed catalog response.` };
+          }
+        })();
+      }
+      // Default: sync credential check
       const key = getApiKey();
       if (key.length > 0) return { ok: true };
       return {
@@ -106,7 +147,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
 
     async chatCompletion(opts: ChatOptions): Promise<string> {
       const key = getApiKey();
-      if (!key) {
+      if (!key && apiKeyRequired) {
         throw new ProviderError(
           `Missing ${envKey}. Add it to a .env file or the Connections panel.`,
           id
@@ -144,7 +185,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
 
     async *chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
       const key = getApiKey();
-      if (!key) {
+      if (!key && apiKeyRequired) {
         throw new ProviderError(
           `Missing ${envKey}. Add it to a .env file or the Connections panel.`,
           id
@@ -177,13 +218,10 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
 
     async listModels(signal?: AbortSignal): Promise<CatalogModel[]> {
       const key = getApiKey();
-      if (!key) return [];
+      if (!key && apiKeyRequired) return [];
 
       try {
-        const res = await fetch(`${baseUrl}${modelsPath}`, {
-          headers: buildHeaders(key),
-          signal,
-        });
+        const res = await probeModels(key, signal);
         if (!res.ok) {
           throw new ProviderError(
             `Could not load ${label} model catalog (HTTP ${res.status}).`,
