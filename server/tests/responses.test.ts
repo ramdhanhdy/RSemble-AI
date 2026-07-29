@@ -88,6 +88,48 @@ describe("handleCompletions — upstream timeout", () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
+
+  it("keeps an active stream alive when total generation time exceeds the timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) => {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const timers: ReturnType<typeof setTimeout>[] = [];
+            const enqueue = (delay: number, text: string) => {
+              timers.push(setTimeout(() => controller.enqueue(encoder.encode(text)), delay));
+            };
+            enqueue(30, 'data: {"type":"response.output_text.delta","delta":"one"}\n\n');
+            enqueue(60, 'data: {"type":"response.output_text.delta","delta":"two"}\n\n');
+            enqueue(90, "data: [DONE]\n\n");
+            init?.signal?.addEventListener("abort", () => {
+              timers.forEach(clearTimeout);
+              controller.error(new DOMException("The operation was aborted.", "AbortError"));
+            });
+          },
+        });
+        return Promise.resolve(
+          new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+        );
+      }),
+    );
+
+    const res = makeRes();
+    const promise = handleCompletions(BASE_BODY, res, {
+      getToken: authOk,
+      upstreamTimeoutMs: 50,
+    });
+
+    await vi.advanceTimersByTimeAsync(120);
+    await promise;
+
+    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+    expect(writes.some((chunk) => chunk.includes('"content":"one"'))).toBe(true);
+    expect(writes.some((chunk) => chunk.includes('"content":"two"'))).toBe(true);
+    expect(writes).toContain("data: [DONE]\n\n");
+  });
 });
 
 // ---------------------------------------------------------------------------

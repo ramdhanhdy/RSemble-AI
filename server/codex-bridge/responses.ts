@@ -19,13 +19,13 @@ export interface CompletionRequestBody {
   stream?: boolean;
 }
 
-/** Default timeout for the upstream Codex request. */
+/** Default inactivity timeout for the upstream Codex request. */
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 60_000;
 
 export interface CompletionDeps {
   /** Injectable token provider (defaults to auth.json based getValidToken). */
   getToken?: () => Promise<{ token: string; accountId?: string }>;
-  /** Upstream request timeout in milliseconds. */
+  /** Upstream connection/stream inactivity timeout in milliseconds. */
   upstreamTimeoutMs?: number;
 }
 
@@ -103,9 +103,14 @@ export async function handleCompletions(
   };
 
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
+  let timeout = setTimeout(() => ctrl.abort(), timeoutMs);
+  const resetUpstreamTimeout = () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => ctrl.abort(), timeoutMs);
+  };
   // If the client disconnects, stop the upstream request too.
-  res.on("close", () => ctrl.abort());
+  const handleClientClose = () => ctrl.abort();
+  res.on("close", handleClientClose);
 
   try {
     let upstreamRes: Response;
@@ -116,6 +121,9 @@ export async function handleCompletions(
         body: JSON.stringify(upstreamBody),
         signal: ctrl.signal,
       });
+      // The request connected successfully. From here on, the timeout measures
+      // upstream inactivity rather than total generation time.
+      resetUpstreamTimeout();
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         if (res.writableEnded) return; // client went away
@@ -170,6 +178,7 @@ export async function handleCompletions(
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            resetUpstreamTimeout();
             buffer += decoder.decode(value, { stream: true });
 
             let nl: number;
@@ -240,6 +249,7 @@ export async function handleCompletions(
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+          resetUpstreamTimeout();
           buffer += decoder.decode(value, { stream: true });
 
           let nl: number;
@@ -297,5 +307,6 @@ export async function handleCompletions(
     });
   } finally {
     clearTimeout(timeout);
+    res.off("close", handleClientClose);
   }
 }
