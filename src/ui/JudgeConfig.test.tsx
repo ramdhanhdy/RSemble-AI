@@ -253,6 +253,32 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
       cleanup(h);
     }
   });
+
+  it("allows the same opaque slug to be committed under a different provider namespace", () => {
+    let committed: { slug: string; providerId: string } | null = null;
+    const h = render(
+      <JudgeCombobox
+        models={NO_MODELS}
+        current="shared-model-id"
+        initialProvider="9router"
+        onCancel={() => {}}
+        onCommit={(slug, providerId) => {
+          committed = { slug, providerId };
+        }}
+      />,
+    );
+    try {
+      act(() => h.byText("Gemini")!.click());
+      const input = h.$("input#judge-search") as HTMLInputElement;
+      typeInto(input, "shared-model-id");
+      const commitButton = h.$('button[aria-label="Set judge to shared-model-id"]') as HTMLButtonElement;
+      expect(commitButton).not.toBeNull();
+      act(() => commitButton.click());
+      expect(committed).toEqual({ slug: "shared-model-id", providerId: "gemini" });
+    } finally {
+      cleanup(h);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

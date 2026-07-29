@@ -360,6 +360,13 @@ describe("OutputPane — Judge-only retry action", () => {
     expect(html).toMatch(/change the judge model/i);
   });
 
+  it("does not tell an eligible Judge failure to rerun the full pipeline", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane state={makeOutputPaneState()} onRetryJudge={() => {}} />,
+    );
+    expect(html).not.toMatch(/re-run from the command pane/i);
+  });
+
   it("states that candidate generation succeeded and only the Judge failed", () => {
     const html = renderToStaticMarkup(
       <OutputPane state={makeOutputPaneState()} onRetryJudge={() => {}} />,

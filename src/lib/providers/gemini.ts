@@ -58,7 +58,13 @@ function fallbackGeminiCatalog(): CatalogModel[] {
  *  (spec §8.1). */
 function supportsGenerateContent(item: { supportedGenerationMethods?: unknown }): boolean {
   const methods = item.supportedGenerationMethods;
-  return !Array.isArray(methods) || methods.includes("generateContent");
+  return methods === undefined || (Array.isArray(methods) && methods.includes("generateContent"));
+}
+
+function compareExactIds(a: string, b: string): number {
+  const folded = a.localeCompare(b, undefined, { sensitivity: "base" });
+  if (folded !== 0) return folded;
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function geminiVersion(id: string): { major: number; minor: number } | null {
@@ -82,11 +88,11 @@ function compareGeminiModelIds(a: string, b: string): number {
   if (av && bv) {
     if (av.major !== bv.major) return bv.major - av.major;
     if (av.minor !== bv.minor) return bv.minor - av.minor;
-    return a.localeCompare(b, undefined, { sensitivity: "base" });
+    return compareExactIds(a, b);
   }
   if (av && !bv) return -1;
   if (!av && bv) return 1;
-  return a.localeCompare(b, undefined, { sensitivity: "base" });
+  return compareExactIds(a, b);
 }
 
 /** Filter to generation-capable gemini* ids, strip the `models/` prefix once,

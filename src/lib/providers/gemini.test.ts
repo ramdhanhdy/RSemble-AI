@@ -109,6 +109,40 @@ describe("gemini listModels — generation filtering and recency ordering", () =
     // gemini-3.1-flash before gemini-3.1-pro.
     expect(list.map((m) => m.id)).toEqual(["gemini-3.1-flash", "gemini-3.1-pro"]);
   });
+
+  it("rejects a present malformed supportedGenerationMethods value", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          models: [
+            {
+              name: "models/gemini-3.6-malformed",
+              displayName: "Malformed Gemini",
+              supportedGenerationMethods: "generateContent",
+            },
+            geminiModel("gemini-3.6-flash", "Gemini 3.6 Flash"),
+          ],
+        }),
+      ),
+    );
+    const list = await geminiProvider.listModels!();
+    expect(list.map((m) => m.id)).not.toContain("gemini-3.6-malformed");
+  });
+
+  it("uses an exact-string fallback when case-insensitive ids compare equal", async () => {
+    const records = [
+      geminiModel("gemini-3.1-Pro", "Uppercase Pro"),
+      geminiModel("gemini-3.1-pro", "Lowercase Pro"),
+    ];
+    const load = async (models: ReturnType<typeof geminiModel>[]) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ models })));
+      return (await geminiProvider.listModels!()).map((m) => m.id);
+    };
+    const forward = await load(records);
+    const reverse = await load([...records].reverse());
+    expect(forward).toEqual(reverse);
+  });
 });
 
 describe("gemini listModels — fallback paths", () => {

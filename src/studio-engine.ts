@@ -397,7 +397,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
       };
 
     case "FUSION_START":
-      return { ...state, fusionStatus: "running", fusionError: null };
+      // Standalone re-fusion is an active provider stage too. Marking it
+      // running prevents Judge retry or another fusion from overlapping it.
+      return { ...state, running: true, fusionStatus: "running", fusionError: null };
 
     case "FUSION_RESULT":
       // Terminal for FUSE mode.

@@ -578,9 +578,15 @@ function ErrorState({
       <div className="flex flex-col items-center justify-center rounded-md border border-error/40 bg-error/[0.08] py-8 px-6 text-center">
         <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-error">Error</p>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">{message}</p>
-        <p className="mt-2 font-mono text-sm text-text-muted">
-          Fix the issue and re-run from the command pane.
-        </p>
+        {judgeRetryEligible ? (
+          <p className="mt-2 font-mono text-sm text-text-muted">
+            Fix the Judge settings or retry the retained candidates below.
+          </p>
+        ) : (
+          <p className="mt-2 font-mono text-sm text-text-muted">
+            Fix the issue and re-run from the command pane.
+          </p>
+        )}
         {judgeRetryEligible && onRetryJudge && (
           <div className="mt-4 flex flex-col items-center gap-2">
             <p className="text-sm leading-relaxed text-text-secondary">

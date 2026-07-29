@@ -216,7 +216,10 @@ export default function RSemble() {
     (mode: Mode) => {
       if (stateRef.current.running) return;
       dispatch({ type: "SET_MODE", mode });
-      if (mode === "fuse") triggerFusion();
+      const current = stateRef.current;
+      if (mode === "fuse" && current.judgeStatus === "done" && current.judgeReport !== null) {
+        triggerFusion();
+      }
     },
     [triggerFusion],
   );

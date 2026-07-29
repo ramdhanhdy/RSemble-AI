@@ -637,3 +637,19 @@ describe("reducer — JUDGE_START as a standalone active-stage transition", () =
     expect(next.runContext).toBe(state.runContext);
   });
 });
+
+describe("reducer — standalone Fusion transition", () => {
+  it("FUSION_START marks the app running so Judge retry cannot overlap it", () => {
+    const next = reducer(
+      {
+        ...initialState,
+        running: false,
+        judgeStatus: "done",
+        fusionStatus: "idle",
+      },
+      { type: "FUSION_START" },
+    );
+    expect(next.running).toBe(true);
+    expect(next.fusionStatus).toBe("running");
+  });
+});

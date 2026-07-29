@@ -441,6 +441,10 @@ export function createRunController(deps: RunControllerDeps) {
     }
     if (!force && s.fusionStatus === "done") return;
     if (s.aborted) return;
+    // Fusion is downstream of a successful Judge. A mode switch after a Judge
+    // failure must retain candidates for Judge-only retry, never synthesize
+    // unjudged answers or write history from stale/zero scores.
+    if (s.judgeStatus !== "done" || s.judgeReport === null) return;
 
     const epoch = ++runEpochRef.current;
     const scoresById = Object.fromEntries(eligibility.usable.map((c) => [c.id, c.weightedScore]));

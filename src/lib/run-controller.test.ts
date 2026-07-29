@@ -69,7 +69,7 @@ function makeDeps(state: StudioState) {
     if (a.type === "JUDGE_START") stateRef.current = { ...stateRef.current, running: true, judgeStatus: "running", judgeError: null, judgeReport: null, consensus: null, insufficient: null, fusionStatus: "idle", fusionError: null, fusedText: null };
     if (a.type === "JUDGE_RESULT") stateRef.current = { ...stateRef.current, running: a.mode === "fuse" ? stateRef.current.running : false, judgeStatus: "done", judgeReport: a.report };
     if (a.type === "JUDGE_FAILED") stateRef.current = { ...stateRef.current, running: false, judgeStatus: "error" };
-    if (a.type === "FUSION_START") stateRef.current = { ...stateRef.current, fusionStatus: "running" };
+    if (a.type === "FUSION_START") stateRef.current = { ...stateRef.current, running: true, fusionStatus: "running" };
     if (a.type === "FUSION_RESULT") stateRef.current = { ...stateRef.current, running: false, fusionStatus: "done", fusedText: a.text };
     if (a.type === "FUSION_FAILED") stateRef.current = { ...stateRef.current, running: false, fusionStatus: "error" };
     if (a.type === "ABORT_RUN") stateRef.current = { ...stateRef.current, running: false, aborted: true };
@@ -597,6 +597,8 @@ describe("run-controller — partial candidate failures", () => {
   it("triggerFusion fuses when ≥2 usable candidates exist (successful partial fusion via button)", async () => {
     const state = stateWithSlots(THREE_SLOTS, "fuse");
     state.running = false;
+    state.judgeStatus = "done";
+    state.judgeReport = { labelMap: [], evaluationsById: {}, comparisons: [] };
     state.candidates = [
       {
         id: "cand-s1", model: "A", provider: "OpenRouter", providerId: "openrouter", slug: "model-a",
@@ -631,6 +633,28 @@ describe("run-controller — partial candidate failures", () => {
     expect(fusionText).not.toContain("gemini provider crashed");
     expect(fusionText).toContain("answer A");
     expect(fusionText).toContain("answer B");
+  });
+
+  it("triggerFusion refuses to bypass a failed Judge even when candidates are usable", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    state.running = false;
+    state.judgeStatus = "error";
+    state.judgeError = "judge unavailable";
+    state.judgeReport = null;
+    state.candidates = [
+      doneCandidate("cand-s1", "openrouter", "model-a", "answer A"),
+      doneCandidate("cand-s2", "umans", "model-b", "answer B"),
+    ];
+    chatCompletionMock.mockResolvedValueOnce("must not run");
+    const { deps, dispatched } = makeDeps(state);
+
+    createRunController(deps).triggerFusion(true);
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(dispatched.map((a) => a.type)).not.toContain("FUSION_START");
+    const { addRun } = await import("./run-history");
+    expect(addRun).not.toHaveBeenCalled();
   });
 
   it("triggerFusion is a no-op while a run is in progress (no provider call, no dispatch)", async () => {

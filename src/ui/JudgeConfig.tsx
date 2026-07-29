@@ -147,12 +147,13 @@ export function JudgeCombobox({
 
   const hasCatalog = providerModels.length > 0;
   const trimmed = query.trim();
+  const isCurrentSelection = selectedProvider === initialProvider && trimmed === current;
   const slugValid =
     trimmed.length > 0 &&
     (selectedProvider === "openrouter" || selectedProvider === "commandcode" || selectedProvider === "clinepass"
       ? trimmed.includes("/")
       : true) &&
-    trimmed !== current;
+    !isCurrentSelection;
   return (
     <div className="mt-2 rounded-md border border-edge-bright bg-card p-2">
       <ProviderTabs
@@ -198,7 +199,7 @@ export function JudgeCombobox({
       {hasCatalog && matches.length > 0 && (
         <ul className="mt-2 max-h-48 overflow-y-auto rounded-sm border border-edge scroll-thin">
           {matches.map((m) => {
-            const selected = m.id === current;
+            const selected = m.providerId === initialProvider && m.id === current;
             return (
               <li key={m.id}>
                 <button
@@ -222,7 +223,7 @@ export function JudgeCombobox({
       )}
 
       {/* Manual raw-slug commit */}
-      {slugValid && trimmed !== current ? (
+      {slugValid ? (
         <button
           type="button"
           onClick={() => onCommit(trimmed, selectedProvider)}
