@@ -344,3 +344,108 @@ describe("bridge — Umans request safety", () => {
     }
   });
 });
+
+describe("bridge — 9Router request safety", () => {
+  it("rejects oversized 9Router POST bodies before calling upstream", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer({ maxBodyBytes: 32 });
+    try {
+      const res = await rawRequest(url, "/9router/v1/chat/completions", "POST", JSON.stringify({ pad: "x".repeat(128) }), {
+        "Content-Type": "application/json",
+      });
+      expect(res.status).toBe(413);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it.each(["PUT", "PATCH", "DELETE"])("rejects unsupported 9Router %s on /v1/models", async (method) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer();
+    try {
+      const res = await rawRequest(url, "/9router/v1/models", method, undefined, {
+        "Content-Type": "application/json",
+      });
+      expect(res.status).toBe(405);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("rejects POST on /9router/v1/models (GET only)", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer();
+    try {
+      const res = await rawRequest(url, "/9router/v1/models", "POST", "{}", {
+        "Content-Type": "application/json",
+      });
+      expect(res.status).toBe(405);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("rejects GET on /9router/v1/chat/completions (POST only)", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer();
+    try {
+      const res = await rawRequest(url, "/9router/v1/chat/completions", "GET");
+      expect(res.status).toBe(405);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("rejects non-JSON 9Router POST bodies", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer();
+    try {
+      const res = await rawRequest(url, "/9router/v1/chat/completions", "POST", "{}", {
+        "Content-Type": "text/plain",
+      });
+      expect(res.status).toBe(415);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("returns 404 for unknown /9router/* paths without calling upstream", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer();
+    try {
+      const res = await rawRequest(url, "/9router/api/settings", "GET");
+      expect(res.status).toBe(404);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const res2 = await rawRequest(url, "/9router/api/health", "GET");
+      expect(res2.status).toBe(404);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("rejects path traversal encodings under /9router/", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { server, url } = await startServer();
+    try {
+      const res = await rawRequest(url, "/9router/v1/models/extra", "GET");
+      expect(res.status).toBe(404);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+});

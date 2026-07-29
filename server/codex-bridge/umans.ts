@@ -93,18 +93,24 @@ export async function handleOpenAICompatibleProxy(
   const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   res.on("close", () => ctrl.abort());
 
+  // Build upstream headers — omit Authorization entirely when blank so we
+  // never send "Authorization: Bearer " to an optional-auth upstream.
+  const upstreamHeaders: Record<string, string> = {
+    "Content-Type": req.headers["content-type"] ?? "application/json",
+    Accept: req.headers.accept ?? "application/json",
+    "X-Title": "RSemble AI",
+  };
+  const auth = typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
+  if (auth) upstreamHeaders.Authorization = auth;
+
   let upstream: Response;
   try {
     upstream = await fetch(upstreamUrl, {
       method: req.method,
-      headers: {
-        Authorization: typeof req.headers.authorization === "string" ? req.headers.authorization : "",
-        "Content-Type": req.headers["content-type"] ?? "application/json",
-        Accept: req.headers.accept ?? "application/json",
-        "X-Title": "RSemble AI",
-      },
+      headers: upstreamHeaders,
       body,
       signal: ctrl.signal,
+      redirect: "manual",
     });
     // Bound connection/response-header latency, not the full SSE lifetime.
     clearTimeout(timeout);
@@ -122,6 +128,17 @@ export async function handleOpenAICompatibleProxy(
     }
     const host = new URL(deps.upstream).host;
     sendJson(res, 502, { error: { message: `Could not reach ${host}.` } });
+    return;
+  }
+
+  // Reject upstream redirects — never follow with credentials to a different origin.
+  if (upstream.status >= 300 && upstream.status < 400) {
+    sendJson(res, 502, {
+      error: {
+        message: `Upstream ${deps.providerLabel} returned a redirect — refusing to follow.`,
+        type: "upstream_redirect",
+      },
+    });
     return;
   }
 

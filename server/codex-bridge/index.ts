@@ -4,6 +4,7 @@
 import http from "node:http";
 import { getAuthStatus } from "./auth.js";
 import { handleClinePassProxy } from "./clinepass.js";
+import { handleNineRouterProxy } from "./nine-router.js";
 import { CODEX_MODELS } from "./models.js";
 import { handleCompletions, type CompletionRequestBody } from "./responses.js";
 import { handleUmansProxy } from "./umans.js";
@@ -120,6 +121,31 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
 
     const url = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
     const pathName = url.pathname;
+
+    // 9Router — exact path allowlist with per-path method enforcement.
+    // Unknown /9router/* paths fall through to the 404 at the end.
+    if (pathName === "/9router/v1/models") {
+      if (req.method !== "GET") {
+        res.setHeader("Allow", "GET, OPTIONS");
+        sendJson(res, 405, { error: { message: `Method not allowed: ${req.method}`, type: "method_not_allowed" } });
+        return;
+      }
+      void handleNineRouterProxy(req, res, `${pathName}${url.search}`, { maxBodyBytes });
+      return;
+    }
+    if (pathName === "/9router/v1/chat/completions") {
+      if (req.method !== "POST") {
+        res.setHeader("Allow", "POST, OPTIONS");
+        sendJson(res, 405, { error: { message: `Method not allowed: ${req.method}`, type: "method_not_allowed" } });
+        return;
+      }
+      if (!isApplicationJson(req)) {
+        sendJson(res, 415, { error: { message: "Content-Type must be application/json.", type: "unsupported_media_type" } });
+        return;
+      }
+      void handleNineRouterProxy(req, res, `${pathName}${url.search}`, { maxBodyBytes });
+      return;
+    }
 
     const proxyHandler = pathName.startsWith("/umans/")
       ? handleUmansProxy
