@@ -98,7 +98,7 @@ export default function RSemble() {
       }),
     [dispatch, streamBuffer],
   );
-  const { runFanout, abortRun, retryCandidate, triggerFusion } = runController;
+  const { runFanout, abortRun, retryCandidate, retryJudge, triggerFusion } = runController;
 
   // ---------------------------------------------------------------------------
   // Readiness + catalog probes — parallel, bounded, with diagnosable failures.
@@ -342,7 +342,7 @@ export default function RSemble() {
             )}
 
             <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
-              <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} />
+              <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} onRetryJudge={retryJudge} />
             </section>
           </div>
         </div>

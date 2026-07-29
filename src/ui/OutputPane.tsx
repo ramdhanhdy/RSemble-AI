@@ -41,6 +41,7 @@ export function OutputPane({
   onFuse,
   onRefuse,
   onRetryCandidate,
+  onRetryJudge,
 }: {
   state: StudioState;
   /** Pass-through from AdaptiveFusion: fuse the current run's candidates. */
@@ -48,6 +49,9 @@ export function OutputPane({
   /** Re-run fusion on the current run's candidates (Re-fuse action). */
   onRefuse?: () => void;
   onRetryCandidate?: (candidate: Candidate) => void;
+  /** Judge-only retry: re-judge the retained candidate outputs after a Judge
+   *  failure, without regenerating candidates (run-recovery spec §5). */
+  onRetryJudge?: () => void;
 }) {
   const [compareMode, setCompareMode] = useState(false);
   const hasRun = state.candidates.length > 0 || state.running;
@@ -66,6 +70,17 @@ export function OutputPane({
       : state.judgeStatus === "error"
         ? state.judgeError ?? "Judge failed."
         : state.fusionError ?? "Fusion failed.";
+
+  // Judge-only retry availability (spec §5.1): a terminal Judge failure, no
+  // stage active, run not aborted, ≥2 usable candidates, and the frozen run
+  // context still present. A Fusion-only failure (Judge succeeded) is excluded
+  // — retrying the Judge there would be meaningless.
+  const judgeRetryEligible =
+    state.judgeStatus === "error" &&
+    !state.running &&
+    !state.aborted &&
+    state.candidates.filter(isUsableCandidate).length >= 2 &&
+    state.runContext != null;
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 sm:p-5">
@@ -108,9 +123,11 @@ export function OutputPane({
           message={stageErrorMessage}
           candidates={state.candidates}
           onRetryCandidate={onRetryCandidate}
+          onRetryJudge={onRetryJudge}
+          judgeRetryEligible={judgeRetryEligible}
+          retryActive={state.running}
         />
       )}
-
       {hasRun &&
         !state.running &&
         !state.insufficient &&
@@ -541,10 +558,18 @@ function ErrorState({
   message,
   candidates,
   onRetryCandidate,
+  onRetryJudge,
+  judgeRetryEligible,
+  retryActive,
 }: {
   message: string;
   candidates: Candidate[];
   onRetryCandidate?: (candidate: Candidate) => void;
+  /** Judge-only recovery action (run-recovery spec §5.5). Rendered only when
+   *  the failure was a Judge error with ≥2 usable candidates retained. */
+  onRetryJudge?: () => void;
+  judgeRetryEligible?: boolean;
+  retryActive?: boolean;
 }) {
   const done = candidates.filter((c) => c.status === "done");
   const failed = candidates.filter((c) => c.status === "error");
@@ -556,6 +581,25 @@ function ErrorState({
         <p className="mt-2 font-mono text-sm text-text-muted">
           Fix the issue and re-run from the command pane.
         </p>
+        {judgeRetryEligible && onRetryJudge && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <p className="text-sm leading-relaxed text-text-secondary">
+              Candidate generation succeeded — only the Judge failed.
+            </p>
+            <button
+              type="button"
+              onClick={onRetryJudge}
+              disabled={retryActive}
+              aria-label="Retry Judge using completed candidates"
+              className="flex min-h-[44px] items-center gap-2 rounded-md border border-accent/50 bg-accent/[0.08] px-4 font-mono text-sm text-accent hover:bg-accent/[0.14] disabled:opacity-50"
+            >
+              <RotateCw size={14} /> Retry Judge
+            </button>
+            <p className="text-xs leading-relaxed text-text-muted">
+              Reuses the completed candidate outputs. You can change the Judge model first.
+            </p>
+          </div>
+        )}
       </div>
       {done.length > 0 && (
         <div className="flex flex-col gap-2">

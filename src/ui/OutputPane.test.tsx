@@ -1,6 +1,10 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { LiveCandidateCard, scrollLiveTranscriptToEnd, InsufficientState } from "./OutputPane";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { OutputPane, LiveCandidateCard, scrollLiveTranscriptToEnd, InsufficientState } from "./OutputPane";
+import { initialState, type StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 
 const candidate: Candidate = {
@@ -315,5 +319,141 @@ describe("InsufficientState — empty done candidate visibility (2 configured ->
       <InsufficientState done={1} failed={1} mode="fuse" candidates={[success, empty]} />,
     );
     expect(html).not.toContain("Retry");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OutputPane — Judge-only retry action in the error state (run-recovery spec §5.5)
+// ---------------------------------------------------------------------------
+
+// React 18 uses this global to decide whether act() warnings are suppressed.
+(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+
+function makeOutputPaneState(overrides: Partial<StudioState> = {}): StudioState {
+  return {
+    ...initialState,
+    mode: "rank",
+    running: false,
+    judgeStatus: "error",
+    judgeError: "The AI judge could not be reached.",
+    candidates: [makeDoneCandidate("c1", "Model A"), makeDoneCandidate("c2", "Model B")],
+    runContext: { prompt: "original task", rubric: [] },
+    ...overrides,
+  };
+}
+
+describe("OutputPane — Judge-only retry action", () => {
+  it("renders a Retry Judge action when the Judge failed with two usable candidates", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane state={makeOutputPaneState()} onRetryJudge={() => {}} />,
+    );
+    expect(html).toContain("Retry Judge");
+    expect(html).toContain('aria-label="Retry Judge using completed candidates"');
+  });
+
+  it("helper copy says completed candidates are reused and the Judge model can change", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane state={makeOutputPaneState()} onRetryJudge={() => {}} />,
+    );
+    expect(html).toMatch(/reuse/i);
+    expect(html).toMatch(/completed candidate/i);
+    expect(html).toMatch(/change the judge model/i);
+  });
+
+  it("states that candidate generation succeeded and only the Judge failed", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane state={makeOutputPaneState()} onRetryJudge={() => {}} />,
+    );
+    expect(html).toMatch(/generation succeeded|only the judge failed/i);
+  });
+
+  it("the Retry Judge button meets the 44px touch target", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane state={makeOutputPaneState()} onRetryJudge={() => {}} />,
+    );
+    // The button markup must carry the 44px minimum-height class used across the app.
+    expect(html).toContain("min-h-[44px]");
+  });
+
+  it("invokes onRetryJudge once when the button is activated", () => {
+    const calls: number[] = [];
+    const onRetryJudge = () => calls.push(1);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(<OutputPane state={makeOutputPaneState()} onRetryJudge={onRetryJudge} />);
+      });
+      const btn = container.querySelector(
+        '[aria-label="Retry Judge using completed candidates"]',
+      ) as HTMLButtonElement | null;
+      expect(btn).not.toBeNull();
+      act(() => {
+        btn!.click();
+      });
+      expect(calls).toHaveLength(1);
+    } finally {
+      act(() => {
+        root.unmount();
+      });
+      container.remove();
+    }
+  });
+
+  it("does not offer per-candidate retry buttons for successful candidates in the error state", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane
+        state={makeOutputPaneState()}
+        onRetryJudge={() => {}}
+        onRetryCandidate={() => {}}
+      />,
+    );
+    // The two done candidates must not carry per-candidate retry aria-labels.
+    expect(html).not.toContain('aria-label="Retry Model A"');
+    expect(html).not.toContain('aria-label="Retry Model B"');
+  });
+
+  it("does not offer Judge retry when fewer than two candidates are usable", () => {
+    const state = makeOutputPaneState({
+      candidates: [makeDoneCandidate("c1", "Model A"), makeFailedCandidate("c2", "Model B", "boom")],
+    });
+    const html = renderToStaticMarkup(
+      <OutputPane state={state} onRetryJudge={() => {}} />,
+    );
+    expect(html).not.toContain("Retry Judge");
+    expect(html).not.toContain('aria-label="Retry Judge using completed candidates"');
+  });
+
+  it("does not mislabel a Fusion-only error as a Judge retry", () => {
+    const state = makeOutputPaneState({
+      mode: "fuse",
+      judgeStatus: "done",
+      judgeError: null,
+      fusionStatus: "error",
+      fusionError: "fusion exploded",
+    });
+    const html = renderToStaticMarkup(
+      <OutputPane state={state} onRetryJudge={() => {}} />,
+    );
+    // A fusion failure (Judge succeeded) must not expose Judge-only retry.
+    expect(html).not.toContain("Retry Judge");
+    expect(html).toContain("fusion exploded");
+  });
+
+  it("does not offer the action while a stage is running", () => {
+    const state = makeOutputPaneState({ running: true });
+    const html = renderToStaticMarkup(
+      <OutputPane state={state} onRetryJudge={() => {}} />,
+    );
+    expect(html).not.toContain("Retry Judge");
+  });
+
+  it("does not offer the action when the run was aborted", () => {
+    const state = makeOutputPaneState({ aborted: true });
+    const html = renderToStaticMarkup(
+      <OutputPane state={state} onRetryJudge={() => {}} />,
+    );
+    expect(html).not.toContain("Retry Judge");
   });
 });
