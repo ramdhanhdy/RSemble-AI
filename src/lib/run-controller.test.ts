@@ -3,6 +3,7 @@ import type React from "react";
 import { createRunController, type RunControllerDeps } from "./run-controller";
 import { initialState, type Action, type StudioState } from "../studio-engine";
 import type { StreamDeltaBuffer } from "./stream-buffer";
+import { ProviderError } from "./providers/types";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -862,5 +863,66 @@ describe("run-controller — partial-failure UI visibility", () => {
     );
     expect(empty).toBeDefined();
     expect(empty!.model).toBe("A");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9Router integration — mixed-provider fanout, 503 failure, critic
+// ---------------------------------------------------------------------------
+
+describe("run-controller — 9Router integration", () => {
+  const MIXED_SLOTS: StudioState["slots"] = [
+    { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+    { id: "s2", providerId: "9router", provider: "9Router", model: "B", slug: "ag/gemini-3.1-pro-low", enabled: true },
+  ];
+
+  it("completes a mixed openrouter + 9router fanout", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("good answer"));
+    const state = stateWithSlots(MIXED_SLOTS);
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const results = dispatched.filter((a) => a.type === "CANDIDATE_RESULT");
+    expect(results).toHaveLength(2);
+  });
+
+  it("a 9router 503 fails only that candidate while the other succeeds", async () => {
+    async function* failingStream(): AsyncGenerator<string, void, unknown> {
+      throw new ProviderError("all routes unavailable", "9router", 503);
+    }
+    chatStreamMock.mockImplementation((opts: { model: string }) => {
+      if (opts.model === "ag/gemini-3.1-pro-low") return failingStream();
+      return streamOf("good answer");
+    });
+    const state = stateWithSlots(MIXED_SLOTS);
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const failed = dispatched.filter((a) => a.type === "CANDIDATE_FAILED");
+    const results = dispatched.filter((a) => a.type === "CANDIDATE_RESULT");
+    expect(failed).toHaveLength(1);
+    expect(results).toHaveLength(1);
+  });
+
+  it("9router can be the critic in Rank mode", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("candidate answer"));
+    chatCompletionMock.mockResolvedValue(
+      JSON.stringify({
+        consensus: [],
+        contradictions: [],
+        uniqueInsights: [],
+        scores: [{ label: "A", score: 4.0 }, { label: "B", score: 3.0 }],
+      }),
+    );
+    const state = stateWithSlots(MIXED_SLOTS, "rank");
+    state.critic = { providerId: "9router", model: "ag/gemini-3.1-pro-low" };
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    const judgeResult = dispatched.find((a) => a.type === "JUDGE_RESULT");
+    expect(judgeResult).toBeDefined();
   });
 });

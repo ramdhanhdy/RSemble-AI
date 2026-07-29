@@ -89,3 +89,22 @@ describe("command preferences", () => {
     expect(loadStoredCritic()).toBeNull();
   });
 });
+
+describe("command preferences — 9router round-trip", () => {
+  it("preserves providerId 9router and exact router-native slug", () => {
+    const routerSlots: ModelSlot[] = [
+      {
+        id: "slot-9r",
+        providerId: "9router",
+        provider: "9Router",
+        model: "Gemini 3.1 Pro Low",
+        slug: "ag/gemini-3.1-pro-low",
+        enabled: true,
+      },
+    ];
+    const routerCritic: CriticRef = { providerId: "9router", model: "combo:fast+cheap" };
+    saveCommandPreferences({ slots: routerSlots, critic: routerCritic });
+    expect(loadStoredSlots()).toEqual(routerSlots);
+    expect(loadStoredCritic()).toEqual(routerCritic);
+  });
+});
