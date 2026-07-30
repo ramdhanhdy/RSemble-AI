@@ -203,7 +203,6 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       owner.release(experimentId);
     }
     void lease.release();
-    ;
   }
 
   // --- Experiment persistence sync --------------------------------------------
@@ -518,7 +517,6 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       }
       throw err;
     }
-    ;
 
     // Create experiment record.
     const id = `exp-${generateId()}`;
@@ -596,7 +594,6 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     if (!leaseInfo) {
       return { ok: false, error: "Lease not held" };
     }
-    ;
 
     const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
     const result = engine.resume(fence, now());
@@ -629,7 +626,6 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       }
       throw err;
     }
-    ;
 
     // Acquire owner.
     if (!owner.tryAcquire({ kind: "experiment", id: expId })) {
