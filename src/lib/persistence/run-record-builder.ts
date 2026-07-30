@@ -207,6 +207,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     };
     candidate.attempts.push(attempt);
     record.revision += 1;
+    record.status = deriveStatus(record);
     record.updatedAt = now();
   }
 
@@ -269,6 +270,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     record.judge.attempts.push(attempt);
     record.judge.status = "running";
     record.revision += 1;
+    record.status = deriveStatus(record);
     record.updatedAt = now();
   }
 
@@ -326,6 +328,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     record.fusion.attempts.push(attempt);
     record.fusion.status = "running";
     record.revision += 1;
+    record.status = deriveStatus(record);
     record.updatedAt = now();
   }
 
@@ -447,6 +450,11 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       c.attempts.some((a) => a.status === "running"),
     );
     if (fanoutActive) return "running";
+
+    // A retry/re-Judge or re-Fuse starting against prior accepted evidence
+    // must revert the run from completed/partial back to running.
+    if (record.judge.status === "running") return "running";
+    if (record.fusion.status === "running") return "running";
 
     const acceptedJudge = hasAcceptedJudge(record);
     const usableCount = countUsableCandidates(record);

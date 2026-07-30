@@ -44,6 +44,7 @@ export interface RunRecorder {
   beginFusionAttempt(runId: string, attemptId: string, input: FusionAttemptStartInput): Promise<void>;
   finishFusionAttempt(runId: string, attemptId: string, input: FusionTerminalInput): Promise<void>;
   markAborted(runId: string): Promise<void>;
+  getRecord(runId: string): Promise<RunRecordV2 | null>;
 }
 
 // --- Per-run write serialization --------------------------------------------
@@ -172,6 +173,10 @@ export function createRunRecorder(
     });
   }
 
+  async function getRecord(runId: string): Promise<RunRecordV2 | null> {
+    return repo.get(runId);
+  }
+
   return {
     begin,
     saveFanout,
@@ -182,5 +187,6 @@ export function createRunRecorder(
     beginFusionAttempt,
     finishFusionAttempt,
     markAborted,
+    getRecord,
   };
 }

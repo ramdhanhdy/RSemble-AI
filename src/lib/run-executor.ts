@@ -195,6 +195,8 @@ export interface RunExecutorDeps {
   random?: () => number;
   /** ID generator for attempt IDs. Tests inject deterministic. */
   generateId?: () => string;
+  /** Clock for timestamps. Tests inject deterministic. Defaults to Date.now. */
+  now?: () => number;
 }
 
 // --- Factory -----------------------------------------------------------------
@@ -202,6 +204,7 @@ export interface RunExecutorDeps {
 export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
   const random = deps.random ?? Math.random;
   const generateId = deps.generateId ?? (() => crypto.randomUUID());
+  const now = deps.now ?? (() => Date.now());
 
   function isAborted(signal: AbortSignal): boolean {
     return signal.aborted;
@@ -242,7 +245,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       const summary = summarize(content);
       const tokensIn = estimateTokens(messages.map((m) => m.content).join(""));
       const tokensOut = estimateTokens(content);
-      return { content, segments, summary, tokensIn, tokensOut, finishedAt: Date.now() };
+      return { content, segments, summary, tokensIn, tokensOut, finishedAt: now() };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return null;
       if (isAborted(signal)) return null;
@@ -274,7 +277,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       request.judgeInstruction,
     );
     const attemptId = generateId();
-    const startedAt = Date.now();
+    const startedAt = now();
 
     const blindLabelToCandidateId: Record<string, string> = {};
     for (const { label, candidateId } of blindSet.labelMap) {
@@ -310,26 +313,26 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       });
       if (isAborted(signal)) {
         await events.onJudgeTerminal(attemptId, {
-          status: "aborted", report: null, consensus: null, error: null, finishedAt: Date.now(),
+          status: "aborted", report: null, consensus: null, error: null, finishedAt: now(),
         }).catch(() => {});
         return { ok: false };
       }
       const { breakdown, scoresById, report } = parseJudge(content, blindSet, request.evaluation.legacyRubric, done);
       await events.onJudgeTerminal(attemptId, {
-        status: "completed", report, consensus: breakdown, error: null, finishedAt: Date.now(),
+        status: "completed", report, consensus: breakdown, error: null, finishedAt: now(),
       });
       return { ok: true, attemptId, report, consensus: breakdown, scoresById, blindSet };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         await events.onJudgeTerminal(attemptId, {
-          status: "aborted", report: null, consensus: null, error: null, finishedAt: Date.now(),
+          status: "aborted", report: null, consensus: null, error: null, finishedAt: now(),
         }).catch(() => {});
         return { ok: false };
       }
       if (isAborted(signal)) return { ok: false };
       await events.onJudgeTerminal(attemptId, {
         status: "failed", report: null, consensus: null,
-        error: sanitizeError(err), finishedAt: Date.now(),
+        error: sanitizeError(err), finishedAt: now(),
       }).catch(() => {});
       return { ok: false };
     } finally {
@@ -356,7 +359,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       judgeInstruction: request.judgeInstruction ?? "",
     });
     const attemptId = generateId();
-    const startedAt = Date.now();
+    const startedAt = now();
 
     try {
       await events.onFusionStart(attemptId, {
@@ -386,25 +389,25 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       });
       if (isAborted(signal)) {
         await events.onFusionTerminal(attemptId, {
-          status: "aborted", result: null, error: null, finishedAt: Date.now(),
+          status: "aborted", result: null, error: null, finishedAt: now(),
         }).catch(() => {});
         return { ok: false, result: null };
       }
       await events.onFusionTerminal(attemptId, {
-        status: "completed", result: content, error: null, finishedAt: Date.now(),
+        status: "completed", result: content, error: null, finishedAt: now(),
       });
       return { ok: true, result: content };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         await events.onFusionTerminal(attemptId, {
-          status: "aborted", result: null, error: null, finishedAt: Date.now(),
+          status: "aborted", result: null, error: null, finishedAt: now(),
         }).catch(() => {});
         return { ok: false, result: null };
       }
       if (isAborted(signal)) return { ok: false, result: null };
       await events.onFusionTerminal(attemptId, {
         status: "failed", result: null,
-        error: sanitizeError(err), finishedAt: Date.now(),
+        error: sanitizeError(err), finishedAt: now(),
       }).catch(() => {});
       return { ok: false, result: null };
     } finally {
@@ -443,7 +446,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           rubric: request.evaluation.legacyRubric,
         });
         const attemptId = generateId();
-        const startedAt = Date.now();
+        const startedAt = now();
 
         try {
           await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
@@ -459,7 +462,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           await events.onCandidateAttemptTerminal(job.id, attemptId, {
             status: "failed", output: null, tokensIn: null, tokensOut: null,
             error: result && "error" in result ? result.error : { message: "Candidate aborted" },
-            finishedAt: Date.now(),
+            finishedAt: now(),
           }).catch(() => {});
           return;
         }
@@ -506,7 +509,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           weightedScore: 0,
           segments: r.segments,
           status: "done" as const,
-          startedAt: Date.now(),
+          startedAt: now(),
           finishedAt: r.finishedAt,
         };
       })
@@ -566,7 +569,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       rubric: request.evaluation.legacyRubric,
     });
     const attemptId = generateId();
-    const startedAt = Date.now();
+    const startedAt = now();
 
     try {
       await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
@@ -582,7 +585,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         await events.onCandidateAttemptTerminal(job.id, attemptId, {
           status: "failed", output: null, tokensIn: null, tokensOut: null,
           error: result && "error" in result ? result.error : { message: "Candidate retry aborted" },
-          finishedAt: Date.now(),
+          finishedAt: now(),
         }).catch(() => {});
       }
       return; // failure → no downstream calls
