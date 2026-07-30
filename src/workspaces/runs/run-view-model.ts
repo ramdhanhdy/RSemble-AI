@@ -6,7 +6,7 @@
 // telemetry (Phase 3 Tasks 3.1, 3.2, 3.3, 3.5, 3.6).
 // =============================================================================
 
-import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "../../lib/persistence/run-types";
+import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunStatus, RunSummary } from "../../lib/persistence/run-types";
 
 // --- Relative time -----------------------------------------------------------
 
@@ -28,7 +28,7 @@ export interface RunRowViewModel {
   kind: "full" | "legacy";
   id: string;
   taskTitle: string;
-  status: string | null;
+  status: RunStatus | null;
   mode: string | null;
   modelCount: number;
   winnerKeys: string[];
