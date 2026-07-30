@@ -206,6 +206,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       error: null,
     };
     candidate.attempts.push(attempt);
+    record.revision += 1;
     record.updatedAt = now();
   }
 
@@ -226,10 +227,11 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     attempt.tokensOut = input.tokensOut;
     attempt.error = input.error;
     attempt.finishedAt = input.finishedAt;
-    // Move accepted pointer only on success
     if (input.status === "completed") {
       candidate.acceptedAttemptId = attemptId;
     }
+    record.revision += 1;
+    record.status = deriveStatus(record);
     record.updatedAt = now();
   }
 
@@ -238,6 +240,8 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     record: RunRecordV2,
     _done: unknown[],
   ): void {
+    record.revision += 1;
+    record.status = deriveStatus(record);
     record.updatedAt = now();
   }
 
@@ -264,6 +268,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     };
     record.judge.attempts.push(attempt);
     record.judge.status = "running";
+    record.revision += 1;
     record.updatedAt = now();
   }
 
@@ -291,6 +296,11 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     } else if (input.status === "failed") {
       record.judge.status = "error";
     }
+    record.revision += 1;
+    record.status = deriveStatus(record);
+    if (record.status !== "running" && record.completedAt === null) {
+      record.completedAt = now();
+    }
     record.updatedAt = now();
   }
 
@@ -315,6 +325,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     };
     record.fusion.attempts.push(attempt);
     record.fusion.status = "running";
+    record.revision += 1;
     record.updatedAt = now();
   }
 
@@ -334,6 +345,13 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     if (input.status === "completed" && input.result !== null) {
       record.fusion.acceptedAttemptId = attemptId;
       record.fusion.status = "done";
+    } else if (input.status === "failed") {
+      record.fusion.status = "error";
+    }
+    record.revision += 1;
+    record.status = deriveStatus(record);
+    if (record.status !== "running" && record.completedAt === null) {
+      record.completedAt = now();
     }
     record.updatedAt = now();
   }
@@ -362,6 +380,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
         a.finishedAt = now();
       }
     }
+    record.revision += 1;
     record.updatedAt = now();
   }
 
@@ -388,6 +407,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
         a.finishedAt = now();
       }
     }
+    record.revision += 1;
     record.updatedAt = now();
   }
 
@@ -505,8 +525,11 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       ...record.candidates.map((c) => `${c.model} ${c.slug}`),
     ].join(" ");
 
-    const judgeModelKey = record.judge.attempts.length > 0
-      ? `${record.judge.attempts[0].providerId}:${record.judge.attempts[0].model}`
+    const acceptedJudge = record.judge.acceptedAttemptId
+      ? record.judge.attempts.find((a) => a.attemptId === record.judge.acceptedAttemptId)
+      : null;
+    const judgeModelKey = acceptedJudge
+      ? `${acceptedJudge.providerId}:${acceptedJudge.model}`
       : null;
     return {
       kind: "full",
