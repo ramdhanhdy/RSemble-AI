@@ -1,0 +1,534 @@
+// =============================================================================
+// RSemble AI — Cross-tab execution lease
+//
+// Coordinates which browser tab owns paid (model-invoking) execution. A tab must
+// hold the lease before it launches a run; the lease is renewed by a periodic
+// heartbeat and expires if the owning tab crashes or is closed. Other tabs see
+// read-only execution controls and may take over only after expiry.
+//
+// Authoritative state lives in the `storageMeta` table:
+//   - "execution-lease"       — the active LeaseInfo, or absent when free.
+//   - "execution-lease-fence" — the high-water fence counter, monotonic and
+//     never reset, so takeovers (including after a voluntary release) always
+//     issue a strictly-greater fence. A delayed write carrying an old owner or
+//     old fence is rejected transactionally.
+//
+// Both keys are written inside Dexie transactions so simultaneous acquisitions
+// from multiple tabs have exactly one winner. BroadcastChannel is a fast
+// notification path only — IndexedDB remains the source of truth, so a
+// lost/delayed broadcast can never permit a second owner.
+// =============================================================================
+
+import type { RSembleEvaluationDB, StorageMetaRow } from "./persistence/database";
+import type { RunRepository } from "./persistence/run-repository";
+import type { RunRecordV2 } from "./persistence/run-types";
+
+// --- Constants ----------------------------------------------------------------
+
+/** Lease time-to-live in ms. A lease is stale once `expiresAt` is in the past. */
+export const LEASE_TTL = 10_000;
+/** Recommended heartbeat interval in ms. Renew well before the TTL elapses. */
+export const HEARTBEAT_INTERVAL = 3_000;
+/** storageMeta key under which the active lease is persisted. */
+export const LEASE_KEY = "execution-lease";
+/** storageMeta key holding the monotonic high-water fence counter. */
+export const FENCE_KEY = "execution-lease-fence";
+/** BroadcastChannel name used for fast cross-tab lease notifications. */
+export const LEASE_CHANNEL = "rsemble-lease";
+/** DB polling fallback interval used when BroadcastChannel is unavailable. */
+const POLL_FALLBACK_INTERVAL = 2_000;
+
+// --- Types --------------------------------------------------------------------
+
+export interface LeaseInfo {
+  ownerId: string;
+  fence: number;
+  expiresAt: number;
+}
+
+export type LeaseState =
+  | { status: "owned"; lease: LeaseInfo }
+  | { status: "contested"; lease: LeaseInfo }
+  | { status: "free" };
+
+export type LeaseErrorKind = "contested" | "expired" | "unavailable";
+
+export class LeaseError extends Error {
+  readonly kind: LeaseErrorKind;
+  readonly lease: LeaseInfo | null;
+  constructor(kind: LeaseErrorKind, message: string, lease: LeaseInfo | null = null) {
+    super(message);
+    this.name = "LeaseError";
+    this.kind = kind;
+    this.lease = lease;
+  }
+}
+
+export interface ExecutionLease {
+  /** Acquire ownership. Returns the lease info or throws if contested. */
+  acquire(): Promise<LeaseInfo>;
+  /** Renew the lease (heartbeat). Must be called periodically while active. */
+  renew(): Promise<LeaseInfo>;
+  /** Release ownership voluntarily. */
+  release(): Promise<void>;
+  /** Verify the current lease is still valid and owned by us. */
+  verify(): Promise<LeaseInfo | null>;
+  /** Check if we are the current owner. */
+  isOwner(): Promise<boolean>;
+  /** Get the current lease info (may be owned by another tab). */
+  getCurrent(): Promise<LeaseInfo | null>;
+  /** Subscribe to lease state changes. Returns unsubscribe. */
+  subscribe(listener: (state: LeaseState) => void): () => void;
+  /** Recover stale "running" runs whose owner is no longer active. */
+  recoverInterruptedRuns(runRepo: RunRepository): Promise<number>;
+}
+
+/** Options for constructing a Dexie-backed lease. */
+export interface LeaseOptions {
+  /** Override the TTL (ms). Defaults to LEASE_TTL. */
+  ttl?: number;
+  /** Override the wall clock. Defaults to Date.now. */
+  now?: () => number;
+  /** Override the poll fallback interval (ms). Defaults to 2_000. */
+  pollInterval?: number;
+}
+
+// --- Shared helpers -----------------------------------------------------------
+
+interface BroadcastLike {
+  postMessage(message: unknown): void;
+  close(): void;
+  set onmessage(handler: ((ev: { data: unknown }) => void) | null);
+  get onmessage(): ((ev: { data: unknown }) => void) | null;
+}
+
+/** Type guard: a lease is live if it exists and has not expired. */
+function isLive(lease: LeaseInfo | null, now: number): lease is LeaseInfo {
+  return lease !== null && lease.expiresAt > now;
+}
+
+/** Generate a random owner ID, falling back when crypto.randomUUID is absent. */
+function newOwnerId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return "owner-" + Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
+}
+
+/** Open a BroadcastChannel if available in this environment, else null. */
+function openChannel(): BroadcastLike | null {
+  if (typeof globalThis.BroadcastChannel !== "function") return null;
+  try {
+    // DOM BroadcastChannel is structurally compatible; the cast reconciles the
+    // narrower MessageEvent payload type with our minimal listener shape.
+    return new globalThis.BroadcastChannel(LEASE_CHANNEL) as unknown as BroadcastLike;
+  } catch {
+    return null;
+  }
+}
+
+interface StoredFence {
+  value: number;
+}
+
+/** Read the active lease from storageMeta. */
+async function readLease(db: RSembleEvaluationDB): Promise<LeaseInfo | null> {
+  const row = await db.storageMeta.get(LEASE_KEY);
+  return (row?.value as LeaseInfo | undefined) ?? null;
+}
+
+/** Read the monotonic high-water fence, defaulting to 0. */
+async function readFence(db: RSembleEvaluationDB): Promise<number> {
+  const row = await db.storageMeta.get(FENCE_KEY);
+  const v = (row?.value as StoredFence | undefined)?.value;
+  return typeof v === "number" ? v : 0;
+}
+
+/**
+ * Sweep "running" runs and convert those not owned by the current lease holder
+ * to "interrupted". Shared by both implementations; the caller must already
+ * hold the lease (verified before invoking).
+ */
+async function sweepInterrupted(runRepo: RunRepository, lease: LeaseInfo): Promise<number> {
+  const summaries = await runRepo.list({
+    status: "running",
+    limit: Number.MAX_SAFE_INTEGER,
+  });
+  if (summaries.length === 0) return 0;
+
+  let recovered = 0;
+  for (const summary of summaries) {
+    if (summary.kind !== "full") continue;
+    const record = await runRepo.get(summary.id);
+    if (!record || record.status !== "running") continue;
+
+    // A run is interruptible if its execution fence was written by a different
+    // owner than the current lease holder, or (defensively) if the run predates
+    // the current lease fence entirely. Runs written by the current owner under
+    // the current fence are left alone — the owning tab may still be live.
+    const ownedByCurrent = record.execution.ownerId === lease.ownerId;
+    const fenceAtOrBeforeCurrent = record.execution.fence <= lease.fence;
+    if (ownedByCurrent && fenceAtOrBeforeCurrent) continue;
+
+    const now = Date.now();
+    const interrupted: RunRecordV2 = {
+      ...record,
+      status: "interrupted",
+      updatedAt: now,
+      completedAt: now,
+    };
+    const summaryUpdate = {
+      ...summary,
+      status: "interrupted" as const,
+      completedAt: now,
+    };
+    try {
+      await runRepo.update(interrupted, summaryUpdate, record.revision);
+      recovered++;
+    } catch {
+      // Stale revision or validation error: another tab likely touched it.
+      // Skip; recovery is idempotent and retried on the next sweep.
+    }
+  }
+  return recovered;
+}
+
+// --- Dexie-backed implementation ---------------------------------------------
+
+export function createExecutionLease(
+  db: RSembleEvaluationDB,
+  options: LeaseOptions = {},
+): ExecutionLease {
+  const ttl = options.ttl ?? LEASE_TTL;
+  const now = options.now ?? (() => Date.now());
+  const pollInterval = options.pollInterval ?? POLL_FALLBACK_INTERVAL;
+  const listeners = new Set<(state: LeaseState) => void>();
+
+  function emit(state: LeaseState): void {
+    for (const l of listeners) {
+      try {
+        l(state);
+      } catch {
+        // listener errors must not break the lease
+      }
+    }
+  }
+
+  // The ownerId this lease instance most recently acquired, so we can
+  // distinguish "owned by us" from "contested by another tab".
+  let currentOwner: string | null = null;
+
+  /** Re-read the DB and emit the current state to all subscribers. */
+  async function refreshAndEmit(): Promise<void> {
+    let current: LeaseInfo | null;
+    try {
+      current = await readLease(db);
+    } catch {
+      // DB may be closed (e.g. after a test tears down); stay quiet.
+      return;
+    }
+    const t = now();
+    if (isLive(current, t)) {
+      if (current.ownerId === currentOwner) {
+        emit({ status: "owned", lease: current });
+      } else {
+        emit({ status: "contested", lease: current });
+      }
+    } else {
+      emit({ status: "free" });
+    }
+  }
+
+  const channel: BroadcastLike | null = openChannel();
+  if (channel) {
+    channel.onmessage = () => {
+      void refreshAndEmit();
+    };
+  }
+
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  function ensurePolling(): void {
+    if (pollTimer) return;
+    pollTimer = setInterval(() => {
+      void refreshAndEmit().catch(() => {
+        // swallow — polling must never throw unhandled rejections
+      });
+    }, pollInterval);
+    // Don't keep the Node process alive solely for lease polling.
+    if (typeof pollTimer.unref === "function") pollTimer.unref();
+  }
+
+  function broadcast(message: unknown): void {
+    if (!channel) return;
+    try {
+      channel.postMessage(message);
+    } catch {
+      // broadcast is best-effort
+    }
+  }
+
+  async function acquire(): Promise<LeaseInfo> {
+    db.assertWritable();
+    const lease = await db.transaction("rw", db.storageMeta, async () => {
+      const t = now();
+      const existing = await readLease(db);
+      if (isLive(existing, t)) {
+        throw new LeaseError(
+          "contested",
+          `Lease is held by ${existing.ownerId} (fence ${existing.fence}) until ${existing.expiresAt}`,
+          existing,
+        );
+      }
+      // Monotonic fence: always one greater than the persisted high-water mark,
+      // independent of whether the prior lease was released or merely expired.
+      const highWater = await readFence(db);
+      const fence = highWater + 1;
+      const acquired: LeaseInfo = {
+        ownerId: newOwnerId(),
+        fence,
+        expiresAt: t + ttl,
+      };
+      await db.storageMeta.put({ key: LEASE_KEY, value: acquired } satisfies StorageMetaRow);
+      await db.storageMeta.put({
+        key: FENCE_KEY,
+        value: { value: fence } satisfies StoredFence,
+      } satisfies StorageMetaRow);
+      return acquired;
+    });
+    currentOwner = lease.ownerId;
+    broadcast({ type: "acquired", lease });
+    emit({ status: "owned", lease });
+    ensurePolling();
+    return lease;
+  }
+
+  async function renew(): Promise<LeaseInfo> {
+    db.assertWritable();
+    const lease = await db.transaction("rw", db.storageMeta, async () => {
+      const t = now();
+      const existing = await readLease(db);
+      if (!existing || existing.ownerId !== currentOwner) {
+        throw new LeaseError("expired", "Cannot renew: lease is not held by this tab", existing);
+      }
+      const renewed: LeaseInfo = { ...existing, expiresAt: t + ttl };
+      await db.storageMeta.put({ key: LEASE_KEY, value: renewed } satisfies StorageMetaRow);
+      return renewed;
+    });
+    broadcast({ type: "renewed", lease });
+    emit({ status: "owned", lease });
+    return lease;
+  }
+
+  async function release(): Promise<void> {
+    db.assertWritable();
+    await db.transaction("rw", db.storageMeta, async () => {
+      const existing = await readLease(db);
+      if (!existing || existing.ownerId !== currentOwner) {
+        return; // nothing to release; not an error
+      }
+      // Remove the active lease but keep the monotonic fence counter so the
+      // next acquisition still issues a strictly-greater fence.
+      await db.storageMeta.delete(LEASE_KEY);
+    });
+    currentOwner = null;
+    broadcast({ type: "released" });
+    emit({ status: "free" });
+  }
+
+  async function verify(): Promise<LeaseInfo | null> {
+    const existing = await readLease(db);
+    const t = now();
+    if (isLive(existing, t) && existing.ownerId === currentOwner) {
+      return existing;
+    }
+    return null;
+  }
+
+  async function isOwner(): Promise<boolean> {
+    return (await verify()) !== null;
+  }
+
+  async function getCurrent(): Promise<LeaseInfo | null> {
+    const existing = await readLease(db);
+    const t = now();
+    return isLive(existing, t) ? existing : null;
+  }
+
+  function subscribe(listener: (state: LeaseState) => void): () => void {
+    listeners.add(listener);
+    ensurePolling();
+    return () => {
+      listeners.delete(listener);
+    };
+  }
+
+  async function recoverInterruptedRuns(runRepo: RunRepository): Promise<number> {
+    if (!(await verify())) {
+      try {
+        await acquire();
+      } catch {
+        // Another tab owns execution; defer recovery to it.
+        return 0;
+      }
+    }
+    const lease = await verify();
+    if (!lease) return 0;
+    return sweepInterrupted(runRepo, lease);
+  }
+
+  return {
+    acquire,
+    renew,
+    release,
+    verify,
+    isOwner,
+    getCurrent,
+    subscribe,
+    recoverInterruptedRuns,
+  };
+}
+
+// =============================================================================
+// In-memory execution lease — for test injection (no Dexie dependency)
+// =============================================================================
+
+/**
+ * Pure in-memory lease for tests that do not need IndexedDB. Multiple instances
+ * sharing the same store behave like multiple tabs contending for one lease.
+ */
+export class InMemoryExecutionLease implements ExecutionLease {
+  private store: { lease: LeaseInfo | null; fence: number };
+  private listeners = new Set<(state: LeaseState) => void>();
+  private currentOwner: string | null = null;
+  private channel: BroadcastLike | null;
+  private readonly ttl: number;
+  private readonly now: () => number;
+
+  /**
+   * @param store shared mutable store so multiple instances simulate multiple
+   * tabs. Create one store and pass it to each lease instance.
+   * @param channel optional shared broadcast channel for cross-instance notify.
+   */
+  constructor(
+    store: { lease: LeaseInfo | null; fence: number } = { lease: null, fence: 0 },
+    channel?: BroadcastLike | null,
+    options: LeaseOptions = {},
+  ) {
+    this.store = store;
+    this.channel = channel ?? openChannel();
+    this.ttl = options.ttl ?? LEASE_TTL;
+    this.now = options.now ?? (() => Date.now());
+  }
+
+  private emit(state: LeaseState): void {
+    for (const l of this.listeners) {
+      try {
+        l(state);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  private notify(): void {
+    const t = this.now();
+    const lease = this.store.lease;
+    if (isLive(lease, t)) {
+      if (lease.ownerId === this.currentOwner) {
+        this.emit({ status: "owned", lease });
+      } else {
+        this.emit({ status: "contested", lease });
+      }
+    } else {
+      this.emit({ status: "free" });
+    }
+    if (this.channel) {
+      try {
+        this.channel.postMessage({ type: "changed" });
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
+  async acquire(): Promise<LeaseInfo> {
+    const t = this.now();
+    const existing = this.store.lease;
+    if (isLive(existing, t)) {
+      throw new LeaseError(
+        "contested",
+        `Lease is held by ${existing.ownerId} (fence ${existing.fence})`,
+        existing,
+      );
+    }
+    const ownerId = newOwnerId();
+    // Monotonic fence: always strictly greater than the high-water mark.
+    const fence = this.store.fence + 1;
+    const lease: LeaseInfo = { ownerId, fence, expiresAt: t + this.ttl };
+    this.store.lease = lease;
+    this.store.fence = fence;
+    this.currentOwner = ownerId;
+    this.notify();
+    return lease;
+  }
+
+  async renew(): Promise<LeaseInfo> {
+    const t = this.now();
+    const existing = this.store.lease;
+    if (!existing || existing.ownerId !== this.currentOwner) {
+      throw new LeaseError("expired", "Cannot renew: lease not held", existing);
+    }
+    const renewed: LeaseInfo = { ...existing, expiresAt: t + this.ttl };
+    this.store.lease = renewed;
+    this.notify();
+    return renewed;
+  }
+
+  async release(): Promise<void> {
+    const existing = this.store.lease;
+    if (!existing || existing.ownerId !== this.currentOwner) return;
+    this.store.lease = null;
+    // fence counter persists for monotonic takeover.
+    this.currentOwner = null;
+    this.notify();
+  }
+
+  async verify(): Promise<LeaseInfo | null> {
+    const existing = this.store.lease;
+    const t = this.now();
+    if (isLive(existing, t) && existing.ownerId === this.currentOwner) {
+      return existing;
+    }
+    return null;
+  }
+
+  async isOwner(): Promise<boolean> {
+    return (await this.verify()) !== null;
+  }
+
+  async getCurrent(): Promise<LeaseInfo | null> {
+    const existing = this.store.lease;
+    const t = this.now();
+    return isLive(existing, t) ? existing : null;
+  }
+
+  subscribe(listener: (state: LeaseState) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  async recoverInterruptedRuns(runRepo: RunRepository): Promise<number> {
+    if (!(await this.verify())) {
+      try {
+        await this.acquire();
+      } catch {
+        return 0;
+      }
+    }
+    const lease = await this.verify();
+    if (!lease) return 0;
+    return sweepInterrupted(runRepo, lease);
+  }
+}
