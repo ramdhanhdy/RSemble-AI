@@ -65,3 +65,25 @@ This document records architectural decisions made for RSemble AI.
   4. The judge must explain material score gaps (≥0.5) between candidates with materially similar conclusions via same-conclusion comparisons.
   5. The rationale is concise decision evidence, explicitly not hidden chain-of-thought; no private reasoning traces are requested or displayed.
 - **Rationale:** Scores become inspectable rather than asserted, while model anonymity at judge time keeps the comparison honest. The audit trail (blind key + explanations + comparisons) ships in both the Rank UI and Markdown export without adding a new top-level mode or dashboard.
+
+---
+
+## Decision #7: Evaluation Workbench — Three Workspaces, Durable History, Local Suites
+- **Date:** 2026-07-30
+- **Context:** RSemble had a single comparison surface and an in-memory `RunHistoryEntry` that could not reconstruct a completed run after reload. Heterogeneous telemetry was aggregated as if comparable, the rubric schema (`goal | metric | gap`) did not match specialized evaluation needs, and multi-task evaluation required manual external record-keeping.
+- **Decision:** Expand RSemble from one surface into three top-level workspaces:
+  1. **Compare** — preserves the existing one-task fanout → blind Judge → Rank/Fuse pipeline unchanged.
+  2. **Runs** — durable, searchable, auditable run history persisted in browser-local IndexedDB: complete snapshots (task, candidates, Judge evidence, scores, config, failures) keyed by one stable run ID.
+  3. **Evaluations** — versioned local suites of multiple tasks, each executed one at a time through the existing comparison pipeline, with a model-by-task result matrix, transparent coverage, equal-task aggregation, and provenance links to underlying run evidence.
+- **Constraints:** Local-first and single-user. No hosted backend, accounts, collaboration, or public benchmark publishing. Rank/Fuse remains the sole per-task finish switch, shown only in Compare. The provider-agnostic pipeline (`pipeline.ts`) is unchanged. Profiles are versioned and immutable; suites pin to profile versions. Out of scope for this plan: embeddings, clustering, multiple Judges, multiple trials, arbitrary task weights, confidence intervals, and pairwise ranking.
+- **Authority changes:** `PRODUCT.md`, `UI.md` (§6A), and `DESIGN.md` (§Workspace Navigation) amended to authorize three-workspace navigation, cross-workspace execution awareness, shared audit grammar (status tokens, model labels, record rows, split panes, monochrome matrices), and the working-surface versus audit-surface rule.
+- **Rationale:** Structured, inspectable run history and multi-task suites are prerequisites for any later semantic-history intelligence. Separating working surfaces (Compare + editors) from audit surfaces (Runs + results) keeps each workspace focused and lets the existing pipeline engine serve both one-off and suite execution without branching.
+
+---
+
+## Decision #8: react-router-dom 7.18.2 — Audit Exemption for RSC-Only Advisory
+- **Date:** 2026-07-30
+- **Context:** Phase 0 of the evaluation workbench plan requires `npm install react-router-dom` and zero high-severity `npm audit` findings. `react-router-dom@7.18.2` reports 2 high findings from GHSA-qwww-vcr4-c8h2 (RSC-mode CSRF bypass). The advisory states: "This only affects your application if you are using the unstable RSC APIs."
+- **Decision:** Accept `react-router-dom@7.18.2` with a documented exemption for GHSA-qwww-vcr4-c8h2. RSemble is a client-side HashRouter SPA with no server, no SSR, no RSC, and no server actions — the vulnerable code path is structurally unreachable. Downgrading to 7.11.0 (the only other React-18-compatible option below the advisory range) introduces 14 real vulnerabilities including XSS, RCE (turbo-stream deserialization), and DoS, making it strictly worse. React Router 8.3.0 (the fully patched version) requires React 19, which is incompatible with RSemble's React 18 stack.
+- **Exemption scope:** This exemption applies only to GHSA-qwww-vcr4-c8h2. All other react-router advisories are cleared by 7.18.2. If RSemble ever adopts server-side rendering or RSC, this exemption must be revoked and the dependency upgraded.
+- **Rationale:** 7.18.2 is the safest React-18-compatible version. The advisory's own note confirms RSC-only impact. Blocking Phase 0 on a structurally inapplicable vulnerability would delay the entire evaluation workbench indefinitely while accepting worse real-world risk by downgrading.

@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { Play, RotateCcw, Square } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
 import { isProviderReadySync } from "./lib/providers/registry";
@@ -31,6 +32,8 @@ import { ConnectionsModal } from "./ui/ConnectionsModal";
 import { CommandPalette } from "./ui/CommandPalette";
 import { ShortcutCheatsheet } from "./ui/ShortcutCheatsheet";
 import { BrandAvatar } from "./ui/brand-icons";
+import { AppRoutes } from "./app-router";
+import { MobileWorkspaceNav } from "./ui/MobileWorkspaceNav";
 
 import { StreamDeltaBuffer } from "./lib/stream-buffer";
 import { createRunController } from "./lib/run-controller";
@@ -41,6 +44,8 @@ import { useActionShortcuts } from "./ui/useActionShortcuts";
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const location = useLocation();
+  const isCompareRoute = location.pathname === "/compare" || location.pathname === "/";
 
   // Mobile command drawer (<768px). On md+ the command pane is inline, so this
   // stays closed. Per DESIGN.md: output is primary full-screen on mobile, command
@@ -298,12 +303,13 @@ export default function RSemble() {
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-edge bg-shell">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Header
-            state={state}
-            onOpenCommand={() => setCommandOpen(true)}
+            running={state.running}
+            onOpenCommand={isCompareRoute ? () => setCommandOpen(true) : undefined}
             onOpenConnections={() => setConnectionsOpen(true)}
             onOpenPalette={() => setPaletteOpen(true)}
             onOpenHelp={() => setCheatsheetOpen(true)}
             connectionState={connectionState}
+            showToggle={isCompareRoute}
           >
             <ModeToggle mode={state.mode} onChange={handleModeChange} disabled={state.running} />
           </Header>
@@ -317,41 +323,53 @@ export default function RSemble() {
             </div>
           )}
 
-          <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
-            <section
-              aria-label="Command"
-              className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
-                focusActive ? "lg:!w-14 lg:!overflow-hidden lg:!border-r" : "lg:w-[var(--cmd-w)]"
-              } md:w-full`}
-              style={focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }}
-            >
-              {focusActive ? (
-                <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} />
-              ) : (
-                <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} />
-              )}
-            </section>
+          {/* Workspace content — routed. Compare content is passed as the
+              compareOutlet so the reducer/controller/state stays mounted above
+              the router and persists across navigation. */}
+          <div className="flex min-h-0 flex-1 flex-col pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0">
+            <AppRoutes
+              compareOutlet={
+                <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
+                  <section
+                    aria-label="Command"
+                    className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
+                      focusActive ? "lg:!w-14 lg:!overflow-hidden lg:!border-r" : "lg:w-[var(--cmd-w)]"
+                    } md:w-full`}
+                    style={focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }}
+                  >
+                    {focusActive ? (
+                      <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} />
+                    ) : (
+                      <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} />
+                    )}
+                  </section>
 
-            {!focusActive && (
-              <Divider
-                dragging={dragging}
-                value={commandWidth}
-                min={min}
-                max={max}
-                onPointerDown={onDividerPointerDown}
-                onKeyDown={onDividerKeyDown}
-                onDoubleClick={onDoubleClick}
-              />
-            )}
+                  {!focusActive && (
+                    <Divider
+                      dragging={dragging}
+                      value={commandWidth}
+                      min={min}
+                      max={max}
+                      onPointerDown={onDividerPointerDown}
+                      onKeyDown={onDividerKeyDown}
+                      onDoubleClick={onDoubleClick}
+                    />
+                  )}
 
-            <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
-              <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} onRetryJudge={retryJudge} />
-            </section>
+                  <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
+                    <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} onRetryJudge={retryJudge} />
+                  </section>
+                </div>
+              }
+            />
           </div>
         </div>
       </div>
 
-      {commandOpen && (
+      {/* Mobile bottom navigation — fixed, three workspaces. */}
+      <MobileWorkspaceNav />
+
+      {commandOpen && isCompareRoute && (
         <>
           <div
             className="fixed inset-0 z-40 bg-black/60 md:hidden"
