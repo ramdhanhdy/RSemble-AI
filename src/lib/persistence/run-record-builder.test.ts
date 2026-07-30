@@ -4,12 +4,20 @@
 // Verifies the pure functions that convert executor events into RunRecordV2
 // mutations and derive FullRunSummaryV2. No I/O, no side effects.
 // Status derivation follows spec §7.5.
+//
+// Contract notes (fixed in Phase 6):
+//  - persisted candidateId uses candidateIdForSlot(slot.id) — the same ID the
+//    executor's fanout jobs and Judge blind labels carry, so candidate events
+//    always join;
+//  - fanout start creates candidates with EMPTY attempt lists; the executor's
+//    onCandidateAttemptStart appends the real attempt before the provider
+//    call. No placeholder attempt keeps a run pinned at "running".
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
-import type { ChatMessage } from "../providers/types";
+import type { ChatMessage, ProviderId } from "../providers/types";
 import type { JudgeReport, ConsensusBreakdown, CandidateEvaluation } from "../../studio-data";
-import type { RunSource, ExecutionFence } from "./run-types";
+import type { RunSource, ExecutionFence, RunRecordV2 } from "./run-types";
 import {
   createRunRecordBuilder,
   type RunRecordBuilderState,
@@ -28,12 +36,12 @@ const TWO_SLOTS = [
   { id: "s2", providerId: "umans", model: "B", slug: "model-b", enabled: true },
 ] as const;
 
+/** Executor-style candidate IDs (cand-<slotId>) for the two fixture slots. */
+const CANDIDATE_S1 = "cand-s1";
+const CANDIDATE_S2 = "cand-s2";
+
 function makeDeps(): BuilderDeps {
-  let counter = 0;
-  return {
-    generateId: () => `id-${++counter}`,
-    now: () => 1000,
-  };
+  return { now: () => 1000 };
 }
 
 function makeMessages(): ChatMessage[] {
@@ -69,7 +77,13 @@ function makeJudgeReport(scoresById: Record<string, number>): JudgeReport {
   return { labelMap, evaluationsById, comparisons: [] };
 }
 
-function startFanout(state: RunRecordBuilderState, builder: ReturnType<typeof createRunRecordBuilder>, slots = TWO_SLOTS) {
+type Builder = ReturnType<typeof createRunRecordBuilder>;
+
+function startFanout(
+  state: RunRecordBuilderState,
+  builder: Builder,
+  slots: readonly { id: string; providerId: ProviderId; model: string; slug: string; enabled: boolean }[] = TWO_SLOTS,
+): RunRecordV2 {
   return builder.applyFanoutStart(state, {
     runId: "run-1",
     source: ADHOC,
@@ -81,12 +95,84 @@ function startFanout(state: RunRecordBuilderState, builder: ReturnType<typeof cr
   });
 }
 
+/** Mirror the executor: attempt-start, then terminal with the same IDs. */
+function runCandidateAttempt(
+  builder: Builder,
+  state: RunRecordBuilderState,
+  record: RunRecordV2,
+  candidateId: string,
+  attemptId: string,
+  terminal:
+    | { status: "completed"; output: string; tokensIn?: number; tokensOut?: number }
+    | { status: "failed"; error?: { message: string } },
+): void {
+  builder.applyCandidateAttemptStart(state, record, candidateId, {
+    attemptId,
+    messages: makeMessages(),
+    startedAt: 1500,
+  });
+  builder.applyCandidateAttemptTerminal(state, record, candidateId, attemptId, {
+    status: terminal.status,
+    output: terminal.status === "completed" ? terminal.output : null,
+    tokensIn: terminal.status === "completed" ? (terminal.tokensIn ?? 5) : null,
+    tokensOut: terminal.status === "completed" ? (terminal.tokensOut ?? 10) : null,
+    error: terminal.status === "failed" ? (terminal.error ?? { message: "fail" }) : null,
+    finishedAt: 2000,
+  });
+}
+
+/** Complete every candidate once, using per-candidate attempt IDs. */
+function completeAllCandidates(builder: Builder, state: RunRecordBuilderState, record: RunRecordV2): void {
+  for (const c of record.candidates) {
+    runCandidateAttempt(builder, state, record, c.candidateId, `att-${c.candidateId}`, {
+      status: "completed",
+      output: `out-${c.candidateId}`,
+    });
+  }
+}
+
+function runJudgeAttempt(
+  builder: Builder,
+  state: RunRecordBuilderState,
+  record: RunRecordV2,
+  judgeAttemptId: string,
+  ok: boolean,
+): void {
+  builder.applyJudgeStart(state, record, judgeAttemptId, {
+    providerId: "openrouter",
+    model: "judge-model",
+    instruction: "",
+    messages: makeMessages(),
+    blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+    candidateAttemptIdsByCandidateId: {
+      [CANDIDATE_S1]: `att-${CANDIDATE_S1}`,
+      [CANDIDATE_S2]: `att-${CANDIDATE_S2}`,
+    },
+    startedAt: 3000,
+  });
+  builder.applyJudgeTerminal(state, record, judgeAttemptId, ok
+    ? {
+        status: "completed",
+        report: makeJudgeReport({ [CANDIDATE_S1]: 4, [CANDIDATE_S2]: 3 }),
+        consensus: null,
+        error: null,
+        finishedAt: 4000,
+      }
+    : {
+        status: "failed",
+        report: null,
+        consensus: null,
+        error: { message: "bad" },
+        finishedAt: 4000,
+      });
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("RunRecordBuilder — fanout start", () => {
-  it("creates one stable run ID plus one running candidate attempt per enabled slot", () => {
+  it("creates one stable run ID with candidates that carry no attempts yet", () => {
     const builder = createRunRecordBuilder(makeDeps());
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
@@ -95,10 +181,10 @@ describe("RunRecordBuilder — fanout start", () => {
     expect(record.status).toBe("running");
     expect(record.candidates).toHaveLength(2);
     for (const c of record.candidates) {
-      expect(c.attempts).toHaveLength(1);
-      expect(c.attempts[0].status).toBe("running");
-      expect(c.attempts[0].startedAt).toBe(1000);
-      expect(c.attempts[0].finishedAt).toBeNull();
+      // No placeholder attempt: a pre-created running attempt would never
+      // terminate and would pin deriveStatus at "running" forever.
+      expect(c.attempts).toEqual([]);
+      expect(c.acceptedAttemptId).toBeNull();
     }
   });
 
@@ -107,40 +193,49 @@ describe("RunRecordBuilder — fanout start", () => {
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
 
-    expect(record.candidates[0].candidateId).toBe("s1");
+    // candidateId matches the executor's fanout job ID scheme (cand-<slotId>).
+    expect(record.candidates[0].candidateId).toBe(CANDIDATE_S1);
     expect(record.candidates[0].slotId).toBe("s1");
     expect(record.candidates[0].modelKey).toBe("openrouter:model-a");
-    expect(record.candidates[1].candidateId).toBe("s2");
+    expect(record.candidates[1].candidateId).toBe(CANDIDATE_S2);
     expect(record.candidates[1].modelKey).toBe("umans:model-b");
   });
 });
 
-describe("RunRecordBuilder — IdFactory", () => {
-  it("generates IDs through deps.generateId; persistence never invents identity", () => {
+describe("RunRecordBuilder — executor event identity (regression)", () => {
+  it("executor-style cand-<slotId> events join persisted candidates and reach terminal", () => {
+    // Regression: persisted candidateId was slot.id while executor events
+    // carried cand-<slot.id>, so every candidate attempt write silently
+    // no-op'd and deriveStatus never left "running".
     const builder = createRunRecordBuilder(makeDeps());
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
-    // Candidate attempt IDs are generated by the builder, not persistence
-    expect(record.candidates[0].attempts[0].attemptId).toBeTruthy();
-    expect(record.candidates[0].attempts[0].attemptId).not.toBe(record.candidates[1].attempts[0].attemptId);
+
+    completeAllCandidates(builder, state, record);
+    builder.applyFanoutTerminal(state, record, []);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
+
+    expect(builder.deriveStatus(record)).toBe("completed");
+    const summary = builder.deriveSummary(record);
+    expect(summary.scoresByModelKey).toEqual({
+      "openrouter:model-a": 4,
+      "umans:model-b": 3,
+    });
+    expect(summary.winnerKeys).toEqual(["openrouter:model-a"]);
   });
 });
 
 describe("RunRecordBuilder — candidate terminal", () => {
-  it("stores segments, output, tokens, timings on terminal", () => {
+  it("stores output, tokens, timings on terminal", () => {
     const builder = createRunRecordBuilder(makeDeps());
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
-    const candidateId = "s1";
-    const attemptId = record.candidates[0].attempts[0].attemptId;
 
-    builder.applyCandidateAttemptTerminal(state, record, candidateId, attemptId, {
+    runCandidateAttempt(builder, state, record, CANDIDATE_S1, "att-1", {
       status: "completed",
       output: "answer text",
       tokensIn: 10,
       tokensOut: 20,
-      error: null,
-      finishedAt: 2000,
     });
 
     const attempt = record.candidates[0].attempts[0];
@@ -149,6 +244,7 @@ describe("RunRecordBuilder — candidate terminal", () => {
     expect(attempt.tokensIn).toBe(10);
     expect(attempt.tokensOut).toBe(20);
     expect(attempt.finishedAt).toBe(2000);
+    expect(record.candidates[0].acceptedAttemptId).toBe("att-1");
   });
 
   it("stores bounded sanitized error on failure", () => {
@@ -156,17 +252,14 @@ describe("RunRecordBuilder — candidate terminal", () => {
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
 
-    builder.applyCandidateAttemptTerminal(state, record, "s1", record.candidates[0].attempts[0].attemptId, {
+    runCandidateAttempt(builder, state, record, CANDIDATE_S1, "att-1", {
       status: "failed",
-      output: null,
-      tokensIn: null,
-      tokensOut: null,
       error: { message: "connection reset" },
-      finishedAt: 2000,
     });
 
     expect(record.candidates[0].attempts[0].status).toBe("failed");
     expect(record.candidates[0].attempts[0].error).toEqual({ message: "connection reset" });
+    expect(record.candidates[0].acceptedAttemptId).toBeNull();
   });
 });
 
@@ -175,13 +268,13 @@ describe("RunRecordBuilder — candidate retry", () => {
     const builder = createRunRecordBuilder(makeDeps());
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
-    // Finalize the first attempt
-    builder.applyCandidateAttemptTerminal(state, record, "s1", record.candidates[0].attempts[0].attemptId, {
-      status: "completed", output: "first", tokensIn: 5, tokensOut: 10, error: null, finishedAt: 2000,
+    runCandidateAttempt(builder, state, record, CANDIDATE_S1, "att-1", {
+      status: "completed",
+      output: "first",
     });
 
     // Retry: append a new running attempt
-    builder.applyCandidateAttemptStart(state, record, "s1", {
+    builder.applyCandidateAttemptStart(state, record, CANDIDATE_S1, {
       attemptId: "retry-att-1",
       messages: makeMessages(),
       startedAt: 3000,
@@ -196,25 +289,25 @@ describe("RunRecordBuilder — candidate retry", () => {
     const builder = createRunRecordBuilder(makeDeps());
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
-    const firstAttemptId = record.candidates[0].attempts[0].attemptId;
-    builder.applyCandidateAttemptTerminal(state, record, "s1", firstAttemptId, {
-      status: "completed", output: "first", tokensIn: 5, tokensOut: 10, error: null, finishedAt: 2000,
+    runCandidateAttempt(builder, state, record, CANDIDATE_S1, "att-1", {
+      status: "completed",
+      output: "first",
     });
 
     // Retry attempt
-    builder.applyCandidateAttemptStart(state, record, "s1", {
+    builder.applyCandidateAttemptStart(state, record, CANDIDATE_S1, {
       attemptId: "retry-att-1", messages: makeMessages(), startedAt: 3000,
     });
-    builder.applyCandidateAttemptTerminal(state, record, "s1", "retry-att-1", {
+    builder.applyCandidateAttemptTerminal(state, record, CANDIDATE_S1, "retry-att-1", {
       status: "completed", output: "second", tokensIn: 6, tokensOut: 12, error: null, finishedAt: 4000,
     });
     expect(record.candidates[0].acceptedAttemptId).toBe("retry-att-1");
 
     // Another retry that fails — should NOT move accepted pointer
-    builder.applyCandidateAttemptStart(state, record, "s1", {
+    builder.applyCandidateAttemptStart(state, record, CANDIDATE_S1, {
       attemptId: "retry-att-2", messages: makeMessages(), startedAt: 5000,
     });
-    builder.applyCandidateAttemptTerminal(state, record, "s1", "retry-att-2", {
+    builder.applyCandidateAttemptTerminal(state, record, CANDIDATE_S1, "retry-att-2", {
       status: "failed", output: null, tokensIn: null, tokensOut: null,
       error: { message: "failed" }, finishedAt: 6000,
     });
@@ -228,11 +321,7 @@ describe("RunRecordBuilder — Judge", () => {
     const builder = createRunRecordBuilder(makeDeps());
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
-    for (const c of record.candidates) {
-      builder.applyCandidateAttemptTerminal(state, record, c.candidateId, c.attempts[0].attemptId, {
-        status: "completed", output: `answer-${c.candidateId}`, tokensIn: 5, tokensOut: 10, error: null, finishedAt: 2000,
-      });
-    }
+    completeAllCandidates(builder, state, record);
     return { builder, state, record };
   }
 
@@ -241,8 +330,8 @@ describe("RunRecordBuilder — Judge", () => {
     builder.applyJudgeStart(state, record, "judge-att-1", {
       providerId: "openrouter", model: "judge-model", instruction: "be strict",
       messages: makeMessages(),
-      blindLabelToCandidateId: { A: "s1", B: "s2" },
-      candidateAttemptIdsByCandidateId: { s1: "att-1", s2: "att-2" },
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "att-1", [CANDIDATE_S2]: "att-2" },
       startedAt: 3000,
     });
     const j = record.judge;
@@ -250,8 +339,8 @@ describe("RunRecordBuilder — Judge", () => {
     expect(j.attempts).toHaveLength(1);
     expect(j.attempts[0].attemptId).toBe("judge-att-1");
     expect(j.attempts[0].messages).toHaveLength(2);
-    expect(j.attempts[0].blindLabelToCandidateId).toEqual({ A: "s1", B: "s2" });
-    expect(j.attempts[0].candidateAttemptIdsByCandidateId).toEqual({ s1: "att-1", s2: "att-2" });
+    expect(j.attempts[0].blindLabelToCandidateId).toEqual({ A: CANDIDATE_S1, B: CANDIDATE_S2 });
+    expect(j.attempts[0].candidateAttemptIdsByCandidateId).toEqual({ [CANDIDATE_S1]: "att-1", [CANDIDATE_S2]: "att-2" });
   });
 
   it("success retains report, consensus, scores, and accepted pointer", () => {
@@ -259,11 +348,11 @@ describe("RunRecordBuilder — Judge", () => {
     builder.applyJudgeStart(state, record, "judge-att-1", {
       providerId: "openrouter", model: "judge-model", instruction: "",
       messages: makeMessages(),
-      blindLabelToCandidateId: { A: "s1", B: "s2" },
-      candidateAttemptIdsByCandidateId: { s1: "att-1", s2: "att-2" },
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "att-1", [CANDIDATE_S2]: "att-2" },
       startedAt: 3000,
     });
-    const report = makeJudgeReport({ s1: 4, s2: 3 });
+    const report = makeJudgeReport({ [CANDIDATE_S1]: 4, [CANDIDATE_S2]: 3 });
     const consensus = makeConsensus();
     builder.applyJudgeTerminal(state, record, "judge-att-1", {
       status: "completed", report, consensus, error: null, finishedAt: 4000,
@@ -279,11 +368,11 @@ describe("RunRecordBuilder — Judge", () => {
     builder.applyJudgeStart(state, record, "judge-att-1", {
       providerId: "openrouter", model: "judge-model", instruction: "",
       messages: makeMessages(),
-      blindLabelToCandidateId: { A: "s1", B: "s2" },
-      candidateAttemptIdsByCandidateId: { s1: "att-1", s2: "att-2" },
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "att-1", [CANDIDATE_S2]: "att-2" },
       startedAt: 3000,
     });
-    const report = makeJudgeReport({ s1: 4, s2: 3 });
+    const report = makeJudgeReport({ [CANDIDATE_S1]: 4, [CANDIDATE_S2]: 3 });
     builder.applyJudgeTerminal(state, record, "judge-att-1", {
       status: "completed", report, consensus: null, error: null, finishedAt: 4000,
     });
@@ -292,8 +381,8 @@ describe("RunRecordBuilder — Judge", () => {
     builder.applyJudgeStart(state, record, "judge-att-2", {
       providerId: "openrouter", model: "judge-model", instruction: "",
       messages: makeMessages(),
-      blindLabelToCandidateId: { A: "s1", B: "s2" },
-      candidateAttemptIdsByCandidateId: { s1: "retry-att-1", s2: "att-2" },
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "retry-att-1", [CANDIDATE_S2]: "att-2" },
       startedAt: 5000,
     });
     builder.applyJudgeTerminal(state, record, "judge-att-2", {
@@ -313,20 +402,16 @@ describe("RunRecordBuilder — Fusion", () => {
     const builder = createRunRecordBuilder(makeDeps());
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
-    for (const c of record.candidates) {
-      builder.applyCandidateAttemptTerminal(state, record, c.candidateId, c.attempts[0].attemptId, {
-        status: "completed", output: `answer-${c.candidateId}`, tokensIn: 5, tokensOut: 10, error: null, finishedAt: 2000,
-      });
-    }
+    completeAllCandidates(builder, state, record);
     builder.applyJudgeStart(state, record, "judge-att-1", {
       providerId: "openrouter", model: "judge-model", instruction: "",
       messages: makeMessages(),
-      blindLabelToCandidateId: { A: "s1", B: "s2" },
-      candidateAttemptIdsByCandidateId: { s1: "att-1", s2: "att-2" },
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "att-1", [CANDIDATE_S2]: "att-2" },
       startedAt: 3000,
     });
     builder.applyJudgeTerminal(state, record, "judge-att-1", {
-      status: "completed", report: makeJudgeReport({ s1: 4, s2: 3 }),
+      status: "completed", report: makeJudgeReport({ [CANDIDATE_S1]: 4, [CANDIDATE_S2]: 3 }),
       consensus: null, error: null, finishedAt: 4000,
     });
     return { builder, state, record };
@@ -338,7 +423,7 @@ describe("RunRecordBuilder — Fusion", () => {
       providerId: "openrouter", model: "judge-model",
       messages: makeMessages(),
       sourceJudgeAttemptId: "judge-att-1",
-      candidateAttemptIdsByCandidateId: { s1: "att-1", s2: "att-2" },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "att-1", [CANDIDATE_S2]: "att-2" },
       startedAt: 5000,
     });
     expect(record.fusion.status).toBe("running");
@@ -352,7 +437,7 @@ describe("RunRecordBuilder — Fusion", () => {
       providerId: "openrouter", model: "judge-model",
       messages: makeMessages(),
       sourceJudgeAttemptId: "judge-att-1",
-      candidateAttemptIdsByCandidateId: { s1: "att-1", s2: "att-2" },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "att-1", [CANDIDATE_S2]: "att-2" },
       startedAt: 5000,
     });
     builder.applyFusionTerminal(state, record, "fusion-att-1", {
@@ -365,7 +450,7 @@ describe("RunRecordBuilder — Fusion", () => {
       providerId: "openrouter", model: "judge-model",
       messages: makeMessages(),
       sourceJudgeAttemptId: "judge-att-1",
-      candidateAttemptIdsByCandidateId: { s1: "att-1", s2: "att-2" },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "att-1", [CANDIDATE_S2]: "att-2" },
       startedAt: 7000,
     });
     builder.applyFusionTerminal(state, record, "fusion-att-2", {
@@ -415,30 +500,11 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
     return { builder, state, record };
   }
 
-  function completeAllCandidates(builder: ReturnType<typeof createRunRecordBuilder>, state: RunRecordBuilderState, record: ReturnType<ReturnType<typeof createRunRecordBuilder>["applyFanoutStart"]>) {
-    for (const c of record.candidates) {
-      builder.applyCandidateAttemptTerminal(state, record, c.candidateId, c.attempts[0].attemptId, {
-        status: "completed", output: `out-${c.candidateId}`, tokensIn: 5, tokensOut: 10, error: null, finishedAt: 2000,
-      });
-    }
-  }
-
-  function runJudge(builder: ReturnType<typeof createRunRecordBuilder>, state: RunRecordBuilderState, record: ReturnType<ReturnType<typeof createRunRecordBuilder>["applyFanoutStart"]>, ok: boolean) {
-    builder.applyJudgeStart(state, record, "judge-att-1", {
-      providerId: "openrouter", model: "judge-model", instruction: "",
-      messages: makeMessages(),
-      blindLabelToCandidateId: { A: "s1", B: "s2" },
-      candidateAttemptIdsByCandidateId: { s1: record.candidates[0].attempts[0].attemptId, s2: record.candidates[1].attempts[0].attemptId },
-      startedAt: 3000,
-    });
-    builder.applyJudgeTerminal(state, record, "judge-att-1", ok
-      ? { status: "completed", report: makeJudgeReport({ s1: 4, s2: 3 }), consensus: null, error: null, finishedAt: 4000 }
-      : { status: "failed", report: null, consensus: null, error: { message: "bad" }, finishedAt: 4000 });
-  }
-
   it("running: provider calls active, no terminal action", () => {
     const { builder, state, record } = setup();
-    builder.applyFanoutTerminal(state, record, []);
+    builder.applyCandidateAttemptStart(state, record, CANDIDATE_S1, {
+      attemptId: "att-1", messages: makeMessages(), startedAt: 1500,
+    });
     expect(builder.deriveStatus(record)).toBe("running");
   });
 
@@ -446,7 +512,7 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
     const { builder, state, record } = setup("rank");
     completeAllCandidates(builder, state, record);
     builder.applyFanoutTerminal(state, record, []);
-    runJudge(builder, state, record, true);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
     expect(builder.deriveStatus(record)).toBe("completed");
   });
 
@@ -454,11 +520,11 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
     const { builder, state, record } = setup("fuse");
     completeAllCandidates(builder, state, record);
     builder.applyFanoutTerminal(state, record, []);
-    runJudge(builder, state, record, true);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
     builder.applyFusionStart(state, record, "fusion-att-1", {
       providerId: "openrouter", model: "judge-model", messages: makeMessages(),
       sourceJudgeAttemptId: "judge-att-1",
-      candidateAttemptIdsByCandidateId: { s1: "a1", s2: "a2" }, startedAt: 5000,
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" }, startedAt: 5000,
     });
     builder.applyFusionTerminal(state, record, "fusion-att-1", {
       status: "completed", result: "fused", error: null, finishedAt: 6000,
@@ -468,16 +534,15 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
 
   it("partial: accepted Judge with one failed candidate", () => {
     const { builder, state, record } = setup("rank");
-    // First candidate completes
-    builder.applyCandidateAttemptTerminal(state, record, "s1", record.candidates[0].attempts[0].attemptId, {
-      status: "completed", output: "out-s1", tokensIn: 5, tokensOut: 10, error: null, finishedAt: 2000,
+    // First candidate completes; second fails.
+    runCandidateAttempt(builder, state, record, CANDIDATE_S1, "att-s1", {
+      status: "completed", output: "out-s1",
     });
-    // Second candidate fails
-    builder.applyCandidateAttemptTerminal(state, record, "s2", record.candidates[1].attempts[0].attemptId, {
-      status: "failed", output: null, tokensIn: null, tokensOut: null, error: { message: "fail" }, finishedAt: 2000,
+    runCandidateAttempt(builder, state, record, CANDIDATE_S2, "att-s2", {
+      status: "failed", error: { message: "fail" },
     });
     builder.applyFanoutTerminal(state, record, []);
-    runJudge(builder, state, record, true);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
     expect(builder.deriveStatus(record)).toBe("partial");
   });
 
@@ -485,12 +550,12 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
     const { builder, state, record } = setup("fuse");
     completeAllCandidates(builder, state, record);
     builder.applyFanoutTerminal(state, record, []);
-    runJudge(builder, state, record, true);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
     // Fusion started but failed
     builder.applyFusionStart(state, record, "fusion-att-1", {
       providerId: "openrouter", model: "judge-model", messages: makeMessages(),
       sourceJudgeAttemptId: "judge-att-1",
-      candidateAttemptIdsByCandidateId: { s1: "a1", s2: "a2" }, startedAt: 5000,
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" }, startedAt: 5000,
     });
     builder.applyFusionTerminal(state, record, "fusion-att-1", {
       status: "failed", result: null, error: { message: "fusion fail" }, finishedAt: 6000,
@@ -501,11 +566,8 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
   it("failed: fewer than two usable candidates", () => {
     const { builder, state, record } = setup("rank");
     // Both fail
-    for (const c of record.candidates) {
-      builder.applyCandidateAttemptTerminal(state, record, c.candidateId, c.attempts[0].attemptId, {
-        status: "failed", output: null, tokensIn: null, tokensOut: null, error: { message: "fail" }, finishedAt: 2000,
-      });
-    }
+    runCandidateAttempt(builder, state, record, CANDIDATE_S1, "att-s1", { status: "failed" });
+    runCandidateAttempt(builder, state, record, CANDIDATE_S2, "att-s2", { status: "failed" });
     builder.applyFanoutTerminal(state, record, []);
     expect(builder.deriveStatus(record)).toBe("failed");
   });
@@ -514,7 +576,7 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
     const { builder, state, record } = setup("rank");
     completeAllCandidates(builder, state, record);
     builder.applyFanoutTerminal(state, record, []);
-    runJudge(builder, state, record, false);
+    runJudgeAttempt(builder, state, record, "judge-att-1", false);
     expect(builder.deriveStatus(record)).toBe("failed");
   });
 
@@ -536,12 +598,12 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
     const { builder, state, record } = setup("fuse");
     completeAllCandidates(builder, state, record);
     builder.applyFanoutTerminal(state, record, []);
-    runJudge(builder, state, record, true);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
     // First fusion succeeds
     builder.applyFusionStart(state, record, "fusion-att-1", {
       providerId: "openrouter", model: "judge-model", messages: makeMessages(),
       sourceJudgeAttemptId: "judge-att-1",
-      candidateAttemptIdsByCandidateId: { s1: "a1", s2: "a2" }, startedAt: 5000,
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" }, startedAt: 5000,
     });
     builder.applyFusionTerminal(state, record, "fusion-att-1", {
       status: "completed", result: "fused", error: null, finishedAt: 6000,
@@ -550,7 +612,7 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
     builder.applyFusionStart(state, record, "fusion-att-2", {
       providerId: "openrouter", model: "judge-model", messages: makeMessages(),
       sourceJudgeAttemptId: "judge-att-1",
-      candidateAttemptIdsByCandidateId: { s1: "a1", s2: "a2" }, startedAt: 7000,
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" }, startedAt: 7000,
     });
     builder.applyFusionTerminal(state, record, "fusion-att-2", {
       status: "failed", result: null, error: { message: "refuse fail" }, finishedAt: 8000,
@@ -565,23 +627,19 @@ describe("RunRecordBuilder — winners", () => {
     const builder = createRunRecordBuilder(makeDeps());
     const state = builder.createInitialState();
     const record = startFanout(state, builder);
-    for (const c of record.candidates) {
-      builder.applyCandidateAttemptTerminal(state, record, c.candidateId, c.attempts[0].attemptId, {
-        status: "completed", output: `out-${c.candidateId}`, tokensIn: 5, tokensOut: 10, error: null, finishedAt: 2000,
-      });
-    }
+    completeAllCandidates(builder, state, record);
     builder.applyFanoutTerminal(state, record, []);
     builder.applyJudgeStart(state, record, "judge-att-1", {
       providerId: "openrouter", model: "judge-model", instruction: "",
       messages: makeMessages(),
-      blindLabelToCandidateId: { A: "s1", B: "s2" },
-      candidateAttemptIdsByCandidateId: { s1: "a1", s2: "a2" },
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" },
       startedAt: 3000,
     });
     // Tie: both score 4
     builder.applyJudgeTerminal(state, record, "judge-att-1", {
       status: "completed",
-      report: makeJudgeReport({ s1: 4, s2: 4 }),
+      report: makeJudgeReport({ [CANDIDATE_S1]: 4, [CANDIDATE_S2]: 4 }),
       consensus: null, error: null, finishedAt: 4000,
     });
     const summary = builder.deriveSummary(record);

@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import RSemble from "./rsemble";
 import { Header } from "./ui/Header";
+import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -62,7 +63,9 @@ function renderAtRoute(initialEntries: string[]): Harness {
   }
   return render(
     <MemoryRouter initialEntries={initialEntries}>
-      <RSemble />
+      <ExecutionOwnerProvider>
+        <RSemble />
+      </ExecutionOwnerProvider>
     </MemoryRouter>,
   );
 }

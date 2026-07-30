@@ -350,7 +350,7 @@ describe("EvaluationRepository (Dexie-backed)", () => {
       expect(task!.selectedAttemptId).toBe("att-1");
     });
 
-    it("rejects committing an already-terminal attempt", async () => {
+    it("re-committing an identical terminal payload is idempotent; conflicting reuse is rejected", async () => {
       await evalRepo.saveSuite(makeSuite("s1"), 0);
       await evalRepo.createExperiment(makeExperiment("e1", "s1"));
       const run = makeRun("r1");
@@ -361,18 +361,30 @@ describe("EvaluationRepository (Dexie-backed)", () => {
       });
       const terminalRun: RunRecordV2 = { ...run, status: "completed", completedAt: 2000 };
       const terminalSummary: FullRunSummaryV2 = { ...summary, status: "completed", completedAt: 2000 };
-      await evalRepo.commitExperimentTaskTerminal({
+      const first = await evalRepo.commitExperimentTaskTerminal({
         experimentId: "e1", taskId: "task-1", attemptId: "att-1",
         run: terminalRun, summary: terminalSummary,
         expectedRunRevision: 0, expectedExperimentRevision: 1,
       });
+      // Idempotent replay with the identical IDs/payload returns current
+      // revisions without another write (spec §11.3).
+      const second = await evalRepo.commitExperimentTaskTerminal({
+        experimentId: "e1", taskId: "task-1", attemptId: "att-1",
+        run: terminalRun, summary: terminalSummary,
+        expectedRunRevision: 0, expectedExperimentRevision: 1,
+      });
+      expect(second).toEqual(first);
+
+      // Conflicting reuse of the terminal attempt ID is still rejected.
+      const conflictingRun: RunRecordV2 = { ...run, status: "failed", completedAt: 2000 };
+      const conflictingSummary: FullRunSummaryV2 = { ...summary, status: "failed", completedAt: 2000 };
       await expect(
         evalRepo.commitExperimentTaskTerminal({
           experimentId: "e1", taskId: "task-1", attemptId: "att-1",
-          run: terminalRun, summary: terminalSummary,
+          run: conflictingRun, summary: conflictingSummary,
           expectedRunRevision: 1, expectedExperimentRevision: 2,
         }),
-      ).rejects.toThrow(/terminal/i);
+      ).rejects.toThrow(/terminal|conflict|already/i);
     });
   });
 });

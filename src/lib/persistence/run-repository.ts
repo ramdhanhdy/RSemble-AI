@@ -380,9 +380,20 @@ export function createRunRepository(db: RSembleEvaluationDB): RunRepository {
 // =============================================================================
 
 export class InMemoryRunRepository implements RunRepository {
-  private summaries = new Map<string, RunSummary>();
-  private details = new Map<string, RunRecordV2>();
+  private summaries: Map<string, RunSummary>;
+  private details: Map<string, RunRecordV2>;
   private listeners = new Set<() => void>();
+
+  /** Optional shared maps let a test harness back an InMemoryRunRepository
+   *  and an InMemoryExperimentStore with the same tables — mirroring the
+   *  single-Dexie-DB production wiring. */
+  constructor(shared?: {
+    summaries?: Map<string, RunSummary>;
+    details?: Map<string, RunRecordV2>;
+  }) {
+    this.summaries = shared?.summaries ?? new Map();
+    this.details = shared?.details ?? new Map();
+  }
 
   private notify() {
     for (const l of this.listeners) {

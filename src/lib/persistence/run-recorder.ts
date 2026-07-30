@@ -71,7 +71,7 @@ class RunWriteQueue {
 
 export function createRunRecorder(
   repo: RunRepository,
-  builderDeps: BuilderDeps = { generateId: () => crypto.randomUUID(), now: () => Date.now() },
+  builderDeps: BuilderDeps = { now: () => Date.now() },
 ): RunRecorder {
   const builder = createRunRecordBuilder(builderDeps);
   const queues = new RunWriteQueue();

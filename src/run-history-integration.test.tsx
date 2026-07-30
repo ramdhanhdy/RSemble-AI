@@ -137,7 +137,6 @@ describe("run-history integration: one stable run ID lifecycle", () => {
   it("Rank → Fuse → Re-fuse → fail-Re-fuse preserves one run ID and accepted evidence", async () => {
     const repo = new InMemoryRunRepository();
     const recorder = createRunRecorder(repo, {
-      generateId: () => crypto.randomUUID(),
       now: () => Date.now(),
     });
 

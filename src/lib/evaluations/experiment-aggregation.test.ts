@@ -1,0 +1,419 @@
+// =============================================================================
+// experiment-aggregation.ts — failing tests (Task 6.1)
+//
+// V1 aggregation (spec §12.2):
+//   model-task score = canonical score from that task's selectedAttemptId
+//   model overall    = arithmetic mean of available canonical task scores
+//   coverage         = scored tasks / total suite tasks
+// Missing results are missing — never silently zero. Only complete-coverage
+// models are winner-eligible. Ties within 1e-9 of raw aggregate share the win.
+// =============================================================================
+
+import { describe, it, expect } from "vitest";
+import {
+  aggregateExperiment,
+  canonicalScoresFromRun,
+  formatTaskScore,
+  formatAggregateMean,
+} from "./experiment-aggregation";
+import type {
+  EvaluationCriterion,
+  EvaluationProfile,
+  ExperimentSnapshot,
+  ExperimentTaskState,
+} from "./evaluation-types";
+import type { RunRecordV2 } from "../persistence/run-types";
+import type { CandidateEvaluation } from "../../studio-data";
+import type { ModelSlot } from "../../studio-data";
+
+// --- Fixtures -------------------------------------------------------------------
+
+const CRITERIA: EvaluationCriterion[] = [
+  {
+    id: "c1",
+    name: "Correctness",
+    description: "Is it right",
+    weight: 3,
+    anchors: { one: "wrong", three: "ok", five: "right" },
+  },
+  {
+    id: "c2",
+    name: "Clarity",
+    description: "Is it clear",
+    weight: 1,
+    anchors: { one: "muddy", three: "ok", five: "clear" },
+  },
+];
+
+const PROFILE: EvaluationProfile = {
+  id: "p1",
+  version: 2,
+  name: "Quality",
+  description: "d",
+  judgeInstruction: "",
+  criteria: CRITERIA,
+  createdAt: 100,
+  updatedAt: 100,
+};
+
+function makeSlot(id: string, slug: string, providerId = "openrouter"): ModelSlot {
+  return {
+    id,
+    providerId: providerId as ModelSlot["providerId"],
+    provider: "OR",
+    model: `Model ${slug}`,
+    slug,
+    enabled: true,
+  };
+}
+
+const SLOTS: ModelSlot[] = [makeSlot("s1", "m1"), makeSlot("s2", "m2", "gemini")];
+const MK1 = "openrouter:m1";
+const MK2 = "gemini:m2";
+
+function makeSnapshot(taskIds: string[]): ExperimentSnapshot {
+  return {
+    suiteId: "suite-1",
+    suiteVersion: 1,
+    tasks: taskIds.map((id, i) => ({
+      id,
+      title: `Task ${id}`,
+      prompt: `Prompt ${id}`,
+      systemPrompt: "",
+      evaluation: { kind: "holistic" },
+      judgeInstructionOverride: "",
+      order: i,
+    })),
+    modelSlots: SLOTS,
+    defaultJudge: { providerId: "openrouter", model: "judge" },
+    defaultEvaluation: { kind: "holistic" },
+    profiles: [],
+    protocolFingerprint: "sha256:abc",
+    createdAt: 1000,
+  };
+}
+
+function makeEvaluation(
+  candidateId: string,
+  overallScore: number,
+  criterionScores?: Array<{ criterionId: string; score: number }>,
+): CandidateEvaluation {
+  return {
+    candidateId,
+    blindLabel: "A",
+    overallScore,
+    position: "p",
+    rationale: "r",
+    strengths: ["s"],
+    deductions: [],
+    missedRequirements: [],
+    criterionScores: (criterionScores ?? []).map((cs) => ({
+      criterionId: cs.criterionId,
+      label: cs.criterionId,
+      score: cs.score,
+      rationale: "r",
+    })),
+  };
+}
+
+/** Minimal RunRecordV2 carrying only the fields aggregation reads. */
+function makeRun(
+  runId: string,
+  scores: Record<string, number>,
+  opts: { profile?: EvaluationProfile | null; criterionScores?: Record<string, Record<string, number>> } = {},
+): RunRecordV2 {
+  const candidates = Object.keys(scores).map((modelKey, i) => ({
+    candidateId: `cand-${i}`,
+    slotId: `slot-${i}`,
+    modelKey,
+    providerId: modelKey.split(":")[0],
+    model: modelKey,
+    slug: modelKey.split(":")[1],
+    acceptedAttemptId: `att-cand-${i}`,
+    attempts: [],
+  }));
+  const evaluationsById: Record<string, CandidateEvaluation> = {};
+  Object.keys(scores).forEach((modelKey, i) => {
+    const cid = `cand-${i}`;
+    const cs = opts.criterionScores?.[modelKey];
+    evaluationsById[cid] = makeEvaluation(
+      cid,
+      scores[modelKey],
+      cs ? Object.entries(cs).map(([criterionId, score]) => ({ criterionId, score })) : undefined,
+    );
+  });
+  return {
+    schemaVersion: 2,
+    id: runId,
+    revision: 1,
+    execution: { ownerId: "tab-1", fence: 1 },
+    createdAt: 1000,
+    updatedAt: 1000,
+    completedAt: 1100,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
+    evaluation: { profile: opts.profile ?? null, candidateMessages: [] },
+    candidates,
+    judge: {
+      status: "done",
+      acceptedAttemptId: "judge-att-1",
+      report: { labelMap: [], evaluationsById, comparisons: [] },
+      consensus: null,
+      attempts: [],
+    },
+    fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    winnerKeys: [],
+  };
+}
+
+function makeTaskState(
+  taskId: string,
+  attempts: Array<{ id: string; runId: string; status: ExperimentTaskState["attempts"][number]["status"] }>,
+  selectedAttemptId: string | null,
+): ExperimentTaskState {
+  return {
+    taskId,
+    selectedAttemptId,
+    attempts: attempts.map((a, i) => ({
+      id: a.id,
+      runId: a.runId,
+      trial: i,
+      status: a.status,
+      startedAt: 100,
+      finishedAt: 200,
+      error: null,
+    })),
+  };
+}
+
+function aggregate(
+  taskIds: string[],
+  taskStates: ExperimentTaskState[],
+  runs: Record<string, RunRecordV2>,
+) {
+  return aggregateExperiment({
+    snapshot: makeSnapshot(taskIds),
+    taskStates,
+    resolveRunRecord: (runId) => runs[runId] ?? null,
+  });
+}
+
+// --- canonicalScoresFromRun -----------------------------------------------------
+
+describe("canonicalScoresFromRun", () => {
+  it("returns the judge overall score in holistic mode", () => {
+    const run = makeRun("r1", { [MK1]: 4.2, [MK2]: 3.1 });
+    expect(canonicalScoresFromRun(run)).toEqual({ [MK1]: 4.2, [MK2]: 3.1 });
+  });
+
+  it("computes the canonical weighted score from criterion scores", () => {
+    // (5*3 + 1*1) / (3+1) = 16/4 = 4.0 for m1; (2*3 + 4*1)/4 = 2.5 for m2
+    const run = makeRun(
+      "r1",
+      { [MK1]: 0, [MK2]: 0 },
+      {
+        profile: PROFILE,
+        criterionScores: {
+          [MK1]: { c1: 5, c2: 1 },
+          [MK2]: { c1: 2, c2: 4 },
+        },
+      },
+    );
+    const scores = canonicalScoresFromRun(run);
+    expect(scores[MK1]).toBeCloseTo(4.0, 10);
+    expect(scores[MK2]).toBeCloseTo(2.5, 10);
+  });
+});
+
+// --- aggregateExperiment -----------------------------------------------------------
+
+describe("aggregateExperiment", () => {
+  it("each task contributes scores from exactly one selectedAttemptId", () => {
+    // Task t1 has two completed attempts with different scores; selection a2
+    // must win and a1's scores must never appear or blend in.
+    const runs = {
+      "r-a1": makeRun("r-a1", { [MK1]: 1.0, [MK2]: 1.0 }),
+      "r-a2": makeRun("r-a2", { [MK1]: 5.0, [MK2]: 4.0 }),
+      "r-b1": makeRun("r-b1", { [MK1]: 3.0, [MK2]: 3.0 }),
+    };
+    const taskStates = [
+      makeTaskState("t1", [
+        { id: "a1", runId: "r-a1", status: "completed" },
+        { id: "a2", runId: "r-a2", status: "completed" },
+      ], "a2"),
+      makeTaskState("t2", [{ id: "b1", runId: "r-b1", status: "completed" }], "b1"),
+    ];
+    const result = aggregate(["t1", "t2"], taskStates, runs);
+
+    const t1Cells = result.cells[0];
+    expect(t1Cells[0]).toMatchObject({ kind: "scored", score: 5.0, attemptId: "a2", runId: "r-a2" });
+    expect(t1Cells[1]).toMatchObject({ kind: "scored", score: 4.0 });
+
+    // Means: m1 = (5+3)/2 = 4.0, m2 = (4+3)/2 = 3.5
+    const m1 = result.models.find((m) => m.modelKey === MK1)!;
+    const m2 = result.models.find((m) => m.modelKey === MK2)!;
+    expect(m1.mean).toBeCloseTo(4.0, 10);
+    expect(m2.mean).toBeCloseTo(3.5, 10);
+    expect(result.winnerKeys).toEqual([MK1]);
+  });
+
+  it("computes coverage as scored tasks / total tasks and means over available scores", () => {
+    const runs = {
+      "r-a1": makeRun("r-a1", { [MK1]: 4.0, [MK2]: 2.0 }),
+      "r-b1": makeRun("r-b1", { [MK1]: 2.0 }), // m2 failed this task — no score
+    };
+    const taskStates = [
+      makeTaskState("t1", [{ id: "a1", runId: "r-a1", status: "completed" }], "a1"),
+      makeTaskState("t2", [{ id: "b1", runId: "r-b1", status: "partial" }], "b1"),
+    ];
+    const result = aggregate(["t1", "t2"], taskStates, runs);
+
+    const m1 = result.models.find((m) => m.modelKey === MK1)!;
+    const m2 = result.models.find((m) => m.modelKey === MK2)!;
+
+    expect(m1.mean).toBeCloseTo(3.0, 10);
+    expect(m1.scoredTasks).toBe(2);
+    expect(m1.totalTasks).toBe(2);
+    expect(m1.complete).toBe(true);
+
+    // Missing is not zero: m2's mean is over its ONE available score, not (2+0)/2.
+    expect(m2.mean).toBeCloseTo(2.0, 10);
+    expect(m2.scoredTasks).toBe(1);
+    expect(m2.complete).toBe(false);
+
+    // The missing cell is explicit.
+    const m2t2 = result.cells[1][1];
+    expect(m2t2.kind).toBe("missing");
+    if (m2t2.kind === "missing") expect(m2t2.reason).toBe("no-score");
+  });
+
+  it("only complete-coverage models are winner-eligible", () => {
+    const runs = {
+      "r-a1": makeRun("r-a1", { [MK1]: 2.0, [MK2]: 5.0 }),
+      "r-b1": makeRun("r-b1", { [MK1]: 2.0 }), // m2 missing → incomplete
+    };
+    const taskStates = [
+      makeTaskState("t1", [{ id: "a1", runId: "r-a1", status: "completed" }], "a1"),
+      makeTaskState("t2", [{ id: "b1", runId: "r-b1", status: "partial" }], "b1"),
+    ];
+    const result = aggregate(["t1", "t2"], taskStates, runs);
+    // m2 has the higher mean but incomplete coverage → m1 wins.
+    expect(result.winnerKeys).toEqual([MK1]);
+  });
+
+  it("no complete-coverage model yields no winner", () => {
+    const runs = {
+      "r-a1": makeRun("r-a1", { [MK1]: 4.0 }),
+      "r-b1": makeRun("r-b1", { [MK2]: 4.5 }),
+    };
+    const taskStates = [
+      makeTaskState("t1", [{ id: "a1", runId: "r-a1", status: "partial" }], "a1"),
+      makeTaskState("t2", [{ id: "b1", runId: "r-b1", status: "partial" }], "b1"),
+    ];
+    const result = aggregate(["t1", "t2"], taskStates, runs);
+    expect(result.winnerKeys).toEqual([]);
+  });
+
+  it("task order does not change the aggregate", () => {
+    const runs = {
+      "r-a1": makeRun("r-a1", { [MK1]: 4.0, [MK2]: 2.0 }),
+      "r-b1": makeRun("r-b1", { [MK1]: 2.0, [MK2]: 4.0 }),
+    };
+    const t1 = makeTaskState("t1", [{ id: "a1", runId: "r-a1", status: "completed" }], "a1");
+    const t2 = makeTaskState("t2", [{ id: "b1", runId: "r-b1", status: "completed" }], "b1");
+
+    const forward = aggregate(["t1", "t2"], [t1, t2], runs);
+    const reversed = aggregate(["t2", "t1"], [t2, t1], runs);
+
+    expect(forward.models).toEqual(reversed.models);
+    expect(forward.winnerKeys).toEqual(reversed.winnerKeys);
+  });
+
+  it("values within 1e-9 epsilon remain tied", () => {
+    const diff = 5e-10; // below WINNER_EPSILON
+    const runs = {
+      "r-a1": makeRun("r-a1", { [MK1]: 3.0 + diff, [MK2]: 3.0 }),
+    };
+    const taskStates = [
+      makeTaskState("t1", [{ id: "a1", runId: "r-a1", status: "completed" }], "a1"),
+    ];
+    const result = aggregate(["t1"], taskStates, runs);
+    expect(result.winnerKeys.sort()).toEqual([MK1, MK2].sort());
+  });
+
+  it("values that look equal after rounding but exceed epsilon are NOT tied", () => {
+    // Both display "3.00" at two decimals, but the raw difference exceeds 1e-9.
+    const runs = {
+      "r-a1": makeRun("r-a1", { [MK1]: 3.004, [MK2]: 2.996 }),
+    };
+    const taskStates = [
+      makeTaskState("t1", [{ id: "a1", runId: "r-a1", status: "completed" }], "a1"),
+    ];
+    const result = aggregate(["t1"], taskStates, runs);
+    expect(result.winnerKeys).toEqual([MK1]);
+  });
+
+  it("task with no accepted attempt produces missing cells with an explicit reason", () => {
+    const runs = {
+      "r-b1": makeRun("r-b1", { [MK1]: 3.0, [MK2]: 3.0 }),
+    };
+    const taskStates = [
+      makeTaskState("t1", [{ id: "a1", runId: "r-a1", status: "failed" }], null),
+      makeTaskState("t2", [{ id: "b1", runId: "r-b1", status: "completed" }], "b1"),
+    ];
+    const result = aggregate(["t1", "t2"], taskStates, runs);
+    for (const cell of result.cells[0]) {
+      expect(cell.kind).toBe("missing");
+      if (cell.kind === "missing") expect(cell.reason).toBe("no-accepted-attempt");
+    }
+    // A task that never ran has a distinct reason.
+    const taskStates2 = [
+      makeTaskState("t1", [], null),
+      makeTaskState("t2", [{ id: "b1", runId: "r-b1", status: "completed" }], "b1"),
+    ];
+    const result2 = aggregate(["t1", "t2"], taskStates2, runs);
+    const cell = result2.cells[0][0];
+    if (cell.kind === "missing") expect(cell.reason).toBe("no-attempt");
+    expect(cell.kind).toBe("missing");
+  });
+
+  it("canonical profile scores flow into cells and means", () => {
+    const runs = {
+      "r-a1": makeRun(
+        "r-a1",
+        { [MK1]: 0, [MK2]: 0 },
+        {
+          profile: PROFILE,
+          criterionScores: {
+            [MK1]: { c1: 5, c2: 1 }, // canonical 4.0
+            [MK2]: { c1: 2, c2: 4 }, // canonical 2.5
+          },
+        },
+      ),
+    };
+    const taskStates = [
+      makeTaskState("t1", [{ id: "a1", runId: "r-a1", status: "completed" }], "a1"),
+    ];
+    const result = aggregate(["t1"], taskStates, runs);
+    expect(result.cells[0][0]).toMatchObject({ kind: "scored", score: 4.0 });
+    expect(result.cells[0][1]).toMatchObject({ kind: "scored", score: 2.5 });
+    expect(result.winnerKeys).toEqual([MK1]);
+  });
+});
+
+// --- display formatting -------------------------------------------------------------
+
+describe("display formatting", () => {
+  it("task cells display one decimal", () => {
+    expect(formatTaskScore(3.26)).toBe("3.3");
+    expect(formatTaskScore(4)).toBe("4.0");
+  });
+
+  it("aggregate means display two decimals", () => {
+    expect(formatAggregateMean(3.14159)).toBe("3.14");
+    expect(formatAggregateMean(3)).toBe("3.00");
+    expect(formatAggregateMean(2.996)).toBe("3.00");
+  });
+});

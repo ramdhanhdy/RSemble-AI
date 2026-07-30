@@ -29,6 +29,7 @@ import type {
   ExecutionFence,
 } from "./run-types";
 import type { EvaluationProfileSnapshot } from "../evaluations/evaluation-types";
+import { candidateIdForSlot } from "../pipeline";
 
 // --- Input shapes (mirror executor event payloads) ---------------------------
 
@@ -100,14 +101,13 @@ export interface RunRecordBuilderState {
 // --- Dependencies ------------------------------------------------------------
 
 export interface BuilderDeps {
-  generateId: () => string;
   now: () => number;
 }
 
 // --- Factory -----------------------------------------------------------------
 
 export function createRunRecordBuilder(deps: BuilderDeps) {
-  const { generateId, now } = deps;
+  const { now } = deps;
 
   function createInitialState(): RunRecordBuilderState {
     return { record: null };
@@ -121,30 +121,21 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     const ts = now();
     const candidates: PersistedCandidate[] = input.slots
       .filter((s) => s.enabled)
-      .map((slot) => {
-        const attemptId = generateId();
-        const attempt: CandidateAttemptRecord = {
-          attemptId,
-          messages: input.evaluation.candidateMessages,
-          startedAt: ts,
-          finishedAt: null,
-          status: "running",
-          output: null,
-          tokensIn: null,
-          tokensOut: null,
-          error: null,
-        };
-        return {
-          candidateId: slot.id,
-          slotId: slot.id,
-          modelKey: modelKey(slot),
-          providerId: slot.providerId,
-          model: slot.model,
-          slug: slot.slug,
-          acceptedAttemptId: null,
-          attempts: [attempt],
-        };
-      });
+      .map((slot) => ({
+        // candidateIdForSlot is the single ID scheme shared with executor
+        // jobs and Judge blind-label resolution — evidence always joins.
+        candidateId: candidateIdForSlot(slot.id),
+        slotId: slot.id,
+        modelKey: modelKey(slot),
+        providerId: slot.providerId,
+        model: slot.model,
+        slug: slot.slug,
+        acceptedAttemptId: null,
+        // Attempts begin empty: the executor's onCandidateAttemptStart appends
+        // the real attempt before the provider call. A pre-created running
+        // placeholder would never terminate, pinning deriveStatus at "running".
+        attempts: [],
+      }));
 
     const record: RunRecordV2 = {
       schemaVersion: 2,

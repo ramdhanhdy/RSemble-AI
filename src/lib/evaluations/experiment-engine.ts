@@ -1,0 +1,438 @@
+// =============================================================================
+// RSemble AI — Experiment engine (spec §11)
+//
+// Deterministic, pure state machine for experiment lifecycle. No I/O, no
+// providers, no React — the controller (Task 6.2) orchestrates persistence
+// and execution around these transitions.
+//
+// Experiment transitions:
+//   draft → running ↔ paused → completed | completed_with_failures
+//                            | aborted | interrupted
+// (The "queued" experiment status exists in the persisted schema for future
+// cross-tab handoff; v1 starts draft → running atomically.)
+//
+// Task attempt transitions:
+//   queued → running → completed | partial | failed | aborted | interrupted
+//
+// Invariants:
+//  - exactly one active task attempt at a time;
+//  - pause never aborts an in-flight task — it takes effect at the boundary
+//    after the active attempt persists terminal, before the next begins;
+//  - abort bumps both epochs so delayed stage writes are rejected;
+//  - retries append attempts; prior terminal attempts are never mutated;
+//  - the snapshot reference is stable for the life of the record.
+// =============================================================================
+
+import type {
+  EvaluationSuite,
+  EvaluationProfile,
+  ExperimentRecord,
+  ExperimentTaskAttempt,
+  ExperimentTaskState,
+} from "./evaluation-types";
+import type { ExecutionFence, PersistedError, RunStatus } from "../persistence/run-types";
+import { createExperimentSnapshot } from "./protocol-fingerprint";
+
+// --- Run-status → attempt-status mapping (deterministic) ----------------------
+
+export function mapRunStatusToAttemptStatus(
+  status: RunStatus,
+): ExperimentTaskAttempt["status"] {
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "partial":
+      return "partial";
+    case "failed":
+      return "failed";
+    case "aborted":
+      return "aborted";
+    case "interrupted":
+      return "interrupted";
+    case "running":
+      return "running";
+  }
+}
+
+// --- selectedAttemptId selector (spec §11.3) ------------------------------------
+//
+// Newest full-coverage accepted (completed) attempt wins; otherwise the newest
+// accepted partial attempt; otherwise none. Prior attempts remain inspectable —
+// this only moves the pointer.
+
+export function selectAttemptId(task: ExperimentTaskState): string | null {
+  let newestCompleted: string | null = null;
+  let newestPartial: string | null = null;
+  for (const attempt of task.attempts) {
+    if (attempt.status === "completed") newestCompleted = attempt.id;
+    else if (attempt.status === "partial") newestPartial = attempt.id;
+  }
+  return newestCompleted ?? newestPartial;
+}
+
+// --- Record creation -------------------------------------------------------------
+
+export interface CreateExperimentRecordInput {
+  id: string;
+  suite: EvaluationSuite;
+  profiles: EvaluationProfile[];
+  now: number;
+}
+
+export function createExperimentRecord(input: CreateExperimentRecordInput): ExperimentRecord {
+  const { id, suite, profiles, now } = input;
+  // createExperimentSnapshot deep-copies the suite's semantic content, so later
+  // suite edits never mutate an existing experiment (spec §11.1).
+  const snapshot = createExperimentSnapshot(suite, profiles, now);
+  const tasks: ExperimentTaskState[] = [...suite.tasks]
+    .sort((a, b) => a.order - b.order)
+    .map((t) => ({ taskId: t.id, selectedAttemptId: null, attempts: [] }));
+  return {
+    id,
+    revision: 0,
+    suiteId: suite.id,
+    suiteVersion: suite.version,
+    protocolFingerprint: snapshot.protocolFingerprint,
+    status: "draft",
+    execution: null,
+    snapshot,
+    tasks,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+// --- Engine ------------------------------------------------------------------------
+
+export type EngineAction = { kind: "begin-task"; taskId: string } | { kind: "wait" };
+
+export interface TransitionResult {
+  ok: boolean;
+  reason?: string;
+}
+
+const OK: TransitionResult = { ok: true };
+function reject(reason: string): TransitionResult {
+  return { ok: false, reason };
+}
+
+export interface CommitTerminalInput {
+  taskId: string;
+  attemptId: string;
+  runStatus: RunStatus;
+  epoch: number;
+  error: PersistedError | null;
+  now: number;
+}
+
+export interface ExperimentEngine {
+  readonly record: ExperimentRecord;
+  readonly pauseRequested: boolean;
+  readonly experimentEpoch: number;
+  readonly taskEpoch: number;
+  readonly activeTaskId: string | null;
+  readonly activeAttemptId: string | null;
+  readonly queuedTaskIds: readonly string[];
+  /** What the controller should do next. */
+  nextAction(): EngineAction;
+  start(fence: ExecutionFence, now: number): TransitionResult;
+  beginTask(taskId: string, attemptId: string, runId: string, now: number): TransitionResult;
+  commitTaskTerminal(input: CommitTerminalInput): TransitionResult;
+  requestPause(now: number): TransitionResult;
+  resume(fence: ExecutionFence, now: number): TransitionResult;
+  abort(now: number): TransitionResult;
+  recoverInterrupted(now: number): TransitionResult;
+  retryIncomplete(generateId: () => string, fence: ExecutionFence, now: number): TransitionResult;
+}
+
+/** A task is complete for retry purposes only when it holds an accepted
+ *  completed (full-coverage) attempt. Never-run, failed, partial, interrupted,
+ *  and aborted tasks are all eligible (spec §11.3). */
+function taskNeedsRetry(task: ExperimentTaskState): boolean {
+  return !task.attempts.some((a) => a.status === "completed");
+}
+
+/** A task counts toward clean completion when it produced any accepted
+ *  evidence (completed or partial attempt). */
+function taskHasAcceptedEvidence(task: ExperimentTaskState): boolean {
+  return task.attempts.some((a) => a.status === "completed" || a.status === "partial");
+}
+
+export function createExperimentEngine(initial: ExperimentRecord): ExperimentEngine {
+  let record = initial;
+  let queue: string[] = [];
+  let activeTaskId: string | null = null;
+  let activeAttemptId: string | null = null;
+  let experimentEpoch = 0;
+  let taskEpoch = 0;
+  let pauseRequestedFlag = false;
+
+  function taskState(taskId: string): ExperimentTaskState | undefined {
+    return record.tasks.find((t) => t.taskId === taskId);
+  }
+
+  function replaceTaskState(updated: ExperimentTaskState, now: number): void {
+    record = {
+      ...record,
+      tasks: record.tasks.map((t) => (t.taskId === updated.taskId ? updated : t)),
+      updatedAt: now,
+    };
+  }
+
+  function setStatus(status: ExperimentRecord["status"], now: number): void {
+    record = { ...record, status, updatedAt: now };
+  }
+
+  /** After a task persists terminal: pause, finalize, or continue. */
+  function settleBoundary(now: number): void {
+    if (queue.length === 0) {
+      // No queued work — finalize. Pause is meaningless without a next task.
+      pauseRequestedFlag = false;
+      const clean = record.tasks.every(taskHasAcceptedEvidence);
+      record = {
+        ...record,
+        status: clean ? "completed" : "completed_with_failures",
+        execution: null,
+        updatedAt: now,
+      };
+      return;
+    }
+    if (pauseRequestedFlag) {
+      pauseRequestedFlag = false;
+      // Paused with queued work retains execution ownership (spec §5.4).
+      setStatus("paused", now);
+    }
+  }
+
+  const engine: ExperimentEngine = {
+    get record() {
+      return record;
+    },
+    get pauseRequested() {
+      return pauseRequestedFlag;
+    },
+    get experimentEpoch() {
+      return experimentEpoch;
+    },
+    get taskEpoch() {
+      return taskEpoch;
+    },
+    get activeTaskId() {
+      return activeTaskId;
+    },
+    get activeAttemptId() {
+      return activeAttemptId;
+    },
+    get queuedTaskIds() {
+      return queue;
+    },
+
+    nextAction(): EngineAction {
+      if (record.status !== "running") return { kind: "wait" };
+      if (activeTaskId !== null || pauseRequestedFlag) return { kind: "wait" };
+      if (queue.length === 0) return { kind: "wait" };
+      return { kind: "begin-task", taskId: queue[0] };
+    },
+
+    start(fence, now) {
+      if (record.status !== "draft") {
+        return reject(`Cannot start from status ${record.status}`);
+      }
+      queue = record.tasks.map((t) => t.taskId);
+      record = { ...record, status: "running", execution: fence, updatedAt: now };
+      return OK;
+    },
+
+    beginTask(taskId, attemptId, runId, now) {
+      if (record.status !== "running") return reject(`Cannot begin task while ${record.status}`);
+      if (activeTaskId !== null) return reject(`Task ${activeTaskId} is already active`);
+      if (queue[0] !== taskId) return reject(`Task ${taskId} is not at the head of the queue`);
+      const task = taskState(taskId);
+      if (!task) return reject(`Task ${taskId} not found`);
+
+      const existing = task.attempts.find((a) => a.id === attemptId);
+      if (existing && existing.runId !== null) {
+        return reject(`Attempt ${attemptId} already has a run`);
+      }
+      if (existing && existing.status !== "queued") {
+        return reject(`Attempt ${attemptId} is not queued`);
+      }
+
+      const attempt: ExperimentTaskAttempt = {
+        id: attemptId,
+        runId,
+        trial: existing?.trial ?? task.attempts.length,
+        status: "running",
+        startedAt: now,
+        finishedAt: null,
+        error: null,
+      };
+      const updatedTask: ExperimentTaskState = {
+        ...task,
+        attempts: existing
+          ? task.attempts.map((a) => (a.id === attemptId ? attempt : a))
+          : [...task.attempts, attempt],
+      };
+      replaceTaskState(updatedTask, now);
+      queue = queue.slice(1);
+      activeTaskId = taskId;
+      activeAttemptId = attemptId;
+      taskEpoch += 1;
+      return OK;
+    },
+
+    commitTaskTerminal(input) {
+      const { taskId, attemptId, runStatus, epoch, error, now } = input;
+      if (epoch !== taskEpoch) {
+        return reject(`Stale task epoch: expected ${taskEpoch}, got ${epoch}`);
+      }
+      if (activeTaskId !== taskId || activeAttemptId !== attemptId) {
+        return reject(`Attempt ${attemptId} is not the active attempt`);
+      }
+      const task = taskState(taskId);
+      if (!task) return reject(`Task ${taskId} not found`);
+      const attempt = task.attempts.find((a) => a.id === attemptId);
+      if (!attempt) return reject(`Attempt ${attemptId} not found`);
+      if (attempt.status !== "running") {
+        return reject(`Attempt ${attemptId} is already terminal`);
+      }
+
+      const finalized: ExperimentTaskAttempt = {
+        ...attempt,
+        status: mapRunStatusToAttemptStatus(runStatus),
+        finishedAt: now,
+        error,
+      };
+      const updatedTask: ExperimentTaskState = {
+        ...task,
+        attempts: task.attempts.map((a) => (a.id === attemptId ? finalized : a)),
+      };
+      updatedTask.selectedAttemptId = selectAttemptId(updatedTask);
+      replaceTaskState(updatedTask, now);
+      activeTaskId = null;
+      activeAttemptId = null;
+      settleBoundary(now);
+      return OK;
+    },
+
+    requestPause(now) {
+      if (record.status !== "running") return reject(`Cannot pause while ${record.status}`);
+      if (activeTaskId === null) {
+        // Between tasks — apply at the boundary immediately.
+        pauseRequestedFlag = false;
+        setStatus("paused", now);
+        return OK;
+      }
+      pauseRequestedFlag = true;
+      return OK;
+    },
+
+    resume(fence, now) {
+      if (record.status !== "paused") return reject(`Cannot resume while ${record.status}`);
+      record = { ...record, status: "running", execution: fence, updatedAt: now };
+      return OK;
+    },
+
+    abort(now) {
+      if (
+        record.status !== "running" &&
+        record.status !== "paused" &&
+        record.status !== "draft"
+      ) {
+        return reject(`Cannot abort while ${record.status}`);
+      }
+      // Bump both epochs: stale candidate, Judge, or persistence completions
+      // cannot advance the queue (spec §11.4).
+      experimentEpoch += 1;
+      taskEpoch += 1;
+      queue = [];
+      pauseRequestedFlag = false;
+
+      let tasks = record.tasks;
+      if (activeTaskId !== null && activeAttemptId !== null) {
+        const task = taskState(activeTaskId);
+        if (task) {
+          const updatedTask: ExperimentTaskState = {
+            ...task,
+            attempts: task.attempts.map((a) =>
+              a.id === activeAttemptId && a.status === "running"
+                ? { ...a, status: "aborted" as const, finishedAt: now }
+                : a,
+            ),
+          };
+          updatedTask.selectedAttemptId = selectAttemptId(updatedTask);
+          tasks = record.tasks.map((t) => (t.taskId === updatedTask.taskId ? updatedTask : t));
+        }
+      }
+      activeTaskId = null;
+      activeAttemptId = null;
+      record = { ...record, tasks, status: "aborted", execution: null, updatedAt: now };
+      return OK;
+    },
+
+    recoverInterrupted(now) {
+      if (record.status !== "running" && record.status !== "paused") {
+        return reject(`Cannot recover while ${record.status}`);
+      }
+      experimentEpoch += 1;
+      taskEpoch += 1;
+      queue = [];
+      pauseRequestedFlag = false;
+
+      let tasks = record.tasks;
+      const running = record.tasks.find((t) => t.attempts.some((a) => a.status === "running"));
+      if (running) {
+        const updatedTask: ExperimentTaskState = {
+          ...running,
+          attempts: running.attempts.map((a) =>
+            a.status === "running" ? { ...a, status: "interrupted" as const, finishedAt: now } : a,
+          ),
+        };
+        updatedTask.selectedAttemptId = selectAttemptId(updatedTask);
+        tasks = record.tasks.map((t) => (t.taskId === updatedTask.taskId ? updatedTask : t));
+      }
+      activeTaskId = null;
+      activeAttemptId = null;
+      record = { ...record, tasks, status: "interrupted", execution: null, updatedAt: now };
+      return OK;
+    },
+
+    retryIncomplete(generateId, fence, now) {
+      // Available after the active queue stops (spec §11.3). Per-task
+      // eligibility (no accepted completed attempt) decides what re-queues —
+      // a "completed" experiment may still hold partial attempts worth
+      // retrying.
+      if (
+        record.status !== "completed" &&
+        record.status !== "completed_with_failures" &&
+        record.status !== "aborted" &&
+        record.status !== "interrupted"
+      ) {
+        return reject(`Cannot retry while ${record.status}`);
+      }
+      const eligible = record.tasks.filter(taskNeedsRetry);
+      if (eligible.length === 0) return reject("No incomplete tasks to retry");
+
+      let tasks = record.tasks;
+      for (const task of eligible) {
+        const attempt: ExperimentTaskAttempt = {
+          id: generateId(),
+          runId: null,
+          trial: task.attempts.length,
+          status: "queued",
+          startedAt: null,
+          finishedAt: null,
+          error: null,
+        };
+        tasks = tasks.map((t) =>
+          t.taskId === task.taskId ? { ...t, attempts: [...t.attempts, attempt] } : t,
+        );
+      }
+      queue = eligible.map((t) => t.taskId);
+      record = { ...record, tasks, status: "running", execution: fence, updatedAt: now };
+      return OK;
+    },
+  };
+
+  return engine;
+}

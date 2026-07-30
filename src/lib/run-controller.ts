@@ -9,6 +9,7 @@ import {
   isUsableCandidate,
   checkFusionEligibility,
 } from "./pipeline";
+import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
 import type { RunRecorder } from "./persistence/run-recorder";
 import { createRunExecutor, type RunExecutorEvents } from "./run-executor";
 import type { StudioState, Action } from "../studio-engine";
@@ -75,7 +76,9 @@ export function createRunController(deps: RunControllerDeps) {
             source: { kind: "adhoc" },
             mode: s.mode,
             task: { title: s.prompt.slice(0, 80), prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
-            evaluation: { profile: null, candidateMessages: [] },
+            // Persist the resolved evaluation profile so run evidence (and
+            // summary provenance) reflects the actual scoring protocol.
+            evaluation: { profile: resolveEvaluationProfile(s.evaluation), candidateMessages: [] },
             slots: s.slots,
             fence: { ownerId: "tab-1", fence: epoch },
           });

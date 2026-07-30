@@ -54,6 +54,16 @@ export function evaluationText(
 }
 
 /**
+ * Immutable candidate ID for a model slot. This is the SINGLE source of truth
+ * for run-level candidate identity — executor jobs, React candidate state,
+ * Judge blind-label resolution, and persisted run records all derive the ID
+ * here so evidence always joins on the same key.
+ */
+export function candidateIdForSlot(slotId: string): string {
+  return `cand-${slotId}`;
+}
+
+/**
  * Plan the fanout: one candidate per enabled slot (multi-model parallel). The
  * focused product always uses this strategy; there is no fast/multi-candidate
  * path anymore.
@@ -61,7 +71,7 @@ export function evaluationText(
 export function buildFanoutJobs(slots: ModelSlot[]): FanoutJob[] {
   const enabled = slots.filter((s) => s.enabled);
   return enabled.map((s, i) => ({
-    id: `cand-${s.id}`,
+    id: candidateIdForSlot(s.id),
     providerId: s.providerId ?? "openrouter",
     slug: s.slug,
     displayName: s.model,

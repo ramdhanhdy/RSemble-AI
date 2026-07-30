@@ -97,7 +97,10 @@ describe("RunRecorder", () => {
     const [record] = mocks.create.mock.calls[0];
     expect(record.status).toBe("running");
     expect(record.candidates).toHaveLength(1);
-    expect(record.candidates[0].attempts[0].status).toBe("running");
+    // Attempts begin empty — the executor's attempt-start appends the real
+    // attempt before the provider call (no immortal placeholder).
+    expect(record.candidates[0].attempts).toEqual([]);
+    expect(record.candidates[0].candidateId).toBe("cand-s1");
   });
 
   it("beginCandidateAttempt persists a running attempt before the provider call", async () => {

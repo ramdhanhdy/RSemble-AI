@@ -43,9 +43,11 @@ import { saveCommandPreferences } from "./lib/preferences";
 import { useActionShortcuts } from "./ui/useActionShortcuts";
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
+import { useExecutionOwner } from "./lib/execution-owner-context";
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const { registry: ownerRegistry, owner: activeOwner } = useExecutionOwner();
   const location = useLocation();
   const isCompareRoute = location.pathname === "/compare" || location.pathname === "/";
 
@@ -211,18 +213,31 @@ export default function RSemble() {
   const enabledSlots = state.slots.filter((s) => s.enabled);
   const slotsReady = enabledSlots.every((s) => readinessMap[s.providerId] === true);
   const criticReady = readinessMap[state.critic.providerId] === true;
+  const experimentActive = activeOwner?.kind === "experiment";
   const canRun =
-    !state.running && state.prompt.trim().length > 0 && enabledSlots.length > 0 && slotsReady && criticReady;
+    !state.running && !experimentActive && state.prompt.trim().length > 0 && enabledSlots.length > 0 && slotsReady && criticReady;
 
   const canRunRef = useRef(canRun);
   useEffect(() => {
     canRunRef.current = canRun;
   }, [canRun]);
 
+  const compareRunIdRef = useRef<string | null>(null);
   const requestRun = useCallback(() => {
     if (!canRunRef.current) return;
+    const runId = `cmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (!ownerRegistry.tryAcquire({ kind: "compare", id: runId })) return;
+    compareRunIdRef.current = runId;
     void runFanout();
-  }, [runFanout]);
+  }, [runFanout, ownerRegistry]);
+
+  // Release Compare ownership when the run finishes (running → false).
+  useEffect(() => {
+    if (!state.running && compareRunIdRef.current) {
+      ownerRegistry.release(compareRunIdRef.current);
+      compareRunIdRef.current = null;
+    }
+  }, [state.running, ownerRegistry]);
 
   // ---------------------------------------------------------------------------
   // Mode change + fusion trigger

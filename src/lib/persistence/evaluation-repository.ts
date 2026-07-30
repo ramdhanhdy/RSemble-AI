@@ -11,6 +11,12 @@ import type { RSembleEvaluationDB } from "./database";
 import { StorageError, classifyStorageError } from "./database";
 import type { RunRepository } from "./run-repository";
 import {
+  createExperimentUnitOfWork,
+  DexieExperimentStore,
+  InMemoryExperimentStore,
+  type ExperimentUnitOfWork,
+} from "./experiment-unit-of-work";
+import {
   isEvaluationProfile,
   isEvaluationSuite,
   isProfileRecord,
@@ -19,16 +25,9 @@ import {
   type EvaluationSuite,
   type ProfileRecord,
   type ExperimentRecord,
-  type ExperimentTaskState,
-  type ExperimentTaskAttempt,
   type BeginExperimentTaskInput,
   type CommitExperimentTaskTerminalInput,
 } from "../evaluations/evaluation-types";
-import {
-  isRunRecordV2,
-  isFullRunSummaryV2,
-  type RunRecordV2,
-} from "./run-types";
 
 export interface EvaluationRepository {
   listSuites(includeArchived?: boolean): Promise<EvaluationSuite[]>;
@@ -49,15 +48,8 @@ export interface EvaluationRepository {
   commitExperimentTaskTerminal(input: CommitExperimentTaskTerminalInput): Promise<{ runRevision: number; experimentRevision: number }>;
 }
 
-function recomputeSelectedAttemptId(taskState: ExperimentTaskState): string | null {
-  const terminal = taskState.attempts.filter(
-    (a) => a.status === "completed" || a.status === "partial",
-  );
-  if (terminal.length === 0) return null;
-  const completed = terminal.filter((a) => a.status === "completed");
-  const pool = completed.length > 0 ? completed : terminal;
-  return pool[pool.length - 1].id;
-}
+// selectedAttemptId recomposition lives in experiment-engine.ts (selectAttemptId)
+// and is applied by the shared experiment unit of work.
 
 export function createEvaluationRepository(
   db: RSembleEvaluationDB,
@@ -361,192 +353,21 @@ export function createEvaluationRepository(
     }
   }
 
+  // begin/commit delegate to the shared experiment unit of work (Task 6.2):
+  // fence-verified when supplied, idempotent for identical IDs/payload, and
+  // atomic across experiments + run tables.
+  const experimentUow = createExperimentUnitOfWork(new DexieExperimentStore(db));
+
   async function beginExperimentTask(
     input: BeginExperimentTaskInput,
   ): Promise<{ runRevision: number; experimentRevision: number }> {
-    if (!isRunRecordV2(input.run)) throw new StorageError("validation", "Invalid run record");
-    if (!isFullRunSummaryV2(input.summary)) throw new StorageError("validation", "Invalid summary");
-    db.assertWritable();
-
-    let expRev = input.expectedExperimentRevision;
-    try {
-      await db.transaction("rw", db.experiments, db.runSummaries, db.runDetails, async () => {
-        const existingRun = await db.runSummaries.get(input.run.id);
-        if (existingRun) throw new StorageError("conflict", `Run ${input.run.id} already exists`);
-        await db.runSummaries.put({
-          kind: "full",
-          summary: input.summary,
-          id: input.summary.id,
-          revision: input.summary.revision,
-          createdAt: input.summary.createdAt,
-          completedAt: input.summary.completedAt,
-          status: input.summary.status,
-          mode: input.summary.mode,
-          sourceKind: input.summary.source.kind,
-          sourceProtocolFingerprint: input.summary.source.kind === "experiment" ? input.summary.source.protocolFingerprint : null,
-          sourceExperimentTaskAttemptId: input.summary.source.kind === "experiment" ? input.summary.source.experimentTaskAttemptId : null,
-          modelKeys: input.summary.modelKeys,
-        });
-        await db.runDetails.put({
-          id: input.run.id,
-          record: input.run,
-          revision: input.run.revision,
-          createdAt: input.run.createdAt,
-          status: input.run.status,
-        });
-
-        const expRow = await db.experiments.get(input.experimentId);
-        if (!expRow) throw new StorageError("conflict", `Experiment ${input.experimentId} not found`);
-        if (expRow.revision !== input.expectedExperimentRevision) {
-          throw new StorageError("conflict", `Stale experiment revision`);
-        }
-        const experiment = expRow.experiment;
-        if (!isExperimentRecord(experiment)) throw new StorageError("validation", "Invalid experiment data");
-
-        const taskState = experiment.tasks.find((t) => t.taskId === input.taskId);
-        if (!taskState) throw new StorageError("validation", `Task ${input.taskId} not found`);
-
-        const existingAttempt = taskState.attempts.find((a) => a.id === input.attemptId);
-        if (existingAttempt && existingAttempt.runId !== null) {
-          throw new StorageError("conflict", `Attempt ${input.attemptId} already has a run`);
-        }
-
-        const newAttempt: ExperimentTaskAttempt = {
-          id: input.attemptId,
-          runId: input.run.id,
-          trial: existingAttempt?.trial ?? taskState.attempts.length,
-          status: "running",
-          startedAt: Date.now(),
-          finishedAt: null,
-          error: null,
-        };
-
-        const updatedTaskState: ExperimentTaskState = {
-          ...taskState,
-          attempts: existingAttempt
-            ? taskState.attempts.map((a) => (a.id === input.attemptId ? newAttempt : a))
-            : [...taskState.attempts, newAttempt],
-        };
-
-        expRev = expRow.revision + 1;
-        const updatedExperiment: ExperimentRecord = {
-          ...experiment,
-          tasks: experiment.tasks.map((t) => (t.taskId === input.taskId ? updatedTaskState : t)),
-          revision: expRev,
-          updatedAt: Date.now(),
-        };
-
-        await db.experiments.put({
-          id: experiment.id,
-          experiment: updatedExperiment,
-          revision: expRev,
-          suiteId: experiment.suiteId,
-          suiteVersion: experiment.suiteVersion,
-          protocolFingerprint: experiment.protocolFingerprint,
-          createdAt: experiment.createdAt,
-          status: experiment.status,
-        });
-      });
-      return { runRevision: input.run.revision, experimentRevision: expRev };
-    } catch (err) {
-      if (err instanceof StorageError) throw err;
-      throw classifyStorageError(err);
-    }
+    return experimentUow.beginTask(input);
   }
 
   async function commitExperimentTaskTerminal(
     input: CommitExperimentTaskTerminalInput,
   ): Promise<{ runRevision: number; experimentRevision: number }> {
-    if (!isRunRecordV2(input.run)) throw new StorageError("validation", "Invalid run record");
-    if (!isFullRunSummaryV2(input.summary)) throw new StorageError("validation", "Invalid summary");
-    db.assertWritable();
-
-    const newRunRevision = input.expectedRunRevision + 1;
-    let expRev = input.expectedExperimentRevision;
-
-    try {
-      await db.transaction("rw", db.experiments, db.runSummaries, db.runDetails, async () => {
-        const existingDetail = await db.runDetails.get(input.run.id);
-        if (!existingDetail) throw new StorageError("conflict", `Run ${input.run.id} not found`);
-        if (existingDetail.revision !== input.expectedRunRevision) {
-          throw new StorageError("conflict", `Stale run revision`);
-        }
-        const updatedRun: RunRecordV2 = { ...input.run, revision: newRunRevision };
-        await db.runDetails.put({
-          id: input.run.id,
-          record: updatedRun,
-          revision: newRunRevision,
-          createdAt: input.run.createdAt,
-          status: input.run.status,
-        });
-        await db.runSummaries.put({
-          kind: "full",
-          summary: { ...input.summary, revision: newRunRevision },
-          id: input.summary.id,
-          revision: newRunRevision,
-          createdAt: input.summary.createdAt,
-          completedAt: input.summary.completedAt,
-          status: input.summary.status,
-          mode: input.summary.mode,
-          sourceKind: input.summary.source.kind,
-          sourceProtocolFingerprint: input.summary.source.kind === "experiment" ? input.summary.source.protocolFingerprint : null,
-          sourceExperimentTaskAttemptId: input.summary.source.kind === "experiment" ? input.summary.source.experimentTaskAttemptId : null,
-          modelKeys: input.summary.modelKeys,
-        });
-
-        const expRow = await db.experiments.get(input.experimentId);
-        if (!expRow) throw new StorageError("conflict", `Experiment ${input.experimentId} not found`);
-        if (expRow.revision !== input.expectedExperimentRevision) {
-          throw new StorageError("conflict", `Stale experiment revision`);
-        }
-        const experiment = expRow.experiment;
-        if (!isExperimentRecord(experiment)) throw new StorageError("validation", "Invalid experiment data");
-
-        const taskState = experiment.tasks.find((t) => t.taskId === input.taskId);
-        if (!taskState) throw new StorageError("validation", `Task ${input.taskId} not found`);
-
-        const attempt = taskState.attempts.find((a) => a.id === input.attemptId);
-        if (!attempt) throw new StorageError("validation", `Attempt ${input.attemptId} not found`);
-        if (["completed", "failed", "aborted"].includes(attempt.status)) {
-          throw new StorageError("conflict", `Attempt ${input.attemptId} is already terminal`);
-        }
-
-        const finalized: ExperimentTaskAttempt = {
-          ...attempt,
-          status: input.run.status === "completed" ? "completed" : input.run.status === "partial" ? "partial" : input.run.status === "aborted" ? "aborted" : input.run.status === "interrupted" ? "interrupted" : "failed",
-          finishedAt: Date.now(),
-        };
-
-        const updatedTaskState: ExperimentTaskState = {
-          ...taskState,
-          attempts: taskState.attempts.map((a) => (a.id === input.attemptId ? finalized : a)),
-        };
-        updatedTaskState.selectedAttemptId = recomputeSelectedAttemptId(updatedTaskState);
-
-        expRev = expRow.revision + 1;
-        const updatedExperiment: ExperimentRecord = {
-          ...experiment,
-          tasks: experiment.tasks.map((t) => (t.taskId === input.taskId ? updatedTaskState : t)),
-          revision: expRev,
-          updatedAt: Date.now(),
-        };
-
-        await db.experiments.put({
-          id: experiment.id,
-          experiment: updatedExperiment,
-          revision: expRev,
-          suiteId: experiment.suiteId,
-          suiteVersion: experiment.suiteVersion,
-          protocolFingerprint: experiment.protocolFingerprint,
-          createdAt: experiment.createdAt,
-          status: experiment.status,
-        });
-      });
-      return { runRevision: newRunRevision, experimentRevision: expRev };
-    } catch (err) {
-      if (err instanceof StorageError) throw err;
-      throw classifyStorageError(err);
-    }
+    return experimentUow.commitTaskTerminal(input);
   }
 
   return {
@@ -561,7 +382,18 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
   private suites = new Map<string, EvaluationSuite>();
   private profileRecords = new Map<string, ProfileRecord>();
   private profileVersions = new Map<string, Map<number, EvaluationProfile>>();
-  private experiments = new Map<string, ExperimentRecord>();
+  private experiments: Map<string, ExperimentRecord>;
+  private readonly experimentUow: ExperimentUnitOfWork;
+
+  /** Optional shared experiments map lets a test harness back this repository
+   *  and an external InMemoryExperimentStore with one table — mirroring the
+   *  single-Dexie-DB production wiring. */
+  constructor(shared?: { experiments?: Map<string, ExperimentRecord> }) {
+    this.experiments = shared?.experiments ?? new Map<string, ExperimentRecord>();
+    this.experimentUow = createExperimentUnitOfWork(
+      new InMemoryExperimentStore({ experiments: this.experiments }),
+    );
+  }
 
   async listSuites(includeArchived = false): Promise<EvaluationSuite[]> {
     return [...this.suites.values()]
@@ -640,54 +472,9 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
       .sort((a, b) => b.createdAt - a.createdAt);
   }
   async beginExperimentTask(input: BeginExperimentTaskInput): Promise<{ runRevision: number; experimentRevision: number }> {
-    const experiment = this.experiments.get(input.experimentId);
-    if (!experiment) throw new StorageError("conflict", "Experiment not found");
-    if (experiment.revision !== input.expectedExperimentRevision) throw new StorageError("conflict", "Stale revision");
-    const taskState = experiment.tasks.find((t) => t.taskId === input.taskId);
-    if (!taskState) throw new StorageError("validation", "Task not found");
-    const existing = taskState.attempts.find((a) => a.id === input.attemptId);
-    if (existing && existing.runId !== null) throw new StorageError("conflict", "Attempt already has a run");
-    const newAttempt: ExperimentTaskAttempt = {
-      id: input.attemptId, runId: input.run.id, trial: existing?.trial ?? taskState.attempts.length,
-      status: "running", startedAt: Date.now(), finishedAt: null, error: null,
-    };
-    const updatedTaskState: ExperimentTaskState = {
-      ...taskState,
-      attempts: existing ? taskState.attempts.map((a) => (a.id === input.attemptId ? newAttempt : a)) : [...taskState.attempts, newAttempt],
-    };
-    const newRevision = input.expectedExperimentRevision + 1;
-    this.experiments.set(input.experimentId, {
-      ...experiment,
-      tasks: experiment.tasks.map((t) => (t.taskId === input.taskId ? updatedTaskState : t)),
-      revision: newRevision, updatedAt: Date.now(),
-    });
-    return { runRevision: input.run.revision, experimentRevision: newRevision };
+    return this.experimentUow.beginTask(input);
   }
   async commitExperimentTaskTerminal(input: CommitExperimentTaskTerminalInput): Promise<{ runRevision: number; experimentRevision: number }> {
-    const experiment = this.experiments.get(input.experimentId);
-    if (!experiment) throw new StorageError("conflict", "Experiment not found");
-    if (experiment.revision !== input.expectedExperimentRevision) throw new StorageError("conflict", "Stale revision");
-    const taskState = experiment.tasks.find((t) => t.taskId === input.taskId);
-    if (!taskState) throw new StorageError("validation", "Task not found");
-    const attempt = taskState.attempts.find((a) => a.id === input.attemptId);
-    if (!attempt) throw new StorageError("validation", "Attempt not found");
-    if (["completed", "failed", "aborted"].includes(attempt.status)) throw new StorageError("conflict", "Attempt already terminal");
-    const finalized: ExperimentTaskAttempt = {
-      ...attempt,
-      status: input.run.status === "completed" ? "completed" : input.run.status === "partial" ? "partial" : input.run.status === "aborted" ? "aborted" : "failed",
-      finishedAt: Date.now(),
-    };
-    const updatedTaskState: ExperimentTaskState = {
-      ...taskState,
-      attempts: taskState.attempts.map((a) => (a.id === input.attemptId ? finalized : a)),
-    };
-    updatedTaskState.selectedAttemptId = recomputeSelectedAttemptId(updatedTaskState);
-    const newExpRev = input.expectedExperimentRevision + 1;
-    this.experiments.set(input.experimentId, {
-      ...experiment,
-      tasks: experiment.tasks.map((t) => (t.taskId === input.taskId ? updatedTaskState : t)),
-      revision: newExpRev, updatedAt: Date.now(),
-    });
-    return { runRevision: input.expectedRunRevision + 1, experimentRevision: newExpRev };
+    return this.experimentUow.commitTaskTerminal(input);
   }
 }

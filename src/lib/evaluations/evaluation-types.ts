@@ -168,6 +168,9 @@ export interface BeginExperimentTaskInput {
   run: RunRecordV2;
   summary: FullRunSummaryV2;
   expectedExperimentRevision: number;
+  /** When present, the write verifies the current unexpired lease carries
+   *  exactly this { ownerId, fence } inside the same transaction (spec §5.6). */
+  fence?: ExecutionFence;
 }
 
 export interface CommitExperimentTaskTerminalInput {
@@ -178,6 +181,8 @@ export interface CommitExperimentTaskTerminalInput {
   summary: FullRunSummaryV2;
   expectedRunRevision: number;
   expectedExperimentRevision: number;
+  /** When present, verified against the current lease in-transaction. */
+  fence?: ExecutionFence;
 }
 
 // =============================================================================
