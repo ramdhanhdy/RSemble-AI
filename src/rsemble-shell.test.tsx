@@ -192,9 +192,10 @@ describe("RSemble workspace shell", () => {
       runsLink!.click();
     });
 
-    // On /runs the command pane (with textarea) is gone — the placeholder shows.
+    // On /runs the command pane (with textarea) is gone — the Runs workspace shows.
     expect(h.$('[aria-label="Command"]')).toBeFalsy();
-    expect(h.container.textContent).toContain("not yet implemented");
+    // Runs workspace renders (no longer a placeholder)
+    expect(h.container.textContent).not.toContain("not yet implemented");
 
     // Navigate back to /compare via the desktop nav link.
     const compareLink = [...h.container.querySelectorAll<HTMLAnchorElement>("a")].find(

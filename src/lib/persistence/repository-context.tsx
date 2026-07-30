@@ -19,7 +19,7 @@ export interface RepositoryContextValue {
   retry: () => void;
 }
 
-const RepositoryContext = createContext<RepositoryContextValue>({
+export const RepositoryContext = createContext<RepositoryContextValue>({
   runRepo: null,
   evalRepo: null,
   storageState: "unavailable",

@@ -20,6 +20,7 @@ export function AppRoutes({ compareOutlet }: { compareOutlet: React.ReactNode })
       <Route path="/" element={<Navigate to="/compare" replace />} />
       <Route path="/compare" element={<CompareSlot>{compareOutlet}</CompareSlot>} />
       <Route path="/runs" element={<RunsWorkspace />} />
+      <Route path="/runs/:runId" element={<RunsWorkspace />} />
       <Route path="/evaluations" element={<EvaluationsWorkspace />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
