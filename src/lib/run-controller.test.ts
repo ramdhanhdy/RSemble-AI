@@ -1302,23 +1302,31 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
     expect(addRunMock).not.toHaveBeenCalled();
   });
 
-  it("Rank→Fuse currently creates a second history entry (duplication risk Phase 2 fixes)", async () => {
+  it("Rank→Fuse uses one stable run ID — no duplicate history entry", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValueOnce(
-      judgeResponse([["A", 4], ["B", 3]]),
-    ).mockResolvedValueOnce("fused answer");
-    const { deps } = makeDeps(state);
+    chatCompletionMock
+      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce("fused answer");
+    const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
-    deps.stateRef.current = { ...deps.stateRef.current, mode: "fuse" };
-    controller.triggerFusion();
+    // Switch to fuse mode and trigger fusion
+    const s = deps.stateRef.current;
+    s.mode = "fuse";
+    s.fusionStatus = "idle";
+    controller.triggerFusion(true);
+    // Wait for fusion to complete
     await new Promise((r) => setTimeout(r, 50));
     const { addRun } = await import("./run-history");
     const addRunMock = addRun as unknown as ReturnType<typeof vi.fn>;
-    // Current behavior: triggerFusion → runFusion → addRun creates a second
-    // history entry. Phase 2 replaces this with one stable run ID.
+    // Phase 2 fix: one stable run ID, no duplicate addRun calls.
+    // addRun is removed entirely — persistence goes through RunRecorder.
     expect(addRunMock).not.toHaveBeenCalled();
+    // Verify JUDGE_RESULT and FUSION_RESULT were both dispatched
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_RESULT");
+    expect(types).toContain("FUSION_RESULT");
   });
 
   it("Judge retry makes zero candidate stream calls", async () => {
