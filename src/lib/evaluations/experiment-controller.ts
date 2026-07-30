@@ -480,9 +480,12 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
             const run = await runRepo.get(attempt.runId);
             if (run && run.status === "running") {
               const state: RunRecordBuilderState = { record: run };
+              const expectedRunRevision = run.revision;
               builder.applyAborted(state, run);
               const summary = builder.deriveSummary(run);
-              await runRepo.update(run, summary, run.revision);
+              // CAS against the pre-mutation revision — applyAborted bumps
+              // record.revision in memory; the stored row is one behind.
+              await runRepo.update(run, summary, expectedRunRevision);
             }
           } catch {
             // Best-effort — the run may not be persistable.
@@ -718,9 +721,12 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
             if (run) {
               // Mark the run as interrupted using the builder, then persist.
               const state: RunRecordBuilderState = { record: run };
+              const expectedRunRevision = run.revision;
               builder.applyInterrupted(state, run);
               const interruptedSummary = builder.deriveSummary(run);
-              await runRepo.update(run, interruptedSummary, run.revision);
+              // CAS against the pre-mutation revision (same rule as the
+              // recorder's loadAndMutate — the builder bumps in memory).
+              await runRepo.update(run, interruptedSummary, expectedRunRevision);
             }
             const interrupted: ExperimentTaskAttempt = {
               ...runningAttempt,

@@ -436,16 +436,24 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     if (record.status === "aborted") return "aborted";
     if (record.status === "interrupted") return "interrupted";
 
+    // Spec §5.6: a post-run paid command (Rank→Fuse, Judge retry, candidate
+    // retry, re-fuse) records its attempt-start WITHOUT regressing an accepted
+    // overall run status to running. The repository CAS guard rejects that
+    // regression outright, so once this record has reached a terminal status
+    // through accepted evidence, in-flight stages keep the terminal value.
+    const acceptedTerminal =
+      record.status === "completed" ||
+      record.status === "partial" ||
+      record.status === "failed";
+
     // Check if any candidate attempts are still running (fanout not settled)
     const fanoutActive = record.candidates.some((c) =>
       c.attempts.some((a) => a.status === "running"),
     );
-    if (fanoutActive) return "running";
+    if (fanoutActive) return acceptedTerminal ? record.status : "running";
 
-    // A retry/re-Judge or re-Fuse starting against prior accepted evidence
-    // must revert the run from completed/partial back to running.
-    if (record.judge.status === "running") return "running";
-    if (record.fusion.status === "running") return "running";
+    if (record.judge.status === "running") return acceptedTerminal ? record.status : "running";
+    if (record.fusion.status === "running") return acceptedTerminal ? record.status : "running";
 
     const acceptedJudge = hasAcceptedJudge(record);
     const usableCount = countUsableCandidates(record);
@@ -473,13 +481,21 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       return "failed";
     }
 
-    // Judge has not run yet or is running → running (if ≥2 usable) or failed
+    // A candidate with zero terminal attempts may simply not have started
+    // yet — mid-fanout is not a failure. Only a fully settled fanout can
+    // ground the <2-usable failure derivation.
+    const fanoutSettled =
+      record.candidates.length > 0 &&
+      record.candidates.every(
+        (c) => c.attempts.length > 0 && c.attempts.every((a) => a.finishedAt !== null),
+      );
+
+    // Judge has not run yet → running (if ≥2 usable) or failed (settled <2)
     if (usableCount < 2) {
-      // Fanout settled with <2 usable and no Judge → failed
-      if (record.judge.status === "idle") return "failed";
+      if (!fanoutSettled) return acceptedTerminal ? record.status : "running";
       return "failed";
     }
-    return "running";
+    return acceptedTerminal ? record.status : "running";
   }
 
   function deriveWinnerKeys(record: RunRecordV2): string[] {

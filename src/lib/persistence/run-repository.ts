@@ -143,7 +143,7 @@ export function createRunRepository(db: RSembleEvaluationDB): RunRepository {
         ) {
           throw new StorageError(
             "validation",
-            `Cannot regress terminal status "${existingDetail.status}" to "running"`,
+            `Cannot regress terminal status "${existingDetail.status}" to "running" (run ${record.id})`,
           );
         }
 
@@ -409,8 +409,13 @@ export class InMemoryRunRepository implements RunRepository {
       throw new StorageError("validation", `Record revision ${record.revision} does not match summary revision ${summary.revision}`);
     }
     if (this.summaries.has(record.id)) throw new StorageError("conflict", `Run ${record.id} already exists`);
-    this.summaries.set(record.id, { ...summary, searchText: normalizeSearchText(summary) });
-    this.details.set(record.id, record);
+    // Deep-clone on write: Dexie structured-clones at the storage boundary,
+    // and this test double must mirror that isolation. Storing the caller's
+    // object by reference lets later in-memory mutations (e.g. the record
+    // builder's revision bump) leak into "stored" state and masks CAS bugs
+    // that fail against the real repository.
+    this.summaries.set(record.id, structuredClone({ ...summary, searchText: normalizeSearchText(summary) }));
+    this.details.set(record.id, structuredClone(record));
     this.notify();
   }
 
@@ -422,11 +427,11 @@ export class InMemoryRunRepository implements RunRepository {
     if (!existing) throw new StorageError("conflict", `Run ${record.id} not found`);
     if (existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");
     if (TERMINAL_STATUSES.has(existing.status) && record.status === "running") {
-      throw new StorageError("validation", "Cannot regress terminal status to running");
+      throw new StorageError("validation", `Cannot regress terminal status "${existing.status}" to "running" (run ${record.id})`);
     }
     const newRevision = expectedRevision + 1;
-    this.summaries.set(record.id, { ...summary, revision: newRevision, searchText: normalizeSearchText(summary) });
-    this.details.set(record.id, { ...record, revision: newRevision });
+    this.summaries.set(record.id, structuredClone({ ...summary, revision: newRevision, searchText: normalizeSearchText(summary) }));
+    this.details.set(record.id, structuredClone({ ...record, revision: newRevision }));
     this.notify();
     return newRevision;
   }
@@ -439,7 +444,10 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   async get(id: string): Promise<RunRecordV2 | null> {
-    return this.details.get(id) ?? null;
+    const record = this.details.get(id);
+    // Deep-clone on read so callers cannot mutate stored state through the
+    // returned reference (mirrors Dexie structured-clone reads).
+    return record ? structuredClone(record) : null;
   }
 
   async list(query: RunListQuery): Promise<RunSummary[]> {

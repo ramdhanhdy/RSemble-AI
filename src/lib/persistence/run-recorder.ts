@@ -83,10 +83,16 @@ export function createRunRecorder(
     return queues.enqueue(runId, async () => {
       const record = await repo.get(runId);
       if (!record) throw new Error(`Run ${runId} not found`);
+      // Capture the STORED revision before the builder mutation bumps
+      // record.revision in memory — repo.update compares expectedRevision
+      // against the stored row. Passing the post-mutation value fails the CAS
+      // against Dexie (structured-clone isolation), while InMemoryRunRepository
+      // masks it by storing the record object by reference.
+      const expectedRevision = record.revision;
       const state: RunRecordBuilderState = { record };
       mutate(record, state);
       const summary = builder.deriveSummary(record);
-      const newRevision = await repo.update(record, summary, record.revision);
+      const newRevision = await repo.update(record, summary, expectedRevision);
       record.revision = newRevision;
     });
   }

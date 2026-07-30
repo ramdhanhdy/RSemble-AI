@@ -620,6 +620,40 @@ describe("RunRecordBuilder — status derivation (§7.5)", () => {
     // Still completed because prior accepted Fusion exists
     expect(builder.deriveStatus(record)).toBe("completed");
   });
+
+  it("fusion start after accepted Judge does not regress partial to running (§5.6)", () => {
+    const { builder, state, record } = setup("fuse");
+    completeAllCandidates(builder, state, record);
+    builder.applyFanoutTerminal(state, record, []);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
+    // Fuse mode with an accepted Judge and no accepted Fusion → partial (terminal).
+    expect(builder.deriveStatus(record)).toBe("partial");
+    // Starting the post-run fusion attempt must NOT regress the accepted
+    // overall status to running — the repository CAS guard rejects that
+    // regression, so the builder must not produce it (spec §5.6).
+    builder.applyFusionStart(state, record, "fusion-att-1", {
+      providerId: "openrouter", model: "judge-model", messages: makeMessages(),
+      sourceJudgeAttemptId: "judge-att-1",
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" }, startedAt: 5000,
+    });
+    expect(builder.deriveStatus(record)).toBe("partial");
+  });
+
+  it("judge retry after judge failure does not regress failed to running (§5.6)", () => {
+    const { builder, state, record } = setup("rank");
+    completeAllCandidates(builder, state, record);
+    builder.applyFanoutTerminal(state, record, []);
+    runJudgeAttempt(builder, state, record, "judge-att-1", false);
+    expect(builder.deriveStatus(record)).toBe("failed");
+    builder.applyJudgeStart(state, record, "judge-att-2", {
+      providerId: "openrouter", model: "judge-model", instruction: "",
+      messages: makeMessages(),
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" },
+      startedAt: 5000,
+    });
+    expect(builder.deriveStatus(record)).toBe("failed");
+  });
 });
 
 describe("RunRecordBuilder — winners", () => {
