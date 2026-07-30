@@ -13,6 +13,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { EvaluationContext } from "../lib/persistence/evaluation-context";
 import { useEvaluationRepository } from "../lib/persistence/repository-context";
+import { DataArchiveActions } from "../ui/DataArchiveActions";
 
 interface SegNavEntry {
   to: string;
@@ -61,6 +62,11 @@ export function EvaluationsWorkspace() {
             through <Outlet />. */}
         <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-3">
           <Outlet />
+        </div>
+
+        {/* Archive export/import — workspace-level actions (plan 8.1). */}
+        <div className="shrink-0 border-t border-edge px-3 py-2">
+          <DataArchiveActions />
         </div>
       </div>
     </EvaluationContext.Provider>

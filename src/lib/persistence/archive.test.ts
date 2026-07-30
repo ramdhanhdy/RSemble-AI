@@ -1,0 +1,670 @@
+// =============================================================================
+// RSemble AI — Workbench archive tests (plan 8.1, spec §13/§18/§20)
+//
+// Covers export completeness, allowlisted construction, centralized import
+// limits, skip/conflict/rollback import semantics, run Markdown export from the
+// persisted record, and classified failure guidance.
+// =============================================================================
+
+import "fake-indexeddb/auto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  RSembleEvaluationDB,
+  StorageError,
+  type ExperimentRow,
+  type ProfileRow,
+  type ProfileVersionRow,
+  type RunDetailRow,
+  type RunSummaryRow,
+  type SuiteRow,
+} from "./database";
+import {
+  archiveFailureGuidance,
+  buildRunExportMarkdown,
+  exportWorkbenchArchive,
+  IMPORT_LIMITS,
+  importWorkbenchArchive,
+  parseWorkbenchArchive,
+  validateArchiveBytes,
+  type WorkbenchArchiveV1,
+} from "./archive";
+import type {
+  FullRunSummaryV2,
+  LegacyRunSummary,
+  RunRecordV2,
+  RunSummary,
+} from "./run-types";
+import type {
+  EvaluationProfile,
+  EvaluationSuite,
+  ExperimentRecord,
+  ProfileRecord,
+} from "../evaluations/evaluation-types";
+
+// --- Valid baselines ----------------------------------------------------------
+
+function makeRun(id: string, prompt = "Do something"): RunRecordV2 {
+  return {
+    schemaVersion: 2,
+    id,
+    revision: 1,
+    execution: { ownerId: "owner", fence: 1 },
+    createdAt: 1000,
+    updatedAt: 1000,
+    completedAt: 2000,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    task: { title: `Task ${id}`, prompt, systemPrompt: "", temperature: 0.7 },
+    evaluation: { profile: null, candidateMessages: [] },
+    candidates: [
+      {
+        candidateId: "c-1",
+        slotId: "s-1",
+        modelKey: "openrouter:foo",
+        providerId: "openrouter",
+        model: "Foo",
+        slug: "foo",
+        acceptedAttemptId: "att-1",
+        attempts: [
+          {
+            attemptId: "att-1",
+            messages: [{ role: "user", content: prompt }],
+            startedAt: 1000,
+            finishedAt: 2000,
+            status: "completed",
+            output: `Answer for ${id}`,
+            tokensIn: 10,
+            tokensOut: 20,
+            error: null,
+          },
+        ],
+      },
+    ],
+    judge: { status: "idle", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+    fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    winnerKeys: ["openrouter:foo"],
+  };
+}
+
+function makeFullSummary(id: string): FullRunSummaryV2 {
+  return {
+    kind: "full",
+    schemaVersion: 2,
+    id,
+    revision: 1,
+    createdAt: 1000,
+    completedAt: 2000,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    taskTitle: `Task ${id}`,
+    taskExcerpt: "excerpt",
+    modelKeys: ["openrouter:foo"],
+    winnerKeys: ["openrouter:foo"],
+    scoresByModelKey: { "openrouter:foo": 4 },
+    judgeModelKey: null,
+    evaluationProfileId: null,
+    evaluationProfileVersion: null,
+    detailAvailable: true,
+    searchText: "excerpt",
+  };
+}
+
+function makeLegacySummary(id: string): LegacyRunSummary {
+  return {
+    kind: "legacy",
+    schemaVersion: "1-import",
+    id,
+    createdAt: 1000,
+    taskExcerpt: "legacy excerpt",
+    modelKeys: ["openrouter:foo"],
+    winnerKeys: ["openrouter:foo"],
+    scoresByModelKey: { "openrouter:foo": 3 },
+    detailAvailable: false,
+    searchText: "legacy excerpt",
+  };
+}
+
+function makeProfile(id: string, version = 1, name = `Profile ${id}`): EvaluationProfile {
+  return {
+    id,
+    version,
+    name,
+    description: "test",
+    judgeInstruction: "judge fairly",
+    criteria: [
+      {
+        id: "c1",
+        name: "Quality",
+        description: "Overall quality",
+        weight: 1,
+        anchors: { one: "bad", three: "ok", five: "great" },
+      },
+    ],
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
+}
+
+function makeProfileRecord(id: string): ProfileRecord {
+  return {
+    id,
+    revision: 1,
+    latestVersion: 1,
+    createdAt: 1000,
+    updatedAt: 1000,
+    archivedAt: null,
+  };
+}
+
+function makeSuite(id: string, name = `Suite ${id}`): EvaluationSuite {
+  return {
+    id,
+    revision: 1,
+    version: 1,
+    name,
+    description: "test suite",
+    tasks: [
+      {
+        id: "task-1",
+        title: "Task 1",
+        prompt: "Do something",
+        systemPrompt: "",
+        evaluation: { kind: "holistic" },
+        judgeInstructionOverride: "",
+        order: 0,
+      },
+    ],
+    modelSlots: [
+      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "m1", slug: "m1", enabled: true },
+      { id: "s2", providerId: "gemini", provider: "Gemini", model: "m2", slug: "m2", enabled: true },
+    ],
+    defaultJudge: { providerId: "openrouter", model: "judge" },
+    defaultEvaluation: { kind: "holistic" },
+    createdAt: 1000,
+    updatedAt: 1000,
+    archivedAt: null,
+  };
+}
+
+function makeExperiment(id: string, suiteId: string): ExperimentRecord {
+  const suite = makeSuite(suiteId);
+  return {
+    id,
+    revision: 1,
+    suiteId,
+    suiteVersion: 1,
+    protocolFingerprint: "sha256:abc",
+    status: "queued",
+    execution: null,
+    snapshot: {
+      suiteId,
+      suiteVersion: 1,
+      tasks: suite.tasks,
+      modelSlots: suite.modelSlots,
+      defaultJudge: suite.defaultJudge,
+      defaultEvaluation: suite.defaultEvaluation,
+      profiles: [],
+      protocolFingerprint: "sha256:abc",
+      createdAt: 1000,
+    },
+    tasks: [{ taskId: "task-1", selectedAttemptId: null, attempts: [] }],
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
+}
+
+// --- Row builders (mirror repository row mapping) ------------------------------
+
+function summaryRow(summary: RunSummary): RunSummaryRow {
+  const full = summary.kind === "full" ? summary : null;
+  return {
+    kind: summary.kind,
+    summary,
+    id: summary.id,
+    revision: full ? full.revision : 0,
+    createdAt: summary.createdAt,
+    completedAt: full ? full.completedAt : null,
+    status: full ? full.status : null,
+    mode: full ? full.mode : null,
+    sourceKind: "adhoc",
+    sourceProtocolFingerprint: null,
+    sourceExperimentTaskAttemptId: null,
+    modelKeys: summary.modelKeys,
+  };
+}
+
+function detailRow(record: RunRecordV2): RunDetailRow {
+  return {
+    id: record.id,
+    record,
+    revision: record.revision,
+    createdAt: record.createdAt,
+    status: record.status,
+  };
+}
+
+function profileRow(record: ProfileRecord): ProfileRow {
+  return {
+    id: record.id,
+    record,
+    revision: record.revision,
+    latestVersion: record.latestVersion,
+    updatedAt: record.updatedAt,
+    archivedAt: record.archivedAt,
+  };
+}
+
+function profileVersionRow(profile: EvaluationProfile): ProfileVersionRow {
+  return { id: profile.id, version: profile.version, profile, updatedAt: profile.updatedAt };
+}
+
+function suiteRow(suite: EvaluationSuite): SuiteRow {
+  return {
+    id: suite.id,
+    suite,
+    revision: suite.revision,
+    version: suite.version,
+    updatedAt: suite.updatedAt,
+    archivedAt: suite.archivedAt,
+  };
+}
+
+function experimentRow(experiment: ExperimentRecord): ExperimentRow {
+  return {
+    id: experiment.id,
+    experiment,
+    revision: experiment.revision,
+    suiteId: experiment.suiteId,
+    suiteVersion: experiment.suiteVersion,
+    protocolFingerprint: experiment.protocolFingerprint,
+    createdAt: experiment.createdAt,
+    status: experiment.status,
+  };
+}
+
+function emptyArchive(): WorkbenchArchiveV1 {
+  return {
+    schemaVersion: 1,
+    exportedAt: 1000,
+    runs: { summaries: [], details: [] },
+    profiles: { identities: [], versions: [] },
+    suites: [],
+    experiments: [],
+  };
+}
+
+function populatedArchive(): WorkbenchArchiveV1 {
+  const archive = emptyArchive();
+  archive.runs.summaries.push(makeFullSummary("run-1"), makeLegacySummary("legacy-1"));
+  archive.runs.details.push(makeRun("run-1"));
+  archive.profiles.identities.push(makeProfileRecord("prof-1"));
+  archive.profiles.versions.push(makeProfile("prof-1"));
+  archive.suites.push(makeSuite("suite-1"));
+  archive.experiments.push(makeExperiment("exp-1", "suite-1"));
+  return archive;
+}
+
+// --- Dexie setup ---------------------------------------------------------------
+
+let db: RSembleEvaluationDB;
+
+beforeEach(async () => {
+  db = new RSembleEvaluationDB("test-archive-" + Math.random());
+  await db.open();
+});
+
+afterEach(async () => {
+  db.close();
+  await db.delete();
+});
+
+// --- 1. Export completeness ----------------------------------------------------
+
+describe("exportWorkbenchArchive", () => {
+  it("includes schema version, summaries, details, profiles, suites, and experiments", async () => {
+    await db.runSummaries.put(summaryRow(makeFullSummary("run-1")));
+    await db.runSummaries.put(summaryRow(makeLegacySummary("legacy-1")));
+    await db.runDetails.put(detailRow(makeRun("run-1")));
+    await db.profiles.put(profileRow(makeProfileRecord("prof-1")));
+    await db.profileVersions.put(profileVersionRow(makeProfile("prof-1")));
+    await db.profileVersions.put(profileVersionRow(makeProfile("prof-1", 2)));
+    await db.suites.put(suiteRow(makeSuite("suite-1")));
+    await db.experiments.put(experimentRow(makeExperiment("exp-1", "suite-1")));
+
+    const archive = await exportWorkbenchArchive(db);
+
+    expect(archive.schemaVersion).toBe(1);
+    expect(typeof archive.exportedAt).toBe("number");
+    expect(archive.runs.summaries.map((s) => s.id).sort()).toEqual(["legacy-1", "run-1"]);
+    expect(archive.runs.details.map((r) => r.id)).toEqual(["run-1"]);
+    expect(archive.profiles.identities.map((p) => p.id)).toEqual(["prof-1"]);
+    expect(archive.profiles.versions.map((p) => p.version).sort()).toEqual([1, 2]);
+    expect(archive.suites.map((s) => s.id)).toEqual(["suite-1"]);
+    expect(archive.experiments.map((e) => e.id)).toEqual(["exp-1"]);
+
+    // The export itself satisfies the import validator (round-trip shape).
+    const check = parseWorkbenchArchive(JSON.parse(JSON.stringify(archive)));
+    expect(check.ok).toBe(true);
+  });
+
+  it("excludes guard-failing rows and keeps ordinary prose about tokens/passwords", async () => {
+    const prosePrompt =
+      "Explain the token bucket algorithm and why a password manager keeps a secret.";
+    await db.runDetails.put(detailRow(makeRun("run-good", prosePrompt)));
+    // Smuggled credential key — written directly, bypassing repository validation.
+    const smuggled = makeRun("run-bad") as unknown as Record<string, unknown>;
+    smuggled.authorization = "super-secret-credential-value";
+    await db.runDetails.put({
+      id: "run-bad",
+      record: smuggled,
+      revision: 1,
+      createdAt: 1000,
+      status: "completed",
+    });
+
+    const archive = await exportWorkbenchArchive(db);
+    expect(archive.runs.details.map((r) => r.id)).toEqual(["run-good"]);
+
+    // Ordinary prose round-trips through parse.
+    const proseCheck = parseWorkbenchArchive(JSON.parse(JSON.stringify(archive)));
+    expect(proseCheck.ok).toBe(true);
+
+    // The smuggled record fails at import validation and the error redacts the
+    // credential value while naming the offending key.
+    const bad = emptyArchive();
+    bad.runs.details.push(smuggled as unknown as RunRecordV2);
+    const badCheck = parseWorkbenchArchive(JSON.parse(JSON.stringify(bad)));
+    expect(badCheck.ok).toBe(false);
+    if (!badCheck.ok) {
+      const joined = badCheck.errors.join("\n");
+      expect(joined).toContain("authorization");
+      expect(joined).toContain("[REDACTED]");
+      expect(joined).not.toContain("super-secret-credential-value");
+    }
+  });
+});
+
+// --- 3. Centralized limits ------------------------------------------------------
+
+describe("IMPORT_LIMITS constants", () => {
+  it("pins the v1 limit values from spec §18", () => {
+    expect(IMPORT_LIMITS.ARCHIVE_BYTES).toBe(268435456);
+    expect(IMPORT_LIMITS.RUN_SUMMARIES).toBe(25000);
+    expect(IMPORT_LIMITS.RUN_DETAILS).toBe(25000);
+    expect(IMPORT_LIMITS.PROFILE_IDENTITIES).toBe(5000);
+    expect(IMPORT_LIMITS.PROFILE_REVISIONS).toBe(10000);
+    expect(IMPORT_LIMITS.SUITES).toBe(5000);
+    expect(IMPORT_LIMITS.EXPERIMENTS).toBe(25000);
+    expect(IMPORT_LIMITS.STRING_BYTES).toBe(8388608);
+    expect(IMPORT_LIMITS.DEPTH).toBe(32);
+    expect(IMPORT_LIMITS.ID_PATTERN.test("abc-DEF_123.x:y")).toBe(true);
+    expect(IMPORT_LIMITS.ID_PATTERN.test("")).toBe(false);
+    expect(IMPORT_LIMITS.ID_PATTERN.test("a".repeat(129))).toBe(false);
+    expect(IMPORT_LIMITS.ID_PATTERN.test("bad id!")).toBe(false);
+  });
+});
+
+describe("validateArchiveBytes", () => {
+  it("rejects files over 256 MiB before decoding", () => {
+    expect(validateArchiveBytes(268435457)).not.toBeNull();
+    expect(validateArchiveBytes(268435456)).toBeNull();
+    expect(validateArchiveBytes(10)).toBeNull();
+  });
+});
+
+describe("parseWorkbenchArchive limits", () => {
+  it("rejects a non-1 schema version and non-record input", () => {
+    expect(parseWorkbenchArchive(null).ok).toBe(false);
+    expect(parseWorkbenchArchive({ schemaVersion: 2 }).ok).toBe(false);
+    const wrongVersion = parseWorkbenchArchive({ ...emptyArchive(), schemaVersion: 2 });
+    expect(wrongVersion.ok).toBe(false);
+    if (!wrongVersion.ok) {
+      expect(wrongVersion.errors.join(" ")).toMatch(/schema/i);
+    }
+  });
+
+  it("accepts a well-formed empty archive", () => {
+    const check = parseWorkbenchArchive(emptyArchive());
+    expect(check.ok).toBe(true);
+  });
+
+  it("rejects more than 25,000 run summaries", () => {
+    const archive = emptyArchive() as unknown as {
+      runs: { summaries: LegacyRunSummary[]; details: RunRecordV2[] };
+    };
+    for (let i = 0; i < IMPORT_LIMITS.RUN_SUMMARIES + 1; i++) {
+      archive.runs.summaries.push(makeLegacySummary(`legacy-${i}`));
+    }
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.errors.join(" ")).toMatch(/summar/i);
+    }
+  });
+
+  it("rejects more than 5,000 suites", () => {
+    const archive = emptyArchive();
+    for (let i = 0; i < IMPORT_LIMITS.SUITES + 1; i++) {
+      archive.suites.push(makeSuite(`suite-${i}`));
+    }
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.errors.join(" ")).toMatch(/suite/i);
+    }
+  });
+
+  it("rejects a string over 8 MiB UTF-8", () => {
+    const archive = emptyArchive();
+    archive.runs.details.push(makeRun("run-big", "a".repeat(IMPORT_LIMITS.STRING_BYTES + 1)));
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.errors.join(" ")).toMatch(/string|8 MiB/i);
+    }
+  });
+
+  it("rejects nesting deeper than 32 levels", () => {
+    let deep: Record<string, unknown> = { leaf: "x" };
+    for (let i = 0; i < 40; i++) deep = { nested: deep };
+    const archive = emptyArchive() as unknown as Record<string, unknown>;
+    (archive.runs as Record<string, unknown>).summaries = [
+      { ...makeLegacySummary("legacy-1"), extra: deep },
+    ];
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.errors.join(" ")).toMatch(/depth/i);
+    }
+  });
+
+  it("rejects unsafe record IDs", () => {
+    for (const badId of ["", "a".repeat(129), "bad id!"]) {
+      const archive = emptyArchive();
+      archive.suites.push(makeSuite(badId));
+      const check = parseWorkbenchArchive(archive);
+      expect(check.ok).toBe(false);
+      if (!check.ok) {
+        expect(check.errors.join(" ")).toMatch(/id/i);
+      }
+    }
+  });
+});
+
+// --- 4/5/6. Import semantics ----------------------------------------------------
+
+describe("importWorkbenchArchive", () => {
+  it("creates all records into an empty database", async () => {
+    const result = await importWorkbenchArchive(db, populatedArchive());
+    expect(result.created.sort()).toEqual([
+      "exp-1",
+      "legacy-1",
+      "prof-1",
+      "prof-1@1",
+      "run-1",
+      "suite-1",
+    ]);
+    expect(result.skipped).toEqual([]);
+    expect(result.conflicting).toEqual([]);
+    expect(await db.runDetails.count()).toBe(1);
+    expect(await db.runSummaries.count()).toBe(2);
+    expect(await db.profiles.count()).toBe(1);
+    expect(await db.profileVersions.count()).toBe(1);
+    expect(await db.suites.count()).toBe(1);
+    expect(await db.experiments.count()).toBe(1);
+  });
+
+  it("skips identical IDs/content on a second import", async () => {
+    await importWorkbenchArchive(db, populatedArchive());
+    const second = await importWorkbenchArchive(db, populatedArchive());
+    expect(second.created).toEqual([]);
+    expect(second.conflicting).toEqual([]);
+    expect(second.skipped.sort()).toEqual([
+      "exp-1",
+      "legacy-1",
+      "prof-1",
+      "prof-1@1",
+      "run-1",
+      "suite-1",
+    ]);
+  });
+
+  it("reports conflicting same-ID content and does NOT overwrite it", async () => {
+    await importWorkbenchArchive(db, populatedArchive());
+    const changed = emptyArchive();
+    changed.suites.push(makeSuite("suite-1", "Renamed suite"));
+    const result = await importWorkbenchArchive(db, changed);
+    expect(result.conflicting).toEqual(["suite-1"]);
+    expect(result.created).toEqual([]);
+    const row = await db.suites.get("suite-1");
+    expect((row?.suite as EvaluationSuite).name).toBe("Suite suite-1");
+  });
+
+  it("conflicts at the profileVersions [id+version] composite key", async () => {
+    await importWorkbenchArchive(db, populatedArchive());
+    const changed = emptyArchive();
+    changed.profiles.versions.push(makeProfile("prof-1", 1, "Renamed profile"));
+    const result = await importWorkbenchArchive(db, changed);
+    expect(result.conflicting).toEqual(["prof-1@1"]);
+    const row = await db.profileVersions.get(["prof-1", 1]);
+    expect((row?.profile as EvaluationProfile).name).toBe("Profile prof-1");
+  });
+
+  it("writes nothing when a record in a multi-record archive is corrupt", async () => {
+    const archive = populatedArchive();
+    (archive.suites[0] as unknown as Record<string, unknown>).apiKey = "leak";
+    await expect(importWorkbenchArchive(db, archive)).rejects.toBeInstanceOf(StorageError);
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.runSummaries.count()).toBe(0);
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.experiments.count()).toBe(0);
+  });
+
+  it("rolls back earlier writes when the transaction fails mid-import", async () => {
+    vi.spyOn(db.suites, "put").mockRejectedValueOnce(new Error("boom"));
+    await expect(importWorkbenchArchive(db, populatedArchive())).rejects.toBeTruthy();
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.runSummaries.count()).toBe(0);
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.experiments.count()).toBe(0);
+  });
+});
+
+// --- 7. Run Markdown export from the persisted record ---------------------------
+
+describe("buildRunExportMarkdown", () => {
+  it("is built from the record only: task, config, candidates, scores, rationale", () => {
+    const record = makeRun("run-md");
+    record.judge = {
+      status: "done",
+      acceptedAttemptId: null,
+      report: {
+        labelMap: [{ label: "A", candidateId: "c-1" }],
+        evaluationsById: {
+          "c-1": {
+            candidateId: "c-1",
+            blindLabel: "A",
+            overallScore: 4,
+            position: "Solid answer",
+            rationale: "Strong coverage of the prompt",
+            strengths: ["Clear structure"],
+            deductions: [{ severity: "minor", reason: "Minor typos" }],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+        },
+        comparisons: [],
+      },
+      consensus: null,
+      attempts: [],
+    };
+    record.fusion = {
+      status: "done",
+      acceptedAttemptId: "f-1",
+      attempts: [
+        {
+          attemptId: "f-1",
+          providerId: "openrouter",
+          model: "fuse-model",
+          messages: [],
+          sourceJudgeAttemptId: "j-1",
+          candidateAttemptIdsByCandidateId: {},
+          startedAt: 1,
+          finishedAt: 2,
+          status: "completed",
+          error: null,
+          result: "Fused answer text",
+        },
+      ],
+    };
+
+    const md = buildRunExportMarkdown(record);
+    expect(md).toContain("Task run-md");
+    expect(md).toContain("Do something");
+    expect(md).toContain("Answer for run-md");
+    expect(md).toContain("Strong coverage of the prompt");
+    expect(md).toContain("Fused answer text");
+    expect(md).toContain("openrouter:foo");
+
+    // Pure function of the record: identical input, identical output; different
+    // record, different output (no ambient Compare state leaks in).
+    expect(buildRunExportMarkdown(record)).toBe(md);
+    const other = makeRun("run-other", "A different prompt entirely");
+    expect(buildRunExportMarkdown(other)).not.toBe(md);
+    expect(buildRunExportMarkdown(other)).toContain("A different prompt entirely");
+  });
+});
+
+// --- 10. Classified failure guidance --------------------------------------------
+
+describe("archiveFailureGuidance", () => {
+  it("maps every StorageErrorKind to its recovery guidance", () => {
+    expect(archiveFailureGuidance(new StorageError("quota", "full"))).toBe(
+      "Storage is full — free space and retry the import.",
+    );
+    expect(archiveFailureGuidance(new StorageError("blocked", "b"))).toBe(
+      "Close other RSemble tabs to finish the storage upgrade, then retry.",
+    );
+    expect(archiveFailureGuidance(new StorageError("versionchange", "v"))).toBe(
+      "Close other RSemble tabs to finish the storage upgrade, then retry.",
+    );
+    expect(archiveFailureGuidance(new StorageError("unavailable", "u"))).toBe(
+      "Storage is unavailable — retry; your existing data was not modified.",
+    );
+    expect(archiveFailureGuidance(new StorageError("validation", "bad"))).toBe(
+      "The archive is invalid — nothing was imported.",
+    );
+    expect(archiveFailureGuidance(new StorageError("conflict", "c"))).toBe(
+      "Import conflicted with existing data — review the conflicting IDs.",
+    );
+  });
+
+  it("falls back for non-StorageError failures", () => {
+    expect(archiveFailureGuidance(new Error("weird"))).toBe(
+      "Import failed — nothing was imported.",
+    );
+    expect(archiveFailureGuidance("weird")).toBe("Import failed — nothing was imported.");
+  });
+});

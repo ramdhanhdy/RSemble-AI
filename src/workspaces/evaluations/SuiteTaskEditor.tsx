@@ -46,7 +46,7 @@ export function SuiteTaskEditor({
           onChange={(e) => onChange({ title: e.target.value })}
           aria-invalid={!task.title.trim()}
           placeholder="e.g. Pricing diagnosis"
-          className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         {!task.title.trim() && (
           <p className="mt-1 text-xs text-error">Task title is required.</p>
@@ -68,7 +68,7 @@ export function SuiteTaskEditor({
           aria-invalid={!task.prompt.trim()}
           rows={6}
           placeholder="The task every candidate model receives. This is the only instruction candidates see."
-          className="mt-1 min-h-[44px] w-full resize-y rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="mt-1 min-h-[44px] w-full resize-y rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         {!task.prompt.trim() && (
           <p className="mt-1 text-xs text-error">Task prompt is required.</p>
@@ -89,7 +89,7 @@ export function SuiteTaskEditor({
           onChange={(e) => onChange({ systemPrompt: e.target.value })}
           rows={3}
           placeholder="Optional system prompt applied to every candidate. Sent to generation only — never to the judge."
-          className="mt-1 min-h-[44px] w-full resize-y rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="mt-1 min-h-[44px] w-full resize-y rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
       </div>
 
@@ -121,7 +121,7 @@ export function SuiteTaskEditor({
           onChange={(e) => onChange({ judgeInstructionOverride: e.target.value })}
           rows={3}
           placeholder="Optional guidance applied to the judge for this task only, on top of the suite/profile judge instruction. Never sent to candidates."
-          className="mt-1 min-h-[44px] w-full resize-y rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="mt-1 min-h-[44px] w-full resize-y rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         <p className="mt-1 text-xs text-text-muted">
           This is evaluator-only guidance. It is visually and semantically separate from the
@@ -229,7 +229,7 @@ function TaskEvaluationPicker({
                   onChange({ kind: "profile", profile: { id, version: Number(ver) } });
                 }}
                 aria-label="Pinned profile version for this task"
-                className="min-h-[44px] w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 {profileRecords.map((r) => (
                   <option key={`${r.id}:${r.latestVersion}`} value={`${r.id}:${r.latestVersion}`}>

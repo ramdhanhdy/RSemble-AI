@@ -85,7 +85,7 @@ export function PipelineRail({
   const defs: StageDef[] = [
     { title: "Task", idleCaption: "You describe what you need", icon: FileText },
     { title: "Models", idleCaption: "Multiple models generate responses", icon: Network },
-    { title: "Judge", idleCaption: "Scores each response using your rubric", icon: ShieldCheck },
+    { title: "Judge", idleCaption: "Scores each response using your evaluation", icon: ShieldCheck },
     mode === "rank"
       ? { title: "Rank", idleCaption: "Best response recommended", icon: Crown }
       : { title: "Fuse", idleCaption: "Merged into one answer", icon: GitMerge },
@@ -212,7 +212,7 @@ export function LeaderboardPreviewCard() {
         </span>
       </div>
       <p className="mt-2 text-xs leading-relaxed text-text-secondary">
-        Every candidate scored against your rubric, ranked by weighted fit. Close calls are flagged, not hidden.
+        Every candidate scored against your evaluation, ranked by weighted fit. Close calls are flagged, not hidden.
       </p>
       <div className="mt-4 flex items-end justify-center gap-2" aria-hidden="true">
         {bars.map((bar) => (
@@ -235,7 +235,7 @@ const BENEFITS: { icon: LucideIcon; title: string; caption: string }[] = [
   {
     icon: Trophy,
     title: "Ranked leaderboard",
-    caption: "Every response scored against your rubric, sorted by weighted fit.",
+    caption: "Every response scored against your evaluation, sorted by weighted fit.",
   },
   {
     icon: BarChart3,

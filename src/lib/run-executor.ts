@@ -27,7 +27,11 @@ import type {
   PersistedError,
 } from "./persistence/run-types";
 import { getProvider } from "./providers/registry";
-import { errorMessage } from "./llm-utils";
+import {
+  configuredCredentialValues,
+  sanitizePersistedError,
+  type SanitizeErrorContext,
+} from "./persistence/error-redaction";
 import { estimateTokens } from "./cost";
 import {
   buildFanoutJobs,
@@ -207,9 +211,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     return signal.aborted;
   }
 
-  function sanitizeError(err: unknown): PersistedError {
-    const msg = errorMessage(err);
-    return { message: msg.slice(0, 500) };
+  // Persisted errors carry only the allowlisted shape (spec §18): a redacted,
+  // byte-capped message plus category/stage/model/at — never raw provider
+  // bodies or configured credential values.
+  function sanitizeError(err: unknown, ctx: SanitizeErrorContext): PersistedError {
+    return sanitizePersistedError(err, ctx, now, configuredCredentialValues());
   }
 
   // --- Candidate fanout (shared by executeTask and retryCandidate) -----------
@@ -248,7 +254,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       if (isAborted(signal)) return null;
       // Provider errors fail this candidate (not the whole run); return the
       // bounded sanitized error so the caller records it on the attempt.
-      return { error: sanitizeError(err) };
+      return { error: sanitizeError(err, { category: "provider", stage: "candidate", model: job.slug }) };
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
@@ -330,7 +336,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       if (isAborted(signal)) return { ok: false };
       await events.onJudgeTerminal(attemptId, {
         status: "failed", report: null, consensus: null,
-        error: sanitizeError(err), finishedAt: now(),
+        error: sanitizeError(err, { category: "provider", stage: "judge", model: request.critic.model }), finishedAt: now(),
       }).catch(() => {});
       return { ok: false };
     } finally {
@@ -406,7 +412,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       if (isAborted(signal)) return { ok: false, result: null };
       await events.onFusionTerminal(attemptId, {
         status: "failed", result: null,
-        error: sanitizeError(err), finishedAt: now(),
+        error: sanitizeError(err, { category: "provider", stage: "fusion", model: request.critic.model }), finishedAt: now(),
       }).catch(() => {});
       return { ok: false, result: null };
     } finally {
@@ -459,7 +465,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           if (isAborted(signal) && !result) return;
           await events.onCandidateAttemptTerminal(job.id, attemptId, {
             status: "failed", output: null, tokensIn: null, tokensOut: null,
-            error: result && "error" in result ? result.error : { message: "Candidate aborted" },
+            error: result && "error" in result
+              ? result.error
+              : sanitizeError(new Error("Candidate aborted"), { category: "aborted", stage: "candidate", model: job.slug }),
             finishedAt: now(),
           }).catch(() => {});
           return;
@@ -581,7 +589,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       if (!isAborted(signal) || (result && "error" in result)) {
         await events.onCandidateAttemptTerminal(job.id, attemptId, {
           status: "failed", output: null, tokensIn: null, tokensOut: null,
-          error: result && "error" in result ? result.error : { message: "Candidate retry aborted" },
+          error: result && "error" in result
+            ? result.error
+            : sanitizeError(new Error("Candidate retry aborted"), { category: "aborted", stage: "candidate", model: job.slug }),
           finishedAt: now(),
         }).catch(() => {});
       }

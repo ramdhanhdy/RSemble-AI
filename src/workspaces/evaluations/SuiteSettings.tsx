@@ -102,7 +102,7 @@ export function SuiteSettings({
           value={suite.name}
           onChange={(e) => onChange({ name: e.target.value })}
           aria-invalid={!suite.name.trim()}
-          className="min-h-[44px] w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         {!suite.name.trim() && (
           <p className="text-xs text-error">Suite name is required.</p>
@@ -119,7 +119,7 @@ export function SuiteSettings({
           value={suite.description}
           onChange={(e) => onChange({ description: e.target.value })}
           rows={2}
-          className="min-h-[44px] w-full resize-y rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-h-[44px] w-full resize-y rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
       </div>
 
@@ -643,7 +643,7 @@ function DefaultEvaluationPicker({
                   onChange({ kind: "profile", profile: { id, version: Number(ver) } });
                 }}
                 aria-label="Pinned profile version"
-                className="min-h-[44px] w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                   {profileRecords.map((r) => (
                     <option key={`${r.id}:${r.latestVersion}`} value={`${r.id}:${r.latestVersion}`}>

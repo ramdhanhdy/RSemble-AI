@@ -83,6 +83,14 @@ export interface ExecutionFence {
 export interface PersistedError {
   message: string;
   code?: string;
+  /** Normalized error category (e.g. provider, aborted, validation). */
+  category?: string;
+  /** Pipeline stage that produced the error (candidate, judge, fusion). */
+  stage?: string;
+  /** Provider model/slug involved in the failure, when known. */
+  model?: string;
+  /** Epoch ms when the error was sanitized for persistence. */
+  at?: number;
 }
 
 export type RunSource =
@@ -361,6 +369,10 @@ export function isPersistedError(v: unknown): v is PersistedError {
   if (!isRecord(v)) return false;
   if (!isString(v.message)) return false;
   if (v.code !== undefined && !isString(v.code)) return false;
+  if (v.category !== undefined && !isString(v.category)) return false;
+  if (v.stage !== undefined && !isString(v.stage)) return false;
+  if (v.model !== undefined && !isString(v.model)) return false;
+  if (v.at !== undefined && !isNumber(v.at)) return false;
   return true;
 }
 

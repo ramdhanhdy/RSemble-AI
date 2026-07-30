@@ -5,8 +5,15 @@
 import { useEffect } from "react";
 import type { StudioState, Action } from "../studio-engine";
 
+/** Workspaces routed by the app shell. Compare is the only workspace whose
+ *  pipeline shortcuts (⌘Enter, ⌘/, ⌘1–9, ⌘F, ⌘C) may fire. */
+export type WorkspaceKind = "compare" | "runs" | "evaluations" | "experiments";
+
 interface ShortcutDeps {
   stateRef: React.MutableRefObject<StudioState>;
+  /** Live workspace ref — read per keystroke so route changes gate shortcuts
+   *  without remounting the listener (spec §15.12). */
+  workspaceRef: { current: WorkspaceKind };
   dispatch: React.Dispatch<Action>;
   requestRun: () => void;
   abortRun: () => void;
@@ -15,6 +22,7 @@ interface ShortcutDeps {
 
 export function useActionShortcuts({
   stateRef,
+  workspaceRef,
   dispatch,
   requestRun,
   abortRun,
@@ -22,6 +30,10 @@ export function useActionShortcuts({
 }: ShortcutDeps) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Every binding below drives the Compare pipeline, so outside Compare
+      // none of them may fire (spec §15.12 — workspace-aware shortcuts).
+      if (workspaceRef.current !== "compare") return;
+
       const mod = e.metaKey || e.ctrlKey;
       const s = stateRef.current;
 
@@ -88,5 +100,5 @@ export function useActionShortcuts({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [stateRef, dispatch, requestRun, abortRun, handleModeChange]);
+  }, [stateRef, workspaceRef, dispatch, requestRun, abortRun, handleModeChange]);
 }

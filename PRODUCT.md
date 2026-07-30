@@ -25,16 +25,16 @@ These are navigation destinations, not pipeline modes. Rank/Fuse remains the per
 ## 2. Core Spine (§3)
 
 ```
-Task → Rubric → Compare (N models in parallel) → Judge
+Task → Evaluation → Compare (N models in parallel) → Judge
                                                        │
                                     ┌─────────────────┴──────────────────┐
                                   RANK                               FUSE
                           "Use this model."                "Here's the merged answer."
 ```
 
-1. **Command**: User describes task + optional rubric criteria.
-2. **Fanout**: N enabled candidate slots stream responses in parallel.
-3. **Judge**: Single judge model scores candidates against the rubric and breaks down consensus and contradictions. Judging is **blind**: candidates reach the judge only as `Candidate A/B/C…` in randomized order — never with RSemble-supplied model/provider identity — and every accepted score carries a structured explanation (position, rationale, strengths, deductions, missed requirements, criterion scores). A score without an explanation is rejected as a visible judge failure, never an opaque ranking.
+1. **Command**: User describes task + optional evaluation criteria (holistic judgment, a pinned saved profile, or one-off custom criteria).
+2. **Fanout**: N enabled candidate slots stream responses in parallel. Candidate generation never receives evaluator-only criteria.
+3. **Judge**: Single judge model scores candidates against the evaluation and breaks down consensus and contradictions. Judging is **blind**: candidates reach the judge only as `Candidate A/B/C…` in randomized order — never with RSemble-supplied model/provider identity — and every accepted score carries a structured explanation (position, rationale, strengths, deductions, missed requirements, criterion scores). A score without an explanation is rejected as a visible judge failure, never an opaque ranking.
 4. **Finish**:
    - **Rank**: Leaderboard with recommendation callout, tier scores, and candidate prose. After judging completes, the blind-label mapping is revealed (Candidate A → model) and each ranked entry shows its judge explanation; materially similar positions with score gaps get a comparative explanation. The recommendation line quotes the judge's actual winner rationale.
    - **Fuse**: Single merged document synthesized from candidate strengths.
@@ -54,7 +54,7 @@ Task → Rubric → Compare (N models in parallel) → Judge
   - Umans (`umans`)
   - 9Router (`9router`) — a local/remote routing gateway with 9Router-managed models and fallback; one requested model ID produces one candidate, regardless of internal fallback
 - **Localhost Node Codex bridge**: Lightweight 127.0.0.1 process that also serves as an allowlisted proxy for compatible providers (e.g. 9Router). The bridge forwards only approved method/path pairs to server-configured upstreams; it is not a general-purpose proxy.
-- **Rubric-driven blind judging**: Configurable judge model evaluates anonymized candidates and outputs consensus/contradictions plus a per-candidate score explanation. The judge receives no RSemble-supplied model/provider metadata; the label mapping is resolved only after judging and is auditable in the UI and Markdown export.
+- **Evaluation-driven blind judging**: Configurable judge model evaluates anonymized candidates against holistic judgment or a versioned evaluation profile (criteria with 1/3/5 anchors and deterministic weighted scoring) and outputs consensus/contradictions plus a per-candidate score explanation. The judge receives no RSemble-supplied model/provider metadata; the label mapping is resolved only after judging and is auditable in the UI and Markdown export.
 - **Rank & Fuse finishes**: The single mode toggle in the header switches between Rank and Fuse. It is the sole per-task finish switch, shown only in Compare.
 - **Three workspaces — Compare, Runs, Evaluations**: Navigation destinations, not pipeline modes. Compare is the one-off working surface; Runs and Evaluations are audit surfaces. Profile and suite editors are working surfaces nested inside Evaluations.
 - **Durable run history**: Browser-local (IndexedDB) persistence of complete run evidence — task inputs, candidate outputs, Judge evidence, scores, configuration, and failures — so completed, partial, failed, aborted, and interrupted runs are inspectable after reload.
@@ -74,7 +74,7 @@ Task → Rubric → Compare (N models in parallel) → Judge
 - **Task-preset library**: Out of scope.
 - **Strategy variants (pragmatic/rigorous/creative)**: Out of scope (every run is a plain multi-model fanout).
 - **Model roles (draft/critic/verifier/synthesizer as user-facing concepts)**: Out of scope.
-- **Standalone scorecard dashboard**: Out of scope (one-line callback in Rank mode only).
+- **Unscoped global rankings**: Out of scope. Scores stay attached to their task, run, or suite-experiment context; no cross-task leaderboard, global model ranking, or analytics dashboard aggregates evidence beyond the approved per-run Rank view and the per-experiment result matrix.
 
 ---
 

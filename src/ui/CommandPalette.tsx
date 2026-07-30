@@ -2,8 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ClipboardList,
   CornerDownLeft,
+  FlaskConical,
   Gauge,
+  GitCompare,
+  History,
   Layers,
   Link2,
   Maximize2,
@@ -12,6 +16,7 @@ import {
   Power,
   Search,
 } from "lucide-react";
+import type { WorkspaceKind } from "./useActionShortcuts";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -29,6 +34,15 @@ interface CommandPaletteProps {
    *  The "Run pipeline" command is disabled when this is false so the palette
    *  never advertises a no-op action. */
   canRun: boolean;
+  /** Active workspace — Compare-only commands are rendered only on "compare".
+   *  Defaults to "compare" so pre-workspace callers compile unchanged. */
+  workspace?: WorkspaceKind;
+  /** Route navigation for the Navigate command group. */
+  onNavigate?: (path: string) => void;
+  /** Non-null while an experiment owns execution — exposes View/Abort. */
+  activeExperimentId?: string | null;
+  onViewExperiment?: () => void;
+  onAbortExperiment?: () => void;
 }
 
 interface Command {
@@ -54,6 +68,11 @@ export function CommandPalette({
   onExport,
   running,
   canRun,
+  workspace = "compare",
+  onNavigate,
+  activeExperimentId = null,
+  onViewExperiment,
+  onAbortExperiment,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -122,47 +141,117 @@ export function CommandPalette({
     return () => node.removeEventListener("keydown", handler);
   }, [open]);
 
-  const commands = useMemo<Command[]>(
-    () => [
+  const commands = useMemo<Command[]>(() => {
+    // Navigate group first — global routing commands, present on every
+    // workspace (navigating to the current workspace is an idempotent no-op).
+    const navigateCommands: Command[] = [
       {
-        id: "run",
-        label: running ? "Abort run" : "Run pipeline",
-        group: "Pipeline",
-        icon: running ? Power : Gauge,
-        hint: ["⌘", "↵"],
-        disabled: !running && !canRun,
-        run: running ? onAbort : onRun,
+        id: "nav-compare",
+        label: "Go to Compare",
+        group: "Navigate",
+        icon: GitCompare,
+        run: () => onNavigate?.("/compare"),
       },
       {
-        id: "toggle-mode",
-        label: "Toggle Rank ↔ Fuse",
-        group: "Pipeline",
-        icon: Layers,
-        hint: ["⌘", "/"],
-        run: onToggleMode,
+        id: "nav-runs",
+        label: "Go to Runs",
+        group: "Navigate",
+        icon: History,
+        run: () => onNavigate?.("/runs"),
       },
       {
-        id: "toggle-focus",
-        label: "Toggle focus mode",
-        group: "Pipeline",
-        icon: Maximize2,
-        hint: ["⌘", "\\"],
-        run: onToggleFocusMode,
+        id: "nav-evaluations",
+        label: "Go to Evaluations",
+        group: "Navigate",
+        icon: FlaskConical,
+        run: () => onNavigate?.("/evaluations"),
       },
-      {
-        id: "add-model",
-        label: "Add a model",
-        group: "Configure",
-        icon: Plus,
-        run: onAddModel,
-      },
-      {
-        id: "add-criterion",
-        label: "Add rubric criterion",
-        group: "Configure",
-        icon: PlusCircle,
-        run: onAddCriterion,
-      },
+    ];
+    // Compare-only commands are ABSENT (not disabled-with-reason) outside the
+    // Compare workspace — plan 8.2 allows either; absent keeps other
+    // workspaces free of dead Compare actions.
+    const compareCommands: Command[] =
+      workspace === "compare"
+        ? [
+            {
+              id: "run",
+              label: running ? "Abort run" : "Run pipeline",
+              group: "Pipeline",
+              icon: running ? Power : Gauge,
+              hint: ["⌘", "↵"],
+              disabled: !running && !canRun,
+              run: running ? onAbort : onRun,
+            },
+            {
+              id: "toggle-mode",
+              label: "Toggle Rank ↔ Fuse",
+              group: "Pipeline",
+              icon: Layers,
+              hint: ["⌘", "/"],
+              run: onToggleMode,
+            },
+            {
+              id: "toggle-focus",
+              label: "Toggle focus mode",
+              group: "Pipeline",
+              icon: Maximize2,
+              hint: ["⌘", "\\"],
+              run: onToggleFocusMode,
+            },
+            {
+              id: "add-model",
+              label: "Add a model",
+              group: "Configure",
+              icon: Plus,
+              run: onAddModel,
+            },
+            {
+              id: "add-criterion",
+              label: "Add evaluation criterion",
+              group: "Configure",
+              icon: PlusCircle,
+              run: onAddCriterion,
+            },
+          ]
+        : [];
+    // Experiment commands appear only while an experiment owns execution.
+    // "Abort experiment" shares the destructive treatment of "Abort run"
+    // (Power icon, standard row) — consistent with the existing abort command.
+    const experimentCommands: Command[] =
+      activeExperimentId !== null
+        ? [
+            {
+              id: "view-experiment",
+              label: "View experiment",
+              group: "Experiment",
+              icon: ClipboardList,
+              run: () => onViewExperiment?.(),
+            },
+            {
+              id: "abort-experiment",
+              label: "Abort experiment",
+              group: "Experiment",
+              icon: Power,
+              run: () => onAbortExperiment?.(),
+            },
+          ]
+        : [];
+    const exportCommands: Command[] =
+      workspace === "compare"
+        ? [
+            {
+              id: "export",
+              label: "Export result",
+              group: "Result",
+              icon: CornerDownLeft,
+              run: onExport,
+            },
+          ]
+        : [];
+    return [
+      ...navigateCommands,
+      ...compareCommands,
+      // Open connections stays global across all workspaces.
       {
         id: "open-connections",
         label: "Open connections",
@@ -170,27 +259,26 @@ export function CommandPalette({
         icon: Link2,
         run: onOpenConnections,
       },
-      {
-        id: "export",
-        label: "Export result",
-        group: "Result",
-        icon: CornerDownLeft,
-        run: onExport,
-      },
-    ],
-    [
-      running,
-      canRun,
-      onRun,
-      onAbort,
-      onToggleMode,
-      onToggleFocusMode,
-      onAddModel,
-      onAddCriterion,
-      onOpenConnections,
-      onExport,
-    ]
-  );
+      ...exportCommands,
+      ...experimentCommands,
+    ];
+  }, [
+    running,
+    canRun,
+    onRun,
+    onAbort,
+    onToggleMode,
+    onToggleFocusMode,
+    onAddModel,
+    onAddCriterion,
+    onOpenConnections,
+    onExport,
+    workspace,
+    onNavigate,
+    activeExperimentId,
+    onViewExperiment,
+    onAbortExperiment,
+  ]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -8,19 +8,9 @@ import type { CriticRef, ProviderId } from "./lib/providers/types";
 // =============================================================================
 
 // --- Finish modes ------------------------------------------------------------
-// The sole switch in the whole product. Chosen per run in the header.
+// The sole per-task finish switch. Chosen per run in the header; shown only in
+// Compare (spec §5.2).
 export type Mode = "rank" | "fuse";
-
-export type RubricKind = "goal" | "metric" | "gap";
-
-export interface RubricCriterion {
-  id: string;
-  label: string;
-  description: string;
-  kind: RubricKind;
-  enabled: boolean;
-  weight: number;
-}
 
 export interface CandidateSegment {
   id: string;
@@ -189,8 +179,6 @@ export const SYSTEM_PROMPT_DEFAULT =
   "over vague prose.";
 
 // Candidates are generated live from the model fanout, so there are no seeds.
-
-export const SEED_RUBRIC: RubricCriterion[] = [];
 
 export const SEED_SLOTS: ModelSlot[] = [
   { id: "slot-1", providerId: "openrouter", provider: "Z-AI", model: "GLM 5.2", slug: "z-ai/glm-5.2", enabled: true },

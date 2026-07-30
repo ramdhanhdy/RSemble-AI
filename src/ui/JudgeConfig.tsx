@@ -81,7 +81,7 @@ export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: Judg
         id="judge-instruction"
         value={judgeInstruction}
         onChange={(e) => dispatch({ type: "SET_JUDGE_INSTRUCTION", value: e.target.value })}
-        placeholder="e.g. “Prefer concise answers and penalize hedging.” Applied on top of the rubric, never overriding the scored JSON contract."
+        placeholder="e.g. “Prefer concise answers and penalize hedging.” Applied on top of the evaluation, never overriding the scored JSON contract."
         aria-label="Optional judge instruction"
         rows={2}
         className="mt-1.5 min-h-[44px] w-full resize-y rounded-md border border-edge bg-card px-2.5 py-1.5 text-sm text-text placeholder-text-muted focus:border-edge-bright focus:outline-none focus:ring-1 focus:ring-accent"

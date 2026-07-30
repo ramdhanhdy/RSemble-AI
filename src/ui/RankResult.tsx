@@ -182,8 +182,8 @@ function buildWhyItWon(
   const criteria = Object.keys(winnerScores);
   if (criteria.length === 0) {
     return consensus && consensus.consensus.length > 0
-      ? "highest rubric fit · aligns with consensus"
-      : "highest rubric fit";
+      ? "highest evaluation fit · aligns with consensus"
+      : "highest evaluation fit";
   }
 
   let bestCriterion: string | null = null;
@@ -218,7 +218,7 @@ function buildWhyItWon(
 
   const wonPart = bestCriterion
     ? `Won on ${bestCriterion} (${bestScore.toFixed(1)})`
-    : "highest rubric fit";
+    : "highest evaluation fit";
   const lostPart =
     lostCriterion && lostTo
       ? `; lost ${lostCriterion} to ${lostTo.model}`

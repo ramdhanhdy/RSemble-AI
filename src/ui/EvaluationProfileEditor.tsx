@@ -261,7 +261,7 @@ function CriterionAccordion({
               value={criterion.weight}
               readOnly={readOnly}
               onChange={(e) => onChange({ weight: parseFloat(e.target.value) || 0 })}
-              className="mt-1 w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
         </div>
@@ -298,7 +298,7 @@ function LabeledInput({
         onBlur={onBlur}
         aria-invalid={!!error}
         aria-describedby={error ? `${label}-error` : undefined}
-        className="mt-1 w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       />
       {error && (
         <p id={`${label}-error`} className="mt-1 text-xs text-error">{error}</p>
@@ -334,7 +334,7 @@ function LabeledTextarea({
         onBlur={onBlur}
         rows={2}
         aria-invalid={!!error}
-        className="mt-1 w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       />
       {error && (
         <p className="mt-1 text-xs text-error">{error}</p>

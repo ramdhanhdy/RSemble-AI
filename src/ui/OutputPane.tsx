@@ -262,7 +262,7 @@ function StageBanner({ state }: { state: StudioState }) {
   const stage = fusing ? "Fusing" : "Judging";
   const verb = fusing
     ? "merging the strongest material from all candidates into one answer"
-    : `comparing ${doneCount} candidate${doneCount === 1 ? "" : "s"} against the rubric and scoring each`;
+    : `comparing ${doneCount} candidate${doneCount === 1 ? "" : "s"} against the evaluation and scoring each`;
 
   return (
     <div className="flex items-center gap-2 rounded-md border border-accent/20 bg-accent/[0.04] px-3 py-2">

@@ -539,3 +539,112 @@ describe("RunExecutor — executeFusionAttempt", () => {
     expect(calls).not.toContain("fusion-terminal");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Persisted error sanitization (spec §18 / plan 8.1 item 9)
+// ---------------------------------------------------------------------------
+
+describe("RunExecutor — persisted error sanitization", () => {
+  const CRED_KEY = "rsemble.key.umans";
+  const CRED_VALUE = "umans-secret-123";
+
+  beforeEach(() => {
+    (globalThis as Record<string, unknown>).localStorage = {
+      getItem: (key: string) => (key === CRED_KEY ? CRED_VALUE : null),
+    };
+  });
+
+  afterEach(() => {
+    delete (globalThis as Record<string, unknown>).localStorage;
+  });
+
+  function failedCandidateError(events: RunExecutorEvents) {
+    const terminalCalls = (events.onCandidateAttemptTerminal as ReturnType<typeof vi.fn>).mock.calls;
+    const failed = terminalCalls.find((c) => c[2].status === "failed");
+    expect(failed).toBeTruthy();
+    return failed![2].error!;
+  }
+
+  it("redacts configured credential values from persisted candidate errors", async () => {
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new Error(`401 unauthorized: Bearer ${CRED_VALUE}`); });
+    const executor = createRunExecutor({ random: () => 0.999, now: () => 4242 });
+    const { events } = makeEvents();
+    await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
+
+    const error = failedCandidateError(events);
+    expect(error.message).toContain("[REDACTED]");
+    expect(error.message).not.toContain(CRED_VALUE);
+    expect(error.category).toBe("provider");
+    expect(error.stage).toBe("candidate");
+    expect(error.model).toBe("model-b");
+    expect(error.at).toBe(4242);
+  });
+
+  it("caps persisted error messages at 4096 UTF-8 bytes", async () => {
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new Error("x".repeat(9000) + "😀"); });
+    const executor = createRunExecutor({ random: () => 0.999 });
+    const { events } = makeEvents();
+    await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
+
+    const error = failedCandidateError(events);
+    expect(new TextEncoder().encode(error.message).length).toBeLessThanOrEqual(4096);
+    const last = error.message.charCodeAt(error.message.length - 1);
+    expect(last < 0xd800 || last > 0xdfff).toBe(true);
+  });
+
+  it("persists judge failures with provider/judge context", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockRejectedValue(new Error("judge blew up"));
+    const executor = createRunExecutor({ random: () => 0.999, now: () => 99 });
+    const { events } = makeEvents();
+    await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
+
+    const judgeTerminalCalls = (events.onJudgeTerminal as ReturnType<typeof vi.fn>).mock.calls;
+    const failed = judgeTerminalCalls.find((c) => c[1].status === "failed");
+    expect(failed).toBeTruthy();
+    const error = failed![1].error!;
+    expect(error.message).toContain("judge blew up");
+    expect(error.category).toBe("provider");
+    expect(error.stage).toBe("judge");
+    expect(error.model).toBe("judge-model");
+    expect(error.at).toBe(99);
+  });
+
+  it("persists fusion failures with provider/fusion context", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock
+      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockRejectedValueOnce(new Error("fusion blew up"));
+    const executor = createRunExecutor({ random: () => 0.999 });
+    const { events } = makeEvents();
+    await executor.executeTask(makeRequest("fuse"), events, new AbortController().signal);
+
+    const fusionTerminalCalls = (events.onFusionTerminal as ReturnType<typeof vi.fn>).mock.calls;
+    const failed = fusionTerminalCalls.find((c) => c[1].status === "failed");
+    expect(failed).toBeTruthy();
+    const error = failed![1].error!;
+    expect(error.message).toContain("fusion blew up");
+    expect(error.category).toBe("provider");
+    expect(error.stage).toBe("fusion");
+    expect(error.model).toBe("judge-model");
+  });
+
+  it("classifies aborted candidate attempts with the aborted category", async () => {
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new DOMException("aborted", "AbortError"); });
+    const executor = createRunExecutor({ random: () => 0.999, now: () => 7 });
+    const { events } = makeEvents();
+    await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
+
+    const error = failedCandidateError(events);
+    expect(error.message).toBe("Candidate aborted");
+    expect(error.category).toBe("aborted");
+    expect(error.stage).toBe("candidate");
+    expect(error.at).toBe(7);
+  });
+});

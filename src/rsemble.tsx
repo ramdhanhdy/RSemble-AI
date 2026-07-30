@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { Play, RotateCcw, Square } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
 import { isProviderReadySync } from "./lib/providers/registry";
@@ -40,17 +40,36 @@ import { createRunController } from "./lib/run-controller";
 import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
-import { useActionShortcuts } from "./ui/useActionShortcuts";
+import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts";
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import { useExecutionOwner } from "./lib/execution-owner-context";
+import { useExperimentController } from "./lib/evaluations/experiment-controller-context";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { registry: ownerRegistry, owner: activeOwner } = useExecutionOwner();
   const location = useLocation();
+  const navigate = useNavigate();
+  const experimentController = useExperimentController();
   const isCompareRoute = location.pathname === "/compare" || location.pathname === "/";
+  // Workspace derivation (plan 8.2): gates the command palette and the
+  // Compare-only keyboard shortcuts (spec §15.12).
+  const workspace: WorkspaceKind = location.pathname.startsWith("/runs")
+    ? "runs"
+    : location.pathname.startsWith("/evaluations")
+      ? "evaluations"
+      : location.pathname.startsWith("/experiments")
+        ? "experiments"
+        : "compare";
+  // Keep a live ref so the shortcut listener reads the current workspace per
+  // keystroke without re-registering on every navigation.
+  const workspaceRef = useRef<WorkspaceKind>(workspace);
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+  const activeExperimentId = activeOwner?.kind === "experiment" ? activeOwner.id : null;
 
   // Mobile command drawer (<768px). On md+ the command pane is inline, so this
   // stays closed. Per DESIGN.md: output is primary full-screen on mobile, command
@@ -267,6 +286,7 @@ export default function RSemble() {
   // ---------------------------------------------------------------------------
   useActionShortcuts({
     stateRef,
+    workspaceRef,
     dispatch,
     requestRun,
     abortRun,
@@ -461,6 +481,15 @@ export default function RSemble() {
         onExport={exportResult}
         running={state.running}
         canRun={canRun}
+        workspace={workspace}
+        onNavigate={(path) => navigate(path)}
+        activeExperimentId={activeExperimentId}
+        onViewExperiment={() =>
+          activeExperimentId && navigate(`/experiments/${activeExperimentId}`)
+        }
+        onAbortExperiment={() => {
+          void experimentController?.abort();
+        }}
       />
       <ShortcutCheatsheet open={cheatsheetOpen} onClose={() => setCheatsheetOpen(false)} />
     </div>

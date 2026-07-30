@@ -33,6 +33,7 @@ import {
   isFullRunSummaryV2,
   isLegacyRunSummary,
   isPersistedCandidate,
+  isPersistedError,
   isRunArchiveV1,
   isRunRecordV2,
   isRunSource,
@@ -916,5 +917,45 @@ describe("isExperimentRecord", () => {
     const e = validExperiment();
     (e.tasks[0].attempts as unknown[]).push({ id: "", trial: 0, status: "queued", runId: null, startedAt: null, finishedAt: null, error: null });
     expect(isExperimentRecord(e)).toBe(false);
+  });
+});
+
+describe("isPersistedError optional allowlist fields", () => {
+  it("accepts a minimal message-only error (backward compatible)", () => {
+    expect(isPersistedError({ message: "boom" })).toBe(true);
+    expect(isPersistedError({ message: "boom", code: "E401" })).toBe(true);
+  });
+
+  it("accepts the full allowlisted shape", () => {
+    expect(
+      isPersistedError({
+        message: "boom",
+        code: "E401",
+        category: "provider",
+        stage: "candidate",
+        model: "model-b",
+        at: 4242,
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts subsets of the optional fields", () => {
+    expect(isPersistedError({ message: "m", category: "provider", stage: "judge" })).toBe(true);
+    expect(isPersistedError({ message: "m", at: 1 })).toBe(true);
+    expect(isPersistedError({ message: "m", model: "fuse-model" })).toBe(true);
+  });
+
+  it("rejects wrong types for each optional field", () => {
+    expect(isPersistedError({ message: "m", category: 5 })).toBe(false);
+    expect(isPersistedError({ message: "m", stage: null })).toBe(false);
+    expect(isPersistedError({ message: "m", model: {} })).toBe(false);
+    expect(isPersistedError({ message: "m", at: "now" })).toBe(false);
+    expect(isPersistedError({ message: "m", at: Number.NaN })).toBe(false);
+  });
+
+  it("still rejects a missing or non-string message", () => {
+    expect(isPersistedError({})).toBe(false);
+    expect(isPersistedError({ message: 5 })).toBe(false);
+    expect(isPersistedError(null)).toBe(false);
   });
 });

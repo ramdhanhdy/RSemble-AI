@@ -14,7 +14,7 @@
 //   5.4  Failed candidates — kept visible so a partial run is honest.
 //
 // No "Frankenstein" manual snippet picker — that interaction is OUT (PRODUCT.md
-// §5). Fusion honors the rubric and the synthesizer's judgment only.
+// §5). Fusion honors the evaluation and the synthesizer's judgment only.
 // =============================================================================
 
 import { useMemo, useState, type JSX } from "react";

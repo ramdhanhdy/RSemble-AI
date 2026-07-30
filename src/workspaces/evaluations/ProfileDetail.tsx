@@ -360,7 +360,7 @@ export function ProfileDetail({
           data-action="version-selector"
           value={selectedVersion}
           onChange={(e) => void load(Number(e.target.value))}
-          className="min-h-[44px] rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-h-[44px] rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           {versions.map((v) => (
             <option key={v} value={v}>
@@ -412,7 +412,7 @@ export function ProfileDetail({
               value={current.name}
               readOnly={!isLatest}
               onChange={(e) => updateDraft({ name: e.target.value })}
-              className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
           <div>
@@ -428,7 +428,7 @@ export function ProfileDetail({
               value={current.description}
               readOnly={!isLatest}
               onChange={(e) => updateDraft({ description: e.target.value })}
-              className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
           <div>
@@ -444,7 +444,7 @@ export function ProfileDetail({
               value={current.judgeInstruction}
               readOnly={!isLatest}
               onChange={(e) => updateDraft({ judgeInstruction: e.target.value })}
-              className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-input px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
 

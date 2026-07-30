@@ -15,6 +15,7 @@ import { useRunDetail } from "./runs/useRunDetail";
 import { RunList } from "./runs/RunList";
 import { RunDetail } from "./runs/RunDetail";
 import { LegacyRunDetail } from "./runs/LegacyRunDetail";
+import { DataArchiveActions } from "../ui/DataArchiveActions";
 
 /** Inline media query — matches the pattern in rsemble.tsx. */
 function useMediaQuery(query: string): boolean {
@@ -84,8 +85,13 @@ export function RunsWorkspace() {
   // --- Mobile/tablet: list only ---
   if (!isDesktop) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
-        <RunList repo={repo} selectedId={runId ?? null} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="min-h-0 flex-1 p-3">
+          <RunList repo={repo} selectedId={runId ?? null} />
+        </div>
+        <div className="shrink-0 border-t border-edge px-3 py-2">
+          <DataArchiveActions />
+        </div>
       </div>
     );
   }
@@ -100,6 +106,9 @@ export function RunsWorkspace() {
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <RunList repo={repo} selectedId={runId ?? null} />
+        </div>
+        <div className="shrink-0 border-t border-edge px-3 py-2">
+          <DataArchiveActions />
         </div>
       </div>
       {/* Detail pane */}

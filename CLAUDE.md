@@ -3,7 +3,7 @@
 > Authority hierarchy: `PRODUCT.md` > `PROVIDERS.md` > `UI.md` / `DESIGN.md`.
 
 ## Principles
-1. **Maintain single pipeline spine:** Task → Rubric → Compare (N models in parallel) → Judge → Rank / Fuse. The pipeline serves one-off Compare runs and per-task suite execution alike; do not branch `pipeline.ts` by workspace or provider.
+1. **Maintain single pipeline spine:** Task → Evaluation → Compare (N models in parallel) → Judge → Rank / Fuse. The pipeline serves one-off Compare runs and per-task suite execution alike; do not branch `pipeline.ts` by workspace or provider.
 2. **Work strictly one phase at a time** per `PROVIDERS.md` §12 and `TODOS.md`.
 3. **Keep pipeline code (`pipeline.ts`) strictly provider-agnostic.** Transport details stay inside `src/lib/providers/` adapters.
 4. **Local/Personal use first:** Bridge binds to `127.0.0.1` only. Secrets/tokens stay local. Durable run history and evaluation suites persist in browser-local IndexedDB; never persist or export credentials, authorization headers, or environment contents.
