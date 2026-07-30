@@ -21,7 +21,9 @@ import type { Action } from "../studio-engine";
 import type { ModelSlot } from "../studio-data";
 import type { CatalogModel, ProviderId } from "../lib/providers/types";
 import { BrandAvatar } from "./brand-icons";
-import { getModelTelemetryCached, modelKey } from "../lib/history-cache";
+import { modelKey } from "../lib/history-cache";
+import { useRunRepository } from "../lib/persistence/repository-context";
+import { useModelTelemetry } from "../workspaces/runs/useModelTelemetry";
 import { pricingFor } from "../lib/cost";
 import { ProviderTabs, PROVIDER_LABELS } from "./ProviderTabs";
 
@@ -89,7 +91,8 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
 // Slot row — toggle on/off, remove
 function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch<Action> }) {
   const providerBadge = PROVIDER_LABELS[slot.providerId] ?? "OpenRouter";
-  const telemetry = getModelTelemetryCached(modelKey(slot.providerId, slot.slug));
+  const repo = useRunRepository();
+  const telemetry = useModelTelemetry(repo, modelKey(slot.providerId, slot.slug));
   const pricing = pricingFor(slot.slug);
 
   return (
@@ -147,6 +150,8 @@ function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch
               )}
               <span aria-hidden>·</span>
               <span>~{Math.round(telemetry.avgLatencyMs / 1000)}s avg</span>
+              <span aria-hidden>·</span>
+              <span className="text-text-muted/70">All ad hoc history</span>
             </>
           ) : (
             <>
