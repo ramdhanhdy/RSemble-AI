@@ -23,7 +23,7 @@ import { useDialogA11y } from "./ui/useDialogA11y";
 import { useResizableSplit } from "./ui/useResizableSplit";
 import { ModeToggle } from "./ui/ModeToggle";
 import { ModelList } from "./ui/ModelList";
-import { RubricDisclosure } from "./ui/RubricDisclosure";
+import { EvaluationDisclosure } from "./ui/EvaluationDisclosure";
 import { TaskInput } from "./ui/TaskInput";
 import { RunButton } from "./ui/RunButton";
 import { JudgeConfig } from "./ui/JudgeConfig";
@@ -529,7 +529,7 @@ function FocusStrip({
 }
 
 // =============================================================================
-// components: TaskInput · ModelList · JudgeConfig · RubricDisclosure · RunButton.
+// components: TaskInput · ModelList · JudgeConfig · EvaluationDisclosure · RunButton.
 // =============================================================================
 
 function CommandPane({
@@ -552,7 +552,7 @@ function CommandPane({
       <PaneLabel
         index="01"
         title="Command"
-        hint="Define your task, select models, choose a judge, and set the rubric."
+        hint="Define your task, select models, choose a judge, and set evaluation criteria."
         action={
           <ResetButton
             hasRun={hasRun}
@@ -570,13 +570,9 @@ function CommandPane({
         dispatch={dispatch}
         judgeInstruction={state.judgeInstruction}
       />
-      <RubricDisclosure
-        rubric={state.rubric}
+      <EvaluationDisclosure
+        evaluation={state.evaluation}
         dispatch={dispatch}
-        critic={state.critic}
-        candidates={state.candidates}
-        slots={state.slots}
-        models={state.models}
       />
       <RunButton
         running={state.running}

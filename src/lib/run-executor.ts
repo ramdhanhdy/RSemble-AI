@@ -18,7 +18,6 @@ import type {
   Candidate,
   CandidateSegment,
   ModelSlot,
-  RubricCriterion,
   JudgeReport,
   ConsensusBreakdown,
 } from "../studio-data";
@@ -43,6 +42,8 @@ import {
   type BlindCandidateSet,
   type FanoutJob,
 } from "./pipeline";
+import type { AdHocEvaluationConfig } from "./evaluations/evaluation-profile-adhoc";
+import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
 
 // --- Request types -----------------------------------------------------------
 
@@ -52,15 +53,11 @@ export interface CandidateTaskSnapshot {
   temperature: number;
 }
 
-export interface FrozenEvaluationInput {
-  legacyRubric: RubricCriterion[];
-}
-
 export interface RunRequest {
   source: RunSource;
   mode: "rank" | "fuse";
   task: CandidateTaskSnapshot;
-  evaluation: FrozenEvaluationInput;
+  evaluation: AdHocEvaluationConfig;
   slots: ModelSlot[];
   critic: CriticRef;
   judgeInstruction: string;
@@ -70,7 +67,7 @@ export interface FrozenCandidateRetryRequest {
   source: RunSource;
   mode: "rank" | "fuse";
   task: CandidateTaskSnapshot;
-  evaluation: FrozenEvaluationInput;
+  evaluation: AdHocEvaluationConfig;
   slots: ModelSlot[];
   critic: CriticRef;
   judgeInstruction: string;
@@ -85,7 +82,7 @@ export interface FrozenCandidateRetryRequest {
 export interface FrozenJudgeRetryRequest {
   mode: "rank" | "fuse";
   task: CandidateTaskSnapshot;
-  evaluation: FrozenEvaluationInput;
+  evaluation: AdHocEvaluationConfig;
   candidates: Candidate[];
   critic: CriticRef;
   judgeInstruction: string;
@@ -96,7 +93,7 @@ export interface FrozenJudgeRetryRequest {
 export interface FrozenFusionRequest {
   mode: "fuse";
   task: CandidateTaskSnapshot;
-  evaluation: FrozenEvaluationInput;
+  evaluation: AdHocEvaluationConfig;
   candidates: Candidate[];
   critic: CriticRef;
   judgeInstruction: string;
@@ -261,7 +258,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runJudge(
     done: Candidate[],
-    request: { task: CandidateTaskSnapshot; evaluation: FrozenEvaluationInput; critic: CriticRef; judgeInstruction: string },
+    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction: string },
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
     signal: AbortSignal,
@@ -270,9 +267,10 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (isAborted(signal)) return { ok: false };
 
     const blindSet = createBlindCandidateSet(done, random);
+    const profile = resolveEvaluationProfile(request.evaluation);
     const messages = judgeMessages(
       request.task.prompt,
-      request.evaluation.legacyRubric,
+      profile,
       blindSet.candidates,
       request.judgeInstruction,
     );
@@ -317,7 +315,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         }).catch(() => {});
         return { ok: false };
       }
-      const { breakdown, scoresById, report } = parseJudge(content, blindSet, request.evaluation.legacyRubric, done);
+      const { breakdown, scoresById, report } = parseJudge(content, blindSet, profile, done);
       await events.onJudgeTerminal(attemptId, {
         status: "completed", report, consensus: breakdown, error: null, finishedAt: now(),
       });
@@ -344,7 +342,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runFusion(
     done: Candidate[],
-    request: { task: CandidateTaskSnapshot; evaluation: FrozenEvaluationInput; critic: CriticRef; judgeInstruction?: string },
+    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction?: string },
     sourceJudgeAttemptId: string,
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
@@ -352,9 +350,10 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
   ): Promise<{ ok: boolean; result: string | null }> {
     if (isAborted(signal)) return { ok: false, result: null };
 
+    const fusionProfile = resolveEvaluationProfile(request.evaluation);
     const messages = fusionMessages({
       prompt: request.task.prompt,
-      rubric: request.evaluation.legacyRubric,
+      profile: fusionProfile,
       candidates: done,
       judgeInstruction: request.judgeInstruction ?? "",
     });
@@ -443,7 +442,6 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         const messages = draftMessages({
           systemPrompt: request.task.systemPrompt,
           prompt: request.task.prompt,
-          rubric: request.evaluation.legacyRubric,
         });
         const attemptId = generateId();
         const startedAt = now();
@@ -566,7 +564,6 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     const messages = draftMessages({
       systemPrompt: request.task.systemPrompt,
       prompt: request.task.prompt,
-      rubric: request.evaluation.legacyRubric,
     });
     const attemptId = generateId();
     const startedAt = now();

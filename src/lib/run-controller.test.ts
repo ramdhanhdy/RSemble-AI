@@ -5,6 +5,7 @@ import { initialState, type Action, type StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 import type { StreamDeltaBuffer } from "./stream-buffer";
 import { ProviderError, type ProviderId } from "./providers/types";
+import type { EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -1027,10 +1028,29 @@ function doneCandidate(id: string, providerId: ProviderId, slug: string, text: s
     tokensOut: 22,
   };
 }
-
 /** Post-failure state: Judge errored after two candidates completed. The command
- *  pane has since been EDITED (prompt/rubric) and the Judge model swapped, so
+ *  pane has since been EDITED (prompt/evaluation) and the Judge model swapped, so
  *  tests can prove the retry uses the frozen context + current critic. */
+function editedProfile(): EvaluationProfileSnapshot {
+  return {
+    id: "edited", version: 1, name: "Edited", description: "edited",
+    judgeInstruction: "",
+    criteria: [
+      { id: "rx", name: "EDITED_RUBRIC_MARKER", description: "edited", weight: 0.9, anchors: { one: "Poor", three: "OK", five: "Great" } },
+    ],
+    createdAt: 1000, updatedAt: 1000,
+  };
+}
+function retainedProfile(): EvaluationProfileSnapshot {
+  return {
+    id: "retained", version: 1, name: "Retained", description: "retained",
+    judgeInstruction: "",
+    criteria: [
+      { id: "r1", name: "RETAINED_RUBRIC_MARKER", description: "retained", weight: 0.5, anchors: { one: "Poor", three: "OK", five: "Great" } },
+    ],
+    createdAt: 1000, updatedAt: 1000,
+  };
+}
 function judgeRetryState(mode: "rank" | "fuse" = "rank"): StudioState {
   return {
     ...initialState,
@@ -1039,16 +1059,12 @@ function judgeRetryState(mode: "rank" | "fuse" = "rank"): StudioState {
     judgeStatus: "error",
     judgeError: "judge exploded",
     prompt: "EDITED_TASK_MARKER",
-    rubric: [
-      { id: "rx", kind: "goal", label: "EDITED_RUBRIC_MARKER", description: "edited", enabled: true, weight: 0.9 },
-    ],
+    evaluation: { kind: "custom", profile: editedProfile() },
     critic: { providerId: "gemini", model: "gemini-3.1-pro-preview" },
     judgeInstruction: "CURRENT_INSTRUCTION_MARKER",
     runContext: {
       prompt: "ORIGINAL_TASK_MARKER",
-      rubric: [
-        { id: "r1", kind: "goal", label: "RETAINED_RUBRIC_MARKER", description: "retained", enabled: true, weight: 0.5 },
-      ],
+      evaluation: { kind: "custom", profile: retainedProfile() },
     },
     candidates: [
       doneCandidate("cand-1", "openrouter", "model-a", "answer from model A"),
@@ -1058,7 +1074,7 @@ function judgeRetryState(mode: "rank" | "fuse" = "rank"): StudioState {
 }
 
 /** Valid judge payload for retry tests — per-evaluation criterionScores must
- *  exact-match the retained rubric's enabled criteria (r1), or the strict
+ *  exact-match the retained profile's criteria (r1), or the strict
  *  parser rejects the response. */
 function retryJudgeResponse(scores: Array<readonly [string, number]>): string {
   return JSON.stringify({

@@ -4,7 +4,9 @@ import { RankResult } from "./RankResult";
 import { FuseResult } from "./FuseResult";
 import { CompareView } from "./CompareView";
 import type { StudioState } from "../studio-engine";
-import type { Candidate, RubricCriterion } from "../studio-data";
+import type { Candidate } from "../studio-data";
+import type { EvaluationCriterion } from "../lib/evaluations/evaluation-types";
+import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
 
 function makeUsableCandidate(id: string, model: string, score = 4.0): Candidate {
   return {
@@ -47,8 +49,7 @@ function makeStudioState(candidates: Candidate[], mode: "rank" | "fuse" = "rank"
   return {
     ...({} as StudioState),
     mode,
-    prompt: "test prompt",
-    rubric: [],
+    evaluation: HOLISTIC_EVALUATION,
     slots: [],
     temperature: 0.4,
     systemPrompt: "",
@@ -124,7 +125,7 @@ describe("FuseResult — SourceAnswers usable filtering", () => {
 // ---------------------------------------------------------------------------
 
 describe("CompareView — usable candidate filtering", () => {
-  const rubric: RubricCriterion[] = [];
+  const criteria: EvaluationCriterion[] = [];
 
   it("excludes empty-content done candidates from the comparison grid", () => {
     const candidates = [
@@ -133,7 +134,7 @@ describe("CompareView — usable candidate filtering", () => {
       makeEmptyDoneCandidate("c3", "ModelC"),
     ];
     const html = renderToStaticMarkup(
-      <CompareView candidates={candidates} rubric={rubric} onClose={() => {}} />,
+      <CompareView candidates={candidates} criteria={criteria} onClose={() => {}} />,
     );
     expect(html).toContain("ModelA");
     expect(html).toContain("ModelB");

@@ -5,9 +5,8 @@
 // retryJudge, and executeFusionAttempt. The executor emits lifecycle events
 // but owns no React state or persistence.
 // =============================================================================
-
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { ModelSlot, Candidate } from "../studio-data";
+import type { Candidate, ModelSlot } from "../studio-data";
 import {
   createRunExecutor,
   type RunRequest,
@@ -16,6 +15,7 @@ import {
   type FrozenJudgeRetryRequest,
   type FrozenFusionRequest,
 } from "./run-executor";
+import { HOLISTIC_EVALUATION } from "./evaluations/evaluation-profile-adhoc";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -65,13 +65,12 @@ function makeRequest(mode: "rank" | "fuse" = "rank", slots: ModelSlot[] = TWO_SL
     source: { kind: "adhoc" },
     mode,
     task: { prompt: "test prompt", systemPrompt: "", temperature: 0.7 },
-    evaluation: { legacyRubric: [] },
+    evaluation: HOLISTIC_EVALUATION,
     slots,
     critic: { providerId: "openrouter", model: "judge-model" },
     judgeInstruction: "",
   };
 }
-
 function makeEvents(): { events: RunExecutorEvents; calls: string[] } {
   const calls: string[] = [];
   const events: RunExecutorEvents = {
@@ -350,7 +349,7 @@ describe("RunExecutor — retryCandidate", () => {
       source: { kind: "adhoc" },
       mode: "rank",
       task: { prompt: "test prompt", systemPrompt: "", temperature: 0.7 },
-      evaluation: { legacyRubric: [] },
+      evaluation: HOLISTIC_EVALUATION,
       slots: TWO_SLOTS,
       critic: { providerId: "openrouter", model: "judge-model" },
       judgeInstruction: "",
@@ -427,7 +426,7 @@ describe("RunExecutor — retryJudge", () => {
     return {
       mode: "rank",
       task: { prompt: "test prompt", systemPrompt: "", temperature: 0.7 },
-      evaluation: { legacyRubric: [] },
+      evaluation: HOLISTIC_EVALUATION,
       candidates: TWO_DONE,
       critic: { providerId: "openrouter", model: "judge-model" },
       judgeInstruction: "",
@@ -485,7 +484,7 @@ describe("RunExecutor — executeFusionAttempt", () => {
     return {
       mode: "fuse",
       task: { prompt: "test prompt", systemPrompt: "", temperature: 0.3 },
-      evaluation: { legacyRubric: [] },
+      evaluation: HOLISTIC_EVALUATION,
       candidates: TWO_DONE,
       critic: { providerId: "openrouter", model: "judge-model" },
       judgeInstruction: "",

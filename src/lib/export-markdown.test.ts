@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildExportMarkdown } from "./export-markdown";
 import type { StudioState } from "../studio-engine";
+import { HOLISTIC_EVALUATION } from "./evaluations/evaluation-profile-adhoc";
 
 const baseState: StudioState = {
   mode: "rank",
   prompt: "Write a haiku",
   exampleIndex: -1,
-  rubric: [],
+  evaluation: HOLISTIC_EVALUATION,
   slots: [],
   temperature: 0.4,
   systemPrompt: "",

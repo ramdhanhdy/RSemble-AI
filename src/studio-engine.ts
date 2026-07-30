@@ -13,7 +13,6 @@ import {
   DEFAULT_CRITIC_REF,
   INITIAL_EXAMPLE_INDEX,
   INITIAL_PROMPT,
-  SEED_RUBRIC,
   SEED_SLOTS,
   SYSTEM_PROMPT_DEFAULT,
   type AuditEntry,
@@ -23,25 +22,28 @@ import {
   type JudgeReport,
   type Mode,
   type ModelSlot,
-  type RubricCriterion,
-  type RubricKind,
 } from "./studio-data";
 import type { CatalogModel, CriticRef } from "./lib/providers/types";
 import { loadStoredCritic, loadStoredSlots } from "./lib/preferences";
 import { EXAMPLE_TASKS, nextExampleIndex } from "./lib/test-cases";
+import {
+  HOLISTIC_EVALUATION,
+  deepCopyEvaluationConfig,
+  type AdHocEvaluationConfig,
+} from "./lib/evaluations/evaluation-profile-adhoc";
 
 export type StageStatus = "idle" | "running" | "done" | "error";
 
 /** Frozen evaluation inputs captured at fanout start (run-recovery spec §5.2).
  *  A Judge-only retry re-judges the retained candidate outputs against THESE
- *  prompt/rubric values — not whatever the command pane currently shows — while
- *  the Judge provider/model, judge instruction, and mode stay live. Deep-copied
- *  by the reducer so later command edits cannot mutate the snapshot. Current-
- *  session only: cleared on reset, replaced on every new fanout. Never carries
- *  provider secrets or candidate outputs. */
+ *  prompt/evaluation values — not whatever the command pane currently shows —
+ *  while the Judge provider/model, judge instruction, and mode stay live.
+ *  Deep-copied by the reducer so later command edits cannot mutate the
+ *  snapshot. Current-session only: cleared on reset, replaced on every new
+ *  fanout. Never carries provider secrets or candidate outputs. */
 export interface RunEvaluationContext {
   prompt: string;
-  rubric: RubricCriterion[];
+  evaluation: AdHocEvaluationConfig;
 }
 
 export interface StudioState {
@@ -53,7 +55,7 @@ export interface StudioState {
   /** Index of the last curated example loaded by the "Try an example" control.
    *  `-1` means none loaded yet. Drives rotation via `nextExampleIndex`. */
   exampleIndex: number;
-  rubric: RubricCriterion[];
+  evaluation: AdHocEvaluationConfig;
   slots: ModelSlot[];
   temperature: number;
   systemPrompt: string;
@@ -96,10 +98,7 @@ export type Action =
   // --- command ---
   | { type: "SET_PROMPT"; value: string }
   | { type: "LOAD_EXAMPLE"; force?: boolean }
-  | { type: "TOGGLE_RUBRIC"; id: string }
-  | { type: "ADD_RUBRIC"; label: string; kind: RubricKind }
-  | { type: "SET_RUBRIC_WEIGHT"; id: string; weight: number }
-  | { type: "REMOVE_RUBRIC"; id: string }
+  | { type: "SET_EVALUATION"; config: AdHocEvaluationConfig }
   | { type: "ADD_SLOT"; slot: ModelSlot }
   | { type: "REMOVE_SLOT"; id: string }
   | { type: "SWAP_SLOT"; id: string; provider: string; model: string; slug: string }
@@ -194,34 +193,8 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return { ...state, prompt: task.prompt, exampleIndex: index };
     }
 
-    case "TOGGLE_RUBRIC":
-      return {
-        ...state,
-        rubric: state.rubric.map((c) => (c.id === action.id ? { ...c, enabled: !c.enabled } : c)),
-      };
-
-    case "ADD_RUBRIC": {
-      const id = `r-${Date.now()}`;
-      const criterion: RubricCriterion = {
-        id,
-        kind: action.kind,
-        label: action.label,
-        description: "User-added criterion. Override before evaluation.",
-        enabled: true,
-        weight: 0.1,
-      };
-      return { ...state, rubric: [...state.rubric, criterion] };
-    }
-    case "SET_RUBRIC_WEIGHT":
-      return {
-        ...state,
-        rubric: state.rubric.map((c) =>
-          c.id === action.id ? { ...c, weight: action.weight } : c
-        ),
-      };
-
-    case "REMOVE_RUBRIC":
-      return { ...state, rubric: state.rubric.filter((c) => c.id !== action.id) };
+    case "SET_EVALUATION":
+      return { ...state, evaluation: action.config };
 
     case "ADD_SLOT":
       return { ...state, slots: [...state.slots, action.slot] };
@@ -277,7 +250,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         // command-pane edits can mutate what a Judge retry evaluates against.
         runContext: {
           prompt: action.context.prompt,
-          rubric: action.context.rubric.map((c) => ({ ...c })),
+          evaluation: deepCopyEvaluationConfig(action.context.evaluation),
         },
         audit: logAudit(state.audit, `Fanout started across ${action.candidates.length} candidate(s).`),
       };
@@ -511,7 +484,7 @@ export const initialState: StudioState = {
   mode: "rank",
   prompt: INITIAL_PROMPT,
   exampleIndex: INITIAL_EXAMPLE_INDEX,
-  rubric: SEED_RUBRIC,
+  evaluation: HOLISTIC_EVALUATION,
   slots: loadStoredSlots() ?? SEED_SLOTS,
   temperature: 0.4,
   systemPrompt: SYSTEM_PROMPT_DEFAULT,

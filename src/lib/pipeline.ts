@@ -22,8 +22,9 @@ import {
   type JudgeDeduction,
   type JudgeReport,
   type ModelSlot,
-  type RubricCriterion,
 } from "../studio-data";
+import type { EvaluationCriterion, EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
+import { evaluationCriteriaText } from "./evaluations/evaluation-profile";
 
 const LETTERS = "ABCDEFGH".split("");
 
@@ -38,20 +39,18 @@ export interface FanoutJob {
 }
 
 /**
- * Render the enabled rubric as a compact instruction block. `withIds` prefixes
- * each line with the stable criterion ID — used for the judge-facing block so
- * the judge can key criterionScores by criterion ID (spec §5.5).
+ * Render the evaluation criteria for the judge-facing block. `withIds` prefixes
+ * each line with the stable criterion ID so the judge can key criterionScores
+ * by criterion ID (spec §9.3).
  */
-export function rubricText(rubric: RubricCriterion[], opts?: { withIds?: boolean }): string {
-  const enabled = rubric.filter((c) => c.enabled);
-  if (enabled.length === 0) return "(no explicit rubric provided — use your best judgment)";
-  return enabled
-    .map(
-      (c) =>
-        `- ${opts?.withIds ? `[id: ${c.id}] ` : ""}[${c.kind}] ${c.label} ` +
-        `(weight ${c.weight.toFixed(2)}): ${c.description}`,
-    )
-    .join("\n");
+export function evaluationText(
+  profile: EvaluationProfileSnapshot | null,
+  opts?: { withIds?: boolean },
+): string {
+  if (!profile || profile.criteria.length === 0) {
+    return "(no explicit criteria provided — use your best holistic judgment)";
+  }
+  return evaluationCriteriaText(profile, opts);
 }
 
 /**
@@ -75,15 +74,11 @@ export function buildFanoutJobs(slots: ModelSlot[]): FanoutJob[] {
 export function draftMessages(opts: {
   systemPrompt: string;
   prompt: string;
-  rubric: RubricCriterion[];
 }): ChatMessage[] {
-  const system =
-    `${opts.systemPrompt}\n\n` +
-    `You are generating ONE candidate answer that will later be judged against this rubric:\n` +
-    `${rubricText(opts.rubric)}\n` +
-    `\nWrite a clear, well-structured answer in prose with short paragraphs. Do not mention the rubric explicitly.`;
+  // Candidate generation receives ONLY the task and system prompt — never
+  // evaluator-only criteria (spec §9.3).
   return [
-    { role: "system", content: system },
+    { role: "system", content: opts.systemPrompt },
     { role: "user", content: opts.prompt },
   ];
 }
@@ -248,7 +243,7 @@ function normalizeBlindLabel(raw: string, letters: string[]): string | null {
 
 export function judgeMessages(
   prompt: string,
-  rubric: RubricCriterion[],
+  profile: EvaluationProfileSnapshot | null,
   blindCandidates: BlindCandidate[],
   judgeInstruction?: string,
 ): ChatMessage[] {
@@ -257,7 +252,7 @@ export function judgeMessages(
   const labelled = blindCandidates
     .map((c) => `### Candidate ${c.label}\n${c.content}`)
     .join("\n\n");
-  const hasRubric = rubric.some((c) => c.enabled);
+  const hasCriteria = profile !== null && profile.criteria.length > 0;
 
   // The custom instruction is UNTRUSTED DATA. It is placed BEFORE the
   // non-negotiable JSON output contract and explicitly delimited, so a
@@ -267,21 +262,21 @@ export function judgeMessages(
   const instructionBlock = renderJudgeInstruction(judgeInstruction);
 
   const system =
-    `You are an impartial evaluation judge. Compare the candidate answers against the user's task and rubric. ` +
+    `You are an impartial evaluation judge. Compare the candidate answers against the user's task and evaluation criteria. ` +
     `The candidates are anonymized: you see only blind labels (Candidate A, Candidate B, ...) and their answer text. ` +
     `You do not know which model produced which answer — do not speculate about candidate identities.\n` +
     `Identify shared consensus points, direct contradictions between candidates, and insights unique to a single candidate.\n` +
     `For EVERY candidate, return one structured evaluation:\n` +
-    `- score: overall rubric satisfaction from 1.0 to 5.0.\n` +
+    `- score: overall evaluation satisfaction from 1.0 to 5.0.\n` +
     `- position: one sentence naming the candidate's main recommendation or answer.\n` +
     `- rationale: one concise sentence of decision evidence — the decisive qualities and omissions that determined the score. ` +
     `This is an evaluation summary, never chain-of-thought; do not narrate step-by-step reasoning.\n` +
     `- strengths: one or two concise strengths.\n` +
     `- deductions: weaknesses that materially lowered the score, each tagged "minor" or "major" (empty array when none).\n` +
-    `- missedRequirements: task or rubric requirements the candidate failed to address (empty array when none).\n` +
-    (hasRubric
-      ? `- criterionScores: exactly one entry per rubric criterion listed below, keyed by its criterion ID, each scored 1.0–5.0 with a concise rationale.\n`
-      : `- criterionScores: an empty array — no explicit rubric is enabled, so do not invent scoring dimensions.\n`) +
+    `- missedRequirements: task or evaluation requirements the candidate failed to address (empty array when none).\n` +
+    (hasCriteria
+      ? `- criterionScores: exactly one entry per evaluation criterion listed below, keyed by its criterion ID, each scored 1.0–5.0 with a concise rationale.\n`
+      : `- criterionScores: an empty array — no explicit criteria are provided, so do not invent scoring dimensions.\n`) +
     `When two candidates reach materially similar conclusions or recommendations but their overall scores differ by at least 0.5, ` +
     `return one comparison per such pair explaining what created the difference (for example quantification, evidence quality, ` +
     `constraint awareness, falsifiability, feasibility, or task compliance). If no pair qualifies, return an empty comparisons array.` +
@@ -295,7 +290,7 @@ export function judgeMessages(
     `Use the candidate blind labels (A, B, C, ...) for "source", "label", and comparison "labels". ` +
     `Output JSON and nothing else — no prose, no code fences, no commentary.`;
   const user =
-    `User task:\n${prompt}\n\nRubric:\n${rubricText(rubric, { withIds: true })}\n\nCandidates:\n${labelled}`;
+    `User task:\n${prompt}\n\nEvaluation criteria:\n${evaluationText(profile, { withIds: true })}\n\nCandidates:\n${labelled}`;
   return [
     { role: "system", content: system },
     { role: "user", content: user },
@@ -327,16 +322,16 @@ function renderJudgeInstruction(judgeInstruction?: string): string {
  * descriptive Error so the caller routes it through the visible JUDGE_FAILED
  * path — an unexplained or partially mapped score never enters state (spec §7).
  *
- * `blindSet` is the precomputed blind packet (labels + label map); `rubric`
- * decides the criterion contract (enabled criteria must each be scored exactly
- * once; a no-rubric run rejects invented criterion results). `candidates` is
+ * `blindSet` is the precomputed blind packet (labels + label map); `profile`
+ * decides the criterion contract (profile criteria must each be scored exactly
+ * once; a holistic run rejects invented criterion results). `candidates` is
  * used ONLY to resolve display names for consensus/insight prose — never for
  * label matching.
  */
 export function parseJudge(
   text: string,
   blindSet: BlindCandidateSet,
-  rubric: RubricCriterion[],
+  profile: EvaluationProfileSnapshot | null,
   candidates: Candidate[],
 ): JudgeResult {
   const raw = extractJson<RawJudgeResponse>(text);
@@ -345,12 +340,12 @@ export function parseJudge(
   for (const m of blindSet.labelMap) labelToId[m.label] = m.candidateId;
   const idToModel: Record<string, string> = {};
   for (const c of candidates) idToModel[c.id] = c.model;
-  const enabledCriteria = rubric.filter((c) => c.enabled);
+  const profileCriteria = profile ? profile.criteria : [];
 
   const consensus = requireStringArray(raw.consensus, "consensus");
   const contradictions = requireStringArray(raw.contradictions, "contradictions");
   const uniqueInsights = parseUniqueInsights(raw.uniqueInsights, letters, labelToId, idToModel);
-  const evaluations = parseEvaluations(raw.evaluations, letters, labelToId, enabledCriteria);
+  const evaluations = parseEvaluations(raw.evaluations, letters, labelToId, profileCriteria);
   const comparisons = parseComparisons(raw.comparisons, letters, labelToId);
 
   const scoresById: Record<string, number> = {};
@@ -467,7 +462,7 @@ function parseDeductions(value: unknown, where: string): JudgeDeduction[] {
 function parseCriterionScores(
   value: unknown,
   where: string,
-  enabledCriteria: RubricCriterion[],
+  profileCriteria: EvaluationCriterion[],
 ): JudgeCriterionScore[] {
   const items = value == null ? [] : value;
   if (!Array.isArray(items)) {
@@ -486,24 +481,24 @@ function parseCriterionScores(
     };
   });
 
-  if (enabledCriteria.length === 0) {
-    // No-rubric run: the judge must not invent hidden scoring dimensions.
+  if (profileCriteria.length === 0) {
+    // Holistic run: the judge must not invent hidden scoring dimensions.
     if (parsed.length > 0) {
       throw new Error(
-        `Judge output invalid: ${where}.criterionScores must be empty — no rubric criteria are enabled, but ${parsed.length} criterion result(s) were returned.`,
+        `Judge output invalid: ${where}.criterionScores must be empty — no criteria are defined, but ${parsed.length} criterion result(s) were returned.`,
       );
     }
     return [];
   }
 
-  // Enabled-rubric run: exactly one result per enabled criterion ID.
+  // Profile run: exactly one result per profile criterion ID.
   const seen = new Set<string>();
   const resolved: JudgeCriterionScore[] = [];
   for (const cs of parsed) {
-    const criterion = enabledCriteria.find((c) => c.id === cs.criterionId);
+    const criterion = profileCriteria.find((c) => c.id === cs.criterionId);
     if (!criterion) {
       throw new Error(
-        `Judge output invalid: ${where}.criterionScores references unknown or disabled criterion ${JSON.stringify(cs.criterionId)}.`,
+        `Judge output invalid: ${where}.criterionScores references unknown criterion ${JSON.stringify(cs.criterionId)}.`,
       );
     }
     if (seen.has(cs.criterionId)) {
@@ -512,9 +507,9 @@ function parseCriterionScores(
       );
     }
     seen.add(cs.criterionId);
-    resolved.push({ criterionId: criterion.id, label: criterion.label, score: cs.score, rationale: cs.rationale });
+    resolved.push({ criterionId: criterion.id, label: criterion.name, score: cs.score, rationale: cs.rationale });
   }
-  for (const criterion of enabledCriteria) {
+  for (const criterion of profileCriteria) {
     if (!seen.has(criterion.id)) {
       throw new Error(
         `Judge output invalid: ${where}.criterionScores is missing a result for criterion ${JSON.stringify(criterion.id)}.`,
@@ -533,7 +528,7 @@ function parseEvaluations(
   value: unknown,
   letters: string[],
   labelToId: Record<string, string>,
-  enabledCriteria: RubricCriterion[],
+  profileCriteria: EvaluationCriterion[],
 ): CandidateEvaluation[] {
   if (!Array.isArray(value)) {
     throw new Error("Judge output invalid: 'evaluations' must be an array.");
@@ -587,7 +582,7 @@ function parseEvaluations(
       strengths,
       deductions: parseDeductions(entry.deductions, where),
       missedRequirements: optionalStringArray(entry.missedRequirements, `${where}.missedRequirements`),
-      criterionScores: parseCriterionScores(entry.criterionScores, where, enabledCriteria),
+      criterionScores: parseCriterionScores(entry.criterionScores, where, profileCriteria),
     });
   }
 
@@ -642,21 +637,24 @@ function parseComparisons(
 
 export function fusionMessages(opts: {
   prompt: string;
-  rubric: RubricCriterion[];
+  profile: EvaluationProfileSnapshot | null;
   candidates: Candidate[];
   judgeInstruction?: string;
 }): ChatMessage[] {
   // Fusion runs on the full candidate answers only — no hand-picked snippets
   // (the Frankenstein picker is OUT, PRODUCT.md §5).
+  // Fusion may receive criterion descriptions and anchors as synthesis quality
+  // targets, but never Judge procedural instructions or blind-label material
+  // (spec §9.3).
   const sources = opts.candidates.map((c) => `### ${c.model}\n${candidateFullText(c)}`).join("\n\n");
 
   const system =
     `You are a senior synthesizer. Merge the strongest material from multiple candidate answers into a single, ` +
     `coherent, production-grade final answer. Remove redundancy and resolve contradictions sensibly. ` +
-    `Honor the user's rubric. Return the final answer in clean Markdown.` +
+    `Honor the user's evaluation criteria. Return the final answer in clean Markdown.` +
     renderJudgeInstruction(opts.judgeInstruction);
   const user =
-    `User task:\n${opts.prompt}\n\nRubric:\n${rubricText(opts.rubric)}\n\nCandidate answers:\n${sources}`;
+    `User task:\n${opts.prompt}\n\nEvaluation criteria:\n${evaluationText(opts.profile)}\n\nCandidate answers:\n${sources}`;
   return [
     { role: "system", content: system },
     { role: "user", content: user },

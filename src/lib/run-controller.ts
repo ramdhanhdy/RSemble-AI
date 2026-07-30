@@ -67,7 +67,7 @@ export function createRunController(deps: RunControllerDeps) {
         dispatch({
           type: "FANOUT_START",
           candidates: placeholders,
-          context: { prompt: s.prompt, rubric: s.rubric.map((c) => ({ ...c })) },
+          context: { prompt: s.prompt, evaluation: s.evaluation },
         });
         if (recorder) {
           await recorder.begin({
@@ -201,7 +201,7 @@ export function createRunController(deps: RunControllerDeps) {
       source: { kind: "adhoc" },
       mode: s.mode,
       task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
-      evaluation: { legacyRubric: s.rubric },
+      evaluation: s.evaluation,
       slots: s.slots,
       critic: s.critic,
       judgeInstruction: s.judgeInstruction,
@@ -266,7 +266,7 @@ export function createRunController(deps: RunControllerDeps) {
       source: { kind: "adhoc" },
       mode: s.mode,
       task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
-      evaluation: { legacyRubric: s.rubric },
+      evaluation: s.evaluation,
       slots: s.slots,
       critic: s.critic,
       judgeInstruction: s.judgeInstruction,
@@ -322,7 +322,7 @@ export function createRunController(deps: RunControllerDeps) {
     await executor.retryJudge({
       mode: s.mode,
       task: { prompt: ctx.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
-      evaluation: { legacyRubric: ctx.rubric },
+      evaluation: ctx.evaluation,
       candidates: done,
       critic: s.critic,
       judgeInstruction: s.judgeInstruction,
@@ -372,7 +372,7 @@ export function createRunController(deps: RunControllerDeps) {
       await executor.executeFusionAttempt({
         mode: "fuse",
         task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: 0.3 },
-        evaluation: { legacyRubric: s.rubric },
+        evaluation: s.evaluation,
         candidates: eligibility.usable,
         critic: s.critic,
         judgeInstruction: s.judgeInstruction,

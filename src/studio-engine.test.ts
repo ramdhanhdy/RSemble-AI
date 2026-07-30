@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { reducer, initialState, type StudioState } from "./studio-engine";
 import type { Candidate } from "./studio-data";
 import type { ProviderId } from "./lib/providers/types";
+import type { EvaluationProfileSnapshot } from "./lib/evaluations/evaluation-types";
+import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-profile-adhoc";
 
 function makeCandidate(id: string, providerId: ProviderId, slug: string): Candidate {
   return {
@@ -372,7 +374,7 @@ describe("reducer — JUDGE_RESULT stores the judge report", () => {
     expect(unscored.scores).toEqual({});
   });
 
-  it("does not populate criterion scores when no rubric is enabled (no invention)", () => {
+  it("does not populate criterion scores when no criteria are defined (no invention)", () => {
     const c1 = makeCandidate("c1", "openrouter", "model-a");
     const state = runningStateWithCandidates([c1], "rank");
     const report = makeReport([{ id: "c1", label: "A", score: 4.5, criterionScores: [] }]);
@@ -429,7 +431,7 @@ describe("reducer — stale reports are cleared correctly", () => {
     const next = reducer(state, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: state.prompt, rubric: state.rubric },
+      context: { prompt: state.prompt, evaluation: state.evaluation },
     });
     expect(next.judgeReport).toBeNull();
   });
@@ -508,7 +510,7 @@ describe("reducer — FANOUT_START clears fusion state (regression)", () => {
     const next = reducer(state, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: state.prompt, rubric: state.rubric },
+      context: { prompt: state.prompt, evaluation: state.evaluation },
     });
     expect(next.fusionStatus).toBe("idle");
     expect(next.fusedText).toBeNull();
@@ -521,42 +523,45 @@ describe("reducer — FANOUT_START clears fusion state (regression)", () => {
 // ---------------------------------------------------------------------------
 
 describe("reducer — retained run evaluation context", () => {
-  // initialState.rubric is an empty seed — context tests need a real rubric.
-  const testRubric = (): StudioState["rubric"] => [
-    { id: "r1", kind: "goal", label: "Correctness", description: "Is it right?", enabled: true, weight: 0.5 },
-    { id: "r2", kind: "metric", label: "Clarity", description: "Is it clear?", enabled: true, weight: 0.3 },
-  ];
+  // initialState.evaluation is holistic — context tests need a real profile.
+  const testProfile = (): EvaluationProfileSnapshot => ({
+    id: "tp", version: 1, name: "Test Profile", description: "test",
+    judgeInstruction: "",
+    criteria: [
+      { id: "r1", name: "Correctness", description: "Is it right?", weight: 0.5, anchors: { one: "Poor", three: "OK", five: "Great" } },
+      { id: "r2", name: "Clarity", description: "Is it clear?", weight: 0.3, anchors: { one: "Poor", three: "OK", five: "Great" } },
+    ],
+    createdAt: 1000, updatedAt: 1000,
+  });
+  const testEvaluation = () => ({ kind: "custom" as const, profile: testProfile() });
 
   it("FANOUT_START stores a deep-copied current-run evaluation context", () => {
     const c1 = makeCandidate("c1", "openrouter", "model-a");
-    const rubric = testRubric();
+    const evaluation = testEvaluation();
     const next = reducer(initialState, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "original task", rubric },
+      context: { prompt: "original task", evaluation },
     });
     expect(next.runContext).not.toBeNull();
     expect(next.runContext?.prompt).toBe("original task");
-    expect(next.runContext?.rubric).toEqual(rubric);
-    // Deep copy: the stored rubric must not alias the payload's array or items.
-    expect(next.runContext?.rubric).not.toBe(rubric);
-    for (let i = 0; i < rubric.length; i++) {
-      expect(next.runContext?.rubric[i]).not.toBe(rubric[i]);
-    }
+    expect(next.runContext?.evaluation).toEqual(evaluation);
+    // Deep copy: the stored profile must not alias the payload's object.
+    expect(next.runContext?.evaluation).not.toBe(evaluation);
+    expect(next.runContext?.evaluation).toEqual({ kind: "custom", profile: testProfile() });
   });
 
-  it("mutating the command rubric after fanout does not mutate the stored run rubric", () => {
+  it("replacing the command evaluation after fanout does not mutate the stored run evaluation", () => {
     const c1 = makeCandidate("c1", "openrouter", "model-a");
-    const rubric = testRubric();
-    const started = reducer({ ...initialState, rubric }, {
+    const started = reducer({ ...initialState, evaluation: testEvaluation() }, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "original task", rubric },
+      context: { prompt: "original task", evaluation: testEvaluation() },
     });
-    const edited = reducer(started, { type: "SET_RUBRIC_WEIGHT", id: "r1", weight: 0.99 });
-    expect(edited.rubric[0].weight).toBe(0.99);
-    const stored = edited.runContext?.rubric.find((r) => r.id === "r1");
-    expect(stored?.weight).toBe(0.5);
+    const edited = reducer(started, { type: "SET_EVALUATION", config: HOLISTIC_EVALUATION });
+    expect(edited.evaluation).toEqual({ kind: "holistic" });
+    const stored = started.runContext?.evaluation;
+    expect(stored).toEqual(testEvaluation());
   });
 
   it("RESET_SESSION clears the retained run context", () => {
@@ -564,7 +569,7 @@ describe("reducer — retained run evaluation context", () => {
     const started = reducer(initialState, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "original task", rubric: initialState.rubric },
+      context: { prompt: "original task", evaluation: HOLISTIC_EVALUATION },
     });
     expect(started.runContext).not.toBeNull();
     const reset = reducer(started, { type: "RESET_SESSION" });
@@ -576,12 +581,12 @@ describe("reducer — retained run evaluation context", () => {
     const first = reducer(initialState, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "task one", rubric: initialState.rubric },
+      context: { prompt: "task one", evaluation: HOLISTIC_EVALUATION },
     });
     const second = reducer(first, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "task two", rubric: initialState.rubric },
+      context: { prompt: "task two", evaluation: HOLISTIC_EVALUATION },
     });
     expect(second.runContext?.prompt).toBe("task two");
   });
@@ -601,7 +606,7 @@ describe("reducer — JUDGE_START as a standalone active-stage transition", () =
     judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
     consensus: { consensus: ["shared"], contradictions: [], uniqueInsights: [] },
     insufficient: { done: 2, failed: 1 },
-    runContext: { prompt: "original task", rubric: initialState.rubric },
+    runContext: { prompt: "original task", evaluation: HOLISTIC_EVALUATION },
   });
 
   it("sets running: true when the previous state is a Judge error", () => {

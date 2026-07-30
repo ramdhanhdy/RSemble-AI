@@ -136,7 +136,7 @@ export function OutputPane({
           compareMode ? (
             <CompareView
               candidates={state.candidates}
-              rubric={state.rubric}
+              criteria={state.evaluation.kind === "holistic" ? [] : state.evaluation.profile.criteria}
               onClose={() => setCompareMode(false)}
             />
           ) : (

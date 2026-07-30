@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback } from "react";
 import { Lock, Unlock, X, Columns2 } from "lucide-react";
-import type { Candidate, RubricCriterion } from "../studio-data";
+import type { Candidate } from "../studio-data";
+import type { EvaluationCriterion } from "../lib/evaluations/evaluation-types";
 import { isUsableCandidate } from "../lib/pipeline";
 import { Markdown } from "./Markdown";
 import { BrandAvatar } from "./brand-icons";
@@ -13,11 +14,11 @@ function tierColor(score: number): string {
 
 export function CompareView({
   candidates,
-  rubric,
+  criteria,
   onClose,
 }: {
   candidates: Candidate[];
-  rubric: RubricCriterion[];
+  criteria: EvaluationCriterion[];
   onClose: () => void;
 }) {
   const done = candidates.filter(isUsableCandidate);
@@ -171,18 +172,18 @@ export function CompareView({
                     </>
                   )}
                 </div>
-                {rubric.length > 0 && Object.keys(c.scores ?? {}).length > 0 && (
+                {criteria.length > 0 && Object.keys(c.scores ?? {}).length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {rubric.map((r) => {
-                      const s = c.scores?.[r.label];
+                    {criteria.map((r) => {
+                      const s = c.scores?.[r.name];
                       if (typeof s !== "number") return null;
                       return (
                         <span
                           key={r.id}
                           className={`rounded-sm border border-edge px-1 font-mono text-[11px] tabular-nums ${tierColor(s)}`}
-                          title={`${r.label}: ${s.toFixed(1)}`}
+                          title={`${r.name}: ${s.toFixed(1)}`}
                         >
-                          {r.label.slice(0, 3)} {s.toFixed(1)}
+                          {r.name.slice(0, 3)} {s.toFixed(1)}
                         </span>
                       );
                     })}

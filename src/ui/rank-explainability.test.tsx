@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RankResult } from "./RankResult";
 import type { StudioState } from "../studio-engine";
+import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
 import type {
   Candidate,
   JudgeReport,
@@ -79,7 +80,7 @@ function makeStudioState(
     mode: "rank",
     prompt: "test prompt",
     exampleIndex: -1,
-    rubric: [],
+    evaluation: HOLISTIC_EVALUATION,
     slots: [],
     temperature: 0.4,
     systemPrompt: "",
@@ -100,7 +101,7 @@ function makeStudioState(
     runContext: null,
     qualityRating: 0,
     audit: [],
-  } as StudioState;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +213,7 @@ describe("RankResult — score explanations", () => {
     expect(html).toContain("Did not address latency");
   });
 
-  it("renders criterion rationales when a rubric was enabled", () => {
+  it("renders criterion rationales when evaluation criteria are defined", () => {
     const candidates = [makeUsableCandidate("c1", "ModelA", 4.5)];
     const report = makeReport([
       {

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { OutputPane, LiveCandidateCard, scrollLiveTranscriptToEnd, InsufficientState } from "./OutputPane";
 import { initialState, type StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
+import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
 
 const candidate: Candidate = {
   id: "live-1",
@@ -337,7 +338,7 @@ function makeOutputPaneState(overrides: Partial<StudioState> = {}): StudioState 
     judgeStatus: "error",
     judgeError: "The AI judge could not be reached.",
     candidates: [makeDoneCandidate("c1", "Model A"), makeDoneCandidate("c2", "Model B")],
-    runContext: { prompt: "original task", rubric: [] },
+    runContext: { prompt: "original task", evaluation: HOLISTIC_EVALUATION },
     ...overrides,
   };
 }
