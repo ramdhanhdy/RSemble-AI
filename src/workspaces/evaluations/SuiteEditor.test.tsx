@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { SuiteEditor } from "./SuiteEditor";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
+import { ExecutionOwnerProvider } from "../../lib/execution-owner-context";
+import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import type { EvaluationSuite, EvaluationTask } from "../../lib/evaluations/evaluation-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,10 +29,13 @@ function renderWithRouter(node: React.ReactNode, initialPath = "/evaluations/s1"
   act(() => {
     root.render(
       <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route path="/evaluations/:suiteId" element={node} />
-          <Route path="/evaluations/:suiteId/tasks/:taskId" element={node} />
-        </Routes>
+        <ExecutionOwnerProvider>
+          <Routes>
+            <Route path="/evaluations/:suiteId" element={node} />
+            <Route path="/evaluations/:suiteId/tasks/:taskId" element={node} />
+            <Route path="/experiments/:experimentId" element={<div data-route="experiment-progress" />} />
+          </Routes>
+        </ExecutionOwnerProvider>
       </MemoryRouter>,
     );
   });
@@ -105,6 +110,33 @@ function makeSuite(id: string, overrides: Partial<EvaluationSuite> = {}): Evalua
 
 async function seedSuite(repo: InMemoryEvaluationRepository, suite: EvaluationSuite) {
   await repo.saveSuite(suite, 0);
+}
+
+function makeValidSuite(id: string): EvaluationSuite {
+  return makeSuite(id, {
+    name: "Valid Suite",
+    version: 1,
+    tasks: [makeTask("t1")],
+    modelSlots: [
+      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "openai/gpt-4o", enabled: true },
+      { id: "s2", providerId: "openrouter", provider: "OpenRouter", model: "claude", slug: "anthropic/claude", enabled: true },
+    ],
+    defaultJudge: { providerId: "openrouter", model: "z-ai/glm-5.2" },
+  });
+}
+
+function makeStubController(overrides: Partial<ExperimentController> = {}): ExperimentController {
+  return {
+    start: vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" })),
+    requestPause: vi.fn(),
+    resume: vi.fn(async () => ({ ok: true as const })),
+    abort: vi.fn(async () => {}),
+    retryIncomplete: vi.fn(async () => ({ ok: true as const })),
+    recoverOnStartup: vi.fn(async () => 0),
+    subscribe: vi.fn(() => () => {}),
+    whenIdle: vi.fn(async () => {}),
+    ...overrides,
+  };
 }
 
 // --- Tests --------------------------------------------------------------------
@@ -265,25 +297,94 @@ describe("SuiteEditor — run validation", () => {
 
   it("Run enabled when suite passes execution validation", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedSuite(
-      repo,
-      makeSuite("s1", {
-        name: "Valid Suite",
-        version: 1,
-        tasks: [makeTask("t1")],
-        modelSlots: [
-          { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "openai/gpt-4o", enabled: true },
-          { id: "s2", providerId: "openrouter", provider: "OpenRouter", model: "claude", slug: "anthropic/claude", enabled: true },
-        ],
-        defaultJudge: { providerId: "openrouter", model: "z-ai/glm-5.2" },
-      }),
-    );
-    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await seedSuite(repo, makeValidSuite("s1"));
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} controller={makeStubController()} />);
     await settle();
     const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
     expect(runBtn.disabled).toBe(false);
     // Run states the persisted version
     expect(runBtn.textContent).toMatch(/run v1/i);
+    cleanup(h);
+  });
+});
+
+describe("SuiteEditor — run execution", () => {
+  it("Run click calls controller.start with the persisted suite id and navigates to the experiment", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const controller = makeStubController();
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} controller={controller} />);
+    await settle();
+    const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(false);
+    await act(async () => {
+      runBtn.click();
+      await flush();
+    });
+    await settle();
+    expect(controller.start).toHaveBeenCalledWith("s1");
+    expect(h.$("[data-route='experiment-progress']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("start failure shows the error in a role=alert line and does not navigate", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const controller = makeStubController({
+      start: vi.fn(async () => ({ ok: false as const, error: "Another tab is active (lease held)" })),
+    });
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} controller={controller} />);
+    await settle();
+    const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
+    await act(async () => {
+      runBtn.click();
+      await flush();
+    });
+    await settle();
+    const alert = h.$("[role='alert']");
+    expect(alert).toBeTruthy();
+    expect(alert!.textContent).toContain("Another tab is active (lease held)");
+    expect(h.$("[data-route='experiment-progress']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("active in-tab execution owner disables Run with a truthful helper", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const h = renderWithRouter(
+      <SuiteEditor
+        repo={repo}
+        models={[]}
+        controller={makeStubController()}
+        executionOwner={{ kind: "compare", id: "run-9" }}
+      />,
+    );
+    await settle();
+    const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(true);
+    expect(h.container.textContent).toContain("Another execution is active");
+    cleanup(h);
+  });
+
+  it("null controller disables Run with a storage-unavailable helper", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} controller={null} />);
+    await settle();
+    const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(true);
+    expect(h.container.textContent).toContain("Storage unavailable — cannot start an experiment");
+    cleanup(h);
+  });
+
+  it("archived suite disables Run with an archived helper", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, { ...makeValidSuite("s1"), archivedAt: Date.now() });
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} controller={makeStubController()} />);
+    await settle();
+    const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(true);
+    expect(h.container.textContent).toContain("Archived suites cannot run");
     cleanup(h);
   });
 });

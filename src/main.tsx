@@ -4,6 +4,7 @@ import { HashRouter } from "react-router-dom";
 import RSemble from "./rsemble";
 import { RepositoryProvider } from "./lib/persistence/repository-context";
 import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
+import { ExperimentControllerProvider } from "./lib/evaluations/experiment-controller-context";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -11,7 +12,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <HashRouter>
       <RepositoryProvider>
         <ExecutionOwnerProvider>
-          <RSemble />
+          <ExperimentControllerProvider>
+            <RSemble />
+          </ExperimentControllerProvider>
         </ExecutionOwnerProvider>
       </RepositoryProvider>
     </HashRouter>

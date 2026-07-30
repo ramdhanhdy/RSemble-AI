@@ -7,13 +7,16 @@
 // =============================================================================
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { createDatabase, type DatabaseHandle, type StorageState } from "./database";
+import { createDatabase, type DatabaseHandle, type RSembleEvaluationDB, type StorageState } from "./database";
 import { createRunRepository, type RunRepository } from "./run-repository";
 import { createEvaluationRepository, type EvaluationRepository } from "./evaluation-repository";
 
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
+  /** Raw Dexie handle for infrastructure that composes repositories (execution
+   *  lease, experiment unit of work). Null while storage is unavailable. */
+  db: RSembleEvaluationDB | null;
   storageState: StorageState;
   /** Retry database initialization after a failure. */
   retry: () => void;
@@ -22,6 +25,7 @@ export interface RepositoryContextValue {
 export const RepositoryContext = createContext<RepositoryContextValue>({
   runRepo: null,
   evalRepo: null,
+  db: null,
   storageState: "unavailable",
   retry: () => undefined,
 });
@@ -90,8 +94,8 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<RepositoryContextValue>(
-    () => ({ runRepo, evalRepo, storageState, retry }),
-    [runRepo, evalRepo, storageState, retry],
+    () => ({ runRepo, evalRepo, db: handle?.db ?? null, storageState, retry }),
+    [runRepo, evalRepo, handle, storageState, retry],
   );
 
   return (

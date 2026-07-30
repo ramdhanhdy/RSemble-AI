@@ -7,7 +7,7 @@
 // =============================================================================
 
 import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { useRunRepository } from "../lib/persistence/repository-context";
 import { useRunList } from "./runs/useRunList";
@@ -38,7 +38,13 @@ const LIST_WIDTH = 380;
 export function RunsWorkspace() {
   const repo = useRunRepository();
   const { runId } = useParams<{ runId: string }>();
+  const [searchParams] = useSearchParams();
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
+
+  // Deep-link targets from result-matrix evidence links (spec §12.1):
+  // /runs/:runId?candidate=:candidateId&attempt=:judgeAttemptId
+  const focusCandidateId = searchParams.get("candidate");
+  const focusJudgeAttemptId = searchParams.get("attempt");
 
   // Fetch the selected record for detail rendering
   const { record, loading } = useRunDetail(repo, runId ?? null);
@@ -68,7 +74,7 @@ export function RunsWorkspace() {
           ) : loading ? (
             <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">Loading…</div>
           ) : (
-            <RunDetail record={record} />
+            <RunDetail record={record} focusCandidateId={focusCandidateId} focusJudgeAttemptId={focusJudgeAttemptId} />
           )}
         </div>
       </div>
@@ -104,7 +110,7 @@ export function RunsWorkspace() {
           ) : loading ? (
             <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">Loading…</div>
           ) : (
-            <RunDetail record={record} />
+            <RunDetail record={record} focusCandidateId={focusCandidateId} focusJudgeAttemptId={focusJudgeAttemptId} />
           )
         ) : (
           <div className="flex min-h-full flex-col items-center justify-center gap-2 p-8 text-center">

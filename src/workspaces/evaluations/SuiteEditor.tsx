@@ -12,12 +12,24 @@
 // At <1024px the task list and task editor are separate route states. This
 // component handles the desktop split; the mobile routes render SuiteTaskEditor
 // directly via the router.
+//
+// Run evaluation starts a real experiment through the ExperimentController
+// context and navigates to /experiments/:experimentId on success. Run is also
+// gated on controller availability (storage), the in-tab execution owner, and
+// archive state. The `controller` and `executionOwner` optional props are test
+// seams: when undefined they resolve from context; pass them explicitly to
+// inject fakes without mounting provider trees.
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronDown, Loader2, Save, Play, AlertCircle } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
+import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
+import { useExperimentController } from "../../lib/evaluations/experiment-controller-context";
+import { useExecutionOwner } from "../../lib/execution-owner-context";
+import type { ExecutionOwner } from "../../lib/execution-owner";
+import { SuiteExperimentHistory } from "./SuiteExperimentHistory";
 import type {
   EvaluationSuite,
   EvaluationTask,
@@ -39,15 +51,26 @@ interface SuiteEditorProps {
   repo: EvaluationRepository | null;
   /** Catalog models from provider probes (may be empty). */
   models: CatalogModel[];
+  /** Test seam: override the context experiment controller. Pass null to
+   *  simulate storage-unavailable (no controller). */
+  controller?: ExperimentController | null;
+  /** Test seam: override the context execution owner. */
+  executionOwner?: ExecutionOwner | null;
 }
 
 function generateTaskId(): string {
   return `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function SuiteEditor({ repo, models }: SuiteEditorProps) {
+export function SuiteEditor({ repo, models, controller: controllerProp, executionOwner: ownerProp }: SuiteEditorProps) {
   const { suiteId } = useParams<{ suiteId: string }>();
   const navigate = useNavigate();
+
+  // Context resolution with prop overrides (test seams — see file header).
+  const ctxController = useExperimentController();
+  const { owner: ctxOwner } = useExecutionOwner();
+  const controller = controllerProp !== undefined ? controllerProp : ctxController;
+  const executionOwner = ownerProp !== undefined ? ownerProp : ctxOwner;
 
   const [persisted, setPersisted] = useState<EvaluationSuite | null>(null);
   const [draft, setDraft] = useState<EvaluationSuite | null>(null);
@@ -58,6 +81,7 @@ export function SuiteEditor({ repo, models }: SuiteEditorProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileRecords, setProfileRecords] = useState<ProfileRecord[]>([]);
+  const [runError, setRunError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
 
   // --- Load suite + profile records ---
@@ -220,6 +244,18 @@ export function SuiteEditor({ repo, models }: SuiteEditorProps) {
     }
   }, [repo, draft, persisted, saving]);
 
+  // --- Run experiment ---
+  const handleRun = useCallback(async () => {
+    if (!controller || !persisted) return;
+    setRunError(null);
+    const result = await controller.start(persisted.id);
+    if (result.ok) {
+      navigate(`/experiments/${result.experimentId}`);
+    } else {
+      setRunError(result.error);
+    }
+  }, [controller, persisted, navigate]);
+
   // --- States ---
   if (!suiteId) {
     return <NoSuiteSelected />;
@@ -251,12 +287,18 @@ export function SuiteEditor({ repo, models }: SuiteEditorProps) {
   }
 
   const selectedTask = draft.tasks.find((t) => t.id === selectedTaskId) ?? null;
-  const canRun = !dirty && execValidation.valid;
   const runDisabledReason = dirty
     ? "Save this suite before running"
     : !execValidation.valid
       ? execValidation.errors[0]?.message ?? "Suite is not ready to run."
-      : null;
+      : !controller
+        ? "Storage unavailable — cannot start an experiment"
+        : executionOwner
+          ? "Another execution is active"
+          : persisted.archivedAt != null
+            ? "Archived suites cannot run"
+            : null;
+  const canRun = runDisabledReason === null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -300,11 +342,10 @@ export function SuiteEditor({ repo, models }: SuiteEditorProps) {
               type="button"
               data-action="run-suite"
               onClick={() => {
-                // Run snaps the exact persisted version; execution wiring is a
-                // later phase. This control's disabled-state contract is the
-                // acceptance criterion here.
+                // Run snaps the exact persisted version inside the controller;
+                // success navigates to the live experiment progress route.
                 if (canRun) {
-                  void runExperiment(repo, persisted);
+                  void handleRun();
                 }
               }}
               disabled={!canRun}
@@ -327,12 +368,15 @@ export function SuiteEditor({ repo, models }: SuiteEditorProps) {
             <span className="text-success">Saved · v{persisted.version}</span>
           )}
           {runDisabledReason && (
-            <span className="text-text-muted">· {runDisabledReason}</span>
+            <span className="text-text-secondary">· {runDisabledReason}</span>
           )}
         </div>
 
         {saveError && (
           <p role="alert" className="text-sm text-error">{saveError}</p>
+        )}
+        {runError && (
+          <p role="alert" className="text-sm text-error">{runError}</p>
         )}
       </header>
 
@@ -366,6 +410,9 @@ export function SuiteEditor({ repo, models }: SuiteEditorProps) {
             onMove={moveTask}
             onDelete={deleteTask}
           />
+          <div className="mt-3 min-w-0 border-t border-edge pt-3">
+            <SuiteExperimentHistory repo={repo} suiteId={persisted.id} />
+          </div>
         </section>
 
         <section aria-label="Task editor" className="min-h-0 flex-1 lg:overflow-y-auto lg:pl-3">
@@ -394,18 +441,6 @@ function NoSuiteSelected() {
       <p className="text-sm text-text-muted">Select a suite from the list.</p>
     </div>
   );
-}
-
-/**
- * Run an experiment from the persisted suite. Execution orchestration is a
- * later phase; this stub snaps the exact persisted version and is wired so the
- * Run button's disabled-state contract is testable now.
- */
-async function runExperiment(repo: EvaluationRepository | null, suite: EvaluationSuite): Promise<void> {
-  if (!repo) return;
-  // Future: createExperiment with a snapshot of `suite` (exact persisted version).
-  // For now this is a no-op placeholder that satisfies the control contract.
-  void suite;
 }
 
 function friendlyStorageError(err: StorageError): string {

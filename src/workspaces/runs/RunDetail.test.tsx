@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
@@ -36,6 +36,7 @@ function cleanup(h: Harness) {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  vi.restoreAllMocks();
 });
 
 // --- Test fixtures ------------------------------------------------------------
@@ -240,7 +241,7 @@ describe("RunDetail", () => {
     cleanup(h);
   });
 
-  it("experiment-sourced run shows provenance section", () => {
+  it("experiment-sourced run shows provenance trail with deep links", () => {
     const h = renderWithRouter(<RunDetail record={makeFullRecord({
       source: {
         kind: "experiment",
@@ -249,16 +250,128 @@ describe("RunDetail", () => {
         suiteVersion: 3,
         protocolFingerprint: "fp-abc",
         taskId: "task-pricing",
-        experimentTaskAttemptId: "attempt-2",
+        experimentTaskAttemptId: "attempt-2-xyz",
         trial: 1,
       },
     })} />);
     const provenance = h.$("[data-section='provenance']");
     expect(provenance).toBeTruthy();
     const text = provenance?.textContent ?? "";
-    expect(text).toContain("exp-1");
-    expect(text).toContain("suite-1");
+    // "Experiment" links to the experiment route
+    const experimentLinks = [...provenance!.querySelectorAll("a[href='/experiments/exp-1']")];
+    expect(experimentLinks.some((a) => a.textContent?.trim() === "Experiment")).toBe(true);
+    // Suite part links to the suite route with its version
+    const suiteLink = provenance!.querySelector("a[href='/evaluations/suite-1']");
+    expect(suiteLink).toBeTruthy();
+    expect(suiteLink?.textContent).toContain("Suite v3");
+    // Task id is visible
     expect(text).toContain("task-pricing");
+    // Attempt id is bounded (first 8 chars) with the full value present (sr-only)
+    expect(text).toContain("attempt-");
+    expect(text).toContain("attempt-2-xyz");
+    // Trailing Back to experiment link
+    expect(experimentLinks.some((a) => a.textContent?.includes("Back to experiment"))).toBe(true);
+    cleanup(h);
+  });
+
+  it("ad hoc run renders no provenance section", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    expect(h.$("[data-section='provenance']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("focusCandidateId selects, focuses, and scrolls the linked candidate", () => {
+    // happy-dom may lack scrollIntoView; stub it so the component's typeof
+    // guard passes, then spy on the prototype method.
+    if (typeof Element.prototype.scrollIntoView !== "function") {
+      Element.prototype.scrollIntoView = () => {};
+    }
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const record = makeFullRecord();
+    record.candidates.push({
+      candidateId: "c2",
+      slotId: "s2",
+      modelKey: "openrouter:claude",
+      providerId: "openrouter",
+      model: "Claude",
+      slug: "anthropic/claude",
+      acceptedAttemptId: "att-2",
+      attempts: [{
+        attemptId: "att-2",
+        messages: [{ role: "user", content: "Sort the list" }],
+        startedAt: 1716048000000,
+        finishedAt: 1716048030000,
+        status: "completed" as const,
+        output: "def quick_sort(arr): ...",
+        tokensIn: 15,
+        tokensOut: 30,
+        error: null,
+      }],
+    });
+    const h = renderWithRouter(<RunDetail record={record} focusCandidateId="c2" />);
+    const btn = h.$("[data-candidate-id='c2']");
+    expect(btn).toBeTruthy();
+    // The linked candidate is selected, overriding the default first candidate
+    expect(btn!.getAttribute("aria-pressed")).toBe("true");
+    // Focus moved to the candidate row button
+    expect(document.activeElement).toBe(btn);
+    // Scrolled into view
+    expect(scrollSpy).toHaveBeenCalled();
+    cleanup(h);
+  });
+
+  it("focusJudgeAttemptId matching the accepted attempt labels it Selected attempt", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} focusJudgeAttemptId="judge-att-1" />);
+    const judge = h.$("[data-section='judge']");
+    expect(judge).toBeTruthy();
+    expect(judge!.textContent).toContain("Selected attempt");
+    expect(judge!.textContent).not.toContain("Historical attempt");
+    const panel = h.$("[data-judge-attempt='judge-att-1']");
+    expect(panel).toBeTruthy();
+    expect(panel!.getAttribute("class") ?? "").toContain("ring-accent");
+    cleanup(h);
+  });
+
+  it("focusJudgeAttemptId matching a non-accepted attempt labels it historical without changing accepted summary", () => {
+    const record = makeFullRecord();
+    record.judge.attempts.push({
+      ...record.judge.attempts[0],
+      attemptId: "judge-att-2",
+      instruction: "Earlier judge pass",
+    });
+    const h = renderWithRouter(<RunDetail record={record} focusJudgeAttemptId="judge-att-2" />);
+    const judge = h.$("[data-section='judge']");
+    expect(judge).toBeTruthy();
+    expect(judge!.textContent).toContain("Historical attempt — accepted summary unchanged");
+    const panel = h.$("[data-judge-attempt='judge-att-2']");
+    expect(panel).toBeTruthy();
+    expect(panel!.getAttribute("class") ?? "").toContain("ring-accent");
+    // Accepted attempt panel remains intact and unhighlighted
+    const accepted = h.$("[data-judge-attempt='judge-att-1']");
+    expect(accepted).toBeTruthy();
+    expect(accepted!.getAttribute("class") ?? "").not.toContain("ring-accent");
+    cleanup(h);
+  });
+
+  it("invalid focus candidate id shows a non-blocking notice and renders normally", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} focusCandidateId="nope" />);
+    const notice = h.$("[data-focus-notice='candidate']");
+    expect(notice).toBeTruthy();
+    expect(notice!.textContent).toContain("Linked candidate not found");
+    expect(notice!.getAttribute("role")).not.toBe("alert");
+    // Normal render continues — sections and default selection intact
+    expect(h.$("[data-section='candidates']")).toBeTruthy();
+    expect(h.container.textContent).toContain("def bubble_sort");
+    cleanup(h);
+  });
+
+  it("invalid focus judge attempt id shows a non-blocking notice and renders normally", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} focusJudgeAttemptId="nope" />);
+    const notice = h.$("[data-focus-notice='attempt']");
+    expect(notice).toBeTruthy();
+    expect(notice!.textContent).toContain("Linked judge attempt not found");
+    expect(notice!.getAttribute("role")).not.toBe("alert");
+    expect(h.$("[data-section='judge']")).toBeTruthy();
     cleanup(h);
   });
 

@@ -44,6 +44,7 @@ import { useActionShortcuts } from "./ui/useActionShortcuts";
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import { useExecutionOwner } from "./lib/execution-owner-context";
+import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -338,6 +339,11 @@ export default function RSemble() {
           >
             <ModeToggle mode={state.mode} onChange={handleModeChange} disabled={state.running} />
           </Header>
+
+          {/* Global execution awareness strip (spec §5.5) — visible on every
+              workspace except the exact owning progress route; never hides a
+              storage failure. */}
+          <GlobalExecutionStripContainer compareRunning={state.running} />
 
           {!apiKeyPresent && <NoKeyBanner />}
           {catalogError && (

@@ -538,7 +538,7 @@ describe("OutputPane recent runs", () => {
     const root = createRoot(container);
     act(() => {
       root.render(
-        <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, storageState: "ready", retry: () => {} }}>
+        <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, db: null, storageState: "ready", retry: () => {} }}>
           <MemoryRouter><OutputPane state={initialState} /></MemoryRouter>
         </RepositoryContext.Provider>,
       );
@@ -559,7 +559,7 @@ describe("OutputPane recent runs", () => {
     const root = createRoot(container);
     act(() => {
       root.render(
-        <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, storageState: "ready", retry: () => {} }}>
+        <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, db: null, storageState: "ready", retry: () => {} }}>
           <MemoryRouter><OutputPane state={initialState} /></MemoryRouter>
         </RepositoryContext.Provider>,
       );

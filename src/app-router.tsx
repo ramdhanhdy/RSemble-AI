@@ -18,6 +18,7 @@ import { SuiteEditor } from "./workspaces/evaluations/SuiteEditor";
 import { SuiteTaskEditorRoute } from "./workspaces/evaluations/SuiteTaskEditorRoute";
 import { ProfileList } from "./workspaces/evaluations/ProfileList";
 import { ProfileDetail } from "./workspaces/evaluations/ProfileDetail";
+import { ExperimentRoute } from "./workspaces/evaluations/ExperimentRoute";
 import { useEvaluationRepository } from "./lib/persistence/repository-context";
 import type { CatalogModel } from "./lib/providers/types";
 
@@ -39,6 +40,10 @@ export function AppRoutes({ compareOutlet, models }: { compareOutlet: React.Reac
         <Route path=":suiteId" element={<SuiteEditorRoute models={models} />} />
         <Route path=":suiteId/tasks/:taskId" element={<SuiteTaskEditorRouteWrapper models={models} />} />
       </Route>
+
+      {/* Experiment progress/results — top-level route (spec §5.1). Terminal
+          records render results; non-terminal render live progress. */}
+      <Route path="/experiments/:experimentId" element={<ExperimentRoute />} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
