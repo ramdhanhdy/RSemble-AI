@@ -401,4 +401,30 @@ describe("EvaluationRepository (In-memory)", () => {
     const visible = await evalRepo.listProfiles();
     expect(visible).toHaveLength(0);
   });
+
+  it("profile version immutability: prior versions remain retrievable after append", async () => {
+    await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1", 1));
+    await evalRepo.appendProfileVersion(makeProfileRecord("p1"), makeProfile("p1", 2), 0);
+    await evalRepo.appendProfileVersion(makeProfileRecord("p1"), makeProfile("p1", 3), 1);
+    const v1 = await evalRepo.getProfile("p1", 1);
+    const v2 = await evalRepo.getProfile("p1", 2);
+    const v3 = await evalRepo.getProfile("p1", 3);
+    expect(v1).not.toBeNull();
+    expect(v2).not.toBeNull();
+    expect(v3).not.toBeNull();
+    expect(v1!.version).toBe(1);
+    expect(v3!.version).toBe(3);
+  });
+
+  it("archive/restore does not create a new profile version", async () => {
+    await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1", 1));
+    await evalRepo.setProfileArchived("p1", true, 0);
+    const record = await evalRepo.getProfileRecord("p1");
+    expect(record!.latestVersion).toBe(1);
+    expect(record!.archivedAt).not.toBeNull();
+    await evalRepo.setProfileArchived("p1", false, 1);
+    const restored = await evalRepo.getProfileRecord("p1");
+    expect(restored!.latestVersion).toBe(1);
+    expect(restored!.archivedAt).toBeNull();
+  });
 });

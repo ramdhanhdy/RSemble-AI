@@ -10,21 +10,73 @@
 // in RSemble above this router so state persists across navigation.
 // =============================================================================
 
-import { Routes, Route, Navigate, Link } from "react-router-dom";
+import { Routes, Route, Navigate, Link, useParams } from "react-router-dom";
 import { RunsWorkspace } from "./workspaces/RunsWorkspace";
 import { EvaluationsWorkspace } from "./workspaces/EvaluationsWorkspace";
+import { SuiteList } from "./workspaces/evaluations/SuiteList";
+import { SuiteEditor } from "./workspaces/evaluations/SuiteEditor";
+import { SuiteTaskEditorRoute } from "./workspaces/evaluations/SuiteTaskEditorRoute";
+import { ProfileList } from "./workspaces/evaluations/ProfileList";
+import { ProfileDetail } from "./workspaces/evaluations/ProfileDetail";
+import { useEvaluationRepository } from "./lib/persistence/repository-context";
+import type { CatalogModel } from "./lib/providers/types";
 
-export function AppRoutes({ compareOutlet }: { compareOutlet: React.ReactNode }) {
+export function AppRoutes({ compareOutlet, models }: { compareOutlet: React.ReactNode; models: CatalogModel[] }) {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/compare" replace />} />
       <Route path="/compare" element={<CompareSlot>{compareOutlet}</CompareSlot>} />
       <Route path="/runs" element={<RunsWorkspace />} />
       <Route path="/runs/:runId" element={<RunsWorkspace />} />
-      <Route path="/evaluations" element={<EvaluationsWorkspace />} />
+
+      {/* Evaluations workspace — segmented nav (Suites | Profiles) + Outlet.
+          EvaluationContext is provided by EvaluationsWorkspace so child routes
+          can call useEvaluationRepository() from evaluation-context.tsx. */}
+      <Route path="/evaluations" element={<EvaluationsWorkspace />}>
+        <Route index element={<SuiteListRoute />} />
+        <Route path="profiles" element={<ProfileListRoute />} />
+        <Route path="profiles/:profileId" element={<ProfileDetailRoute />} />
+        <Route path=":suiteId" element={<SuiteEditorRoute models={models} />} />
+        <Route path=":suiteId/tasks/:taskId" element={<SuiteTaskEditorRouteWrapper models={models} />} />
+      </Route>
+
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
+}
+
+/** SuiteList route wrapper — pulls the repo from RepositoryContext and passes
+ *  it as a prop so SuiteList stays test-friendly (matches RunList's pattern). */
+function SuiteListRoute() {
+  const repo = useEvaluationRepository();
+  return <SuiteList repo={repo} />;
+}
+
+/** SuiteEditor route wrapper. */
+function SuiteEditorRoute({ models }: { models: CatalogModel[] }) {
+  const repo = useEvaluationRepository();
+  return <SuiteEditor repo={repo} models={models} />;
+}
+
+/** ProfileList route wrapper. ProfileList falls back to context, but we pass
+ *  repo explicitly for consistency with the suite route wrappers. */
+function ProfileListRoute() {
+  const repo = useEvaluationRepository();
+  return <ProfileList repo={repo} />;
+}
+
+/** ProfileDetail route wrapper. Reads :profileId from the route and passes it
+ *  as a prop (spec §5.1: /evaluations/profiles/:profileId). */
+function ProfileDetailRoute() {
+  const repo = useEvaluationRepository();
+  const { profileId } = useParams<{ profileId: string }>();
+  return <ProfileDetail repo={repo} profileId={profileId ?? ""} />;
+}
+
+/** SuiteTaskEditorRoute wrapper for the mobile deep-link route. */
+function SuiteTaskEditorRouteWrapper({ models }: { models: CatalogModel[] }) {
+  const repo = useEvaluationRepository();
+  return <SuiteTaskEditorRoute repo={repo} models={models} />;
 }
 
 function CompareSlot({ children }: { children: React.ReactNode }) {

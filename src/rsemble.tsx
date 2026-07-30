@@ -371,6 +371,7 @@ export default function RSemble() {
                   </section>
                 </div>
               }
+              models={state.models}
             />
           </div>
         </div>
