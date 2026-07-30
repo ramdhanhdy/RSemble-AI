@@ -8,6 +8,7 @@
 // =============================================================================
 
 import { memo, useState } from "react";
+import { Link } from "react-router-dom";
 import { AlertCircle, ArrowDown, Check, Copy, Loader2, RotateCw } from "lucide-react";
 import type { StudioState } from "../studio-engine";
 import { BrandAvatar } from "./brand-icons";
@@ -20,18 +21,16 @@ import { LeaderboardPreviewCard, PipelineRail, WhatYouGetRow, computeStages } fr
 import { useRunClock, elapsedSeconds } from "./useRunClock";
 import { useStickToBottom } from "./useStickToBottom";
 
-import { getRunCountCached, getRunsCached, type RunHistoryEntry } from "../lib/history-cache";
+import { useRunRepository } from "../lib/persistence/repository-context";
+import { useRunList } from "../workspaces/runs/useRunList";
+import { formatRunRow } from "../workspaces/runs/run-view-model";
+import { RecordRow } from "./RecordRow";
+import type { RunSummary } from "../lib/persistence/run-types";
 
 export function scrollLiveTranscriptToEnd(transcript: { scrollTop: number; readonly scrollHeight: number }): void {
   transcript.scrollTop = transcript.scrollHeight;
 }
 
-/** Extract the slug portion from a composite key ("providerId:slug" → "slug").
- *  Tolerates legacy bare-slug keys (no colon → returns as-is). */
-function slugFromKey(key: string): string {
-  const idx = key.indexOf(":");
-  return idx >= 0 ? key.slice(idx + 1) : key;
-}
 
 /** After this many ms with no text, the waiting caption adopts a warning tone. */
 const FIRST_TOKEN_PATIENCE_MS = 15_000;
@@ -462,7 +461,9 @@ function PaneLabel({ index, title, hint }: { index: string; title: string; hint:
 }
 
 function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
-  const hasHistory = getRunCountCached() > 0;
+  const repo = useRunRepository();
+  const { summaries } = useRunList(repo, { limit: 3 });
+  const hasHistory = summaries.length > 0;
   return (
     // On mobile the content is taller than the viewport, so start at the top of
     // the scroll origin (justify-start) instead of centering content above it.
@@ -480,7 +481,7 @@ function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
           mobile so the rail + guidance fit the first viewport without scrolling. */}
       <div className="hidden sm:contents">
         <LeaderboardPreviewCard />
-        {hasHistory ? <RecentRuns /> : <WhatYouGetRow />}
+        {hasHistory ? <RecentRuns summaries={summaries} /> : <WhatYouGetRow />}
       </div>
       <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
         Configure the command pane, then Run pipeline
@@ -489,70 +490,44 @@ function EmptyState({ mode }: { mode: "rank" | "fuse" }) {
   );
 }
 
-/** Recent runs list — shown once the user has at least one completed run in
- *  history. Replaces the static "What you get" 3-up row so the empty state
- *  becomes a live surface: the rail + preview stay, but the bottom half now
- *  reflects actual past activity. Rows are read-only (config reload is a
- *  future phase, so there is intentionally no click affordance). */
-function RecentRuns() {
-  const runs = getRunsCached(3);
+/** Recent runs list — links to /runs/:runId for full evidence inspection. */
+function RecentRuns({ summaries }: { summaries: RunSummary[] }) {
   return (
     <div className="w-full max-w-3xl rounded-md border border-edge bg-card p-3 text-left">
       <div className="flex items-center justify-between">
         <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
           Recent runs
         </span>
-        <span className="font-mono text-[11px] uppercase tracking-wider text-text-muted">
-          {runs.length} of {getRunCountCached()}
-        </span>
+        <Link
+          to="/runs"
+          className="flex min-h-[44px] items-center gap-1 rounded-sm px-2 font-mono text-[11px] uppercase tracking-wider text-accent transition-colors duration-150 hover:text-accent-deep"
+        >
+          View all runs
+        </Link>
       </div>
-      <ul className="mt-2 flex flex-col gap-1">
-        {runs.map((run) => (
-          <RecentRunRow key={`${run.timestamp}`} run={run} />
-        ))}
+      <ul className="mt-2 flex flex-col gap-1" role="list">
+        {summaries.map((summary) => {
+          const vm = formatRunRow(summary);
+          return (
+            <li key={vm.id}>
+              <RecordRow
+                variant="list"
+                id={vm.id}
+                title={vm.taskTitle}
+                status={vm.status ?? "completed"}
+                timestamp={vm.timestampMs}
+                modelCount={vm.modelCount}
+                source={vm.sourceLabel}
+                href={`/runs/${vm.id}`}
+              />
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
 }
 
-function RecentRunRow({ run }: { run: RunHistoryEntry }) {
-  const winnerStats = run.stats[run.winner];
-  const score = winnerStats?.score;
-  // Read-only history row. Config reload is not implemented, so this is NOT a
-  // button — a clickable affordance that does nothing on activation is a no-op
-  // control (and fails "no advertised action is a no-op").
-  return (
-    <li
-      className="flex w-full min-h-[44px] items-center gap-3 rounded-sm px-2 py-1.5"
-      title={run.taskExcerpt}
-    >
-      <BrandAvatar slug={slugFromKey(run.winner)} size={24} />
-      <span className="flex-1 truncate text-sm text-text">{run.taskExcerpt}</span>
-      {score != null && (
-        <span className="font-mono text-sm tabular-nums text-accent">{score.toFixed(1)}/5</span>
-      )}
-      <span className="font-mono text-xs tabular-nums text-text-muted">{formatRelativeTime(run.timestamp)}</span>
-    </li>
-  );
-}
-
-/** Compact relative-time formatter: "2m ago", "1h ago", "3d ago". Falls back
- *  to a date string for anything older than a week. */
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diffMs = now - timestamp;
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return "just now";
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  const wk = Math.floor(day / 7);
-  if (wk < 5) return `${wk}w ago`;
-  return new Date(timestamp).toLocaleDateString();
-}
 
 function ErrorState({
   message,

@@ -464,3 +464,111 @@ describe("OutputPane — Judge-only retry action", () => {
     expect(html).not.toContain("Retry Judge");
   });
 });
+// ---------------------------------------------------------------------------
+// Recent runs — links to /runs/:runId (Phase 3 Task 3.5)
+// ---------------------------------------------------------------------------
+
+import { MemoryRouter } from "react-router-dom";
+import { InMemoryRunRepository } from "../lib/persistence/run-repository";
+import { RepositoryContext } from "../lib/persistence/repository-context";
+import type { RunRecordV2, FullRunSummaryV2 } from "../lib/persistence/run-types";
+
+function makeRecentSummary(id: string, createdAt: number): FullRunSummaryV2 {
+  return {
+    kind: "full",
+    schemaVersion: 2,
+    id,
+    revision: 1,
+    createdAt,
+    completedAt: createdAt + 1000,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    taskTitle: `Task ${id}`,
+    taskExcerpt: `Task ${id} excerpt`,
+    modelKeys: ["openrouter:gpt-4o"],
+    winnerKeys: ["openrouter:gpt-4o"],
+    scoresByModelKey: { "openrouter:gpt-4o": 4.5 },
+    judgeModelKey: "openrouter:judge",
+    evaluationProfileId: null,
+    evaluationProfileVersion: null,
+    detailAvailable: true,
+    searchText: `task ${id}`,
+  };
+}
+
+function makeRecentRecord(id: string, createdAt: number): RunRecordV2 {
+  return {
+    schemaVersion: 2,
+    id,
+    revision: 1,
+    execution: { ownerId: "tab-1", fence: 1 },
+    createdAt,
+    updatedAt: createdAt + 1000,
+    completedAt: createdAt + 1000,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    task: { title: `Task ${id}`, prompt: "do it", systemPrompt: "helpful", temperature: 0.7 },
+    evaluation: { profile: null, candidateMessages: [] },
+    candidates: [],
+    judge: { status: "idle", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+    fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    winnerKeys: [],
+  };
+}
+
+async function seedRecent(repo: InMemoryRunRepository, entries: Array<[string, number]>) {
+  for (const [id, createdAt] of entries) {
+    await repo.create(makeRecentRecord(id, createdAt), makeRecentSummary(id, createdAt));
+  }
+}
+
+async function settleRecent() {
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+}
+
+describe("OutputPane recent runs", () => {
+  it("View all runs links to /runs", async () => {
+    const repo = new InMemoryRunRepository();
+    await seedRecent(repo, [["run-1", 1000]]);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, storageState: "ready", retry: () => {} }}>
+          <MemoryRouter><OutputPane state={initialState} /></MemoryRouter>
+        </RepositoryContext.Provider>,
+      );
+    });
+    await settleRecent();
+    const link = container.querySelector<HTMLAnchorElement>("a[href='/runs']");
+    expect(link).toBeTruthy();
+    expect(link?.textContent).toMatch(/view all runs/i);
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it("each recent row links to /runs/:runId", async () => {
+    const repo = new InMemoryRunRepository();
+    await seedRecent(repo, [["run-1", 1000], ["run-2", 2000]]);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, storageState: "ready", retry: () => {} }}>
+          <MemoryRouter><OutputPane state={initialState} /></MemoryRouter>
+        </RepositoryContext.Provider>,
+      );
+    });
+    await settleRecent();
+    const links = [...container.querySelectorAll<HTMLAnchorElement>("a[href^='/runs/']")];
+    expect(links.length).toBeGreaterThanOrEqual(2);
+    expect(links.some((l) => l.getAttribute("href") === "/runs/run-1")).toBe(true);
+    expect(links.some((l) => l.getAttribute("href") === "/runs/run-2")).toBe(true);
+    act(() => root.unmount());
+    container.remove();
+  });
+});
