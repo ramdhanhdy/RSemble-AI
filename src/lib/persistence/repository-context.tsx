@@ -6,7 +6,7 @@
 // Runs/Evaluations show a blocking storage error with Retry.
 // =============================================================================
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createDatabase, type DatabaseHandle, type StorageState } from "./database";
 import { createRunRepository, type RunRepository } from "./run-repository";
 import { createEvaluationRepository, type EvaluationRepository } from "./evaluation-repository";
@@ -42,7 +42,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
   const [handle, setHandle] = useState<DatabaseHandle | null>(null);
   const [storageState, setStorageState] = useState<StorageState>("ready");
 
-  function initialize() {
+  const initialize = useCallback(() => {
     const h = createDatabase();
     setHandle(h);
     setStorageState(h.state);
@@ -58,35 +58,41 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         setStorageState("unavailable");
       });
-  }
+  }, []);
 
   useEffect(() => {
     initialize();
-  }, []);
+  }, [initialize]);
 
-  function retry() {
-    if (handle) {
-      try {
-        handle.db.close();
-      } catch {
-        // best-effort
+  const retry = useCallback(() => {
+    setHandle((prev) => {
+      if (prev) {
+        try {
+          prev.db.close();
+        } catch {
+          // best-effort
+        }
       }
-    }
-    setHandle(null);
+      return null;
+    });
     setStorageState("ready");
     // Reinitialize on next tick.
     setTimeout(initialize, 0);
-  }
+  }, [initialize]);
 
-  const runRepo = handle ? createRunRepository(handle.db) : null;
-  const evalRepo = handle ? createEvaluationRepository(handle.db, runRepo!) : null;
+  const runRepo = useMemo(
+    () => (handle ? createRunRepository(handle.db) : null),
+    [handle],
+  );
+  const evalRepo = useMemo(
+    () => (handle && runRepo ? createEvaluationRepository(handle.db, runRepo) : null),
+    [handle, runRepo],
+  );
 
-  const value: RepositoryContextValue = {
-    runRepo,
-    evalRepo,
-    storageState,
-    retry,
-  };
+  const value = useMemo<RepositoryContextValue>(
+    () => ({ runRepo, evalRepo, storageState, retry }),
+    [runRepo, evalRepo, storageState, retry],
+  );
 
   return (
     <RepositoryContext.Provider value={value}>
