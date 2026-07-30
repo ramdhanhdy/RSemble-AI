@@ -41,6 +41,8 @@ import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
 import { useActionShortcuts } from "./ui/useActionShortcuts";
+import { useRunRepository } from "./lib/persistence/repository-context";
+import { createRunRecorder } from "./lib/persistence/run-recorder";
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -88,10 +90,17 @@ export default function RSemble() {
     });
   }
   const streamBuffer = streamBufferRef.current;
-
   // ---------------------------------------------------------------------------
   // Run controller — extracted pipeline orchestration.
+  // Persistence: create a RunRecorder when the repository is available. When
+  // storage is unavailable, the controller keeps evidence in memory only — it
+  // never falls back to the legacy localStorage addRun path (spec §7.7).
   // ---------------------------------------------------------------------------
+  const runRepo = useRunRepository();
+  const recorder = useMemo(
+    () => (runRepo ? createRunRecorder(runRepo) : null),
+    [runRepo],
+  );
   const runController = useMemo(
     () =>
       createRunController({
@@ -100,8 +109,9 @@ export default function RSemble() {
         runEpochRef,
         abortControllersRef,
         streamBuffer,
+        recorder: recorder ?? undefined,
       }),
-    [dispatch, streamBuffer],
+    [dispatch, streamBuffer, recorder],
   );
   const { runFanout, abortRun, retryCandidate, retryJudge, triggerFusion } = runController;
 
