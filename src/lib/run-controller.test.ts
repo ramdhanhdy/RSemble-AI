@@ -1280,3 +1280,138 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
     expect(chatCompletionMock).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Characterization tests (Task 2.1) — protect existing invariants before
+// extracting a shared executor and replacing addRun with lifecycle records.
+// These tests pin the CURRENT behavior so extraction doesn't drift.
+// ---------------------------------------------------------------------------
+
+describe("run-controller — characterization (pre-extraction invariants)", () => {
+  it("Rank success writes exactly one addRun call", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    const { deps } = makeDeps(state);
+    await createRunController(deps).runFanout();
+    const { addRun } = await import("./run-history");
+    const addRunMock = addRun as unknown as ReturnType<typeof vi.fn>;
+    expect(addRunMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("Fuse success writes exactly one addRun call", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([["A", 4], ["B", 3]]),
+    ).mockResolvedValueOnce("fused answer");
+    const { deps } = makeDeps(state);
+    await createRunController(deps).runFanout();
+    const { addRun } = await import("./run-history");
+    const addRunMock = addRun as unknown as ReturnType<typeof vi.fn>;
+    expect(addRunMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("Rank→Fuse currently creates a second history entry (duplication risk Phase 2 fixes)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([["A", 4], ["B", 3]]),
+    ).mockResolvedValueOnce("fused answer");
+    const { deps } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    deps.stateRef.current = { ...deps.stateRef.current, mode: "fuse" };
+    controller.triggerFusion();
+    await new Promise((r) => setTimeout(r, 50));
+    const { addRun } = await import("./run-history");
+    const addRunMock = addRun as unknown as ReturnType<typeof vi.fn>;
+    // Current behavior: triggerFusion → runFusion → addRun creates a second
+    // history entry. Phase 2 replaces this with one stable run ID.
+    expect(addRunMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("Judge retry makes zero candidate stream calls", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock
+      .mockResolvedValueOnce("malformed judge output")
+      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]));
+    const { deps } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    chatStreamMock.mockClear();
+    await controller.retryJudge();
+    expect(chatStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("abort suppresses late results (stale epoch check)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    let resolveB: () => void = () => {};
+    const deferredB = new Promise<void>((r) => { resolveB = r; });
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(async () => {
+        await deferredB;
+        return streamOf("answer B");
+      });
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    const fanoutPromise = controller.runFanout();
+    controller.abortRun();
+    resolveB();
+    await fanoutPromise;
+    const types = dispatched.map((a) => a.type);
+    expect(types).not.toContain("JUDGE_START");
+  });
+
+  it("partial candidate success reaches Judge with at least two usable candidates", async () => {
+    const state = stateWithSlots(THREE_SLOTS, "rank");
+    chatStreamMock
+      .mockImplementationOnce(() => streamOf("answer A"))
+      .mockImplementationOnce(() => { throw new Error("B failed"); })
+      .mockImplementationOnce(() => streamOf("answer C"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).runFanout();
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("JUDGE_START");
+    expect(types).toContain("JUDGE_RESULT");
+  });
+
+  it("candidate providers execute concurrently (not sequentially)", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    const callOrder: string[] = [];
+    chatStreamMock
+      .mockImplementationOnce(() => {
+        callOrder.push("A-start");
+        return streamOf("answer A");
+      })
+      .mockImplementationOnce(() => {
+        callOrder.push("B-start");
+        return streamOf("answer B");
+      });
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    const { deps } = makeDeps(state);
+    await createRunController(deps).runFanout();
+    expect(callOrder).toEqual(["A-start", "B-start"]);
+  });
+
+  it("event order for Rank: FANOUT_START → CANDIDATE_RESULT × N → FANOUT_END → JUDGE_START → JUDGE_RESULT", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).runFanout();
+    const types = dispatched.map((a) => a.type);
+    const startIdx = types.indexOf("FANOUT_START");
+    const firstResultIdx = types.indexOf("CANDIDATE_RESULT");
+    const fanoutEndIdx = types.indexOf("FANOUT_END");
+    const judgeStartIdx = types.indexOf("JUDGE_START");
+    const judgeResultIdx = types.indexOf("JUDGE_RESULT");
+    expect(startIdx).toBeLessThan(firstResultIdx);
+    expect(firstResultIdx).toBeLessThan(fanoutEndIdx);
+    expect(fanoutEndIdx).toBeLessThan(judgeStartIdx);
+    expect(judgeStartIdx).toBeLessThan(judgeResultIdx);
+  });
+});
