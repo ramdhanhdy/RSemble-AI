@@ -32,6 +32,7 @@ import {
   type PoolManifestVersion,
 } from "../evaluations/fusion-study-types";
 import { findJudgeCircularityConflict } from "../evaluations/fusion-study-validation";
+import type { CriticRef } from "../providers/types";
 
 export interface FusionStudyRepository {
   // Recipes — immutable versions, create-only.
@@ -103,7 +104,9 @@ export function validateTrialAttemptLink(
     JSON.stringify(fromTrial.judge1) === JSON.stringify(toTrial.judge1) &&
     JSON.stringify(fromTrial.judge2) === JSON.stringify(toTrial.judge2) &&
     JSON.stringify(fromTrial.recipe) === JSON.stringify(toTrial.recipe) &&
+    JSON.stringify(fromTrial.synthesizer) === JSON.stringify(toTrial.synthesizer) &&
     JSON.stringify(fromTrial.candidateConfig) === JSON.stringify(toTrial.candidateConfig) &&
+    fromTrial.policy === toTrial.policy &&
     fromTrial.stage === toTrial.stage;
   if (!sameTreatment) {
     return (
@@ -427,15 +430,22 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
         if (trial.status === "sealed") {
           throw new StorageError("conflict", `Fusion trial ${trialId} is already sealed — seals are final.`);
         }
-        const recipeRow = await db.fusionRecipes.get([trial.recipe.id, trial.recipe.version]);
-        const recipe = recipeRow && isFusionRecipeVersion(recipeRow.recipe) ? recipeRow.recipe : null;
-        if (!recipe) {
-          throw new StorageError(
-            "validation",
-            `Recipe ${trial.recipe.id} v${trial.recipe.version} referenced by trial ${trialId} not found.`,
-          );
+        // Fuse trials reference a stored recipe (provenance must resolve);
+        // the effective synthesizer is the trial's, else the recipe's.
+        let recipeSynthesizer: CriticRef | null = null;
+        if (trial.recipe !== null) {
+          const recipeRow = await db.fusionRecipes.get([trial.recipe.id, trial.recipe.version]);
+          const recipe = recipeRow && isFusionRecipeVersion(recipeRow.recipe) ? recipeRow.recipe : null;
+          if (!recipe) {
+            throw new StorageError(
+              "validation",
+              `Recipe ${trial.recipe.id} v${trial.recipe.version} referenced by trial ${trialId} not found.`,
+            );
+          }
+          recipeSynthesizer = recipe.synthesizer;
         }
-        const conflict = findJudgeCircularityConflict(trial.judge1, trial.judge2, recipe.synthesizer);
+        const synthesizer = trial.synthesizer ?? recipeSynthesizer;
+        const conflict = findJudgeCircularityConflict(trial.judge1, trial.judge2, synthesizer);
         if (conflict) {
           throw new StorageError("conflict", conflict);
         }
@@ -816,14 +826,24 @@ export class InMemoryFusionStudyRepository implements FusionStudyRepository {
     if (existing.status === "sealed") {
       throw new StorageError("conflict", `Fusion trial ${trialId} is already sealed — seals are final.`);
     }
-    const recipe = await this.getRecipe(existing.recipe.id, existing.recipe.version);
-    if (!recipe) {
-      throw new StorageError(
-        "validation",
-        `Recipe ${existing.recipe.id} v${existing.recipe.version} referenced by trial ${trialId} not found.`,
-      );
+    // Fuse trials reference a stored recipe (provenance must resolve); the
+    // effective synthesizer is the trial's, else the recipe's.
+    let recipeSynthesizer: CriticRef | null = null;
+    if (existing.recipe !== null) {
+      const recipe = await this.getRecipe(existing.recipe.id, existing.recipe.version);
+      if (!recipe) {
+        throw new StorageError(
+          "validation",
+          `Recipe ${existing.recipe.id} v${existing.recipe.version} referenced by trial ${trialId} not found.`,
+        );
+      }
+      recipeSynthesizer = recipe.synthesizer;
     }
-    const conflict = findJudgeCircularityConflict(existing.judge1, existing.judge2, recipe.synthesizer);
+    const conflict = findJudgeCircularityConflict(
+      existing.judge1,
+      existing.judge2,
+      existing.synthesizer ?? recipeSynthesizer,
+    );
     if (conflict) throw new StorageError("conflict", conflict);
     const newRevision = expectedRevision + 1;
     this.trials.set(trialId, {

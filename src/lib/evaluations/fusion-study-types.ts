@@ -161,6 +161,11 @@ export interface FusionTrialCost {
  * A treatment-changing rerun (synthesis rerun, candidate regeneration) creates
  * a NEW FusionTrial with sampleIndex + 1, linked by a FusionAttempt record —
  * never a mutation of this record.
+ *
+ * `policy` distinguishes the four execution policies. Fuse trials carry the
+ * recipe under test; refine trials carry the synthesizer (and MAY carry the
+ * fusion recipe they mirror for confound provenance); rank and best-fixed
+ * trials carry neither.
  */
 export interface FusionTrial {
   id: string;
@@ -171,7 +176,10 @@ export interface FusionTrial {
   candidateConfig: FusionCandidateConfig;
   judge1: CriticRef;
   judge2: CriticRef;
-  recipe: FusionRecipeRef;
+  policy: FusionPolicyKind;
+  recipe: FusionRecipeRef | null;
+  /** The effective synthesizer/reviser for fuse and refine policies. */
+  synthesizer: CriticRef | null;
   stage: FusionStage;
   sampleIndex: number;
   children: FusionTrialChildren;
@@ -292,6 +300,33 @@ export interface PoolAdequacyOutcome {
   note: string;
 }
 
+/** Per-policy outcome on one shortlisted pair (blocked holdout evaluation). */
+export interface StageBPolicyResult {
+  pair: [string, string];
+  policy: FusionPolicyKind;
+  /** Human-readable configuration, e.g. "B + C → Synth X". */
+  configuration: string;
+  meanScore: number;
+  /** Policy cost multiplier relative to best-fixed (policy cost, not experimental). */
+  costMultiplier: number;
+  perTaskScores: Array<{ taskId: string; score: number }>;
+}
+
+/** A predeclared finalist comparison against the MPID (spec §7.4). */
+export interface StageBComparison {
+  pair: [string, string];
+  p: FusionPolicyKind;
+  q: FusionPolicyKind;
+  meanDelta: number;
+  ciLow: number;
+  ciHigh: number;
+  wins: number;
+  ties: number;
+  losses: number;
+  mpid: number;
+  verdict: "adopt" | "not_justified" | "inconclusive";
+}
+
 export interface StageBResult {
   /** The complete screened-pair table (winner's-curse transparency). */
   screenedPairs: ScreenedPairRow[];
@@ -306,6 +341,10 @@ export interface StageBResult {
     reason: string;
   }>;
   poolAdequacy: PoolAdequacyOutcome;
+  /** Blocked holdout results per policy per shortlisted pair. */
+  policyResults: StageBPolicyResult[];
+  /** Finalist paired comparisons vs the predeclared MPID. */
+  comparisons: StageBComparison[];
   completedAt: number;
 }
 
@@ -568,7 +607,19 @@ export function isFusionTrial(v: unknown): v is FusionTrial {
   if (!isFusionCandidateConfig(v.candidateConfig)) return false;
   if (!isCriticRef(v.judge1)) return false;
   if (!isCriticRef(v.judge2)) return false;
-  if (!isFusionRecipeRef(v.recipe)) return false;
+  if (!isString(v.policy) || !(FUSION_POLICY_KINDS as readonly string[]).includes(v.policy)) {
+    return false;
+  }
+  if (v.recipe !== null && !isFusionRecipeRef(v.recipe)) return false;
+  if (v.synthesizer !== null && !isCriticRef(v.synthesizer)) return false;
+  // Policy/ref consistency: fuse requires recipe + synthesizer; refine
+  // requires the reviser (recipe optional for confound provenance); rank and
+  // best-fixed carry neither.
+  if (v.policy === "fuse" && (v.recipe === null || v.synthesizer === null)) return false;
+  if (v.policy === "refine" && v.synthesizer === null) return false;
+  if ((v.policy === "rank" || v.policy === "best_fixed") && (v.recipe !== null || v.synthesizer !== null)) {
+    return false;
+  }
   if (!isFusionStage(v.stage)) return false;
   if (!isNumber(v.sampleIndex) || !Number.isInteger(v.sampleIndex) || v.sampleIndex < 0) {
     return false;
@@ -712,7 +763,43 @@ export function isStageBResult(v: unknown): v is StageBResult {
     return false;
   }
   if (!isPoolAdequacyOutcome(v.poolAdequacy)) return false;
+  if (!Array.isArray(v.policyResults) || !v.policyResults.every(isStageBPolicyResult)) return false;
+  if (!Array.isArray(v.comparisons) || !v.comparisons.every(isStageBComparison)) return false;
   if (!isNumber(v.completedAt)) return false;
+  return true;
+}
+
+export function isStageBPolicyResult(v: unknown): v is StageBPolicyResult {
+  if (!isRecord(v)) return false;
+  if (!isPair(v.pair)) return false;
+  if (!isString(v.policy) || !(FUSION_POLICY_KINDS as readonly string[]).includes(v.policy)) {
+    return false;
+  }
+  if (!isString(v.configuration)) return false;
+  if (!isFiniteNumber(v.meanScore)) return false;
+  if (!isFiniteNumber(v.costMultiplier)) return false;
+  if (
+    !Array.isArray(v.perTaskScores) ||
+    !v.perTaskScores.every((e) => isRecord(e) && isNonEmptyString(e.taskId) && isFiniteNumber(e.score))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function isStageBComparison(v: unknown): v is StageBComparison {
+  if (!isRecord(v)) return false;
+  if (!isPair(v.pair)) return false;
+  if (!isString(v.p) || !(FUSION_POLICY_KINDS as readonly string[]).includes(v.p)) return false;
+  if (!isString(v.q) || !(FUSION_POLICY_KINDS as readonly string[]).includes(v.q)) return false;
+  if (!isFiniteNumber(v.meanDelta)) return false;
+  if (!isFiniteNumber(v.ciLow)) return false;
+  if (!isFiniteNumber(v.ciHigh)) return false;
+  if (!isNumber(v.wins) || !isNumber(v.ties) || !isNumber(v.losses)) return false;
+  if (!isFiniteNumber(v.mpid)) return false;
+  if (v.verdict !== "adopt" && v.verdict !== "not_justified" && v.verdict !== "inconclusive") {
+    return false;
+  }
   return true;
 }
 

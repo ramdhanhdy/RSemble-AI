@@ -43,7 +43,7 @@ function criticKey(ref: CriticRef): string {
 export function findJudgeCircularityConflict(
   judge1: CriticRef,
   judge2: CriticRef,
-  synthesizer: CriticRef,
+  synthesizer: CriticRef | null,
 ): string | null {
   if (criticKey(judge2) === criticKey(judge1)) {
     return (
@@ -52,7 +52,8 @@ export function findJudgeCircularityConflict(
       `must never evaluate its product.`
     );
   }
-  if (criticKey(judge2) === criticKey(synthesizer)) {
+  // Rank/best-fixed treatments have no synthesizer — only judge distinctness applies.
+  if (synthesizer !== null && criticKey(judge2) === criticKey(synthesizer)) {
     return (
       `Anti-circularity violation: holdout judge ${criticKey(judge2)} equals ` +
       `synthesizer ${criticKey(synthesizer)} — the synthesizer must never evaluate ` +

@@ -80,7 +80,9 @@ function makeTrial(): FusionTrial {
     candidateConfig: { slots: [slot("s1", "a/m1"), slot("s3", "b/m3")] },
     judge1: { providerId: "openrouter", model: "acme/judge-1" },
     judge2: { providerId: "gemini", model: "acme/judge-2" },
+    policy: "fuse",
     recipe: { id: "recipe-blind-raw", version: 1 },
+    synthesizer: { providerId: "openrouter", model: "acme/synth-1" },
     stage: "B",
     sampleIndex: 0,
     children: {
