@@ -133,6 +133,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     const value: RepositoryContextValue = {
       runRepo,
       evalRepo,
+      fusionRepo: null,
       db,
       storageState: "ready",
       retry: () => undefined,
@@ -174,6 +175,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     const value: RepositoryContextValue = {
       runRepo,
       evalRepo,
+      fusionRepo: null,
       db,
       storageState: "ready",
       retry: () => undefined,

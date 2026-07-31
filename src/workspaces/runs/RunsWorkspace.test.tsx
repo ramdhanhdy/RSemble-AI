@@ -26,7 +26,7 @@ function renderWithRouter(initialEntry = "/runs", repo: InMemoryRunRepository): 
   const root = createRoot(container);
   act(() => {
     root.render(
-      <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, db: null, storageState: "ready", retry: () => {} }}>
+      <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, fusionRepo: null, db: null, storageState: "ready", retry: () => {} }}>
         <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
             <Route path="/runs" element={<RunsWorkspace />} />

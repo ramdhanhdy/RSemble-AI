@@ -12,7 +12,7 @@ import { RepositoryContext } from "../lib/persistence/repository-context";
 function withRepo(node: React.ReactNode) {
   return (
     <RepositoryContext.Provider
-      value={{ runRepo: new InMemoryRunRepository(), evalRepo: null, db: null, storageState: "ready", retry: () => {} }}
+      value={{ runRepo: new InMemoryRunRepository(), evalRepo: null, fusionRepo: null, db: null, storageState: "ready", retry: () => {} }}
     >
       {node}
     </RepositoryContext.Provider>

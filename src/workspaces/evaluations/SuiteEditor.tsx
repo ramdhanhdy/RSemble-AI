@@ -30,6 +30,8 @@ import { useExperimentController } from "../../lib/evaluations/experiment-contro
 import { useExecutionOwner } from "../../lib/execution-owner-context";
 import type { ExecutionOwner } from "../../lib/execution-owner";
 import { SuiteExperimentHistory } from "./SuiteExperimentHistory";
+import { FusionStudyPanel } from "./FusionStudyPanel";
+import { useFusionStudyRepository } from "../../lib/persistence/repository-context";
 import type {
   EvaluationSuite,
   EvaluationTask,
@@ -71,6 +73,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
   const { owner: ctxOwner } = useExecutionOwner();
   const controller = controllerProp !== undefined ? controllerProp : ctxController;
   const executionOwner = ownerProp !== undefined ? ownerProp : ctxOwner;
+  const fusionRepo = useFusionStudyRepository();
 
   const [persisted, setPersisted] = useState<EvaluationSuite | null>(null);
   const [draft, setDraft] = useState<EvaluationSuite | null>(null);
@@ -412,6 +415,14 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
           />
           <div className="mt-3 min-w-0 border-t border-edge pt-3">
             <SuiteExperimentHistory repo={repo} suiteId={persisted.id} />
+          </div>
+          <div className="mt-3 min-w-0 border-t border-edge pt-3">
+            <FusionStudyPanel
+              fusionRepo={fusionRepo}
+              evalRepo={repo}
+              suite={persisted}
+              models={models}
+            />
           </div>
         </section>
 

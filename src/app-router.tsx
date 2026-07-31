@@ -19,7 +19,8 @@ import { SuiteTaskEditorRoute } from "./workspaces/evaluations/SuiteTaskEditorRo
 import { ProfileList } from "./workspaces/evaluations/ProfileList";
 import { ProfileDetail } from "./workspaces/evaluations/ProfileDetail";
 import { ExperimentRoute } from "./workspaces/evaluations/ExperimentRoute";
-import { useEvaluationRepository } from "./lib/persistence/repository-context";
+import { FusionStudyRoute } from "./workspaces/evaluations/FusionStudyView";
+import { useEvaluationRepository, useFusionStudyRepository } from "./lib/persistence/repository-context";
 import type { CatalogModel } from "./lib/providers/types";
 
 export function AppRoutes({ compareOutlet, models }: { compareOutlet: React.ReactNode; models: CatalogModel[] }) {
@@ -39,6 +40,7 @@ export function AppRoutes({ compareOutlet, models }: { compareOutlet: React.Reac
         <Route path="profiles/:profileId" element={<ProfileDetailRoute />} />
         <Route path=":suiteId" element={<SuiteEditorRoute models={models} />} />
         <Route path=":suiteId/tasks/:taskId" element={<SuiteTaskEditorRouteWrapper models={models} />} />
+        <Route path=":suiteId/fusion/:studyId" element={<FusionStudyRouteWrapper />} />
       </Route>
 
       {/* Experiment progress/results — top-level route (spec §5.1). Terminal
@@ -61,6 +63,12 @@ function SuiteListRoute() {
 function SuiteEditorRoute({ models }: { models: CatalogModel[] }) {
   const repo = useEvaluationRepository();
   return <SuiteEditor repo={repo} models={models} />;
+}
+
+/** Fusion Study route wrapper — under the suite, inside Evaluations (spec §9). */
+function FusionStudyRouteWrapper() {
+  const fusionRepo = useFusionStudyRepository();
+  return <FusionStudyRoute fusionRepo={fusionRepo} />;
 }
 
 /** ProfileList route wrapper. ProfileList falls back to context, but we pass

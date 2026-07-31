@@ -155,7 +155,7 @@ function archiveWithSuites(suites: EvaluationSuite[]): WorkbenchArchiveV1 {
 }
 
 function contextValue(db: RSembleEvaluationDB | null, storageState: RepositoryContextValue["storageState"]): RepositoryContextValue {
-  return { runRepo: null, evalRepo: null, db, storageState, retry: () => undefined };
+  return { runRepo: null, evalRepo: null, fusionRepo: null, db, storageState, retry: () => undefined };
 }
 
 async function chooseFile(h: Harness, file: File) {

@@ -10,10 +10,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { createDatabase, type DatabaseHandle, type RSembleEvaluationDB, type StorageState } from "./database";
 import { createRunRepository, type RunRepository } from "./run-repository";
 import { createEvaluationRepository, type EvaluationRepository } from "./evaluation-repository";
+import { createFusionStudyRepository, type FusionStudyRepository } from "./fusion-study-repository";
 
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
+  fusionRepo: FusionStudyRepository | null;
   /** Raw Dexie handle for infrastructure that composes repositories (execution
    *  lease, experiment unit of work). Null while storage is unavailable. */
   db: RSembleEvaluationDB | null;
@@ -25,6 +27,7 @@ export interface RepositoryContextValue {
 export const RepositoryContext = createContext<RepositoryContextValue>({
   runRepo: null,
   evalRepo: null,
+  fusionRepo: null,
   db: null,
   storageState: "unavailable",
   retry: () => undefined,
@@ -36,6 +39,10 @@ export function useRunRepository(): RunRepository | null {
 
 export function useEvaluationRepository(): EvaluationRepository | null {
   return useContext(RepositoryContext).evalRepo;
+}
+
+export function useFusionStudyRepository(): FusionStudyRepository | null {
+  return useContext(RepositoryContext).fusionRepo;
 }
 
 export function useStorageState(): StorageState {
@@ -92,10 +99,14 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     () => (handle && runRepo ? createEvaluationRepository(handle.db, runRepo) : null),
     [handle, runRepo],
   );
+  const fusionRepo = useMemo(
+    () => (handle ? createFusionStudyRepository(handle.db) : null),
+    [handle],
+  );
 
   const value = useMemo<RepositoryContextValue>(
-    () => ({ runRepo, evalRepo, db: handle?.db ?? null, storageState, retry }),
-    [runRepo, evalRepo, handle, storageState, retry],
+    () => ({ runRepo, evalRepo, fusionRepo, db: handle?.db ?? null, storageState, retry }),
+    [runRepo, evalRepo, fusionRepo, handle, storageState, retry],
   );
 
   return (
