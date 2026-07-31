@@ -1,15 +1,20 @@
 // =============================================================================
+// =============================================================================
 // ResultMatrix — accessible desktop experiment result matrix (spec §12.1).
 //
 // A real <table>: task rows × provider-scoped model columns. Cells are the
 // accepted Judge score (neutral tabular numerals, deep-linked to run evidence)
 // or explicit missing text paired with a StatusMark — never a bare dash and
-// never score-magnitude coloring. Complete-coverage winners get a restrained
-// emerald ring; every tied winner is marked. The tablet scroll region is
+// NEVER score-magnitude coloring (ui-redesign-spec §6.1). Readability comes
+// from structure, not heat: per-row best scores are marked with a bold ▲
+// glyph, complete-coverage winners get crown + #1 and a restrained success
+// ring (every tied winner marked), and the footer splits mean score and
+// coverage into two explicit labeled rows. The tablet scroll region is
 // keyboard-focusable with a persistent outline and never scrolls the page.
 // =============================================================================
 
 import { Link } from "react-router-dom";
+import { Crown } from "lucide-react";
 import type { ReactElement } from "react";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
@@ -66,26 +71,47 @@ export function cellEvidenceLink(
 }
 
 const CELL_LINK_CLASSES =
-  "flex min-h-[44px] items-center tabular-nums text-sm text-text transition-colors duration-150 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+  "flex min-h-[44px] items-center gap-1 tabular-nums text-sm font-semibold text-text transition-colors duration-150 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+/** Crown + Winner — the spec winner glyph, never color alone (ui-redesign-spec §3). */
+function WinnerBadge(): ReactElement {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-success">
+      <Crown size={12} aria-hidden="true" /> Winner
+    </span>
+  );
+}
 
 function CellContent({
   cell,
   modelKey,
   runRecords,
+  rowBest,
 }: {
   cell: CellState;
   modelKey: string;
   runRecords: ReadonlyMap<string, RunRecordV2>;
+  rowBest: boolean;
 }): ReactElement {
   if (cell.kind === "scored") {
     const href = cellEvidenceLink(cell, modelKey, cell.runId ? runRecords.get(cell.runId) : undefined);
     const score = formatTaskScore(cell.score);
-    return href ? (
-      <Link to={href} className={CELL_LINK_CLASSES}>
+    const content = (
+      <>
         {score}
+        {rowBest ? (
+          <span aria-label="best in row" title="Best score for this task" className="text-xs text-text-muted">
+            ▲
+          </span>
+        ) : null}
+      </>
+    );
+    return href ? (
+      <Link to={href} className={`${CELL_LINK_CLASSES}${rowBest ? " font-bold" : ""}`}>
+        {content}
       </Link>
     ) : (
-      <span className={CELL_LINK_CLASSES}>{score}</span>
+      <span className={CELL_LINK_CLASSES}>{content}</span>
     );
   }
   const display = MISSING_CELL_DISPLAY[cell.reason];
@@ -128,7 +154,7 @@ export function ResultMatrix({
             <tr className="border-b border-edge">
               <th
                 scope="col"
-                className="sticky top-0 z-10 bg-panel px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
+                className="sticky top-0 z-10 min-w-[200px] bg-panel px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
               >
                 Task
               </th>
@@ -139,15 +165,15 @@ export function ResultMatrix({
                   <th
                     key={modelKey}
                     scope="col"
-                    className={`sticky top-0 z-10 bg-panel px-3 py-2 font-normal${isWinner ? " ring-1 ring-success/40" : ""}`}
+                    className={`sticky top-0 z-10 min-w-[150px] bg-panel px-3 py-2 font-normal${isWinner ? " bg-success/[0.06] ring-1 ring-success/40" : ""}`}
                   >
-                    <span className="flex flex-col gap-0.5">
+                    <span className="flex flex-col items-start gap-1 whitespace-nowrap">
                       {slot ? (
                         <CompactModelLabel providerId={slot.providerId} slug={slot.slug} />
                       ) : (
                         <span className="font-mono text-text">{modelKey}</span>
                       )}
-                      {isWinner ? <span className="text-xs text-success">Winner</span> : null}
+                      {isWinner ? <WinnerBadge /> : null}
                     </span>
                   </th>
                 );
@@ -160,27 +186,45 @@ export function ResultMatrix({
               const title = task?.title ?? taskId;
               const rowCells = aggregation.cells[taskIdx] ?? [];
               const rowRunId = rowCells.find((c) => c.runId !== null)?.runId ?? null;
+              // Per-row best: the highest score this task, all ties marked.
+              let best: number | null = null;
+              for (const c of rowCells) {
+                if (c.kind === "scored") best = best === null ? c.score : Math.max(best, c.score);
+              }
               return (
                 <tr key={taskId} className="border-b border-edge last:border-b-0">
-                  <th scope="row" className="max-w-[280px] px-3 py-1 align-middle font-normal">
+                  <th scope="row" className="max-w-[320px] px-3 py-1 align-middle font-normal">
                     {rowRunId ? (
                       <Link
                         to={`/runs/${rowRunId}`}
-                        className="flex min-h-[44px] min-w-0 items-center truncate text-sm text-text transition-colors duration-150 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="flex min-h-[44px] min-w-0 items-center whitespace-normal text-sm font-medium leading-snug text-text transition-colors duration-150 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         {title}
                       </Link>
                     ) : (
-                      <span className="flex min-h-[44px] min-w-0 items-center truncate text-sm text-text">
+                      <span className="flex min-h-[44px] min-w-0 items-center whitespace-normal text-sm font-medium leading-snug text-text">
                         {title}
                       </span>
                     )}
                   </th>
-                  {aggregation.modelKeys.map((modelKey, modelIdx) => (
-                    <td key={modelKey} className="px-3 py-1 align-middle">
-                      <CellContent cell={rowCells[modelIdx]} modelKey={modelKey} runRecords={runRecords} />
-                    </td>
-                  ))}
+                  {aggregation.modelKeys.map((modelKey, modelIdx) => {
+                    const cell = rowCells[modelIdx];
+                    return (
+                      <td key={modelKey} className="px-3 py-1 align-middle">
+                        <CellContent
+                          cell={cell}
+                          modelKey={modelKey}
+                          runRecords={runRecords}
+                          rowBest={
+                            cell.kind === "scored" &&
+                            best !== null &&
+                            // Same epsilon as aggregation winner ties (1e-9).
+                            Math.abs(cell.score - best) <= 1e-9
+                          }
+                        />
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
@@ -191,24 +235,45 @@ export function ResultMatrix({
                 scope="row"
                 className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
               >
-                Mean · coverage
+                Mean score
               </th>
               {aggregation.models.map((model) => {
                 const isWinner = winners.has(model.modelKey);
                 return (
                   <td
                     key={model.modelKey}
-                    className={`px-3 py-2${isWinner ? " ring-1 ring-success/40" : ""}`}
+                    className={`px-3 py-2${isWinner ? " bg-success/[0.06] ring-1 ring-success/40" : ""}`}
                   >
                     <span className="flex items-center gap-2">
                       {model.mean !== null ? (
-                        <span className="tabular-nums text-sm text-text">
-                          {formatAggregateMean(model.mean)} · {model.scoredTasks}/{model.totalTasks}
+                        <span className="tabular-nums text-base font-bold text-text">
+                          {formatAggregateMean(model.mean)}
                         </span>
                       ) : (
                         <span className="text-sm text-text-secondary">No scores</span>
                       )}
-                      {isWinner ? <span className="text-xs text-success">Winner</span> : null}
+                      {isWinner ? <WinnerBadge /> : null}
+                    </span>
+                  </td>
+                );
+              })}
+            </tr>
+            <tr className="border-t border-edge/60 bg-panel">
+              <th
+                scope="row"
+                className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
+              >
+                Coverage
+              </th>
+              {aggregation.models.map((model) => {
+                const isWinner = winners.has(model.modelKey);
+                return (
+                  <td
+                    key={model.modelKey}
+                    className={`px-3 py-2${isWinner ? " bg-success/[0.06] ring-1 ring-success/40" : ""}`}
+                  >
+                    <span className="tabular-nums text-sm text-text-secondary">
+                      {model.scoredTasks}/{model.totalTasks} tasks
                     </span>
                   </td>
                 );

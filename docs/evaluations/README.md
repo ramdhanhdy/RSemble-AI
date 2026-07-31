@@ -7,6 +7,12 @@ evaluation content. Validate both mechanically with:
 npx tsx scripts/validate-archive-fixture.ts
 ```
 
+Dev-only preview tooling (not shipped, not type-gated): `scripts/render-results-preview.tsx`
+renders `ExperimentResults` with a scored fixture into the compiled Tailwind bundle for
+screenshot review — `npx vite-node scripts/render-results-preview.tsx` (requires
+`npx vite build` first; writes a disposable `.preview-experiment-results.html` you can
+delete afterward).
+
 ## Two import formats — pick the right one
 
 | | Workbench Archive v1 | Suite Package v1 |

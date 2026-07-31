@@ -7,7 +7,7 @@ import { SuiteEditor } from "./SuiteEditor";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import { ExecutionOwnerProvider } from "../../lib/execution-owner-context";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
-import type { EvaluationSuite, EvaluationTask } from "../../lib/evaluations/evaluation-types";
+import type { EvaluationSuite, EvaluationTask, ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -110,6 +110,32 @@ function makeSuite(id: string, overrides: Partial<EvaluationSuite> = {}): Evalua
 
 async function seedSuite(repo: InMemoryEvaluationRepository, suite: EvaluationSuite) {
   await repo.saveSuite(suite, 0);
+}
+
+function makeExperiment(id: string, suite: EvaluationSuite): ExperimentRecord {
+  return {
+    id,
+    revision: 0,
+    suiteId: suite.id,
+    suiteVersion: suite.version,
+    protocolFingerprint: "sha256:fp",
+    status: "completed",
+    execution: null,
+    snapshot: {
+      suiteId: suite.id,
+      suiteVersion: suite.version,
+      tasks: suite.tasks,
+      modelSlots: suite.modelSlots,
+      defaultJudge: suite.defaultJudge,
+      defaultEvaluation: suite.defaultEvaluation,
+      profiles: [],
+      protocolFingerprint: "sha256:fp",
+      createdAt: 1000,
+    },
+    tasks: [],
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
 }
 
 function makeValidSuite(id: string): EvaluationSuite {
@@ -374,6 +400,28 @@ describe("SuiteEditor — run execution", () => {
     const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
     expect(runBtn.disabled).toBe(true);
     expect(h.container.textContent).toContain("Storage unavailable — cannot start an experiment");
+    cleanup(h);
+  });
+
+  it("shows a Latest results entry linking to the newest experiment", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+    await repo.createExperiment(makeExperiment("exp-1", suite));
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await settle();
+    const link = h.$('[data-testid="latest-results-link"]');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href")).toBe("/experiments/exp-1");
+    cleanup(h);
+  });
+
+  it("hides the Latest results entry when the suite has no experiments", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await settle();
+    expect(h.$('[data-testid="latest-results-link"]')).toBeNull();
     cleanup(h);
   });
 

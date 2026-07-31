@@ -190,7 +190,8 @@ describe("MobileExperimentResults — model selector (plan 7.3 #1)", () => {
 describe("MobileExperimentResults — selected model (plan 7.3 #2)", () => {
   it("shows mean + coverage and one row per task with score or status", () => {
     const h = renderMobile();
-    expect(h.container.textContent).toContain("4.33 · 3/3");
+    expect(h.container.textContent).toContain("4.33");
+    expect(h.container.textContent).toContain("3/3 tasks");
     const rows = h.$$("li");
     expect(rows).toHaveLength(3);
     expect(rows[0].textContent).toContain("Task 1: Summarize");
@@ -201,7 +202,8 @@ describe("MobileExperimentResults — selected model (plan 7.3 #2)", () => {
   it("shows missing status text + StatusMark for cells without a score", () => {
     const h = renderMobile();
     switchModel(h, KEY_C);
-    expect(h.container.textContent).toContain("4.00 · 1/3");
+    expect(h.container.textContent).toContain("4.00");
+    expect(h.container.textContent).toContain("1/3 tasks");
     const rows = h.$$("li");
     expect(rows[1].textContent).toContain("No score");
     expect(rows[1].querySelector("[data-status-mark]")).not.toBeNull();
@@ -220,7 +222,8 @@ describe("MobileExperimentResults — local selection (plan 7.3 #3)", () => {
     switchModel(h, KEY_B);
     expect(h.$("[data-location]")?.getAttribute("data-location")).toBe("/experiments/exp-1");
     // experiment state intact: model B aggregate now displayed
-    expect(h.container.textContent).toContain("4.00 · 3/3");
+    expect(h.container.textContent).toContain("4.00");
+    expect(h.container.textContent).toContain("3/3 tasks");
     expect(h.$$("li")).toHaveLength(3);
     cleanup(h);
   });

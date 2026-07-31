@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Crown } from "lucide-react";
 import type { ReactElement } from "react";
 import type {
   ExperimentRecord,
@@ -155,15 +156,21 @@ export function ExperimentResults({
       ? profiles.map((p) => `${p.name} v${p.version}`).join(", ")
       : "Holistic judgment";
 
+  const winnerModels = aggregation.models.filter((m) => aggregation.winnerKeys.includes(m.modelKey));
+  const rankedModels = [...aggregation.models].sort((a, b) => (b.mean ?? -1) - (a.mean ?? -1));
+
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-4 p-4">
       <header className="flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <h1 className="truncate font-mono text-sm text-text">{experiment.id}</h1>
+          <h1 className="truncate text-lg font-semibold text-text">
+            {suiteName ?? experiment.suiteId}
+          </h1>
           <StatusMark status={experiment.status} />
         </div>
         <p className="text-sm text-text-secondary">
-          {suiteName ?? experiment.suiteId} · Suite v{experiment.suiteVersion} · {startedText}
+          Experiment results · Suite v{experiment.suiteVersion} · {startedText} ·{" "}
+          <span className="font-mono text-xs text-text-muted">{experiment.id}</span>
         </p>
         <div>
           <Link
@@ -175,26 +182,68 @@ export function ExperimentResults({
         </div>
       </header>
 
-      <section aria-label="Aggregate scores" className="flex min-w-0 flex-col gap-1">
-        <p className="text-sm text-text">
-          {aggregation.winnerKeys.length > 0
-            ? `Winner: ${aggregation.winnerKeys.join(", ")}`
-            : "No complete-coverage winner"}
-        </p>
-        <ul className="flex min-w-0 flex-col gap-1">
-          {aggregation.models.map((model) => {
+      {/* Winner callout — crown + #1, coverage labeled (ui-redesign-spec §3). */}
+      {winnerModels.length > 0 ? (
+        <section
+          aria-label="Winner"
+          className="flex min-w-0 flex-col gap-1 rounded-md border border-success/40 bg-success/[0.06] px-4 py-3"
+          data-testid="winner-callout"
+        >
+          {winnerModels.map((model) => {
             const slot = slotsByKey.get(model.modelKey);
             return (
-              <li key={model.modelKey} className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+              <div key={model.modelKey} className="flex min-w-0 flex-wrap items-center gap-2">
+                <Crown size={15} className="text-success" aria-hidden="true" />
+                <span className="text-sm font-semibold text-success">#1</span>
                 {slot ? (
                   <CompactModelLabel providerId={slot.providerId} slug={slot.slug} />
                 ) : (
                   <span className="font-mono text-text">{model.modelKey}</span>
                 )}
                 {model.mean !== null ? (
-                  <span className="tabular-nums text-text">
-                    {formatAggregateMean(model.mean)} · {model.scoredTasks}/{model.totalTasks}
+                  <span className="tabular-nums text-sm font-bold text-text">
+                    {formatAggregateMean(model.mean)}
                   </span>
+                ) : null}
+                <span className="text-xs text-text-secondary">
+                  mean over {model.scoredTasks}/{model.totalTasks} tasks
+                </span>
+              </div>
+            );
+          })}
+        </section>
+      ) : (
+        <p className="text-sm text-text-secondary">No complete-coverage winner</p>
+      )}
+
+      <section aria-label="Aggregate scores" className="flex min-w-0 flex-col gap-1">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-text-muted">
+          Standings
+        </h2>
+        <ul className="flex min-w-0 flex-col gap-1">
+          {rankedModels.map((model, rank) => {
+            const slot = slotsByKey.get(model.modelKey);
+            const isWinner = aggregation.winnerKeys.includes(model.modelKey);
+            return (
+              <li key={model.modelKey} className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+                <span className="w-7 font-mono text-xs text-text-muted">#{rank + 1}</span>
+                {isWinner ? (
+                  <Crown size={12} className="text-success" aria-label="Winner" />
+                ) : null}
+                {slot ? (
+                  <CompactModelLabel providerId={slot.providerId} slug={slot.slug} />
+                ) : (
+                  <span className="font-mono text-text">{model.modelKey}</span>
+                )}
+                {model.mean !== null ? (
+                  <>
+                    <span className="tabular-nums text-sm font-semibold text-text">
+                      {formatAggregateMean(model.mean)}
+                    </span>
+                    <span className="text-xs text-text-secondary">
+                      mean · {model.scoredTasks}/{model.totalTasks} tasks
+                    </span>
+                  </>
                 ) : (
                   <span className="text-text-secondary">No scores</span>
                 )}

@@ -216,9 +216,9 @@ describe("ResultMatrix — table semantics (plan 7.2 #1, #8)", () => {
     expect(caption?.textContent).toContain("task scores by model");
     // corner + one scope=col per model
     expect(h.$$('thead th[scope="col"]')).toHaveLength(SLOTS.length + 1);
-    // one scope=row per task + one for the footer aggregate row
+    // one scope=row per task + two labeled footer rows (mean score, coverage)
     expect(h.$$('tbody th[scope="row"]')).toHaveLength(TASKS.length);
-    expect(h.$$('tfoot th[scope="row"]')).toHaveLength(1);
+    expect(h.$$('tfoot th[scope="row"]')).toHaveLength(2);
     cleanup(h);
   });
 
@@ -343,9 +343,15 @@ describe("ResultMatrix — footer (plan 7.2 #5)", () => {
   it("shows formatted means with coverage per model", () => {
     const h = renderMatrix();
     const tfoot = h.$("tfoot");
-    expect(tfoot?.textContent).toContain("4.33 · 3/3");
-    expect(tfoot?.textContent).toContain("4.00 · 3/3");
-    expect(tfoot?.textContent).toContain("4.00 · 1/3");
+    // Mean score and coverage are separate, explicitly labeled rows — never a
+    // cryptic "4.33 · 3/3" composite.
+    expect(tfoot?.textContent).toContain("Mean score");
+    expect(tfoot?.textContent).toContain("Coverage");
+    expect(tfoot?.textContent).toContain("4.33");
+    expect(tfoot?.textContent).toContain("4.00");
+    expect(tfoot?.textContent).toContain("3/3 tasks");
+    expect(tfoot?.textContent).toContain("1/3 tasks");
+    expect(tfoot?.textContent).not.toContain("· 3/3");
     cleanup(h);
   });
 
@@ -382,8 +388,9 @@ describe("ResultMatrix — winner treatment (plan 7.2 #6, #7, #11)", () => {
     expect(colHeaders[2].className).toContain("ring-success/40");
     expect(colHeaders[2].textContent).toContain("Winner");
     expect(colHeaders[3].className).not.toContain("ring-success/40");
+    // Two tied winners × two footer rows (mean + coverage) = 4 marked cells.
     const markedFooters = h.$$("tfoot td").filter((td) => td.className.includes("ring-success/40"));
-    expect(markedFooters).toHaveLength(2);
+    expect(markedFooters).toHaveLength(4);
     cleanup(h);
   });
 
@@ -402,6 +409,20 @@ describe("ResultMatrix — winner treatment (plan 7.2 #6, #7, #11)", () => {
 });
 
 // --- 9. Compact model identity ------------------------------------------------------------
+
+describe("ResultMatrix — per-row best marker", () => {
+  it("marks the best cell per row with a bold ▲, all ties marked", () => {
+    const h = renderMatrix();
+    const rows = h.$$("tbody tr");
+    const mark = (td: HTMLElement) => td.querySelector('[aria-label="best in row"]') !== null;
+    // Row 0: only column A (5.0) is best.
+    expect(tdCells(rows[0]).map(mark)).toEqual([true, false, false]);
+    // Rows 1 and 2: A and B tie at 4.0 — both marked, C (missing) never marked.
+    expect(tdCells(rows[1]).map(mark)).toEqual([true, true, false]);
+    expect(tdCells(rows[2]).map(mark)).toEqual([true, true, false]);
+    cleanup(h);
+  });
+});
 
 describe("ResultMatrix — model identity (plan 7.2 #9)", () => {
   it("renders CompactModelLabel with full identity available without hover", () => {

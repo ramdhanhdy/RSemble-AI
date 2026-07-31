@@ -22,8 +22,8 @@
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ChevronDown, Loader2, Save, Play, AlertCircle } from "lucide-react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { ChevronDown, Loader2, Save, Play, AlertCircle, Trophy } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import { useExperimentController } from "../../lib/evaluations/experiment-controller-context";
@@ -36,6 +36,7 @@ import type {
   EvaluationSuite,
   EvaluationTask,
   EvaluationProfileRef,
+  ExperimentRecord,
 } from "../../lib/evaluations/evaluation-types";
 import type { ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel } from "../../lib/providers/types";
@@ -77,6 +78,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
 
   const [persisted, setPersisted] = useState<EvaluationSuite | null>(null);
   const [draft, setDraft] = useState<EvaluationSuite | null>(null);
+  const [latestExperiment, setLatestExperiment] = useState<ExperimentRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -126,6 +128,22 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Latest experiment for the header "Latest results" entry — the persistent
+  // path back to results after navigation (discoverability, spec §10.4).
+  useEffect(() => {
+    let cancelled = false;
+    setLatestExperiment(null);
+    if (!repo || !persisted) return;
+    void repo.listExperiments(persisted.id).then((list) => {
+      if (!cancelled) setLatestExperiment(list[0] ?? null);
+    }).catch(() => {
+      if (!cancelled) setLatestExperiment(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, persisted]);
 
   // --- Dirty + validation ---
   const dirty = useMemo(
@@ -317,6 +335,17 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {latestExperiment ? (
+              <Link
+                to={`/experiments/${latestExperiment.id}`}
+                data-testid="latest-results-link"
+                title="View the latest experiment results for this suite"
+                className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <Trophy size={14} aria-hidden="true" />
+                Latest results
+              </Link>
+            ) : null}
             <button
               type="button"
               aria-expanded={settingsOpen}

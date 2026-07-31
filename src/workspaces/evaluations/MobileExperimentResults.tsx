@@ -114,11 +114,15 @@ export function MobileExperimentResults({
 
       {model ? (
         <p className="flex items-baseline gap-2 text-sm">
-          <span className="text-text-secondary">Mean · coverage</span>
           {model.mean !== null ? (
-            <span className="tabular-nums text-text">
-              {formatAggregateMean(model.mean)} · {model.scoredTasks}/{model.totalTasks}
-            </span>
+            <>
+              <span className="tabular-nums text-base font-bold text-text">
+                {formatAggregateMean(model.mean)}
+              </span>
+              <span className="text-xs text-text-secondary">
+                mean · {model.scoredTasks}/{model.totalTasks} tasks
+              </span>
+            </>
           ) : (
             <span className="text-text-secondary">No scores</span>
           )}
