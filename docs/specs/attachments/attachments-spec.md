@@ -145,10 +145,10 @@ Capability is resolved per **(provider, model slug)** — not per provider — b
 
 | Provider | Image transport | PDF transport | Notes |
 |---|---|---|---|
-| `openrouter` | OpenAI-style `{"type":"image_url","image_url":{"url":"data:…;base64,…"}}` | `{"type":"file","file":{"filename","file_data":"data:application/pdf;base64,…"}}` | Model support varies. Detected from the `listModels` payload (`architecture.input_modalities` contains `"image"` / `"file"`), cached with the catalog; unknown ⇒ treated as text-only. |
+| `openrouter` | OpenAI-style `{"type":"image_url","image_url":{"url":"data:…;base64,…"}}` | `{"type":"file","file":{"filename","file_data":"data:application/pdf;base64,…"}}` | Model support varies. Detected from the `listModels` payload (`architecture.input_modalities` contains `"image"` / `"file"`), cached with the catalog; unknown ⇒ treated as text-only. Verified 2026-07-31: all 336 models expose `architecture.input_modalities`; distribution is 146 text-only, 73 file+image+text, 56 image+text, 28 image+text+video, 17 audio+file+image+text+video. |
 | `gemini` | `inlineData: { mimeType, data }` part inside `contents[].parts` | same `inlineData` with `application/pdf` | Native for all `gemini-*` models in the catalog. `mapMessagesToGemini` extends to emit parts. |
 | `chatgpt-codex` | Responses API `input_image` with a data URL | not in v1 | Requires a bridge change (§7). Until then: `image: true`, `pdf: false`, gated by a bridge `/health` capability flag. |
-| `commandcode`, `clinepass`, `umans` (`openai-compat`) | `image_url` data URL | none | Gateways are OpenAI-shaped; per-config flag `supportsImages` on `OpenAICompatConfig`, default `false`. |
+| `commandcode`, `clinepass`, `umans`, `9router` (`openai-compat`) | `image_url` data URL | none | Gateways are OpenAI-shaped; per-config flag `supportsImages` on `OpenAICompatConfig`, default `false`. |
 
 ### 5.1 Degradation policy (decisive)
 
@@ -162,10 +162,25 @@ When a slot's model cannot natively consume an attachment kind:
 
 ## 6. Prompt assembly
 
-All changes are inside `src/lib/pipeline.ts`, which stays provider-agnostic — it emits
-`ContentPart[]`, never a wire shape.
+Prompt assembly lives in two places, and both must be attachment-aware:
 
-### 6.1 `draftMessages`
+- **`src/lib/pipeline.ts`** — `draftMessages` (candidate generation), `judgeMessages`
+  (blind judge scoring). These are the live Compare pipeline.
+- **`src/lib/evaluations/fusion-recipes.ts`** — `renderRecipeMessages` (fusion
+  synthesis), `renderRefineWinnerMessages` (refine-the-winner control). These are the
+  Fusion Study's blocked-policy runner. Note that `pipeline.ts`'s own `fusionMessages`
+  already delegates to `renderRecipeMessages` — there is one fusion prompt path,
+  not two. But `draftMessages` and `judgeMessages` remain independent.
+
+The attachment rendering (`renderAttachmentBlocks`) is a **shared utility** in a new
+module `src/lib/attachments/render.ts`, imported by both `pipeline.ts` and
+`fusion-recipes.ts`. It emits `ContentPart[]` fragments that each caller inserts at
+the appropriate position in its own message structure.
+
+All provider wire-format mapping stays in `src/lib/providers/*` — neither
+`pipeline.ts` nor `fusion-recipes.ts` emits a wire shape.
+
+### 6.1 `draftMessages` (candidate generation — `pipeline.ts`)
 
 ```ts
 draftMessages({ systemPrompt, prompt, rubric, attachments, capabilities })
@@ -178,6 +193,22 @@ draftMessages({ systemPrompt, prompt, rubric, attachments, capabilities })
   2. One delimited block per extracted-text attachment (§6.3), concatenated into a **single additional** `text` part.
   3. One `image`/`file` part per native attachment, in UI order.
 - **Zero attachments ⇒ the function returns the exact same `{role, content: string}[]` it returns today.** No wrapper, no extra whitespace.
+
+### 6.1a `renderRecipeMessages` / `renderRefineWinnerMessages` (Fusion Study — `fusion-recipes.ts`)
+
+These functions assemble the fusion and refine prompts from `FusionSynthesisInput`
+and `RefineWinnerInput` respectively. Both must become attachment-aware:
+
+- `FusionSynthesisInput` and `RefineWinnerInput` gain an optional `attachments?: Attachment[]`
+  field. When absent or empty, behavior is identical to today.
+- The attachment blocks (§6.3) are inserted into the `user` message after the task
+  section and before the rubric section. Native media parts follow the same rules as
+  §6.2 (judge/fusion media policy).
+- The system prompt gains the same "attached N file(s)" sentence as §6.1 when
+  attachments are present.
+- **Zero attachments ⇒ `renderRecipeMessages` and `renderRefineWinnerMessages` return
+  the exact same output they return today.** This is the same zero-regression
+  requirement as §6.1.
 
 ### 6.2 `judgeMessages` / `fusionMessages`
 
@@ -256,6 +287,8 @@ Surfaces live with the Task input (`UI.md` §3.1, panel `01 COMMAND`).
 | `src/lib/export-markdown.ts` | Exported run gains an `## Attachments` list (name, kind, size, `truncated` flag). |
 | `src/studio-engine.ts` | New actions: `ADD_ATTACHMENTS`, `ATTACHMENT_READY`, `ATTACHMENT_FAILED`, `REMOVE_ATTACHMENT`, `CLEAR_ATTACHMENTS`, `SET_ATTACHMENTS_TO_JUDGE`. `RESET_SESSION` clears attachments and revokes object URLs. |
 | `src/lib/run-controller.ts` | Reads `s.attachments` into `draftMessages`/`judgeMessages`/`fusionMessages`; applies the §5.1 gate before `FANOUT_START`. Abort semantics unchanged. |
+| `src/lib/evaluations/fusion-study-stages.ts` | Threads `attachments` from the trial context into `renderRecipeMessages`/`renderRefineWinnerMessages`. Attachment set changes between trials ⇒ new trial (not new attempt), per the Fusion Study's Trial/Attempt rule. |
+| `src/lib/evaluations/fusion-recipes.ts` | `renderRecipeMessages`/`renderRefineWinnerMessages` gain optional `attachments` parameter; zero-attachment path is byte-identical to today. |
 | `PROVIDERS.md` | New section documenting the capability matrix and the inline-base64-only decision. |
 | `DECISIONS.md` | New entry: attachments are inline-only, no Files API, no server storage, images have no text fallback. |
 
