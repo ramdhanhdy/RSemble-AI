@@ -92,6 +92,9 @@ function makeSuite(enabledCount: number): EvaluationSuite {
 const MODELS: CatalogModel[] = [
   { id: "acme/judge-2", name: "Judge Two", providerId: "gemini" },
   { id: "acme/judge-1", name: "Judge One", providerId: "openrouter" },
+  // The built-in recipes' synthesizer (DEFAULT_CRITIC_REF) — must never be
+  // offered as Judge 2 (anti-circularity, spec §5.3).
+  { id: "z-ai/glm-5.2", name: "GLM 5.2", providerId: "openrouter" },
 ];
 
 function makeStudy(overrides: Partial<FusionStudy> = {}): FusionStudy {
@@ -223,6 +226,40 @@ describe("FusionStudyPanel", () => {
     expect(list?.textContent).toContain("Exploratory");
     const link = h.$('a[href="/evaluations/suite-1/fusion/study-1"]');
     expect(link).not.toBeNull();
+    h.unmount();
+  });
+
+  it("excludes Judge 1 and every built-in synthesizer from the Judge 2 picker", async () => {
+    const repo = new InMemoryFusionStudyRepository();
+    const h = render(
+      <FusionStudyPanel fusionRepo={repo} evalRepo={null} suite={makeSuite(6)} models={MODELS} />,
+    );
+    await settle();
+    const options = [...h.container.querySelectorAll("select option")].map((o) =>
+      o.getAttribute("value"),
+    );
+    expect(options).toContain("gemini:acme/judge-2");
+    expect(options).not.toContain("openrouter:acme/judge-1");
+    expect(options).not.toContain("openrouter:z-ai/glm-5.2");
+    h.unmount();
+  });
+
+  it("refuses creation when every catalog model is Judge 1 or the synthesizer", async () => {
+    const repo = new InMemoryFusionStudyRepository();
+    const h = render(
+      <FusionStudyPanel
+        fusionRepo={repo}
+        evalRepo={null}
+        suite={makeSuite(6)}
+        models={[MODELS[1], MODELS[2]]}
+      />,
+    );
+    await settle();
+    const createButton = h.$$("button").find((b) => b.textContent === "New study")!;
+    act(() => createButton.click());
+    await settle();
+    expect(h.text()).toContain("holdout judge");
+    expect(await repo.listStudies("suite-1")).toHaveLength(0);
     h.unmount();
   });
 

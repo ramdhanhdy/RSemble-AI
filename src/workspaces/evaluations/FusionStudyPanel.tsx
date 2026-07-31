@@ -20,6 +20,7 @@ import { BUILTIN_FUSION_RECIPES } from "../../lib/evaluations/fusion-recipes";
 import { computeProtocolFingerprint } from "../../lib/evaluations/protocol-fingerprint";
 import type { EvaluationProfile, EvaluationProfileRef } from "../../lib/evaluations/evaluation-types";
 import {
+  validateJudgePair,
   validatePoolManifest,
   validateStudy,
 } from "../../lib/evaluations/fusion-study-validation";
@@ -60,8 +61,16 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
   const enabledSlots = suite.modelSlots.filter((s) => s.enabled);
   const poolReady = enabledSlots.length >= 6;
 
+  // Judge 2 must differ from Judge 1 AND from every synthesizer the study
+  // will use (anti-circularity, spec §5.3) — the picker enforces this at
+  // creation time so trials never fail the seal check after spend.
+  const synthesizerKeys = new Set(
+    BUILTIN_FUSION_RECIPES.map((r) => `${r.synthesizer.providerId}:${r.synthesizer.model}`),
+  );
   const judge2Options = models.filter(
-    (m) => !(m.providerId === suite.defaultJudge.providerId && m.id === suite.defaultJudge.model),
+    (m) =>
+      !(m.providerId === suite.defaultJudge.providerId && m.id === suite.defaultJudge.model) &&
+      !synthesizerKeys.has(`${m.providerId}:${m.id}`),
   );
 
   async function createStudy() {
@@ -123,6 +132,15 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
       if (!studyValidation.valid) {
         setCreateErrors(studyValidation.errors.map((e) => e.message));
         return;
+      }
+      // Defense in depth: the picker already excludes synthesizers, but the
+      // judge pair must pass the anti-circularity rule for every recipe.
+      for (const recipe of BUILTIN_FUSION_RECIPES) {
+        const pairValidation = validateJudgePair(study.judge1, study.judge2, recipe.synthesizer);
+        if (!pairValidation.valid) {
+          setCreateErrors(pairValidation.errors.map((e) => e.message));
+          return;
+        }
       }
 
       for (const recipe of BUILTIN_FUSION_RECIPES) {
