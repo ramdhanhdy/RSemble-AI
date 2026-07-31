@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": 1785600000000,
+  "runs": { "summaries": [], "details": [] },
+  "profiles": {
+    "identities": [
+      {
+        "id": "profile-biz-analytics",
+        "revision": 0,
+        "latestVersion": 1,
+        "createdAt": 1785600000000,
+        "updatedAt": 1785600000000,
+        "archivedAt": null
+      }
+    ],
+    "versions": [
+      {
+        "id": "profile-biz-analytics",
+        "version": 1,
+        "name": "Business Analytics Discrimination",
+        "description": "Scores answers to business-analytics cases on statistical rigor, business judgment, market awareness, and executive communication. Designed to separate models that reason quantitatively from models that pattern-match consulting vocabulary.",
+        "judgeInstruction": "Score against the anchors, not eloquence. A fluent, well-structured answer that accepts a misleading metric at face value belongs at 1–2 on statistical rigor regardless of polish. A 5 on any criterion requires the specific insight named in that anchor — award it only when the answer demonstrates the behavior with the case's actual numbers, not generic advice. Penalize fabricated figures, and penalize indecision dressed up as nuance.",
+        "criteria": [
+          {
+            "id": "statistical-rigor",
+            "name": "Statistical rigor & trap avoidance",
+            "description": "Does the answer do the math correctly, and does it catch the deliberately planted statistical traps (mix shifts, peeking/optional stopping, unadjusted baselines) instead of accepting surface readings?",
+            "weight": 2,
+            "anchors": {
+              "one": "Accepts blended or surface metrics at face value; contains arithmetic or reasoning errors; treats a peeked, early-stopped A/B result as valid evidence.",
+              "three": "Catches one planted trap but misses another, or runs the right computation with wrong inputs (e.g., computes LTV without adjusting for retention/churn); partial sensitivity to experimental caveats.",
+              "five": "Catches every planted trap explicitly and proves it with the case's numbers: names the mix-shift/Simpson effect, computes churn- or retention-adjusted unit economics correctly while stating assumptions, and rejects or qualifies the compromised experiment citing early stopping/peeking or immature outcome data."
+            }
+          },
+          {
+            "id": "business-judgment",
+            "name": "Business judgment & decisiveness",
+            "description": "Does the answer make clear, quantified, defensible decisions under uncertainty — or does it hedge with generic frameworks?",
+            "weight": 1.5,
+            "anchors": {
+              "one": "Hedge-fest: 'it depends' listicle with no decision, or decisions that ignore the economics entirely.",
+              "three": "Makes decisions but generic ('optimize the funnel', 'improve retention') or unquantified; no explicit tradeoff reasoning.",
+              "five": "Clear, quantified allocation and go/no-go calls (which channel to cut/scale/fix and why, whether to ship and under what conditions) with explicit tradeoffs, stated assumptions, and a concrete next experiment or safeguard."
+            }
+          },
+          {
+            "id": "market-awareness",
+            "name": "Market & competitive awareness",
+            "description": "Does the answer connect the case to real market dynamics — privacy-driven CAC inflation, audience/creative saturation, free-tier competitive pressure on willingness-to-pay — rather than treating the numbers as context-free?",
+            "weight": 1.5,
+            "anchors": {
+              "one": "Ignores the stated market context entirely; analysis could be about any company in any year.",
+              "three": "Mentions market forces (privacy changes, a competitor) but does not connect them to the case's numbers or the recommendation.",
+              "five": "Integrates market dynamics into the verdict: ties privacy-driven CAC inflation to stale targeting assets and the fix, reasons about a competitor's free tier compressing willingness-to-pay and raising churn risk, and grounds claims in how these markets actually behave (e.g., annual plans as a churn defense)."
+            }
+          },
+          {
+            "id": "executive-communication",
+            "name": "Executive communication",
+            "description": "Is the answer board-ready: verdict-first structure, correct figures, honest uncertainty without indecision?",
+            "weight": 1,
+            "anchors": {
+              "one": "Unstructured wall of text; numbers absent, wrong, or fabricated.",
+              "three": "Structured but buries the verdict; mostly correct figures with some misquotes; uncertainty handled vaguely.",
+              "five": "Verdict-first, board-ready structure with the math visible and figures accurate; assumptions and unknowns stated precisely without using them as an excuse to avoid deciding."
+            }
+          }
+        ],
+        "createdAt": 1785600000000,
+        "updatedAt": 1785600000000
+      }
+    ]
+  },
+  "suites": [
+    {
+      "id": "suite-pulsefit-biz-analytics",
+      "revision": 0,
+      "version": 1,
+      "name": "Business Analytics — PulseFit Suite",
+      "description": "Three research-grounded business-analytics cases (D2C subscription fitness) that discriminate statistical rigor, business judgment, and market awareness. Integrative board-deck case, an isolated unit-economics case, and a competitive-strategy case. Six enabled models — Fusion Study ready.",
+      "tasks": [
+        {
+          "id": "task-pulsefit-board-deck",
+          "title": "PulseFit board deck (integrative)",
+          "prompt": "PulseFit is a D2C fitness-app subscription ($19.99/month, ~75% gross margin). The board meets in 3 days. Your CEO says: \"Blended CAC is stable, conversion is up — we're fine.\" You suspect the business is quietly deteriorating.\n\nCHANNEL PERFORMANCE (last two quarters)\n                    Q1                          Q2\nChannel      Spend    Installs  CAC    Spend    Installs  CAC\nPaid Social  $400k    20,000   $20    $450k    18,000   $25\nSearch Ads   $150k    10,000   $15    $120k     8,000   $15\nInfluencer   $100k     4,000   $25    $180k     6,000   $30\nReferral      $50k     5,000   $10     $50k     5,200  ~$10\nOrganic         $0     8,000    $0       $0     7,800    $0\n\n6-MONTH PAID RETENTION BY CHANNEL (share of installs still subscribed)\nChannel      Q1 cohort   Q2 cohort\nPaid Social    34%         29%\nSearch Ads     41%         40%\nInfluencer     22%         18%\nReferral       48%         47%\n\nPRICING EXPERIMENT (ran 3 weeks, just concluded)\nVariant B (annual-plan-first paywall) vs Variant A (monthly-first):\n- Conversion to paid: +12% relative lift (p = 0.03, n ≈ 9,000 per arm)\n- The test was peeked at weekly. It crossed significance in week 2 of a planned 4-week test, so it was stopped early \"to save budget.\"\n- Refund/churn data for the variant B cohort is immature — annual plans don't reveal churn for months.\n\nMARKET CONTEXT\n- Since Apple's ATT rollout, paid-social acquisition costs across the app economy have inflated materially; competitors report double-digit percentage increases.\n- FitStream (well-funded competitor) just launched a free tier with ads.\n- Your paid-social ads are mostly lookalike audiences built on purchasers from 2 years ago.\n\nQUESTIONS\n1. Is the CEO right that \"we're fine\"? Diagnose what the blended numbers hide, with the math to prove it.\n2. Compute retention-adjusted unit economics per channel (rough LTV and LTV:CAC at a 6-month window; state your assumptions). Which channel do you cut, scale, or fix — and why? Judge each against a ~3:1 LTV:CAC bar.\n3. Should you ship Variant B? Give your decision and the analysis you'd demand before committing.\n4. What is the single biggest strategic risk to this business over the next 12 months, and what leading indicator would you put on the board deck to watch it?",
+          "systemPrompt": "You are the acting head of growth analytics presenting to the board. Be quantitative, be decisive, and show your work.",
+          "evaluation": { "kind": "inherit" },
+          "judgeInstructionOverride": "",
+          "order": 0
+        },
+        {
+          "id": "task-fern-cohort-economics",
+          "title": "Fable & Fern cohort economics (unit-economics isolation)",
+          "prompt": "Fable & Fern sells a home-goods subscription box ($45/box monthly, 55% contribution margin after COGS and shipping). The growth team celebrates: \"Blended churn fell from 9.5% to 8.1% this year — retention is improving.\" You are skeptical.\n\nMONTHLY CHURN BY COHORT TYPE (share of subscribers cancelling per month)\nCohort type        Last year   This year   Mix last year   Mix this year\nMonthly plans        12%         14%            70%              45%\nAnnual plans        2.5%         3%            30%              55%\n\nCUSTOMER ECONOMICS\n- Monthly-plan subscribers pay $45/month. Annual-plan subscribers prepay $450/year (≈$37.50/month equivalent).\n- Blended CAC is $95 and rising ~15% year over year as paid channels saturate.\n\nQUESTIONS\n1. Reconcile the celebration with the cohort table. Is retention improving? Show the arithmetic that settles it, and name the phenomenon precisely.\n2. Compute rough LTV for each cohort type (expected months subscribed × monthly margin; state your assumptions about churn shape). Which cohort is actually worth more per acquired customer, and by how much?\n3. The growth team proposes shifting spend entirely into annual-plan acquisition. Give two concrete risks of that strategy and one condition under which you would endorse it.\n4. What single metric would you track monthly to know whether the business is genuinely getting healthier?",
+          "systemPrompt": "You are a staff analyst asked to review the growth team's retention claim before it goes to leadership. Be quantitative and direct.",
+          "evaluation": { "kind": "inherit" },
+          "judgeInstructionOverride": "",
+          "order": 1
+        },
+        {
+          "id": "task-fitstream-free-tier",
+          "title": "The free-tier question (market & strategy isolation)",
+          "prompt": "You run strategy for PulseFit, a D2C fitness-app subscription ($19.99/month, ~75% gross margin, ~900k subscribers, growth already slowing). Yesterday, FitStream — a competitor with 10x your funding — launched a free, ad-supported tier that covers ~60% of your core workout library. Their paid tier is $14.99/month.\n\nWHAT YOU KNOW\n- In subscription media and fitness, free tiers typically compress willingness-to-pay at the low end and pull forward churn among price-sensitive subscribers.\n- Your churn is concentrated in months 2–4 of a subscription; subscribers who survive month 6 rarely leave.\n- Annual plans historically retain far better than monthly plans (roughly half the effective churn), and your annual share is only 20% of subscribers.\n- Your paid acquisition costs have been rising (privacy-driven targeting degradation), so every churned subscriber is more expensive to replace than last year.\n\nQUESTIONS\n1. FitStream's CEO calls the free tier a \"land grab.\" Analyze what it actually does to YOUR unit economics over the next 12 months. Be specific about the mechanisms, not the slogans.\n2. Choose one strategic response and defend it: (a) hold price and differentiate on depth/coaching, (b) cut price to $14.99 and compete head-on, or (c) hold price but aggressively shift subscribers to annual plans (e.g., annual-first paywall, save-30% pricing). Quantify the tradeoffs of your choice against at least one alternative.\n3. What is the strongest argument AGAINST your choice, and what evidence would tell you within two quarters that you chose wrong?\n4. A board member asks: \"Should we launch our own free tier?\" Answer in five sentences or fewer.",
+          "systemPrompt": "You are the head of strategy. The board wants a recommendation, not a survey of options.",
+          "evaluation": { "kind": "inherit" },
+          "judgeInstructionOverride": "",
+          "order": 2
+        }
+      ],
+      "modelSlots": [
+        { "id": "slot-glm", "providerId": "openrouter", "provider": "Z-AI", "model": "GLM 5.2", "slug": "z-ai/glm-5.2", "enabled": true },
+        { "id": "slot-deepseek", "providerId": "openrouter", "provider": "DeepSeek", "model": "DeepSeek V4 Flash", "slug": "deepseek/deepseek-v4-flash", "enabled": true },
+        { "id": "slot-minimax", "providerId": "openrouter", "provider": "MiniMax", "model": "MiniMax M2.5", "slug": "minimax/minimax-m2.5", "enabled": true },
+        { "id": "slot-gpt", "providerId": "openrouter", "provider": "OpenAI", "model": "GPT-5.6 Sol", "slug": "openai/gpt-5.6-sol", "enabled": true },
+        { "id": "slot-gemini", "providerId": "openrouter", "provider": "Google", "model": "Gemini 3.1 Pro", "slug": "google/gemini-3.1-pro", "enabled": true },
+        { "id": "slot-kimi", "providerId": "openrouter", "provider": "Moonshot", "model": "Kimi K3", "slug": "moonshotai/kimi-k3", "enabled": true }
+      ],
+      "defaultJudge": { "providerId": "openrouter", "model": "z-ai/glm-5.2" },
+      "defaultEvaluation": { "kind": "profile", "profile": { "id": "profile-biz-analytics", "version": 1 } },
+      "createdAt": 1785600000000,
+      "updatedAt": 1785600000000,
+      "archivedAt": null
+    }
+  ],
+  "experiments": []
+}
