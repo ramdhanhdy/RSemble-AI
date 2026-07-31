@@ -28,6 +28,11 @@ import {
   type BeginExperimentTaskInput,
   type CommitExperimentTaskTerminalInput,
 } from "../evaluations/evaluation-types";
+import {
+  importSuitePackage as persistSuitePackage,
+  type SuitePackageImportResult,
+} from "./suite-package-import";
+import type { ImportedSuitePackage } from "../evaluations/suite-package";
 
 export interface EvaluationRepository {
   listSuites(includeArchived?: boolean): Promise<EvaluationSuite[]>;
@@ -46,6 +51,8 @@ export interface EvaluationRepository {
   listExperiments(suiteId?: string): Promise<ExperimentRecord[]>;
   beginExperimentTask(input: BeginExperimentTaskInput): Promise<{ runRevision: number; experimentRevision: number }>;
   commitExperimentTaskTerminal(input: CommitExperimentTaskTerminalInput): Promise<{ runRevision: number; experimentRevision: number }>;
+  /** Import a normalized suite package — always creates new entities. */
+  importSuitePackage(imported: ImportedSuitePackage): Promise<SuitePackageImportResult>;
 }
 
 // selectedAttemptId recomposition lives in experiment-engine.ts (selectAttemptId)
@@ -370,11 +377,16 @@ export function createEvaluationRepository(
     return experimentUow.commitTaskTerminal(input);
   }
 
+  async function importSuitePackage(imported: ImportedSuitePackage): Promise<SuitePackageImportResult> {
+    return persistSuitePackage(db, imported);
+  }
+
   return {
     listSuites, getSuite, saveSuite, archiveSuite,
     listProfiles, getProfileRecord, getProfile, createProfile, appendProfileVersion, setProfileArchived,
     createExperiment, updateExperiment, getExperiment, listExperiments,
     beginExperimentTask, commitExperimentTaskTerminal,
+    importSuitePackage,
   };
 }
 
@@ -487,5 +499,25 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
   }
   async commitExperimentTaskTerminal(input: CommitExperimentTaskTerminalInput): Promise<{ runRevision: number; experimentRevision: number }> {
     return this.experimentUow.commitTaskTerminal(input);
+  }
+  async importSuitePackage(imported: ImportedSuitePackage): Promise<SuitePackageImportResult> {
+    // Same contract as the Dexie writer: never skips, conflicts are errors.
+    const profileIds: string[] = [];
+    for (const { record, profile } of imported.profiles) {
+      if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
+      if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
+      if (this.profileRecords.has(record.id)) {
+        throw new StorageError("conflict", `Profile ${record.id} already exists`);
+      }
+      this.profileRecords.set(record.id, record);
+      this.profileVersions.set(record.id, new Map([[profile.version, profile]]));
+      profileIds.push(record.id);
+    }
+    if (!isEvaluationSuite(imported.suite)) throw new StorageError("validation", "Invalid suite");
+    if (this.suites.has(imported.suite.id)) {
+      throw new StorageError("conflict", `Suite ${imported.suite.id} already exists`);
+    }
+    this.suites.set(imported.suite.id, imported.suite);
+    return { suiteId: imported.suite.id, profileIds };
   }
 }

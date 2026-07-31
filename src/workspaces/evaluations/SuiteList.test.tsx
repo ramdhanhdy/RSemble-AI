@@ -283,6 +283,61 @@ describe("SuiteList — create", () => {
   });
 });
 
+describe("SuiteList — suite package import", () => {
+  const pkg = {
+    kind: "rsemble-suite-package",
+    schemaVersion: 1,
+    name: "Imported Suite",
+    tasks: [{ title: "Task A", prompt: "Answer the question" }],
+    modelSlots: [
+      { providerId: "openrouter", provider: "A", model: "MA", slug: "a/m1" },
+      { providerId: "openrouter", provider: "B", model: "MB", slug: "b/m2" },
+    ],
+    defaultJudge: { providerId: "openrouter", model: "judge-1" },
+  };
+
+  async function chooseImportFile(h: Harness, file: File) {
+    const input = h.$('input[aria-label="Import suite package"]') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    await act(async () => {
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+      await flush();
+    });
+    await settle();
+  }
+
+  it("imports a suite package — creates a NEW suite every time", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const file = new File([JSON.stringify(pkg)], "suite.json", { type: "application/json" });
+    await chooseImportFile(h, file);
+
+    expect(await repo.listSuites(true)).toHaveLength(1);
+    expect((await repo.listSuites(true))[0].name).toBe("Imported Suite");
+    expect(h.$('[data-testid="suite-import-notes"]')?.textContent).toContain("ready to run");
+
+    // Re-importing the same file creates a SECOND suite — never a silent skip.
+    await chooseImportFile(h, file);
+    expect(await repo.listSuites(true)).toHaveLength(2);
+    cleanup(h);
+  });
+
+  it("surfaces parse errors and imports nothing", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const file = new File([JSON.stringify({ kind: "rsemble-suite-package", schemaVersion: 1 })], "bad.json", {
+      type: "application/json",
+    });
+    await chooseImportFile(h, file);
+    expect(h.$('[data-testid="suite-import-errors"]')).not.toBeNull();
+    expect(await repo.listSuites(true)).toHaveLength(0);
+    cleanup(h);
+  });
+});
+
 describe("SuiteList — accessibility", () => {
   it("all interactive controls meet 44px target size", async () => {
     const repo = new InMemoryEvaluationRepository();

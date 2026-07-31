@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Copy,
   Loader2,
+  Upload,
   Plus,
   Archive,
 } from "lucide-react";
@@ -22,6 +23,11 @@ import type { EvaluationSuite } from "../../lib/evaluations/evaluation-types";
 import { RecordRow } from "../../ui/RecordRow";
 import { StorageError } from "../../lib/persistence/database";
 import { DEFAULT_CRITIC_REF } from "../../studio-data";
+import {
+  normalizeSuitePackage,
+  parseSuitePackage,
+  validateSuitePackageBytes,
+} from "../../lib/evaluations/suite-package";
 
 interface SuiteListProps {
   repo: EvaluationRepository | null;
@@ -83,6 +89,10 @@ export function SuiteList({ repo }: SuiteListProps) {
   const [createError, setCreateError] = useState<string | null>(null);
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importNotes, setImportNotes] = useState<string[]>([]);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
   const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -130,6 +140,61 @@ export function SuiteList({ repo }: SuiteListProps) {
       setCreateError(msg);
     } finally {
       setCreating(false);
+    }
+  }
+
+  /** Import a suite package (content authoring) — always creates a NEW suite. */
+  async function handleImportFile(file: File) {
+    if (!repo || importing) return;
+    setImporting(true);
+    setImportErrors([]);
+    setImportNotes([]);
+    try {
+      const sizeError = validateSuitePackageBytes(file.size);
+      if (sizeError) {
+        setImportErrors([sizeError]);
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch {
+        setImportErrors(["The file is not valid JSON — nothing was imported."]);
+        return;
+      }
+      const check = parseSuitePackage(parsed);
+      if (!check.ok) {
+        setImportErrors(check.errors);
+        return;
+      }
+      const [suites, profiles] = await Promise.all([repo.listSuites(true), repo.listProfiles(true)]);
+      const takenIds = new Set<string>([
+        ...suites.map((s) => s.id),
+        ...profiles.map((p) => p.id),
+      ]);
+      const normalized = normalizeSuitePackage(check.pkg, {
+        takenIds,
+        existingProfileIds: new Set(profiles.map((p) => p.id)),
+      });
+      if (!normalized.ok) {
+        setImportErrors(normalized.errors);
+        return;
+      }
+      const result = await repo.importSuitePackage(normalized.result);
+      setImportNotes([
+        `Imported "${normalized.result.suite.name}" — ${normalized.result.suite.tasks.length} task(s)` +
+          (result.profileIds.length > 0 ? `, ${result.profileIds.length} profile(s)` : "") +
+          (normalized.result.executionReady ? " — ready to run." : " — saved as a draft."),
+        ...normalized.result.notes,
+      ]);
+      await load();
+      window.location.hash = `#/evaluations/${result.suiteId}`;
+    } catch (err: unknown) {
+      const msg = err instanceof StorageError ? friendlyStorageError(err) : err instanceof Error ? err.message : "Could not import the suite package.";
+      setImportErrors([msg]);
+    } finally {
+      setImporting(false);
+      if (importFileRef.current) importFileRef.current.value = "";
     }
   }
 
@@ -204,6 +269,17 @@ export function SuiteList({ repo }: SuiteListProps) {
   if (visible.length === 0) {
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-3 p-6 text-center">
+        <input
+          ref={importFileRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          aria-label="Import suite package"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void handleImportFile(file);
+          }}
+        />
         <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-text-muted">
           No evaluation suites yet
         </h2>
@@ -213,16 +289,42 @@ export function SuiteList({ repo }: SuiteListProps) {
           workload with a consistent judge and evaluation profile.
         </p>
         {createError && <p className="text-sm text-error">{createError}</p>}
-        <button
-          type="button"
-          data-action="create-suite"
-          onClick={handleCreate}
-          disabled={creating}
-          className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
-        >
-          <Plus size={15} aria-hidden="true" />
-          {creating ? "Creating…" : "Create suite"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-action="create-suite"
+            onClick={handleCreate}
+            disabled={creating}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <Plus size={15} aria-hidden="true" />
+            {creating ? "Creating…" : "Create suite"}
+          </button>
+          <button
+            type="button"
+            data-action="import-suite"
+            onClick={() => importFileRef.current?.click()}
+            disabled={importing}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <Upload size={15} aria-hidden="true" />
+            {importing ? "Importing…" : "Import suite"}
+          </button>
+        </div>
+        {importErrors.length > 0 && (
+          <ul className="flex max-w-md flex-col gap-0.5 text-left text-sm text-error" data-testid="suite-import-errors">
+            {importErrors.slice(0, 5).map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        )}
+        {importNotes.length > 0 && (
+          <ul className="flex max-w-md flex-col gap-0.5 text-left text-sm text-text-secondary" data-testid="suite-import-notes">
+            {importNotes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        )}
         {archivedCount > 0 && (
           <label className="flex min-h-[44px] cursor-pointer items-center gap-1.5 text-xs text-text-secondary">
             <input
@@ -241,6 +343,17 @@ export function SuiteList({ repo }: SuiteListProps) {
   // --- List ---
   return (
     <div className="flex flex-col gap-2">
+      <input
+        ref={importFileRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        aria-label="Import suite package"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleImportFile(file);
+        }}
+      />
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-muted">
           {visible.length} suite{visible.length === 1 ? "" : "s"}
@@ -259,6 +372,16 @@ export function SuiteList({ repo }: SuiteListProps) {
           )}
           <button
             type="button"
+            data-action="import-suite"
+            onClick={() => importFileRef.current?.click()}
+            disabled={importing}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <Upload size={15} aria-hidden="true" />
+            {importing ? "Importing…" : "Import"}
+          </button>
+          <button
+            type="button"
             data-action="create-suite"
             onClick={handleCreate}
             disabled={creating}
@@ -275,6 +398,20 @@ export function SuiteList({ repo }: SuiteListProps) {
       )}
       {actionError && (
         <p className="text-sm text-error">{actionError}</p>
+      )}
+      {importErrors.length > 0 && (
+        <ul className="flex flex-col gap-0.5 text-sm text-error" data-testid="suite-import-errors">
+          {importErrors.slice(0, 5).map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      )}
+      {importNotes.length > 0 && (
+        <ul className="flex flex-col gap-0.5 text-sm text-text-secondary" data-testid="suite-import-notes">
+          {importNotes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
       )}
 
       <ul className="flex flex-col gap-1.5" role="list">

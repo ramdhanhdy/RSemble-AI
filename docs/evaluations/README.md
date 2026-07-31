@@ -1,12 +1,27 @@
 # Evaluation Fixtures — Business Analytics Suite
 
-Importable archive fixtures for testing RSemble's data import (Workbench Archive v1) with
-real, discriminating evaluation content. Import via **Evaluations → archive actions →
-Import**, or validate mechanically with:
+Importable fixtures for testing RSemble's two import paths with real, discriminating
+evaluation content. Validate both mechanically with:
 
 ```bash
 npx tsx scripts/validate-archive-fixture.ts
 ```
+
+## Two import formats — pick the right one
+
+| | Workbench Archive v1 | Suite Package v1 |
+|---|---|---|
+| File | `pulsefit-business-analytics.archive.json` | `pulsefit-business-analytics.suite.json` |
+| Purpose | **Backup/restore** of a whole workbench (runs, experiments, profiles, suites) | **Content authoring** — load a hand-written or shared suite |
+| Identity | Preserves ids; re-import **skips** existing records | Mints/suffixes ids; re-import **creates new** entities |
+| UI entry | Evaluations → archive actions → Import | Evaluations (Suites) → **Import suite** |
+| Envelope | `{ schemaVersion, exportedAt, runs, profiles, suites, experiments }` | `{ kind: "rsemble-suite-package", schemaVersion: 1, name, tasks[], modelSlots[], defaultJudge, defaultEvaluation?, profiles?[] }` |
+
+Suite packages are hand-authorable: DB-identity fields (`id`, `order`, timestamps) are
+optional and minted when absent; tasks need only `title` + `prompt`. Embedded profiles
+are created fresh with in-package references remapped; tasks may also pin profiles that
+already exist locally. Imports must pass the structural record guards; execution
+readiness is reported ("ready to run" vs "saved as a draft"), never required.
 
 ## `pulsefit-business-analytics.archive.json`
 
