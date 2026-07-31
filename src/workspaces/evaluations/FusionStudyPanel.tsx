@@ -29,6 +29,7 @@ import {
   DEFAULT_SHORTLIST_RULE,
   runFusionStudy,
 } from "../../lib/evaluations/fusion-study-orchestration";
+import { runConfirmationStudy } from "../../lib/evaluations/fusion-confirmation";
 import { ClaimBadge } from "./FusionStudyView";
 
 export interface FusionStudyPanelProps {
@@ -163,6 +164,57 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
     return null;
   }
 
+  /**
+   * Confirmation lifecycle (spec §7.5): a completed exploratory study can be
+   * confirmed only on a NEW suite version — the confirmation study evaluates
+   * the preselected configuration on fresh tasks without re-selection.
+   */
+  async function confirmStudy(sourceStudy: FusionStudy) {
+    if (!fusionRepo) return;
+    setBusyStudyId(sourceStudy.id);
+    setError(null);
+    try {
+      const controller = createFusionStudyController({ repo: fusionRepo });
+      const exec = executor ?? createLiveFusionExecutor();
+      const profile = await resolveProfile();
+      const fingerprint = await computeFingerprint();
+      const confirmation: FusionStudy = {
+        id: `fusion-conf-${crypto.randomUUID()}`,
+        revision: 0,
+        kind: "confirmation",
+        suiteRef: { suiteId: suite.id, suiteVersion: suite.version, protocolFingerprint: fingerprint },
+        poolRef: sourceStudy.poolRef,
+        judge1: sourceStudy.judge1,
+        judge2: sourceStudy.judge2,
+        recipeRefs: sourceStudy.recipeRefs,
+        stageResults: { stageA: null, stageB: null, stageC: null },
+        playbookRef: null,
+        claimLevel: "exploratory",
+        confirmationOf: sourceStudy.id,
+        status: "in_progress",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      await fusionRepo.createStudy(confirmation);
+      await runConfirmationStudy(
+        { controller, executor: exec, repo: fusionRepo },
+        {
+          sourceStudyId: sourceStudy.id,
+          confirmationStudyId: confirmation.id,
+          suite,
+          profile,
+          tasksPerPair: Math.min(3, suite.tasks.length),
+          mpid: 0.2,
+        },
+      );
+      reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The confirmation run failed.");
+    } finally {
+      setBusyStudyId(null);
+    }
+  }
+
   async function runStudy(studyId: string) {
     if (!fusionRepo) return;
     setBusyStudyId(studyId);
@@ -283,6 +335,20 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
                   {busyStudyId === study.id ? "Running…" : "Run"}
                 </button>
               )}
+              {study.status === "completed" &&
+                study.kind === "exploration" &&
+                study.suiteRef.suiteVersion !== suite.version && (
+                  <button
+                    type="button"
+                    onClick={() => void confirmStudy(study)}
+                    disabled={busyStudyId !== null}
+                    title={`Confirm on fresh tasks in suite v${suite.version} (no re-selection)`}
+                    className="flex min-h-[44px] items-center gap-1 rounded-md bg-panel px-2 text-xs font-medium text-text-secondary hover:text-text disabled:opacity-50"
+                  >
+                    <Play size={12} />
+                    {busyStudyId === study.id ? "Confirming…" : "Confirm"}
+                  </button>
+                )}
             </li>
           ))}
         </ul>

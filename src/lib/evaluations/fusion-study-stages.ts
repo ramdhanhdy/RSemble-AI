@@ -582,7 +582,7 @@ export async function runStageB(
   };
 }
 
-function bestFixedModelKey(
+export function bestFixedModelKey(
   tasks: EvaluationTask[],
   scoresByTask: Map<string, Map<string, ModelTaskScore>>,
   weights: CriterionWeights,
@@ -702,15 +702,26 @@ async function runPoolAdequacyProbe(
 
 // --- Blocked pair evaluation -------------------------------------------------------------
 
-interface PairEvalOutcome {
+export interface PairEvalOutcome {
   policyResults: StageBPolicyResult[];
   comparisons: StageBComparison[];
   familyMeans: Map<FusionRecipeFamily, number>;
 }
 
-async function evaluatePairBlocked(
+/** Minimal input for blocked pair evaluation — shared by Stage B and the
+ *  confirmation lifecycle (which evaluates a preselected pair without any
+ *  screening or shortlisting). */
+export interface PairEvaluationInput {
+  study: FusionStudy;
+  pool: PoolManifestVersion;
+  profile: EvaluationProfileSnapshot | null;
+  mpid: number;
+  rng?: () => number;
+}
+
+export async function evaluatePairBlocked(
   deps: StageDriverDeps,
-  input: StageBDriverInput,
+  input: PairEvaluationInput,
   pair: [string, string],
   opts: { recipes: FusionRecipeVersion[]; bestFixedKey: string; tasks: EvaluationTask[] },
 ): Promise<PairEvalOutcome> {
@@ -914,7 +925,7 @@ interface FinishTrialInput {
 
 async function finishTrial(
   deps: StageDriverDeps,
-  input: StageBDriverInput,
+  input: PairEvaluationInput,
   args: FinishTrialInput,
 ): Promise<FusionTrial> {
   const trial = await deps.controller.createTrial({
