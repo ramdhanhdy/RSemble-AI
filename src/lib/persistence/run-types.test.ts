@@ -711,7 +711,10 @@ describe("isTaskEvaluationSelection discrimination", () => {
   });
 });
 
-describe("isEvaluationSuite execution preconditions", () => {
+describe("isEvaluationSuite structural validity", () => {
+  // Execution preconditions (≥1 task, ≥2 enabled unique keys, ready judge)
+  // live in validateSuiteForExecution — see suite-validation.test.ts. The
+  // record guard intentionally accepts saveable but non-executable drafts.
   it("accepts a valid suite", () => {
     expect(isEvaluationSuite(validSuite())).toBe(true);
   });
@@ -722,27 +725,17 @@ describe("isEvaluationSuite execution preconditions", () => {
     expect(isEvaluationSuite(s)).toBe(false);
   });
 
-  it("rejects a suite with fewer than two enabled models", () => {
+  it("accepts a draft with fewer than two enabled models (execution-gated)", () => {
     const s = validSuite();
     s.modelSlots = [validSlot1, { ...validSlot2, enabled: false }];
-    expect(isEvaluationSuite(s)).toBe(false);
+    expect(isEvaluationSuite(s)).toBe(true);
   });
 
-  it("rejects a suite with duplicate enabled providerId:slug keys", () => {
+  it("accepts a draft with duplicate enabled keys (execution-gated)", () => {
     const s = validSuite();
     s.modelSlots = [
       validSlot1,
       { ...validSlot2, providerId: "openrouter", provider: "OpenRouter", model: "foo", slug: "foo" },
-    ];
-    expect(isEvaluationSuite(s)).toBe(false);
-  });
-
-  it("accepts duplicate keys when one duplicate is disabled", () => {
-    const s = validSuite();
-    s.modelSlots = [
-      validSlot1,
-      { ...validSlot2, providerId: "openrouter", provider: "OpenRouter", model: "foo", slug: "foo", enabled: false },
-      validSlot2,
     ];
     expect(isEvaluationSuite(s)).toBe(true);
   });
@@ -753,10 +746,10 @@ describe("isEvaluationSuite execution preconditions", () => {
     expect(isEvaluationSuite(s)).toBe(false);
   });
 
-  it("rejects a suite with zero tasks", () => {
+  it("accepts a draft with zero tasks (execution-gated)", () => {
     const s = validSuite();
     s.tasks = [];
-    expect(isEvaluationSuite(s)).toBe(false);
+    expect(isEvaluationSuite(s)).toBe(true);
   });
 
   it("rejects a task with an empty title", () => {

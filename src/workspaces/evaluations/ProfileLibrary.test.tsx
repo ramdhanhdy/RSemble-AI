@@ -183,6 +183,23 @@ describe("ProfileList", () => {
     cleanup(h);
   });
 
+  it("Create profile persists a valid draft that appears in the list", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await settle();
+    const createBtn = h.$("button[data-action='create-profile']");
+    await act(async () => {
+      createBtn!.click();
+      await flush();
+    });
+    await settle();
+    // The repository's strict guard accepted the draft AND it lists.
+    const records = await repo.listProfiles(true);
+    expect(records).toHaveLength(1);
+    expect(h.container.textContent).not.toMatch(/validation/i);
+    cleanup(h);
+  });
+
   it("Show archived toggle reveals archived profiles and hides them by default", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedProfile(repo, "p-active", "Active");

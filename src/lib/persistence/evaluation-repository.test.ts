@@ -19,6 +19,7 @@ import type {
   ExperimentRecord,
   ProfileRecord,
 } from "../evaluations/evaluation-types";
+import { validateSuiteForExecution } from "../evaluations/suite-validation";
 import type { FullRunSummaryV2, RunRecordV2 } from "./run-types";
 
 // --- Valid baselines ----------------------------------------------------------
@@ -211,6 +212,24 @@ describe("EvaluationRepository (Dexie-backed)", () => {
     it("rejects stale revision on save", async () => {
       await evalRepo.saveSuite(makeSuite("s1"), 0);
       await expect(evalRepo.saveSuite(makeSuite("s1"), 0)).rejects.toThrow(/stale/i);
+    });
+
+    it("persists a non-executable draft and reads it back (execution is gated separately)", async () => {
+      const draft: EvaluationSuite = { ...makeSuite("draft"), tasks: [], modelSlots: [] };
+      await evalRepo.saveSuite(draft, 0);
+      const retrieved = await evalRepo.getSuite("draft");
+      expect(retrieved).not.toBeNull();
+      expect(retrieved!.tasks).toHaveLength(0);
+      const listed = await evalRepo.listSuites();
+      expect(listed.some((s) => s.id === "draft")).toBe(true);
+      // The draft is not runnable — that decision belongs to the execution gate.
+      expect(validateSuiteForExecution(retrieved!).valid).toBe(false);
+    });
+
+    it("still rejects structurally invalid records", async () => {
+      const bad = makeSuite("bad");
+      (bad.tasks[0] as unknown as Record<string, unknown>).order = "zero";
+      await expect(evalRepo.saveSuite(bad, 0)).rejects.toThrow(/invalid suite/i);
     });
 
     it("listSuites returns newest first and hides archived by default", async () => {
@@ -438,5 +457,14 @@ describe("EvaluationRepository (In-memory)", () => {
     const restored = await evalRepo.getProfileRecord("p1");
     expect(restored!.latestVersion).toBe(1);
     expect(restored!.archivedAt).toBeNull();
+  });
+
+  it("persists a non-executable draft, matching the Dexie contract", async () => {
+    const draft: EvaluationSuite = { ...makeSuite("draft"), tasks: [], modelSlots: [] };
+    await evalRepo.saveSuite(draft, 0);
+    expect((await evalRepo.getSuite("draft"))!.tasks).toHaveLength(0);
+    const bad = makeSuite("bad");
+    (bad.tasks[0] as unknown as Record<string, unknown>).order = "zero";
+    await expect(evalRepo.saveSuite(bad, 0)).rejects.toThrow(/invalid suite/i);
   });
 });

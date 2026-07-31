@@ -38,12 +38,18 @@ export function EvaluationProfileEditor({
 
   function addCriterion() {
     const id = `c-${Date.now()}`;
+    // The persisted-profile guard requires non-empty 1/3/5 anchors — seed
+    // placeholders the user rewrites, or saving the profile is rejected.
     const newCriterion: EvaluationCriterion = {
       id,
-      name: "",
+      name: "New criterion",
       description: "",
       weight: 1,
-      anchors: { one: "", three: "", five: "" },
+      anchors: {
+        one: "1 — does not meet this criterion at all",
+        three: "3 — partially meets this criterion",
+        five: "5 — fully meets this criterion",
+      },
     };
     onChange({ ...profile, criteria: [...profile.criteria, newCriterion], updatedAt: Date.now() });
     setOpenId(id);

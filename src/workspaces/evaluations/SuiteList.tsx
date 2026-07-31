@@ -21,6 +21,7 @@ import type { EvaluationRepository } from "../../lib/persistence/evaluation-repo
 import type { EvaluationSuite } from "../../lib/evaluations/evaluation-types";
 import { RecordRow } from "../../ui/RecordRow";
 import { StorageError } from "../../lib/persistence/database";
+import { DEFAULT_CRITIC_REF } from "../../studio-data";
 
 interface SuiteListProps {
   repo: EvaluationRepository | null;
@@ -39,15 +40,31 @@ function generateId(prefix: string): string {
 
 function blankSuite(): EvaluationSuite {
   const now = Date.now();
+  // The persisted-record guard requires ≥1 valid task and ≥2 enabled, unique
+  // model slots — a blank draft must seed a runnable starting point or the
+  // repository rejects it as a validation failure.
   return {
     id: generateId("suite"),
     revision: 0,
     version: 1,
     name: "Untitled suite",
     description: "",
-    tasks: [],
-    modelSlots: [],
-    defaultJudge: { providerId: "openrouter", model: "" },
+    tasks: [
+      {
+        id: generateId("task"),
+        title: "Task 1",
+        prompt: "Describe the task you want the candidate models to answer.",
+        systemPrompt: "",
+        evaluation: { kind: "inherit" },
+        judgeInstructionOverride: "",
+        order: 0,
+      },
+    ],
+    modelSlots: [
+      { id: generateId("slot"), providerId: "openrouter", provider: "Z-AI", model: "GLM 5.2", slug: "z-ai/glm-5.2", enabled: true },
+      { id: generateId("slot"), providerId: "openrouter", provider: "DeepSeek", model: "DeepSeek V4 Flash", slug: "deepseek/deepseek-v4-flash", enabled: true },
+    ],
+    defaultJudge: { ...DEFAULT_CRITIC_REF },
     defaultEvaluation: { kind: "holistic" },
     createdAt: now,
     updatedAt: now,

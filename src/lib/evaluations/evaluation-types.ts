@@ -9,9 +9,9 @@
 //    when non-holistic
 //  - Task evaluation validation distinguishes inherit, holistic, and
 //    pinned-profile selections without nullable inference
-//  - Suite validation requires non-empty name, valid tasks, at least two
-//    enabled models, and unique enabled providerId:modelSlug keys before
-//    execution
+//  - Suite RECORDS validate structurally (non-empty name, valid task objects);
+//    execution preconditions (≥1 task, ≥2 enabled unique model keys, ready
+//    judge) live in validateSuiteForExecution — incomplete drafts are saveable
 //  - Profile archive state validates only on mutable ProfileRecord, never on
 //    immutable EvaluationProfile versions
 // =============================================================================
@@ -399,6 +399,12 @@ export function isEvaluationTask(v: unknown): v is EvaluationTask {
   );
 }
 
+/**
+ * Structural record validity for a persisted suite. Execution preconditions
+ * (≥1 task, ≥2 enabled unique model keys, ready judge) are deliberately NOT
+ * enforced here — incomplete drafts are saveable records; the Run gate is
+ * validateSuiteForExecution (suite-validation.ts §10.2).
+ */
 export function isEvaluationSuite(v: unknown): v is EvaluationSuite {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
@@ -407,23 +413,13 @@ export function isEvaluationSuite(v: unknown): v is EvaluationSuite {
   // Non-empty name required.
   if (!isNonEmptyString(v.name)) return false;
   if (!isString(v.description)) return false;
-  if (!Array.isArray(v.tasks) || v.tasks.length === 0 || !v.tasks.every(isEvaluationTask)) return false;
+  if (!Array.isArray(v.tasks) || !v.tasks.every(isEvaluationTask)) return false;
   if (!Array.isArray(v.modelSlots) || !v.modelSlots.every(isModelSlot)) return false;
   if (!isCriticRef(v.defaultJudge)) return false;
   if (!isEvaluationSelection(v.defaultEvaluation)) return false;
   if (!isNumber(v.createdAt)) return false;
   if (!isNumber(v.updatedAt)) return false;
   if (v.archivedAt !== null && !isNumber(v.archivedAt)) return false;
-
-  // At least two enabled models before execution.
-  const enabled = (v.modelSlots as unknown[]).filter(
-    (s): s is ModelSlot => isRecord(s) && isBoolean(s.enabled) && s.enabled === true,
-  );
-  if (enabled.length < 2) return false;
-
-  // Unique enabled providerId:modelSlug keys.
-  const keys = enabled.map((s) => `${s.providerId}:${s.slug}`);
-  if (new Set(keys).size !== keys.length) return false;
 
   if (hasProhibitedKeys(v)) return false;
   return true;

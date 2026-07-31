@@ -404,6 +404,9 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     return this.suites.get(id) ?? null;
   }
   async saveSuite(suite: EvaluationSuite, expectedRevision: number): Promise<number> {
+    // Same contract as the Dexie store — a test double that silently accepts
+    // records the real store rejects lets invalid drafts ship.
+    if (!isEvaluationSuite(suite)) throw new StorageError("validation", "Invalid suite");
     const existing = this.suites.get(suite.id);
     if (existing && existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");
     const newRevision = expectedRevision + 1;
@@ -427,6 +430,11 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     return this.profileVersions.get(id)?.get(version) ?? null;
   }
   async createProfile(record: ProfileRecord, profile: EvaluationProfile): Promise<void> {
+    // Same contract as the Dexie store (validation + id/version checks).
+    if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
+    if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
+    if (record.id !== profile.id) throw new StorageError("validation", "Record/profile ID mismatch");
+    if (profile.version !== 1) throw new StorageError("validation", "First version must be 1");
     if (this.profileRecords.has(record.id)) throw new StorageError("conflict", "Profile exists");
     this.profileRecords.set(record.id, record);
     const versions = new Map<number, EvaluationProfile>();
@@ -434,6 +442,9 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     this.profileVersions.set(record.id, versions);
   }
   async appendProfileVersion(record: ProfileRecord, profile: EvaluationProfile, expectedRevision: number): Promise<number> {
+    if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
+    if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
+    if (record.id !== profile.id) throw new StorageError("validation", "Record/profile ID mismatch");
     const existing = this.profileRecords.get(record.id);
     if (!existing) throw new StorageError("conflict", "Profile not found");
     if (existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");
