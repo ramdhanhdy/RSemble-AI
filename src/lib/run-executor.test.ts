@@ -489,6 +489,7 @@ describe("RunExecutor — executeFusionAttempt", () => {
       critic: { providerId: "openrouter", model: "judge-model" },
       judgeInstruction: "",
       judgeAttemptId: "judge-att-1",
+      blindLabelToCandidateId: { A: "cand-s1", B: "cand-s2" },
       candidateAttemptIdsByCandidateId: { "cand-s1": "att-1", "cand-s2": "att-2" },
     };
   }

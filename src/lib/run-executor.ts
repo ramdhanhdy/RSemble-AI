@@ -15,6 +15,7 @@
 
 import type { ChatMessage, CriticRef } from "./providers/types";
 import type {
+  BlindCandidate,
   Candidate,
   CandidateSegment,
   ModelSlot,
@@ -35,6 +36,7 @@ import {
 import { estimateTokens } from "./cost";
 import {
   buildFanoutJobs,
+  candidateFullText,
   createBlindCandidateSet,
   draftMessages,
   fusionMessages,
@@ -102,6 +104,9 @@ export interface FrozenFusionRequest {
   critic: CriticRef;
   judgeInstruction: string;
   judgeAttemptId: string;
+  /** Frozen blind-label map from the source Judge attempt — the re-fusion
+   *  reuses the exact same labels so the blind synthesis is reproducible. */
+  blindLabelToCandidateId: Record<string, string>;
   candidateAttemptIdsByCandidateId: Record<string, string>;
 }
 
@@ -347,7 +352,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
   // --- Fusion (shared by executeTask, retryCandidate, retryJudge, executeFusionAttempt) ---
 
   async function runFusion(
-    done: Candidate[],
+    blindCandidates: BlindCandidate[],
     request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction?: string },
     sourceJudgeAttemptId: string,
     candidateAttemptIdsByCandidateId: Record<string, string>,
@@ -360,7 +365,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     const messages = fusionMessages({
       prompt: request.task.prompt,
       profile: fusionProfile,
-      candidates: done,
+      blindCandidates,
       judgeInstruction: request.judgeInstruction ?? "",
     });
     const attemptId = generateId();
@@ -543,7 +548,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     if (request.mode === "fuse") {
       await runFusion(
-        done,
+        judgeResult.blindSet.candidates,
         { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
         judgeResult.attemptId,
         candidateAttemptIds,
@@ -656,7 +661,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     if (request.mode === "fuse") {
       await runFusion(
-        allDone,
+        judgeResult.blindSet.candidates,
         { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
         judgeResult.attemptId,
         candidateAttemptIds,
@@ -687,7 +692,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     if (request.mode === "fuse") {
       await runFusion(
-        done,
+        judgeResult.blindSet.candidates,
         { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
         judgeResult.attemptId,
         candidateAttemptIds,
@@ -703,8 +708,22 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     const done = request.candidates.filter(isUsableCandidate);
     if (done.length < 2) return;
 
+    // Rebuild the blind packet from the frozen label map of the source Judge
+    // attempt — a re-fusion reuses the exact original labels (no reshuffle).
+    // When no frozen map is available (no persisted record), fall back to a
+    // fresh blind labeling of the usable candidates.
+    let blindCandidates: BlindCandidate[] = [];
+    for (const [label, candidateId] of Object.entries(request.blindLabelToCandidateId)) {
+      const candidate = done.find((c) => c.id === candidateId);
+      if (!candidate) continue;
+      blindCandidates.push({ label, candidateId, content: candidateFullText(candidate) });
+    }
+    if (blindCandidates.length < 2) {
+      blindCandidates = createBlindCandidateSet(done, random).candidates;
+    }
+
     await runFusion(
-      done,
+      blindCandidates,
       { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
       request.judgeAttemptId,
       request.candidateAttemptIdsByCandidateId,

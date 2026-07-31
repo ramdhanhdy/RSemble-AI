@@ -25,6 +25,10 @@ import {
 } from "../studio-data";
 import type { EvaluationCriterion, EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
 import { evaluationCriteriaText } from "./evaluations/evaluation-profile";
+import {
+  FUSION_RECIPE_BLIND_RAW_V1,
+  renderRecipeMessages,
+} from "./evaluations/fusion-recipes";
 
 const LETTERS = "ABCDEFGH".split("");
 
@@ -645,28 +649,24 @@ function parseComparisons(
 
 // ---- Fusion ------------------------------------------------------------------
 
+/**
+ * Compare's Fuse mode — runs the versioned `BlindRaw` v1 recipe (fusion-study
+ * plan §8). Candidates reach the synthesizer ONLY as anonymized blind labels
+ * reused from the judge stage; the old non-blind, real-model-name prompt is
+ * deliberately not preserved (it is the known-weak configuration).
+ */
 export function fusionMessages(opts: {
   prompt: string;
   profile: EvaluationProfileSnapshot | null;
-  candidates: Candidate[];
+  blindCandidates: BlindCandidate[];
   judgeInstruction?: string;
 }): ChatMessage[] {
-  // Fusion runs on the full candidate answers only — no hand-picked snippets
-  // (the Frankenstein picker is OUT, PRODUCT.md §5).
-  // Fusion may receive criterion descriptions and anchors as synthesis quality
-  // targets, but never Judge procedural instructions or blind-label material
-  // (spec §9.3).
-  const sources = opts.candidates.map((c) => `### ${c.model}\n${candidateFullText(c)}`).join("\n\n");
-
-  const system =
-    `You are a senior synthesizer. Merge the strongest material from multiple candidate answers into a single, ` +
-    `coherent, production-grade final answer. Remove redundancy and resolve contradictions sensibly. ` +
-    `Honor the user's evaluation criteria. Return the final answer in clean Markdown.` +
-    renderJudgeInstruction(opts.judgeInstruction);
-  const user =
-    `User task:\n${opts.prompt}\n\nEvaluation criteria:\n${evaluationText(opts.profile)}\n\nCandidate answers:\n${sources}`;
-  return [
-    { role: "system", content: system },
-    { role: "user", content: user },
-  ];
+  return renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
+    prompt: opts.prompt,
+    profile: opts.profile,
+    blindCandidates: opts.blindCandidates,
+    judgeReport: null,
+    consensus: null,
+    judgeInstruction: opts.judgeInstruction,
+  });
 }

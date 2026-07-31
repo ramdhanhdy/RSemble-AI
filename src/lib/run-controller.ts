@@ -366,6 +366,7 @@ export function createRunController(deps: RunControllerDeps) {
       // Load the persisted record for real accepted attempt IDs
       let candidateAttemptIdsByCandidateId: Record<string, string> = {};
       let judgeAttemptId = "";
+      let blindLabelToCandidateId: Record<string, string> = {};
       if (recorder && runIdRef.current) {
         const record = await recorder.getRecord(runIdRef.current);
         if (record) {
@@ -375,6 +376,12 @@ export function createRunController(deps: RunControllerDeps) {
             }
           }
           judgeAttemptId = record.judge.acceptedAttemptId ?? "";
+          const acceptedJudge = record.judge.attempts.find(
+            (a) => a.attemptId === record.judge.acceptedAttemptId,
+          );
+          if (acceptedJudge) {
+            blindLabelToCandidateId = acceptedJudge.blindLabelToCandidateId;
+          }
         }
       }
 
@@ -387,6 +394,7 @@ export function createRunController(deps: RunControllerDeps) {
         critic: s.critic,
         judgeInstruction: s.judgeInstruction,
         judgeAttemptId,
+        blindLabelToCandidateId,
         candidateAttemptIdsByCandidateId,
       }, events, abort.signal);
     })();

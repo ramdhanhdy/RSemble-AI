@@ -466,7 +466,7 @@ describe("fusionMessages — judge instruction", () => {
     const msgs = fusionMessages({
       prompt: "test prompt",
       profile: null,
-      candidates,
+      blindCandidates: blindOf(candidates).candidates,
       judgeInstruction: instruction,
     });
     expect(msgs).toHaveLength(2);
@@ -482,18 +482,18 @@ describe("fusionMessages — judge instruction", () => {
     const baseline = fusionMessages({
       prompt: "test prompt",
       profile: null,
-      candidates,
+      blindCandidates: blindOf(candidates).candidates,
     });
     const empty = fusionMessages({
       prompt: "test prompt",
       profile: null,
-      candidates,
+      blindCandidates: blindOf(candidates).candidates,
       judgeInstruction: "",
     });
     const whitespace = fusionMessages({
       prompt: "test prompt",
       profile: null,
-      candidates,
+      blindCandidates: blindOf(candidates).candidates,
       judgeInstruction: "  \n ",
     });
     expect(empty).toEqual(baseline);

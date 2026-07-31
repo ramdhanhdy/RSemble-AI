@@ -1,0 +1,150 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`recipe prompt assembly (snapshots) > AnalysisFed v1 — adds qualitative development-judge analysis 1`] = `
+[
+  {
+    "content": "You are a senior synthesizer. Merge the strongest material from multiple anonymized candidate answers into a single, coherent, production-grade final answer. The candidates are anonymized: you see only blind labels (Candidate A, Candidate B, ...) and their answer text. You do not know which model produced which answer — do not speculate about candidate identities, and never refer to model names or providers in your output. Remove redundancy and resolve contradictions sensibly. Honor the user's evaluation criteria. Return the final answer in clean Markdown.",
+    "role": "system",
+  },
+  {
+    "content": "User task:
+Which algorithm finds the shortest path?
+
+Evaluation criteria:
+- Accuracy (weight 2.00): Factually correct
+  Score 1: wrong
+  Score 3: mostly right
+  Score 5: fully correct
+- Completeness (weight 1.00): Covers the task
+  Score 1: sparse
+  Score 3: adequate
+  Score 5: complete
+
+Development-judge analysis (anonymized):
+Consensus points:
+- Both answers pick a graph traversal algorithm
+Contradictions between candidates:
+- Whether edge weights matter
+Per-candidate assessment:
+- Candidate A: position: BFS is sufficient | evidence: Correct but misses weighted edges | strengths: simple; correct on unweighted graphs | deductions: major: ignores weights | blind spots: complexity analysis
+- Candidate B: position: Dijkstra handles weights | evidence: General but more complex | strengths: handles weighted graphs; includes complexity analysis | deductions: minor: overkill for unweighted
+
+Candidate answers (anonymized):
+### Candidate A
+Answer A: use a breadth-first search.
+
+### Candidate B
+Answer B: use Dijkstra's algorithm.",
+    "role": "user",
+  },
+]
+`;
+
+exports[`recipe prompt assembly (snapshots) > AnalysisScores v1 — adds numeric per-criterion scores 1`] = `
+[
+  {
+    "content": "You are a senior synthesizer. Merge the strongest material from multiple anonymized candidate answers into a single, coherent, production-grade final answer. The candidates are anonymized: you see only blind labels (Candidate A, Candidate B, ...) and their answer text. You do not know which model produced which answer — do not speculate about candidate identities, and never refer to model names or providers in your output. Remove redundancy and resolve contradictions sensibly. Honor the user's evaluation criteria. Return the final answer in clean Markdown.",
+    "role": "system",
+  },
+  {
+    "content": "User task:
+Which algorithm finds the shortest path?
+
+Evaluation criteria:
+- Accuracy (weight 2.00): Factually correct
+  Score 1: wrong
+  Score 3: mostly right
+  Score 5: fully correct
+- Completeness (weight 1.00): Covers the task
+  Score 1: sparse
+  Score 3: adequate
+  Score 5: complete
+
+Development-judge analysis (anonymized):
+Consensus points:
+- Both answers pick a graph traversal algorithm
+Contradictions between candidates:
+- Whether edge weights matter
+Per-candidate assessment:
+- Candidate A: position: BFS is sufficient | evidence: Correct but misses weighted edges | strengths: simple; correct on unweighted graphs | deductions: major: ignores weights | blind spots: complexity analysis
+- Candidate B: position: Dijkstra handles weights | evidence: General but more complex | strengths: handles weighted graphs; includes complexity analysis | deductions: minor: overkill for unweighted
+
+Per-candidate scores (1.0–5.0):
+- Candidate A: overall 4.0; Accuracy 5.0, Completeness 3.0
+- Candidate B: overall 4.0; Accuracy 3.0, Completeness 5.0
+
+Candidate answers (anonymized):
+### Candidate A
+Answer A: use a breadth-first search.
+
+### Candidate B
+Answer B: use Dijkstra's algorithm.",
+    "role": "user",
+  },
+]
+`;
+
+exports[`recipe prompt assembly (snapshots) > BlindRaw v1 — anonymized answers only, no analysis 1`] = `
+[
+  {
+    "content": "You are a senior synthesizer. Merge the strongest material from multiple anonymized candidate answers into a single, coherent, production-grade final answer. The candidates are anonymized: you see only blind labels (Candidate A, Candidate B, ...) and their answer text. You do not know which model produced which answer — do not speculate about candidate identities, and never refer to model names or providers in your output. Remove redundancy and resolve contradictions sensibly. Honor the user's evaluation criteria. Return the final answer in clean Markdown.",
+    "role": "system",
+  },
+  {
+    "content": "User task:
+Which algorithm finds the shortest path?
+
+Evaluation criteria:
+- Accuracy (weight 2.00): Factually correct
+  Score 1: wrong
+  Score 3: mostly right
+  Score 5: fully correct
+- Completeness (weight 1.00): Covers the task
+  Score 1: sparse
+  Score 3: adequate
+  Score 5: complete
+
+Candidate answers (anonymized):
+### Candidate A
+Answer A: use a breadth-first search.
+
+### Candidate B
+Answer B: use Dijkstra's algorithm.",
+    "role": "user",
+  },
+]
+`;
+
+exports[`recipe prompt assembly (snapshots) > refine-the-winner — revises the blind winner against the rubric 1`] = `
+[
+  {
+    "content": "You are a senior reviser. Improve the winning draft below into the best possible final answer. The candidates are anonymized: you see only blind labels (Candidate A, Candidate B, ...) and their answer text. You do not know which model produced which answer — do not speculate about candidate identities, and never refer to model names or providers in your output. Use the other anonymized candidate answers only as reference material — fix weaknesses, incorporate what they do better, and remove what does not serve the user's task. Honor the user's evaluation criteria. Return the revised answer in clean Markdown.",
+    "role": "system",
+  },
+  {
+    "content": "User task:
+Which algorithm finds the shortest path?
+
+Evaluation criteria:
+- Accuracy (weight 2.00): Factually correct
+  Score 1: wrong
+  Score 3: mostly right
+  Score 5: fully correct
+- Completeness (weight 1.00): Covers the task
+  Score 1: sparse
+  Score 3: adequate
+  Score 5: complete
+
+Winning draft (Candidate A):
+Answer A: use a breadth-first search.
+
+Reference candidate answers (anonymized):
+### Candidate A
+Answer A: use a breadth-first search.
+
+### Candidate B
+Answer B: use Dijkstra's algorithm.",
+    "role": "user",
+  },
+]
+`;
