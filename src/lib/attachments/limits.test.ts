@@ -50,7 +50,7 @@ describe("admitFiles", () => {
   });
 
   it("rejects files over MAX_FILES count", () => {
-    const existing = Array.from({ length: MAX_FILES }, (_, i) => ({ bytes: 100 }));
+    const existing = Array.from({ length: MAX_FILES }, () => ({ bytes: 100 }));
     const files = [makeFile("extra.png", 1024)];
     const result = admitFiles(existing, files);
     expect(result.accepted).toHaveLength(0);
