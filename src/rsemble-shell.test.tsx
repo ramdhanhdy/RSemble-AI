@@ -76,7 +76,7 @@ afterEach(() => {
 });
 
 describe("RSemble workspace shell", () => {
-  it("renders distinct workspace headings for /compare, /runs, and /evaluations", () => {
+  it("renders distinct workspace headings for /compare, /runs, and /evaluations", async () => {
     const compare = renderAtRoute(["/compare"]);
     // Compare renders the command/output panes — its heading is the section
     // aria-label "Command" + "Output". There is no "not implemented" placeholder.
@@ -85,12 +85,14 @@ describe("RSemble workspace shell", () => {
     cleanup(compare);
 
     const runs = renderAtRoute(["/runs"]);
+    await settleLazy();
     // Runs workspace is an honest placeholder saying the feature is not yet
     // implemented, with no fake controls.
     expect(runs.container.textContent).toContain("Runs");
     cleanup(runs);
 
     const evaluations = renderAtRoute(["/evaluations"]);
+    await settleLazy();
     expect(evaluations.container.textContent).toContain("Evaluations");
     cleanup(evaluations);
   });
@@ -132,7 +134,14 @@ describe("RSemble workspace shell", () => {
     cleanup(h);
   });
 
-  it("shows Rank/Fuse toggle on Compare and not on Runs/Evaluations", () => {
+  /** Flush so lazily-imported route chunks resolve and render. */
+  async function settleLazy() {
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  it("shows Rank/Fuse toggle on Compare and not on Runs/Evaluations", async () => {
     const compare = renderAtRoute(["/compare"]);
     // The ModeToggle is a radiogroup with role="radiogroup".
     const compareToggle = compare.$('[role="radiogroup"]');
@@ -140,11 +149,13 @@ describe("RSemble workspace shell", () => {
     cleanup(compare);
 
     const runs = renderAtRoute(["/runs"]);
+    await settleLazy();
     const runsToggle = runs.$('[role="radiogroup"]');
     expect(runsToggle).toBeFalsy();
     cleanup(runs);
 
     const evaluations = renderAtRoute(["/evaluations"]);
+    await settleLazy();
     const evalToggle = evaluations.$('[role="radiogroup"]');
     expect(evalToggle).toBeFalsy();
     cleanup(evaluations);

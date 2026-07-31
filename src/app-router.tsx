@@ -10,42 +10,77 @@
 // in RSemble above this router so state persists across navigation.
 // =============================================================================
 
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, Link, useParams } from "react-router-dom";
-import { RunsWorkspace } from "./workspaces/RunsWorkspace";
-import { EvaluationsWorkspace } from "./workspaces/EvaluationsWorkspace";
-import { SuiteList } from "./workspaces/evaluations/SuiteList";
-import { SuiteEditor } from "./workspaces/evaluations/SuiteEditor";
-import { SuiteTaskEditorRoute } from "./workspaces/evaluations/SuiteTaskEditorRoute";
-import { ProfileList } from "./workspaces/evaluations/ProfileList";
-import { ProfileDetail } from "./workspaces/evaluations/ProfileDetail";
-import { ExperimentRoute } from "./workspaces/evaluations/ExperimentRoute";
-import { FusionStudyRoute } from "./workspaces/evaluations/FusionStudyView";
 import { useEvaluationRepository, useFusionStudyRepository } from "./lib/persistence/repository-context";
 import type { CatalogModel } from "./lib/providers/types";
+
+// Route-level code splitting: Compare is the default surface and stays in the
+// main chunk; Runs, Evaluations (suites, profiles, fusion study), and
+// experiment results load on first navigation to them.
+const RunsWorkspace = lazy(() =>
+  import("./workspaces/RunsWorkspace").then((m) => ({ default: m.RunsWorkspace })),
+);
+const EvaluationsWorkspace = lazy(() =>
+  import("./workspaces/EvaluationsWorkspace").then((m) => ({ default: m.EvaluationsWorkspace })),
+);
+const SuiteList = lazy(() =>
+  import("./workspaces/evaluations/SuiteList").then((m) => ({ default: m.SuiteList })),
+);
+const SuiteEditor = lazy(() =>
+  import("./workspaces/evaluations/SuiteEditor").then((m) => ({ default: m.SuiteEditor })),
+);
+const SuiteTaskEditorRoute = lazy(() =>
+  import("./workspaces/evaluations/SuiteTaskEditorRoute").then((m) => ({ default: m.SuiteTaskEditorRoute })),
+);
+const ProfileList = lazy(() =>
+  import("./workspaces/evaluations/ProfileList").then((m) => ({ default: m.ProfileList })),
+);
+const ProfileDetail = lazy(() =>
+  import("./workspaces/evaluations/ProfileDetail").then((m) => ({ default: m.ProfileDetail })),
+);
+const FusionStudyRoute = lazy(() =>
+  import("./workspaces/evaluations/FusionStudyView").then((m) => ({ default: m.FusionStudyRoute })),
+);
+const ExperimentRoute = lazy(() =>
+  import("./workspaces/evaluations/ExperimentRoute").then((m) => ({ default: m.ExperimentRoute })),
+);
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">
+      Loading…
+    </div>
+  );
+}
+
+function withSuspense(node: React.ReactNode): React.ReactNode {
+  return <Suspense fallback={<RouteFallback />}>{node}</Suspense>;
+}
 
 export function AppRoutes({ compareOutlet, models }: { compareOutlet: React.ReactNode; models: CatalogModel[] }) {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/compare" replace />} />
       <Route path="/compare" element={<CompareSlot>{compareOutlet}</CompareSlot>} />
-      <Route path="/runs" element={<RunsWorkspace />} />
-      <Route path="/runs/:runId" element={<RunsWorkspace />} />
+      <Route path="/runs" element={withSuspense(<RunsWorkspace />)} />
+      <Route path="/runs/:runId" element={withSuspense(<RunsWorkspace />)} />
 
       {/* Evaluations workspace — segmented nav (Suites | Profiles) + Outlet.
           EvaluationContext is provided by EvaluationsWorkspace so child routes
           can call useEvaluationRepository() from evaluation-context.tsx. */}
-      <Route path="/evaluations" element={<EvaluationsWorkspace />}>
-        <Route index element={<SuiteListRoute />} />
-        <Route path="profiles" element={<ProfileListRoute />} />
-        <Route path="profiles/:profileId" element={<ProfileDetailRoute />} />
-        <Route path=":suiteId" element={<SuiteEditorRoute models={models} />} />
-        <Route path=":suiteId/tasks/:taskId" element={<SuiteTaskEditorRouteWrapper models={models} />} />
-        <Route path=":suiteId/fusion/:studyId" element={<FusionStudyRouteWrapper />} />
+      <Route path="/evaluations" element={withSuspense(<EvaluationsWorkspace />)}>
+        <Route index element={withSuspense(<SuiteListRoute />)} />
+        <Route path="profiles" element={withSuspense(<ProfileListRoute />)} />
+        <Route path="profiles/:profileId" element={withSuspense(<ProfileDetailRoute />)} />
+        <Route path=":suiteId" element={withSuspense(<SuiteEditorRoute models={models} />)} />
+        <Route path=":suiteId/tasks/:taskId" element={withSuspense(<SuiteTaskEditorRouteWrapper models={models} />)} />
+        <Route path=":suiteId/fusion/:studyId" element={withSuspense(<FusionStudyRouteWrapper />)} />
       </Route>
 
       {/* Experiment progress/results — top-level route (spec §5.1). Terminal
           records render results; non-terminal render live progress. */}
-      <Route path="/experiments/:experimentId" element={<ExperimentRoute />} />
+      <Route path="/experiments/:experimentId" element={withSuspense(<ExperimentRoute />)} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
