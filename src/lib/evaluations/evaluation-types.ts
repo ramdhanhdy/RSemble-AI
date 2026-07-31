@@ -75,6 +75,32 @@ export type TaskEvaluationSelection =
 
 // --- Tasks / suites -----------------------------------------------------------
 
+/**
+ * Verifier-derived determinism (fusion-study spec §5.5): deterministic
+ * correctness is a property of whether a task has an external verifier, never
+ * a user toggle over rubric scores. Task-level only in v1.
+ */
+export type VerificationKind =
+  | "none"
+  | "exact_match"
+  | "numeric"
+  | "schema"
+  | "unit_tests"
+  | "custom_checker";
+
+export const VERIFICATION_KINDS: readonly VerificationKind[] = [
+  "none",
+  "exact_match",
+  "numeric",
+  "schema",
+  "unit_tests",
+  "custom_checker",
+];
+
+export interface TaskVerification {
+  kind: VerificationKind;
+}
+
 export interface EvaluationTask {
   id: string;
   title: string;
@@ -83,6 +109,8 @@ export interface EvaluationTask {
   evaluation: TaskEvaluationSelection;
   judgeInstructionOverride: string;
   order: number;
+  /** External verifier configuration; absent or kind "none" = rubric-only. */
+  verification?: TaskVerification;
 }
 
 export interface EvaluationSuite {
@@ -331,7 +359,7 @@ export function isProfileRecord(v: unknown): v is ProfileRecord {
 
 // --- Model slot / critic ref --------------------------------------------------
 
-function isModelSlot(v: unknown): v is ModelSlot {
+export function isModelSlot(v: unknown): v is ModelSlot {
   if (!isRecord(v)) return false;
   return (
     isNonEmptyString(v.id) &&
@@ -343,14 +371,23 @@ function isModelSlot(v: unknown): v is ModelSlot {
   );
 }
 
-function isCriticRef(v: unknown): v is CriticRef {
+export function isCriticRef(v: unknown): v is CriticRef {
   return isRecord(v) && isString(v.providerId) && isString(v.model);
 }
 
 // --- Tasks / suite ------------------------------------------------------------
 
+export function isTaskVerification(v: unknown): v is TaskVerification {
+  return (
+    isRecord(v) &&
+    typeof v.kind === "string" &&
+    (VERIFICATION_KINDS as readonly string[]).includes(v.kind)
+  );
+}
+
 export function isEvaluationTask(v: unknown): v is EvaluationTask {
   if (!isRecord(v)) return false;
+  if (v.verification !== undefined && !isTaskVerification(v.verification)) return false;
   return (
     isNonEmptyString(v.id) &&
     isNonBlankString(v.title) &&

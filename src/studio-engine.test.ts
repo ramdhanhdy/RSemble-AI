@@ -658,3 +658,61 @@ describe("reducer — standalone Fusion transition", () => {
     expect(next.fusionStatus).toBe("running");
   });
 });
+
+describe("reducer — SWAP_SLOT switches a slot's model", () => {
+  const baseSlots: StudioState["slots"] = [
+    { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+  ];
+
+  it("updates slug/model/provider label within the same provider", () => {
+    const state: StudioState = { ...initialState, slots: baseSlots };
+    const next = reducer(state, {
+      type: "SWAP_SLOT",
+      id: "s1",
+      provider: "OpenRouter",
+      model: "A2",
+      slug: "vendor/model-a2",
+    });
+    expect(next.slots[0]).toMatchObject({
+      id: "s1",
+      providerId: "openrouter", // unchanged — same provider
+      model: "A2",
+      slug: "vendor/model-a2",
+      enabled: true, // preserved
+    });
+  });
+
+  it("updates providerId when switching to a different provider", () => {
+    const state: StudioState = { ...initialState, slots: baseSlots };
+    const next = reducer(state, {
+      type: "SWAP_SLOT",
+      id: "s1",
+      providerId: "gemini",
+      provider: "Gemini",
+      model: "Gemini 3.6 Flash",
+      slug: "gemini-3.6-flash",
+    });
+    expect(next.slots[0]).toMatchObject({
+      id: "s1",
+      providerId: "gemini", // switched
+      provider: "Gemini",
+      model: "Gemini 3.6 Flash",
+      slug: "gemini-3.6-flash",
+      enabled: true,
+    });
+  });
+
+  it("keeps the slot id stable so the candidate→slot retry link survives a switch", () => {
+    const state: StudioState = { ...initialState, slots: baseSlots };
+    const next = reducer(state, {
+      type: "SWAP_SLOT",
+      id: "s1",
+      providerId: "umans",
+      provider: "Umans",
+      model: "K3",
+      slug: "kimi-k3",
+    });
+    // The slot id is the stable identity the retry path keys on (cand-s1 → s1).
+    expect(next.slots[0].id).toBe("s1");
+  });
+});

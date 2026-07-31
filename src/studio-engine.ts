@@ -23,7 +23,7 @@ import {
   type Mode,
   type ModelSlot,
 } from "./studio-data";
-import type { CatalogModel, CriticRef } from "./lib/providers/types";
+import type { CatalogModel, CriticRef, ProviderId } from "./lib/providers/types";
 import { loadStoredCritic, loadStoredSlots } from "./lib/preferences";
 import { EXAMPLE_TASKS, nextExampleIndex } from "./lib/test-cases";
 import {
@@ -101,7 +101,7 @@ export type Action =
   | { type: "SET_EVALUATION"; config: AdHocEvaluationConfig }
   | { type: "ADD_SLOT"; slot: ModelSlot }
   | { type: "REMOVE_SLOT"; id: string }
-  | { type: "SWAP_SLOT"; id: string; provider: string; model: string; slug: string }
+  | { type: "SWAP_SLOT"; id: string; providerId?: ProviderId; provider: string; model: string; slug: string }
   | { type: "TOGGLE_SLOT"; id: string }
   | { type: "SET_TEMPERATURE"; value: number }
   | { type: "SET_SYSTEM_PROMPT"; value: string }
@@ -203,8 +203,21 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return { ...state, slots: state.slots.filter((s) => s.id !== action.id) };
 
     case "SWAP_SLOT": {
+      // Switch a slot's model in place, keeping its stable `id` so the
+      // candidate→slot retry link (cand-<slotId>) survives the switch. When the
+      // caller supplies providerId (a cross-provider switch), update it too so
+      // the retry path resolves the correct provider adapter; otherwise keep the
+      // existing providerId (model-only change within the same provider).
       const slots = state.slots.map((s) =>
-        s.id === action.id ? { ...s, provider: action.provider, model: action.model, slug: action.slug } : s
+        s.id === action.id
+          ? {
+              ...s,
+              providerId: action.providerId ?? s.providerId,
+              provider: action.provider,
+              model: action.model,
+              slug: action.slug,
+            }
+          : s
       );
       return { ...state, slots };
     }

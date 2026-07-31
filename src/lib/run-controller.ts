@@ -239,7 +239,14 @@ export function createRunController(deps: RunControllerDeps) {
   const retryCandidate = async (candidate: Candidate) => {
     if (stateRef.current.running) return;
     const s = stateRef.current;
+    // Resolve the slot by IDENTITY, not by the candidate's stale slug/providerId.
+    // Candidate identity is `cand-<slotId>` (candidateIdForSlot), so the slot id
+    // is the suffix. The user may have switched the slot's model/provider after
+    // the failed run — retry must use the slot's CURRENT model, which the
+    // executor reads from the resolved slot via retrySlotId.
+    const slotId = candidate.id.startsWith("cand-") ? candidate.id.slice("cand-".length) : null;
     const slot =
+      (slotId ? s.slots.find((sl) => sl.id === slotId) : undefined) ??
       s.slots.find((sl) => sl.slug === candidate.slug && sl.providerId === candidate.providerId) ??
       s.slots.find((sl) => sl.slug === candidate.slug);
     if (!slot) return;

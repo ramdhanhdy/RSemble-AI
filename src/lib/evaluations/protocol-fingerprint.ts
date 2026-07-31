@@ -111,6 +111,16 @@ export function createExperimentSnapshot(
 // --- SHA-256 implementation (synchronous, via Web Crypto fallback) -----------
 
 /**
+ * Content hash for immutable experimental artifacts (fusion-study spec §6.3).
+ * Identical output text under different generation settings is NOT the same
+ * artifact — callers hash text plus full generation provenance (model, prompt,
+ * decode settings), never text alone.
+ */
+export function hashArtifactContent(content: string): string {
+  return `sha256:${sha256Hex(content)}`;
+}
+
+/**
  * Compute SHA-256 hex hash of a string.
  * Uses Web Crypto (available in browser and Node ≥20).
  */

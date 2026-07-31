@@ -2,9 +2,22 @@
 import { describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { AddModelCombobox } from "./ModelList";
+import { AddModelCombobox, ModelList } from "./ModelList";
 import type { CatalogModel } from "../lib/providers/types";
 import type { ModelSlot } from "../studio-data";
+import type { Action } from "../studio-engine";
+import { InMemoryRunRepository } from "../lib/persistence/run-repository";
+import { RepositoryContext } from "../lib/persistence/repository-context";
+
+function withRepo(node: React.ReactNode) {
+  return (
+    <RepositoryContext.Provider
+      value={{ runRepo: new InMemoryRunRepository(), evalRepo: null, db: null, storageState: "ready", retry: () => {} }}
+    >
+      {node}
+    </RepositoryContext.Provider>
+  );
+}
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -274,6 +287,85 @@ describe("AddModelCombobox — complete catalog (no slice cutoff)", () => {
       expect(added).not.toBeNull();
       expect(added!.slug).toBe("gemini-custom-fake");
       expect(added!.providerId).toBe("gemini");
+    } finally {
+      cleanup(h);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ModelList — switch model for an existing slot (run-recovery: candidate swap)
+// ---------------------------------------------------------------------------
+
+describe("ModelList — switch model for a slot", () => {
+  const slot: ModelSlot = {
+    id: "slot-2",
+    providerId: "umans",
+    provider: "Umans",
+    model: "Kimi K3",
+    slug: "kimi-k3",
+    enabled: true,
+  };
+
+  it("opens the edit combobox on the slot's CURRENT provider, not OpenRouter", () => {
+    const h = render(
+      withRepo(<ModelList slots={[slot]} models={NO_MODELS} dispatch={() => {}} />),
+    );
+    try {
+      act(() => (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click());
+      // The Umans tab is active in the opened combobox (aria-pressed/selected).
+      const umansTab = h.byText("Umans")!;
+      const pressed = umansTab.getAttribute("aria-pressed") ?? umansTab.getAttribute("aria-selected");
+      expect(pressed).toBe("true");
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("committing a different provider dispatches SWAP_SLOT with the new providerId and the SAME slot id", () => {
+    const dispatched: Action[] = [];
+    const h = render(
+      withRepo(<ModelList slots={[slot]} models={NO_MODELS} dispatch={(a) => dispatched.push(a)} />),
+    );
+    try {
+      act(() => (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click());
+      // Switch to the Gemini provider tab.
+      act(() => h.byText("Gemini")!.click());
+      const input = h.$("input#model-search") as HTMLInputElement;
+      typeInto(input, "gemini-3.6-flash");
+      // Commit the manual slug (commitLabel is "Switch to" in the edit flow).
+      const commitBtn = h.$$("button").find((b) =>
+        b.getAttribute("aria-label")?.startsWith("Switch to "),
+      ) as HTMLButtonElement;
+      expect(commitBtn).toBeTruthy();
+      act(() => commitBtn.click());
+
+      const swap = dispatched.find((a) => a.type === "SWAP_SLOT");
+      expect(swap).toBeDefined();
+      expect(swap).toMatchObject({
+        type: "SWAP_SLOT",
+        id: "slot-2", // stable identity — the candidate→slot retry link survives
+        providerId: "gemini",
+        slug: "gemini-3.6-flash",
+      });
+    } finally {
+      cleanup(h);
+    }
+  });
+
+  it("does not dispatch SWAP_SLOT when the edit is cancelled", () => {
+    const dispatched: Action[] = [];
+    const h = render(
+      withRepo(<ModelList slots={[slot]} models={NO_MODELS} dispatch={(a) => dispatched.push(a)} />),
+    );
+    try {
+      act(() => (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click());
+      const input = h.$("input#model-search") as HTMLInputElement;
+      typeInto(input, "gemini-3.6-flash");
+      // X with a non-empty query clears it; X again cancels.
+      act(() => (h.$('button[aria-label="Clear model search"]') as HTMLButtonElement).click());
+      act(() => (h.$('button[aria-label="Cancel add model"]') as HTMLButtonElement).click());
+      expect(dispatched.find((a) => a.type === "SWAP_SLOT")).toBeUndefined();
     } finally {
       cleanup(h);
     }

@@ -16,7 +16,7 @@
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import type { Action } from "../studio-engine";
 import type { ModelSlot } from "../studio-data";
 import type { CatalogModel, ProviderId } from "../lib/providers/types";
@@ -35,6 +35,7 @@ interface ModelListProps {
 
 export function ModelList({ slots, models, dispatch }: ModelListProps) {
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const enabledCount = slots.filter((s) => s.enabled).length;
 
   useEffect(() => {
@@ -42,6 +43,13 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
     window.addEventListener("rsemble:add-model", onAddModel);
     return () => window.removeEventListener("rsemble:add-model", onAddModel);
   }, []);
+
+  // Keys taken by OTHER slots — when editing slot X we exclude X's own key so
+  // the user can re-commit the same model without a false "already added".
+  const takenKeysFor = (excludeSlotId: string | null) =>
+    new Set(
+      slots.filter((s) => s.id !== excludeSlotId).map((s) => modelKey(s.providerId, s.slug)),
+    );
 
   return (
     <div>
@@ -63,7 +71,17 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
 
       <ul className={`mt-2 space-y-2 ${slots.length > 0 && enabledCount === 0 ? "opacity-60" : ""}`}>
         {slots.map((slot) => (
-          <SlotRow key={slot.id} slot={slot} dispatch={dispatch} />
+          <SlotRow
+            key={slot.id}
+            slot={slot}
+            dispatch={dispatch}
+            editing={editingId === slot.id}
+            models={models}
+            takenKeys={takenKeysFor(slot.id)}
+            onEdit={() => setEditingId(slot.id)}
+            onCancelEdit={() => setEditingId(null)}
+            onSwapped={() => setEditingId(null)}
+          />
         ))}
         {slots.length === 0 && !adding && (
           <li className="rounded-md border border-dashed border-edge px-2 py-2 text-center font-mono text-sm text-text-muted">
@@ -75,7 +93,7 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
       {adding && (
         <AddModelCombobox
           models={models}
-          takenKeys={new Set(slots.map((s) => modelKey(s.providerId, s.slug)))}
+          takenKeys={takenKeysFor(null)}
           onCancel={() => setAdding(false)}
           onAdd={(slot) => {
             dispatch({ type: "ADD_SLOT", slot });
@@ -88,8 +106,26 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
 }
 
 // -----------------------------------------------------------------------------
-// Slot row — toggle on/off, remove
-function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch<Action> }) {
+// Slot row — toggle on/off, switch model (edit), remove
+function SlotRow({
+  slot,
+  dispatch,
+  editing,
+  models,
+  takenKeys,
+  onEdit,
+  onCancelEdit,
+  onSwapped,
+}: {
+  slot: ModelSlot;
+  dispatch: React.Dispatch<Action>;
+  editing: boolean;
+  models: CatalogModel[];
+  takenKeys: Set<string>;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSwapped: () => void;
+}) {
   const providerBadge = PROVIDER_LABELS[slot.providerId] ?? "OpenRouter";
   const repo = useRunRepository();
   const telemetry = useModelTelemetry(repo, modelKey(slot.providerId, slot.slug));
@@ -97,83 +133,115 @@ function SlotRow({ slot, dispatch }: { slot: ModelSlot; dispatch: React.Dispatch
 
   return (
     <li
-      className={`flex items-center gap-2 rounded-md border bg-card px-2 py-1.5 transition-[background-color,border-color] ease-out duration-150 ${
+      className={`flex flex-col gap-2 rounded-md border bg-card px-2 py-1.5 transition-[background-color,border-color] ease-out duration-150 ${
         slot.enabled ? "border-accent/50" : "border-edge hover:border-edge-bright"
       }`}
     >
-      <button
-        type="button"
-        onClick={() => dispatch({ type: "TOGGLE_SLOT", id: slot.id })}
-        aria-pressed={slot.enabled}
-        aria-label={slot.enabled ? `Disable ${slot.model}` : `Enable ${slot.model}`}
-        className="flex h-11 w-11 shrink-0 items-center justify-center"
-      >
-        <span
-          className={`flex h-5 w-5 items-center justify-center rounded-sm border transition-[background-color,border-color] ease-out duration-100 ${
-            slot.enabled ? "border-accent bg-accent text-on-accent" : "border-edge-bright text-transparent"
-          }`}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => dispatch({ type: "TOGGLE_SLOT", id: slot.id })}
+          aria-pressed={slot.enabled}
+          aria-label={slot.enabled ? `Disable ${slot.model}` : `Enable ${slot.model}`}
+          className="flex h-11 w-11 shrink-0 items-center justify-center"
         >
-          <Check
-            size={12}
-            strokeWidth={3}
-            className={`transition-transform ease-out duration-100 ${slot.enabled ? "scale-100" : "scale-75"}`}
-          />
+          <span
+            className={`flex h-5 w-5 items-center justify-center rounded-sm border transition-[background-color,border-color] ease-out duration-100 ${
+              slot.enabled ? "border-accent bg-accent text-on-accent" : "border-edge-bright text-transparent"
+            }`}
+          >
+            <Check
+              size={12}
+              strokeWidth={3}
+              className={`transition-transform ease-out duration-100 ${slot.enabled ? "scale-100" : "scale-75"}`}
+            />
+          </span>
+        </button>
+        <BrandAvatar slug={slot.slug} size={32} />
+        <span className="min-w-0 flex-1">
+          <span
+            className={`block truncate text-sm font-semibold ${slot.enabled ? "text-text" : "text-text-secondary"}`}
+            title={slot.model}
+          >
+            {slot.model}
+          </span>
+          <span className="mt-0.5 flex items-center gap-1.5">
+            <span className="shrink-0 rounded-sm border border-edge px-1 text-[11px] uppercase tracking-wide text-text-secondary">
+              {providerBadge}
+            </span>
+            <span dir="rtl" className="min-w-0 truncate font-mono text-xs text-text-muted" title={slot.slug}>
+              {`‎${slot.slug}`}
+            </span>
+          </span>
+          <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-text-muted">
+            {telemetry && telemetry.runCount >= 3 ? (
+              <>
+                <span>★ {(telemetry.winRate * 100).toFixed(0)}% win</span>
+                <span aria-hidden>·</span>
+                <span>{telemetry.avgScore.toFixed(1)} avg</span>
+                <span aria-hidden>·</span>
+                {pricing ? (
+                  <span>${pricing.inputPerM.toFixed(2)}/M</span>
+                ) : (
+                  <span>— no pricing</span>
+                )}
+                <span aria-hidden>·</span>
+                <span>~{Math.round(telemetry.avgLatencyMs / 1000)}s avg</span>
+                <span aria-hidden>·</span>
+                <span className="text-text-muted/70">All ad hoc history</span>
+              </>
+            ) : (
+              <>
+                {pricing ? (
+                  <span>${pricing.inputPerM.toFixed(2)}/M</span>
+                ) : (
+                  <span>— no pricing</span>
+                )}
+                <span aria-hidden>·</span>
+                <span>— no history yet</span>
+              </>
+            )}
+          </span>
         </span>
-      </button>
-      <BrandAvatar slug={slot.slug} size={32} />
-      <span className="min-w-0 flex-1">
-        <span
-          className={`block truncate text-sm font-semibold ${slot.enabled ? "text-text" : "text-text-secondary"}`}
-          title={slot.model}
+        <button
+          type="button"
+          onClick={editing ? onCancelEdit : onEdit}
+          aria-label={`Switch model for ${slot.model}`}
+          aria-expanded={editing}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-accent"
         >
-          {slot.model}
-        </span>
-        <span className="mt-0.5 flex items-center gap-1.5">
-          <span className="shrink-0 rounded-sm border border-edge px-1 text-[11px] uppercase tracking-wide text-text-secondary">
-            {providerBadge}
-          </span>
-          <span dir="rtl" className="min-w-0 truncate font-mono text-xs text-text-muted" title={slot.slug}>
-            {`‎${slot.slug}`}
-          </span>
-        </span>
-        <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-text-muted">
-          {telemetry && telemetry.runCount >= 3 ? (
-            <>
-              <span>★ {(telemetry.winRate * 100).toFixed(0)}% win</span>
-              <span aria-hidden>·</span>
-              <span>{telemetry.avgScore.toFixed(1)} avg</span>
-              <span aria-hidden>·</span>
-              {pricing ? (
-                <span>${pricing.inputPerM.toFixed(2)}/M</span>
-              ) : (
-                <span>— no pricing</span>
-              )}
-              <span aria-hidden>·</span>
-              <span>~{Math.round(telemetry.avgLatencyMs / 1000)}s avg</span>
-              <span aria-hidden>·</span>
-              <span className="text-text-muted/70">All ad hoc history</span>
-            </>
-          ) : (
-            <>
-              {pricing ? (
-                <span>${pricing.inputPerM.toFixed(2)}/M</span>
-              ) : (
-                <span>— no pricing</span>
-              )}
-              <span aria-hidden>·</span>
-              <span>— no history yet</span>
-            </>
-          )}
-        </span>
-      </span>
-      <button
-        type="button"
-        onClick={() => dispatch({ type: "REMOVE_SLOT", id: slot.id })}
-        aria-label={`Remove ${slot.model}`}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-error"
-      >
-        <Trash2 size={14} />
-      </button>
+          <Pencil size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => dispatch({ type: "REMOVE_SLOT", id: slot.id })}
+          aria-label={`Remove ${slot.model}`}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-error"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+
+      {editing && (
+        <AddModelCombobox
+          models={models}
+          takenKeys={takenKeys}
+          initialProvider={slot.providerId}
+          commitLabel="Switch to"
+          onCancel={onCancelEdit}
+          onAdd={(updated) => {
+            dispatch({
+              type: "SWAP_SLOT",
+              id: slot.id,
+              providerId: updated.providerId,
+              provider: updated.provider,
+              model: updated.model,
+              slug: updated.slug,
+            });
+            onSwapped();
+          }}
+        />
+      )}
     </li>
   );
 }
@@ -188,13 +256,21 @@ export function AddModelCombobox({
   takenKeys,
   onCancel,
   onAdd,
+  initialProvider = "openrouter",
+  commitLabel = "Add slug",
 }: {
   models: CatalogModel[];
   takenKeys: Set<string>;
   onCancel: () => void;
   onAdd: (slot: ModelSlot) => void;
+  /** Provider tab to open on (defaults to OpenRouter for the add flow). The
+   *  edit/switch flow passes the slot's current provider so the user lands on
+   *  the right namespace. */
+  initialProvider?: ProviderId;
+  /** Verb for the manual-slug commit button ("add slug" vs "Switch"). */
+  commitLabel?: string;
 }) {
-  const [selectedProvider, setSelectedProvider] = useState<ProviderId>("openrouter");
+  const [selectedProvider, setSelectedProvider] = useState<ProviderId>(initialProvider);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -330,10 +406,10 @@ export function AddModelCombobox({
         <button
           type="button"
           onClick={() => commit(trimmed)}
-          aria-label={`Add slug ${trimmed}`}
+          aria-label={`${commitLabel} ${trimmed}`}
           className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/[0.06] py-2 font-mono text-sm text-accent hover:bg-accent/[0.12]"
         >
-          <Plus size={13} /> add slug
+          <Plus size={13} /> {commitLabel}
           <span className="max-w-[55%] truncate" title={trimmed}>
             {trimmed}
           </span>

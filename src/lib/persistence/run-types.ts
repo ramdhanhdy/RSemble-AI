@@ -277,7 +277,8 @@ function isNumber(v: unknown): v is number {
   return typeof v === "number" && !Number.isNaN(v);
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
+/** Canonical record guard for persistence/type-guard modules — reuse, do not redefine. */
+export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 

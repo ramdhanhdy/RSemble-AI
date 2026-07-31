@@ -282,6 +282,64 @@ describe("run-controller — guarded paths", () => {
     expect(chatStreamMock).not.toHaveBeenCalled();
   });
 
+  it("retryCandidate resolves its slot by candidate→slot id and uses the slot's CURRENT model after a switch", async () => {
+    // The slot s2 was switched to a different model (and provider) after the
+    // failed candidate was produced. The candidate snapshot still carries the
+    // OLD slug/providerId. Retry must resolve the slot by identity (cand-s2 →
+    // s2) and stream the slot's current slug — not the candidate's stale slug.
+    const state = stateWithSlots([
+      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+      // switched: was model-b/umans, now model-b2/gemini
+      { id: "s2", providerId: "gemini", provider: "Gemini", model: "B2", slug: "model-b2", enabled: true },
+    ], "rank");
+    state.candidates = [
+      {
+        id: "cand-s1", model: "A", provider: "OpenRouter", providerId: "openrouter", slug: "model-a",
+        accent: "indigo", strategy: "Parallel model", summary: "good", scores: {}, weightedScore: 0,
+        segments: [{ id: "a", text: "existing answer" }], status: "done", startedAt: 100, finishedAt: 200,
+      },
+      {
+        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
+        accent: "emerald", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
+        segments: [], status: "error", errorMessage: "failed",
+      },
+    ];
+    chatStreamMock.mockImplementation(() => streamOf("switched-model answer"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+
+    await controller.retryCandidate(state.candidates[1]);
+
+    // It streamed the slot's CURRENT slug, not the stale candidate slug.
+    expect(chatStreamMock).toHaveBeenCalledTimes(1);
+    expect(chatStreamMock.mock.calls[0][0].model).toBe("model-b2");
+    // The retried candidate now reflects the switched model in state.
+    const retryResult = dispatched.find((a) => a.type === "RETRY_CANDIDATE_RESULT");
+    expect(retryResult).toBeDefined();
+    // And the judge still ran against the recovered pair.
+    expect(dispatched.map((a) => a.type)).toContain("JUDGE_START");
+  });
+
+  it("retryCandidate is a no-op when its slot no longer exists", async () => {
+    const state = stateWithSlots([
+      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+      // s2 was removed after the run.
+    ], "rank");
+    state.candidates = [
+      {
+        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
+        accent: "emerald", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
+        segments: [], status: "error", errorMessage: "failed",
+      },
+    ];
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.retryCandidate(state.candidates[0]);
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(dispatched.map((a) => a.type)).not.toContain("RETRY_CANDIDATE_START");
+  });
+
   it("happy path: fanout → judge → (rank) terminal JUDGE_RESULT with provider-scoped history keys", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));

@@ -73,6 +73,63 @@ export interface ExperimentRow {
   status: string;
 }
 
+// --- Fusion Study rows (schema v2) --------------------------------------------
+
+export interface FusionRecipeRow {
+  id: string;
+  version: number;
+  recipe: unknown;
+  createdAt: number;
+}
+
+export interface PoolManifestRow {
+  id: string;
+  version: number;
+  manifest: unknown;
+  createdAt: number;
+}
+
+export interface FusionStudyRow {
+  id: string;
+  study: unknown;
+  revision: number;
+  suiteId: string;
+  suiteVersion: number;
+  status: string;
+  updatedAt: number;
+}
+
+export interface FusionTrialRow {
+  id: string;
+  trial: unknown;
+  revision: number;
+  studyId: string;
+  stage: string;
+  status: string;
+  createdAt: number;
+}
+
+export interface FusionAttemptRow {
+  id: string;
+  attempt: unknown;
+  studyId: string;
+  createdAt: number;
+}
+
+export interface FusionObservationRow {
+  id: string;
+  observation: unknown;
+  trialId: string;
+  createdAt: number;
+}
+
+export interface FusionPlaybookRow {
+  id: string;
+  playbook: unknown;
+  studyId: string;
+  createdAt: number;
+}
+
 export interface StorageMetaRow {
   key: string;
   value: unknown;
@@ -143,6 +200,14 @@ export class RSembleEvaluationDB extends Dexie {
   suites!: Table<SuiteRow, string>;
   experiments!: Table<ExperimentRow, string>;
   storageMeta!: Table<StorageMetaRow, string>;
+  // Fusion Study tables (schema v2)
+  fusionRecipes!: Table<FusionRecipeRow, [string, number]>;
+  poolManifests!: Table<PoolManifestRow, [string, number]>;
+  fusionStudies!: Table<FusionStudyRow, string>;
+  fusionTrials!: Table<FusionTrialRow, string>;
+  fusionAttempts!: Table<FusionAttemptRow, string>;
+  fusionObservations!: Table<FusionObservationRow, string>;
+  fusionPlaybooks!: Table<FusionPlaybookRow, string>;
 
   /** Current storage lifecycle state. */
   private _storageState: StorageState = "ready";
@@ -162,6 +227,18 @@ export class RSembleEvaluationDB extends Dexie {
       experiments:
         "id, revision, suiteId, suiteVersion, protocolFingerprint, createdAt, status",
       storageMeta: "key",
+    });
+
+    // v2: additive Fusion Study tables (immutable recipes/manifests/playbooks,
+    // sealable trials, attempt lineage, holdout observations).
+    this.version(2).stores({
+      fusionRecipes: "[id+version], id, version",
+      poolManifests: "[id+version], id, version",
+      fusionStudies: "id, revision, suiteId, suiteVersion, status, updatedAt",
+      fusionTrials: "id, revision, studyId, stage, status, createdAt",
+      fusionAttempts: "id, studyId, createdAt",
+      fusionObservations: "id, trialId, createdAt",
+      fusionPlaybooks: "id, studyId, createdAt",
     });
 
     this.on("blocked", () => {
