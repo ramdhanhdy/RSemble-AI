@@ -61,16 +61,29 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
   }, [db, evalRepo, runRepo, owner]);
   const controller = composed?.controller ?? null;
 
-  // Startup recovery: mark stale running/paused experiments (and their
-  // non-terminal task runs) interrupted after lease acquisition. Runs once
-  // per controller instance; recovery never silently resumes work (spec §5.6).
+  // Startup recovery (spec §20): after lease acquisition, mark stale
+  // running/paused experiments (and their non-terminal task runs) interrupted,
+  // and sweep stale ad-hoc "running" runs (crashed tabs, orphaned writes) to
+  // interrupted so they stop presenting as live. Recovery never silently
+  // resumes work and runs once per controller instance.
   useEffect(() => {
-    if (!controller) return;
-    void controller.recoverOnStartup().catch(() => {
-      // Recovery failure must not break the workspace; the next start attempt
-      // re-verifies the lease.
-    });
-  }, [controller]);
+    if (!controller || !composed || !runRepo) return;
+    const lease = composed.lease;
+    const repo = runRepo;
+    void (async () => {
+      try {
+        await controller.recoverOnStartup();
+      } catch {
+        // Recovery failure must not break the workspace; the next start
+        // attempt re-verifies the lease.
+      }
+      try {
+        await lease.recoverInterruptedRuns(repo);
+      } catch {
+        // Sweep is idempotent; a later startup retries.
+      }
+    })();
+  }, [controller, composed, runRepo]);
 
   const value = useMemo<ExperimentControllerContextValue>(
     () => ({ controller, lease: composed?.lease ?? null }),
