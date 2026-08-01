@@ -222,6 +222,21 @@ describe("RunExecutor — executeTask", () => {
     expect(calls).not.toContain("candidate-attempt-start");
   });
 
+  it("surfaces candidate-attempt persistence errors instead of leaving generic placeholders", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    const { events } = makeEvents();
+    events.onCandidateAttemptStart = vi.fn(async () => { throw new Error("persistence rejected"); });
+    const executor = createRunExecutor({ random: () => 0.999 });
+
+    await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    const terminalCalls = vi.mocked(events.onCandidateAttemptTerminal).mock.calls;
+    expect(terminalCalls).toHaveLength(2);
+    expect(terminalCalls[0][2].status).toBe("failed");
+    expect(terminalCalls[0][2].error!.message).toContain("persistence rejected");
+  });
+
   it("rejected fanout-terminal stops before Judge", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     const { events, calls } = makeEvents();

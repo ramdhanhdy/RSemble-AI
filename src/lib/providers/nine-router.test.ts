@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { nineRouterProvider } from "./nine-router";
 import { ProviderError } from "./types";
+import { clearModelCapabilities, getModelCapabilities } from "./capabilities";
+import { checkAttachmentEligibility } from "../pipeline";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  clearModelCapabilities();
 });
 
 function stubLocalStorage(key: string): void {
@@ -50,7 +53,31 @@ describe("nineRouterProvider — bridge paths", () => {
     expect(url).toContain("/9router/v1/chat/completions");
     expect(url).not.toContain("20128");
   });
+  it("rejects image parts until 9Router exposes authoritative model capabilities", async () => {
+    stubLocalStorage("");
+    vi.stubEnv("VITE_9ROUTER_KEY", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const err = await nineRouterProvider
+      .chatCompletion({
+        model: "moonshotai/kimi-k3",
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: "describe this" },
+            { type: "image", mimeType: "image/png", data: "AAA" },
+          ],
+        }],
+      })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).toContain("supportsImages is off");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
+
 
 describe("nineRouterProvider — optional key", () => {
   it("works with a blank key (no Authorization header)", async () => {
@@ -124,6 +151,47 @@ describe("nineRouterProvider — catalog", () => {
     expect(ids).toContain("alias-model");
     // All tagged with providerId 9router
     expect(models.every((m) => m.providerId === "9router")).toBe(true);
+  });
+  it("keeps image eligibility blocked for the v1 catalog shape without modality metadata", async () => {
+    stubLocalStorage("key");
+    vi.stubEnv("VITE_9ROUTER_KEY", "key");
+    const catalog = [
+      { id: "ag/gemini-3.1-pro-low", name: "Gemini 3.1 Pro Low", owned_by: "9router", kind: "chat" },
+      { id: "combo:fast+cheap", name: "Fast+Cheap Combo", owned_by: "9router", kind: "chat" },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ object: "list", data: catalog }), { status: 200 }),
+      ),
+    );
+
+    const models = await nineRouterProvider.listModels!();
+    expect(models.map((model) => model.id)).toEqual(catalog.map((model) => model.id));
+    for (const model of models) {
+      expect(getModelCapabilities("9router", model.id)).toEqual({ image: false, pdf: false });
+    }
+
+    const slots = models.map((model, index) => ({
+      id: `slot-${index}`,
+      providerId: "9router" as const,
+      provider: nineRouterProvider.label,
+      model: model.name,
+      slug: model.id,
+      enabled: true,
+    }));
+    const image = {
+      id: "att-image",
+      name: "shot.png",
+      kind: "image" as const,
+      mimeType: "image/png",
+      bytes: 1,
+      status: "ready" as const,
+      data: "AAA",
+    };
+    expect(checkAttachmentEligibility(slots, [image])).toEqual({
+      blocked: "Attach-incompatible: only 0 of 2 selected models can read images. Swap a model or remove the image.",
+    });
   });
 
   it("deduplicates by exact ID (first occurrence wins)", async () => {

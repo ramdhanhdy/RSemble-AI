@@ -413,26 +413,25 @@ export function judgeMessages(
     `Output JSON and nothing else — no prose, no code fences, no commentary.`;
 
   // Attachment blocks sit after the task, before the criteria (spec §6.3).
-  // Native parts make the user message a ContentPart[]; without them the
-  // message stays a plain string, byte-identical to pre-attachments.
+  // Attachment-bearing judge messages stay multipart even when native media is
+  // withheld, keeping the generated block isolated for persistence redaction.
   const textBlocks = atts.length > 0 ? renderAttachmentBlocks(atts) : "";
   const native =
     includeNativeMedia && criticCapabilities
       ? selectNativeParts(atts, criticCapabilities)
       : [];
-  const userText = [
+  const userParts = [
     `User task:\n${prompt}`,
     textBlocks.length > 0 ? textBlocks : null,
     `Evaluation criteria:\n${evaluationText(profile, { withIds: true })}`,
     `Candidates:\n${labelled}`,
-  ]
-    .filter((x): x is string => x !== null)
-    .join("\n\n");
+  ].filter((x): x is string => x !== null);
+  const userText = userParts.join("\n\n");
   const user: string | ContentPart[] =
-    native.length === 0
+    atts.length === 0
       ? userText
       : [
-          { type: "text", text: userText },
+          ...userParts.map((text) => ({ type: "text" as const, text })),
           ...native.map((p) =>
             p.type === "image"
               ? { type: "image" as const, mimeType: p.mimeType, data: p.data }

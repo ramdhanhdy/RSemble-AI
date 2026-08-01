@@ -23,6 +23,7 @@ const base = createOpenAICompatProvider({
   storageKey: "rsemble.key.umans",
   modelsPath: "/umans/v1/models",
   completionsPath: "/umans/v1/chat/completions",
+  supportsImages: true,
 });
 
 export const umansProvider: LLMProvider = {

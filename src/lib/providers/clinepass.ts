@@ -23,6 +23,7 @@ const base = createOpenAICompatProvider({
   storageKey: "rsemble.key.clinepass",
   modelsPath: "/clinepass/api/v1/models",
   completionsPath: "/clinepass/api/v1/chat/completions",
+  supportsImages: true,
 });
 
 export const clinepassProvider: LLMProvider = {

@@ -6,7 +6,7 @@
 > Phase 6 was skipped — the Fusion Study used its own gate numbering G1–G6).
 >
 > **v2 changes from v1:**
-> - Provider list updated: 9router added (openai-compat family, inherits `supportsImages` flag).
+> - Provider list updated: 9router added (openai-compat family; `supportsImages` remains `false` until an authoritative per-model capability source exists).
 > - OpenRouter capability detection verified: `architecture.input_modalities` is present
 >   on all 336 models in the `/models` response (checked 2026-07-31).
 > - Recipe layer integration: attachment rendering must also reach
@@ -81,7 +81,7 @@ New: `src/lib/attachments/extract.ts` (+ `image.ts`, `pdf.ts`, `docx.ts`)
 ## Phase 7.4 — Remaining providers
 
 - [x] 7.4.1 `gemini.ts`: extend `mapMessagesToGemini` so a `ContentPart[]` user message becomes `parts: [{text}, {inlineData:{mimeType,data}}, …]`. String content path untouched. (Format verified 2026-07-31: `inlineData` with `mimeType`/`data` in `contents[].parts` is current for all `gemini-*` models.)
-- [x] 7.4.2 `openai-compat.ts`: add `supportsImages?: boolean` to `OpenAICompatConfig` (default `false`); reuse the OpenRouter `toOpenAIContent` mapper (extract it to `providers/content.ts` so both import it); throw a clear `ProviderError` if a media part reaches a config with `supportsImages: false`. Applies to `commandcode`, `clinepass`, `umans`, and `9router`.
+- [x] 7.4.2 `openai-compat.ts`: add `supportsImages?: boolean` to `OpenAICompatConfig` (default `false`); reuse the OpenRouter `toOpenAIContent` mapper (extract it to `providers/content.ts` so both import it); throw a clear `ProviderError` if a media part reaches a config with `supportsImages: false`. Applies to `commandcode`, `clinepass`, and `umans`; 9Router remains explicitly disabled until its catalog exposes authoritative per-model modality metadata.
 - [x] 7.4.3 Codex bridge: translate `content` arrays to Responses API `input_text`/`input_image`; reject `file` parts with HTTP 415 + readable message; raise the JSON body limit to 48 MB with a 413 message above it.
 - [x] 7.4.4 Bridge `GET /health` returns `capabilities: { image: true, pdf: false }`; `chatgpt-codex.ts` feeds that into the capability cache during `readiness()`.
 - [x] 7.4.5 Tests: `gemini` parts snapshot (string path golden-snapshot unchanged), `openai-compat` reject path, `server/tests/` case for array-content translation + 415 on `file` + 413 on oversize.

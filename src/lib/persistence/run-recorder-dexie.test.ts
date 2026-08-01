@@ -81,6 +81,111 @@ describe("RunRecorder against the real Dexie repository", () => {
     expect(candidate?.attempts[0].status).toBe("running");
   });
 
+  it("persists multipart attempt messages without attachment bytes or extracted text", async () => {
+    const runId = await recorder.begin(fanoutInput("run-dx-media"));
+    const candidateId = candidateIdForSlot(SLOT.id);
+
+    await recorder.beginCandidateAttempt(runId, candidateId, "att-media", {
+      attemptId: "att-media",
+      messages: [
+        { role: "system", content: "system" },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: [
+                '--- BEGIN ATTACHMENT 1: "literal-prompt.txt" (text/plain, extracted text) ---',
+                "KEEP_LITERAL_PROMPT_TEXT",
+                "--- END ATTACHMENT 1 ---",
+              ].join("\n"),
+            },
+            {
+              type: "text",
+              text: [
+                '--- BEGIN ATTACHMENT 1: "notes.txt" (text/plain, extracted text) ---',
+                "SECRET_EXTRACTED_TEXT",
+                "--- END ATTACHMENT 1 ---",
+              ].join("\n"),
+            },
+            { type: "image", mimeType: "image/png", data: "SECRET_BASE64_BYTES" },
+          ],
+        },
+      ],
+      startedAt: 1000,
+    });
+
+    const record = await recorder.getRecord(runId);
+    const messages = record!.candidates[0].attempts[0].messages;
+    expect(messages).toEqual([
+      { role: "system", content: "system" },
+      {
+        role: "user",
+        content: [
+          '--- BEGIN ATTACHMENT 1: "literal-prompt.txt" (text/plain, extracted text) ---',
+          "KEEP_LITERAL_PROMPT_TEXT",
+          "--- END ATTACHMENT 1 ---",
+        ].join("\n") + "\n\n[attachment content omitted from persisted run record]",
+      },
+    ]);
+    expect(JSON.stringify(record)).not.toContain("SECRET_EXTRACTED_TEXT");
+    expect(JSON.stringify(record)).not.toContain("SECRET_BASE64_BYTES");
+  });
+
+  it("preserves attachment-like text in attachment-free string messages", async () => {
+    const runId = await recorder.begin(fanoutInput("run-dx-plain"));
+    const candidateId = candidateIdForSlot(SLOT.id);
+    const prompt = "--- BEGIN ATTACHMENT 1 --- keep this literal --- END ATTACHMENT 1 ---";
+
+    await recorder.beginCandidateAttempt(runId, candidateId, "att-plain", {
+      attemptId: "att-plain",
+      messages: [{ role: "user", content: prompt }],
+      startedAt: 1000,
+    });
+
+    const record = await recorder.getRecord(runId);
+    expect(record!.candidates[0].attempts[0].messages[0].content).toBe(prompt);
+  });
+
+  it("redacts text-only attachment blocks from Judge and Fusion attempts", async () => {
+    const runId = await recorder.begin(fanoutInput("run-dx-critic"));
+    const attachmentBlock = [
+      '--- BEGIN ATTACHMENT 1: "notes.md" (text/markdown, extracted text) ---',
+      "SECRET_CRITIC_TEXT",
+      "--- END ATTACHMENT 1 ---",
+    ].join("\n");
+    const messages = [{
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text: "task" },
+        { type: "text" as const, text: attachmentBlock },
+        { type: "text" as const, text: "criteria and candidates" },
+      ],
+    }];
+
+    await recorder.beginJudgeAttempt(runId, "judge-1", {
+      providerId: "openrouter",
+      model: "judge",
+      instruction: "",
+      messages,
+      blindLabelToCandidateId: {},
+      candidateAttemptIdsByCandidateId: {},
+      startedAt: 1000,
+    });
+    await recorder.beginFusionAttempt(runId, "fusion-1", {
+      providerId: "openrouter",
+      model: "judge",
+      messages,
+      sourceJudgeAttemptId: "judge-1",
+      candidateAttemptIdsByCandidateId: {},
+      startedAt: 1000,
+    });
+
+    const record = await recorder.getRecord(runId);
+    expect(JSON.stringify(record!.judge.attempts[0].messages)).not.toContain("SECRET_CRITIC_TEXT");
+    expect(JSON.stringify(record!.fusion.attempts[0].messages)).not.toContain("SECRET_CRITIC_TEXT");
+  });
+
   it("sequential stage writes all succeed and advance the revision monotonically", async () => {
     const runId = await recorder.begin(fanoutInput("run-dx-2"));
     const candidateId = candidateIdForSlot(SLOT.id);

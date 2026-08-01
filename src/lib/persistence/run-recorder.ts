@@ -9,6 +9,7 @@
 // builder is injected for testability.
 // =============================================================================
 
+import type { ChatMessage, ContentPart } from "../providers/types";
 import type { RunRepository } from "./run-repository";
 import type { RunRecordV2 } from "./run-types";
 import {
@@ -30,6 +31,45 @@ export interface BeginRunInput extends FanoutStartInput {}
 
 export interface FanoutTerminalInput {
   candidates: unknown[];
+}
+
+/**
+ * Run attempts retain prompt/audit text but never attachment bytes or extracted
+ * document text. Multipart provider messages are reduced at the persistence
+ * boundary because the live ContentPart[] includes inline base64 media.
+ */
+const ATTACHMENT_BLOCK_PART_RE =
+  /^\s*(?:---\s*BEGIN\s+ATTACHMENT\s+\d+:[\s\S]*?---\s*END\s+ATTACHMENT\s+\d+\s*---\s*)+$/i;
+const PERSISTED_ATTACHMENT_MARKER = "[attachment content omitted from persisted run record]";
+
+function persistedMessage(message: ChatMessage): ChatMessage {
+  // Attachment-free requests use plain strings. Preserve them exactly; the
+  // block scrubber below is only for generated multipart attachment payloads.
+  if (typeof message.content === "string") return message;
+
+  let hadAttachmentText = false;
+  const textParts = message.content
+    .filter((part): part is Extract<ContentPart, { type: "text" }> => part.type === "text")
+    .map((part, index) => {
+      if (index === 0 || !ATTACHMENT_BLOCK_PART_RE.test(part.text)) return part.text;
+      hadAttachmentText = true;
+      return "";
+    });
+  const text = textParts.join("\n");
+  const hasNativeMedia = message.content.some((part) => part.type === "image" || part.type === "file");
+  const marker = hasNativeMedia || hadAttachmentText ? PERSISTED_ATTACHMENT_MARKER : "";
+
+  return {
+    role: message.role,
+    content: marker
+      ? `${text}${text.length === 0 ? "" : text.endsWith("\n") ? "\n" : "\n\n"}${marker}`
+      : text,
+  };
+
+}
+
+function persistedMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map(persistedMessage);
 }
 
 // --- Recorder interface ------------------------------------------------------
@@ -118,7 +158,10 @@ export function createRunRecorder(
     input: CandidateAttemptStartInput,
   ): Promise<void> {
     await loadAndMutate(runId, (record, state) => {
-      builder.applyCandidateAttemptStart(state, record, candidateId, input);
+      builder.applyCandidateAttemptStart(state, record, candidateId, {
+        ...input,
+        messages: persistedMessages(input.messages),
+      });
     });
   }
 
@@ -139,7 +182,10 @@ export function createRunRecorder(
     input: JudgeAttemptStartInput,
   ): Promise<void> {
     await loadAndMutate(runId, (record, state) => {
-      builder.applyJudgeStart(state, record, attemptId, input);
+      builder.applyJudgeStart(state, record, attemptId, {
+        ...input,
+        messages: persistedMessages(input.messages),
+      });
     });
   }
 
@@ -159,7 +205,10 @@ export function createRunRecorder(
     input: FusionAttemptStartInput,
   ): Promise<void> {
     await loadAndMutate(runId, (record, state) => {
-      builder.applyFusionStart(state, record, attemptId, input);
+      builder.applyFusionStart(state, record, attemptId, {
+        ...input,
+        messages: persistedMessages(input.messages),
+      });
     });
   }
 

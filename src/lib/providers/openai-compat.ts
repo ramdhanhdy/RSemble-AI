@@ -33,8 +33,10 @@ export interface OpenAICompatConfig {
   readinessProbe?: "credential" | "models";
   /**
    * Whether this gateway can transport image parts (OpenAI `image_url` data
-   * URLs). Default: false — media parts reaching a non-image config are
-   * rejected with a ProviderError before any request is sent (spec §5).
+   * URLs). This controls wire compatibility only; model vision capability is
+   * read from explicit catalog metadata and remains unknown otherwise.
+   * Default: false — media parts reaching a non-image config are rejected
+   * before any request is sent (spec §5).
    */
   supportsImages?: boolean;
 }
@@ -47,6 +49,30 @@ function getKey(envKey: string, storageKey: string): string {
   } catch {
     return "";
   }
+}
+
+/** Read an explicit per-model vision declaration without guessing from a slug. */
+function explicitImageCapability(model: unknown): boolean | null {
+  if (typeof model !== "object" || model === null || Array.isArray(model)) return null;
+  const record = model as Record<string, unknown>;
+  const sources = [record, record.architecture, record.capabilities, record.metadata]
+    .filter((value): value is Record<string, unknown> =>
+      typeof value === "object" && value !== null && !Array.isArray(value),
+    );
+
+  for (const source of sources) {
+    const modalityFields = [source.input_modalities, source.modalities, source.inputModalities];
+    for (const field of modalityFields) {
+      if (!Array.isArray(field)) continue;
+      return field.some((value) =>
+        typeof value === "string" && /^(?:image|vision)$/i.test(value.trim()),
+      );
+    }
+    for (const field of ["image", "vision", "supports_images"]) {
+      if (typeof source[field] === "boolean") return source[field];
+    }
+  }
+  return null;
 }
 
 export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvider {
@@ -268,11 +294,12 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
           .map((m) => {
             const model = m as { id?: string; name?: string };
             const modelId = model.id ?? "";
-            // Record transport capabilities from the config flag: a gateway
-            // either speaks OpenAI image_url parts for every model or for none
-            // (spec §5, plan 7.4.2). PDFs have no openai-compat path in v1.
-            if (modelId.length > 0) {
-              setModelCapabilities(id, modelId, { image: supportsImages, pdf: false });
+            // `supportsImages` describes the gateway wire transport only.
+            // Per-model vision stays unknown unless the catalog explicitly
+            // declares it; guessing from a slug would send images blindly.
+            const imageCapability = explicitImageCapability(m);
+            if (modelId.length > 0 && imageCapability !== null) {
+              setModelCapabilities(id, modelId, { image: supportsImages && imageCapability, pdf: false });
             }
             return {
               id: modelId,

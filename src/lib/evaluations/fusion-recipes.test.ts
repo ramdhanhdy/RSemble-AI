@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import type { BlindCandidate, JudgeReport, ConsensusBreakdown } from "../../studio-data";
 import type { EvaluationProfile } from "./evaluation-types";
+import { contentToText } from "../providers/content";
 import {
   findBlindnessViolations,
   FUSION_RECIPE_ANALYSIS_FED_V1,
@@ -323,7 +324,7 @@ describe("renderRecipeMessages — attachment policy (7.6.4)", () => {
       ...baseInput,
       attachments: [TEXT_ATT],
     });
-    const user = msgs[1].content as string;
+    const user = contentToText(msgs[1].content);
     expect(user.indexOf("BEGIN ATTACHMENT 1")).toBeGreaterThan(user.indexOf("User task:"));
     expect(user.indexOf("Evaluation criteria:")).toBeGreaterThan(user.indexOf("BEGIN ATTACHMENT 1"));
     expect(msgs[0].content).toContain("The user has attached 1 file(s).");
@@ -335,7 +336,7 @@ describe("renderRecipeMessages — attachment policy (7.6.4)", () => {
       attachments: [IMAGE_ATT],
     });
     expect(msgs[0].content).toContain("1 attachment(s) you cannot see");
-    expect(typeof msgs[1].content).toBe("string");
+    expect(Array.isArray(msgs[1].content)).toBe(true);
   });
 
   it("delivers native image parts when enabled and supported", () => {
@@ -345,10 +346,13 @@ describe("renderRecipeMessages — attachment policy (7.6.4)", () => {
       includeNativeMedia: true,
       criticCapabilities: { image: true, pdf: false },
     });
-    expect(msgs[1].content).toEqual([
-      { type: "text", text: expect.stringContaining("Candidate answers") as unknown as string },
-      { type: "image", mimeType: "image/png", data: "iVBORw0KGgo" },
-    ]);
+    expect(Array.isArray(msgs[1].content)).toBe(true);
+    expect(contentToText(msgs[1].content)).toContain("Candidate answers");
+    expect(msgs[1].content).toContainEqual({
+      type: "image",
+      mimeType: "image/png",
+      data: "iVBORw0KGgo",
+    });
     expect(msgs[0].content).not.toContain("you cannot see");
   });
 });
@@ -361,7 +365,7 @@ describe("renderRefineWinnerMessages — attachment policy (7.6.4)", () => {
 
   it("inserts attachment blocks after the task section and before the rubric", () => {
     const msgs = renderRefineWinnerMessages({ ...refineBase, attachments: [TEXT_ATT] });
-    const user = msgs[1].content as string;
+    const user = contentToText(msgs[1].content);
     expect(user.indexOf("BEGIN ATTACHMENT 1")).toBeGreaterThan(user.indexOf("User task:"));
     expect(user.indexOf("Winning draft")).toBeGreaterThan(user.indexOf("BEGIN ATTACHMENT 1"));
   });

@@ -485,8 +485,16 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
         try {
           await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
-        } catch {
-          return; // start rejection → zero provider calls for this candidate
+        } catch (err) {
+          await events.onCandidateAttemptTerminal(job.id, attemptId, {
+            status: "failed",
+            output: null,
+            tokensIn: null,
+            tokensOut: null,
+            error: sanitizeError(err, { category: "storage", stage: "candidate", model: job.slug }),
+            finishedAt: now(),
+          }).catch(() => {});
+          return;
         }
 
         if (isAborted(signal)) return;
@@ -611,7 +619,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     try {
       await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
-    } catch {
+    } catch (err) {
+      await events.onCandidateAttemptTerminal(job.id, attemptId, {
+        status: "failed",
+        output: null,
+        tokensIn: null,
+        tokensOut: null,
+        error: sanitizeError(err, { category: "storage", stage: "candidate", model: job.slug }),
+        finishedAt: now(),
+      }).catch(() => {});
       return;
     }
 

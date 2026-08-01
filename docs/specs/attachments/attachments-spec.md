@@ -148,7 +148,8 @@ Capability is resolved per **(provider, model slug)** — not per provider — b
 | `openrouter` | OpenAI-style `{"type":"image_url","image_url":{"url":"data:…;base64,…"}}` | `{"type":"file","file":{"filename","file_data":"data:application/pdf;base64,…"}}` | Model support varies. Detected from the `listModels` payload (`architecture.input_modalities` contains `"image"` / `"file"`), cached with the catalog; unknown ⇒ treated as text-only. Verified 2026-07-31: all 336 models expose `architecture.input_modalities`; distribution is 146 text-only, 73 file+image+text, 56 image+text, 28 image+text+video, 17 audio+file+image+text+video. |
 | `gemini` | `inlineData: { mimeType, data }` part inside `contents[].parts` | same `inlineData` with `application/pdf` | Native for all `gemini-*` models in the catalog. `mapMessagesToGemini` extends to emit parts. |
 | `chatgpt-codex` | Responses API `input_image` with a data URL | not in v1 | Requires a bridge change (§7). Until then: `image: true`, `pdf: false`, gated by a bridge `/health` capability flag. |
-| `commandcode`, `clinepass`, `umans`, `9router` (`openai-compat`) | `image_url` data URL | none | Gateways are OpenAI-shaped; per-config flag `supportsImages` on `OpenAICompatConfig`, default `false`. |
+| `commandcode`, `clinepass`, `umans` (`openai-compat`) | `image_url` data URL | none | Gateways are OpenAI-shaped; per-config flag `supportsImages` on `OpenAICompatConfig`, default `false`. |
+| `9router` | disabled in v1 | none | The `/v1/models` contract exposes no modality metadata or authoritative per-model capability source, so image transport remains disabled until one exists. |
 
 ### 5.1 Degradation policy (decisive)
 

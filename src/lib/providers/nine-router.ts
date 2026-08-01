@@ -29,6 +29,9 @@ export const nineRouterProvider: LLMProvider = createOpenAICompatProvider({
   storageKey: "rsemble.key.9router",
   modelsPath: "/9router/v1/models",
   completionsPath: "/9router/v1/chat/completions",
+  // 9Router v1 exposes no authoritative per-model modality metadata. Keep
+  // image transport and eligibility disabled until such a source exists.
+  supportsImages: false,
   apiKeyRequired: false,
   readinessProbe: "models",
 });

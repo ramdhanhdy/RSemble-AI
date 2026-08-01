@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createOpenAICompatProvider } from "./openai-compat";
+import { clearModelCapabilities, getModelCapabilities } from "./capabilities";
 import { ProviderError } from "./types";
 
 const config = {
@@ -15,6 +16,7 @@ const config = {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  clearModelCapabilities();
 });
 
 function stubKey() {
@@ -381,5 +383,28 @@ describe("createOpenAICompatProvider — supportsImages gate (7.4.2)", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("createOpenAICompatProvider — per-model capability metadata", () => {
+  it("records explicit vision metadata and leaves undocumented models unknown", async () => {
+    stubKey();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: [
+          { id: "vision", architecture: { input_modalities: ["text", "image"] } },
+          { id: "text-only", architecture: { input_modalities: ["text"] } },
+          { id: "undocumented" },
+        ],
+      }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = createOpenAICompatProvider({ ...config, supportsImages: true });
+    await provider.listModels!();
+
+    expect(getModelCapabilities("umans", "vision")).toEqual({ image: true, pdf: false });
+    expect(getModelCapabilities("umans", "text-only")).toEqual({ image: false, pdf: false });
+    expect(getModelCapabilities("umans", "undocumented")).toEqual({ image: false, pdf: false });
   });
 });

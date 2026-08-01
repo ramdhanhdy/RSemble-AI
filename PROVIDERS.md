@@ -529,6 +529,7 @@ Do not block Phase 3 on a full proxy if direct browser access works for the buil
 | Catalog | `data[].id` → `CatalogModel` with `providerId: "9router"`; IDs are opaque (namespaced, aliases, combos round-trip unchanged) |
 | Model discovery | Duplicate IDs deduplicated; deterministic case-insensitive sort |
 | Chat | `POST /v1/chat/completions` (OpenAI-compatible, non-stream + SSE) |
+| Attachments | Text-only in v1; image transport remains disabled until 9Router exposes an authoritative per-model capability source |
 | Errors | 401 → auth required/invalid; 400 → model not in catalog; 503 → all routes unavailable; surfaced via `ProviderError` |
 | Security | `redirect: "manual"` (no cross-origin credential forwarding); POST JSON-only + body-limited; no management endpoints exposed |
 

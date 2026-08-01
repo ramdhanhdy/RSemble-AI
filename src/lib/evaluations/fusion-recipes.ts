@@ -344,17 +344,16 @@ export function renderRecipeMessages(
 
   const userText = userParts.join("\n\n");
   const user: string | ContentPart[] =
-    attachment.native.length === 0
+    attachment.count === 0
       ? userText
       : [
-          { type: "text", text: userText },
+          ...userParts.map((text) => ({ type: "text" as const, text })),
           ...attachment.native.map((p) =>
             p.type === "image"
               ? { type: "image" as const, mimeType: p.mimeType, data: p.data }
               : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename }
           ),
         ];
-
   return [
     { role: "system", content: system },
     { role: "user", content: user },
@@ -417,17 +416,16 @@ export function renderRefineWinnerMessages(input: RefineWinnerInput): ChatMessag
 
   const userText = userParts.join("\n\n");
   const user: string | ContentPart[] =
-    attachment.native.length === 0
+    attachment.count === 0
       ? userText
       : [
-          { type: "text", text: userText },
+          ...userParts.map((text) => ({ type: "text" as const, text })),
           ...attachment.native.map((p) =>
             p.type === "image"
               ? { type: "image" as const, mimeType: p.mimeType, data: p.data }
               : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename }
           ),
         ];
-
   return [
     { role: "system", content: system },
     { role: "user", content: user },

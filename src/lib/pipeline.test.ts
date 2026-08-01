@@ -1033,8 +1033,9 @@ describe("judgeMessages — attachment policy (7.6.3)", () => {
     const msgs = judgeMessages("prompt", null, blind().candidates, undefined, [imageAtt("shot.png")]);
     const system = contentToText(msgs[0].content);
     expect(system).toContain("1 attachment(s) you cannot see");
-    // No native part: user content stays a string (byte-identical shape).
-    expect(typeof msgs[1].content).toBe("string");
+    // Attachment-bearing judge requests stay multipart even when native media
+    // is withheld, so the persistence boundary can remove attachment text.
+    expect(Array.isArray(msgs[1].content)).toBe(true);
     expect(contentToText(msgs[1].content)).not.toContain("data:image");
   });
 
@@ -1043,10 +1044,13 @@ describe("judgeMessages — attachment policy (7.6.3)", () => {
       "prompt", null, blind().candidates, undefined,
       [imageAtt("shot.png")], true, { image: true, pdf: false },
     );
-    expect(msgs[1].content).toEqual([
-      { type: "text", text: expect.stringContaining("Candidates:") as unknown as string },
-      { type: "image", mimeType: "image/png", data: "iVBORw0KGgo" },
-    ]);
+    expect(Array.isArray(msgs[1].content)).toBe(true);
+    expect(contentToText(msgs[1].content)).toContain("Candidates:");
+    expect(msgs[1].content).toContainEqual({
+      type: "image",
+      mimeType: "image/png",
+      data: "iVBORw0KGgo",
+    });
     expect(contentToText(msgs[0].content)).not.toContain("you cannot see");
   });
 

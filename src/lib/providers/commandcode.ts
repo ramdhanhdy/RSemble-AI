@@ -14,4 +14,5 @@ export const commandcodeProvider = createOpenAICompatProvider({
   storageKey: "rsemble.key.commandcode",
   modelsPath: "/provider/v1/models",
   completionsPath: "/provider/v1/chat/completions",
+  supportsImages: true,
 });
