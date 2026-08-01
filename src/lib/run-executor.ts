@@ -28,6 +28,8 @@ import type {
   PersistedError,
 } from "./persistence/run-types";
 import { getProvider } from "./providers/registry";
+import { getModelCapabilities } from "./providers/capabilities";
+import type { Attachment } from "./attachments/types";
 import {
   configuredCredentialValues,
   sanitizePersistedError,
@@ -67,6 +69,10 @@ export interface RunRequest {
   slots: ModelSlot[];
   critic: CriticRef;
   judgeInstruction: string;
+  /** Task attachments delivered to every candidate (plan 7.6.6). */
+  attachments: Attachment[];
+  /** Whether native media is also sent to the judge/fusion critic (§6.2). */
+  attachmentsToJudge: boolean;
 }
 
 export interface FrozenCandidateRetryRequest {
@@ -77,6 +83,10 @@ export interface FrozenCandidateRetryRequest {
   slots: ModelSlot[];
   critic: CriticRef;
   judgeInstruction: string;
+  /** Frozen attachment set from the original run (plan 7.6.6). */
+  attachments: Attachment[];
+  /** Frozen §6.2 flag for the re-judge that follows the retry. */
+  attachmentsToJudge: boolean;
   retryCandidateId: string;
   retrySlotId: string;
   peerCandidates: Candidate[];
@@ -92,6 +102,10 @@ export interface FrozenJudgeRetryRequest {
   candidates: Candidate[];
   critic: CriticRef;
   judgeInstruction: string;
+  /** Frozen attachment set from the original run (plan 7.6.6). */
+  attachments: Attachment[];
+  /** Frozen §6.2 flag from the original run. */
+  attachmentsToJudge: boolean;
   /** Frozen exact attempt references for every candidate being re-judged. */
   candidateAttemptIdsByCandidateId: Record<string, string>;
 }
@@ -103,6 +117,10 @@ export interface FrozenFusionRequest {
   candidates: Candidate[];
   critic: CriticRef;
   judgeInstruction: string;
+  /** Task attachments for the synthesis pass (plan 7.6.6). */
+  attachments: Attachment[];
+  /** Frozen §6.2 flag. */
+  attachmentsToJudge: boolean;
   judgeAttemptId: string;
   /** Frozen blind-label map from the source Judge attempt — the re-fusion
    *  reuses the exact same labels so the blind synthesis is reproducible. */
@@ -269,7 +287,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runJudge(
     done: Candidate[],
-    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction: string },
+    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction: string; attachments: Attachment[]; attachmentsToJudge: boolean },
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
     signal: AbortSignal,
@@ -284,6 +302,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       profile,
       blindSet.candidates,
       request.judgeInstruction,
+      request.attachments,
+      request.attachmentsToJudge,
+      getModelCapabilities(request.critic.providerId, request.critic.model),
     );
     const attemptId = generateId();
     const startedAt = now();
@@ -353,7 +374,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runFusion(
     blindCandidates: BlindCandidate[],
-    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction?: string },
+    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction?: string; attachments: Attachment[]; attachmentsToJudge: boolean },
     sourceJudgeAttemptId: string,
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
@@ -367,6 +388,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       profile: fusionProfile,
       blindCandidates,
       judgeInstruction: request.judgeInstruction ?? "",
+      attachments: request.attachments,
+      includeNativeMedia: request.attachmentsToJudge,
+      criticCapabilities: getModelCapabilities(request.critic.providerId, request.critic.model),
     });
     const attemptId = generateId();
     const startedAt = now();
@@ -453,6 +477,8 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         const messages = draftMessages({
           systemPrompt: request.task.systemPrompt,
           prompt: request.task.prompt,
+          attachments: request.attachments,
+          capabilities: getModelCapabilities(job.providerId, job.slug),
         });
         const attemptId = generateId();
         const startedAt = now();
@@ -537,7 +563,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       done,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
+      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
       candidateAttemptIds,
       events,
       signal,
@@ -549,7 +575,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
+        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -577,6 +603,8 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     const messages = draftMessages({
       systemPrompt: request.task.systemPrompt,
       prompt: request.task.prompt,
+      attachments: request.attachments,
+      capabilities: getModelCapabilities(job.providerId, job.slug),
     });
     const attemptId = generateId();
     const startedAt = now();
@@ -651,7 +679,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       allDone,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
+      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
       candidateAttemptIds,
       events,
       signal,
@@ -662,7 +690,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
+        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -682,7 +710,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       done,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
+      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
       candidateAttemptIds,
       events,
       signal,
@@ -693,7 +721,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
+        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -724,7 +752,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     await runFusion(
       blindCandidates,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction },
+      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
       request.judgeAttemptId,
       request.candidateAttemptIdsByCandidateId,
       events,

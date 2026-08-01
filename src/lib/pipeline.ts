@@ -8,8 +8,17 @@
 // rubric and the synthesizer's judgment only (PRODUCT.md §5).
 // =============================================================================
 
-import type { ChatMessage, ProviderId } from "./providers/types";
+import type { ChatMessage, ContentPart, ProviderId } from "./providers/types";
 import { extractJson } from "./llm-utils";
+import { getModelCapabilities, type ModelCapabilities } from "./providers/capabilities";
+import {
+  attachmentSystemSentence,
+  hasNativeMedia,
+  renderAttachmentBlocks,
+  selectNativeParts,
+  withheldMediaSentence,
+} from "./attachments/render";
+import type { Attachment } from "./attachments/types";
 import {
   CANDIDATE_ACCENTS,
   type BlindCandidate,
@@ -85,15 +94,60 @@ export function buildFanoutJobs(slots: ModelSlot[]): FanoutJob[] {
   }));
 }
 
+/**
+ * Candidate-generation messages (spec §6.1, plan 7.6.2).
+ *
+ * Zero attachments ⇒ byte-identical to the pre-attachments output. With
+ * attachments, the user message becomes a ContentPart[]: the prompt, one
+ * delimited text block per extracted-text attachment (§6.3), then native
+ * image/file parts in UI order — gated per slot by `capabilities`.
+ *
+ * An image a slot cannot consume is a gate failure, never a silent drop
+ * (spec §5.1): the eligibility check disables such slots before the run.
+ */
 export function draftMessages(opts: {
   systemPrompt: string;
   prompt: string;
+  attachments?: Attachment[];
+  capabilities?: ModelCapabilities;
 }): ChatMessage[] {
-  // Candidate generation receives ONLY the task and system prompt — never
-  // evaluator-only criteria (spec §9.3).
+  const attachments = opts.attachments ?? [];
+  if (attachments.length === 0) {
+    return [
+      { role: "system", content: opts.systemPrompt },
+      { role: "user", content: opts.prompt },
+    ];
+  }
+
+  const caps = opts.capabilities ?? { image: false, pdf: false };
+  if (attachments.some((a) => a.kind === "image" && !caps.image)) {
+    throw new Error(
+      "draftMessages: an image attachment cannot reach a slot without image capability — the eligibility gate must prevent this."
+    );
+  }
+
+  const textBlocks = renderAttachmentBlocks(
+    // One channel per attachment for candidates: a pdf delivered natively
+    // does not also carry its extracted text (spec §6.1, §5.1 degradation).
+    attachments.filter((a) => !(a.kind === "pdf" && caps.pdf && typeof a.data === "string"))
+  );
+  const native = selectNativeParts(attachments, caps);
+  const user: ContentPart[] = [{ type: "text", text: opts.prompt }];
+  if (textBlocks.length > 0) user.push({ type: "text", text: textBlocks });
+  for (const part of native) {
+    user.push(
+      part.type === "image"
+        ? { type: "image", mimeType: part.mimeType, data: part.data }
+        : { type: "file", mimeType: part.mimeType, data: part.data, filename: part.filename }
+    );
+  }
+
   return [
-    { role: "system", content: opts.systemPrompt },
-    { role: "user", content: opts.prompt },
+    {
+      role: "system",
+      content: `${opts.systemPrompt}\n\n${attachmentSystemSentence(attachments.length)}`,
+    },
+    { role: "user", content: user },
   ];
 }
 
@@ -161,6 +215,44 @@ export function checkFusionEligibility(candidates: Candidate[]): FusionEligibili
     };
   }
   return { ok: true, usable };
+}
+
+// ---- Attachment eligibility (spec §5.1, plan 7.6.5) -------------------------
+
+export type AttachmentEligibility =
+  | { ok: true }
+  | { blocked: string }
+  | { autoDisable: string[]; reason: string };
+
+/**
+ * Gate a fanout against the task's attachments (spec §5.1). Only IMAGE
+ * attachments can block a run — PDFs, docs, and text degrade to the
+ * extracted-text channel. When ≥2 enabled slots can read images, the
+ * incapable slots are auto-disabled and the run proceeds; with <2 capable
+ * slots the run is blocked with the exact §5.1 message (never a comparison
+ * where a model answered blind).
+ */
+export function checkAttachmentEligibility(
+  slots: ModelSlot[],
+  attachments: Attachment[]
+): AttachmentEligibility {
+  if (!attachments.some((a) => a.kind === "image")) return { ok: true };
+
+  const enabled = slots.filter((s) => s.enabled);
+  const capable = enabled.filter((s) => getModelCapabilities(s.providerId, s.slug).image);
+  if (capable.length >= 2) {
+    const disable = enabled
+      .filter((s) => !getModelCapabilities(s.providerId, s.slug).image)
+      .map((s) => s.id);
+    if (disable.length === 0) return { ok: true };
+    return {
+      autoDisable: disable,
+      reason: `${capable.length} of ${enabled.length} selected models can read images; the rest are disabled for this run.`,
+    };
+  }
+  return {
+    blocked: `Attach-incompatible: only ${capable.length} of ${enabled.length} selected models can read images. Swap a model or remove the image.`,
+  };
 }
 
 // ---- Blind evaluation --------------------------------------------------------
@@ -260,7 +352,11 @@ export function judgeMessages(
   profile: EvaluationProfileSnapshot | null,
   blindCandidates: BlindCandidate[],
   judgeInstruction?: string,
+  attachments?: Attachment[],
+  includeNativeMedia?: boolean,
+  criticCapabilities?: ModelCapabilities,
 ): ChatMessage[] {
+  const atts = attachments ?? [];
   // Bare blind headings — no model names, providers, slugs, or run metadata
   // (DECISIONS.md #6). Candidate answer text passes through unchanged.
   const labelled = blindCandidates
@@ -274,6 +370,17 @@ export function judgeMessages(
   // the contract and override the output format. The JSON schema and
   // JSON-only requirement always come last and are unconditional.
   const instructionBlock = renderJudgeInstruction(judgeInstruction);
+
+  // Spec §6.2: when native media is withheld from the critic, say so — the
+  // judge must not penalize answers it cannot verify. Extracted-text blocks
+  // are always sent, so only withheld IMAGE delivery (no text substitute)
+  // triggers the line; a PDF without native delivery still arrives as text.
+  const withheld =
+    hasNativeMedia(atts) &&
+    (includeNativeMedia !== true ||
+      !criticCapabilities ||
+      atts.some((a) => a.kind === "image" && !criticCapabilities.image));
+  const withheldLine = withheld ? `\n${withheldMediaSentence(atts.length)}` : "";
 
   const system =
     `You are an impartial evaluation judge. Compare the candidate answers against the user's task and evaluation criteria. ` +
@@ -294,6 +401,7 @@ export function judgeMessages(
     `When two candidates reach materially similar conclusions or recommendations but their overall scores differ by at least 0.5, ` +
     `return one comparison per such pair explaining what created the difference (for example quantification, evidence quality, ` +
     `constraint awareness, falsifiability, feasibility, or task compliance). If no pair qualifies, return an empty comparisons array.` +
+    withheldLine +
     instructionBlock +
     `\n\nRespond with ONLY a JSON object of this exact shape:\n` +
     `{"consensus": string[], "contradictions": string[], "uniqueInsights": [{"source": "A", "insight": "..."}], ` +
@@ -303,8 +411,34 @@ export function judgeMessages(
     `"comparisons": [{"labels": ["A", "B"], "reason": "..."}]}\n` +
     `Use the candidate blind labels (A, B, C, ...) for "source", "label", and comparison "labels". ` +
     `Output JSON and nothing else — no prose, no code fences, no commentary.`;
-  const user =
-    `User task:\n${prompt}\n\nEvaluation criteria:\n${evaluationText(profile, { withIds: true })}\n\nCandidates:\n${labelled}`;
+
+  // Attachment blocks sit after the task, before the criteria (spec §6.3).
+  // Native parts make the user message a ContentPart[]; without them the
+  // message stays a plain string, byte-identical to pre-attachments.
+  const textBlocks = atts.length > 0 ? renderAttachmentBlocks(atts) : "";
+  const native =
+    includeNativeMedia && criticCapabilities
+      ? selectNativeParts(atts, criticCapabilities)
+      : [];
+  const userText = [
+    `User task:\n${prompt}`,
+    textBlocks.length > 0 ? textBlocks : null,
+    `Evaluation criteria:\n${evaluationText(profile, { withIds: true })}`,
+    `Candidates:\n${labelled}`,
+  ]
+    .filter((x): x is string => x !== null)
+    .join("\n\n");
+  const user: string | ContentPart[] =
+    native.length === 0
+      ? userText
+      : [
+          { type: "text", text: userText },
+          ...native.map((p) =>
+            p.type === "image"
+              ? { type: "image" as const, mimeType: p.mimeType, data: p.data }
+              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename }
+          ),
+        ];
   return [
     { role: "system", content: system },
     { role: "user", content: user },
@@ -660,6 +794,11 @@ export function fusionMessages(opts: {
   profile: EvaluationProfileSnapshot | null;
   blindCandidates: BlindCandidate[];
   judgeInstruction?: string;
+  /** Task attachments for the synthesis pass (plan 7.6.4). */
+  attachments?: Attachment[];
+  /** Native media to the synthesizer (spec §6.2). */
+  includeNativeMedia?: boolean;
+  criticCapabilities?: ModelCapabilities;
 }): ChatMessage[] {
   return renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
     prompt: opts.prompt,
@@ -668,5 +807,8 @@ export function fusionMessages(opts: {
     judgeReport: null,
     consensus: null,
     judgeInstruction: opts.judgeInstruction,
+    attachments: opts.attachments,
+    includeNativeMedia: opts.includeNativeMedia,
+    criticCapabilities: opts.criticCapabilities,
   });
 }

@@ -17,6 +17,7 @@
 // =============================================================================
 
 import type { CriticRef } from "../providers/types";
+import type { Attachment } from "../attachments/types";
 import type { ModelSlot } from "../../studio-data";
 import type {
   EvaluationProfileSnapshot,
@@ -176,6 +177,8 @@ export interface StageADriverInput {
   recipes: FusionRecipeVersion[];
   stratifiedPairs: StratifiedPair[];
   tasksPerPair: number;
+  /** In-memory per-task attachments (never persisted — plan 7.6.7). */
+  taskAttachments?: Record<string, Attachment[]>;
 }
 
 interface PairTaskOutcome {
@@ -288,6 +291,7 @@ export async function runStageA(
           blindCandidates: evidence.blindCandidates,
           judgeReport: evidence.report,
           consensus: evidence.consensus,
+            attachments: input.taskAttachments?.[task.id] ?? [],
         });
         const synth = await deps.executor.runSynthesis(recipe.synthesizer, messages);
         synthByFamily.set(recipe.recipeFamily, synth);
@@ -304,6 +308,7 @@ export async function runStageA(
           blindCandidates: evidence.blindCandidates,
           rubricAccess: refineFlags.rubricAccess,
           verification: refineFlags.verification,
+            attachments: input.taskAttachments?.[task.id] ?? [],
         });
         refineSynth = await deps.executor.runSynthesis(refineFlags.synthesizer, refineMessages);
         artifacts.push({ key: "refine", text: refineSynth.text });
@@ -435,6 +440,8 @@ export interface StageBDriverInput {
   /** Outside-pool challengers for the adequacy probe (spec §5.6). */
   outsideChallengers?: ModelSlot[];
   rng?: () => number;
+  /** In-memory per-task attachments (never persisted — plan 7.6.7). */
+  taskAttachments?: Record<string, Attachment[]>;
 }
 
 export async function runStageB(
@@ -717,6 +724,8 @@ export interface PairEvaluationInput {
   profile: EvaluationProfileSnapshot | null;
   mpid: number;
   rng?: () => number;
+  /** In-memory per-task attachments (never persisted — plan 7.6.7). */
+  taskAttachments?: Record<string, Attachment[]>;
 }
 
 export async function evaluatePairBlocked(
@@ -747,6 +756,7 @@ export async function evaluatePairBlocked(
         blindCandidates: evidence.blindCandidates,
         judgeReport: evidence.report,
         consensus: evidence.consensus,
+          attachments: input.taskAttachments?.[task.id] ?? [],
       });
       const synth = await deps.executor.runSynthesis(recipe.synthesizer, messages);
       const key = `fuse:${recipe.recipeFamily}`;
@@ -763,6 +773,7 @@ export async function evaluatePairBlocked(
       blindCandidates: evidence.blindCandidates,
       rubricAccess: refineRecipe.rubricAccess,
       verification: refineRecipe.verification,
+        attachments: input.taskAttachments?.[task.id] ?? [],
     });
     const refineSynth = await deps.executor.runSynthesis(refineRecipe.synthesizer, refineMessages);
     synths.push({ key: "refine", text: refineSynth.text, cost: refineSynth.cost, recipe: null });
@@ -967,6 +978,8 @@ export interface StageCDriverInput {
   /** Alternate synthesizer for the cross (budget-gated). */
   alternateSynthesizer: CriticRef | null;
   tasksPerPair: number;
+  /** In-memory per-task attachments (never persisted — plan 7.6.7). */
+  taskAttachments?: Record<string, Attachment[]>;
 }
 
 export async function runStageC(
@@ -990,6 +1003,7 @@ export async function runStageC(
         blindCandidates: evidence.blindCandidates,
         judgeReport: evidence.report,
         consensus: evidence.consensus,
+          attachments: input.taskAttachments?.[task.id] ?? [],
       });
       const synth = await deps.executor.runSynthesis(input.runnerUpRecipe.synthesizer, messages);
       const holdout = await deps.executor.runHoldout(task, input.profile, input.study.judge2, [
@@ -1060,6 +1074,7 @@ export async function runStageC(
             blindCandidates: evidence.blindCandidates,
             judgeReport: evidence.report,
             consensus: evidence.consensus,
+              attachments: input.taskAttachments?.[task.id] ?? [],
           });
           const synth = await deps.executor.runSynthesis(synthesizer, messages);
           const holdout = await deps.executor.runHoldout(task, input.profile, input.study.judge2, [

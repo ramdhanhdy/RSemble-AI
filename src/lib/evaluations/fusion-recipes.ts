@@ -20,7 +20,17 @@
 //  - VERIFICATION toggles the verify-arithmetic/flag-unconfirmable instruction.
 // =============================================================================
 
-import type { ChatMessage } from "../providers/types";
+import type { ChatMessage, ContentPart } from "../providers/types";
+import type { ModelCapabilities } from "../providers/capabilities";
+import {
+  attachmentSystemSentence,
+  hasNativeMedia,
+  renderAttachmentBlocks,
+  selectNativeParts,
+  withheldMediaSentence,
+  type NativeAttachmentPart,
+} from "../attachments/render";
+import type { Attachment } from "../attachments/types";
 import { contentToText } from "../providers/content";
 import {
   DEFAULT_CRITIC_REF,
@@ -98,6 +108,13 @@ export interface FusionSynthesisInput {
   judgeReport: JudgeReport | null;
   consensus: ConsensusBreakdown | null;
   judgeInstruction?: string;
+  /** Task attachments — absent/empty keeps output byte-identical (plan 7.6.4). */
+  attachments?: Attachment[];
+  /** Send native media (image/pdf parts) to the synthesizer (spec §6.2).
+   *  Absent/false withholds it and adds the "cannot see" line. */
+  includeNativeMedia?: boolean;
+  /** Critic capability gate for per-kind native delivery. */
+  criticCapabilities?: ModelCapabilities;
 }
 
 // --- Blindness invariant --------------------------------------------------------------
@@ -251,6 +268,36 @@ export function criterionScoresSection(
 // --- Recipe renderer -----------------------------------------------------------------
 
 /**
+ * Shared attachment material for the recipe renderers (plan 7.6.4): the §6.3
+ * text blocks, the native parts the critic can consume (spec §6.2), and
+ * whether any native media is being withheld (→ the "cannot see" line).
+ */
+function attachmentMaterial(input: {
+  attachments?: Attachment[];
+  includeNativeMedia?: boolean;
+  criticCapabilities?: ModelCapabilities;
+}) {
+  const atts = input.attachments ?? [];
+  if (atts.length === 0) {
+    return { textBlocks: "", native: [] as NativeAttachmentPart[], withheld: false, count: 0 };
+  }
+  const caps = input.criticCapabilities;
+  const native =
+    input.includeNativeMedia && caps ? selectNativeParts(atts, caps) : [];
+  const withheld =
+    hasNativeMedia(atts) &&
+    (input.includeNativeMedia !== true ||
+      !caps ||
+      atts.some((a) => a.kind === "image" && !caps.image));
+  return {
+    textBlocks: renderAttachmentBlocks(atts),
+    native,
+    withheld,
+    count: atts.length,
+  };
+}
+
+/**
  * Render the synthesizer messages for a fusion recipe. The template is
  * determined by the recipe family; `rubricAccess` gates the criteria section;
  * `verification` toggles the verify/flag instruction.
@@ -260,6 +307,7 @@ export function renderRecipeMessages(
   input: FusionSynthesisInput,
 ): ChatMessage[] {
   const rubric = rubricSection(input.profile, recipe.rubricAccess);
+  const attachment = attachmentMaterial(input);
 
   let analysisBlock = "";
   if (recipe.judgeAnalysisMode === "qualitative" || recipe.judgeAnalysisMode === "scores") {
@@ -283,17 +331,33 @@ export function renderRecipeMessages(
     `Remove redundancy and resolve contradictions sensibly.` +
     (recipe.rubricAccess ? ` Honor the user's evaluation criteria.` : "") +
     (recipe.verification ? VERIFICATION_INSTRUCTION : "") +
+    (attachment.count > 0 ? ` ${attachmentSystemSentence(attachment.count)}` : "") +
+    (attachment.withheld ? ` ${withheldMediaSentence(attachment.count)}` : "") +
     ` Return the final answer in clean Markdown.` +
     renderSupplementaryInstruction(input.judgeInstruction);
 
   const userParts = [taskSection(input.prompt)];
+  if (attachment.textBlocks.length > 0) userParts.push(attachment.textBlocks);
   if (rubric.length > 0) userParts.push(rubric);
   if (analysisBlock.length > 0) userParts.push(analysisBlock);
   userParts.push(`Candidate answers (anonymized):\n${blindCandidateSection(input.blindCandidates)}`);
 
+  const userText = userParts.join("\n\n");
+  const user: string | ContentPart[] =
+    attachment.native.length === 0
+      ? userText
+      : [
+          { type: "text", text: userText },
+          ...attachment.native.map((p) =>
+            p.type === "image"
+              ? { type: "image" as const, mimeType: p.mimeType, data: p.data }
+              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename }
+          ),
+        ];
+
   return [
     { role: "system", content: system },
-    { role: "user", content: userParts.join("\n\n") },
+    { role: "user", content: user },
   ];
 }
 
@@ -316,6 +380,12 @@ export interface RefineWinnerInput {
   /** Toggles the same verify/flag instruction as the fusion recipe. */
   verification: boolean;
   judgeInstruction?: string;
+  /** Task attachments — absent/empty keeps output byte-identical (plan 7.6.4). */
+  attachments?: Attachment[];
+  /** Send native media (image/pdf parts) to the reviser (spec §6.2). */
+  includeNativeMedia?: boolean;
+  /** Critic capability gate for per-kind native delivery. */
+  criticCapabilities?: ModelCapabilities;
 }
 
 /**
@@ -325,6 +395,7 @@ export interface RefineWinnerInput {
  */
 export function renderRefineWinnerMessages(input: RefineWinnerInput): ChatMessage[] {
   const rubric = rubricSection(input.profile, input.rubricAccess);
+  const attachment = attachmentMaterial(input);
 
   const system =
     `You are a senior reviser. Improve the winning draft below into the best possible final answer. ` +
@@ -333,16 +404,32 @@ export function renderRefineWinnerMessages(input: RefineWinnerInput): ChatMessag
     `incorporate what they do better, and remove what does not serve the user's task.` +
     (input.rubricAccess ? ` Honor the user's evaluation criteria.` : "") +
     (input.verification ? VERIFICATION_INSTRUCTION : "") +
+    (attachment.count > 0 ? ` ${attachmentSystemSentence(attachment.count)}` : "") +
+    (attachment.withheld ? ` ${withheldMediaSentence(attachment.count)}` : "") +
     ` Return the revised answer in clean Markdown.` +
     renderSupplementaryInstruction(input.judgeInstruction);
 
   const userParts = [taskSection(input.prompt)];
+  if (attachment.textBlocks.length > 0) userParts.push(attachment.textBlocks);
   if (rubric.length > 0) userParts.push(rubric);
   userParts.push(`Winning draft (Candidate ${input.winnerLabel}):\n${input.winnerContent}`);
   userParts.push(`Reference candidate answers (anonymized):\n${blindCandidateSection(input.blindCandidates)}`);
 
+  const userText = userParts.join("\n\n");
+  const user: string | ContentPart[] =
+    attachment.native.length === 0
+      ? userText
+      : [
+          { type: "text", text: userText },
+          ...attachment.native.map((p) =>
+            p.type === "image"
+              ? { type: "image" as const, mimeType: p.mimeType, data: p.data }
+              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename }
+          ),
+        ];
+
   return [
     { role: "system", content: system },
-    { role: "user", content: userParts.join("\n\n") },
+    { role: "user", content: user },
   ];
 }

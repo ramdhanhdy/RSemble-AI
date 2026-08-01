@@ -69,6 +69,8 @@ function makeRequest(mode: "rank" | "fuse" = "rank", slots: ModelSlot[] = TWO_SL
     slots,
     critic: { providerId: "openrouter", model: "judge-model" },
     judgeInstruction: "",
+    attachments: [],
+    attachmentsToJudge: true,
   };
 }
 function makeEvents(): { events: RunExecutorEvents; calls: string[] } {
@@ -353,6 +355,8 @@ describe("RunExecutor — retryCandidate", () => {
       slots: TWO_SLOTS,
       critic: { providerId: "openrouter", model: "judge-model" },
       judgeInstruction: "",
+      attachments: [],
+      attachmentsToJudge: true,
       retryCandidateId: candidateId,
       retrySlotId: slotId,
       peerCandidates: TWO_DONE.filter((c) => c.id !== candidateId),
@@ -430,6 +434,8 @@ describe("RunExecutor — retryJudge", () => {
       candidates: TWO_DONE,
       critic: { providerId: "openrouter", model: "judge-model" },
       judgeInstruction: "",
+      attachments: [],
+      attachmentsToJudge: true,
       candidateAttemptIdsByCandidateId: { "cand-s1": "att-1", "cand-s2": "att-2" },
     };
   }
@@ -488,6 +494,8 @@ describe("RunExecutor — executeFusionAttempt", () => {
       candidates: TWO_DONE,
       critic: { providerId: "openrouter", model: "judge-model" },
       judgeInstruction: "",
+      attachments: [],
+      attachmentsToJudge: true,
       judgeAttemptId: "judge-att-1",
       blindLabelToCandidateId: { A: "cand-s1", B: "cand-s2" },
       candidateAttemptIdsByCandidateId: { "cand-s1": "att-1", "cand-s2": "att-2" },

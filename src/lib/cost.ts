@@ -78,9 +78,10 @@ export interface RunCostEstimate {
 
 export function estimateRunCost(
   prompt: string,
-  slugs: string[]
+  slugs: string[],
+  attachmentTokens = 0,
 ): RunCostEstimate {
-  const tokensIn = estimateTokens(prompt);
+  const tokensIn = estimateTokens(prompt) + attachmentTokens;
   const perModel: PerModelCost[] = slugs.map((slug) => {
     const tokensOut = Math.round(tokensIn * 1.5);
     const tokens = tokensIn + tokensOut;

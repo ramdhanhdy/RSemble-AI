@@ -46,6 +46,11 @@ export type StageStatus = "idle" | "running" | "done" | "error";
 export interface RunEvaluationContext {
   prompt: string;
   evaluation: AdHocEvaluationConfig;
+  /** Frozen attachment set the candidates saw — retries reproduce it exactly
+   *  (plan 7.6.6), even if the user edits the command pane afterwards. */
+  attachments: Attachment[];
+  /** Frozen §6.2 flag: whether native media reached the judge/fusion critic. */
+  attachmentsToJudge: boolean;
 }
 
 export interface StudioState {
@@ -128,6 +133,7 @@ export type Action =
   | { type: "SET_ATTACHMENTS_TO_JUDGE"; value: boolean }
   // --- pipeline ---
   | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext }
+  | { type: "FANOUT_BLOCKED"; reason: string }
   | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
   | { type: "CANDIDATE_DELTA"; id: string; delta: string }
   | { type: "CANDIDATE_FAILED"; id: string; error: string; finishedAt: number }
@@ -370,9 +376,16 @@ export function reducer(state: StudioState, action: Action): StudioState {
         runContext: {
           prompt: action.context.prompt,
           evaluation: deepCopyEvaluationConfig(action.context.evaluation),
+          attachments: action.context.attachments.map((a) => ({ ...a })),
+          attachmentsToJudge: action.context.attachmentsToJudge,
         },
         audit: logAudit(state.audit, `Fanout started across ${action.candidates.length} candidate(s).`),
       };
+
+    case "FANOUT_BLOCKED":
+      // The RunButton gate normally prevents this; the controller dispatches it
+      // as a visible audit trail when a run is attempted anyway (shortcut, race).
+      return { ...state, audit: logAudit(state.audit, `Run blocked: ${action.reason}`) };
 
     case "CANDIDATE_RESULT":
       return {

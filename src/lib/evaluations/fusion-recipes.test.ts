@@ -254,3 +254,115 @@ describe("refine-the-winner confound control (spec §7.1)", () => {
     expect(refine[1].content).not.toContain("Evaluation criteria:");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Attachments — plan 7.6.4
+// ---------------------------------------------------------------------------
+
+const TEXT_ATT = {
+  id: "att-notes",
+  name: "notes.md",
+  kind: "text" as const,
+  mimeType: "text/markdown" as const,
+  bytes: 10,
+  status: "ready" as const,
+  text: "notes body",
+};
+
+const IMAGE_ATT = {
+  id: "att-shot",
+  name: "shot.png",
+  kind: "image" as const,
+  mimeType: "image/png" as const,
+  bytes: 10,
+  status: "ready" as const,
+  data: "iVBORw0KGgo",
+};
+
+const baseInput = {
+  prompt: "merge these",
+  profile: PROFILE,
+  blindCandidates: BLIND,
+  judgeReport: REPORT,
+  consensus: {
+    consensus: ["both agree on scope"],
+    contradictions: [],
+    uniqueInsights: [],
+  },
+  judgeInstruction: undefined as string | undefined,
+};
+
+const refineBase = {
+  prompt: "merge these",
+  profile: PROFILE,
+  winnerLabel: "A",
+  winnerContent: "winning draft",
+  blindCandidates: BLIND,
+  rubricAccess: true,
+  verification: false,
+  judgeInstruction: undefined as string | undefined,
+};
+
+describe("renderRecipeMessages — attachment policy (7.6.4)", () => {
+  it("is byte-identical to the pre-attachments output when absent", () => {
+    const baseline = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, baseInput);
+    const withEmpty = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, { ...baseInput, attachments: [] });
+    const withUndefined = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
+      prompt: "merge these",
+      profile: PROFILE,
+      blindCandidates: BLIND,
+      judgeReport: REPORT,
+      consensus: baseInput.consensus,
+    });
+    expect(withEmpty).toEqual(baseline);
+    expect(withUndefined).toEqual(baseline);
+  });
+
+  it("inserts attachment blocks after the task section, before the rubric", () => {
+    const msgs = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
+      ...baseInput,
+      attachments: [TEXT_ATT],
+    });
+    const user = msgs[1].content as string;
+    expect(user.indexOf("BEGIN ATTACHMENT 1")).toBeGreaterThan(user.indexOf("User task:"));
+    expect(user.indexOf("Evaluation criteria:")).toBeGreaterThan(user.indexOf("BEGIN ATTACHMENT 1"));
+    expect(msgs[0].content).toContain("The user has attached 1 file(s).");
+  });
+
+  it("withholds native media by default and warns the synthesizer", () => {
+    const msgs = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
+      ...baseInput,
+      attachments: [IMAGE_ATT],
+    });
+    expect(msgs[0].content).toContain("1 attachment(s) you cannot see");
+    expect(typeof msgs[1].content).toBe("string");
+  });
+
+  it("delivers native image parts when enabled and supported", () => {
+    const msgs = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
+      ...baseInput,
+      attachments: [IMAGE_ATT],
+      includeNativeMedia: true,
+      criticCapabilities: { image: true, pdf: false },
+    });
+    expect(msgs[1].content).toEqual([
+      { type: "text", text: expect.stringContaining("Candidate answers") as unknown as string },
+      { type: "image", mimeType: "image/png", data: "iVBORw0KGgo" },
+    ]);
+    expect(msgs[0].content).not.toContain("you cannot see");
+  });
+});
+
+describe("renderRefineWinnerMessages — attachment policy (7.6.4)", () => {
+  it("is byte-identical to the pre-attachments output when absent", () => {
+    const baseline = renderRefineWinnerMessages(refineBase);
+    expect(renderRefineWinnerMessages({ ...refineBase, attachments: [] })).toEqual(baseline);
+  });
+
+  it("inserts attachment blocks after the task section and before the rubric", () => {
+    const msgs = renderRefineWinnerMessages({ ...refineBase, attachments: [TEXT_ATT] });
+    const user = msgs[1].content as string;
+    expect(user.indexOf("BEGIN ATTACHMENT 1")).toBeGreaterThan(user.indexOf("User task:"));
+    expect(user.indexOf("Winning draft")).toBeGreaterThan(user.indexOf("BEGIN ATTACHMENT 1"));
+  });
+});

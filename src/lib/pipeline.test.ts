@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { parseJudge, judgeMessages, fusionMessages, splitSegments, buildFanoutJobs, isUsableCandidate, checkFusionEligibility, createBlindCandidateSet } from "./pipeline";
+import { describe, it, expect, beforeEach } from "vitest";
+import { parseJudge, judgeMessages, fusionMessages, splitSegments, buildFanoutJobs, isUsableCandidate, checkFusionEligibility, checkAttachmentEligibility, draftMessages, createBlindCandidateSet } from "./pipeline";
 import { contentToText } from "./providers/content";
+import { clearModelCapabilities, setModelCapabilities } from "./providers/capabilities";
 import type { Candidate } from "../studio-data";
 import type { ProviderId } from "./providers/types";
 import type { EvaluationProfile, EvaluationCriterion } from "./evaluations/evaluation-types";
@@ -917,5 +918,192 @@ describe("createBlindCandidateSet — blind packet", () => {
     const snapshot = JSON.parse(JSON.stringify(candidates));
     createBlindCandidateSet(candidates, () => 0);
     expect(candidates).toEqual(snapshot);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Attachments — plan 7.6.2 / 7.6.3 / 7.6.5
+// ---------------------------------------------------------------------------
+
+function textAtt(name: string, text: string) {
+  return { id: `att-${name}`, name, kind: "text" as const, mimeType: "text/markdown" as const, bytes: 10, status: "ready" as const, text };
+}
+
+function imageAtt(name: string, data = "iVBORw0KGgo") {
+  return { id: `att-${name}`, name, kind: "image" as const, mimeType: "image/png" as const, bytes: 10, status: "ready" as const, data };
+}
+
+function pdfAtt(name: string, text: string, pages = 2) {
+  return { id: `att-${name}`, name, kind: "pdf" as const, mimeType: "application/pdf" as const, bytes: 10, status: "ready" as const, data: "JVBERi0xLjQ", text, pages };
+}
+
+describe("draftMessages — attachment delivery (7.6.2)", () => {
+  it("returns the byte-identical pre-attachments output when absent", () => {
+    const baseline = [
+      { role: "system" as const, content: "You are helpful." },
+      { role: "user" as const, content: "the task" },
+    ];
+    expect(draftMessages({ systemPrompt: "You are helpful.", prompt: "the task" })).toEqual(baseline);
+    expect(draftMessages({ systemPrompt: "You are helpful.", prompt: "the task", attachments: [] })).toEqual(baseline);
+  });
+
+  it("sends extracted-text blocks plus the system sentence for text attachments", () => {
+    const msgs = draftMessages({
+      systemPrompt: "You are helpful.",
+      prompt: "summarize",
+      attachments: [textAtt("notes.md", "notes body")],
+      capabilities: { image: false, pdf: false },
+    });
+    expect(msgs[0].content).toContain("The user has attached 1 file(s).");
+    expect(msgs[1].content).toEqual([
+      { type: "text", text: "summarize" },
+      { type: "text", text: expect.stringContaining('BEGIN ATTACHMENT 1: "notes.md"') as unknown as string },
+    ]);
+  });
+
+  it("delivers pdf natively only when the slot has pdf capability, else as text", () => {
+    const withPdf = draftMessages({
+      systemPrompt: "s",
+      prompt: "p",
+      attachments: [pdfAtt("r.pdf", "pdf body")],
+      capabilities: { image: false, pdf: true },
+    });
+    expect(withPdf[1].content).toEqual([
+      { type: "text", text: "p" },
+      { type: "file", mimeType: "application/pdf", data: "JVBERi0xLjQ", filename: "r.pdf" },
+    ]);
+
+    const degraded = draftMessages({
+      systemPrompt: "s",
+      prompt: "p",
+      attachments: [pdfAtt("r.pdf", "pdf body")],
+      capabilities: { image: false, pdf: false },
+    });
+    expect(degraded[1].content).toEqual([
+      { type: "text", text: "p" },
+      { type: "text", text: expect.stringContaining("pdf body") as unknown as string },
+    ]);
+  });
+
+  it("throws when an image reaches a slot without image capability (gate failure)", () => {
+    expect(() =>
+      draftMessages({
+        systemPrompt: "s",
+        prompt: "p",
+        attachments: [imageAtt("shot.png")],
+        capabilities: { image: false, pdf: false },
+      })
+    ).toThrow(/eligibility gate/);
+  });
+
+  it("delivers images natively for capable slots", () => {
+    const msgs = draftMessages({
+      systemPrompt: "s",
+      prompt: "p",
+      attachments: [imageAtt("shot.png")],
+      capabilities: { image: true, pdf: false },
+    });
+    expect(msgs[1].content).toEqual([
+      { type: "text", text: "p" },
+      { type: "image", mimeType: "image/png", data: "iVBORw0KGgo" },
+    ]);
+  });
+});
+
+describe("judgeMessages — attachment policy (7.6.3)", () => {
+  const candidates = [
+    { ...makeCandidate("c1", "ModelA", "openrouter", "model-a"), segments: [{ id: "c1-s0", text: "answer A" }] },
+    { ...makeCandidate("c2", "ModelB", "umans", "model-b"), segments: [{ id: "c2-s0", text: "answer B" }] },
+  ];
+  const blind = () => blindOf(candidates);
+
+  it("is byte-identical to the pre-attachments output when absent", () => {
+    const baseline = judgeMessages("prompt", null, blind().candidates);
+    expect(judgeMessages("prompt", null, blind().candidates, undefined, undefined, undefined, undefined)).toEqual(baseline);
+    expect(judgeMessages("prompt", null, blind().candidates, undefined, [])).toEqual(baseline);
+  });
+
+  it("always sends extracted-text blocks to the judge user message", () => {
+    const msgs = judgeMessages("prompt", null, blind().candidates, undefined, [textAtt("notes.md", "notes body")]);
+    expect(contentToText(msgs[1].content)).toContain("notes body");
+    expect(contentToText(msgs[1].content)).toContain("BEGIN ATTACHMENT 1");
+  });
+
+  it("withholds native media by default and adds the §6.2 warning line", () => {
+    const msgs = judgeMessages("prompt", null, blind().candidates, undefined, [imageAtt("shot.png")]);
+    const system = contentToText(msgs[0].content);
+    expect(system).toContain("1 attachment(s) you cannot see");
+    // No native part: user content stays a string (byte-identical shape).
+    expect(typeof msgs[1].content).toBe("string");
+    expect(contentToText(msgs[1].content)).not.toContain("data:image");
+  });
+
+  it("sends native image parts when the critic supports them and the flag is on", () => {
+    const msgs = judgeMessages(
+      "prompt", null, blind().candidates, undefined,
+      [imageAtt("shot.png")], true, { image: true, pdf: false },
+    );
+    expect(msgs[1].content).toEqual([
+      { type: "text", text: expect.stringContaining("Candidates:") as unknown as string },
+      { type: "image", mimeType: "image/png", data: "iVBORw0KGgo" },
+    ]);
+    expect(contentToText(msgs[0].content)).not.toContain("you cannot see");
+  });
+
+  it("keeps the JSON contract last and unconditional with attachments present", () => {
+    const msgs = judgeMessages("prompt", null, blind().candidates, "custom", [imageAtt("shot.png")]);
+    const system = contentToText(msgs[0].content);
+    const contract = system.indexOf("Respond with ONLY a JSON object");
+    expect(contract).toBeGreaterThan(system.indexOf("custom"));
+    expect(system.slice(contract)).toContain('"evaluations"');
+  });
+});
+
+describe("checkAttachmentEligibility — §5.1 matrix (7.6.5)", () => {
+  const slot = (id: string, slug: string, enabled = true) => ({
+    id, providerId: "openrouter" as const, provider: "OpenRouter", model: slug, slug, enabled,
+  });
+  const img = () => [imageAtt("shot.png")];
+
+  beforeEach(() => clearModelCapabilities());
+
+  it("always ok when no images are attached (pdf/text/doc degrade)", () => {
+    expect(checkAttachmentEligibility([slot("s1", "a")], [pdfAtt("r.pdf", "x")])).toEqual({ ok: true });
+    expect(checkAttachmentEligibility([], [textAtt("n.md", "x")])).toEqual({ ok: true });
+  });
+
+  it("blocks with the exact §5.1 message when fewer than 2 slots can see images", () => {
+    setModelCapabilities("openrouter", "a", { image: true, pdf: false });
+    const result = checkAttachmentEligibility([slot("s1", "a"), slot("s2", "b")], img());
+    expect(result).toEqual({
+      blocked: "Attach-incompatible: only 1 of 2 selected models can read images. Swap a model or remove the image.",
+    });
+  });
+
+  it("blocks at zero capable slots too", () => {
+    const result = checkAttachmentEligibility([slot("s1", "a"), slot("s2", "b")], img());
+    expect(result).toMatchObject({ blocked: expect.stringContaining("only 0 of 2") });
+  });
+
+  it("auto-disables incapable enabled slots when ≥2 can see images", () => {
+    setModelCapabilities("openrouter", "a", { image: true, pdf: false });
+    setModelCapabilities("openrouter", "b", { image: true, pdf: false });
+    setModelCapabilities("openrouter", "c", { image: false, pdf: false });
+    const result = checkAttachmentEligibility(
+      [slot("s1", "a"), slot("s2", "b"), slot("s3", "c"), slot("s4", "d", false)],
+      img(),
+    );
+    expect(result).toEqual({
+      autoDisable: ["s3"],
+      reason: expect.stringContaining("2 of 3 selected models") as unknown as string,
+    });
+    // Disabled slots are not candidates for auto-disable.
+    expect((result as { autoDisable: string[] }).autoDisable).not.toContain("s4");
+  });
+
+  it("ok when every enabled slot can see images", () => {
+    setModelCapabilities("openrouter", "a", { image: true, pdf: false });
+    setModelCapabilities("openrouter", "b", { image: true, pdf: false });
+    expect(checkAttachmentEligibility([slot("s1", "a"), slot("s2", "b")], img())).toEqual({ ok: true });
   });
 });

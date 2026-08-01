@@ -433,7 +433,7 @@ describe("reducer — stale reports are cleared correctly", () => {
     const next = reducer(state, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: state.prompt, evaluation: state.evaluation },
+      context: { prompt: state.prompt, evaluation: state.evaluation, attachments: [], attachmentsToJudge: true },
     });
     expect(next.judgeReport).toBeNull();
   });
@@ -512,7 +512,7 @@ describe("reducer — FANOUT_START clears fusion state (regression)", () => {
     const next = reducer(state, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: state.prompt, evaluation: state.evaluation },
+      context: { prompt: state.prompt, evaluation: state.evaluation, attachments: [], attachmentsToJudge: true },
     });
     expect(next.fusionStatus).toBe("idle");
     expect(next.fusedText).toBeNull();
@@ -543,7 +543,7 @@ describe("reducer — retained run evaluation context", () => {
     const next = reducer(initialState, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "original task", evaluation },
+      context: { prompt: "original task", evaluation, attachments: [], attachmentsToJudge: true },
     });
     expect(next.runContext).not.toBeNull();
     expect(next.runContext?.prompt).toBe("original task");
@@ -558,7 +558,7 @@ describe("reducer — retained run evaluation context", () => {
     const started = reducer({ ...initialState, evaluation: testEvaluation() }, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "original task", evaluation: testEvaluation() },
+      context: { prompt: "original task", evaluation: testEvaluation(), attachments: [], attachmentsToJudge: true },
     });
     const edited = reducer(started, { type: "SET_EVALUATION", config: HOLISTIC_EVALUATION });
     expect(edited.evaluation).toEqual({ kind: "holistic" });
@@ -571,7 +571,7 @@ describe("reducer — retained run evaluation context", () => {
     const started = reducer(initialState, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "original task", evaluation: HOLISTIC_EVALUATION },
+      context: { prompt: "original task", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
     });
     expect(started.runContext).not.toBeNull();
     const reset = reducer(started, { type: "RESET_SESSION" });
@@ -583,12 +583,12 @@ describe("reducer — retained run evaluation context", () => {
     const first = reducer(initialState, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "task one", evaluation: HOLISTIC_EVALUATION },
+      context: { prompt: "task one", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
     });
     const second = reducer(first, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "task two", evaluation: HOLISTIC_EVALUATION },
+      context: { prompt: "task two", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
     });
     expect(second.runContext?.prompt).toBe("task two");
   });
@@ -608,7 +608,7 @@ describe("reducer — JUDGE_START as a standalone active-stage transition", () =
     judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
     consensus: { consensus: ["shared"], contradictions: [], uniqueInsights: [] },
     insufficient: { done: 2, failed: 1 },
-    runContext: { prompt: "original task", evaluation: HOLISTIC_EVALUATION },
+    runContext: { prompt: "original task", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
   });
 
   it("sets running: true when the previous state is a Judge error", () => {

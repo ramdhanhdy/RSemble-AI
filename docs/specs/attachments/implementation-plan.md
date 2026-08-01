@@ -106,15 +106,15 @@ New: `src/lib/attachments/extract.ts` (+ `image.ts`, `pdf.ts`, `docx.ts`)
 
 ## Phase 7.6 — Pipeline + run controller + recipe layer
 
-- [ ] 7.6.1 `src/lib/attachments/render.ts`: `renderAttachmentBlocks(attachments)` implementing spec §6.3 (delimiter stripping, numbering, DATA-not-instructions banner, total-char truncation). Shared utility — imported by both `pipeline.ts` and `fusion-recipes.ts`.
-- [ ] 7.6.2 `pipeline.ts`: `draftMessages` accepts `attachments` + per-job `capabilities`; returns identical output to today when `attachments` is empty/absent.
-- [ ] 7.6.3 `pipeline.ts`: `judgeMessages` accepts `attachments` + `includeNativeMedia`; adds the "attachments you cannot see" line when media is withheld; JSON contract stays last and unconditional.
-- [ ] 7.6.4 `fusion-recipes.ts`: `renderRecipeMessages` and `renderRefineWinnerMessages` gain optional `attachments?: Attachment[]` parameter; attachment blocks inserted after task section, before rubric section; zero-attachment path is byte-identical to today. `FusionSynthesisInput` and `RefineWinnerInput` gain the optional field.
-- [ ] 7.6.5 `pipeline.ts`: `checkAttachmentEligibility(slots, attachments)` → `{ ok } | { blocked: string } | { autoDisable: slotIds[], reason }` implementing spec §5.1.
-- [ ] 7.6.6 `run-controller.ts`: call the eligibility check before `FANOUT_START`; dispatch a blocked/auto-disabled outcome; thread attachments into all three message builders. Abort/retry paths carry the same attachment set (retry must reproduce the original candidate's input exactly).
-- [ ] 7.6.7 `fusion-study-stages.ts`: thread `attachments` from the trial context into `renderRecipeMessages`/`renderRefineWinnerMessages`. Attachment set changes between trials ⇒ new trial (not new attempt), per the Fusion Study's Trial/Attempt rule.
-- [ ] 7.6.8 `RunButton`/`rsemble.tsx`: disable Run while any attachment is not `ready`, or when eligibility is `blocked`, with the reason as the tooltip/inline message.
-- [ ] 7.6.9 Tests in `pipeline.test.ts` + `run-controller.test.ts` + `fusion-recipes.test.ts`: attachment-free byte-identical message snapshots for all three builders; delimiter-forgery input; injection payload still yields a parseable judge contract; block/auto-disable matrix (0/1/2 capable slots × 2/3/4 enabled); retry reuses attachments; recipe layer zero-attachment regression.
+- [x] 7.6.1 `src/lib/attachments/render.ts`: `renderAttachmentBlocks(attachments)` implementing spec §6.3 (delimiter stripping, numbering, DATA-not-instructions banner, total-char truncation). Shared utility — imported by both `pipeline.ts` and `fusion-recipes.ts`.
+- [x] 7.6.2 `pipeline.ts`: `draftMessages` accepts `attachments` + per-job `capabilities`; returns identical output to today when `attachments` is empty/absent.
+- [x] 7.6.3 `pipeline.ts`: `judgeMessages` accepts `attachments` + `includeNativeMedia`; adds the "attachments you cannot see" line when media is withheld; JSON contract stays last and unconditional.
+- [x] 7.6.4 `fusion-recipes.ts`: `renderRecipeMessages` and `renderRefineWinnerMessages` gain optional `attachments?: Attachment[]` parameter; attachment blocks inserted after task section, before rubric section; zero-attachment path is byte-identical to today. `FusionSynthesisInput` and `RefineWinnerInput` gain the optional field.
+- [x] 7.6.5 `pipeline.ts`: `checkAttachmentEligibility(slots, attachments)` → `{ ok } | { blocked: string } | { autoDisable: slotIds[], reason }` implementing spec §5.1.
+- [x] 7.6.6 `run-controller.ts`: call the eligibility check before `FANOUT_START`; dispatch a blocked/auto-disabled outcome; thread attachments into all three message builders. Abort/retry paths carry the same attachment set (retry must reproduce the original candidate's input exactly).
+- [x] 7.6.7 `fusion-study-stages.ts`: thread `attachments` from the trial context into `renderRecipeMessages`/`renderRefineWinnerMessages`. Attachment set changes between trials ⇒ new trial (not new attempt), per the Fusion Study's Trial/Attempt rule.
+- [x] 7.6.8 `RunButton`/`rsemble.tsx`: disable Run while any attachment is not `ready`, or when eligibility is `blocked`, with the reason as the tooltip/inline message.
+- [x] 7.6.9 Tests in `pipeline.test.ts` + `run-controller.test.ts` + `fusion-recipes.test.ts`: attachment-free byte-identical message snapshots for all three builders; delimiter-forgery input; injection payload still yields a parseable judge contract; block/auto-disable matrix (0/1/2 capable slots × 2/3/4 enabled); retry reuses attachments; recipe layer zero-attachment regression.
 
 **Exit:** acceptance criteria §10.1–§10.5, §10.7 pass in tests. Live smoke test: one image, two vision models, Rank then Fuse.
 

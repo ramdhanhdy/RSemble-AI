@@ -8,6 +8,7 @@ import {
   buildFanoutJobs,
   isUsableCandidate,
   checkFusionEligibility,
+  checkAttachmentEligibility,
 } from "./pipeline";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
 import type { RunRecorder } from "./persistence/run-recorder";
@@ -49,7 +50,7 @@ export function createRunController(deps: RunControllerDeps) {
 
   // --- Events adapter: executor events → dispatch + recorder -----------------
 
-  function makeEvents(epoch: number, isRetry = false): RunExecutorEvents {
+  function makeEvents(epoch: number, isRetry = false, slotsOverride?: StudioState["slots"]): RunExecutorEvents {
     const candidateAttemptIds: Record<string, string> = {};
 
     return {
@@ -57,7 +58,10 @@ export function createRunController(deps: RunControllerDeps) {
         const s = stateRef.current;
         const runId = `run-${now()}-${random().toString(36).slice(2, 8)}`;
         runIdRef.current = runId;
-        const jobs = buildFanoutJobs(s.slots);
+        // The eligibility gate may have filtered slots for this run
+        // (spec §5.1 auto-disable) — placeholders must match what the executor
+        // actually fans out, or the candidate roster would include ghosts.
+        const jobs = buildFanoutJobs(slotsOverride ?? s.slots);
         const ts = now();
         const placeholders: Candidate[] = jobs.map((j) => ({
           id: j.id, model: j.displayName, provider: j.provider, providerId: j.providerId,
@@ -68,7 +72,12 @@ export function createRunController(deps: RunControllerDeps) {
         dispatch({
           type: "FANOUT_START",
           candidates: placeholders,
-          context: { prompt: s.prompt, evaluation: s.evaluation },
+          context: {
+            prompt: s.prompt,
+            evaluation: s.evaluation,
+            attachments: s.attachments,
+            attachmentsToJudge: s.attachmentsToJudge,
+          },
         });
         if (recorder) {
           await recorder.begin({
@@ -193,21 +202,42 @@ export function createRunController(deps: RunControllerDeps) {
 
   const runFanout = async () => {
     const s = stateRef.current;
-    const jobs = buildFanoutJobs(s.slots);
+
+    // Attachment gate (spec §5.1, plan 7.6.6): never start a fanout where a
+    // model would answer blind. Blocked → visible audit trail; auto-disable →
+    // the run proceeds with the capable slots (matching the strip's explicit
+    // "Disable incompatible" action).
+    const eligibility = checkAttachmentEligibility(s.slots, s.attachments);
+    if ("blocked" in eligibility) {
+      dispatch({ type: "FANOUT_BLOCKED", reason: eligibility.blocked });
+      return;
+    }
+    let slots = s.slots;
+    if ("autoDisable" in eligibility) {
+      const dropped = new Set(eligibility.autoDisable);
+      slots = slots.filter((sl) => !dropped.has(sl.id));
+      for (const id of eligibility.autoDisable) {
+        dispatch({ type: "TOGGLE_SLOT", id });
+      }
+    }
+
+    const jobs = buildFanoutJobs(slots);
     if (jobs.length === 0) return;
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
 
-    const events = makeEvents(epoch);
+    const events = makeEvents(epoch, false, slots);
     await executor.executeTask({
       source: { kind: "adhoc" },
       mode: s.mode,
       task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
       evaluation: s.evaluation,
-      slots: s.slots,
+      slots,
       critic: s.critic,
       judgeInstruction: s.judgeInstruction,
+      attachments: s.attachments,
+      attachmentsToJudge: s.attachmentsToJudge,
     }, events, abort.signal);
 
     // Insufficient candidates check
@@ -280,6 +310,10 @@ export function createRunController(deps: RunControllerDeps) {
       slots: s.slots,
       critic: s.critic,
       judgeInstruction: s.judgeInstruction,
+      // Frozen attachment set — the retry must reproduce the original input
+      // even if the user edited the command pane since the run (plan 7.6.6).
+      attachments: s.runContext?.attachments ?? [],
+      attachmentsToJudge: s.runContext?.attachmentsToJudge ?? true,
       retryCandidateId: candidate.id,
       retrySlotId: slot.id,
       peerCandidates,
@@ -336,6 +370,8 @@ export function createRunController(deps: RunControllerDeps) {
       candidates: done,
       critic: s.critic,
       judgeInstruction: s.judgeInstruction,
+      attachments: ctx.attachments,
+      attachmentsToJudge: ctx.attachmentsToJudge,
       candidateAttemptIdsByCandidateId,
     }, events, abort.signal);
   };
@@ -393,6 +429,8 @@ export function createRunController(deps: RunControllerDeps) {
         candidates: eligibility.usable,
         critic: s.critic,
         judgeInstruction: s.judgeInstruction,
+        attachments: s.attachments,
+        attachmentsToJudge: s.attachmentsToJudge,
         judgeAttemptId,
         blindLabelToCandidateId,
         candidateAttemptIdsByCandidateId,

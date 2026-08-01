@@ -40,6 +40,7 @@ import { MobileWorkspaceNav } from "./ui/MobileWorkspaceNav";
 
 import { StreamDeltaBuffer } from "./lib/stream-buffer";
 import { createRunController } from "./lib/run-controller";
+import { checkAttachmentEligibility } from "./lib/pipeline";
 import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
@@ -237,8 +238,20 @@ export default function RSemble() {
   const slotsReady = enabledSlots.every((s) => readinessMap[s.providerId] === true);
   const criticReady = readinessMap[state.critic.providerId] === true;
   const experimentActive = activeOwner?.kind === "experiment";
+
+  // Attachment gate (spec §5.1, plan 7.6.8): Run is disabled while any
+  // attachment is still reading, or when the §5.1 image-eligibility check
+  // blocks the run. The reason surfaces as the Run button caption/tooltip.
+  const attachmentsReady = state.attachments.every((a) => a.status === "ready");
+  const attachmentEligibility = checkAttachmentEligibility(state.slots, state.attachments);
+  const attachmentBlockReason =
+    !attachmentsReady && state.attachments.length > 0
+      ? "Waiting for attachments to finish reading…"
+      : "blocked" in attachmentEligibility
+        ? attachmentEligibility.blocked
+        : null;
   const canRun =
-    !state.running && !experimentActive && state.prompt.trim().length > 0 && enabledSlots.length > 0 && slotsReady && criticReady;
+    !state.running && !experimentActive && state.prompt.trim().length > 0 && enabledSlots.length > 0 && slotsReady && criticReady && attachmentBlockReason === null;
 
   const canRunRef = useRef(canRun);
   useEffect(() => {
@@ -392,9 +405,9 @@ export default function RSemble() {
                     style={focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }}
                   >
                     {focusActive ? (
-                      <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} />
+                      <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
                     ) : (
-                      <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} />
+                      <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
                     )}
                   </section>
 
@@ -547,11 +560,14 @@ function FocusStrip({
   canRun,
   onRun,
   onAbort,
+  blockReason,
 }: {
   state: StudioState;
   canRun: boolean;
   onRun: () => void;
   onAbort: () => void;
+  /** Attachment gate reason surfaced as the button tooltip (plan 7.6.8). */
+  blockReason?: string | null;
 }) {
   const enabledSlots = state.slots.filter((s) => s.enabled);
   return (
@@ -567,7 +583,7 @@ function FocusStrip({
         onClick={state.running ? onAbort : onRun}
         disabled={!canRun && !state.running}
         aria-label={state.running ? "Stop run" : "Re-run pipeline"}
-        title={state.running ? "Stop run" : "Re-run pipeline"}
+        title={state.running ? "Stop run" : blockReason ?? "Re-run pipeline"}
         className={`mt-auto flex h-11 w-11 items-center justify-center rounded-md transition-[transform,background-color] ease-out duration-150 ${
           state.running
             ? "bg-error/20 text-error"
@@ -592,12 +608,15 @@ function CommandPane({
   canRun,
   onRun,
   onAbort,
+  blockReason,
 }: {
   state: StudioState;
   dispatch: React.Dispatch<Action>;
   canRun: boolean;
   onRun: () => void;
   onAbort: () => void;
+  /** Attachment gate reason for the Run button (plan 7.6.8). */
+  blockReason?: string | null;
 }) {
   const enabledCount = state.slots.filter((s) => s.enabled).length;
   const hasRun = state.candidates.length > 0 || state.running;
@@ -657,6 +676,8 @@ function CommandPane({
         prompt={state.prompt}
         onClick={onRun}
         onAbort={onAbort}
+        blockReason={blockReason}
+        attachments={state.attachments}
       />
     </div>
   );

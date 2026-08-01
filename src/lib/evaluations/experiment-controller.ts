@@ -361,6 +361,10 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         slots: suite.modelSlots,
         critic: suite.defaultJudge,
         judgeInstruction: task.judgeInstructionOverride,
+        // Suite runs have no task attachments in v1 (attachments are an
+        // ad-hoc Compare feature; suites never persist them).
+        attachments: [],
+        attachmentsToJudge: true,
       },
       events,
       abortController.signal,

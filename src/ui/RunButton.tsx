@@ -4,7 +4,8 @@
 // =============================================================================
 
 import { Play, Square } from "lucide-react";
-import { estimateRunCost, estimateRunTime } from "../lib/cost";
+import { estimateAttachmentTokens, estimateRunCost, estimateRunTime } from "../lib/cost";
+import type { Attachment } from "../lib/attachments/types";
 
 export function RunButton({
   running,
@@ -15,6 +16,8 @@ export function RunButton({
   prompt,
   onClick,
   onAbort,
+  blockReason,
+  attachments,
 }: {
   running: boolean;
   canRun: boolean;
@@ -24,8 +27,12 @@ export function RunButton({
   prompt: string;
   onClick: () => void;
   onAbort: () => void;
+  /** Why Run is disabled beyond the base gates (attachments not ready / blocked). */
+  blockReason?: string | null;
+  attachments?: Attachment[];
 }) {
-  const cost = hasPrompt && enabledCount > 0 ? estimateRunCost(prompt, enabledSlugs) : null;
+  const attachmentTokens = attachments ? estimateAttachmentTokens(attachments) : 0;
+  const cost = hasPrompt && enabledCount > 0 ? estimateRunCost(prompt, enabledSlugs, attachmentTokens) : null;
   const time = enabledCount > 0 ? estimateRunTime(enabledSlugs) : 0;
 
   const costStr = cost?.totalCostUsd != null ? `~$${cost.totalCostUsd.toFixed(2)}` : null;
@@ -38,9 +45,11 @@ export function RunButton({
       ? "Enter a task to run"
       : enabledCount === 0
         ? "Enable at least one model"
-        : canRun
-          ? `${enabledCount} model${enabledCount === 1 ? "" : "s"} · 1 judge${forecast ? ` · ${forecast}` : ""}`
-          : "Waiting for provider connections";
+        : blockReason
+          ? blockReason
+          : canRun
+            ? `${enabledCount} model${enabledCount === 1 ? "" : "s"} · 1 judge${forecast ? ` · ${forecast}` : ""}`
+            : "Waiting for provider connections";
 
   const look = running
     ? "bg-gradient-to-br from-accent to-[#14b8a6] text-on-accent saturate-50"
@@ -53,6 +62,7 @@ export function RunButton({
       type="button"
       onClick={running ? onAbort : onClick}
       disabled={!canRun && !running}
+      title={!running && blockReason ? blockReason : undefined}
       className={`mt-auto flex min-h-[64px] w-full items-center gap-3 rounded-md px-4 text-left transition-[transform,box-shadow,background-color] ease-out duration-150 ${look}`}
     >
       {running ? (

@@ -1123,6 +1123,8 @@ function judgeRetryState(mode: "rank" | "fuse" = "rank"): StudioState {
     runContext: {
       prompt: "ORIGINAL_TASK_MARKER",
       evaluation: { kind: "custom", profile: retainedProfile() },
+      attachments: [],
+      attachmentsToJudge: true,
     },
     candidates: [
       doneCandidate("cand-1", "openrouter", "model-a", "answer from model A"),
@@ -1485,5 +1487,130 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
     expect(firstResultIdx).toBeLessThan(fanoutEndIdx);
     expect(fanoutEndIdx).toBeLessThan(judgeStartIdx);
     expect(judgeStartIdx).toBeLessThan(judgeResultIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Attachment gate + frozen retry inputs — plan 7.6.6
+// ---------------------------------------------------------------------------
+
+import { clearModelCapabilities, setModelCapabilities } from "./providers/capabilities";
+
+const IMAGE_ATT = {
+  id: "att-1",
+  name: "shot.png",
+  kind: "image" as const,
+  mimeType: "image/png",
+  bytes: 10,
+  status: "ready" as const,
+  data: "iVBORw0KGgo",
+};
+
+const TEXT_ATT = {
+  id: "att-2",
+  name: "notes.md",
+  kind: "text" as const,
+  mimeType: "text/markdown",
+  bytes: 10,
+  status: "ready" as const,
+  text: "attached notes body",
+};
+
+describe("runFanout — attachment eligibility gate (7.6.6)", () => {
+  afterEach(() => clearModelCapabilities());
+
+  it("dispatches FANOUT_BLOCKED and never touches a provider when <2 slots can see images", async () => {
+    setModelCapabilities("openrouter", "model-a", { image: true, pdf: false });
+    const state = { ...stateWithSlots(THREE_SLOTS), attachments: [IMAGE_ATT] };
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+
+    await controller.runFanout();
+
+    const blocked = dispatched.find((a) => a.type === "FANOUT_BLOCKED");
+    expect(blocked).toBeDefined();
+    expect("reason" in blocked! && (blocked as { reason: string }).reason).toContain("only 1 of 3");
+    expect(getProviderMock).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === "FANOUT_START")).toBe(false);
+  });
+
+  it("auto-disables incapable slots and starts the fanout with only the capable ones", async () => {
+    setModelCapabilities("openrouter", "model-a", { image: true, pdf: false });
+    setModelCapabilities("umans", "model-b", { image: true, pdf: false });
+    chatStreamMock.mockImplementation(async function* () {
+      yield "answer";
+    });
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    const state = { ...stateWithSlots(THREE_SLOTS), attachments: [IMAGE_ATT] };
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+
+    await controller.runFanout();
+
+    expect(dispatched.some((a) => a.type === "TOGGLE_SLOT" && a.id === "s3")).toBe(true);
+    const start = dispatched.find((a) => a.type === "FANOUT_START") as
+      | { candidates: { id: string }[] }
+      | undefined;
+    expect(start?.candidates.map((c) => c.id)).toEqual(["cand-s1", "cand-s2"]);
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(false);
+  });
+
+  it("proceeds normally when every enabled slot can see images", async () => {
+    setModelCapabilities("openrouter", "model-a", { image: true, pdf: false });
+    setModelCapabilities("umans", "model-b", { image: true, pdf: false });
+    setModelCapabilities("gemini", "model-c", { image: true, pdf: false });
+    chatStreamMock.mockImplementation(async function* () {
+      yield "answer";
+    });
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    const state = { ...stateWithSlots(THREE_SLOTS), attachments: [IMAGE_ATT] };
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+
+    await controller.runFanout();
+
+    expect(dispatched.some((a) => a.type === "TOGGLE_SLOT")).toBe(false);
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(false);
+  });
+});
+
+describe("retryCandidate — frozen attachment set from runContext (7.6.6)", () => {
+  afterEach(() => clearModelCapabilities());
+
+  it("streams the retry with the ORIGINAL attachments even if the user changed state", async () => {
+    chatStreamMock.mockImplementation(async function* () {
+      yield "retried answer";
+    });
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    const failed = {
+      ...doneCandidate("cand-s1", "openrouter", "model-a", "old answer"),
+      status: "error" as const,
+      errorMessage: "boom",
+      segments: [],
+    };
+    const state: StudioState = {
+      ...stateWithSlots(TWO_SLOTS),
+      candidates: [
+        failed,
+        doneCandidate("cand-s2", "umans", "model-b", "answer from model B"),
+      ],
+      runContext: {
+        prompt: "original task",
+        evaluation: { kind: "holistic" },
+        attachments: [TEXT_ATT],
+        attachmentsToJudge: true,
+      },
+      attachments: [], // user removed the files after the run
+    };
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+
+    await controller.retryCandidate(state.candidates[0]);
+
+    expect(dispatched.some((a) => a.type === "RETRY_CANDIDATE_START")).toBe(true);
+    // The retry streamed the FROZEN attachment, not the now-empty live set.
+    const messages = (chatStreamMock.mock.calls[0][0] as { messages: { content: string | unknown[] }[] })
+      .messages;
+    expect(JSON.stringify(messages)).toContain("attached notes body");
   });
 });

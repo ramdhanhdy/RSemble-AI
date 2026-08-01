@@ -338,7 +338,7 @@ function makeOutputPaneState(overrides: Partial<StudioState> = {}): StudioState 
     judgeStatus: "error",
     judgeError: "The AI judge could not be reached.",
     candidates: [makeDoneCandidate("c1", "Model A"), makeDoneCandidate("c2", "Model B")],
-    runContext: { prompt: "original task", evaluation: HOLISTIC_EVALUATION },
+    runContext: { prompt: "original task", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
     ...overrides,
   };
 }
