@@ -100,6 +100,29 @@ Use your ChatGPT subscription entitlements locally without Platform API key bill
 Rank and Fuse share the same pipeline and fork only at the finish, so you can start in
 either mode and switch per run.
 
+### Task attachments
+
+Attach files to the task with the **Attach** button, drag & drop onto the task field, or
+paste a screenshot directly (`Ctrl+V`) — every enabled model receives the same set, so
+the comparison stays apples-to-apples.
+
+| Kind | Delivered as |
+|---|---|
+| Image (PNG, JPEG, WebP, GIF) | Native image part — only to models that support vision |
+| PDF | Native file part to PDF-capable models; extracted text to the rest |
+| Markdown / text / source code / JSON / CSV | Extracted text block |
+| `.docx` | Extracted text block |
+
+Limits: 10 files per task, 20 MB per file, 40 MB total. Files live in the tab's memory
+only — nothing is uploaded, and run history stores attachment names/kinds/sizes as
+metadata, never content.
+
+Vision gating is explicit, never silent: the capability strip under the task shows
+`Vision: X of Y selected models`; models that cannot see images are auto-disabled at
+pre-flight, and a run is blocked when fewer than two selected models can read images.
+The judge sees extracted text always; native media is sent to the judge only when small
+enough (≤ 4 images and ≤ 4 MB, toggleable in the judge settings).
+
 ## Tech stack
 
 React 18 · TypeScript · Vite 5 · Tailwind CSS 3 · lucide-react

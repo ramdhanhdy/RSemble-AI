@@ -18,6 +18,7 @@ import { describe, it, expect } from "vitest";
 import type { ChatMessage, ProviderId } from "../providers/types";
 import type { JudgeReport, ConsensusBreakdown, CandidateEvaluation } from "../../studio-data";
 import type { RunSource, ExecutionFence, RunRecordV2 } from "./run-types";
+import { isRunRecordV2 } from "./run-types";
 import {
   createRunRecordBuilder,
   type RunRecordBuilderState,
@@ -740,5 +741,57 @@ describe("RunRecordBuilder — source metadata", () => {
     });
     expect(expRecord.source.kind).toBe("experiment");
     expect(expRecord.source).toEqual(expSource);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Attachment metadata — plan 7.7.2
+// ---------------------------------------------------------------------------
+
+describe("run record builder — attachment metadata (7.7.2)", () => {
+  it("records attachment metadata (never bytes/text) when provided", () => {
+    const builder = createRunRecordBuilder(makeDeps());
+    const state = builder.createInitialState();
+    const record = builder.applyFanoutStart(state, {
+      runId: "run-1", source: ADHOC, mode: "rank",
+      task: { title: "T", prompt: "p", systemPrompt: "", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      slots: [
+        { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+        { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
+      ],
+      fence: { ownerId: "tab-1", fence: 1 },
+      attachments: [
+        { name: "shot.png", kind: "image", bytes: 1024 },
+        { name: "notes.md", kind: "text", bytes: 200 },
+      ],
+    });
+
+    expect(record.attachments).toEqual([
+      { name: "shot.png", kind: "image", bytes: 1024 },
+      { name: "notes.md", kind: "text", bytes: 200 },
+    ]);
+    // Bytes/text of the attachment never appear on the record.
+    const serialized = JSON.stringify(record);
+    expect(serialized).not.toContain("data:");
+    expect(serialized).not.toContain("iVBOR");
+  });
+
+  it("omits the field entirely for attachment-free runs (pre-attachments shape)", () => {
+    const builder = createRunRecordBuilder(makeDeps());
+    const state = builder.createInitialState();
+    const record = builder.applyFanoutStart(state, {
+      runId: "run-1", source: ADHOC, mode: "rank",
+      task: { title: "T", prompt: "p", systemPrompt: "", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      slots: [
+        { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+        { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
+      ],
+      fence: { ownerId: "tab-1", fence: 1 },
+    });
+    expect("attachments" in record).toBe(false);
+    // Old records without the field still validate.
+    expect(isRunRecordV2(record)).toBe(true);
   });
 });

@@ -88,8 +88,12 @@ export function createRunController(deps: RunControllerDeps) {
             // Persist the resolved evaluation profile so run evidence (and
             // summary provenance) reflects the actual scoring protocol.
             evaluation: { profile: resolveEvaluationProfile(s.evaluation), candidateMessages: [] },
-            slots: s.slots,
+            // The eligibility gate may have filtered slots (spec §5.1) — the
+            // record must match the fanout that actually ran.
+            slots: slotsOverride ?? s.slots,
             fence: { ownerId: "tab-1", fence: epoch },
+            // Attachment metadata only — never bytes or text (spec §9).
+            attachments: s.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })),
           });
         }
       },

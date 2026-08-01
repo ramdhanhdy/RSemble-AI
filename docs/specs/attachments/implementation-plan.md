@@ -122,12 +122,12 @@ New: `src/lib/attachments/extract.ts` (+ `image.ts`, `pdf.ts`, `docx.ts`)
 
 ## Phase 7.7 — Cross-cutting polish
 
-- [ ] 7.7.1 `cost.ts`: `estimateAttachmentTokens` (text heuristic, image tile formula, native-PDF per-page estimate); wire into the Run button estimate.
-- [ ] 7.7.2 `run-history.ts`: `RunRecord.attachments` metadata only; migrate/tolerate older records without the field.
-- [ ] 7.7.3 `export-markdown.ts`: `## Attachments` section.
-- [ ] 7.7.4 Object-URL leak audit + test (spec §10.8).
-- [ ] 7.7.5 `README.md`: attachments quickstart, supported types, limits table, capability caveats.
-- [ ] 7.7.6 `npm run check` clean; manual pass of every acceptance criterion in spec §10, including the 25 MB rejection and the mixed-capability block.
+- [x] 7.7.1 `cost.ts`: `estimateAttachmentTokens` (text heuristic, image tile formula, native-PDF per-page estimate); wire into the Run button estimate.
+- [x] 7.7.2 `run-history.ts`: `RunRecord.attachments` metadata only; migrate/tolerate older records without the field.
+- [x] 7.7.3 `export-markdown.ts`: `## Attachments` section.
+- [x] 7.7.4 Object-URL leak audit + test (spec §10.8).
+- [x] 7.7.5 `README.md`: attachments quickstart, supported types, limits table, capability caveats.
+- [x] 7.7.6 `npm run check` clean; manual pass of every acceptance criterion in spec §10, including the 25 MB rejection and the mixed-capability block.
 
 **Exit:** feature complete per spec §10; `TODOS.md` Phase 7 fully checked.
 

@@ -108,6 +108,16 @@ export type RunSource =
 
 // --- Run summaries ------------------------------------------------------------
 
+/**
+ * Attachment metadata persisted on a run record (spec §9, plan 7.7.2).
+ * Metadata ONLY — bytes and extracted text never leave the tab's memory.
+ */
+export interface TaskAttachmentMeta {
+  name: string;
+  kind: "image" | "pdf" | "text" | "doc";
+  bytes: number;
+}
+
 export interface FullRunSummaryV2 {
   kind: "full";
   schemaVersion: 2;
@@ -215,6 +225,8 @@ export interface RunRecordV2 {
   mode: "rank" | "fuse";
   source: RunSource;
   task: { title: string; prompt: string; systemPrompt: string; temperature: number };
+  /** Attachment metadata for the run's task — absent for older records. */
+  attachments?: TaskAttachmentMeta[];
   evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
   candidates: PersistedCandidate[];
   judge: {

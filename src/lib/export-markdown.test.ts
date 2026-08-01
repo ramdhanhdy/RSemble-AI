@@ -329,3 +329,63 @@ describe("buildExportMarkdown — blind judge audit trail", () => {
     expect(md).toContain("M1 — 4.5/5");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Attachments section — plan 7.7.3
+// ---------------------------------------------------------------------------
+
+describe("buildExportMarkdown — attachments section (7.7.3)", () => {
+  it("renders an ## Attachments list with kind, size, and truncated flag", () => {
+    const s: StudioState = {
+      ...baseState,
+      candidates: [
+        {
+          id: "c1",
+          model: "Model A",
+          provider: "OpenRouter",
+          providerId: "openrouter",
+          slug: "model-a",
+          accent: "A",
+          strategy: "Parallel model",
+          summary: "x",
+          scores: {},
+          weightedScore: 4,
+          segments: [{ id: "c1-s0", text: "answer" }],
+          status: "done",
+        },
+      ],
+      attachments: [
+        { id: "att-1", name: "shot.png", kind: "image", mimeType: "image/png", bytes: 2 * 1024 * 1024, status: "ready" },
+        { id: "att-2", name: "notes.md", kind: "text", mimeType: "text/markdown", bytes: 1500, status: "ready", text: "x", truncated: true },
+      ],
+    };
+    const md = buildExportMarkdown(s)!;
+    expect(md).toContain("## Attachments");
+    expect(md).toContain("- shot.png — image, 2.0 MB");
+    expect(md).toContain("- notes.md — text, 1.5 KB (truncated)");
+  });
+
+  it("omits the section when no attachments exist", () => {
+    const s: StudioState = {
+      ...baseState,
+      candidates: [
+        {
+          id: "c1",
+          model: "Model A",
+          provider: "OpenRouter",
+          providerId: "openrouter",
+          slug: "model-a",
+          accent: "A",
+          strategy: "Parallel model",
+          summary: "x",
+          scores: {},
+          weightedScore: 4,
+          segments: [{ id: "c1-s0", text: "answer" }],
+          status: "done",
+        },
+      ],
+    };
+    const md = buildExportMarkdown(s)!;
+    expect(md).not.toContain("## Attachments");
+  });
+});

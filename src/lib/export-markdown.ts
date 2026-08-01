@@ -4,6 +4,7 @@
 
 import { candidateFullText } from "./pipeline";
 import type { StudioState } from "../studio-engine";
+import { formatBytes } from "./attachments/limits";
 
 /**
  * Sanitize judge-provided or model-provided free text for safe Markdown export.
@@ -23,6 +24,16 @@ export function buildExportMarkdown(s: StudioState): string | null {
   if (done.length === 0 && !s.fusedText) return null;
 
   const lines: string[] = [`# RSemble AI — Export`, ``, `## Task`, ``, s.prompt, ``];
+
+  // Attachment metadata (spec §9, plan 7.7.3) — names/kinds/sizes only, the
+  // record never contains the bytes or extracted text.
+  if (s.attachments.length > 0) {
+    lines.push(`## Attachments`, ``);
+    for (const a of s.attachments) {
+      lines.push(`- ${a.name} — ${a.kind}, ${formatBytes(a.bytes)}${a.truncated ? " (truncated)" : ""}`);
+    }
+    lines.push(``);
+  }
 
   // Record how the result was judged when a custom judge instruction was
   // applied — enough context to understand the ranking/fusion afterwards.

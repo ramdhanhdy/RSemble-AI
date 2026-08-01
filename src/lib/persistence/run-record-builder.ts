@@ -20,6 +20,7 @@ import type {
   FullRunSummaryV2,
   RunStatus,
   RunSource,
+  TaskAttachmentMeta,
   AttemptStatus,
   PersistedError,
   PersistedCandidate,
@@ -41,6 +42,8 @@ export interface FanoutStartInput {
   evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
   slots: ModelSlot[];
   fence: ExecutionFence;
+  /** Attachment metadata for the record (plan 7.7.2) — never bytes/text. */
+  attachments?: TaskAttachmentMeta[];
 }
 
 export interface CandidateAttemptStartInput {
@@ -149,6 +152,11 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       mode: input.mode,
       source: input.source,
       task: { ...input.task },
+      // Recorded only when attachments exist, so attachment-free records keep
+      // their pre-attachments shape byte-for-byte.
+      ...(input.attachments && input.attachments.length > 0
+        ? { attachments: input.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })) }
+        : {}),
       evaluation: { profile: input.evaluation.profile, candidateMessages: input.evaluation.candidateMessages },
       candidates,
       judge: {
