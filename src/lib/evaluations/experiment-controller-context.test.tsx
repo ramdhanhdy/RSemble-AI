@@ -52,6 +52,32 @@ async function settle(ms = 30): Promise<void> {
   });
 }
 
+/**
+ * Poll `cond` inside act() until it holds, with a generous ceiling. Replaces a
+ * fixed wall-clock wait on a variable-latency async effect (the startup sweep)
+ * — fast when the effect is fast, patient under load, and the ceiling still
+ * catches a genuinely broken sweep. Throws the last error if time runs out.
+ */
+async function waitUntil(cond: () => Promise<boolean>, timeoutMs = 3000, stepMs = 25): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown;
+  while (Date.now() < deadline) {
+    try {
+      let ok = false;
+      await act(async () => {
+        ok = await cond();
+      });
+      if (ok) return;
+    } catch (err) {
+      lastErr = err;
+    }
+    await settle(stepMs);
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(`waitUntil: condition not met within ${timeoutMs}ms`);
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
 });
@@ -150,9 +176,11 @@ describe("ExperimentControllerProvider startup recovery", () => {
         </RepositoryContext.Provider>
       </MemoryRouter>,
     );
-    await settle(60);
-
     // The stale run is swept to interrupted — spinner stops, status truthful.
+    // Wait on the condition, not a fixed clock: the sweep is a fire-and-forget
+    // async effect whose latency varies under load.
+    await waitUntil(async () => (await runRepo.get("run-stuck"))?.status === "interrupted");
+
     const recovered = await runRepo.get("run-stuck");
     expect(recovered?.status).toBe("interrupted");
     expect(recovered?.completedAt).not.toBeNull();
@@ -192,7 +220,11 @@ describe("ExperimentControllerProvider startup recovery", () => {
         </RepositoryContext.Provider>
       </MemoryRouter>,
     );
-    await settle(60);
+    // Assert an absence: the sweep must not fabricate history. Unlike the
+    // condition-poll above, an absence can only be checked after a quiet
+    // window — there is no positive signal to wait for. Use a generous fixed
+    // window so the sweep has definitely had its chance even under load.
+    await settle(250);
 
     // Startup recovery must not fabricate history: no runs exist, none are created.
     expect(await runRepo.list({ limit: 10 })).toHaveLength(0);
