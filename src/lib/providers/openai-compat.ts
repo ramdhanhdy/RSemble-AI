@@ -7,6 +7,7 @@
 
 import {
   type CatalogModel,
+  type ChatMessage,
   type ChatOptions,
   type LLMProvider,
   type ProviderId,
@@ -14,6 +15,8 @@ import {
   ProviderError,
 } from "./types";
 import { readSseChatStream } from "./sse-stream";
+import { toOpenAIMessages } from "./content";
+import { setModelCapabilities } from "./capabilities";
 
 export interface OpenAICompatConfig {
   id: ProviderId;
@@ -28,6 +31,12 @@ export interface OpenAICompatConfig {
   apiKeyRequired?: boolean;
   /** How readiness is established: "credential" (sync key check) or "models" (async /models probe). Default: "credential". */
   readinessProbe?: "credential" | "models";
+  /**
+   * Whether this gateway can transport image parts (OpenAI `image_url` data
+   * URLs). Default: false — media parts reaching a non-image config are
+   * rejected with a ProviderError before any request is sent (spec §5).
+   */
+  supportsImages?: boolean;
 }
 
 function getKey(envKey: string, storageKey: string): string {
@@ -45,6 +54,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
     id, label, baseUrl, envKey, storageKey, modelsPath, completionsPath, extraHeaders,
     apiKeyRequired = true,
     readinessProbe = "credential",
+    supportsImages = false,
   } = config;
 
   function getApiKey(): string {
@@ -59,6 +69,26 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
     };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     return headers;
+  }
+
+  /**
+   * Reject media parts before any network I/O when the config does not declare
+   * image support (attachments plan 7.4.2). Text parts and plain strings always
+   * pass — an attachment-free run must never hit this gate.
+   */
+  function assertTransportable(messages: ChatMessage[]): void {
+    if (supportsImages) return;
+    for (const m of messages) {
+      if (typeof m.content === "string") continue;
+      for (const part of m.content) {
+        if (part.type === "image" || part.type === "file") {
+          throw new ProviderError(
+            `${label} does not support image or file attachments (supportsImages is off for this provider). Remove the attachment or use a vision-capable provider.`,
+            id
+          );
+        }
+      }
+    }
   }
 
   async function parseError(res: Response, providerId: ProviderId): Promise<ProviderError> {
@@ -153,6 +183,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
           id
         );
       }
+      assertTransportable(opts.messages);
 
       let res: Response;
       try {
@@ -161,7 +192,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
           headers: buildHeaders(key),
           body: JSON.stringify({
             model: opts.model,
-            messages: opts.messages,
+            messages: toOpenAIMessages(opts.messages),
             temperature: opts.temperature,
             max_tokens: opts.maxTokens,
             stream: false,
@@ -191,6 +222,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
           id
         );
       }
+      assertTransportable(opts.messages);
 
       let res: Response;
       try {
@@ -199,7 +231,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
           headers: buildHeaders(key),
           body: JSON.stringify({
             model: opts.model,
-            messages: opts.messages,
+            messages: toOpenAIMessages(opts.messages),
             temperature: opts.temperature,
             max_tokens: opts.maxTokens,
             stream: true,
@@ -235,8 +267,15 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         return arr
           .map((m) => {
             const model = m as { id?: string; name?: string };
+            const modelId = model.id ?? "";
+            // Record transport capabilities from the config flag: a gateway
+            // either speaks OpenAI image_url parts for every model or for none
+            // (spec §5, plan 7.4.2). PDFs have no openai-compat path in v1.
+            if (modelId.length > 0) {
+              setModelCapabilities(id, modelId, { image: supportsImages, pdf: false });
+            }
             return {
-              id: model.id ?? "",
+              id: modelId,
               name: model.name ?? model.id ?? "",
               providerId: id,
             };

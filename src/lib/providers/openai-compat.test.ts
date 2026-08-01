@@ -283,3 +283,103 @@ describe("createOpenAICompatProvider — default remains key-required", () => {
     await expect(provider.chatCompletion({ model: "m", messages: [] })).rejects.toBeInstanceOf(ProviderError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Attachment transport gate — plan 7.4.2
+// ---------------------------------------------------------------------------
+
+const mediaMessages = [
+  {
+    role: "user" as const,
+    content: [
+      { type: "text" as const, text: "prompt" },
+      { type: "image" as const, mimeType: "image/png", data: "iVBORw0KGgo" },
+    ],
+  },
+];
+
+function stubKeyAndOkChat() {
+  vi.stubGlobal("localStorage", {
+    getItem: () => "sk-test",
+    setItem: () => {},
+    removeItem: () => {},
+  });
+  return vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ choices: [{ message: { content: "hello" } }] }), { status: 200 }),
+  );
+}
+
+describe("createOpenAICompatProvider — supportsImages gate (7.4.2)", () => {
+  it.each(["image", "file"])("rejects a %s part before any fetch when supportsImages is off", async (partType) => {
+    const fetchMock = stubKeyAndOkChat();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider(config);
+
+    const messages = [
+      {
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: "prompt" },
+          ...(partType === "image"
+            ? [{ type: "image" as const, mimeType: "image/png", data: "iVBOR" }]
+            : [{ type: "file" as const, mimeType: "application/pdf", data: "JVBER", filename: "r.pdf" }]),
+        ],
+      },
+    ];
+
+    const err = await provider
+      .chatCompletion({ model: "m", messages })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).toContain("supportsImages");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects media parts on the streaming path too", async () => {
+    const fetchMock = stubKeyAndOkChat();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider(config);
+
+    const stream = provider.chatCompletionStream({ model: "m", messages: mediaMessages });
+    await expect(stream.next()).rejects.toBeInstanceOf(ProviderError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("passes string content through untouched even with the gate on", async () => {
+    const fetchMock = stubKeyAndOkChat();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider(config);
+
+    await provider.chatCompletion({
+      model: "m",
+      messages: [{ role: "user", content: "plain text" }],
+      temperature: 0.1,
+      maxTokens: 42,
+    });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    // Byte-identical regression: string content is not wrapped or rewritten.
+    expect(body.messages).toEqual([{ role: "user", content: "plain text" }]);
+  });
+
+  it("maps image parts to image_url data URLs when supportsImages is true", async () => {
+    const fetchMock = stubKeyAndOkChat();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, supportsImages: true });
+
+    await provider.chatCompletion({ model: "m", messages: mediaMessages });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "prompt" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgo" } },
+        ],
+      },
+    ]);
+  });
+});

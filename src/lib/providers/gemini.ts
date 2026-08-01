@@ -6,6 +6,7 @@ import {
   type CatalogModel,
   type ChatMessage,
   type ChatOptions,
+  type ContentPart,
   type LLMProvider,
   type ProviderReadiness,
   ProviderError,
@@ -23,18 +24,54 @@ function getApiKey(): string {
   }
 }
 
+/**
+ * Map one message's content to Gemini parts (attachments plan 7.4.1).
+ * String content maps to `[{ text }]` exactly as before; `ContentPart[]`
+ * maps text parts to `{ text }` and image/file parts (base64, no prefix) to
+ * `{ inlineData: { mimeType, data } }` — the verified current shape for all
+ * `gemini-*` models (spec §5).
+ */
+function mapContentToGeminiParts(
+  content: string | ContentPart[]
+): { text?: string; inlineData?: { mimeType: string; data: string } }[] {
+  if (typeof content === "string") return [{ text: content }];
+  return content.map((part) => {
+    switch (part.type) {
+      case "text":
+        return { text: part.text };
+      case "image":
+      case "file":
+        return { inlineData: { mimeType: part.mimeType, data: part.data } };
+    }
+  });
+}
+
 /** Map ChatMessage[] to Gemini systemInstruction + contents shape */
 function mapMessagesToGemini(messages: ChatMessage[]) {
   const systemMsg = messages.find((m) => m.role === "system");
   const nonSystemMsgs = messages.filter((m) => m.role !== "system");
 
+  // System messages are always plain strings (spec §4); if one ever carries
+  // parts, project to text rather than emitting an invalid `text` value.
   const systemInstruction = systemMsg
-    ? { parts: [{ text: systemMsg.content }] }
+    ? {
+        parts: [
+          {
+            text:
+              typeof systemMsg.content === "string"
+                ? systemMsg.content
+                : systemMsg.content
+                    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
+                    .map((p) => p.text)
+                    .join("\n"),
+          },
+        ],
+      }
     : undefined;
 
   const contents = nonSystemMsgs.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
+    parts: mapContentToGeminiParts(m.content),
   }));
 
   return { systemInstruction, contents };

@@ -67,12 +67,12 @@ New: `src/lib/attachments/extract.ts` (+ `image.ts`, `pdf.ts`, `docx.ts`)
 
 ## Phase 7.3 — Content parts + first provider (OpenRouter)
 
-- [ ] 7.3.1 `providers/types.ts`: add `ContentPart`; widen `ChatMessage.content` to `string | ContentPart[]`.
-- [ ] 7.3.2 `providers/capabilities.ts`: `ModelCapabilities`, `getModelCapabilities(providerId, slug)`, and a capability cache populated from `listModels`. Unknown ⇒ `{ image: false, pdf: false }`.
-- [ ] 7.3.3 `openrouter.ts`: `toOpenAIContent(content)` — `string` passes through **unchanged**; `ContentPart[]` maps `text` → `{type:"text"}`, `image` → `{type:"image_url", image_url:{url:"data:…"}}`, `file` → `{type:"file", file:{filename, file_data}}`. Applied in both `chatCompletion` and `chatCompletionStream`.
-- [ ] 7.3.4 `openrouter.listModels`: read `architecture.input_modalities` and record capabilities in the cache. (Verified 2026-07-31: all 336 models expose this field.)
-- [ ] 7.3.5 Surface HTTP 413 / 415 detail verbatim through `ProviderError` (already the shape; add a test).
-- [ ] 7.3.6 Tests `providers/openrouter.test.ts`: **golden snapshot** of the request body for a string-content message (must equal the pre-change body), plus bodies for image-only, pdf-only, and mixed parts; capability parsing from a realistic `listModels` payload.
+- [x] 7.3.1 `providers/types.ts`: add `ContentPart`; widen `ChatMessage.content` to `string | ContentPart[]`.
+- [x] 7.3.2 `providers/capabilities.ts`: `ModelCapabilities`, `getModelCapabilities(providerId, slug)`, and a capability cache populated from `listModels`. Unknown ⇒ `{ image: false, pdf: false }`.
+- [x] 7.3.3 `openrouter.ts`: `toOpenAIContent(content)` — `string` passes through **unchanged**; `ContentPart[]` maps `text` → `{type:"text"}`, `image` → `{type:"image_url", image_url:{url:"data:…"}}`, `file` → `{type:"file", file:{filename, file_data}}`. Applied in both `chatCompletion` and `chatCompletionStream`. (Mapper lives in `providers/content.ts` per 7.4.2; OpenRouter imports it.)
+- [x] 7.3.4 `openrouter.listModels`: read `architecture.input_modalities` and record capabilities in the cache. (Verified 2026-07-31: all 336 models expose this field.)
+- [x] 7.3.5 Surface HTTP 413 / 415 detail verbatim through `ProviderError` (already the shape; add a test).
+- [x] 7.3.6 Tests `providers/openrouter.test.ts`: **golden snapshot** of the request body for a string-content message (must equal the pre-change body), plus bodies for image-only, pdf-only, and mixed parts; capability parsing from a realistic `listModels` payload.
 
 **Exit:** OpenRouter can carry an image and a PDF; attachment-free bodies byte-identical.
 
@@ -80,11 +80,11 @@ New: `src/lib/attachments/extract.ts` (+ `image.ts`, `pdf.ts`, `docx.ts`)
 
 ## Phase 7.4 — Remaining providers
 
-- [ ] 7.4.1 `gemini.ts`: extend `mapMessagesToGemini` so a `ContentPart[]` user message becomes `parts: [{text}, {inlineData:{mimeType,data}}, …]`. String content path untouched. (Format verified 2026-07-31: `inlineData` with `mimeType`/`data` in `contents[].parts` is current for all `gemini-*` models.)
-- [ ] 7.4.2 `openai-compat.ts`: add `supportsImages?: boolean` to `OpenAICompatConfig` (default `false`); reuse the OpenRouter `toOpenAIContent` mapper (extract it to `providers/content.ts` so both import it); throw a clear `ProviderError` if a media part reaches a config with `supportsImages: false`. Applies to `commandcode`, `clinepass`, `umans`, and `9router`.
-- [ ] 7.4.3 Codex bridge: translate `content` arrays to Responses API `input_text`/`input_image`; reject `file` parts with HTTP 415 + readable message; raise the JSON body limit to 48 MB with a 413 message above it.
-- [ ] 7.4.4 Bridge `GET /health` returns `capabilities: { image: true, pdf: false }`; `chatgpt-codex.ts` feeds that into the capability cache during `readiness()`.
-- [ ] 7.4.5 Tests: `gemini` parts snapshot (string path golden-snapshot unchanged), `openai-compat` reject path, `server/tests/` case for array-content translation + 415 on `file` + 413 on oversize.
+- [x] 7.4.1 `gemini.ts`: extend `mapMessagesToGemini` so a `ContentPart[]` user message becomes `parts: [{text}, {inlineData:{mimeType,data}}, …]`. String content path untouched. (Format verified 2026-07-31: `inlineData` with `mimeType`/`data` in `contents[].parts` is current for all `gemini-*` models.)
+- [x] 7.4.2 `openai-compat.ts`: add `supportsImages?: boolean` to `OpenAICompatConfig` (default `false`); reuse the OpenRouter `toOpenAIContent` mapper (extract it to `providers/content.ts` so both import it); throw a clear `ProviderError` if a media part reaches a config with `supportsImages: false`. Applies to `commandcode`, `clinepass`, `umans`, and `9router`.
+- [x] 7.4.3 Codex bridge: translate `content` arrays to Responses API `input_text`/`input_image`; reject `file` parts with HTTP 415 + readable message; raise the JSON body limit to 48 MB with a 413 message above it.
+- [x] 7.4.4 Bridge `GET /health` returns `capabilities: { image: true, pdf: false }`; `chatgpt-codex.ts` feeds that into the capability cache during `readiness()`.
+- [x] 7.4.5 Tests: `gemini` parts snapshot (string path golden-snapshot unchanged), `openai-compat` reject path, `server/tests/` case for array-content translation + 415 on `file` + 413 on oversize.
 
 **Exit:** every registered provider either transports attachments correctly or refuses them with a message the UI can show. All string-content snapshots unchanged.
 

@@ -8,7 +8,34 @@ import { getValidToken } from "./auth.js";
 
 export interface ChatMessageInput {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | BridgeContentPart[];
+}
+
+/**
+ * OpenAI-shaped content parts accepted from the web adapter (spec §7).
+ * `{type:"file"}` is recognized but rejected with HTTP 415 — v1 has no Codex
+ * PDF path (spec §7, plan 7.4.3).
+ */
+export type BridgeContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+  | { type: "file"; file: { filename: string; file_data: string } };
+
+/**
+ * Map one OpenAI-style part to the Responses API input-item shape (spec §7):
+ * `input_text` for text, `input_image` with a data URL for images. File parts
+ * are rejected with 415 before translation ever runs.
+ */
+function toResponseApiPart(part: BridgeContentPart): unknown {
+  switch (part.type) {
+    case "text":
+      return { type: "input_text", text: part.text };
+    case "image_url":
+      return { type: "input_image", image_url: part.image_url.url };
+    case "file":
+      // Unreachable: file parts are rejected with 415 above translation.
+      return { type: "input_file", filename: part.file.filename, file_data: part.file.file_data };
+  }
 }
 
 export interface CompletionRequestBody {
@@ -54,6 +81,31 @@ export async function handleCompletions(
   const getToken = deps.getToken ?? getValidToken;
   const timeoutMs = deps.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS;
 
+  // Attachment-aware content translation (spec §7, plan 7.4.3). Two paths:
+  // - All-string content: the legacy flattened input, byte-identical to what
+  //   this bridge sent before attachments existed.
+  // - Any ContentPart[]: per-message Responses API input items.
+  // File parts have no Codex transport in v1 — reject with 415 (a message the
+  // web adapter surfaces verbatim) before any upstream or auth work, so the
+  // response does not depend on login state.
+  const hasParts = reqBody.messages.some((m) => Array.isArray(m.content));
+
+  if (hasParts) {
+    for (const m of reqBody.messages) {
+      if (!Array.isArray(m.content)) continue;
+      const filePart = m.content.find((p) => p.type === "file");
+      if (filePart) {
+        sendJson(res, 415, {
+          error: {
+            message: `File attachments are not supported by the Codex bridge (v1): "${filePart.file.filename}". Convert the file to text or use a provider with PDF support.`,
+            type: "unsupported_media_type",
+          },
+        });
+        return;
+      }
+    }
+  }
+
   let tokenData: { token: string; accountId?: string };
   try {
     tokenData = await getToken();
@@ -87,17 +139,43 @@ export async function handleCompletions(
   const systemMsg = reqBody.messages.find((m) => m.role === "system");
   const nonSystemMsgs = reqBody.messages.filter((m) => m.role !== "system");
 
-  const instructions = systemMsg ? systemMsg.content : "You are a helpful, rigorous assistant.";
-  const inputPrompt = nonSystemMsgs
-    .map((m) => (m.role === "user" ? m.content : `Assistant: ${m.content}`))
-    .join("\n\n");
+  const instructions = systemMsg
+    ? typeof systemMsg.content === "string"
+      ? systemMsg.content
+      : systemMsg.content
+          .filter((p): p is Extract<BridgeContentPart, { type: "text" }> => p.type === "text")
+          .map((p) => p.text)
+          .join("\n")
+    : "You are a helpful, rigorous assistant.";
 
   const modelSlug = reqBody.model && reqBody.model.length > 0 ? reqBody.model : "gpt-5.6-sol";
+
+  let input: unknown[];
+  if (hasParts) {
+    input = nonSystemMsgs.map((m) => ({
+      type: "message",
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: Array.isArray(m.content)
+        ? m.content.map(toResponseApiPart)
+        : [{ type: "input_text", text: m.content }],
+    }));
+    if (input.length === 0) {
+      input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }];
+    }
+  } else {
+    const inputPrompt = nonSystemMsgs
+      .map((m) => {
+        const text = typeof m.content === "string" ? m.content : "";
+        return m.role === "user" ? text : `Assistant: ${text}`;
+      })
+      .join("\n\n");
+    input = [{ role: "user", content: inputPrompt || "hello" }];
+  }
 
   const upstreamBody = {
     model: modelSlug,
     instructions,
-    input: [{ role: "user", content: inputPrompt || "hello" }],
+    input,
     store: false,
     stream: true,
   };

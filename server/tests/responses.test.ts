@@ -255,3 +255,138 @@ describe("handleCompletions — auth", () => {
     expect(res.writeHead).toHaveBeenCalledWith(401, expect.objectContaining({ "Content-Type": "application/json" }));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Content-array translation — attachments plan 7.4.3
+// ---------------------------------------------------------------------------
+
+function captureUpstreamBody(fetchMock: ReturnType<typeof vi.fn>) {
+  const init = fetchMock.mock.calls[0][1] as RequestInit;
+  return JSON.parse(init.body as string);
+}
+
+describe("handleCompletions — content parts (7.4.3)", () => {
+  it("keeps the all-string upstream body byte-identical to pre-attachments", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(
+      {
+        model: "gpt-5.6-sol",
+        messages: [
+          { role: "system", content: "You are a judge." },
+          { role: "user", content: "hello" },
+          { role: "assistant", content: "hi there" },
+        ],
+        stream: true,
+      },
+      res,
+      { getToken: authOk },
+    );
+
+    const body = captureUpstreamBody(fetchMock);
+    expect(body.input).toEqual([{ role: "user", content: "hello\n\nAssistant: hi there" }]);
+    expect(body.instructions).toBe("You are a judge.");
+    // Legacy flattening: the input item has no type wrapper and no part array.
+    expect(body.input[0]).toEqual({ role: "user", content: "hello\n\nAssistant: hi there" });
+  });
+
+  it("translates text and image_url parts to Responses API input items", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(
+      {
+        model: "gpt-5.6-sol",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "read this chart" },
+              { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgo" } },
+            ],
+          },
+        ],
+        stream: true,
+      },
+      res,
+      { getToken: authOk },
+    );
+
+    const body = captureUpstreamBody(fetchMock);
+    expect(body.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "read this chart" },
+          { type: "input_image", image_url: "data:image/png;base64,iVBORw0KGgo" },
+        ],
+      },
+    ]);
+    expect(body.instructions).toBe("You are a helpful, rigorous assistant.");
+  });
+
+  it("preserves roles and wraps string messages alongside part messages", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(
+      {
+        model: "gpt-5.6-sol",
+        messages: [
+          { role: "assistant", content: "first answer" },
+          { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA" } }] },
+        ],
+        stream: true,
+      },
+      res,
+      { getToken: authOk },
+    );
+
+    const body = captureUpstreamBody(fetchMock);
+    expect(body.input).toEqual([
+      { type: "message", role: "assistant", content: [{ type: "input_text", text: "first answer" }] },
+      { type: "message", role: "user", content: [{ type: "input_image", image_url: "data:image/jpeg;base64,AAAA" }] },
+    ]);
+  });
+
+  it("rejects file parts with HTTP 415 before any auth or upstream call", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(
+      {
+        model: "gpt-5.6-sol",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "summarize" },
+              { type: "file", file: { filename: "report.pdf", file_data: "data:application/pdf;base64,JVBER" } },
+            ],
+          },
+        ],
+        stream: true,
+      },
+      res,
+      {
+        getToken: () => {
+          throw new Error("must not be called");
+        },
+      },
+    );
+
+    expect(res.writeHead).toHaveBeenCalledWith(415, expect.objectContaining({ "Content-Type": "application/json" }));
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.error.type).toBe("unsupported_media_type");
+    expect(body.error.message).toContain("report.pdf");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { createBridgeServer } from "../codex-bridge/index";
+import { createBridgeServer, DEFAULT_MAX_BODY_BYTES } from "../codex-bridge/index";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -86,10 +86,19 @@ describe("bridge — request size limit", () => {
       const oversized = JSON.stringify({ model: "m", messages: [], pad: "x".repeat(512) });
       const res = await rawPost(url, "/v1/chat/completions", oversized);
       expect(res.status).toBe(413);
-      expect(JSON.parse(res.body).error.type).toBe("request_too_large");
+      const body = JSON.parse(res.body);
+      expect(body.error.type).toBe("request_too_large");
+      // Readable reason: names the limit and why attachment bodies are large
+      // (spec §7: the adapter surfaces the message verbatim).
+      expect(body.error.message).toContain("128-byte limit");
+      expect(body.error.message).toMatch(/base64|attached/i);
     } finally {
       await closeServer(server);
     }
+  });
+
+  it("defaults the JSON body limit to 48 MB for attachment payloads (7.4.3)", () => {
+    expect(DEFAULT_MAX_BODY_BYTES).toBe(48 * 1024 * 1024);
   });
 
   it("destroys the socket on oversize so the client cannot keep streaming", async () => {
@@ -165,12 +174,16 @@ describe("bridge — request error rejection", () => {
 // ---------------------------------------------------------------------------
 
 describe("bridge — static endpoints", () => {
-  it("GET /health returns ok", async () => {
+  it("GET /health returns ok with attachment capabilities", async () => {
     const { server, url } = await startServer();
     try {
       const res = await fetch(`${url}/health`);
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ status: "ok", service: "rsemble-codex-bridge" });
+      expect(await res.json()).toEqual({
+        status: "ok",
+        service: "rsemble-codex-bridge",
+        capabilities: { image: true, pdf: false },
+      });
     } finally {
       await closeServer(server);
     }

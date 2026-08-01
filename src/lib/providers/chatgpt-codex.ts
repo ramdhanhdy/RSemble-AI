@@ -10,6 +10,7 @@ import {
   ProviderError,
 } from "./types";
 import { readSseChatStream } from "./sse-stream";
+import { setProviderCapabilities } from "./capabilities";
 
 function getBridgeUrl(): string {
   return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
@@ -25,15 +26,33 @@ export const chatgptCodexProvider: LLMProvider = {
   async readiness(signal?: AbortSignal): Promise<ProviderReadiness> {
     const baseUrl = getBridgeUrl();
     try {
-      const res = await fetch(`${baseUrl}/auth/status`, { signal });
-      if (!res.ok) {
+      const [authRes, healthRes] = await Promise.all([
+        fetch(`${baseUrl}/auth/status`, { signal }),
+        fetch(`${baseUrl}/health`, { signal }),
+      ]);
+      if (!authRes.ok) {
         return {
           ok: false,
-          reason: `Codex bridge returned HTTP ${res.status}. Check bridge server.`,
+          reason: `Codex bridge returned HTTP ${authRes.status}. Check bridge server.`,
         };
       }
-      const data = (await res.json()) as { ok?: boolean; error?: string };
+      const data = (await authRes.json()) as { ok?: boolean; error?: string };
       if (data.ok) {
+        // Record bridge attachment capabilities (spec §7, plan 7.4.4): the
+        // Codex backend has one capability set for every model it serves, so
+        // it is recorded as a provider-wide default. Per-model records, if any
+        // ever appear, still take precedence in the capability cache.
+        if (healthRes.ok) {
+          const health = (await healthRes.json().catch(() => null)) as {
+            capabilities?: { image?: boolean; pdf?: boolean };
+          } | null;
+          if (health?.capabilities) {
+            setProviderCapabilities("chatgpt-codex", {
+              image: health.capabilities.image === true,
+              pdf: health.capabilities.pdf === true,
+            });
+          }
+        }
         return { ok: true };
       }
       return {

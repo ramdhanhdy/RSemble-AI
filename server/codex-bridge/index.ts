@@ -13,8 +13,13 @@ import { BRIDGE_SERVICE, listenOrReuseBridge } from "./startup.js";
 const PORT = Number.parseInt(process.env.RSEMBLE_CODEX_BRIDGE_PORT || "8787", 10);
 const HOST = "127.0.0.1";
 
-/** Default maximum accepted JSON body size for POST endpoints (1 MiB). */
-export const DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024;
+/**
+ * Default maximum accepted JSON body size for POST endpoints (48 MiB).
+ * Raised from 1 MiB for attachment payloads (plan 7.4.3): attachment bytes
+ * travel as base64 (≈1.37× raw), so the effective raw cap for a 40 MB task
+ * is ~54 MB of body — 48 MB keeps a hard ceiling just under that.
+ */
+export const DEFAULT_MAX_BODY_BYTES = 48 * 1024 * 1024;
 
 export interface BridgeServerOptions {
   /** Maximum bytes accepted for a JSON request body before 413. */
@@ -80,7 +85,7 @@ function readJsonBody(
         settled = true;
         sendJson(res, 413, {
           error: {
-            message: `Request body exceeds the ${maxBytes}-byte limit.`,
+            message: `Request body exceeds the ${maxBytes}-byte limit. Attachment payloads are base64-encoded (about 1.37x raw size); reduce the size or number of attached files.`,
             type: "request_too_large",
           },
         });
@@ -167,7 +172,14 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
     }
 
     if (req.method === "GET" && pathName === "/health") {
-      sendJson(res, 200, { status: "ok", service: BRIDGE_SERVICE });
+      sendJson(res, 200, {
+        status: "ok",
+        service: BRIDGE_SERVICE,
+        // Attachment capability flag for the web adapter's capability cache
+        // (spec §7, plan 7.4.4): the Codex backend takes Responses-API
+        // input_image data URLs, but has no PDF (file) path in v1.
+        capabilities: { image: true, pdf: false },
+      });
       return;
     }
 

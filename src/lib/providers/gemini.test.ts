@@ -195,3 +195,109 @@ describe("gemini listModels — abort semantics", () => {
     await expect(geminiProvider.listModels!(ctrl.signal)).rejects.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// chatCompletion content mapping — attachments plan 7.4.1
+// ---------------------------------------------------------------------------
+
+function okGeminiChat(): Response {
+  return new Response(
+    JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+describe("gemini chatCompletion — content parts mapping (7.4.1)", () => {
+  it("keeps the string-content request body byte-identical to pre-attachments", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okGeminiChat());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geminiProvider.chatCompletion({
+      model: "gemini-3.6-flash",
+      messages: [
+        { role: "system", content: "You are a judge." },
+        { role: "user", content: "hello" },
+      ],
+      temperature: 0.2,
+      maxTokens: 512,
+    });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.body).toBe(
+      JSON.stringify({
+        systemInstruction: { parts: [{ text: "You are a judge." }] },
+        contents: [{ role: "user", parts: [{ text: "hello" }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
+      }),
+    );
+  });
+
+  it("maps text, image, and file parts to text/inlineData parts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okGeminiChat());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geminiProvider.chatCompletion({
+      model: "gemini-3.6-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "prompt" },
+            { type: "image", mimeType: "image/png", data: "iVBORw0KGgo" },
+            { type: "file", mimeType: "application/pdf", data: "JVBERi0xLjQ", filename: "report.pdf" },
+          ],
+        },
+      ],
+    });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.contents).toEqual([
+      {
+        role: "user",
+        parts: [
+          { text: "prompt" },
+          { inlineData: { mimeType: "image/png", data: "iVBORw0KGgo" } },
+          { inlineData: { mimeType: "application/pdf", data: "JVBERi0xLjQ" } },
+        ],
+      },
+    ]);
+    expect(body.systemInstruction).toBeUndefined();
+  });
+
+  it("uses the same parts mapping on the streaming endpoint", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}\n\n', {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const chunks: string[] = [];
+    for await (const chunk of geminiProvider.chatCompletionStream({
+      model: "gemini-3.6-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "prompt" },
+            { type: "image", mimeType: "image/webp", data: "UklGR" },
+          ],
+        },
+      ],
+    })) {
+      chunks.push(chunk);
+    }
+    expect(chunks).toEqual(["hi"]);
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.contents[0].parts).toEqual([
+      { text: "prompt" },
+      { inlineData: { mimeType: "image/webp", data: "UklGR" } },
+    ]);
+  });
+});
