@@ -25,11 +25,11 @@ inert until Phase 6.5 wires the UI.
 
 ## Phase 7.0 — Spec lock (docs only)
 
-- [ ] 7.0.1 Land `docs/specs/attachments/attachments-spec.md` (this set of files).
-- [ ] 7.0.2 Add `DECISIONS.md` entry: attachments are **inline base64 only** — no provider Files API, no server-side storage, no text substitute for images.
-- [ ] 7.0.3 Add `PROVIDERS.md` section: attachment capability matrix + per-adapter transport (spec §5), including 9router.
-- [ ] 7.0.4 Add `PRODUCT.md` §5 IN row ("task attachments: images / PDF / md / docx") and OUT rows (OCR, Files API, persistence, audio/video).
-- [ ] 7.0.5 Append Phase 7 checklist to `TODOS.md` pointing at this file.
+- [x] 7.0.1 Land `docs/specs/attachments/attachments-spec.md` (this set of files).
+- [x] 7.0.2 Add `DECISIONS.md` entry: attachments are **inline base64 only** — no provider Files API, no server-side storage, no text substitute for images.
+- [x] 7.0.3 Add `PROVIDERS.md` section: attachment capability matrix + per-adapter transport (spec §5), including 9router.
+- [x] 7.0.4 Add `PRODUCT.md` §5 IN row ("task attachments: images / PDF / md / docx") and OUT rows (OCR, Files API, persistence, audio/video).
+- [x] 7.0.5 Append Phase 7 checklist to `TODOS.md` pointing at this file.
 
 **Exit:** docs consistent; no code touched.
 
@@ -39,11 +39,11 @@ inert until Phase 6.5 wires the UI.
 
 New: `src/lib/attachments/types.ts`, `src/lib/attachments/classify.ts`, `src/lib/attachments/limits.ts`
 
-- [ ] 7.1.1 `types.ts`: `AttachmentKind`, `AttachmentStatus`, `Attachment` exactly as spec §4.
-- [ ] 7.1.2 `classify.ts`: `classifyFile(file: File): { kind: AttachmentKind; mimeType: string } | { rejected: string }`. MIME first, extension fallback (Windows reports `""` often). Explicit rejections for `.doc`, archives, audio/video, spreadsheets — each with the exact copy from spec §3.
-- [ ] 7.1.3 `limits.ts`: `MAX_FILES`, `MAX_FILE_BYTES`, `MAX_TOTAL_BYTES`, `MAX_TEXT_CHARS_PER_FILE`, `MAX_TEXT_CHARS_TOTAL`, `MAX_IMAGE_DIM`, plus `admitFiles(existing, incoming)` returning `{ accepted: File[]; rejections: { name: string; reason: string }[] }`. Pure function, no DOM.
-- [ ] 7.1.4 `sanitizeName(name: string): string` (control chars, ANSI, whitespace collapse, 120-char cap).
-- [ ] 7.1.5 Tests `src/lib/attachments/classify.test.ts`, `limits.test.ts`: every accepted extension, every rejection reason, over-count, over-size, over-total (partial admission keeps the non-offending files), name sanitization incl. `..\..\etc` and CRLF injection.
+- [x] 7.1.1 `types.ts`: `AttachmentKind`, `AttachmentStatus`, `Attachment` exactly as spec §4.
+- [x] 7.1.2 `classify.ts`: `classifyFile(file: File): { kind: AttachmentKind; mimeType: string } | { rejected: string }`. MIME first, extension fallback (Windows reports `""` often). Explicit rejections for `.doc`, archives, audio/video, spreadsheets — each with the exact copy from spec §3.
+- [x] 7.1.3 `limits.ts`: `MAX_FILES`, `MAX_FILE_BYTES`, `MAX_TOTAL_BYTES`, `MAX_TEXT_CHARS_PER_FILE`, `MAX_TEXT_CHARS_TOTAL`, `MAX_IMAGE_DIM`, plus `admitFiles(existing, incoming)` returning `{ accepted: File[]; rejections: { name: string; reason: string }[] }`. Pure function, no DOM.
+- [x] 7.1.4 `sanitizeName(name: string): string` (control chars, ANSI, whitespace collapse, 120-char cap).
+- [x] 7.1.5 Tests `src/lib/attachments/classify.test.ts`, `limits.test.ts`: every accepted extension, every rejection reason, over-count, over-size, over-total (partial admission keeps the non-offending files), name sanitization incl. `..\..\etc` and CRLF injection.
 
 **Exit:** pure modules, 100% of branches in `classify`/`admitFiles` covered. No UI, no state.
 
@@ -53,13 +53,13 @@ New: `src/lib/attachments/types.ts`, `src/lib/attachments/classify.ts`, `src/lib
 
 New: `src/lib/attachments/extract.ts` (+ `image.ts`, `pdf.ts`, `docx.ts`)
 
-- [ ] 7.2.1 `readAsBase64(file): Promise<string>` — `FileReader`/`arrayBuffer` → base64 without the data-URL prefix, chunked to avoid `String.fromCharCode` stack overflow on large buffers.
-- [ ] 7.2.2 `image.ts`: `prepareImage(file)` → decode with `createImageBitmap`, downscale to fit `MAX_IMAGE_DIM` preserving aspect, re-encode to `image/png` (or keep JPEG if already JPEG and within bounds), return `{ data, width, height, mimeType }`. GIF → first frame.
-- [ ] 7.2.3 `pdf.ts`: `extractPdf(file)` → **dynamic** `import("pdfjs-dist")`, return `{ pageCount, text, truncated }`. Zero extractable text ⇒ `{ text: "", pageCount }` and the caller records `noExtractableText`.
-- [ ] 7.2.4 `docx.ts`: `extractDocx(file)` → **dynamic** `import("mammoth")` → `extractRawText`.
-- [ ] 7.2.5 `extract.ts`: `extractAttachment(file, kind): Promise<Partial<Attachment>>` dispatching on kind; `text` kinds read via `file.text()`; all paths truncate at `MAX_TEXT_CHARS_PER_FILE` appending `[truncated: N of M characters shown]`; all paths catch and return a human-readable `error`.
-- [ ] 7.2.6 Add `pdfjs-dist` + `mammoth` to `dependencies`; confirm via `npm run build` that neither appears in the entry chunk (dynamic-import chunk only).
-- [ ] 7.2.7 Tests: truncation boundary, `[truncated: …]` marker, corrupt-PDF error text, empty-text PDF, base64 round-trip of a >1 MB buffer, downscale math (`4000×3000 → 4096 cap` no-op vs `8000×2000 → 4096×1024`).
+- [x] 7.2.1 `readAsBase64(file): Promise<string>` — `FileReader`/`arrayBuffer` → base64 without the data-URL prefix, chunked to avoid `String.fromCharCode` stack overflow on large buffers.
+- [x] 7.2.2 `image.ts`: `prepareImage(file)` → decode with `createImageBitmap`, downscale to fit `MAX_IMAGE_DIM` preserving aspect, re-encode to `image/png` (or keep JPEG if already JPEG and within bounds), return `{ data, width, height, mimeType }`. GIF → first frame.
+- [x] 7.2.3 `pdf.ts`: `extractPdf(file)` → **dynamic** `import("pdfjs-dist")`, return `{ pageCount, text, truncated }`. Zero extractable text ⇒ `{ text: "", pageCount }` and the caller records `noExtractableText`.
+- [x] 7.2.4 `docx.ts`: `extractDocx(file)` → **dynamic** `import("mammoth")` → `extractRawText`.
+- [x] 7.2.5 `extract.ts`: `extractAttachment(file, kind): Promise<Partial<Attachment>>` dispatching on kind; `text` kinds read via `file.text()`; all paths truncate at `MAX_TEXT_CHARS_PER_FILE` appending `[truncated: N of M characters shown]`; all paths catch and return a human-readable `error`.
+- [x] 7.2.6 Add `pdfjs-dist` + `mammoth` to `dependencies`; confirm via `npm run build` that neither appears in the entry chunk (dynamic-import chunk only).
+- [x] 7.2.7 Tests: truncation boundary, `[truncated: …]` marker, corrupt-PDF error text, empty-text PDF, base64 round-trip of a >1 MB buffer, downscale math (`4000×3000 → 4096 cap` no-op vs `8000×2000 → 4096×1024`).
 
 **Exit:** `extractAttachment` handles every kind and every failure without throwing. Bundle unaffected when no file is attached.
 
