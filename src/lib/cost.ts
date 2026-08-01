@@ -24,6 +24,34 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * Approximate token contribution of attachments (spec §9, plan 7.5.4).
+ * Provider-agnostic: extracted text uses the existing char heuristic, images
+ * use the tile formula ceil(w/512)×ceil(h/512)×170 + 85, native PDFs use
+ * pages × 1500. A kind with no estimate data contributes 0 (unknown, not a
+ * guess).
+ */
+export function estimateAttachmentTokens(
+  attachments: { kind: string; text?: string; width?: number; height?: number; pages?: number }[]
+): number {
+  let total = 0;
+  for (const a of attachments) {
+    if (a.kind === "image") {
+      const w = a.width ?? 0;
+      const h = a.height ?? 0;
+      if (w > 0 && h > 0) {
+        total += Math.ceil(w / 512) * Math.ceil(h / 512) * 170 + 85;
+      }
+    } else if (a.kind === "pdf") {
+      const pages = a.pages ?? 0;
+      total += pages > 0 ? pages * 1500 : a.text ? estimateTokens(a.text) : 0;
+    } else if (a.text) {
+      total += estimateTokens(a.text);
+    }
+  }
+  return total;
+}
+
 export function estimateCost(
   tokensIn: number,
   tokensOut: number,

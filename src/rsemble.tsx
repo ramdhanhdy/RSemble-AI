@@ -25,6 +25,9 @@ import { ModeToggle } from "./ui/ModeToggle";
 import { ModelList } from "./ui/ModelList";
 import { EvaluationDisclosure } from "./ui/EvaluationDisclosure";
 import { TaskInput } from "./ui/TaskInput";
+import { AttachmentChips } from "./ui/AttachmentChips";
+import { AttachmentCapabilityStrip } from "./ui/AttachmentCapabilityStrip";
+import { useAttachments } from "./ui/useAttachments";
 import { RunButton } from "./ui/RunButton";
 import { JudgeConfig } from "./ui/JudgeConfig";
 import { OutputPane } from "./ui/OutputPane";
@@ -598,6 +601,7 @@ function CommandPane({
 }) {
   const enabledCount = state.slots.filter((s) => s.enabled).length;
   const hasRun = state.candidates.length > 0 || state.running;
+  const attachmentUi = useAttachments(state.attachments, dispatch);
   return (
     <div className="flex h-full flex-col gap-4 p-5">
       <PaneLabel
@@ -613,13 +617,32 @@ function CommandPane({
         }
       />
 
-      <TaskInput prompt={state.prompt} exampleIndex={state.exampleIndex} dispatch={dispatch} />
+      <TaskInput
+        prompt={state.prompt}
+        exampleIndex={state.exampleIndex}
+        dispatch={dispatch}
+        attachments={state.attachments}
+        onAddFiles={attachmentUi.addFiles}
+      />
+      <AttachmentChips
+        attachments={state.attachments}
+        thumbnails={attachmentUi.thumbnails}
+        notice={attachmentUi.notice}
+        onRemove={attachmentUi.remove}
+      />
+      <AttachmentCapabilityStrip
+        slots={state.slots}
+        attachments={state.attachments}
+        dispatch={dispatch}
+      />
       <ModelList slots={state.slots} models={state.models} dispatch={dispatch} />
       <JudgeConfig
         critic={state.critic}
         models={state.models}
         dispatch={dispatch}
         judgeInstruction={state.judgeInstruction}
+        attachments={state.attachments}
+        attachmentsToJudge={state.attachmentsToJudge}
       />
       <EvaluationDisclosure
         evaluation={state.evaluation}

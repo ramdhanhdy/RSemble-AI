@@ -25,4 +25,6 @@ export interface Attachment {
   /** Image intrinsic size after downscale, for the UI chip and token estimate. */
   width?: number;
   height?: number;
+  /** Page count for PDFs (spec §8.2 announcements, §9 token estimate). */
+  pages?: number;
 }

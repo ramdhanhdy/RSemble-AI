@@ -86,6 +86,8 @@ function makeStudioState(
     systemPrompt: "",
     critic: { providerId: "openrouter", model: "judge" },
     judgeInstruction: "",
+    attachments: [],
+    attachmentsToJudge: true,
     candidates,
     running: false,
     models: [],

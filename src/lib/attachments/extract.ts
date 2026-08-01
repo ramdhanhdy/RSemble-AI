@@ -148,6 +148,8 @@ export interface ExtractionResult {
   height?: number;
   pageCount?: number;
   noExtractableText?: boolean;
+  /** Final media type after image re-encode — may differ from the file's (spec §4). */
+  mimeType?: string;
   error?: string;
 }
 
@@ -167,17 +169,24 @@ export async function extractAttachment(
           data: prepared.data,
           width: prepared.width,
           height: prepared.height,
+          // Re-encode (downscale → PNG) can change the type; the attachment
+          // must record what is actually sent (spec §4).
+          mimeType: prepared.mimeType,
         };
       }
 
       case "pdf": {
-        // Try text extraction first; if no text, fall back to base64 for native transport
+        // Both channels are produced up front (plan 7.4 follow-up): base64 for
+        // pdf-capable slots (native `file` part, spec §3) and extracted text
+        // for text-only slots and the judge. 7.6 routes per slot — the data
+        // must exist regardless of which slots are enabled.
+        const data = await readAsBase64(file);
         const extraction = await extractPdf(file);
         if (extraction.noExtractableText) {
-          const data = await readAsBase64(file);
           return { data, pageCount: extraction.pageCount, noExtractableText: true };
         }
         return {
+          data,
           text: extraction.text,
           truncated: extraction.truncated,
           pageCount: extraction.pageCount,

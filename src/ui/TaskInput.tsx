@@ -18,20 +18,35 @@
 // it. Its armed state is announced via aria-label and title.
 // =============================================================================
 
-import { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Paperclip, Sparkles } from "lucide-react";
 import type { Action } from "../studio-engine";
-import { estimateTokens } from "../lib/cost";
+import { estimateAttachmentTokens, estimateTokens } from "../lib/cost";
 import { EXAMPLE_TASKS } from "../lib/test-cases";
+import type { Attachment } from "../lib/attachments/types";
+
+/** Accepted picker types for the hidden input (spec §3). HEIC is offered; a
+ *  browser that cannot decode it rejects at extraction with a named reason. */
+const ATTACH_ACCEPT = [
+  "image/png", "image/jpeg", "image/webp", "image/gif", "image/heic",
+  "application/pdf",
+  ".md", ".mdx", ".txt", ".csv", ".json",
+  ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".sql", ".yml", ".yaml", ".toml",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+].join(",");
 
 export function TaskInput({
   prompt,
   exampleIndex,
   dispatch,
+  attachments,
+  onAddFiles,
 }: {
   prompt: string;
   exampleIndex: number;
   dispatch: React.Dispatch<Action>;
+  attachments: Attachment[];
+  onAddFiles: (files: File[]) => void;
 }) {
   const hasText = prompt.trim().length > 0;
   // True when the prompt is still exactly the last-loaded curated example — the
@@ -39,6 +54,21 @@ export function TaskInput({
   const isUneditedExample =
     exampleIndex >= 0 && EXAMPLE_TASKS[exampleIndex]?.prompt === prompt;
   const [armed, setArmed] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Drag & drop onto the whole task field. Depth counter so child elements do
+  // not flicker the overlay (spec §8.1); Escape cancels the drop (spec §8.2).
+  const [dragDepth, setDragDepth] = useState(0);
+  const dragging = dragDepth > 0;
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDragDepth(0);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dragging]);
 
   // Disarm whenever the prompt leaves the "user text that needs confirmation"
   // state — i.e. it became empty, or it became an unedited example again.
@@ -88,42 +118,101 @@ export function TaskInput({
         >
           Task
         </label>
-        <button
-          type="button"
-          onClick={onClick}
-          aria-label={label}
-          title={title}
-          className={`flex min-h-[44px] items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-colors ${
-            armed
-              ? "border-warning/60 bg-warning/10 text-warning"
-              : "border-edge text-text-secondary hover:border-edge-bright hover:text-text"
-          }`}
-        >
-          <Sparkles size={12} aria-hidden="true" />
-          {armed ? "Replace" : "Try an example"}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            aria-label="Attach files to this task"
+            title="Attach files — images, PDF, Markdown, .docx"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider text-text-secondary transition-colors hover:border-edge-bright hover:text-text"
+          >
+            <Paperclip size={12} aria-hidden="true" />
+            Attach
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ATTACH_ACCEPT}
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length > 0) onAddFiles(files);
+              // Reset so re-selecting the same file fires change again.
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={label}
+            title={title}
+            className={`flex min-h-[44px] items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-colors ${
+              armed
+                ? "border-warning/60 bg-warning/10 text-warning"
+                : "border-edge text-text-secondary hover:border-edge-bright hover:text-text"
+            }`}
+          >
+            <Sparkles size={12} aria-hidden="true" />
+            {armed ? "Replace" : "Try an example"}
+          </button>
+        </div>
       </div>
-      <div className="relative mt-2">
+      <div
+        className="relative mt-2"
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragDepth((d) => d + 1);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => setDragDepth((d) => Math.max(0, d - 1))}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragDepth(0);
+          const files = Array.from(e.dataTransfer?.files ?? []);
+          if (files.length > 0) onAddFiles(files);
+        }}
+      >
         <textarea
           id="prompt"
           aria-label="Task"
           rows={4}
           value={prompt}
           onChange={(e) => dispatch({ type: "SET_PROMPT", value: e.target.value })}
+          onPaste={(e) => {
+            // Screenshot → Ctrl+V is the single most common attach path (spec
+            // §8.1): a paste carrying files attaches instead of inserting text.
+            const pasted = Array.from(e.clipboardData?.files ?? []);
+            if (pasted.length > 0) {
+              e.preventDefault();
+              onAddFiles(pasted);
+            }
+          }}
           placeholder="Describe the task — e.g. write a 600-word article on…"
           className="w-full resize-y rounded-md border border-edge bg-card px-3 py-3 pb-7 text-sm text-text placeholder-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
-        <Counter value={prompt} />
+        <Counter value={prompt} attachments={attachments} />
+        {dragging && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-accent bg-accent/[0.06] font-mono text-sm text-accent"
+          >
+            Drop files — images, PDF, Markdown, .docx
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function Counter({ value }: { value: string }) {
+function Counter({ value, attachments }: { value: string; attachments: Attachment[] }) {
   const tokens = estimateTokens(value);
+  const fromFiles = attachments.length > 0 ? estimateAttachmentTokens(attachments) : 0;
   return (
     <span className="pointer-events-none absolute bottom-2.5 right-3 font-mono text-xs tabular-nums text-text-muted">
-      ~{tokens} tokens
+      ~{tokens} tokens{fromFiles > 0 ? ` · +${fromFiles} from files` : ""}
     </span>
   );
 }

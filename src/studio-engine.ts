@@ -26,6 +26,8 @@ import {
 import type { CatalogModel, CriticRef, ProviderId } from "./lib/providers/types";
 import { loadStoredCritic, loadStoredSlots } from "./lib/preferences";
 import { EXAMPLE_TASKS, nextExampleIndex } from "./lib/test-cases";
+import type { Attachment } from "./lib/attachments/types";
+import { MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from "./lib/attachments/limits";
 import {
   HOLISTIC_EVALUATION,
   deepCopyEvaluationConfig,
@@ -64,6 +66,15 @@ export interface StudioState {
    *  from the task prompt and weighted rubric. Empty string = no instruction
    *  (prompts stay byte-identical to the pre-instruction baseline). */
   judgeInstruction: string;
+
+  // --- task attachments (attachments spec §4) ---
+  /** In-memory attachment set for the current task. Bytes/text never persist
+   *  to localStorage or history (metadata only, phase 7.7). */
+  attachments: Attachment[];
+  /** Whether native media (image/pdf parts) is also sent to the judge/fusion
+   *  critic (spec §6.2). Auto-defaulted on attachment-set changes; the user can
+   *  override via SET_ATTACHMENTS_TO_JUDGE until the next set change. */
+  attachmentsToJudge: boolean;
 
   // --- live pipeline execution state ---
   candidates: Candidate[];
@@ -108,6 +119,13 @@ export type Action =
   | { type: "SET_CRITIC"; critic: CriticRef }
   | { type: "SET_CRITIC_MODEL"; value: string }
   | { type: "SET_JUDGE_INSTRUCTION"; value: string }
+  // --- attachments (spec §4.1, §9) ---
+  | { type: "ADD_ATTACHMENTS"; attachments: Attachment[] }
+  | { type: "ATTACHMENT_READY"; id: string; data?: string; text?: string; truncated?: boolean; width?: number; height?: number; pageCount?: number; mimeType?: string }
+  | { type: "ATTACHMENT_FAILED"; id: string; error: string }
+  | { type: "REMOVE_ATTACHMENT"; id: string }
+  | { type: "CLEAR_ATTACHMENTS" }
+  | { type: "SET_ATTACHMENTS_TO_JUDGE"; value: boolean }
   // --- pipeline ---
   | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext }
   | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
@@ -165,6 +183,24 @@ function criterionScoresToMap(
   }
   return out;
 }
+/**
+ * Spec §6.2 thresholds for auto-sending native media to the judge.
+ * Default ON when the native payload is small enough that re-sending it to
+ * the critic is cheap: ≤ 4 MB total native bytes AND ≤ 4 images.
+ */
+export const NATIVE_TO_JUDGE_MAX_BYTES = 4 * 1024 * 1024;
+export const NATIVE_TO_JUDGE_MAX_IMAGES = 4;
+
+/** Compute the spec §6.2 default for `attachmentsToJudge` from a set. */
+export function computeAttachmentsToJudgeDefault(attachments: Attachment[]): boolean {
+  const nativeBytes = attachments.reduce(
+    (sum, a) => sum + (a.kind === "image" || a.kind === "pdf" ? a.bytes : 0),
+    0
+  );
+  const imageCount = attachments.filter((a) => a.kind === "image").length;
+  return nativeBytes <= NATIVE_TO_JUDGE_MAX_BYTES && imageCount <= NATIVE_TO_JUDGE_MAX_IMAGES;
+}
+
 export function reducer(state: StudioState, action: Action): StudioState {
   switch (action.type) {
     case "SET_MODE":
@@ -243,6 +279,76 @@ export function reducer(state: StudioState, action: Action): StudioState {
 
     case "SET_JUDGE_INSTRUCTION":
       return { ...state, judgeInstruction: action.value };
+
+    case "ADD_ATTACHMENTS": {
+      // Defence in depth: the picker already ran admitFiles (spec §3.1), but a
+      // file that slips past it can never enter state. Per-file admission:
+      // over-count and over-total reject only the offending files, keeping the
+      // rest — mirroring admitFiles exactly.
+      const next = [...state.attachments];
+      for (const att of action.attachments) {
+        if (next.length >= MAX_FILES) break;
+        if (att.bytes > MAX_FILE_BYTES) continue;
+        const total = next.reduce((sum, a) => sum + a.bytes, 0);
+        if (total + att.bytes > MAX_TOTAL_BYTES) continue;
+        next.push(att);
+      }
+      return {
+        ...state,
+        attachments: next,
+        // The auto-default tracks the set; a user override (SET_ATTACHMENTS_TO_JUDGE)
+        // persists until the next set change (spec §6.2).
+        attachmentsToJudge: computeAttachmentsToJudgeDefault(next),
+      };
+    }
+
+    case "ATTACHMENT_READY":
+      return {
+        ...state,
+        attachments: state.attachments.map((a) =>
+          a.id === action.id
+            ? {
+                ...a,
+                status: "ready",
+                error: undefined,
+                data: action.data ?? a.data,
+                text: action.text ?? a.text,
+                truncated: action.truncated ?? a.truncated,
+                width: action.width ?? a.width,
+                height: action.height ?? a.height,
+                pages: action.pageCount ?? a.pages,
+                mimeType: action.mimeType ?? a.mimeType,
+              }
+            : a
+        ),
+      };
+
+    case "ATTACHMENT_FAILED":
+      return {
+        ...state,
+        attachments: state.attachments.map((a) =>
+          a.id === action.id ? { ...a, status: "error", error: action.error } : a
+        ),
+      };
+
+    case "REMOVE_ATTACHMENT": {
+      const next = state.attachments.filter((a) => a.id !== action.id);
+      return {
+        ...state,
+        attachments: next,
+        attachmentsToJudge: computeAttachmentsToJudgeDefault(next),
+      };
+    }
+
+    case "CLEAR_ATTACHMENTS":
+      return {
+        ...state,
+        attachments: [],
+        attachmentsToJudge: computeAttachmentsToJudgeDefault([]),
+      };
+
+    case "SET_ATTACHMENTS_TO_JUDGE":
+      return { ...state, attachmentsToJudge: action.value };
 
     case "FANOUT_START":
       return {
@@ -503,6 +609,8 @@ export const initialState: StudioState = {
   systemPrompt: SYSTEM_PROMPT_DEFAULT,
   critic: loadStoredCritic() ?? DEFAULT_CRITIC_REF,
   judgeInstruction: "",
+  attachments: [],
+  attachmentsToJudge: true,
   candidates: [],
   running: false,
   models: [],

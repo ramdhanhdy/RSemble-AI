@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { JudgeConfig, JudgeCombobox } from "./JudgeConfig";
 import type { Action } from "../studio-engine";
 import type { CatalogModel } from "../lib/providers/types";
+import type { Attachment } from "../lib/attachments/types";
 
 const noop: React.Dispatch<Action> = () => undefined;
 const NO_MODELS: CatalogModel[] = [];
@@ -14,12 +15,14 @@ const baseProps = {
   critic: { providerId: "openrouter" as const, model: "z-ai/glm-5.2" },
   models: NO_MODELS,
   dispatch: noop,
+  attachments: [] as Attachment[],
+  attachmentsToJudge: true,
 };
 
 describe("JudgeConfig — judge custom instruction input", () => {
   it("renders a clearly labelled optional judge-instruction input", () => {
     const html = renderToStaticMarkup(
-      <JudgeConfig {...baseProps} judgeInstruction="" />,
+      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[]} attachmentsToJudge={true} />,
     );
     // A visible label identifying it as the judge instruction.
     expect(html.toLowerCase()).toMatch(/judge instruction/);
@@ -27,7 +30,7 @@ describe("JudgeConfig — judge custom instruction input", () => {
 
   it("renders concise helper text explaining the instruction is optional", () => {
     const html = renderToStaticMarkup(
-      <JudgeConfig {...baseProps} judgeInstruction="" />,
+      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[]} attachmentsToJudge={true} />,
     );
     // Helper text must mention "optional" (or equivalent) so the user knows it
     // is not required and is judge-scoped.
@@ -36,7 +39,7 @@ describe("JudgeConfig — judge custom instruction input", () => {
 
   it("the instruction textarea is accessible via an associated label", () => {
     const html = renderToStaticMarkup(
-      <JudgeConfig {...baseProps} judgeInstruction="" />,
+      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[]} attachmentsToJudge={true} />,
     );
     // There must be a label[for] pointing at the input's id, or an
     // aria-label on the input itself, so AT users can reach it.
@@ -53,7 +56,7 @@ describe("JudgeConfig — judge custom instruction input", () => {
 
   it("the input meets the 44px touch-target minimum (WCAG 2.5.5)", () => {
     const html = renderToStaticMarkup(
-      <JudgeConfig {...baseProps} judgeInstruction="" />,
+      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[]} attachmentsToJudge={true} />,
     );
     const match = html.match(/<(textarea)[^>]*id="judge-instruction"[^>]*>/);
     expect(match).not.toBeNull();
@@ -120,7 +123,7 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
         critic={{ providerId: "gemini", model: "gemini-3.1-pro-preview" }}
         models={GEMINI_MODELS}
         dispatch={(a) => dispatched.push(a)}
-        judgeInstruction=""
+        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
       />,
     );
     try {
@@ -172,7 +175,7 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
         critic={{ providerId: "openrouter", model: "z-ai/glm-5.2" }}
         models={NO_MODELS}
         dispatch={(a) => dispatched.push(a)}
-        judgeInstruction=""
+        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
       />,
     );
     try {
@@ -202,7 +205,7 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
         critic={{ providerId: "openrouter", model: "z-ai/glm-5.2" }}
         models={NO_MODELS}
         dispatch={noop}
-        judgeInstruction=""
+        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
       />,
     );
     try {
@@ -229,7 +232,7 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
         critic={{ providerId: "gemini", model: "old-model" }}
         models={GEMINI_MODELS}
         dispatch={(a) => dispatched.push(a)}
-        judgeInstruction=""
+        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
       />,
     );
     try {
@@ -354,7 +357,7 @@ describe("JudgeCombobox — complete catalog (no slice cutoff)", () => {
         critic={{ providerId: "gemini", model: "old-model" }}
         models={models}
         dispatch={(a) => dispatched.push(a)}
-        judgeInstruction=""
+        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
       />,
     );
     try {
@@ -372,6 +375,67 @@ describe("JudgeCombobox — complete catalog (no slice cutoff)", () => {
         type: "SET_CRITIC",
         critic: { providerId: "gemini", model: "gemini-custom-fake" },
       });
+    } finally {
+      cleanup(h);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Send-attachments-to-judge toggle — plan 7.5.6
+// ---------------------------------------------------------------------------
+
+const IMAGE_ATTACHMENT = {
+  id: "att-1",
+  name: "shot.png",
+  kind: "image" as const,
+  mimeType: "image/png",
+  bytes: 100,
+  status: "ready" as const,
+  data: "AAAA",
+};
+
+describe("JudgeConfig — attachments-to-judge toggle (7.5.6)", () => {
+  it("is absent when the task has no native attachments", () => {
+    const html = renderToStaticMarkup(
+      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[]} attachmentsToJudge={true} />,
+    );
+    expect(html).not.toContain("Send attachments to judge");
+  });
+
+  it("renders when an image is attached, checked to match state", () => {
+    const html = renderToStaticMarkup(
+      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[IMAGE_ATTACHMENT]} attachmentsToJudge={true} />,
+    );
+    expect(html).toContain("Send attachments to judge");
+    const match = html.match(/<input[^>]*type="checkbox"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match![0]).toContain("checked");
+  });
+
+  it("explains the auto-off reason when unchecked", () => {
+    const html = renderToStaticMarkup(
+      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[IMAGE_ATTACHMENT]} attachmentsToJudge={false} />,
+    );
+    expect(html).toContain("4 images or 4 MB");
+  });
+
+  it("dispatches SET_ATTACHMENTS_TO_JUDGE on change", () => {
+    const dispatched: Action[] = [];
+    const h = render(
+      <JudgeConfig
+        critic={{ providerId: "openrouter", model: "z-ai/glm-5.2" }}
+        models={NO_MODELS}
+        dispatch={(a) => dispatched.push(a)}
+        judgeInstruction=""
+        attachments={[IMAGE_ATTACHMENT]}
+        attachmentsToJudge={true}
+      />,
+    );
+    try {
+      const checkbox = h.$('input[type="checkbox"]') as HTMLInputElement;
+      act(() => checkbox.click());
+      expect(dispatched).toEqual([{ type: "SET_ATTACHMENTS_TO_JUDGE", value: false }]);
     } finally {
       cleanup(h);
     }

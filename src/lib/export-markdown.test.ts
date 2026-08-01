@@ -13,6 +13,8 @@ const baseState: StudioState = {
   systemPrompt: "",
   critic: { providerId: "openrouter", model: "x" },
   judgeInstruction: "",
+  attachments: [],
+  attachmentsToJudge: true,
   candidates: [],
   running: false,
   models: [],

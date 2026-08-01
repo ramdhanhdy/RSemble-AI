@@ -92,13 +92,13 @@ New: `src/lib/attachments/extract.ts` (+ `image.ts`, `pdf.ts`, `docx.ts`)
 
 ## Phase 7.5 — State + UI
 
-- [ ] 7.5.1 `studio-engine.ts`: `attachments: Attachment[]` and `attachmentsToJudge: boolean` on `StudioState`; actions `ADD_ATTACHMENTS`, `ATTACHMENT_READY`, `ATTACHMENT_FAILED`, `REMOVE_ATTACHMENT`, `CLEAR_ATTACHMENTS`, `SET_ATTACHMENTS_TO_JUDGE`; `RESET_SESSION` clears them. Reducer enforces `MAX_FILES`/`MAX_TOTAL_BYTES` (defence in depth) and auto-computes the `attachmentsToJudge` default per spec §6.2.
-- [ ] 7.5.2 `src/ui/useAttachments.ts`: hook owning the `File` → dispatch lifecycle (`reading` → `extracting` → `ready`/`error`), object-URL creation for thumbnails, and revocation on remove/reset/unmount.
-- [ ] 7.5.3 `src/ui/AttachmentChips.tsx`: chip list with thumbnail/icon, name, size, status, `Remove` button, error text, and the `aria-live="polite"` announcer.
-- [ ] 7.5.4 `TaskInput.tsx`: `Attach` button + hidden input, drag & drop overlay with a depth counter, `paste` handler for `clipboardData.files`, counter becomes `~N tokens · +M from files`.
-- [ ] 7.5.5 `src/ui/AttachmentCapabilityStrip.tsx`: `Vision: X of Y selected models`, per-slot disclosure, `Disable incompatible` action.
-- [ ] 7.5.6 `JudgeConfig.tsx`: `Send attachments to judge` toggle bound to `attachmentsToJudge`, with the auto-off explanation.
-- [ ] 7.5.7 Tests: `studio-engine` reducer cases (cap enforcement, remove, reset, judge default flip at the 4-image/4 MB thresholds); `TaskInput.test.tsx` drop/paste/reject-reason rendering; `AttachmentChips` a11y (labels, live region).
+- [x] 7.5.1 `studio-engine.ts`: `attachments: Attachment[]` and `attachmentsToJudge: boolean` on `StudioState`; actions `ADD_ATTACHMENTS`, `ATTACHMENT_READY`, `ATTACHMENT_FAILED`, `REMOVE_ATTACHMENT`, `CLEAR_ATTACHMENTS`, `SET_ATTACHMENTS_TO_JUDGE`; `RESET_SESSION` clears them. Reducer enforces `MAX_FILES`/`MAX_TOTAL_BYTES` (defence in depth) and auto-computes the `attachmentsToJudge` default per spec §6.2.
+- [x] 7.5.2 `src/ui/useAttachments.ts`: hook owning the `File` → dispatch lifecycle (`reading` → `extracting` → `ready`/`error`), object-URL creation for thumbnails, and revocation on remove/reset/unmount.
+- [x] 7.5.3 `src/ui/AttachmentChips.tsx`: chip list with thumbnail/icon, name, size, status, `Remove` button, error text, and the `aria-live="polite"` announcer.
+- [x] 7.5.4 `TaskInput.tsx`: `Attach` button + hidden input, drag & drop overlay with a depth counter, `paste` handler for `clipboardData.files`, counter becomes `~N tokens · +M from files`.
+- [x] 7.5.5 `src/ui/AttachmentCapabilityStrip.tsx`: `Vision: X of Y selected models`, per-slot disclosure, `Disable incompatible` action.
+- [x] 7.5.6 `JudgeConfig.tsx`: `Send attachments to judge` toggle bound to `attachmentsToJudge`, with the auto-off explanation.
+- [x] 7.5.7 Tests: `studio-engine` reducer cases (cap enforcement, remove, reset, judge default flip at the 4-image/4 MB thresholds); `TaskInput.test.tsx` drop/paste/reject-reason rendering; `AttachmentChips` a11y (labels, live region).
 
 **Exit:** a user can attach, see, and remove files. Nothing is sent yet.
 

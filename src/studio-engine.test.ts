@@ -4,6 +4,8 @@ import type { Candidate } from "./studio-data";
 import type { ProviderId } from "./lib/providers/types";
 import type { EvaluationProfileSnapshot } from "./lib/evaluations/evaluation-types";
 import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-profile-adhoc";
+import type { Attachment } from "./lib/attachments/types";
+import { MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from "./lib/attachments/limits";
 
 function makeCandidate(id: string, providerId: ProviderId, slug: string): Candidate {
   return {
@@ -714,5 +716,173 @@ describe("reducer — SWAP_SLOT switches a slot's model", () => {
     });
     // The slot id is the stable identity the retry path keys on (cand-s1 → s1).
     expect(next.slots[0].id).toBe("s1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Attachments — plan 7.5.1
+// ---------------------------------------------------------------------------
+
+function makeAttachment(id: string, over: Partial<Attachment> = {}): Attachment {
+  return {
+    id,
+    name: `${id}.png`,
+    kind: "image",
+    mimeType: "image/png",
+    bytes: 1024,
+    status: "reading",
+    ...over,
+  };
+}
+
+describe("reducer — ADD_ATTACHMENTS", () => {
+  it("appends reading-state drafts and defaults attachmentsToJudge on", () => {
+    const next = reducer(initialState, {
+      type: "ADD_ATTACHMENTS",
+      attachments: [makeAttachment("att-1"), makeAttachment("att-2")],
+    });
+    expect(next.attachments.map((a) => a.id)).toEqual(["att-1", "att-2"]);
+    expect(next.attachments[0].status).toBe("reading");
+    expect(next.attachmentsToJudge).toBe(true);
+  });
+
+  it("enforces MAX_FILES defensively, keeping the first files", () => {
+    const state: StudioState = {
+      ...initialState,
+      attachments: Array.from({ length: MAX_FILES }, (_, i) => makeAttachment(`att-${i}`)),
+    };
+    const next = reducer(state, { type: "ADD_ATTACHMENTS", attachments: [makeAttachment("overflow")] });
+    expect(next.attachments.length).toBe(MAX_FILES);
+    expect(next.attachments.some((a) => a.id === "overflow")).toBe(false);
+  });
+
+  it("enforces MAX_TOTAL_BYTES per file, keeping non-offending files", () => {
+    const state: StudioState = { ...initialState, attachments: [] };
+    const next = reducer(state, {
+      type: "ADD_ATTACHMENTS",
+      attachments: [
+        makeAttachment("ok", { bytes: 1000 }),
+        makeAttachment("overflow", { bytes: MAX_TOTAL_BYTES }), // would exceed alone? no — with ok
+      ],
+    });
+    // ok (1000) fits; overflow (40 MB) pushes the total to 40 MB + 1000 > 40 MB → rejected.
+    expect(next.attachments.map((a) => a.id)).toEqual(["ok"]);
+  });
+
+  it("rejects a single file over MAX_FILE_BYTES but keeps the rest", () => {
+    const next = reducer(initialState, {
+      type: "ADD_ATTACHMENTS",
+      attachments: [makeAttachment("big", { bytes: MAX_FILE_BYTES + 1 }), makeAttachment("fine")],
+    });
+    expect(next.attachments.map((a) => a.id)).toEqual(["fine"]);
+  });
+});
+
+describe("reducer — attachment lifecycle transitions", () => {
+  it("ATTACHMENT_READY fills fields and flips status to ready", () => {
+    const state: StudioState = {
+      ...initialState,
+      attachments: [makeAttachment("att-1")],
+    };
+    const next = reducer(state, {
+      type: "ATTACHMENT_READY",
+      id: "att-1",
+      text: "extracted",
+      truncated: true,
+      pageCount: 3,
+    });
+    expect(next.attachments[0]).toMatchObject({
+      status: "ready",
+      text: "extracted",
+      truncated: true,
+      pages: 3,
+      error: undefined,
+    });
+  });
+
+  it("ATTACHMENT_READY updates the media type after image re-encode", () => {
+    const state: StudioState = {
+      ...initialState,
+      attachments: [makeAttachment("att-1", { mimeType: "image/jpeg" })],
+    };
+    const next = reducer(state, { type: "ATTACHMENT_READY", id: "att-1", mimeType: "image/png" });
+    expect(next.attachments[0].mimeType).toBe("image/png");
+  });
+
+  it("ATTACHMENT_FAILED sets status error with the message", () => {
+    const state: StudioState = {
+      ...initialState,
+      attachments: [makeAttachment("att-1")],
+    };
+    const next = reducer(state, { type: "ATTACHMENT_FAILED", id: "att-1", error: "PDF extraction failed: x" });
+    expect(next.attachments[0].status).toBe("error");
+    expect(next.attachments[0].error).toBe("PDF extraction failed: x");
+  });
+
+  it("REMOVE_ATTACHMENT drops the id and recomputes the judge default", () => {
+    const state: StudioState = {
+      ...initialState,
+      attachments: [makeAttachment("a", { bytes: 1 }), makeAttachment("b")],
+      attachmentsToJudge: false,
+    };
+    const next = reducer(state, { type: "REMOVE_ATTACHMENT", id: "a" });
+    expect(next.attachments.map((x) => x.id)).toEqual(["b"]);
+    expect(next.attachmentsToJudge).toBe(true);
+  });
+
+  it("CLEAR_ATTACHMENTS empties the set", () => {
+    const state: StudioState = {
+      ...initialState,
+      attachments: [makeAttachment("a")],
+      attachmentsToJudge: false,
+    };
+    const next = reducer(state, { type: "CLEAR_ATTACHMENTS" });
+    expect(next.attachments).toEqual([]);
+    expect(next.attachmentsToJudge).toBe(true);
+  });
+
+  it("RESET_SESSION clears attachments but keeps the model roster", () => {
+    const state: StudioState = {
+      ...initialState,
+      attachments: [makeAttachment("a")],
+      attachmentsToJudge: false,
+      slots: [
+        { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+      ],
+    };
+    const next = reducer(state, { type: "RESET_SESSION" });
+    expect(next.attachments).toEqual([]);
+    expect(next.attachmentsToJudge).toBe(true);
+    expect(next.slots).toEqual(state.slots);
+  });
+});
+
+describe("reducer — attachmentsToJudge auto-default (spec §6.2)", () => {
+  it("SET_ATTACHMENTS_TO_JUDGE overrides until the next set change", () => {
+    const next = reducer(initialState, { type: "SET_ATTACHMENTS_TO_JUDGE", value: false });
+    expect(next.attachmentsToJudge).toBe(false);
+  });
+
+  it("flips to false at the 5th image", () => {
+    const four = Array.from({ length: 4 }, (_, i) => makeAttachment(`i${i}`, { bytes: 100 }));
+    const atFour = reducer(initialState, { type: "ADD_ATTACHMENTS", attachments: four });
+    expect(atFour.attachmentsToJudge).toBe(true);
+
+    const five = reducer(atFour, { type: "ADD_ATTACHMENTS", attachments: [makeAttachment("i4", { bytes: 100 })] });
+    expect(five.attachmentsToJudge).toBe(false);
+  });
+
+  it("flips to false when native bytes exceed 4 MB even with few images", () => {
+    const big = [makeAttachment("big", { kind: "pdf", mimeType: "application/pdf", bytes: 4 * 1024 * 1024 + 1 })];
+    const next = reducer(initialState, { type: "ADD_ATTACHMENTS", attachments: big });
+    expect(next.attachmentsToJudge).toBe(false);
+  });
+
+  it("stays on when a text-only attachment is added", () => {
+    const next = reducer(initialState, {
+      type: "ADD_ATTACHMENTS",
+      attachments: [makeAttachment("doc", { kind: "doc", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes: 30 * 1024 * 1024 })],
+    });
+    expect(next.attachmentsToJudge).toBe(true);
   });
 });

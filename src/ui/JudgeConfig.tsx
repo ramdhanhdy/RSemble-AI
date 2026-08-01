@@ -15,6 +15,7 @@ import { useMemo, useRef, useState } from "react";
 import { Check, ChevronRight, Search, X } from "lucide-react";
 import type { Action } from "../studio-engine";
 import type { CatalogModel, ProviderId } from "../lib/providers/types";
+import type { Attachment } from "../lib/attachments/types";
 import { BrandAvatar } from "./brand-icons";
 import { ProviderTabs, PROVIDER_LABELS } from "./ProviderTabs";
 
@@ -24,12 +25,24 @@ interface JudgeConfigProps {
   dispatch: React.Dispatch<Action>;
   /** Optional custom instruction applied to the judge/fusion model. */
   judgeInstruction: string;
+  /** Current task attachments — drives the "send to judge" toggle visibility. */
+  attachments: Attachment[];
+  /** Whether native media is sent to the judge/fusion critic (spec §6.2). */
+  attachmentsToJudge: boolean;
 }
 
-export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: JudgeConfigProps) {
+export function JudgeConfig({
+  critic,
+  models,
+  dispatch,
+  judgeInstruction,
+  attachments,
+  attachmentsToJudge,
+}: JudgeConfigProps) {
   const [editing, setEditing] = useState(false);
   // TODO(phase-2): adjacent gear button → judge settings popover (temperature,
   // system prompt — both already in state) per spec §4.4.
+  const hasNativeAttachments = attachments.some((a) => a.kind === "image" || a.kind === "pdf");
 
   return (
     <div>
@@ -89,6 +102,29 @@ export function JudgeConfig({ critic, models, dispatch, judgeInstruction }: Judg
       <p className="mt-1 text-[11px] text-text-muted">
         Optional guidance applied to every judge &amp; fusion pass. Leave blank to keep prompts unchanged.
       </p>
+
+      {/* Native-media-to-judge toggle (spec §6.2). Only rendered when the task
+          actually carries image/pdf attachments — invisible when idle. */}
+      {hasNativeAttachments && (
+        <label className="mt-3 flex items-start gap-2 rounded-md border border-edge bg-card px-2.5 py-2">
+          <input
+            type="checkbox"
+            checked={attachmentsToJudge}
+            onChange={(e) => dispatch({ type: "SET_ATTACHMENTS_TO_JUDGE", value: e.target.checked })}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[#06b6d4]"
+          />
+          <span>
+            <span className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary">
+              Send attachments to judge
+            </span>
+            <span className="mt-0.5 block text-[11px] text-text-muted">
+              {attachmentsToJudge
+                ? "The judge sees the images/PDFs the candidates saw, so it can verify factual claims."
+                : "Off — auto-disabled for more than 4 images or 4 MB of media. Re-enable to include them (costs more)."}
+            </span>
+          </span>
+        </label>
+      )}
     </div>
   );
 }
