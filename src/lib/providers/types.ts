@@ -6,8 +6,19 @@ export type ProviderId = "openrouter" | "chatgpt-codex" | "gemini" | "commandcod
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
 }
+
+/**
+ * One part of a multi-part message (spec §4, attachments plan 7.3.1).
+ * - text: plain text segment
+ * - image: base64 (no data-URL prefix) + mimeType
+ * - file: base64 (no data-URL prefix) + mimeType + filename (PDFs and other binary docs)
+ */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; mimeType: string; data: string }
+  | { type: "file"; mimeType: string; data: string; filename: string };
 
 export interface ChatOptions {
   /** Provider-native model id (not namespaced). */

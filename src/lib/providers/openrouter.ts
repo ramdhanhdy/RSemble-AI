@@ -10,6 +10,8 @@ import {
   ProviderError,
 } from "./types";
 import { readSseChatStream } from "./sse-stream";
+import { toOpenAIMessages } from "./content";
+import { setModelCapabilities } from "./capabilities";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -75,7 +77,7 @@ export const openrouterProvider: LLMProvider = {
         },
         body: JSON.stringify({
           model: opts.model,
-          messages: opts.messages,
+          messages: toOpenAIMessages(opts.messages),
           temperature: opts.temperature,
           max_tokens: opts.maxTokens,
         }),
@@ -129,7 +131,7 @@ export const openrouterProvider: LLMProvider = {
         },
         body: JSON.stringify({
           model: opts.model,
-          messages: opts.messages,
+          messages: toOpenAIMessages(opts.messages),
           temperature: opts.temperature,
           max_tokens: opts.maxTokens,
           stream: true,
@@ -176,9 +178,26 @@ export const openrouterProvider: LLMProvider = {
     const arr: unknown[] = Array.isArray(data?.data) ? data.data : [];
     return arr
       .map((m) => {
-        const model = m as { id?: string; name?: string };
+        const model = m as {
+          id?: string;
+          name?: string;
+          architecture?: { input_modalities?: unknown };
+        };
+        const id = model.id ?? "";
+        // Record capabilities from architecture.input_modalities (verified 2026-07-31:
+        // all catalog models expose this field). Modalities beyond text/image (e.g.
+        // "file") are treated as pdf-capable; audio/video are ignored for now.
+        if (id.length > 0) {
+          const modalities = Array.isArray(model.architecture?.input_modalities)
+            ? (model.architecture!.input_modalities as string[])
+            : [];
+          setModelCapabilities("openrouter", id, {
+            image: modalities.includes("image"),
+            pdf: modalities.includes("file") || modalities.includes("pdf"),
+          });
+        }
         return {
-          id: model.id ?? "",
+          id,
           name: model.name ?? model.id ?? "",
           providerId: "openrouter" as const,
         };

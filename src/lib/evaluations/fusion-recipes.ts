@@ -21,6 +21,7 @@
 // =============================================================================
 
 import type { ChatMessage } from "../providers/types";
+import { contentToText } from "../providers/content";
 import {
   DEFAULT_CRITIC_REF,
   type BlindCandidate,
@@ -119,7 +120,7 @@ export function findBlindnessViolations(
   identities: CandidateIdentity[],
 ): string[] {
   const violations: string[] = [];
-  const haystacks = messages.map((m) => m.content);
+  const haystacks = messages.map((m) => contentToText(m.content));
   for (const identity of identities) {
     for (const [field, value] of Object.entries(identity) as Array<[keyof CandidateIdentity, string]>) {
       const needle = value.trim();

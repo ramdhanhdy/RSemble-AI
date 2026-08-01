@@ -8,8 +8,9 @@
 // are estimated (estimateTokens) exactly as in the ad-hoc run path.
 // =============================================================================
 
-import type { CriticRef } from "../providers/types";
+import type { ChatMessage, CriticRef } from "../providers/types";
 import { getProvider } from "../providers/registry";
+import { contentToText } from "../providers/content";
 import { estimateTokens } from "../cost";
 import type { Candidate, CandidateSegment, JudgeReport } from "../../studio-data";
 import {
@@ -48,15 +49,15 @@ function candidateFromOutput(candidateId: string, slot: ModelSlot, text: string)
 
 async function chatOnce(
   ref: CriticRef,
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  messages: ChatMessage[],
   temperature: number,
 ): Promise<string> {
   const provider = getProvider(ref.providerId);
   return provider.chatCompletion({ model: ref.model, messages, temperature });
 }
 
-function messageTokens(messages: Array<{ content: string }>): number {
-  return estimateTokens(messages.map((m) => m.content).join("\n"));
+function messageTokens(messages: ChatMessage[]): number {
+  return estimateTokens(messages.map((m) => contentToText(m.content)).join("\n"));
 }
 
 export function createLiveFusionExecutor(deps?: {
