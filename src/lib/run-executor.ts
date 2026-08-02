@@ -73,6 +73,17 @@ export interface RunRequest {
   attachments: Attachment[];
   /** Whether native media is also sent to the judge/fusion critic (§6.2). */
   attachmentsToJudge: boolean;
+  /** When present, skip generation for reused candidates and execute only
+   *  the listed model keys, feeding reused + fresh outputs into one Judge
+   *  pass (spec §11.3, Task 10). */
+  candidateExecution?: {
+    executeModelKeys: string[];
+    seededCandidates: Candidate[];
+    /** Fresh seed attempt IDs for every reused candidate, keyed by
+     *  candidateId — the Judge attempt record needs immutable attempt
+     *  references for every judged output (spec §11.3, Task 10). */
+    seededAttemptIdsByCandidateId: Record<string, string>;
+  };
 }
 
 export interface FrozenCandidateRetryRequest {
@@ -461,6 +472,179 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       throw new Error("Duplicate enabled provider:model keys are not allowed");
     }
 
+    // --- Targeted candidate execution (spec §11.3, Task 10) ---
+    // When candidateExecution is present, skip generation for reused (seeded)
+    // candidates and execute only the listed model keys, then feed reused +
+    // fresh outputs into one fresh Judge pass.
+    if (request.candidateExecution) {
+      const { executeModelKeys, seededCandidates } = request.candidateExecution;
+      const executeSet = new Set(executeModelKeys);
+      const jobByKey = new Map(jobs.map((j) => [`${j.providerId}:${j.slug}`, j]));
+
+      // Validate: every execute key belongs to slots.
+      for (const key of executeModelKeys) {
+        if (!jobByKey.has(key)) {
+          throw new Error(`candidateExecution: execute key ${key} not found in slots`);
+        }
+      }
+      // Validate: seeded and execute keys do not overlap.
+      const seededKeys = new Set(seededCandidates.map((c) => `${c.providerId}:${c.slug}`));
+      for (const key of executeModelKeys) {
+        if (seededKeys.has(key)) {
+          throw new Error(`candidateExecution: ${key} appears in both seeded and execute lists`);
+        }
+      }
+      // Validate: no duplicate in execute keys.
+      if (new Set(executeModelKeys).size !== executeModelKeys.length) {
+        throw new Error("candidateExecution: duplicate model keys in executeModelKeys");
+      }
+
+      try {
+        await events.onFanoutStart();
+      } catch {
+        return;
+      }
+      if (isAborted(signal)) return;
+
+      const candidateAttemptIds: Record<string, string> = {};
+      // Seed the attempt map with reused candidates' fresh attempt IDs so
+      // the Judge attempt record carries immutable references for every
+      // judged output (spec §11.3, Task 10).
+      const { seededAttemptIdsByCandidateId } = request.candidateExecution;
+      for (const c of seededCandidates) {
+        if (seededAttemptIdsByCandidateId[c.id]) {
+          candidateAttemptIds[c.id] = seededAttemptIdsByCandidateId[c.id];
+        } else {
+          throw new Error(`candidateExecution: missing seed attempt ID for reused candidate ${c.id}`);
+        }
+      }
+      const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; finishedAt: number; content: string }> = new Map();
+
+      // Execute only the requested model keys.
+      const executeJobs = jobs.filter((j) => executeSet.has(`${j.providerId}:${j.slug}`));
+      await Promise.all(
+        executeJobs.map(async (job): Promise<void> => {
+          const messages = draftMessages({
+            systemPrompt: request.task.systemPrompt,
+            prompt: request.task.prompt,
+            attachments: request.attachments,
+            capabilities: getModelCapabilities(job.providerId, job.slug),
+          });
+          const attemptId = generateId();
+          const startedAt = now();
+
+          try {
+            await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
+          } catch (err) {
+            await events.onCandidateAttemptTerminal(job.id, attemptId, {
+              status: "failed", output: null, tokensIn: null, tokensOut: null,
+              error: sanitizeError(err, { category: "storage", stage: "candidate", model: job.slug }),
+              finishedAt: now(),
+            }).catch(() => {});
+            return;
+          }
+
+          if (isAborted(signal)) return;
+
+          const result = await runCandidateStream(job, messages, request.task.temperature, events, signal);
+          if (!result || "error" in result) {
+            if (isAborted(signal) && !result) return;
+            await events.onCandidateAttemptTerminal(job.id, attemptId, {
+              status: "failed", output: null, tokensIn: null, tokensOut: null,
+              error: result && "error" in result
+                ? result.error
+                : sanitizeError(new Error("Candidate aborted"), { category: "aborted", stage: "candidate", model: job.slug }),
+              finishedAt: now(),
+            }).catch(() => {});
+            return;
+          }
+
+          events.onCandidateTerminal(job.id, {
+            segments: result.segments,
+            summary: result.summary,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+            finishedAt: result.finishedAt,
+          });
+
+          candidateAttemptIds[job.id] = attemptId;
+          candidateResults.set(job.id, result);
+
+          await events.onCandidateAttemptTerminal(job.id, attemptId, {
+            status: "completed",
+            output: result.content,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+            error: null,
+            finishedAt: result.finishedAt,
+          }).catch(() => {});
+        }),
+      );
+
+      if (isAborted(signal)) return;
+
+      // Build the done set: fresh results + seeded reused candidates.
+      const done: Candidate[] = [];
+      // Fresh candidates from provider calls.
+      for (const j of executeJobs) {
+        const r = candidateResults.get(j.id);
+        if (!r) continue;
+        done.push({
+          id: j.id,
+          model: j.displayName,
+          provider: j.provider,
+          providerId: j.providerId,
+          slug: j.slug,
+          accent: j.accent,
+          strategy: j.strategyLabel,
+          summary: r.summary,
+          scores: {},
+          weightedScore: 0,
+          segments: r.segments,
+          status: "done" as const,
+          startedAt: now(),
+          finishedAt: r.finishedAt,
+        });
+      }
+      // Seeded reused candidates — their outputs are already complete.
+      for (const c of seededCandidates) {
+        if (isUsableCandidate(c)) done.push(c);
+      }
+
+      try {
+        await events.onFanoutTerminal(done);
+      } catch {
+        return;
+      }
+
+      if (isAborted(signal)) return;
+      if (done.length < 2) return;
+
+      const judgeResult = await runJudge(
+        done,
+        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+        candidateAttemptIds,
+        events,
+        signal,
+      );
+
+      if (!judgeResult.ok) return;
+      if (isAborted(signal)) return;
+
+      if (request.mode === "fuse") {
+        await runFusion(
+          judgeResult.blindSet.candidates,
+          { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+          judgeResult.attemptId,
+          candidateAttemptIds,
+          events,
+          signal,
+        );
+      }
+      return;
+    }
+
+    // --- Normal executeTask path (no candidateExecution) ---
     try {
       await events.onFanoutStart();
     } catch {

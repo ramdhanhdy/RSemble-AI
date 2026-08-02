@@ -316,7 +316,7 @@ describe("planMissingCellRepair", () => {
   });
 
   it("rejects a base run whose id does not match the selected attempt", () => {
-    const { experiment, aggregation } = makeRepairableFixture();
+    const { experiment } = makeRepairableFixture();
     const wrongRun = { ...makeRun("run-WRONG", [MK1, MK2]) };
     const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
     const aggregation2 = aggregateExperiment({
