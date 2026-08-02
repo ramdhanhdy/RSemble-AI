@@ -347,15 +347,16 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
               </Link>
             ) : null}
             <button
+              data-geometry="suite-settings-trigger"
               type="button"
               aria-expanded={settingsOpen}
               aria-controls="suite-settings-disclosure"
               onClick={() => setSettingsOpen((v) => !v)}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex min-h-[44px] min-w-[104px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <ChevronDown
                 size={14}
-                className={settingsOpen ? "rotate-180 transition-transform duration-150" : "transition-transform duration-150"}
+                className={settingsOpen ? "shrink-0 rotate-180 transition-transform duration-150 ease-out" : "shrink-0 transition-transform duration-150 ease-out"}
                 aria-hidden="true"
               />
               Settings
@@ -365,7 +366,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
               data-action="save-suite"
               onClick={handleSave}
               disabled={!dirty || saving}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Save size={14} aria-hidden="true" />
               {saving ? "Saving…" : "Save"}
@@ -382,7 +383,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
               }}
               disabled={!canRun}
               title={runDisabledReason ?? `Run v${persisted.version}`}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Play size={14} aria-hidden="true" />
               {dirty ? "Run" : `Run v${persisted.version}`}
@@ -414,7 +415,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
 
       {/* Settings disclosure (in-page, not a permanent third pane) */}
       {settingsOpen && (
-        <div id="suite-settings-disclosure" className="border-b border-edge p-3">
+        <div id="suite-settings-disclosure" data-geometry="suite-settings-panel" className="border-b border-edge p-3">
           <SuiteSettings
             suite={draft}
             onChange={patchDraft}

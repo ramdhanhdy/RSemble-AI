@@ -59,28 +59,31 @@ export function RunButton({
 
   return (
     <button
+      data-geometry="run-action"
       type="button"
       onClick={running ? onAbort : onClick}
       disabled={!canRun && !running}
       title={!running && blockReason ? blockReason : undefined}
-      className={`pressable mt-auto flex min-h-[64px] w-full items-center gap-3 rounded-md px-4 text-left ${look}`}
+      className={`pressable mt-auto grid min-h-[64px] w-full grid-cols-[1rem_minmax(0,1fr)_53px] items-center gap-3 rounded-md px-4 text-left ${look}`}
     >
       {running ? (
         <Square size={16} className="shrink-0" />
       ) : (
         <Play size={16} className="shrink-0" />
       )}
-      <span className="min-w-0 flex-1">
+      <span data-geometry="run-label" className="min-w-0">
         <span className="block text-sm font-semibold">{running ? "Stop run" : "Run pipeline"}</span>
         <span className={`mt-0.5 block truncate text-xs tabular-nums ${canRun || running ? "text-on-accent/80" : ""}`}>
           {caption}
         </span>
       </span>
-      {canRun && !running && (
-        <kbd className="flex shrink-0 items-center gap-1 rounded-sm bg-black/25 px-1.5 py-0.5 font-mono text-xs text-white/90">
-          ⌘ Enter
-        </kbd>
-      )}
+      <span data-geometry="run-shortcut" className="flex h-[22px] w-[53px] shrink-0 items-center">
+        {canRun && !running && (
+          <kbd className="flex w-full items-center gap-1 rounded-sm bg-black/25 px-1.5 py-0.5 font-mono text-xs text-white/90">
+            ⌘ Enter
+          </kbd>
+        )}
+      </span>
     </button>
   );
 }

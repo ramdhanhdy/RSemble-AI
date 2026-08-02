@@ -30,7 +30,7 @@ export function EvaluationDisclosure({
   const summary = formatSummary(evaluation);
 
   return (
-    <div className="rounded-md border border-edge bg-card">
+    <div data-geometry="evaluation-disclosure" className="rounded-md border border-edge bg-card">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -40,7 +40,7 @@ export function EvaluationDisclosure({
       >
         <ChevronRight
           size={13}
-          className={`text-text-muted transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+          className={`shrink-0 text-text-muted transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`}
         />
         <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
           Evaluation
@@ -49,7 +49,7 @@ export function EvaluationDisclosure({
       </button>
 
       {open && (
-        <div id="evaluation-panel" className="space-y-3 border-t border-edge px-3 py-3">
+        <div id="evaluation-panel" data-geometry="evaluation-panel" className="space-y-3 border-t border-edge px-3 py-3">
           <EvaluationModeSelector evaluation={evaluation} dispatch={dispatch} />
 
           {evaluation.kind !== "holistic" && (

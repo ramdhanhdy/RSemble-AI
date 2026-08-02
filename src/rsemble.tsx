@@ -706,6 +706,7 @@ function ResetButton({
   }, [armed]);
   return (
     <button
+      data-geometry="reset-action"
       type="button"
       disabled={running}
       onClick={() => {
@@ -725,7 +726,7 @@ function ResetButton({
             ? "Click again to discard the current run and reset"
             : "Reset session"
       }
-      className={`pressable flex h-11 min-w-[132px] shrink-0 items-center justify-center gap-1.5 rounded-md border ${
+      className={`pressable relative flex h-11 min-w-[132px] shrink-0 items-center justify-center rounded-md border ${
         running
           ? "cursor-not-allowed border-edge text-text-secondary opacity-50"
           : armed
@@ -733,8 +734,10 @@ function ResetButton({
             : "border-edge text-text-secondary hover:border-edge-bright hover:text-text"
       }`}
     >
-      {armed && <span>Confirm reset</span>}
-      <RotateCcw size={15} />
+      <span className="absolute inset-0 flex items-center justify-center gap-1.5">
+        {armed && <span>Confirm reset</span>}
+        <RotateCcw size={15} />
+      </span>
     </button>
   );
 }
