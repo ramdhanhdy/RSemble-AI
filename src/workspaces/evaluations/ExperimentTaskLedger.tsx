@@ -100,7 +100,7 @@ export function ExperimentTaskLedger({
     <div className="flex flex-col gap-2">
       <header
         data-ledger-instrument=""
-        className="sticky top-0 z-10 flex flex-col gap-2 border-b border-edge bg-panel/95 py-2"
+        className="sticky top-0 z-10 flex flex-col gap-2 border-b border-edge bg-panel py-2"
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {currentIndex !== null && currentRow ? (

@@ -284,6 +284,21 @@ describe("createExecutionLease (Dexie-backed)", () => {
     expect(live?.status).toBe("running");
   });
 
+  it("releases a lease acquired only for a recovery sweep", async () => {
+    const clock = makeClock();
+    const repo = createRunRepository(db);
+    const lease = createExecutionLease(db, { now: clock.now });
+
+    await seedRunningRun(repo, "run-stale", "old-tab", 0);
+
+    expect(await lease.recoverInterruptedRuns(repo)).toBe(1);
+    expect((await repo.get("run-stale"))?.status).toBe("interrupted");
+    expect(await lease.getCurrent()).toBeNull();
+
+    const next = await createExecutionLease(db, { now: clock.now }).acquire();
+    expect(next.fence).toBe(2);
+  });
+
   // Test 5: terminal runs are unchanged by recovery.
   it("leaves completed/failed/aborted records untouched", async () => {
     const clock = makeClock();
@@ -468,6 +483,21 @@ describe("InMemoryExecutionLease", () => {
 
     // Idempotent.
     expect(await lease.recoverInterruptedRuns(repo)).toBe(0);
+  });
+
+  it("releases an in-memory lease acquired only for a recovery sweep", async () => {
+    const store = { lease: null as null | { ownerId: string; fence: number; expiresAt: number }, fence: 0 };
+    const lease = new InMemoryExecutionLease(store);
+    const repo = new InMemoryRunRepository();
+
+    await seedRunningRun(repo, "stale", "other-tab", 0);
+
+    expect(await lease.recoverInterruptedRuns(repo)).toBe(1);
+    expect((await repo.get("stale"))?.status).toBe("interrupted");
+    expect(await lease.getCurrent()).toBeNull();
+
+    const next = await new InMemoryExecutionLease(store).acquire();
+    expect(next.fence).toBe(2);
   });
 
   // Fake timers are safe here: InMemoryExecutionLease has no Dexie dependency.

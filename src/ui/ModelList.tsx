@@ -91,6 +91,12 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
         )}
       </ul>
 
+      {slots.length > 0 ? (
+        <p className="mt-2 text-xs text-text-muted">
+          Live model tests send a small generation request and may incur provider cost.
+        </p>
+      ) : null}
+
       {adding && (
         <AddModelCombobox
           models={models}

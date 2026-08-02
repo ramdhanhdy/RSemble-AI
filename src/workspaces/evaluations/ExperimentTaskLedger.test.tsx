@@ -276,6 +276,9 @@ describe("ExperimentTaskLedger — stress", () => {
     // Current task and Pause/Abort controls sit in the instrument header, before the rows.
     const instrument = h.$("[data-ledger-instrument]")!;
     expect(instrument).not.toBeNull();
+    expect(instrument.className).toContain("sticky");
+    expect(instrument.className).toContain("bg-panel");
+    expect(instrument.className).not.toContain("bg-panel/");
     expect(instrument.textContent).toContain("Task 1 of 250");
     const pause = [...instrument.querySelectorAll("button")].find(
       (b) => b.textContent?.trim() === "Pause after current task",
