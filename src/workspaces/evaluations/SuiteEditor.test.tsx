@@ -3,6 +3,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { ModelProbeProvider } from "../../ui/ModelProbeContext";
 import { SuiteEditor } from "./SuiteEditor";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import { ExecutionOwnerProvider } from "../../lib/execution-owner-context";
@@ -30,11 +31,13 @@ function renderWithRouter(node: React.ReactNode, initialPath = "/evaluations/s1"
     root.render(
       <MemoryRouter initialEntries={[initialPath]}>
         <ExecutionOwnerProvider>
-          <Routes>
-            <Route path="/evaluations/:suiteId" element={node} />
-            <Route path="/evaluations/:suiteId/tasks/:taskId" element={node} />
-            <Route path="/experiments/:experimentId" element={<div data-route="experiment-progress" />} />
-          </Routes>
+          <ModelProbeProvider>
+            <Routes>
+              <Route path="/evaluations/:suiteId" element={node} />
+              <Route path="/evaluations/:suiteId/tasks/:taskId" element={node} />
+              <Route path="/experiments/:experimentId" element={<div data-route="experiment-progress" />} />
+            </Routes>
+          </ModelProbeProvider>
         </ExecutionOwnerProvider>
       </MemoryRouter>,
     );
@@ -479,6 +482,57 @@ describe("SuiteEditor — settings disclosure", () => {
     expect(openBtn).toBeTruthy();
     // Settings content visible
     expect(h.$("#suite-name")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("SuiteEditor — Test selected models (spec §8.1)", () => {
+  it("shows the batch test action when enabled candidates exist", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          { id: "m1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+          { id: "m2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "model-b", enabled: true },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const batchBtn = h.$$("button").find((b) => b.textContent?.trim() === "Test selected models");
+    expect(batchBtn).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("does not show the batch action when no candidates are enabled", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          { id: "m1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: false },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const batchBtn = h.$$("button").find((b) => b.textContent?.trim() === "Test selected models");
+    expect(batchBtn).toBeFalsy();
     cleanup(h);
   });
 });

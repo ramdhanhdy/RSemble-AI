@@ -8,8 +8,8 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Check, Loader2, RefreshCw, X, Zap } from "lucide-react";
 import { listProviders } from "../lib/providers/registry";
 import type { ProviderId, ProviderReadiness } from "../lib/providers/types";
+import { useModelProbe } from "./ModelProbeContext";
 import { DialogSurface } from "./DialogSurface";
-
 interface ConnectionsModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -153,9 +153,14 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
   }, [isOpen]);
 
 
+  const { invalidateProvider } = useModelProbe();
+
   const handleSave = (providerId: ProviderId, label: string) => {
     localStorage.setItem(keyStorageId(providerId), keys[providerId].trim());
     setSavedMessage(`${label} key saved to local storage.`);
+    // Invalidate probe results for this provider so stale Ready/Failed
+    // states don't persist after a credential change (plan §4.5).
+    invalidateProvider(providerId);
     void fetchStatuses();
     onRefresh();
     setTimeout(() => setSavedMessage(null), 3000);

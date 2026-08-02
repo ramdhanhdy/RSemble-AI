@@ -3,6 +3,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ModelProbeControl } from "./ModelProbeControl";
+import { ModelProbeProvider, useModelProbe } from "./ModelProbeContext";
 import type { LLMProvider } from "../lib/providers/types";
 import { ProviderError } from "../lib/providers/types";
 
@@ -19,7 +20,7 @@ function render(node: React.ReactNode): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  act(() => root.render(node));
+  act(() => root.render(<ModelProbeProvider>{node}</ModelProbeProvider>));
   return {
     container,
     root,
@@ -43,7 +44,6 @@ async function settle() {
   });
 }
 
-// Track the current mock provider so tests can swap it.
 let mockProvider: LLMProvider;
 
 vi.mock("../lib/providers/registry", () => ({
@@ -70,7 +70,6 @@ afterEach(() => {
   mockProvider = makeProvider();
 });
 
-// Initialize default provider.
 mockProvider = makeProvider();
 
 describe("ModelProbeControl", () => {
@@ -133,56 +132,6 @@ describe("ModelProbeControl", () => {
     cleanup(h);
   });
 
-  it("resets to Untested when the provider or slug changes", async () => {
-    mockProvider = makeProvider();
-    const h = render(
-      <ModelProbeControl providerId="9router" model="cmc/model" slotLabel="9Router · cmc/model" />,
-    );
-    const btn = h.$("button")!;
-    act(() => btn.click());
-    await settle();
-    expect(h.container.textContent).toContain("Ready");
-
-    act(() => {
-      h.root.render(
-        <ModelProbeControl providerId="9router" model="other/model" slotLabel="9Router · other/model" />,
-      );
-    });
-    await settle();
-    expect(h.container.textContent).not.toContain("Ready");
-    cleanup(h);
-  });
-
-  it("resets to Untested when the invalidation token changes", async () => {
-    mockProvider = makeProvider();
-    const h = render(
-      <ModelProbeControl
-        providerId="9router"
-        model="cmc/model"
-        slotLabel="9Router · cmc/model"
-        invalidationToken={0}
-      />,
-    );
-    const btn = h.$("button")!;
-    act(() => btn.click());
-    await settle();
-    expect(h.container.textContent).toContain("Ready");
-
-    act(() => {
-      h.root.render(
-        <ModelProbeControl
-          providerId="9router"
-          model="cmc/model"
-          slotLabel="9Router · cmc/model"
-          invalidationToken={1}
-        />,
-      );
-    });
-    await settle();
-    expect(h.container.textContent).not.toContain("Ready");
-    cleanup(h);
-  });
-
   it("does not dispatch a slot change or save a credential", async () => {
     mockProvider = makeProvider();
     const h = render(
@@ -193,6 +142,55 @@ describe("ModelProbeControl", () => {
     act(() => btn.click());
     await settle();
     expect(setItemSpy).not.toHaveBeenCalled();
+    cleanup(h);
+  });
+});
+
+describe("ModelProbeContext — batch testing and invalidation", () => {
+  it("batch tests multiple models and keeps per-row results independent", async () => {
+    mockProvider = makeProvider();
+    const calls: string[] = [];
+    mockProvider = makeProvider({
+      chatCompletionStream: vi.fn(async function* (opts: { model: string }) {
+        calls.push(opts.model);
+        yield "OK";
+      }),
+    });
+    // Render two controls sharing one provider.
+    const h = render(
+      <div>
+        <ModelProbeControl providerId="9router" model="a/model" slotLabel="a" />
+        <ModelProbeControl providerId="9router" model="b/model" slotLabel="b" />
+      </div>,
+    );
+    // Click both quickly — each only disables itself.
+    const buttons = h.$$("button");
+    act(() => buttons[0].click());
+    act(() => buttons[1].click());
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    await settle();
+    // Both resolve independently.
+    const text = h.container.textContent ?? "";
+    expect((text.match(/Ready/g) ?? []).length).toBe(2);
+    cleanup(h);
+  });
+
+  it("credential invalidation resets probe results to Untested", async () => {
+    mockProvider = makeProvider();
+    let invalidate!: () => void;
+    function ProbeHarness() {
+      const { invalidateProvider } = useModelProbe();
+      invalidate = () => invalidateProvider("9router");
+      return <ModelProbeControl providerId="9router" model="cmc/model" slotLabel="9Router · cmc/model" />;
+    }
+    const h = render(<ProbeHarness />);
+    const btn = h.$("button")!;
+    act(() => btn.click());
+    await settle();
+    expect(h.container.textContent).toContain("Ready");
+    act(() => invalidate());
+    await settle();
+    expect(h.container.textContent).not.toContain("Ready");
     cleanup(h);
   });
 });

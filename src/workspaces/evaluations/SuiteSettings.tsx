@@ -18,6 +18,7 @@ import {
   Check,
 } from "lucide-react";
 import { ModelProbeControl } from "../../ui/ModelProbeControl";
+import { useModelProbe } from "../../ui/ModelProbeContext";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
 import type { ModelSlot } from "../../studio-data";
 import type {
@@ -48,6 +49,7 @@ export function SuiteSettings({
   profileRecords,
   resolveProfileLabel,
 }: SuiteSettingsProps) {
+  const { testBatch } = useModelProbe();
   const enabledSlots = suite.modelSlots.filter((s) => s.enabled);
   const takenKeys = useMemo(
     () => new Set(enabledSlots.map((s) => modelKey(s.providerId, s.slug))),
@@ -165,7 +167,24 @@ export function SuiteSettings({
           ))}
         </ul>
         <SuiteModelAdder models={models} takenKeys={takenKeys} onAdd={addSlot} />
-        {/* Roster-level test notice (spec §8.1) — cost disclosure. */}
+        {enabledSlots.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              // Build entries: enabled candidates + Judge (de-duplicated).
+              const entries = enabledSlots.map((s) => ({ providerId: s.providerId, model: s.slug }));
+              const judgeKey = `${suite.defaultJudge.providerId}:${suite.defaultJudge.model}`;
+              const candidateKeys = new Set(entries.map((e) => `${e.providerId}:${e.model}`));
+              if (!candidateKeys.has(judgeKey)) {
+                entries.push({ providerId: suite.defaultJudge.providerId, model: suite.defaultJudge.model });
+              }
+              void testBatch(entries, 3);
+            }}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-card px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            Test selected models
+          </button>
+        )}
         {enabledSlots.length > 0 && (
           <p className="text-xs text-text-muted">
             Live model tests send a small generation request and may incur provider cost.

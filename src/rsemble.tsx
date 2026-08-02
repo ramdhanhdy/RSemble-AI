@@ -35,9 +35,9 @@ import { ConnectionsModal } from "./ui/ConnectionsModal";
 import { CommandPalette } from "./ui/CommandPalette";
 import { ShortcutCheatsheet } from "./ui/ShortcutCheatsheet";
 import { BrandAvatar } from "./ui/brand-icons";
+import { ModelProbeProvider } from "./ui/ModelProbeContext";
 import { AppRoutes } from "./app-router";
 import { MobileWorkspaceNav } from "./ui/MobileWorkspaceNav";
-
 import { StreamDeltaBuffer } from "./lib/stream-buffer";
 import { createRunController } from "./lib/run-controller";
 import { checkAttachmentEligibility } from "./lib/pipeline";
@@ -381,6 +381,7 @@ export default function RSemble() {
   }, []);
 
   return (
+    <ModelProbeProvider>
     <div className="flex h-screen w-screen overflow-hidden bg-canvas p-2 text-text antialiased">
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-edge bg-shell">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -534,6 +535,7 @@ export default function RSemble() {
         handle={cheatsheetDialogHandle}
       />
     </div>
+    </ModelProbeProvider>
   );
 }
 

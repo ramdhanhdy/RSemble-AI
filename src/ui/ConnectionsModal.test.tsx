@@ -22,4 +22,10 @@ describe("ConnectionsModal", () => {
     expect(source).toContain('id: "9router"');
     expect(source).toContain("key is optional");
   });
+
+  it("invalidates model probe results when a credential is saved", () => {
+    expect(source).toContain("useModelProbe");
+    expect(source).toContain("invalidateProvider(providerId)");
+    expect(source).toContain("const { invalidateProvider } = useModelProbe()");
+  });
 });
