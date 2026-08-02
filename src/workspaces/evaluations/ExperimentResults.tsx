@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Crown } from "lucide-react";
+import { ChevronDown, Crown } from "lucide-react";
 import type { ReactElement } from "react";
 import type {
   ExperimentRecord,
@@ -23,12 +23,20 @@ import type { ExperimentController } from "../../lib/evaluations/experiment-cont
 import {
   aggregateExperiment,
   formatAggregateMean,
+  type MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
 import { deriveDisplayRanking } from "../../lib/evaluations/experiment-ranking";
+import { planMissingCellRepair, type CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
 import { StatusMark } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
-import { ResultMatrix } from "./ResultMatrix";
+import { ResultMatrix, MISSING_CELL_DISPLAY } from "./ResultMatrix";
 import { MobileExperimentResults } from "./MobileExperimentResults";
+import {
+  ExperimentRecoveryDialog,
+  type RecoveryDialogVariant,
+  type RepairAllSummary,
+  type ExperimentRecoveryMessage,
+} from "./ExperimentRecoveryDialog";
 
 export interface ExperimentResultsProps {
   experiment: ExperimentRecord;
@@ -36,6 +44,13 @@ export interface ExperimentResultsProps {
   /** Terminal recovery handoff — retry incomplete tasks (Task 7). */
   controller?: ExperimentController | null;
 }
+
+/** Which recovery action the shared dialog currently drives (spec §11.1). */
+type RecoveryTarget =
+  | { kind: "repair-cell"; taskId: string; modelKey: string }
+  | { kind: "retry-task"; taskId: string }
+  | { kind: "repair-all" }
+  | null;
 
 const DESKTOP_QUERY = "(min-width: 768px)";
 
@@ -75,6 +90,9 @@ export function ExperimentResults({
   const [suiteName, setSuiteName] = useState<string | null>(null);
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
+  const [recoveryTarget, setRecoveryTarget] = useState<RecoveryTarget>(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState<ExperimentRecoveryMessage | null>(null);
 
   // Load every selected attempt's run record; memoized on id + revision.
   const experimentId = experiment.id;
@@ -131,6 +149,12 @@ export function ExperimentResults({
   ).length;
   const hasRetryableTasks = retryableTaskCount > 0 && !!controller;
   const executionActive = experiment.status === "running" || experiment.status === "queued";
+  // Actions are ABSENT while another execution owns the lease (spec §11.1):
+  // no controller (read-only view) or the experiment is actively executing.
+  const recoveryEnabled = !!controller && !executionActive;
+  const handleRepairRequest = useCallback((taskId: string, modelKey: string) => {
+    setRecoveryTarget({ kind: "repair-cell", taskId, modelKey });
+  }, []);
 
   const handleRetryAll = useCallback(async () => {
     if (!controller) return;
@@ -170,6 +194,181 @@ export function ExperimentResults({
   );
   const taskById = new Map(experiment.snapshot.tasks.map((t) => [t.id, t]));
 
+  // --- Recovery planning (spec §11.2) ---------------------------------------
+  // Per-cell plans: repairable no-score cells where the task has a selected
+  // partial attempt whose run is available and holds accepted outputs for at
+  // least one other candidate. The pure planner decides; the sync resolver
+  // reads the already-loaded map.
+  const repairablePlans = new Map<string, Map<string, CompoundRepairPlan>>();
+  const resolveSync = (runId: string) => runRecords.get(runId) ?? null;
+  aggregation.cells.forEach((row, taskIdx) => {
+    const taskId = aggregation.taskIds[taskIdx];
+    row.forEach((cell, modelIdx) => {
+      if (cell.kind !== "missing" || cell.reason !== "no-score") return;
+      const modelKey = aggregation.modelKeys[modelIdx];
+      const result = planMissingCellRepair({
+        experiment,
+        aggregation,
+        request: { taskId, modelKeys: [modelKey] },
+        resolveRunRecord: resolveSync,
+      });
+      if (result.ok) {
+        let byKey = repairablePlans.get(taskId);
+        if (!byKey) {
+          byKey = new Map();
+          repairablePlans.set(taskId, byKey);
+        }
+        byKey.set(modelKey, result.plan);
+      }
+    });
+  });
+
+  // Grouped per-task plans for the batch action (spec §11.7): the toolbar
+  // queues ONE controller call per task with ALL its repairable keys, so two
+  // missing models on one task never re-plan against changed evidence mid-
+  // batch, and the preview never overstates paid work. A task whose grouped
+  // plan fails (e.g. no reusable outputs outside the full requested set) is
+  // excluded from the batch and counts as fallback.
+  const taskRepairPlans = new Map<string, CompoundRepairPlan>();
+  for (const [taskId, byKey] of repairablePlans) {
+    const grouped = planMissingCellRepair({
+      experiment,
+      aggregation,
+      request: { taskId, modelKeys: [...byKey.keys()] },
+      resolveRunRecord: resolveSync,
+    });
+    if (grouped.ok) taskRepairPlans.set(taskId, grouped.plan);
+  }
+
+  let missingCellCount = 0;
+  for (const row of aggregation.cells) {
+    for (const cell of row) {
+      if (cell.kind === "missing") missingCellCount += 1;
+    }
+  }
+  let repairableCount = 0;
+  for (const plan of taskRepairPlans.values()) repairableCount += plan.requestedModelKeys.length;
+  const fallbackCount = missingCellCount - repairableCount;
+  const showRecoveryToolbar =
+    recoveryEnabled && (missingCellCount > 0 || retryableTaskCount > 0);
+
+  /** Aggregate planner counts for the batch "Repair all" action (spec §11.7).
+   *  Built from the GROUPED per-task plans: one call per task, all its keys. */
+  function summarizeRepairAll(plans: ReadonlyMap<string, CompoundRepairPlan>): RepairAllSummary {
+    let candidateCalls = 0;
+    let judgeCalls = 0;
+    let reusedCount = 0;
+    for (const plan of plans.values()) {
+      candidateCalls += plan.candidateCalls;
+      judgeCalls += plan.judgeCalls;
+      reusedCount += plan.reusedModelKeys.length;
+    }
+    return { taskCount: plans.size, candidateCalls, judgeCalls, reusedCount };
+  }
+
+  const recoveryPlan =
+    recoveryTarget?.kind === "repair-cell"
+      ? (repairablePlans.get(recoveryTarget.taskId)?.get(recoveryTarget.modelKey) ?? null)
+      : null;
+  const recoveryVariant: RecoveryDialogVariant =
+    recoveryTarget?.kind === "repair-cell" && recoveryPlan
+      ? "repair-cell"
+      : recoveryTarget?.kind === "repair-all"
+        ? "repair-all"
+        : "retry-task";
+  const recoveryTaskTitle =
+    recoveryTarget && recoveryTarget.kind !== "repair-all"
+      ? (taskById.get(recoveryTarget.taskId)?.title ?? recoveryTarget.taskId)
+      : "";
+  const recoveryModelLabel = recoveryTarget?.kind === "repair-cell" ? recoveryTarget.modelKey : "";
+  const repairAllSummary =
+    recoveryTarget?.kind === "repair-all" && taskRepairPlans.size > 0
+      ? summarizeRepairAll(taskRepairPlans)
+      : null;
+
+  // Plain function (not a hook): derived only after run records load, and the
+  // early loading return above must never precede a conditional hook call.
+  async function handleRecoveryConfirm(): Promise<void> {
+    if (!controller || !recoveryTarget) return;
+    // A cell reported as "Retry incomplete task" opens the dialog as a
+    // repair-cell target with no planner plan; the effective action is the
+    // full-roster retry fallback (spec §11.1).
+    const effectiveRepair =
+      recoveryTarget.kind === "repair-cell" &&
+      repairablePlans.get(recoveryTarget.taskId)?.has(recoveryTarget.modelKey) === true;
+    setRecoveryBusy(true);
+    setRecoveryMessage(null);
+    try {
+      if (recoveryTarget.kind === "repair-cell" && effectiveRepair) {
+        const result = await controller.repairMissingCells(experimentId, {
+          taskId: recoveryTarget.taskId,
+          modelKeys: [recoveryTarget.modelKey],
+        });
+        if (result.ok) {
+          setRecoveryTarget(null);
+          setRecoveryMessage({
+            tone: "success",
+            text: "Repair started — navigate to the progress view to watch it.",
+          });
+        } else {
+          setRecoveryMessage({ tone: "error", text: result.error });
+        }
+      } else if (recoveryTarget.kind === "repair-all") {
+        // Repair all: queue ONE controller call per task carrying ALL of that
+        // task's repairable model keys (grouped plans), so the batch never
+        // re-plans a task against its own changed evidence mid-run. The lease
+        // is released between terminal loops; whenIdle gates the next call.
+        const plans = [...taskRepairPlans.values()];
+        let error: string | null = null;
+        let queued = 0;
+        for (const plan of plans) {
+          const result = await controller.repairMissingCells(experimentId, {
+            taskId: plan.taskId,
+            modelKeys: plan.requestedModelKeys,
+          });
+          if (!result.ok) {
+            error = result.error;
+            break;
+          }
+          queued += 1;
+          await controller.whenIdle();
+        }
+        if (error) {
+          setRecoveryMessage({
+            tone: "error",
+            text: queued > 0 ? `${error} — ${queued} task(s) already queued.` : error,
+          });
+        } else {
+          setRecoveryTarget(null);
+          setRecoveryMessage({
+            tone: "success",
+            text: "Repair started — navigate to the progress view to watch it.",
+          });
+        }
+      } else {
+        // Full-roster fallback: single "Retry incomplete task" cell action or
+        // a repair-cell target whose plan disappeared.
+        const result = await controller.retryIncomplete(experimentId);
+        if (result.ok) {
+          setRecoveryTarget(null);
+          setRecoveryMessage({
+            tone: "success",
+            text: "Retry started — navigate to the progress view to watch it.",
+          });
+        } else {
+          setRecoveryMessage({ tone: "error", text: result.error });
+        }
+      }
+    } catch (err: unknown) {
+      setRecoveryMessage({
+        tone: "error",
+        text: err instanceof Error ? err.message : "Recovery failed.",
+      });
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
   // Exact localized timestamp + explicit timezone (spec §12.3).
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const startedText = `${new Date(experiment.createdAt).toLocaleString()} · ${timeZone}`;
@@ -181,6 +380,29 @@ export function ExperimentResults({
       if (ISSUE_STATUSES.has(attempt.status)) issueAttempts.push({ taskTitle, attempt });
     }
   }
+
+  // Coverage issues derive from CURRENT aggregation cells (spec §12.4 #6): a
+  // repaired cell leaves this list as soon as the selected attempt changes.
+  const coverageIssues: {
+    taskId: string;
+    taskTitle: string;
+    modelKey: string;
+    reason: MissingReason;
+  }[] = [];
+  aggregation.cells.forEach((row, taskIdx) => {
+    const taskId = aggregation.taskIds[taskIdx];
+    const taskTitle = taskById.get(taskId)?.title ?? taskId;
+    row.forEach((cell, modelIdx) => {
+      if (cell.kind === "missing") {
+        coverageIssues.push({
+          taskId,
+          taskTitle,
+          modelKey: aggregation.modelKeys[modelIdx],
+          reason: cell.reason,
+        });
+      }
+    });
+  });
 
   const profiles = experiment.snapshot.profiles;
   const profileText =
@@ -380,27 +602,118 @@ export function ExperimentResults({
       ) : null}
 
       {/* Recovery toolbar (spec §11.1) — above the matrix, only when retryable. */}
-      {hasRetryableTasks && !executionActive ? (
+      {/* Coverage issues — derives from CURRENT aggregation cells (spec §12.4 #6).
+          A repaired cell disappears from here once the selected attempt changes. */}
+      {coverageIssues.length > 0 ? (
+        <section
+          aria-label="Coverage issues"
+          data-testid="coverage-issues"
+          className="flex min-w-0 flex-col gap-1"
+        >
+          <h2 className="text-xs font-medium uppercase tracking-wide text-text-muted">
+            Coverage issues
+          </h2>
+          <ul className="flex min-w-0 flex-col">
+            {coverageIssues.map(({ taskId, taskTitle, modelKey, reason }) => (
+              <li
+                key={`${taskId}:${modelKey}`}
+                className="flex min-h-[44px] min-w-0 flex-wrap items-center gap-2 border-b border-edge py-1 last:border-b-0"
+              >
+                <StatusMark status={MISSING_CELL_DISPLAY[reason].status} size={12} />
+                <span className="min-w-0 truncate text-sm text-text">{taskTitle}</span>
+                <span className="font-mono text-xs text-text-muted">{modelKey}</span>
+                <span className="text-xs text-text-secondary">{MISSING_CELL_DISPLAY[reason].text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {/* Attempt history — historical failed attempts behind a disclosure (spec §12.4 #7).
+          Old failures remain inspectable here after a repair succeeds. */}
+      {issueAttempts.length > 0 ? (
+        <section
+          aria-label="Attempt history"
+          data-testid="attempt-history"
+          className="flex min-w-0 flex-col gap-1"
+        >
+          <details className="group min-w-0">
+            <summary className="flex min-h-[44px] min-w-0 cursor-pointer list-none items-center gap-2 text-xs font-medium uppercase tracking-wide text-text-muted transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+              <ChevronDown
+                size={14}
+                aria-hidden="true"
+                className="shrink-0 transition-transform duration-150 group-open:rotate-180"
+              />
+              Attempt history ({issueAttempts.length})
+            </summary>
+            <ul className="flex min-w-0 flex-col">
+              {issueAttempts.map(({ taskTitle, attempt }) => (
+                <li
+                  key={attempt.id}
+                  className="flex min-h-[44px] min-w-0 flex-wrap items-center gap-2 border-b border-edge py-1 last:border-b-0"
+                >
+                  <StatusMark status={attempt.status} />
+                  <span className="min-w-0 truncate text-sm text-text">{taskTitle}</span>
+                  <span className="text-xs text-text-muted">Trial {attempt.trial}</span>
+                  {attempt.runId ? (
+                    <Link
+                      to={`/runs/${attempt.runId}`}
+                      className="inline-flex min-h-[44px] items-center px-2 text-sm text-accent transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      View run
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </section>
+      ) : null}
+
+      {/* Recovery toolbar (spec §11.1) — above the matrix, only while this surface
+          owns the lease. Reports repairable vs fallback counts and offers the
+          batch repair plus the existing full-roster retry fallback. */}
+      {showRecoveryToolbar ? (
         <section
           aria-label="Recovery"
           className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border border-edge bg-panel px-4 py-3"
         >
           <div className="min-w-0 flex-1">
             <p className="text-sm text-text">
-              {retryableTaskCount} incomplete task{retryableTaskCount === 1 ? "" : "s"} — retry with the full candidate roster.
+              {missingCellCount} missing result{missingCellCount === 1 ? "" : "s"} —{" "}
+              {repairableCount} repairable, {fallbackCount} {fallbackCount === 1 ? "needs" : "need"} a
+              full task retry.
             </p>
-            {retryMessage ? (
+            {recoveryMessage ? (
+              <p
+                role="alert"
+                className={`mt-1 text-xs ${recoveryMessage.tone === "error" ? "text-warning" : "text-success"}`}
+              >
+                {recoveryMessage.text}
+              </p>
+            ) : retryMessage ? (
               <p role="alert" className="mt-1 text-xs text-warning">{retryMessage}</p>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={() => void handleRetryAll()}
-            disabled={retryBusy}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {retryBusy ? "Starting…" : "Retry all incomplete tasks"}
-          </button>
+          {repairableCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setRecoveryTarget({ kind: "repair-all" })}
+              className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Repair all missing results
+            </button>
+          ) : null}
+          {hasRetryableTasks ? (
+            <button
+              type="button"
+              onClick={() => void handleRetryAll()}
+              disabled={retryBusy}
+              className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {retryBusy ? "Starting…" : "Retry all incomplete tasks"}
+            </button>
+          ) : null}
         </section>
       ) : null}
 
@@ -410,6 +723,8 @@ export function ExperimentResults({
           tasks={experiment.snapshot.tasks}
           modelSlots={experiment.snapshot.modelSlots}
           runRecords={runRecords}
+          repairablePlans={repairablePlans}
+          onRepairRequest={recoveryEnabled ? handleRepairRequest : undefined}
         />
       ) : (
         <MobileExperimentResults
@@ -417,8 +732,25 @@ export function ExperimentResults({
           tasks={experiment.snapshot.tasks}
           modelSlots={experiment.snapshot.modelSlots}
           runRecords={runRecords}
+          repairablePlans={repairablePlans}
+          onRepairRequest={recoveryEnabled ? handleRepairRequest : undefined}
         />
       )}
+
+      <ExperimentRecoveryDialog
+        open={recoveryTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRecoveryTarget(null);
+        }}
+        variant={recoveryVariant}
+        plan={recoveryPlan}
+        summary={repairAllSummary}
+        taskTitle={recoveryTaskTitle}
+        modelLabel={recoveryModelLabel}
+        busy={recoveryBusy}
+        message={recoveryMessage}
+        onConfirm={() => void handleRecoveryConfirm()}
+      />
     </div>
   );
 }

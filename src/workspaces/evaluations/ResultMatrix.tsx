@@ -31,6 +31,14 @@ import {
 import { StatusMark } from "../../ui/StatusMark";
 import type { StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
+import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
+
+/** Planner plans by taskId → modelKey (spec §11.2). Shared with the mobile
+ *  adaptation and the recovery toolbar. */
+export type RepairableCellPlans = ReadonlyMap<
+  string,
+  ReadonlyMap<string, CompoundRepairPlan>
+>;
 
 export interface ResultMatrixProps {
   aggregation: ExperimentAggregation;
@@ -38,6 +46,11 @@ export interface ResultMatrixProps {
   modelSlots: ModelSlot[];
   /** Loaded run records by runId for evidence links. */
   runRecords: ReadonlyMap<string, RunRecordV2>;
+  /** Repairable no-score cells by task + model key (spec §11.2). */
+  repairablePlans?: RepairableCellPlans;
+  /** Recovery handoff — present only while this surface owns the lease; when
+   *  provided, every missing cell renders one action control (spec §11.1). */
+  onRepairRequest?: (taskId: string, modelKey: string) => void;
 }
 
 /** Truthful closest status token per missing reason; text stays primary.
@@ -82,16 +95,76 @@ function WinnerBadge(): ReactElement {
   );
 }
 
+function MissingCellContent({
+  reason,
+  runId,
+  taskId,
+  modelKey,
+  repairable,
+  onRepairRequest,
+}: {
+  reason: MissingReason;
+  runId: string | null;
+  taskId: string;
+  modelKey: string;
+  repairable: boolean;
+  onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
+}): ReactElement {
+  const display = MISSING_CELL_DISPLAY[reason];
+  const evidenceHref = runId ? `/runs/${runId}` : null;
+  return (
+    <div className="flex min-h-[44px] min-w-0 flex-col justify-center gap-1 py-1">
+      <span className="flex items-center gap-2">
+        <StatusMark status={display.status} size={12} />
+        <span className="text-xs text-text-secondary">{display.text}</span>
+      </span>
+      {onRepairRequest ? (
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            data-recovery-action={repairable ? "repair-cell" : "retry-task"}
+            onClick={() => onRepairRequest(taskId, modelKey)}
+            className="inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-2.5 text-xs text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {repairable ? "Complete missing result" : "Retry incomplete task"}
+          </button>
+          {evidenceHref ? (
+            <Link
+              to={evidenceHref}
+              className="inline-flex min-h-[44px] items-center px-1 text-xs text-accent transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Evidence
+            </Link>
+          ) : null}
+        </span>
+      ) : evidenceHref ? (
+        <Link
+          to={evidenceHref}
+          className="inline-flex min-h-[44px] items-center px-1 text-xs text-accent transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          View evidence
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
 function CellContent({
   cell,
   modelKey,
   runRecords,
   rowBest,
+  taskId,
+  repairable,
+  onRepairRequest,
 }: {
   cell: CellState;
   modelKey: string;
   runRecords: ReadonlyMap<string, RunRecordV2>;
   rowBest: boolean;
+  taskId: string;
+  repairable: boolean;
+  onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
 }): ReactElement {
   if (cell.kind === "scored") {
     const href = cellEvidenceLink(cell, modelKey, cell.runId ? runRecords.get(cell.runId) : undefined);
@@ -114,12 +187,15 @@ function CellContent({
       <span className={CELL_LINK_CLASSES}>{content}</span>
     );
   }
-  const display = MISSING_CELL_DISPLAY[cell.reason];
   return (
-    <span className="flex min-h-[44px] items-center gap-2">
-      <StatusMark status={display.status} size={12} />
-      <span className="text-xs text-text-secondary">{display.text}</span>
-    </span>
+    <MissingCellContent
+      reason={cell.reason}
+      runId={cell.runId}
+      taskId={taskId}
+      modelKey={modelKey}
+      repairable={repairable}
+      onRepairRequest={onRepairRequest}
+    />
   );
 }
 
@@ -128,6 +204,8 @@ export function ResultMatrix({
   tasks,
   modelSlots,
   runRecords,
+  repairablePlans,
+  onRepairRequest,
 }: ResultMatrixProps): ReactElement {
   const slotsByKey = new Map(modelSlots.map((s) => [`${s.providerId}:${s.slug}`, s]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
@@ -221,6 +299,9 @@ export function ResultMatrix({
                             // Same epsilon as aggregation winner ties (1e-9).
                             Math.abs(cell.score - best) <= 1e-9
                           }
+                          taskId={taskId}
+                          repairable={repairablePlans?.get(taskId)?.has(modelKey) ?? false}
+                          onRepairRequest={onRepairRequest}
                         />
                       </td>
                     );

@@ -11,6 +11,7 @@ import type {
   ExperimentAggregation,
   MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
+import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
 import type {
   EvaluationTask,
   ExperimentRecord,
@@ -453,6 +454,98 @@ describe("ResultMatrix — scroll region (plan 7.2 #12)", () => {
     expect(region!.className).toContain("focus-visible:ring-accent");
     // persistent outline while focused, not only focus-visible
     expect(region!.className).toContain("focus:ring-2");
+    cleanup(h);
+  });
+});
+
+// --- 14. Recovery actions (spec §11.1) --------------------------------------------------
+
+describe("ResultMatrix — recovery actions (spec §11.1)", () => {
+  const PLAN_C: CompoundRepairPlan = {
+    taskId: "t2",
+    baseRunId: "run-2",
+    requestedModelKeys: [KEY_C],
+    reusedModelKeys: [KEY_A, KEY_B],
+    candidateCalls: 1,
+    judgeCalls: 1,
+  };
+  const REPAIRABLE = new Map([["t2", new Map([[KEY_C, PLAN_C]])]]);
+
+  function renderWithRecovery(
+    repairablePlans: ReadonlyMap<string, ReadonlyMap<string, CompoundRepairPlan>> = REPAIRABLE,
+    onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined = vi.fn(),
+  ): Harness {
+    return renderWithRouter(
+      <ResultMatrix
+        aggregation={BASE}
+        tasks={TASKS}
+        modelSlots={SLOTS}
+        runRecords={defaultRecords()}
+        repairablePlans={repairablePlans}
+        onRepairRequest={onRepairRequest}
+      />,
+    );
+  }
+
+  it("shows Complete missing result on a repairable no-score cell", () => {
+    const h = renderWithRecovery();
+    const rows = h.$$("tbody tr");
+    const cell = tdCells(rows[1])[2];
+    const action = cell.querySelector("button");
+    expect(action).not.toBeNull();
+    expect(action?.textContent).toContain("Complete missing result");
+    cleanup(h);
+  });
+
+  it("shows Retry incomplete task on a non-repairable missing cell", () => {
+    const h = renderWithRecovery();
+    const rows = h.$$("tbody tr");
+    const cell = tdCells(rows[2])[2]; // no-accepted-attempt, no run
+    const action = cell.querySelector("button");
+    expect(action).not.toBeNull();
+    expect(action?.textContent).toContain("Retry incomplete task");
+    cleanup(h);
+  });
+
+  it("clicking a cell action reports the exact task and model key", () => {
+    const onRepairRequest = vi.fn();
+    const h = renderWithRecovery(REPAIRABLE, onRepairRequest);
+    const rows = h.$$("tbody tr");
+    const action = tdCells(rows[1])[2].querySelector("button") as HTMLButtonElement;
+    act(() => action.click());
+    expect(onRepairRequest).toHaveBeenCalledWith("t2", KEY_C);
+    // fallback cell reports its task too
+    const fallback = tdCells(rows[2])[2].querySelector("button") as HTMLButtonElement;
+    act(() => fallback.click());
+    expect(onRepairRequest).toHaveBeenCalledWith("t3", KEY_C);
+    cleanup(h);
+  });
+
+  it("keeps one action control and one evidence link, never nested", () => {
+    const h = renderWithRecovery();
+    const rows = h.$$("tbody tr");
+    const cell = tdCells(rows[1])[2]; // no-score with run-2 evidence
+    expect(cell.querySelector("button")).not.toBeNull();
+    expect(cell.querySelector("a")?.getAttribute("href")).toBe("/runs/run-2");
+    // No nested interactive elements: button not inside a link, link not inside a button.
+    expect(cell.querySelector("a button")).toBeNull();
+    expect(cell.querySelector("button a")).toBeNull();
+    cleanup(h);
+  });
+
+  it("renders no action buttons when no recovery handler is wired", () => {
+    const h = renderMatrix();
+    expect(h.$$("tbody button")).toHaveLength(0);
+    cleanup(h);
+  });
+
+  it("keeps 44px action targets with keyboard focus-visible rings", () => {
+    const h = renderWithRecovery();
+    const rows = h.$$("tbody tr");
+    const action = tdCells(rows[1])[2].querySelector("button") as HTMLButtonElement;
+    expect(action.className).toContain("min-h-[44px]");
+    expect(action.className).toContain("focus-visible:ring-2");
+    expect(action.className).toContain("focus-visible:ring-accent");
     cleanup(h);
   });
 });

@@ -238,28 +238,48 @@ function CandidatesSection({
     <section data-section="candidates" className="flex flex-col gap-2">
       <h3 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Candidates</h3>
       <ul className="flex flex-col gap-1" role="list" ref={listRef}>
-        {record.candidates.map((c) => (
-          <li key={c.candidateId}>
-            <button
-              type="button"
-              data-candidate-id={c.candidateId}
-              tabIndex={-1}
-              onClick={() => setSelectedId(c.candidateId)}
-              aria-pressed={c.candidateId === selectedId}
-              className="flex min-h-[44px] w-full items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-left text-sm transition-colors duration-150 hover:border-edge-bright focus:outline-none focus:ring-2 focus:ring-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <CompactModelLabel providerId={c.providerId} slug={c.slug} />
-              {blindMap[c.candidateId] && (
-                <span className="rounded-md border border-edge px-1.5 py-0.5 font-mono text-xs text-text-muted">
-                  Label: {blindMap[c.candidateId]}
+        {record.candidates.map((c) => {
+          const accepted = c.acceptedAttemptId
+            ? c.attempts.find((a) => a.attemptId === c.acceptedAttemptId)
+            : null;
+          const reusedFrom = accepted?.reusedFrom ?? null;
+          return (
+            <li key={c.candidateId}>
+              <button
+                type="button"
+                data-candidate-id={c.candidateId}
+                tabIndex={-1}
+                onClick={() => setSelectedId(c.candidateId)}
+                aria-pressed={c.candidateId === selectedId}
+                className="flex min-h-[44px] w-full items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-left text-sm transition-colors duration-150 hover:border-edge-bright focus:outline-none focus:ring-2 focus:ring-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <CompactModelLabel providerId={c.providerId} slug={c.slug} />
+                {blindMap[c.candidateId] && (
+                  <span className="rounded-md border border-edge px-1.5 py-0.5 font-mono text-xs text-text-muted">
+                    Label: {blindMap[c.candidateId]}
+                  </span>
+                )}
+                <span className="ml-auto text-text-muted tabular-nums">
+                  {c.attempts.length} attempt{c.attempts.length === 1 ? "" : "s"}
                 </span>
-              )}
-              <span className="ml-auto text-text-muted tabular-nums">
-                {c.attempts.length} attempt{c.attempts.length === 1 ? "" : "s"}
-              </span>
-            </button>
-          </li>
-        ))}
+              </button>
+              {reusedFrom ? (
+                <p
+                  data-reused-from=""
+                  className="flex min-h-[44px] min-w-0 items-center gap-2 px-2 text-xs"
+                >
+                  <span className="text-text-muted">Reused from prior attempt</span>
+                  <Link
+                    to={`/runs/${reusedFrom.sourceRunId}`}
+                    className="inline-flex min-h-[44px] items-center text-accent transition-colors duration-150 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    View source run
+                  </Link>
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
       {/* Selected candidate output */}
       {selected && acceptedAttempt && (

@@ -212,6 +212,45 @@ describe("RunDetail", () => {
     cleanup(h);
   });
 
+  it("reused candidates link to the source run evidence (spec §11.4)", () => {
+    const record = makeFullRecord({
+      candidates: [{
+        candidateId: "c1",
+        slotId: "s1",
+        modelKey: "openrouter:gpt-4o",
+        providerId: "openrouter",
+        model: "GPT-4o",
+        slug: "gpt-4o",
+        acceptedAttemptId: "att-1",
+        attempts: [{
+          attemptId: "att-1",
+          messages: [{ role: "user", content: "Sort the list" }],
+          startedAt: 1716048000000,
+          finishedAt: 1716048030000,
+          status: "completed" as const,
+          output: "def bubble_sort(arr):\n    return sorted(arr)",
+          tokensIn: 15,
+          tokensOut: 30,
+          error: null,
+          // Compound-repair provenance: copied from an earlier immutable run.
+          reusedFrom: {
+            sourceRunId: "run-base-1",
+            sourceCandidateId: "cand-orig",
+            sourceAttemptId: "att-orig",
+          },
+        }],
+      }],
+    });
+    const h = renderWithRouter(<RunDetail record={record} />);
+    const reused = h.$("[data-reused-from]");
+    expect(reused).not.toBeNull();
+    expect(reused?.textContent).toContain("Reused from prior attempt");
+    const link = reused?.querySelector("a");
+    expect(link?.getAttribute("href")).toBe("/runs/run-base-1");
+    expect(link?.textContent).toContain("View source run");
+    cleanup(h);
+  });
+
   it("judge evidence section shows accepted attempt and blind-label mapping", () => {
     const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
     const judge = h.$("[data-section='judge']");
