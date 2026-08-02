@@ -1,18 +1,19 @@
 // =============================================================================
 // ExperimentProgress — live experiment progress surface (spec §11, Phase 7)
 //
-// Mounted by ExperimentRoute for non-terminal experiments. Shows the
-// completed/total summary, one RecordRow per task attempt in snapshot order,
-// and the execution controls (pause-at-boundary, resume, abort, retry
-// incomplete). A controller "error" event surfaces a compact role="alert"
-// region with the failed operation and the next action (spec §14).
+// Mounted by ExperimentRoute for non-terminal experiments. Shows the identity
+// header, the scalable task ledger (sticky instrument header with current task,
+// counts, elapsed, Pause/Resume + Abort; one primary row per task; collapsed
+// attempt history; 50-row pages), and the footer recovery controls
+// (retry incomplete, back to suite). A controller "error" event surfaces a
+// compact role="alert" region with the failed operation and the next action
+// (spec §14).
 // =============================================================================
 
 import { useEffect, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { StatusMark } from "../../ui/StatusMark";
-import { RecordRow } from "../../ui/RecordRow";
-import { formatElapsed } from "../../ui/GlobalExecutionStrip";
+import { ExperimentTaskLedger } from "./ExperimentTaskLedger";
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 
@@ -31,7 +32,6 @@ const RETRYABLE_STATUSES: ReadonlySet<string> = new Set([
 const BUTTON_BASE =
   "pressable flex min-h-[44px] items-center rounded-md border px-4 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
 const BUTTON_NEUTRAL = `${BUTTON_BASE} border-edge bg-panel text-text-secondary hover:border-edge-bright hover:text-text`;
-const BUTTON_DESTRUCTIVE = `${BUTTON_BASE} border-error/40 bg-panel text-error hover:border-error`;
 
 export function ExperimentProgress({
   experiment,
@@ -48,12 +48,6 @@ export function ExperimentProgress({
       if (event.kind === "error") setControllerError(event.error);
     });
   }, [controller]);
-
-  const stateByTaskId = new Map(experiment.tasks.map((t) => [t.taskId, t]));
-  const ordered = experiment.snapshot.tasks.map((task) => ({
-    task,
-    attempts: stateByTaskId.get(task.id)?.attempts ?? [],
-  }));
 
   const hasRunningAttempt = experiment.tasks.some((t) =>
     t.attempts.some((a) => a.status === "running"),
@@ -74,15 +68,6 @@ export function ExperimentProgress({
     return () => clearInterval(handle);
   }, [hasRunningAttempt]);
 
-  const total = ordered.length;
-  const completedCount = ordered.filter(({ attempts }) =>
-    attempts.some((a) => a.status === "completed"),
-  ).length;
-  const currentEntry =
-    ordered.find(({ attempts }) => attempts.some((a) => a.status === "running")) ??
-    ordered.find(({ attempts }) => !attempts.some((a) => a.status === "completed"));
-  const currentIndex = currentEntry ? ordered.indexOf(currentEntry) + 1 : null;
-
   const controllerUnavailable = controller === null;
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -99,12 +84,6 @@ export function ExperimentProgress({
         </p>
       </header>
 
-      <p className="text-sm text-text-secondary">
-        {currentIndex !== null && currentEntry
-          ? `Task ${currentIndex} of ${total} · ${currentEntry.task.title} · ${completedCount} completed`
-          : `${total} of ${total} tasks complete`}
-      </p>
-
       {controllerError !== null && (
         <div
           role="alert"
@@ -115,64 +94,10 @@ export function ExperimentProgress({
         </div>
       )}
 
-      <section aria-label="Experiment tasks" className="flex flex-col gap-2">
-        {ordered.map(({ task, attempts }) => (
-          <div key={task.id} data-task-section="" className="flex flex-col gap-1">
-            {attempts.map((attempt) => (
-              <RecordRow
-                key={attempt.id}
-                variant="list"
-                id={attempt.id}
-                title={task.title}
-                status={attempt.status}
-                timestamp={attempt.startedAt ?? experiment.createdAt}
-                summary={
-                  attempt.status === "running" && attempt.startedAt !== null
-                    ? `Trial ${attempt.trial} · ${formatElapsed(now - attempt.startedAt)} elapsed`
-                    : `Trial ${attempt.trial}`
-                }
-              />
-            ))}
-          </div>
-        ))}
-      </section>
+      <ExperimentTaskLedger experiment={experiment} controller={controller} now={now} />
 
       <footer className="mt-auto flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          {experiment.status === "running" && (
-            <button
-              type="button"
-              disabled={controllerUnavailable}
-              onClick={() => controller?.requestPause()}
-              className={BUTTON_NEUTRAL}
-            >
-              Pause after current task
-            </button>
-          )}
-          {experiment.status === "paused" && (
-            <button
-              type="button"
-              disabled={controllerUnavailable}
-              onClick={() => {
-                if (controller) void controller.resume();
-              }}
-              className={BUTTON_NEUTRAL}
-            >
-              Resume
-            </button>
-          )}
-          {(experiment.status === "running" || experiment.status === "paused") && (
-            <button
-              type="button"
-              disabled={controllerUnavailable}
-              onClick={() => {
-                if (controller) void controller.abort();
-              }}
-              className={BUTTON_DESTRUCTIVE}
-            >
-              Abort experiment
-            </button>
-          )}
           {showRetry && (
             <button
               type="button"

@@ -189,14 +189,20 @@ describe("ExperimentProgress", () => {
     cleanup(h);
   });
 
-  it("renders every task attempt as a RecordRow with StatusMark text, never color-only (plan 7.1 #2)", async () => {
+  it("renders one primary ledger row per task with StatusMark text, never color-only (plan 7.1 #2)", async () => {
     const { controller } = makeController();
     const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
     await settle();
-    const rows = h.$$("[data-record-row]");
+    const rows = h.$$("[data-task-row]");
     expect(rows).toHaveLength(3);
     for (const row of rows) {
       expect(row.querySelector("[data-status-mark]")).not.toBeNull();
+      // The painted surface carries the row-width contract (flex-1 + min-w-0).
+      const surface = row.querySelector("[data-record-row-surface]");
+      expect(surface).not.toBeNull();
+      const cls = surface?.getAttribute("class") ?? "";
+      expect(cls.includes("flex-1") || cls.includes("w-full")).toBe(true);
+      expect(cls.includes("min-w-0")).toBe(true);
     }
     const text = h.container.textContent ?? "";
     expect(text).toContain("Completed");
@@ -205,6 +211,23 @@ describe("ExperimentProgress", () => {
     // Row titles carry the task title
     expect(text).toContain("Draft release notes");
     expect(text).toContain("Summarize logs");
+    cleanup(h);
+  });
+
+  it("renders the ledger instrument header and keeps attempt history collapsed (plan 7.1 #2)", async () => {
+    const { controller } = makeController();
+    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    await settle();
+    expect(h.$("[data-ledger-instrument]")).not.toBeNull();
+    // Attempt history rows only mount after disclosure opens.
+    expect(h.$$("[data-attempt-row]")).toHaveLength(0);
+    const toggle = h.$$("[data-attempt-toggle]")[0];
+    await act(async () => {
+      toggle.click();
+      await flush();
+    });
+    expect(h.$$("[data-attempt-row]")).toHaveLength(1);
+    expect(h.container.textContent).toContain("Trial 1");
     cleanup(h);
   });
 

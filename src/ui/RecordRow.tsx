@@ -30,7 +30,7 @@ export interface RecordRowProps {
   children?: ReactNode;
 }
 
-function formatRelativeTime(ts: number): string {
+export function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const sec = Math.round(diff / 1000);
   if (sec < 60) return `${sec}s ago`;
@@ -95,8 +95,11 @@ export function RecordRow(props: RecordRowProps) {
   }
 
   // list variant
+  // The painted child (link or div) carries the width contract — flex-1 + min-w-0
+  // so it fills the wrapper while long titles truncate instead of expanding the
+  // row (spec §12.2 row geometry; Task 13).
   const className =
-    "flex min-h-[44px] items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-sm transition-colors duration-150 hover:border-edge-bright";
+    "flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-sm transition-colors duration-150 hover:border-edge-bright";
 
   const inner = (
     <Inner {...rest} />
@@ -107,13 +110,14 @@ export function RecordRow(props: RecordRowProps) {
       {href ? (
         <Link
           to={href}
+          data-record-row-surface=""
           className={className}
           aria-label={`Run: ${rest.title}`}
         >
           {inner}
         </Link>
       ) : (
-        <div className={className}>
+        <div data-record-row-surface="" className={className}>
           {inner}
         </div>
       )}
