@@ -168,6 +168,13 @@ export interface CandidateAttemptRecord {
   tokensIn: number | null;
   tokensOut: number | null;
   error: PersistedError | null;
+  /** Compound-repair provenance: this attempt's output was copied from an
+   *  earlier immutable run's accepted candidate (spec §11.4). */
+  reusedFrom?: {
+    sourceRunId: string;
+    sourceCandidateId: string;
+    sourceAttemptId: string;
+  };
 }
 
 export interface PersistedCandidate {
@@ -413,6 +420,15 @@ export function isRunSource(v: unknown): v is RunSource {
 
 // --- Attempt records ----------------------------------------------------------
 
+function isReusedFrom(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  const { sourceRunId, sourceCandidateId, sourceAttemptId } = v;
+  if (!isNonEmptyString(sourceRunId) || /^(sk-|AIza|Bearer\s)/i.test(sourceRunId)) return false;
+  if (!isNonEmptyString(sourceCandidateId) || /^(sk-|AIza|Bearer\s)/i.test(sourceCandidateId)) return false;
+  if (!isNonEmptyString(sourceAttemptId) || /^(sk-|AIza|Bearer\s)/i.test(sourceAttemptId)) return false;
+  return true;
+}
+
 function isCandidateAttemptRecord(v: unknown): v is CandidateAttemptRecord {
   if (!isRecord(v)) return false;
   return (
@@ -424,7 +440,8 @@ function isCandidateAttemptRecord(v: unknown): v is CandidateAttemptRecord {
     (v.output === null || isString(v.output)) &&
     (v.tokensIn === null || isNumber(v.tokensIn)) &&
     (v.tokensOut === null || isNumber(v.tokensOut)) &&
-    (v.error === null || isPersistedError(v.error))
+    (v.error === null || isPersistedError(v.error)) &&
+    (v.reusedFrom === undefined || isReusedFrom(v.reusedFrom))
   );
 }
 

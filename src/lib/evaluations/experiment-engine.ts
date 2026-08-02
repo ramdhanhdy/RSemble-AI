@@ -26,7 +26,9 @@
 import type {
   EvaluationSuite,
   EvaluationProfile,
+  ExperimentAttemptCoverage,
   ExperimentRecord,
+  ExperimentRepairPlan,
   ExperimentTaskAttempt,
   ExperimentTaskState,
 } from "./evaluation-types";
@@ -54,20 +56,46 @@ export function mapRunStatusToAttemptStatus(
   }
 }
 
-// --- selectedAttemptId selector (spec §11.3) ------------------------------------
+// --- selectedAttemptId selector (spec §11.5) ------------------------------------
 //
-// Newest full-coverage accepted (completed) attempt wins; otherwise the newest
-// accepted partial attempt; otherwise none. Prior attempts remain inspectable —
-// this only moves the pointer.
+// Selection policy (spec §11.5):
+//   1. Newest completed full-coverage attempt.
+//   2. Otherwise, partial attempt with the highest scored-model coverage.
+//   3. Newest attempt only as the tie-breaker.
+//   4. Otherwise none.
+//
+// Existing records without stored score coverage use the current
+// newest-partial behavior as a migration fallback until a new attempt supplies
+// coverage metadata. A failed or lower-coverage repair must never displace
+// better accepted evidence.
 
 export function selectAttemptId(task: ExperimentTaskState): string | null {
   let newestCompleted: string | null = null;
+  let bestPartial: { id: string; coverage: number } | null = null;
   let newestPartial: string | null = null;
+
   for (const attempt of task.attempts) {
-    if (attempt.status === "completed") newestCompleted = attempt.id;
-    else if (attempt.status === "partial") newestPartial = attempt.id;
+    if (attempt.status === "completed") {
+      newestCompleted = attempt.id;
+    } else if (attempt.status === "partial") {
+      newestPartial = attempt.id;
+      const coverage = attempt.coverage
+        ? attempt.coverage.scoredModelKeys.length / Math.max(1, attempt.coverage.totalModels)
+        : -1; // No metadata → treat as lowest, preserve newest-partial fallback.
+      if (bestPartial === null || coverage > bestPartial.coverage) {
+        bestPartial = { id: attempt.id, coverage };
+      } else if (coverage === bestPartial.coverage && coverage >= 0) {
+        // Tie — newer attempt wins (spec §11.5 rule 3).
+        bestPartial = { id: attempt.id, coverage };
+      }
+    }
   }
-  return newestCompleted ?? newestPartial;
+
+  if (newestCompleted !== null) return newestCompleted;
+  // No completed attempt: prefer the highest-coverage partial when any attempt
+  // carries coverage metadata; otherwise fall back to the newest partial.
+  if (bestPartial !== null && bestPartial.coverage >= 0) return bestPartial.id;
+  return newestPartial;
 }
 
 // --- Record creation -------------------------------------------------------------
@@ -123,6 +151,10 @@ export interface CommitTerminalInput {
   epoch: number;
   error: PersistedError | null;
   now: number;
+  /** Scored-model coverage stored on the terminal attempt (spec §11.5). */
+  coverage?: ExperimentAttemptCoverage;
+  /** Compound repair metadata stored on the terminal attempt (spec §11.4). */
+  repair?: ExperimentRepairPlan;
 }
 
 export interface ExperimentEngine {
@@ -282,7 +314,7 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
     },
 
     commitTaskTerminal(input) {
-      const { taskId, attemptId, runStatus, epoch, error, now } = input;
+      const { taskId, attemptId, runStatus, epoch, error, now, coverage, repair } = input;
       if (epoch !== taskEpoch) {
         return reject(`Stale task epoch: expected ${taskEpoch}, got ${epoch}`);
       }
@@ -302,6 +334,8 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
         status: mapRunStatusToAttemptStatus(runStatus),
         finishedAt: now,
         error,
+        ...(coverage !== undefined ? { coverage } : {}),
+        ...(repair !== undefined ? { repair } : {}),
       };
       const updatedTask: ExperimentTaskState = {
         ...task,

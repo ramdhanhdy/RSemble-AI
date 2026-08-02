@@ -539,6 +539,54 @@ describe("selectAttemptId", () => {
     ).toBeNull();
   });
 
+  it("partial with higher scored-model coverage beats a newer partial attempt", () => {
+    const task = makeTaskState("t1", [
+      {
+        ...makeAttempt("a1", "partial"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+      },
+      {
+        ...makeAttempt("a2", "partial"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6"], totalModels: 8 },
+      },
+    ]);
+    // a1 is older but has 7/8 coverage; a2 is newer with 6/8.
+    expect(selectAttemptId(task)).toBe("a1");
+  });
+
+  it("newer partial wins when coverage ties", () => {
+    const task = makeTaskState("t1", [
+      {
+        ...makeAttempt("a1", "partial"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+      },
+      {
+        ...makeAttempt("a2", "partial"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+      },
+    ]);
+    expect(selectAttemptId(task)).toBe("a2");
+  });
+
+  it("attempts without coverage metadata preserve the newest-partial fallback", () => {
+    const task = makeTaskState("t1", [
+      makeAttempt("a1", "partial"),
+      makeAttempt("a2", "partial"),
+    ]);
+    expect(selectAttemptId(task)).toBe("a2");
+  });
+
+  it("failed attempts never become selected even with high coverage", () => {
+    const task = makeTaskState("t1", [
+      {
+        ...makeAttempt("a1", "failed"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+      },
+      makeAttempt("a2", "partial"),
+    ]);
+    expect(selectAttemptId(task)).toBe("a2");
+  });
+
   it("commit recomputes selection under the documented selector", () => {
     const engine = makeEngine(["t1"]);
     const att1 = startAndBegin(engine);

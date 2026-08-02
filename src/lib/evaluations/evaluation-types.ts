@@ -145,6 +145,21 @@ export interface ExperimentTaskAttempt {
   startedAt: number | null;
   finishedAt: number | null;
   error: PersistedError | null;
+  /** Scored-model coverage for coverage-aware attempt selection (spec §11.5). */
+  coverage?: ExperimentAttemptCoverage;
+  /** Compound repair metadata for auditable targeted repairs (spec §11.4). */
+  repair?: ExperimentRepairPlan;
+}
+
+export interface ExperimentAttemptCoverage {
+  scoredModelKeys: string[];
+  totalModels: number;
+}
+
+export interface ExperimentRepairPlan {
+  kind: "missing-cells";
+  baseRunId: string;
+  requestedModelKeys: string[];
 }
 
 export interface ExperimentTaskState {
@@ -427,6 +442,27 @@ export function isEvaluationSuite(v: unknown): v is EvaluationSuite {
 
 // --- Experiment ---------------------------------------------------------------
 
+function isExperimentAttemptCoverage(v: unknown): v is ExperimentAttemptCoverage {
+  if (!isRecord(v)) return false;
+  if (!Array.isArray(v.scoredModelKeys) || v.scoredModelKeys.length === 0) return false;
+  if (!v.scoredModelKeys.every((k): k is string => isNonEmptyString(k))) return false;
+  if (new Set(v.scoredModelKeys).size !== v.scoredModelKeys.length) return false;
+  if (!isNumber(v.totalModels) || v.totalModels < 0) return false;
+  if (v.scoredModelKeys.some((k) => /^(sk-|AIza|Bearer\s)/i.test(k))) return false;
+  return true;
+}
+
+function isExperimentRepairPlan(v: unknown): v is ExperimentRepairPlan {
+  if (!isRecord(v)) return false;
+  if (v.kind !== "missing-cells") return false;
+  if (!isNonEmptyString(v.baseRunId) || /^(sk-|AIza|Bearer\s)/i.test(v.baseRunId)) return false;
+  if (!Array.isArray(v.requestedModelKeys) || v.requestedModelKeys.length === 0) return false;
+  if (!v.requestedModelKeys.every((k): k is string => isNonEmptyString(k))) return false;
+  if (new Set(v.requestedModelKeys).size !== v.requestedModelKeys.length) return false;
+  if (v.requestedModelKeys.some((k) => /^(sk-|AIza|Bearer\s)/i.test(k))) return false;
+  return true;
+}
+
 export function isExperimentTaskAttempt(v: unknown): v is ExperimentTaskAttempt {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
@@ -438,6 +474,8 @@ export function isExperimentTaskAttempt(v: unknown): v is ExperimentTaskAttempt 
   if (v.startedAt !== null && !isNumber(v.startedAt)) return false;
   if (v.finishedAt !== null && !isNumber(v.finishedAt)) return false;
   if (v.error !== null && !isPersistedError(v.error)) return false;
+  if (v.coverage !== undefined && !isExperimentAttemptCoverage(v.coverage)) return false;
+  if (v.repair !== undefined && !isExperimentRepairPlan(v.repair)) return false;
   return true;
 }
 
