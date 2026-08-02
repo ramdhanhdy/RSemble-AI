@@ -63,7 +63,7 @@ export function ModeToggle({
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(opt.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={`min-h-[44px] rounded-sm px-2 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 ${
+            className={`pressable min-h-[44px] rounded-sm px-2 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 ${
               active
                 ? "bg-accent/15 font-semibold text-accent"
                 : "text-text-secondary hover:text-text"

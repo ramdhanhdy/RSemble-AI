@@ -36,7 +36,7 @@ export function EvaluationDisclosure({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls="evaluation-panel"
-        className="flex w-full min-h-[44px] items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="pressable flex w-full min-h-[44px] items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <ChevronRight
           size={13}
@@ -71,7 +71,7 @@ export function EvaluationDisclosure({
           {evaluation.kind === "custom" && (
             <button
               type="button"
-              className="flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="pressable flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               onClick={() => {
                 // Save as profile is a separate deliberate action — it opens a
                 // named draft and does not silently mutate Compare.
@@ -148,7 +148,7 @@ function ModeOption({ label, active, onClick }: { label: string; active: boolean
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex min-h-[44px] items-center gap-2 rounded-sm px-3 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+      className={`pressable flex min-h-[44px] items-center gap-2 rounded-sm px-3 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
         active ? "bg-accent/10 text-accent" : "text-text-secondary hover:bg-card-hover"
       }`}
     >

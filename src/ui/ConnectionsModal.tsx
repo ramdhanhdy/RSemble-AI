@@ -203,7 +203,7 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
             type="button"
             onClick={() => onOpenChange(false)}
             aria-label="Close connections"
-            className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card-hover hover:text-text"
+            className="pressable flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card-hover hover:text-text"
           >
             <X size={15} />
           </button>
@@ -257,7 +257,7 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
                         aria-label={`Test ${d.label} connection`}
                         onClick={() => void handleTest(d.id, d.label)}
                         disabled={testingProvider !== null}
-                        className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded border border-edge-bright bg-card px-3 font-mono text-xs text-text hover:bg-card-hover disabled:cursor-wait disabled:opacity-60 sm:flex-none"
+                        className="pressable flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded border border-edge-bright bg-card px-3 font-mono text-xs text-text hover:bg-card-hover disabled:cursor-wait disabled:opacity-60 sm:flex-none"
                       >
                         {testingProvider === d.id ? <Loader2 size={12} className="animate-spin-ease" /> : <Zap size={12} />}
                         Test
@@ -266,7 +266,7 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
                         type="button"
                         onClick={() => handleSave(d.id, d.label)}
                         disabled={testingProvider === d.id}
-                        className="min-h-[44px] flex-1 rounded border border-accent/40 bg-accent/10 px-3 font-mono text-xs text-accent hover:bg-accent/20 disabled:cursor-wait disabled:opacity-60 sm:flex-none"
+                        className="pressable min-h-[44px] flex-1 rounded border border-accent/40 bg-accent/10 px-3 font-mono text-xs text-accent hover:bg-accent/20 disabled:cursor-wait disabled:opacity-60 sm:flex-none"
                       >
                         Save
                       </button>
@@ -289,7 +289,7 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
                         void fetchStatuses();
                         onRefresh();
                       }}
-                      className="flex items-center gap-1 rounded border border-edge-bright bg-card px-3 py-1.5 font-mono text-xs text-text hover:bg-card-hover"
+                      className="pressable flex items-center gap-1 rounded border border-edge-bright bg-card px-3 py-1.5 font-mono text-xs text-text hover:bg-card-hover"
                     >
                       <RefreshCw size={12} /> Refresh status
                     </button>
@@ -304,7 +304,7 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="min-h-[44px] rounded-sm border border-edge-bright bg-card-hover px-4 font-mono text-xs text-text hover:bg-raised"
+            className="pressable min-h-[44px] rounded-sm border border-edge-bright bg-card-hover px-4 font-mono text-xs text-text hover:bg-raised"
           >
             Done
           </button>

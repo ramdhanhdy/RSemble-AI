@@ -124,7 +124,7 @@ export function TaskInput({
             onClick={() => fileInputRef.current?.click()}
             aria-label="Attach files to this task"
             title="Attach files — images, PDF, Markdown, .docx"
-            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider text-text-secondary transition-colors hover:border-edge-bright hover:text-text"
+            className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider text-text-secondary transition-colors hover:border-edge-bright hover:text-text"
           >
             <Paperclip size={12} aria-hidden="true" />
             Attach
@@ -149,7 +149,7 @@ export function TaskInput({
             onClick={onClick}
             aria-label={label}
             title={title}
-            className={`flex min-h-[44px] items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-colors ${
+            className={`pressable flex min-h-[44px] items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-colors ${
               armed
                 ? "border-warning/60 bg-warning/10 text-warning"
                 : "border-edge text-text-secondary hover:border-edge-bright hover:text-text"

@@ -62,7 +62,7 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
             type="button"
             onClick={() => setAdding(true)}
             aria-label="Add a model"
-            className="flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text"
+            className="pressable flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text"
           >
             <Plus size={13} /> Add model
           </button>
@@ -143,7 +143,7 @@ function SlotRow({
           onClick={() => dispatch({ type: "TOGGLE_SLOT", id: slot.id })}
           aria-pressed={slot.enabled}
           aria-label={slot.enabled ? `Disable ${slot.model}` : `Enable ${slot.model}`}
-          className="flex h-11 w-11 shrink-0 items-center justify-center"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center"
         >
           <span
             className={`flex h-5 w-5 items-center justify-center rounded-sm border transition-[background-color,border-color] ease-out duration-100 ${
@@ -208,7 +208,7 @@ function SlotRow({
           onClick={editing ? onCancelEdit : onEdit}
           aria-label={`Switch model for ${slot.model}`}
           aria-expanded={editing}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-accent"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-accent"
         >
           <Pencil size={14} />
         </button>
@@ -216,7 +216,7 @@ function SlotRow({
           type="button"
           onClick={() => dispatch({ type: "REMOVE_SLOT", id: slot.id })}
           aria-label={`Remove ${slot.model}`}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-error"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-error"
         >
           <Trash2 size={14} />
         </button>
@@ -367,7 +367,7 @@ export function AddModelCombobox({
           type="button"
           onClick={handleClearOrCancel}
           aria-label={query.length > 0 ? "Clear model search" : "Cancel add model"}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text"
         >
           <X size={13} />
         </button>
@@ -407,7 +407,7 @@ export function AddModelCombobox({
           type="button"
           onClick={() => commit(trimmed)}
           aria-label={`${commitLabel} ${trimmed}`}
-          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/[0.06] py-2 font-mono text-sm text-accent hover:bg-accent/[0.12]"
+          className="pressable mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/[0.06] py-2 font-mono text-sm text-accent hover:bg-accent/[0.12]"
         >
           <Plus size={13} /> {commitLabel}
           <span className="max-w-[55%] truncate" title={trimmed}>

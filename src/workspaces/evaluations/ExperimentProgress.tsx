@@ -29,7 +29,7 @@ const RETRYABLE_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 const BUTTON_BASE =
-  "flex min-h-[44px] items-center rounded-md border px-4 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
+  "pressable flex min-h-[44px] items-center rounded-md border px-4 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
 const BUTTON_NEUTRAL = `${BUTTON_BASE} border-edge bg-panel text-text-secondary hover:border-edge-bright hover:text-text`;
 const BUTTON_DESTRUCTIVE = `${BUTTON_BASE} border-error/40 bg-panel text-error hover:border-error`;
 
