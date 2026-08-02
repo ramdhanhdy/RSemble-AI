@@ -168,6 +168,8 @@ git commit -m "test: lock suite reliability regressions"
 
 **Objective:** Append one `[DONE]` sentinel only to a normally completed, output-bearing 9Router stream, including reasoning deltas.
 
+Finalize a complete pending `data:` line at clean EOF and insert an SSE separator before the sentinel when the upstream omitted its final newline.
+
 **Files:**
 
 - Create: `server/codex-bridge/sse-termination.ts`

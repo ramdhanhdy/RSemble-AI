@@ -7,6 +7,7 @@ import type http from "node:http";
 import {
   initialSseTerminationState,
   inspectOpenAiSseChunk,
+  finalizeOpenAiSseState,
   shouldAppendDone,
   DONE_SENTINEL,
 } from "./sse-termination.js";
@@ -155,6 +156,7 @@ export async function handleOpenAICompatibleProxy(
   const isSse = contentType.includes("text/event-stream");
   const normalize = deps.normalizeCleanSseEof === true && isSse;
   let sseState = normalize ? initialSseTerminationState() : null;
+  let needsSseSeparator = false;
   let completedNormally = false;
 
   res.writeHead(upstream.status, { "Content-Type": contentType });
@@ -173,14 +175,19 @@ export async function handleOpenAICompatibleProxy(
       const ok = res.write(chunk);
       if (!ok) await once(res, "drain");
     }
+    if (sseState && sseState.pending.length > 0) {
+      needsSseSeparator = true;
+      sseState = finalizeOpenAiSseState(sseState);
+    }
     completedNormally = true;
   } catch {
     // Client disconnected or upstream aborted after headers were sent.
     completedNormally = false;
   } finally {
     clearTimeout(timeout);
-    if (sseState && shouldAppendDone(sseState, completedNormally) && !res.writableEnded) {
-      res.write(DONE_SENTINEL);
+    if (sseState && completedNormally && !res.writableEnded) {
+      if (needsSseSeparator) res.write("\n\n");
+      if (shouldAppendDone(sseState, true)) res.write(DONE_SENTINEL);
     }
     res.end();
   }

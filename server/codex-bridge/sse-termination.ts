@@ -82,6 +82,12 @@ export function inspectOpenAiSseChunk(
   return { pending: buffer, sawDone, sawUsableContent };
 }
 
+/** Inspect the final pending SSE line when upstream EOF arrives without `\n`. */
+export function finalizeOpenAiSseState(state: SseTerminationState): SseTerminationState {
+  if (state.pending.length === 0) return state;
+  return inspectOpenAiSseChunk(state, new TextEncoder().encode("\n"));
+}
+
 /**
  * Decide whether to append `data: [DONE]\n\n` at upstream EOF.
  *

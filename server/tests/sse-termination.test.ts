@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   inspectOpenAiSseChunk,
+  finalizeOpenAiSseState,
   shouldAppendDone,
   initialSseTerminationState,
   DONE_SENTINEL,
@@ -98,6 +99,21 @@ describe("inspectOpenAiSseChunk — reasoning-only protocol activity", () => {
       state,
       encode(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "thinking" } }] })}\n\n`),
     );
+    expect(shouldAppendDone(state, true)).toBe(true);
+  });
+});
+
+describe("finalizeOpenAiSseState — final line without newline", () => {
+  it("inspects a complete content event left in the pending EOF buffer", () => {
+    let state = initialSseTerminationState();
+    state = inspectOpenAiSseChunk(
+      state,
+      encode(`data: ${JSON.stringify({ choices: [{ delta: { content: "OK" } }] })}`),
+    );
+    expect(state.sawUsableContent).toBe(false);
+    state = finalizeOpenAiSseState(state);
+    expect(state.sawUsableContent).toBe(true);
+    expect(state.pending).toBe("");
     expect(shouldAppendDone(state, true)).toBe(true);
   });
 });

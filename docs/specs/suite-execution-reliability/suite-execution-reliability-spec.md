@@ -255,6 +255,8 @@ At upstream EOF:
 data: [DONE]\n\n
 ```
 
+If the final `data:` line has no trailing newline, inspect that pending line at clean EOF and write an SSE separator before the synthetic sentinel. This prevents valid final content from being glued to `[DONE]` and misclassified as protocol-incompatible.
+
 3. If no usable content was observed, end unchanged so the browser reports an empty stream.
 4. If reading threw, the client disconnected, or the upstream was aborted, do not append `[DONE]`.
 5. Never append a duplicate sentinel.

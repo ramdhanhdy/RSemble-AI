@@ -226,6 +226,20 @@ function bodyToString(res: { written: Buffer[] }): string {
 }
 
 describe("handleNineRouterProxy — SSE clean-EOF normalization", () => {
+  it("separates and terminates a final content data line that has no trailing newline", async () => {
+    const unterminated = `data: ${JSON.stringify({ choices: [{ delta: { content: "OK" } }] })}`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(upstreamWithChunks([unterminated])));
+    const res = makeRes();
+    await handleNineRouterProxy(
+      makeReq("POST", JSON.stringify({ stream: true })),
+      res,
+      "/9router/v1/chat/completions",
+      { upstream: "http://127.0.0.1:20128" },
+    );
+    const body = bodyToString(res);
+    expect(body).toContain(`${unterminated}\n\ndata: [DONE]\n\n`);
+  });
+
   it("normalizes a clean EOF after reasoning-only chunks so the client reports empty output, not protocol failure", async () => {
     const reasoning = `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "thinking" } }] })}\n\n`;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(upstreamWithChunks([reasoning])));
