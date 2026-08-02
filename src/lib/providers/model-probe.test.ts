@@ -46,8 +46,8 @@ describe("probeModelRoute — contract", () => {
     });
 
     expect(stream).toHaveBeenCalledTimes(1);
-    const opts = stream.mock.calls[0][0];
-    expect(opts.model).toBe("cmc/model");
+    const call = stream.mock.calls[0] as unknown as [{ model: string; temperature?: number; maxTokens?: number }];
+    expect(call[0].model).toBe("cmc/model");
   });
 
   it("requests temperature 0 and maxTokens 8", async () => {
@@ -64,10 +64,11 @@ describe("probeModelRoute — contract", () => {
       timeoutMs: 5_000,
     });
 
-    const opts = stream.mock.calls[0][0];
-    expect(opts.temperature).toBe(0);
-    expect(opts.maxTokens).toBe(8);
+    const call = stream.mock.calls[0] as unknown as [{ model: string; temperature?: number; maxTokens?: number }];
+    expect(call[0].temperature).toBe(0);
+    expect(call[0].maxTokens).toBe(8);
   });
+
 
   it("consumes the streaming iterator to completion", async () => {
     let yieldCount = 0;
@@ -244,6 +245,39 @@ describe("probeModelRoute — contract", () => {
       expect(result.message).not.toContain("sk-9router-secret-key");
       expect(result.message).not.toContain("Bearer ");
       expect(result.message).not.toContain("Say OK");
+    }
+  });
+
+  it("never discloses raw upstream response body content in the message", async () => {
+    // An upstream body with an unusual token format that the old regex-based
+    // sanitizer would have passed through verbatim.
+    const rawBody = '{"error":{"code":"model_overloaded","message":"The server is overloaded with requests. Please retry. Trace ID: xyz-abc-123"}}';
+    const provider = makeProvider({
+      chatCompletionStream: vi.fn(async function* (): AsyncGenerator<string, void, unknown> {
+        throw new ProviderError(rawBody, "9router", 503);
+      }),
+    });
+
+    const result = await probeModelRoute({
+      provider,
+      providerId: "9router",
+      model: "cmc/model",
+      now: () => 100,
+      timeoutMs: 5_000,
+    });
+
+    expect(result.kind).toBe("failed");
+    if (result.kind === "failed") {
+      // The raw upstream body must never appear in the message.
+      expect(result.message).not.toContain("model_overloaded");
+      expect(result.message).not.toContain("Trace ID");
+      expect(result.message).not.toContain("xyz-abc-123");
+      expect(result.message).not.toContain("Please retry");
+      // Only the generated safe message should appear.
+      expect(result.message).toContain("9Router");
+      expect(result.message).toContain("cmc/model");
+      expect(result.message).toContain("unavailable");
+      expect(result.message).toContain("HTTP 503");
     }
   });
 });
