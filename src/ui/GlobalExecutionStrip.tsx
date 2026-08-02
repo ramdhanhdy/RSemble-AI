@@ -155,7 +155,7 @@ export function buildStripViewModel(deps: {
 // --- Presentational component ---------------------------------------------------
 
 const DOT_CLASSES: Record<StripViewModel["status"], string> = {
-  running: "bg-accent motion-safe:animate-pulse",
+  running: "bg-accent",
   paused: "bg-text-muted",
   interrupted: "bg-error",
   "other-tab": "bg-text-muted",
@@ -205,7 +205,7 @@ export function GlobalExecutionStrip({ view }: { view: StripViewModel | null }):
       {view.status === "other-tab" ? (
         <span className="shrink-0 text-xs text-text-muted">Another tab</span>
       ) : (
-        <StatusMark status={view.status} />
+        <StatusMark status={view.status} reducedMotion />
       )}
       <span aria-hidden="true" className="min-w-0 flex-1 truncate font-mono text-xs text-text">
         {view.caption}

@@ -87,12 +87,17 @@ export function StatusMark({
   return (
     <span
       data-status-mark=""
-      className={`inline-flex items-center gap-1.5 text-sm ${cfg.color}`}
+      className={`motion-state inline-flex items-center gap-1.5 text-sm ${cfg.color}`}
     >
-      <Icon
-        size={size}
-        className={shouldSpin ? "animate-spin-ease" : undefined}
-      />
+      <span
+        data-status-icon=""
+        className="flex size-4 shrink-0 items-center justify-center"
+      >
+        <Icon
+          size={size}
+          className={shouldSpin ? "animate-spin-ease" : undefined}
+        />
+      </span>
       <span className="tabular-nums">{cfg.label}</span>
     </span>
   );
