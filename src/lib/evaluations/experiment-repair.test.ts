@@ -314,4 +314,75 @@ describe("planMissingCellRepair", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toMatch(/reuse/i);
   });
+
+  it("rejects a base run whose id does not match the selected attempt", () => {
+    const { experiment, aggregation } = makeRepairableFixture();
+    const wrongRun = { ...makeRun("run-WRONG", [MK1, MK2]) };
+    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+    const aggregation2 = aggregateExperiment({
+      snapshot: experiment.snapshot,
+      taskStates,
+      resolveRunRecord: () => wrongRun,
+    });
+    const result = planMissingCellRepair({
+      experiment,
+      aggregation: aggregation2,
+      request: { taskId: "t1", modelKeys: [MK3] },
+      resolveRunRecord: () => wrongRun,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/id does not match/i);
+  });
+
+  it("rejects a base run from a different experiment", () => {
+    const { experiment } = makeRepairableFixture();
+    const baseRun = makeRun("run-base", [MK1, MK2]);
+    const otherExpRun = {
+      ...baseRun,
+      source: {
+        ...baseRun.source,
+        experimentId: "exp-OTHER",
+      },
+    };
+    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+    const aggregation2 = aggregateExperiment({
+      snapshot: experiment.snapshot,
+      taskStates,
+      resolveRunRecord: () => otherExpRun,
+    });
+    const result = planMissingCellRepair({
+      experiment,
+      aggregation: aggregation2,
+      request: { taskId: "t1", modelKeys: [MK3] },
+      resolveRunRecord: () => otherExpRun,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/different experiment/i);
+  });
+
+  it("rejects a base run with a mismatched protocol fingerprint", () => {
+    const { experiment } = makeRepairableFixture();
+    const baseRun = makeRun("run-base", [MK1, MK2]);
+    const mismatchedRun = {
+      ...baseRun,
+      source: {
+        ...baseRun.source,
+        protocolFingerprint: "sha256:DIFFERENT",
+      },
+    };
+    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+    const aggregation2 = aggregateExperiment({
+      snapshot: experiment.snapshot,
+      taskStates,
+      resolveRunRecord: () => mismatchedRun,
+    });
+    const result = planMissingCellRepair({
+      experiment,
+      aggregation: aggregation2,
+      request: { taskId: "t1", modelKeys: [MK3] },
+      resolveRunRecord: () => mismatchedRun,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/protocol fingerprint/i);
+  });
 });

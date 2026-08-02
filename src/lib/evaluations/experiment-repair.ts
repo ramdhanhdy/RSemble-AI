@@ -109,6 +109,28 @@ export function planMissingCellRepair(input: {
     return { ok: false, reason: "Targeted repair requires a selected partial attempt." };
   }
 
+  // Verify the base run is from this experiment, this task, and this
+  // protocol — never reuse outputs across experiment/task/protocol boundaries.
+  if (baseRun.id !== selectedAttempt.runId) {
+    return { ok: false, reason: "Base run ID does not match the selected attempt." };
+  }
+  if (baseRun.source.kind !== "experiment") {
+    return { ok: false, reason: "Base run is not an experiment run." };
+  }
+  const src = baseRun.source;
+  if (src.experimentId !== experiment.id) {
+    return { ok: false, reason: "Base run belongs to a different experiment." };
+  }
+  if (src.suiteId !== experiment.suiteId || src.suiteVersion !== experiment.suiteVersion) {
+    return { ok: false, reason: "Base run belongs to a different suite version." };
+  }
+  if (src.taskId !== request.taskId) {
+    return { ok: false, reason: "Base run belongs to a different task." };
+  }
+  if (src.protocolFingerprint !== experiment.protocolFingerprint) {
+    return { ok: false, reason: "Base run protocol fingerprint does not match the experiment." };
+  }
+
   // The selected run must have accepted outputs for at least one other
   // candidate (so reuse is possible).
   const acceptedCandidateIds = new Set(
