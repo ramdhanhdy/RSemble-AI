@@ -149,6 +149,34 @@ describe("buildTaskLedger", () => {
     expect(row3.history).toHaveLength(0);
   });
 
+  it("prefers a live running retry over preserved selected evidence (engine keeps selection until commit)", () => {
+    const now = Date.now();
+    // beginTask keeps selectedAttemptId pointing at the prior completed evidence
+    // and only recomputes selection at terminal commit (experiment-engine.ts).
+    const experiment = makeExperiment(
+      [makeTask("t1", "Alpha", 0)],
+      [
+        makeState(
+          "t1",
+          [
+            makeAttempt("att-original", "completed", { trial: 1, coverage: makeCoverage(8, 8), startedAt: now - 60_000 }),
+            makeAttempt("att-retry", "running", { trial: 2, runId: "run-retry", startedAt: now - 5_000 }),
+          ],
+          "att-original",
+        ),
+      ],
+    );
+    const ledger = buildTaskLedger(experiment);
+    const [row] = ledger.rows;
+    expect(row.status).toBe("running");
+    expect(row.currentAttemptId).toBe("att-retry");
+    // A running retry is live work: it must be the current task and the active row.
+    expect(ledger.currentTaskId).toBe("t1");
+    expect(ledger.currentIndex).toBe(1);
+    expect(filterTaskLedgerRows(ledger.rows, "active", "running").map((r) => r.taskId)).toEqual(["t1"]);
+    expect(ledger.counts.complete).toBe(0);
+  });
+
   it("falls back to selectAttemptId policy, then the newest attempt, for display status", () => {
     const now = Date.now();
     const experiment = makeExperiment(

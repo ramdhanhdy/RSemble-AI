@@ -86,17 +86,19 @@ function isTerminal(status: ExperimentRecord["status"]): boolean {
 }
 
 /**
- * Current attempt for display: explicit selection, else a live running
- * attempt, else the evidence-selection policy (spec §11.5), else the newest
- * attempt so failed/aborted/queued rows still show a truthful status.
+ * Current attempt for display: a live running attempt first (a retry/repair
+ * run in flight is the current state even though the engine preserves the
+ * prior selected evidence until terminal commit), then the explicit selection,
+ * then the evidence-selection policy (spec §11.5), then the newest attempt so
+ * failed/aborted/queued rows still show a truthful status.
  */
 export function currentAttemptOf(task: ExperimentTaskState): ExperimentTaskAttempt | null {
+  const running = task.attempts.find((a) => a.status === "running");
+  if (running) return running;
   if (task.selectedAttemptId !== null) {
     const selected = task.attempts.find((a) => a.id === task.selectedAttemptId);
     if (selected) return selected;
   }
-  const running = task.attempts.find((a) => a.status === "running");
-  if (running) return running;
   const selectedId = selectAttemptId(task);
   if (selectedId !== null) {
     const selected = task.attempts.find((a) => a.id === selectedId);
