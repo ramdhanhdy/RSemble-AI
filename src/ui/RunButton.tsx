@@ -52,10 +52,10 @@ export function RunButton({
             : "Waiting for provider connections";
 
   const look = running
-    ? "bg-gradient-to-br from-accent to-[#14b8a6] text-on-accent saturate-50"
+    ? "bg-error/15 text-error"
     : canRun
-      ? "bg-gradient-to-br from-accent to-[#14b8a6] text-on-accent hover:-translate-y-0.5 hover:shadow-cta active:translate-y-0"
-      : "border border-edge bg-card text-text-secondary opacity-70 cursor-not-allowed";
+      ? "bg-accent text-on-accent hover-lift"
+      : "cursor-not-allowed border border-edge bg-card text-text-secondary opacity-70";
 
   return (
     <button
@@ -63,7 +63,7 @@ export function RunButton({
       onClick={running ? onAbort : onClick}
       disabled={!canRun && !running}
       title={!running && blockReason ? blockReason : undefined}
-      className={`mt-auto flex min-h-[64px] w-full items-center gap-3 rounded-md px-4 text-left transition-[transform,box-shadow,background-color] ease-out duration-150 ${look}`}
+      className={`pressable mt-auto flex min-h-[64px] w-full items-center gap-3 rounded-md px-4 text-left ${look}`}
     >
       {running ? (
         <Square size={16} className="shrink-0" />

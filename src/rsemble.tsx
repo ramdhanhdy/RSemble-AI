@@ -590,11 +590,11 @@ function FocusStrip({
         disabled={!canRun && !state.running}
         aria-label={state.running ? "Stop run" : "Re-run pipeline"}
         title={state.running ? "Stop run" : blockReason ?? "Re-run pipeline"}
-        className={`mt-auto flex h-11 w-11 items-center justify-center rounded-md transition-[transform,background-color] ease-out duration-150 ${
+        className={`pressable mt-auto flex h-11 w-11 items-center justify-center rounded-md ${
           state.running
             ? "bg-error/20 text-error"
             : canRun
-              ? "bg-accent text-on-accent hover:-translate-y-0.5"
+              ? "bg-accent text-on-accent hover-lift"
               : "border border-edge bg-card text-text-secondary opacity-60 cursor-not-allowed"
         }`}
       >
@@ -707,7 +707,7 @@ function ResetButton({
   return (
     <button
       type="button"
-      aria-disabled={running ? true : undefined}
+      disabled={running}
       onClick={() => {
         if (running) return;
         if (hasRun && !armed) {
@@ -725,9 +725,7 @@ function ResetButton({
             ? "Click again to discard the current run and reset"
             : "Reset session"
       }
-      className={`flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-md border ${
-        armed ? "px-3" : "w-11"
-      } ${
+      className={`pressable flex h-11 min-w-[132px] shrink-0 items-center justify-center gap-1.5 rounded-md border ${
         running
           ? "cursor-not-allowed border-edge text-text-secondary opacity-50"
           : armed
