@@ -575,6 +575,58 @@ describe("experiment-controller — retry incomplete tasks", () => {
     expect(taskIds(h.executor)).toEqual(["t1", "t2", "t2"]);
     expect(experiment!.status).toBe("completed");
   });
+
+  it("retry executes against the immutable snapshot, never the edited live suite", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t2"
+          ? { kind: "judge-fails" }
+          : { kind: "success" },
+    });
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const result = await h.controller.start("suite-1");
+    expect(result.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // Edit the live suite AFTER the experiment ran: new model roster,
+    // renamed tasks, changed judge. Retry must NOT see any of this.
+    const liveSuite = (await h.evalRepo.getSuite("suite-1"))!;
+    await h.evalRepo.saveSuite(
+      {
+        ...liveSuite,
+        revision: liveSuite.revision + 1,
+        version: 2,
+        modelSlots: [makeSlot("s9", "edited-model")],
+        defaultJudge: { providerId: "gemini", model: "edited-judge" },
+        tasks: liveSuite.tasks.map((t) => ({ ...t, title: `EDITED ${t.title}` })),
+      },
+      liveSuite.revision,
+    );
+
+    // Switch behavior so the retry succeeds.
+    h.executor.behavior = () => ({ kind: "success" });
+
+    const retried = await h.controller.retryIncomplete(result.ok ? result.experimentId : "");
+    expect(retried.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // The retry executor request must carry the SNAPSHOT roster and judge,
+    // not the edited live suite.
+    const retryCalls = h.executor.calls.filter((c) => c.source.kind === "experiment" && c.source.taskId === "t2");
+    const lastCall = retryCalls[retryCalls.length - 1];
+    expect(lastCall).toBeTruthy();
+    // Snapshot roster: s1/m1 + s2/m2 — NOT the edited s9/edited-model.
+    expect(lastCall.slots.map((s) => s.slug)).toEqual(["m1", "m2"]);
+    // Snapshot judge — NOT the edited gemini/edited-judge.
+    expect(lastCall.critic).toEqual({ providerId: "openrouter", model: "judge-model" });
+    // Snapshot task text — NOT the EDITED title/prompt.
+    expect(lastCall.task.prompt).toBe("Prompt for t2");
+    // The retry executor source labels the snapshot version, not v2.
+    expect(lastCall.source.kind).toBe("experiment");
+    if (lastCall.source.kind === "experiment") {
+      expect(lastCall.source.suiteVersion).toBe(1);
+    }
+  });
 });
 
 describe("experiment-controller — execution ownership", () => {

@@ -12,6 +12,7 @@ import type {
   ExperimentSnapshot,
 } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
+import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import type { CandidateEvaluation, ModelSlot } from "../../studio-data";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -282,6 +283,116 @@ describe("ExperimentResults — winner and provisional ranking", () => {
     const text = h.container.textContent ?? "";
     expect(text).toContain("Incomplete");
     expect(text).toContain("14/15");
+    cleanup(h);
+  });
+});
+
+describe("ExperimentResults — terminal recovery (Task 7)", () => {
+  function makeController(retryResult: { ok: boolean; error?: string }) {
+    return {
+      retryIncomplete: vi.fn(async () => retryResult),
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as ExperimentController;
+  }
+
+  function makeFailedExperiment(): { experiment: ExperimentRecord; runs: Record<string, RunRecordV2> } {
+    const taskIds = ["t1", "t2", "t3"];
+    const taskStates: ExperimentTaskState[] = [];
+    const runs: Record<string, RunRecordV2> = {};
+    taskIds.forEach((taskId, i) => {
+      const runId = `run-${taskId}`;
+      runs[runId] = makeRun(runId, { [MK_COMPLETE]: 4.0 });
+      taskStates.push({
+        taskId,
+        selectedAttemptId: `att-${taskId}`,
+        attempts: [
+          {
+            id: `att-${taskId}`,
+            runId,
+            trial: 0,
+            status: i === 0 ? "failed" : "completed",
+            startedAt: 100,
+            finishedAt: 200,
+            error: null,
+          },
+        ],
+      });
+    });
+    return {
+      experiment: {
+        id: "exp-fail",
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: "sha256:abc",
+        execution: null,
+        snapshot: makeSnapshot(taskIds),
+        tasks: taskStates,
+        status: "completed_with_failures",
+        revision: 1,
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+      runs,
+    };
+  }
+
+  it("shows Retry all incomplete tasks when retryable tasks exist and no execution is active", async () => {
+    const { experiment, runs } = makeFailedExperiment();
+    const controller = makeController({ ok: true });
+    const h = renderWithRouter(
+      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+    );
+    await settle();
+    const btn = h.$$("button").find((b) => b.textContent?.includes("Retry all incomplete tasks"));
+    expect(btn).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("clicking retry calls controller.retryIncomplete with the experiment id", async () => {
+    const { experiment, runs } = makeFailedExperiment();
+    const controller = makeController({ ok: true });
+    const h = renderWithRouter(
+      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+    );
+    await settle();
+    const btn = h.$$("button").find((b) => b.textContent?.includes("Retry all incomplete tasks"))!;
+    await act(async () => {
+      btn.click();
+      await flush();
+    });
+    await settle();
+    expect(controller.retryIncomplete).toHaveBeenCalledWith("exp-fail");
+    cleanup(h);
+  });
+
+  it("operation errors render as visible alerts", async () => {
+    const { experiment, runs } = makeFailedExperiment();
+    const controller = makeController({ ok: false, error: "Another tab holds the lease" });
+    const h = renderWithRouter(
+      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+    );
+    await settle();
+    const btn = h.$$("button").find((b) => b.textContent?.includes("Retry all incomplete tasks"))!;
+    await act(async () => {
+      btn.click();
+      await flush();
+    });
+    await settle();
+    const alert = h.$("[role='alert']");
+    expect(alert).toBeTruthy();
+    expect(alert!.textContent).toContain("Another tab holds the lease");
+    cleanup(h);
+  });
+
+  it("shows no retry action for a fully complete experiment", async () => {
+    const { experiment, runs } = makeWinnerProvisionalExperiment();
+    const controller = makeController({ ok: true });
+    const h = renderWithRouter(
+      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+    );
+    await settle();
+    const btn = h.$$("button").find((b) => b.textContent?.includes("Retry all incomplete tasks"));
+    expect(btn).toBeFalsy();
     cleanup(h);
   });
 });

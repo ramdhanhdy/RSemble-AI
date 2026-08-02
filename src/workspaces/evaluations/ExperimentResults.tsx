@@ -9,7 +9,7 @@
 // below that the model-selectable mobile adaptation.
 // =============================================================================
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Crown } from "lucide-react";
 import type { ReactElement } from "react";
@@ -19,6 +19,7 @@ import type {
 } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import { useEvaluationRepository } from "../../lib/persistence/repository-context";
+import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import {
   aggregateExperiment,
   formatAggregateMean,
@@ -32,6 +33,8 @@ import { MobileExperimentResults } from "./MobileExperimentResults";
 export interface ExperimentResultsProps {
   experiment: ExperimentRecord;
   resolveRunRecord: (runId: string) => Promise<RunRecordV2 | null>;
+  /** Terminal recovery handoff — retry incomplete tasks (Task 7). */
+  controller?: ExperimentController | null;
 }
 
 const DESKTOP_QUERY = "(min-width: 768px)";
@@ -64,11 +67,14 @@ const ISSUE_STATUSES: ReadonlySet<ExperimentTaskAttempt["status"]> = new Set([
 export function ExperimentResults({
   experiment,
   resolveRunRecord,
+  controller,
 }: ExperimentResultsProps): ReactElement {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const evalRepo = useEvaluationRepository();
   const [runRecords, setRunRecords] = useState<ReadonlyMap<string, RunRecordV2> | null>(null);
   const [suiteName, setSuiteName] = useState<string | null>(null);
+  const [retryBusy, setRetryBusy] = useState(false);
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
   // Load every selected attempt's run record; memoized on id + revision.
   const experimentId = experiment.id;
@@ -118,6 +124,31 @@ export function ExperimentResults({
       cancelled = true;
     };
   }, [evalRepo, experiment.suiteId]);
+
+  // --- Terminal recovery (Task 7): retry all incomplete tasks. ---
+  const retryableTaskCount = experiment.tasks.filter((t) =>
+    t.attempts.some((a) => a.status === "failed" || a.status === "interrupted"),
+  ).length;
+  const hasRetryableTasks = retryableTaskCount > 0 && !!controller;
+  const executionActive = experiment.status === "running" || experiment.status === "queued";
+
+  const handleRetryAll = useCallback(async () => {
+    if (!controller) return;
+    setRetryBusy(true);
+    setRetryMessage(null);
+    try {
+      const result = await controller.retryIncomplete(experimentId);
+      if (result.ok) {
+        setRetryMessage("Retry started — navigate to the progress view to watch it.");
+      } else {
+        setRetryMessage(result.error);
+      }
+    } catch (err: unknown) {
+      setRetryMessage(err instanceof Error ? err.message : "Retry failed.");
+    } finally {
+      setRetryBusy(false);
+    }
+  }, [controller, experimentId]);
 
   if (!runRecords) {
     return (
@@ -345,6 +376,31 @@ export function ExperimentResults({
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+
+      {/* Recovery toolbar (spec §11.1) — above the matrix, only when retryable. */}
+      {hasRetryableTasks && !executionActive ? (
+        <section
+          aria-label="Recovery"
+          className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border border-edge bg-panel px-4 py-3"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-text">
+              {retryableTaskCount} incomplete task{retryableTaskCount === 1 ? "" : "s"} — retry with the full candidate roster.
+            </p>
+            {retryMessage ? (
+              <p role="alert" className="mt-1 text-xs text-warning">{retryMessage}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleRetryAll()}
+            disabled={retryBusy}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {retryBusy ? "Starting…" : "Retry all incomplete tasks"}
+          </button>
         </section>
       ) : null}
 

@@ -116,7 +116,11 @@ export function ExperimentRoute() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {isExperimentTerminal(experiment.status) ? (
-        <ExperimentResults experiment={experiment} resolveRunRecord={resolveRunRecord} />
+        <ExperimentResults
+          experiment={experiment}
+          resolveRunRecord={resolveRunRecord}
+          controller={controller}
+        />
       ) : (
         <ExperimentProgress experiment={experiment} controller={controller} />
       )}

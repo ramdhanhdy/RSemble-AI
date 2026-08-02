@@ -81,6 +81,36 @@ export interface ExperimentControllerDeps {
 
 // --- Helpers ------------------------------------------------------------------
 
+/**
+ * Rebuild an execution suite pinned to the immutable experiment snapshot.
+ *
+ * Retry and recovery must NEVER execute against the live suite: the user may
+ * have edited tasks/models/judge since the experiment started, and executing
+ * against the mutable suite would produce evidence that no longer matches
+ * `record.snapshot` (and would label it with the current suite version).
+ *
+ * The returned suite is derived entirely from the snapshot and is used only
+ * for execution (task text, model roster, judge, default evaluation).
+ */
+function pinnedSuiteFromSnapshot(record: ExperimentRecord): EvaluationSuite {
+  const s = record.snapshot;
+  return {
+    id: s.suiteId,
+    // Pinned identity — revision/version come from the snapshot, not the live suite.
+    revision: -1,
+    version: s.suiteVersion,
+    name: `Suite v${s.suiteVersion} (pinned)`,
+    description: "Pinned execution copy of the immutable experiment snapshot.",
+    tasks: s.tasks.map((t) => ({ ...t })),
+    modelSlots: s.modelSlots.map((m) => ({ ...m })),
+    defaultJudge: { ...s.defaultJudge },
+    defaultEvaluation: { ...s.defaultEvaluation },
+    createdAt: s.createdAt,
+    updatedAt: s.createdAt,
+    archivedAt: null,
+  };
+}
+
 /** Resolve a task's evaluation selection to an AdHocEvaluationConfig for the
  *  executor. Inherits the suite default when the task says "inherit". */
 function taskEvaluationConfig(
@@ -640,12 +670,10 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       return { ok: false, error: "Another execution is active" };
     }
 
-    // Load suite.
-    const loadedSuite = await evalRepo.getSuite(record.suiteId);
-    if (!loadedSuite) {
-      releaseExecution();
-      return { ok: false, error: `Suite ${record.suiteId} not found` };
-    }
+    // Execution always runs against the immutable snapshot, never the live
+    // suite — the user may have edited the suite since the experiment ran
+    // (spec §11.1, Task 7).
+    const loadedSuite = pinnedSuiteFromSnapshot(record);
 
     // Initialize engine from the persisted record.
     engine = createExperimentEngine(record);
