@@ -82,6 +82,29 @@ export interface ExperimentControllerDeps {
 // --- Helpers ------------------------------------------------------------------
 
 /**
+ * Derive scored-model coverage from a terminal run's accepted Judge report.
+ * The judge's `evaluationsById` maps candidate IDs to evaluations; each
+ * evaluated candidate's modelKey is a scored snapshot model key (spec §11.5).
+ */
+function deriveAttemptCoverage(
+  run: RunRecordV2,
+  snapshotKeys: ReadonlySet<string>,
+): { scoredModelKeys: string[]; totalModels: number } {
+  const scoredModelKeys: string[] = [];
+  const seen = new Set<string>();
+  const evaluatedCandidateIds = new Set(Object.keys(run.judge.report?.evaluationsById ?? {}));
+  for (const candidate of run.candidates) {
+    if (evaluatedCandidateIds.has(candidate.candidateId) && snapshotKeys.has(candidate.modelKey)) {
+      if (!seen.has(candidate.modelKey)) {
+        seen.add(candidate.modelKey);
+        scoredModelKeys.push(candidate.modelKey);
+      }
+    }
+  }
+  return { scoredModelKeys, totalModels: snapshotKeys.size };
+}
+
+/**
  * Rebuild an execution suite pinned to the immutable experiment snapshot.
  *
  * Retry and recovery must NEVER execute against the live suite: the user may
@@ -406,7 +429,11 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     if (!finalRun) throw new Error(`Run ${runId} not found after execution`);
     const finalSummary = builder.deriveSummary(finalRun);
 
-    // Engine transition: commitTaskTerminal.
+    // Engine transition: commitTaskTerminal with scored coverage derived from
+    // the accepted Judge report (spec §11.5) so the coverage-aware attempt
+    // selector has real metadata.
+    const snapshotKeys = new Set(record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`));
+    const coverage = deriveAttemptCoverage(finalRun, snapshotKeys);
     const commitResult = engine.commitTaskTerminal({
       taskId,
       attemptId,
@@ -414,10 +441,11 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       epoch: engine.taskEpoch,
       error: null,
       now: now(),
+      coverage,
     });
     if (!commitResult.ok) throw new Error(commitResult.reason ?? "commitTaskTerminal failed");
 
-    // Persist: atomically finalize run + attempt.
+    // Persist: atomically finalize run + attempt (coverage rides along).
     const commitRev = await uow.commitTaskTerminal({
       experimentId: record.id,
       taskId,
@@ -427,6 +455,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       expectedRunRevision: finalRun.revision,
       expectedExperimentRevision: persistedExperimentRevision,
       fence,
+      coverage,
     });
     persistedExperimentRevision = commitRev.experimentRevision;
 

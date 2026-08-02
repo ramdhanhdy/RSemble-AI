@@ -247,6 +247,8 @@ export async function commitExperimentTaskTerminalCore(
     status: mapRunStatusToAttemptStatus(input.run.status),
     finishedAt: now,
     error: null,
+    ...(input.coverage !== undefined ? { coverage: input.coverage } : {}),
+    ...(input.repair !== undefined ? { repair: input.repair } : {}),
   };
   const updatedTask: ExperimentTaskState = {
     ...task,

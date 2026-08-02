@@ -576,6 +576,41 @@ describe("experiment-controller — retry incomplete tasks", () => {
     expect(experiment!.status).toBe("completed");
   });
 
+  it("partial attempts persist scored-model coverage so selection prefers higher coverage", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t2"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const result = await h.controller.start("suite-1");
+    expect(result.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    let experiment = await h.evalRepo.getExperiment(result.ok ? result.experimentId : "");
+    const t2 = experiment!.tasks[1];
+    // t2 was partial: one candidate failed → 1/2 scored coverage persisted.
+    expect(t2.attempts[0].status).toBe("partial");
+    expect(t2.attempts[0].coverage).toBeTruthy();
+    expect(t2.attempts[0].coverage!.totalModels).toBe(2);
+    expect(t2.attempts[0].coverage!.scoredModelKeys).toHaveLength(1);
+
+    // Retry succeeds → full coverage. The new attempt must be selected.
+    h.executor.behavior = () => ({ kind: "success" });
+    const retried = await h.controller.retryIncomplete(result.ok ? result.experimentId : "");
+    expect(retried.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    experiment = await h.evalRepo.getExperiment(result.ok ? result.experimentId : "");
+    const t2After = experiment!.tasks[1];
+    expect(t2After.attempts).toHaveLength(2);
+    expect(t2After.attempts[1].status).toBe("completed");
+    expect(t2After.attempts[1].coverage!.scoredModelKeys).toHaveLength(2);
+    // Completed full coverage wins selection.
+    expect(t2After.selectedAttemptId).toBe(t2After.attempts[1].id);
+  });
+
   it("retry executes against the immutable snapshot, never the edited live suite", async () => {
     const h = makeHarness({
       behavior: (request) =>

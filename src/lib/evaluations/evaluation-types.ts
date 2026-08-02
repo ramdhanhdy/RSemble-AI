@@ -226,6 +226,10 @@ export interface CommitExperimentTaskTerminalInput {
   expectedExperimentRevision: number;
   /** When present, verified against the current lease in-transaction. */
   fence?: ExecutionFence;
+  /** Scored-model coverage persisted on the terminal attempt (spec §11.5). */
+  coverage?: ExperimentAttemptCoverage;
+  /** Compound repair metadata persisted on the terminal attempt (spec §11.4). */
+  repair?: ExperimentRepairPlan;
 }
 
 // =============================================================================
@@ -444,7 +448,8 @@ export function isEvaluationSuite(v: unknown): v is EvaluationSuite {
 
 function isExperimentAttemptCoverage(v: unknown): v is ExperimentAttemptCoverage {
   if (!isRecord(v)) return false;
-  if (!Array.isArray(v.scoredModelKeys) || v.scoredModelKeys.length === 0) return false;
+  // Empty scoredModelKeys is legal — a judge-failed run scores nothing.
+  if (!Array.isArray(v.scoredModelKeys)) return false;
   if (!v.scoredModelKeys.every((k): k is string => isNonEmptyString(k))) return false;
   if (new Set(v.scoredModelKeys).size !== v.scoredModelKeys.length) return false;
   if (!isNumber(v.totalModels) || v.totalModels < 0) return false;
