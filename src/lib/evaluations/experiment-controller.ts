@@ -38,10 +38,16 @@ import type {
   ExperimentTaskState,
   ExperimentTaskAttempt,
 } from "./evaluation-types";
-import { createExperimentEngine, type ExperimentEngine } from "./experiment-engine";
-import { createExperimentRecord } from "./experiment-engine";
-import { mapRunStatusToAttemptStatus } from "./experiment-engine";
-import { selectAttemptId } from "./experiment-engine";
+import {
+  createExperimentEngine,
+  createExperimentRecord,
+  mapRunStatusToAttemptStatus,
+  selectAttemptId,
+  type ExperimentEngine,
+} from "./experiment-engine";
+import { planMissingCellRepair } from "./experiment-repair";
+import { aggregateExperiment } from "./experiment-aggregation";
+import type { ExperimentRepairPlan } from "./evaluation-types";
 import type {
   RunRecordV2,
   FullRunSummaryV2,
@@ -52,6 +58,7 @@ import type {
 import type { AdHocEvaluationConfig } from "./evaluation-profile-adhoc";
 import { HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
 import type { Candidate } from "../../studio-data";
+import type { ProviderId } from "../providers/types";
 
 // --- Events -------------------------------------------------------------------
 
@@ -840,6 +847,274 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     );
   }
 
+  async function repairMissingCells(
+    expId: string,
+    request: { taskId: string; modelKeys: string[] },
+  ): Promise<SimpleResult> {
+    const record = await evalRepo.getExperiment(expId);
+    if (!record) return { ok: false, error: `Experiment ${expId} not found` };
+
+    // Acquire lease.
+    let leaseInfo: LeaseInfo;
+    try {
+      leaseInfo = await lease.acquire();
+    } catch (err) {
+      if (err instanceof LeaseError) {
+        return { ok: false, error: `Another tab is active (${err.message})` };
+      }
+      throw err;
+    }
+
+    if (!owner.tryAcquire({ kind: "experiment", id: expId })) {
+      await lease.release();
+      return { ok: false, error: "Another execution is active" };
+    }
+
+    experimentId = expId;
+
+    try {
+      // Pre-load all selected attempt run records for the planner (it needs
+      // synchronous resolution; the repository is async).
+      const runCache = new Map<string, RunRecordV2>();
+      for (const ts of record.tasks) {
+        const selected = ts.selectedAttemptId
+          ? ts.attempts.find((a) => a.id === ts.selectedAttemptId)
+          : undefined;
+        if (selected?.runId) {
+          const run = await runRepo.get(selected.runId);
+          if (run) runCache.set(selected.runId, run);
+        }
+      }
+
+      const resolveRunRecord = (runId: string): RunRecordV2 | null => runCache.get(runId) ?? null;
+
+      // Validate through the pure planner.
+      const aggregation = aggregateExperiment({
+        snapshot: record.snapshot,
+        taskStates: record.tasks,
+        resolveRunRecord,
+      });
+
+      const planResult = planMissingCellRepair({
+        experiment: record,
+        aggregation,
+        request,
+        resolveRunRecord,
+      });
+
+      if (!planResult.ok) {
+        return { ok: false, error: planResult.reason };
+      }
+
+      const plan = planResult.plan;
+      const loadedSuite = pinnedSuiteFromSnapshot(record);
+
+      // Initialize engine from the persisted record.
+      engine = createExperimentEngine(record);
+      suite = loadedSuite;
+      persistedExperimentRevision = record.revision;
+
+      // Queue the repair attempt.
+      const repairPlan: ExperimentRepairPlan = {
+        kind: "missing-cells",
+        baseRunId: plan.baseRunId,
+        requestedModelKeys: plan.requestedModelKeys,
+      };
+      const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
+      const queueResult = engine.queueRepairs([{ taskId: request.taskId, repair: repairPlan }], generateId, fence, now());
+      if (!queueResult.ok) {
+        return { ok: false, error: queueResult.reason ?? "Failed to queue repair" };
+      }
+
+      await syncExperimentStatus(persistedExperimentRevision);
+
+      // Get the queued attempt ID and run the repair.
+      const repairTaskState = engine.record.tasks.find((t) => t.taskId === request.taskId);
+      const repairAttempt = repairTaskState?.attempts.find((a) => a.status === "queued");
+      if (!repairAttempt) {
+        return { ok: false, error: "Repair attempt was not queued" };
+      }
+
+      startHeartbeat();
+
+      try {
+        await executeRepairTask(request.taskId, repairAttempt.id, plan, fence);
+        await syncExperimentStatus(persistedExperimentRevision);
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        emit({ kind: "error", error: message });
+        return { ok: false, error: message };
+      }
+    } finally {
+      releaseExecution();
+      engine = null;
+      experimentId = null;
+      suite = null;
+      markIdle();
+    }
+  }
+
+  async function executeRepairTask(
+    taskId: string,
+    attemptId: string,
+    plan: { baseRunId: string; requestedModelKeys: string[]; reusedModelKeys: string[] },
+    fence: ExecutionFence,
+  ): Promise<void> {
+    if (!engine || !suite) throw new Error("Engine or suite not initialized");
+    const record = engine.record;
+    const task = suite.tasks.find((t) => t.id === taskId)!;
+    const taskState = record.tasks.find((t) => t.taskId === taskId)!;
+    const repairPlan: ExperimentRepairPlan = {
+      kind: "missing-cells",
+      baseRunId: plan.baseRunId,
+      requestedModelKeys: plan.requestedModelKeys,
+    };
+
+    // Load the base run.
+    const baseRun = await runRepo.get(plan.baseRunId);
+    if (!baseRun) throw new Error(`Base run ${plan.baseRunId} not found`);
+
+    // Build the seeded fresh run.
+    const runId = `run-${generateId()}`;
+    const runSource: RunSource = {
+      kind: "experiment",
+      experimentId: record.id,
+      suiteId: suite.id,
+      suiteVersion: suite.version,
+      protocolFingerprint: record.protocolFingerprint,
+      taskId,
+      experimentTaskAttemptId: attemptId,
+      trial: taskState.attempts.find((a) => a.id === attemptId)?.trial ?? 0,
+      repair: repairPlan,
+    };
+
+    const seedRun = builder.buildRepairRunSeed({
+      runId,
+      source: runSource,
+      task: { title: task.title, prompt: task.prompt, systemPrompt: task.systemPrompt, temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      slots: suite.modelSlots,
+      fence,
+      baseRun,
+      requestedModelKeys: plan.requestedModelKeys,
+      generateId,
+    });
+    const seedSummary = builder.deriveSummary(seedRun);
+
+    // Engine transition: beginTask.
+    const beginResult = engine.beginTask(taskId, attemptId, runId, now());
+    if (!beginResult.ok) throw new Error(beginResult.reason ?? "beginTask failed");
+
+    // Persist: atomically create run + link attempt.
+    const beginRev = await uow.beginTask({
+      experimentId: record.id,
+      taskId,
+      attemptId,
+      run: seedRun,
+      summary: seedSummary,
+      expectedExperimentRevision: persistedExperimentRevision,
+      fence,
+    });
+    persistedExperimentRevision = beginRev.experimentRevision;
+
+    await syncExperimentStatus(persistedExperimentRevision);
+    emit({ kind: "task-began", taskId, attemptId, runId });
+
+    // Build seeded candidates and attempt ID map for the executor.
+    const seededCandidates = seedRun.candidates
+      .filter((c) => plan.reusedModelKeys.includes(c.modelKey))
+      .map((c) => {
+        const attempt = c.attempts[0];
+        return {
+          id: c.candidateId,
+          model: c.model,
+          provider: "",
+          providerId: c.providerId as ProviderId,
+          slug: c.slug,
+          accent: "indigo",
+          strategy: "Parallel model",
+          summary: attempt?.output ?? "",
+          scores: {},
+          weightedScore: 0,
+          segments: [{ id: `${c.candidateId}-seg`, text: attempt?.output ?? "" }],
+          status: "done" as const,
+          startedAt: attempt?.startedAt ?? now(),
+          finishedAt: attempt?.finishedAt ?? now(),
+        };
+      });
+    const seededAttemptIdsByCandidateId: Record<string, string> = {};
+    for (const c of seedRun.candidates) {
+      if (c.acceptedAttemptId) {
+        seededAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+      }
+    }
+
+    const evalConfig = taskEvaluationConfig(task, suite, record.snapshot.profiles);
+    const recorder = createRunRecorder(runRepo, { now } as BuilderDeps);
+    const events = makeEvents(runId, recorder);
+
+    abortController = new AbortController();
+    await executor.executeTask(
+      {
+        source: runSource,
+        mode: "rank",
+        task: { prompt: task.prompt, systemPrompt: task.systemPrompt, temperature: 0.7 },
+        evaluation: evalConfig,
+        slots: suite.modelSlots,
+        critic: suite.defaultJudge,
+        judgeInstruction: task.judgeInstructionOverride,
+        attachments: [],
+        attachmentsToJudge: true,
+        candidateExecution: {
+          executeModelKeys: plan.requestedModelKeys,
+          seededCandidates,
+          seededAttemptIdsByCandidateId,
+        },
+      },
+      events,
+      abortController.signal,
+    );
+    abortController = null;
+
+    // Read the final run.
+    const finalRun = await runRepo.get(runId);
+    if (!finalRun) throw new Error(`Run ${runId} not found after repair execution`);
+    const finalSummary = builder.deriveSummary(finalRun);
+
+    // Derive coverage from the accepted Judge report.
+    const snapshotKeys = new Set(record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`));
+    const coverage = deriveAttemptCoverage(finalRun, snapshotKeys);
+
+    const commitResult = engine.commitTaskTerminal({
+      taskId,
+      attemptId,
+      runStatus: finalRun.status,
+      epoch: engine.taskEpoch,
+      error: null,
+      now: now(),
+      coverage,
+      repair: repairPlan,
+    });
+    if (!commitResult.ok) throw new Error(commitResult.reason ?? "commitTaskTerminal failed");
+
+    const commitRev = await uow.commitTaskTerminal({
+      experimentId: record.id,
+      taskId,
+      attemptId,
+      run: finalRun,
+      summary: finalSummary,
+      expectedRunRevision: finalRun.revision,
+      expectedExperimentRevision: persistedExperimentRevision,
+      fence,
+      coverage,
+      repair: repairPlan,
+    });
+    persistedExperimentRevision = commitRev.experimentRevision;
+
+    await syncExperimentStatus(persistedExperimentRevision);
+    emit({ kind: "task-terminal", taskId, attemptId, status: finalRun.status });
+  }
   // --- Return public API ------------------------------------------------------
 
   return {
@@ -848,6 +1123,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     resume,
     abort,
     retryIncomplete,
+    repairMissingCells,
     recoverOnStartup,
     subscribe,
     whenIdle,
@@ -860,6 +1136,10 @@ export interface ExperimentController {
   resume(): Promise<SimpleResult>;
   abort(): Promise<void>;
   retryIncomplete(experimentId: string): Promise<SimpleResult>;
+  repairMissingCells(
+    experimentId: string,
+    request: { taskId: string; modelKeys: string[] },
+  ): Promise<SimpleResult>;
   recoverOnStartup(): Promise<number>;
   subscribe(listener: (e: ExperimentControllerEvent) => void): () => void;
   whenIdle(): Promise<void>;

@@ -997,3 +997,47 @@ describe("experiment-controller — reload and recovery", () => {
     expect(final!.tasks[0].attempts).toHaveLength(1);
   });
 });
+
+describe("experiment-controller — repairMissingCells ownership and release (Task 11)", () => {
+  it("releases owner and lease after repairMissingCells planner rejection", async () => {
+    const h = makeHarness();
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    // Attempt repair with invalid/unknown task id -> planner rejection.
+    const res = await h.controller.repairMissingCells(expId, { taskId: "unknown-task", modelKeys: ["openrouter:m1"] });
+    expect(res.ok).toBe(false);
+
+    // Execution owner and lease must be released.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("releases owner and lease after repairMissingCells success", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    // Switch executor behavior to success for repair.
+    h.executor.behavior = () => ({ kind: "success" });
+
+    // Repair the missing cell on t1.
+    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    expect(res.ok).toBe(true);
+
+    // Execution owner and lease must be released after completion.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+});

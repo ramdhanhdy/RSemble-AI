@@ -175,6 +175,12 @@ export interface ExperimentEngine {
   abort(now: number): TransitionResult;
   recoverInterrupted(now: number): TransitionResult;
   retryIncomplete(generateId: () => string, fence: ExecutionFence, now: number): TransitionResult;
+  queueRepairs(
+    repairs: Array<{ taskId: string; repair: ExperimentRepairPlan }>,
+    generateId: () => string,
+    fence: ExecutionFence,
+    now: number,
+  ): TransitionResult;
 }
 
 /** A task is complete for retry purposes only when it holds an accepted
@@ -463,6 +469,38 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
         );
       }
       queue = eligible.map((t) => t.taskId);
+      record = { ...record, tasks, status: "running", execution: fence, updatedAt: now };
+      return OK;
+    },
+
+    queueRepairs(repairs, generateId, fence, now) {
+      if (
+        record.status !== "completed" &&
+        record.status !== "completed_with_failures" &&
+        record.status !== "aborted" &&
+        record.status !== "interrupted"
+      ) {
+        return reject(`Cannot queue repairs while ${record.status}`);
+      }
+      if (repairs.length === 0) return reject("No repairs to queue");
+
+      let tasks = record.tasks;
+      for (const item of repairs) {
+        const attempt: ExperimentTaskAttempt = {
+          id: generateId(),
+          runId: null,
+          trial: tasks.find((t) => t.taskId === item.taskId)?.attempts.length ?? 0,
+          status: "queued",
+          startedAt: null,
+          finishedAt: null,
+          error: null,
+          repair: item.repair,
+        };
+        tasks = tasks.map((t) =>
+          t.taskId === item.taskId ? { ...t, attempts: [...t.attempts, attempt] } : t,
+        );
+      }
+      queue = repairs.map((r) => r.taskId);
       record = { ...record, tasks, status: "running", execution: fence, updatedAt: now };
       return OK;
     },
