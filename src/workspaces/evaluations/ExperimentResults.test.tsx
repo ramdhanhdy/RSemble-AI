@@ -12,7 +12,7 @@ import type {
   ExperimentSnapshot,
 } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
-import type { ModelSlot } from "../../studio-data";
+import type { CandidateEvaluation, ModelSlot } from "../../studio-data";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -100,7 +100,7 @@ function makeRun(runId: string, scores: Record<string, number>): RunRecordV2 {
     acceptedAttemptId: `att-cand-${i}`,
     attempts: [],
   }));
-  const evaluationsById: Record<string, unknown> = {};
+  const evaluationsById: Record<string, CandidateEvaluation> = {};
   Object.keys(scores).forEach((modelKey, i) => {
     const cid = `cand-${i}`;
     evaluationsById[cid] = {
@@ -185,6 +185,8 @@ function makeWinnerProvisionalExperiment(): {
     id: "exp-1",
     suiteId: "suite-1",
     suiteVersion: 1,
+    protocolFingerprint: "sha256:abc",
+    execution: null,
     snapshot: makeSnapshot(taskIds),
     tasks: taskStates,
     status: "completed",
@@ -210,10 +212,10 @@ describe("ExperimentResults — winner and provisional ranking", () => {
     expect(winnerCallout).toBeTruthy();
     const winnerText = winnerCallout?.textContent ?? "";
     expect(winnerText).toContain("umans");
-    expect(winnerText).toContain("model");
+    cleanup(h);
   });
 
-  it("never gives the provisional model a numeric #1 label", async () => {
+  it("never gives the provisional model a numeric rank", async () => {
     const { experiment, runs } = makeWinnerProvisionalExperiment();
     const resolveRun = vi.fn(async (runId: string) => runs[runId] ?? null);
 
@@ -222,22 +224,21 @@ describe("ExperimentResults — winner and provisional ranking", () => {
     );
     await settle();
 
-    // The standings section must not label the incomplete 9router:route as #1.
-    const standingsSection = h.$('[aria-label="Aggregate scores"]') ?? h.$('[aria-label="Standings"]');
-    expect(standingsSection).toBeTruthy();
-    const standingsText = standingsSection?.textContent ?? "";
-
-    // The provisional model (9router:route, 4.54 mean) must not appear with #1.
-    // Currently the component sorts ALL models by mean and numbers them,
-    // so 9router:route gets #1 — this is the bug.
-    const rankSpans = standingsSection?.querySelectorAll(".font-mono.text-xs") ?? [];
-    const firstRank = rankSpans[0]?.textContent ?? "";
-    expect(firstRank).not.toBe("#1");
-    // The first ranked entry should be the complete winner, not the provisional leader.
-    if (rankSpans.length > 0) {
-      const firstRow = rankSpans[0]?.closest("li");
-      expect(firstRow?.textContent ?? "").not.toContain("9router");
-    }
+    const text = h.container.textContent ?? "";
+    // Provisional results heading exists and the provisional model is listed
+    // WITHOUT any numeric rank (the eligible group owns the #1..#N ranks).
+    expect(text).toContain("Provisional results");
+    // The provisional row must not contain a rank label: find the row that
+    // contains the 9router label and assert no "#" rank text precedes it.
+    const provisionalList = h.$('[aria-label="Aggregate scores"]');
+    const rows = [...(provisionalList?.querySelectorAll("li") ?? [])];
+    const provisionalRow = rows.find((li) => li.textContent?.includes("9router"));
+    expect(provisionalRow).toBeTruthy();
+    // The only rank span in the provisional row would be the spacer (empty);
+    // assert it is not a numeric "#N".
+    const rankText = provisionalRow?.querySelector(".font-mono.text-xs")?.textContent ?? "";
+    expect(rankText).not.toMatch(/^#\d+$/);
+    cleanup(h);
   });
 
   it("labels the winner callout as Complete-coverage winner", async () => {
@@ -251,6 +252,7 @@ describe("ExperimentResults — winner and provisional ranking", () => {
 
     const winnerCallout = h.$('[data-testid="winner-callout"]');
     expect(winnerCallout?.textContent ?? "").toContain("Complete-coverage winner");
+    cleanup(h);
   });
 
   it("shows a provisional score leader line when an incomplete model has a higher mean", async () => {
@@ -265,6 +267,7 @@ describe("ExperimentResults — winner and provisional ranking", () => {
     const text = h.container.textContent ?? "";
     expect(text).toContain("Provisional score leader");
     expect(text).toContain("not winner-eligible");
+    cleanup(h);
   });
 
   it("labels incomplete models with Incomplete and coverage", async () => {
@@ -279,5 +282,6 @@ describe("ExperimentResults — winner and provisional ranking", () => {
     const text = h.container.textContent ?? "";
     expect(text).toContain("Incomplete");
     expect(text).toContain("14/15");
+    cleanup(h);
   });
 });

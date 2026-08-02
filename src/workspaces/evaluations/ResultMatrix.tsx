@@ -274,6 +274,9 @@ export function ResultMatrix({
                   >
                     <span className="tabular-nums text-sm text-text-secondary">
                       {model.scoredTasks}/{model.totalTasks} tasks
+                      {!model.complete ? (
+                        <span className="ml-1 text-xs font-medium text-text-muted">Provisional</span>
+                      ) : null}
                     </span>
                   </td>
                 );
