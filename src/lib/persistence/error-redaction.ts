@@ -22,6 +22,7 @@ const MIN_CREDENTIAL_LENGTH = 6;
 const STORAGE_CREDENTIAL_KEYS: readonly string[] = [
   "rsemble.key.openrouter",
   "rsemble.key.gemini",
+  "rsemble.key.deepseek",
   "rsemble.key.commandcode",
   "rsemble.key.clinepass",
   "rsemble.key.umans",
@@ -33,6 +34,7 @@ const STORAGE_CREDENTIAL_KEYS: readonly string[] = [
 const ENV_CREDENTIAL_KEYS: readonly string[] = [
   "VITE_OPENROUTER_KEY",
   "VITE_GEMINI_KEY",
+  "VITE_DEEPSEEK_KEY",
   "VITE_COMMANDCODE_KEY",
   "VITE_CLINEPASS_KEY",
   "VITE_UMANS_KEY",

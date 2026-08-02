@@ -149,6 +149,7 @@ export default function RSemble() {
     openrouter: isProviderReadySync("openrouter"),
     "chatgpt-codex": false,
     gemini: isProviderReadySync("gemini"),
+    deepseek: isProviderReadySync("deepseek"),
     commandcode: isProviderReadySync("commandcode"),
     clinepass: isProviderReadySync("clinepass"),
     umans: false,
@@ -226,6 +227,7 @@ export default function RSemble() {
     readinessMap.openrouter ||
     readinessMap["chatgpt-codex"] ||
     readinessMap.gemini ||
+    readinessMap.deepseek ||
     readinessMap.commandcode ||
     readinessMap.clinepass ||
     readinessMap.umans;
@@ -778,7 +780,7 @@ function NoKeyBanner() {
     <div className="flex shrink-0 items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning">
       <span>
         <span className="font-semibold">No provider connected.</span> Add an API key for any
-        provider (OpenRouter, Gemini, CommandCode, ClinePass, Umans) via the connection status
+        provider (OpenRouter, Gemini, DeepSeek, CommandCode, ClinePass, Umans) via the connection status
         button in the header — or set <code className="rounded bg-warning/10 px-1">VITE_*_KEY</code> in{" "}
         <code className="rounded bg-warning/10 px-1">.env</code> and restart the dev server to enable live runs.
       </span>
