@@ -573,35 +573,6 @@ export function ExperimentResults({
         </div>
       </section>
 
-      {issueAttempts.length > 0 ? (
-        <section aria-label="Failed or incomplete task attempts" className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-text-muted">
-            Failed &amp; incomplete attempts
-          </h2>
-          <ul className="flex min-w-0 flex-col">
-            {issueAttempts.map(({ taskTitle, attempt }) => (
-              <li
-                key={attempt.id}
-                className="flex min-h-[44px] min-w-0 flex-wrap items-center gap-2 border-b border-edge py-1 last:border-b-0"
-              >
-                <StatusMark status={attempt.status} />
-                <span className="min-w-0 truncate text-sm text-text">{taskTitle}</span>
-                <span className="text-xs text-text-muted">Trial {attempt.trial}</span>
-                {attempt.runId ? (
-                  <Link
-                    to={`/runs/${attempt.runId}`}
-                    className="inline-flex min-h-[44px] items-center px-2 text-sm text-accent transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    View run
-                  </Link>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {/* Recovery toolbar (spec §11.1) — above the matrix, only when retryable. */}
       {/* Coverage issues — derives from CURRENT aggregation cells (spec §12.4 #6).
           A repaired cell disappears from here once the selected attempt changes. */}
       {coverageIssues.length > 0 ? (

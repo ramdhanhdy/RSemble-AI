@@ -828,6 +828,10 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     expect(history?.textContent).toContain("Task t2");
     const oldRunLink = h2.$$("a").find((a) => a.getAttribute("href") === "/runs/run-old");
     expect(oldRunLink).not.toBeUndefined();
+    // Historical failures live ONLY inside the collapsed disclosure — the old
+    // default-visible list must not resurface them twice.
+    expect(h2.container.textContent).not.toContain("Failed &amp; incomplete attempts");
+    expect(h2.container.textContent).not.toContain("Failed & incomplete attempts");
     cleanup(h2);
   });
 });
