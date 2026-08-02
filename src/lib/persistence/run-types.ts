@@ -104,6 +104,12 @@ export type RunSource =
       taskId: string;
       experimentTaskAttemptId: string;
       trial: number;
+      /** Compound-repair metadata on the experiment branch (spec §11.4). */
+      repair?: {
+        kind: "missing-cells";
+        baseRunId: string;
+        requestedModelKeys: string[];
+      };
     };
 
 // --- Run summaries ------------------------------------------------------------
@@ -412,7 +418,13 @@ export function isRunSource(v: unknown): v is RunSource {
       isString(v.taskId) &&
       // Experiment run sources require an immutable, non-empty attempt id.
       isNonEmptyString(v.experimentTaskAttemptId) &&
-      isNumber(v.trial)
+      isNumber(v.trial) &&
+      (v.repair === undefined ||
+        (isRecord(v.repair) &&
+          v.repair.kind === "missing-cells" &&
+          isNonEmptyString(v.repair.baseRunId) &&
+          Array.isArray(v.repair.requestedModelKeys) &&
+          v.repair.requestedModelKeys.every((k): k is string => isNonEmptyString(k))))
     );
   }
   return false;

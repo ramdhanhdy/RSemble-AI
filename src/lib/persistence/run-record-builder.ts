@@ -46,6 +46,23 @@ export interface FanoutStartInput {
   attachments?: TaskAttachmentMeta[];
 }
 
+export interface RepairRunSeedInput {
+  runId: string;
+  /** Source of the new run — experiment branch carries repair metadata. */
+  source: RunSource;
+  task: { title: string; prompt: string; systemPrompt: string; temperature: number };
+  evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
+  /** Snapshot roster slots (full candidate set for the new Judge pass). */
+  slots: ModelSlot[];
+  fence: ExecutionFence;
+  /** The base run whose accepted candidate outputs are reused. */
+  baseRun: RunRecordV2;
+  /** Model keys to re-execute (requested) vs reuse (everything else). */
+  requestedModelKeys: string[];
+  /** Fresh candidate/attempt ID generator (avoids collisions with base run). */
+  generateId: () => string;
+}
+
 export interface CandidateAttemptStartInput {
   attemptId: string;
   messages: ChatMessage[];
@@ -175,6 +192,99 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     };
     _state.record = record;
     return record;
+  }
+
+  /**
+   * Build a fresh compound-repair run seed (spec §11.3–11.4):
+   *  - fresh run/candidate/attempt IDs;
+   *  - copied accepted outputs + messages for reused candidates with explicit
+   *    `reusedFrom` provenance;
+   *  - unstarted target candidates (the executor will call them);
+   *  - empty Judge and fusion evidence;
+   *  - repair metadata in the run source;
+   *  - NO copied winner or score report (the new Judge pass is fresh).
+   */
+  function buildRepairRunSeed(input: RepairRunSeedInput): RunRecordV2 {
+    const ts = now();
+    const requested = new Set(input.requestedModelKeys);
+    const baseByKey = new Map(input.baseRun.candidates.map((c) => [c.modelKey, c]));
+
+    const candidates: PersistedCandidate[] = input.slots
+      .filter((s) => s.enabled)
+      .map((slot) => {
+        const key = `${slot.providerId}:${slot.slug}`;
+        const candidateId = candidateIdForSlot(slot.id);
+        const base = baseByKey.get(key);
+
+        if (!requested.has(key) && base?.acceptedAttemptId) {
+          // Reuse: copy the accepted output + messages with provenance and a
+          // FRESH attempt ID (never reuse the base attempt id). The fresh
+          // attempt is already completed, set it as the candidate's accepted
+          // pointer so a subsequent repair planner can reuse this result.
+          const sourceAttempt = base.attempts.find((a) => a.attemptId === base.acceptedAttemptId);
+          if (sourceAttempt) {
+            const freshAttemptId = input.generateId();
+            return {
+              candidateId,
+              slotId: slot.id,
+              modelKey: key,
+              providerId: slot.providerId,
+              model: slot.model,
+              slug: slot.slug,
+              acceptedAttemptId: freshAttemptId,
+              attempts: [
+                {
+                  attemptId: freshAttemptId,
+                  messages: sourceAttempt.messages,
+                  startedAt: sourceAttempt.startedAt,
+                  finishedAt: sourceAttempt.finishedAt,
+                  status: "completed",
+                  output: sourceAttempt.output,
+                  tokensIn: sourceAttempt.tokensIn,
+                  tokensOut: sourceAttempt.tokensOut,
+                  error: null,
+                  reusedFrom: {
+                    sourceRunId: input.baseRun.id,
+                    sourceCandidateId: base.candidateId,
+                    sourceAttemptId: sourceAttempt.attemptId,
+                  },
+                },
+              ],
+            };
+          }
+        }
+
+        // Requested (or non-reusable) candidate: unstarted, executor fills it.
+        return {
+          candidateId,
+          slotId: slot.id,
+          modelKey: key,
+          providerId: slot.providerId,
+          model: slot.model,
+          slug: slot.slug,
+          acceptedAttemptId: null,
+          attempts: [],
+        };
+      });
+
+    return {
+      schemaVersion: 2,
+      id: input.runId,
+      revision: 1,
+      execution: input.fence,
+      createdAt: ts,
+      updatedAt: ts,
+      completedAt: null,
+      status: "running",
+      mode: "rank",
+      source: input.source,
+      task: { ...input.task },
+      evaluation: { profile: input.evaluation.profile, candidateMessages: input.evaluation.candidateMessages },
+      candidates,
+      judge: { status: "idle", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    };
   }
 
   function findCandidate(record: RunRecordV2, candidateId: string): PersistedCandidate | undefined {
@@ -579,6 +689,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
 
   return {
     createInitialState,
+    buildRepairRunSeed,
     applyFanoutStart,
     applyCandidateAttemptStart,
     applyCandidateAttemptTerminal,
