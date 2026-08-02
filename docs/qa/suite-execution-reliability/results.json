@@ -1,0 +1,185 @@
+{
+  "generatedAt": "2026-08-02T18:01:07.499Z",
+  "baseUrl": "http://127.0.0.1:5176/",
+  "probes": [
+    {
+      "name": "compare-model-preflight",
+      "testActions": 3,
+      "untestedActions": 3,
+      "costNotice": true,
+      "pass": true,
+      "reason": "Compare exposes model test actions, explicit Untested state, and the cost notice"
+    },
+    {
+      "name": "compare-probe-ready",
+      "ready": true,
+      "text": "Ready · 2ms",
+      "pass": true,
+      "reason": "mocked provider stream yields a Ready probe result"
+    },
+    {
+      "name": "compare-probe-failed",
+      "unauthorized": true,
+      "noCredentialLeak": true,
+      "pass": true,
+      "reason": "failed probe renders a sanitized Unauthorized state without credential-shaped text"
+    },
+    {
+      "name": "preflight-failed-confirmation",
+      "failedListed": true,
+      "runAnyway": true,
+      "reviewTests": true,
+      "noReadySubset": true,
+      "roster": [
+        "Test model umans:model",
+        "Test model 9router:route",
+        "Test model Judge · openrouter:judge"
+      ],
+      "rosterUnchanged": true,
+      "pass": true,
+      "reason": "failed preflight lists failures, requires Run anyway, and preserves the exact selected roster"
+    },
+    {
+      "name": "winner-provisional-15-14",
+      "winnerTitle": "Complete-coverage winnerUmans·modelumans:model4.38mean over 15/15 tasks",
+      "provisionalRows": "9Router·route9router:route4.54Incomplete · 14/15 tasks",
+      "provisionalHasNumericRank": false,
+      "hasProvisionalLeader": true,
+      "notEligible": true,
+      "hasProvisionalResults": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "complete 15/15 model crowned; incomplete 14/15 labeled provisional without numeric rank"
+    },
+    {
+      "name": "matrix-250-sticky",
+      "rowsMounted": 50,
+      "rangeText": "1–50 of 250",
+      "headerStickyLeft": true,
+      "firstRowStickyLeft": true,
+      "footerStickyLeft": true,
+      "regionFocusable": true,
+      "headerStickyTop": true,
+      "opaqueHeader": true,
+      "pass": true,
+      "reason": "250-task matrix mounts <=50 rows, sticky first column (header/row/footer) and focusable scroll region"
+    },
+    {
+      "name": "recovery-cost-preview",
+      "oneCandidateCall": true,
+      "oneJudgeCall": true,
+      "reuseMention": true,
+      "pass": true,
+      "reason": "recovery dialog previews exact candidate + Judge call counts"
+    },
+    {
+      "name": "recovery-cell-completed",
+      "anyRepairableCellLeft": 49,
+      "t1Row": "Task t14.4▲4.2",
+      "pass": true,
+      "reason": "repair execution selects newly judged evidence and clears the missing t1 cell"
+    },
+    {
+      "name": "failed-repair-preserves-evidence",
+      "surfaceAlive": true,
+      "cellStillMissing": true,
+      "repairActionStillOffered": true,
+      "attempts": 3,
+      "selectedAttemptId": "att-t2",
+      "latestAttemptStatus": "failed",
+      "pass": true,
+      "reason": "a terminal judge-failing repair adds an attempt but preserves the better selected evidence and leaves the repair action available"
+    },
+    {
+      "name": "ledger-250-page1",
+      "rowsMounted": 50,
+      "rangeText": "1–50 of 250",
+      "instrumentVisible": true,
+      "historyCollapsed": true,
+      "pass": true,
+      "reason": "250-task ledger mounts <=50 rows with sticky instrument header and collapsed history"
+    },
+    {
+      "name": "ledger-250-page5",
+      "rowsMounted": 50,
+      "rangeText": "201–250 of 250",
+      "pass": true,
+      "reason": "page five mounts <=50 rows with the correct range"
+    },
+    {
+      "name": "ledger-attempt-history",
+      "attemptRows": 2,
+      "hasOldFailed": true,
+      "pass": true,
+      "reason": "expanding the disclosure mounts attempt rows including historical failures"
+    },
+    {
+      "name": "mobile-250-pagination",
+      "cardsMounted": 50,
+      "rangeText": "1–50 of 250",
+      "overflowX": false,
+      "pass": true,
+      "reason": "mobile mounts <=50 cards with range text and no page-level horizontal overflow"
+    },
+    {
+      "name": "mobile-250-page-two",
+      "cardsMounted": 50,
+      "overflowX": false,
+      "pass": true,
+      "reason": "mobile page two mounts <=50 cards without overflow"
+    },
+    {
+      "name": "dialog-keyboard-focus",
+      "focusInDialog": true,
+      "overflowX": false,
+      "keyboardOpened": true,
+      "tabTrapped": true,
+      "pass": true,
+      "reason": "keyboard opens the dialog, focus enters it, and Tab remains trapped without horizontal overflow"
+    },
+    {
+      "name": "dialog-focus-restored",
+      "restored": true,
+      "pass": true,
+      "reason": "Escape restores focus to the trigger"
+    },
+    {
+      "name": "zoom-200-percent",
+      "overflowX": false,
+      "innerWidth": 720,
+      "pass": true,
+      "reason": "effective 200% CSS viewport fits without horizontal overflow"
+    },
+    {
+      "name": "reduced-motion",
+      "spinnerAnimation": "none",
+      "overflowX": false,
+      "pass": true,
+      "reason": "reduced motion removes spinner rotation without horizontal overflow"
+    }
+  ],
+  "screenshots": [
+    "qa-probe-ready.png",
+    "qa-probe-failed.png",
+    "qa-preflight-failed.png",
+    "qa-winner-provisional.png",
+    "qa-matrix-250.png",
+    "qa-recovery-dialog.png",
+    "qa-after-repair.png",
+    "qa-failed-repair.png",
+    "qa-ledger-250-page1.png",
+    "qa-ledger-250-page5.png",
+    "qa-ledger-history-expanded.png",
+    "qa-mobile-250.png",
+    "qa-mobile-250-page2.png",
+    "qa-dialog.png",
+    "qa-zoom-200.png",
+    "qa-reduced-motion.png"
+  ],
+  "seeded": {
+    "suiteId": "suite-qa",
+    "qaId": "exp-qa",
+    "bigId": "exp-big",
+    "runningId": "exp-running"
+  }
+}
