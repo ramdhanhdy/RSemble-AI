@@ -150,7 +150,7 @@ export function PipelineRail({
                 <span className={`connector-node ${done ? "bg-success" : ""}`} />
                 <span
                   className={`connector-dots w-10 ${active ? "animate-dash-march" : ""}`}
-                  style={active ? { backgroundImage: "radial-gradient(circle, #22d3ee 1.25px, transparent 1.25px)" } : undefined}
+                  style={active ? { backgroundImage: "radial-gradient(circle, #00e5ff 1.25px, transparent 1.25px)" } : undefined}
                 />
                 <span className={`connector-node ${active || done ? "bg-accent" : ""}`} />
               </div>

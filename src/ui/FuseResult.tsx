@@ -172,7 +172,7 @@ const ACCENT_HEX: Record<string, string> = {
   teal: "#2dd4bf",
 };
 
-const NEUTRAL_TICK = "#3a4f78";
+const NEUTRAL_TICK = "#3a3a3a";
 
 function tokenize(text: string): Set<string> {
   return new Set(text.toLowerCase().split(/\W+/).filter((w) => w.length > 2));

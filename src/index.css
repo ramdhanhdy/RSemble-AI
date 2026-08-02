@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  font-optical-sizing: auto;
+  --motion-fast: 100ms;
+  --motion-short: 150ms;
+  --motion-medium: 200ms;
+  --ease-out-ui: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-ui: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
 html,
 body,
 #root {
@@ -13,7 +22,7 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #05080f;
+  background-color: #0a0a0a;
 }
 
 /* ---- Accessibility: global focus indicator --------------------------------
@@ -22,7 +31,7 @@ body {
    by DESIGN.md ("All clickable elements have focus states"). Mouse clicks keep
    their native look (focus-visible, not focus). */
 :focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #00e5ff;
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -33,11 +42,11 @@ body {
   height: 8px;
 }
 .scroll-thin::-webkit-scrollbar-thumb {
-  background-color: #2b3d5f;
+  background-color: #3a3a3a;
   border-radius: 9999px;
 }
 .scroll-thin::-webkit-scrollbar-thumb:hover {
-  background-color: #3a4f78;
+  background-color: #4a4a4a;
 }
 .scroll-thin::-webkit-scrollbar-track {
   background-color: transparent;
@@ -45,13 +54,13 @@ body {
 
 .glow-accent {
   box-shadow:
-    0 0 0 1px rgba(34, 211, 238, 0.45),
-    0 0 24px rgba(34, 211, 238, 0.18);
+    0 0 0 1px rgba(0, 229, 255, 0.45),
+    0 0 24px rgba(0, 229, 255, 0.18);
 }
 
 .connector-dots {
   height: 2px;
-  background-image: radial-gradient(circle, #2b3d5f 1.25px, transparent 1.25px);
+  background-image: radial-gradient(circle, #3a3a3a 1.25px, transparent 1.25px);
   background-size: 8px 2px;
   background-repeat: repeat-x;
   background-position: center;
@@ -60,7 +69,7 @@ body {
   width: 5px;
   height: 5px;
   border-radius: 9999px;
-  background-color: #2b3d5f;
+  background-color: #3a3a3a;
   flex: none;
 }
 @keyframes bg-march {
@@ -70,14 +79,42 @@ body {
   animation: bg-march 1.2s linear infinite;
 }
 
+/* Shared press / hover primitives (design-motion-refinement §6.4–6.6). */
+.pressable {
+  transition:
+    transform var(--motion-fast) var(--ease-out-ui),
+    background-color var(--motion-short) var(--ease-out-ui),
+    border-color var(--motion-short) var(--ease-out-ui),
+    color var(--motion-short) var(--ease-out-ui),
+    box-shadow var(--motion-short) var(--ease-out-ui);
+}
 
-/* Custom animations: ease-out timing, 400ms duration (replaces Tailwind's
-   linear 1s spin and 2s ease-in-out pulse). Per Round 2 constraint library. */
+.pressable:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hover-lift:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* Continuity transitions for status glyphs, borders, and compact state swaps. */
+.motion-state {
+  transition:
+    opacity var(--motion-short) var(--ease-out-ui),
+    color var(--motion-short) var(--ease-out-ui),
+    background-color var(--motion-short) var(--ease-out-ui),
+    border-color var(--motion-short) var(--ease-out-ui),
+    box-shadow var(--motion-short) var(--ease-out-ui);
+}
+
+/* Infinite rotation must be linear — constant cadence, no ease-out stall. */
 @keyframes spin-ease {
   to { transform: rotate(360deg); }
 }
 .animate-spin-ease {
-  animation: spin-ease 0.2s ease-out infinite;
+  animation: spin-ease 600ms linear infinite;
 }
 @keyframes pulse-ease {
   0%, 100% { opacity: 0.7; }
@@ -85,15 +122,6 @@ body {
 }
 .animate-pulse-ease {
   animation: pulse-ease 1s steps(2, jump-none) infinite;
-}
-
-/* Command palette / cheatsheet open: scale 0.98→1 + fade, 120ms ease-out (spec §6). */
-@keyframes cmd-pop {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
-}
-.animate-cmd-pop {
-  animation: cmd-pop 120ms ease-out;
 }
 
 /* Resizable split divider (spec §3.1): 4px visible bar, 12px invisible hit
@@ -112,27 +140,29 @@ body {
   position: absolute;
   inset: 0 4px;
   border-radius: 9999px;
-  background-color: #1c2942;
-  transition: background-color 120ms ease-out;
+  background-color: #262626;
+  transition: background-color var(--motion-short) var(--ease-out-ui);
 }
 .rsemble-divider:hover::before,
 .rsemble-divider[data-dragging="true"]::before,
 .rsemble-divider:focus-visible::before {
-  background-color: #22d3ee;
+  background-color: #00e5ff;
 }
 
-/* Respect reduced-motion preferences (DESIGN.md: minimal-functional motion). */
+/* Reduced motion: remove movement/loops; keep short opacity/color feedback. */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
   .animate-dash-march,
-  .flip-move {
+  .animate-spin-ease,
+  .animate-pulse-ease,
+  .animate-pulse,
+  .hover-lift {
     animation: none !important;
-    transition: none !important;
+    transform: none !important;
+  }
+
+  .pressable,
+  .motion-state,
+  .rsemble-divider::before {
+    transition-duration: 0ms !important;
   }
 }

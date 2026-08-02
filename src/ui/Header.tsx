@@ -163,7 +163,7 @@ export function Header({
 
       {running && (
         <div className="absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden">
-          <div className="h-full w-1/3 animate-[bg-march_1s_linear_infinite] bg-gradient-to-r from-transparent via-accent to-transparent" style={{ animation: "bg-march 1s linear infinite", backgroundImage: "linear-gradient(90deg, transparent, #22d3ee, transparent)", backgroundSize: "200% 100%" }} />
+          <div className="h-full w-1/3 animate-[bg-march_1s_linear_infinite] bg-gradient-to-r from-transparent via-accent to-transparent" style={{ animation: "bg-march 1s linear infinite", backgroundImage: "linear-gradient(90deg, transparent, #00e5ff, transparent)", backgroundSize: "200% 100%" }} />
         </div>
       )}
     </header>
