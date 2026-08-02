@@ -17,6 +17,7 @@ import {
   X,
   Check,
 } from "lucide-react";
+import { ModelProbeControl } from "../../ui/ModelProbeControl";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
 import type { ModelSlot } from "../../studio-data";
 import type {
@@ -164,6 +165,25 @@ export function SuiteSettings({
           ))}
         </ul>
         <SuiteModelAdder models={models} takenKeys={takenKeys} onAdd={addSlot} />
+        {/* Roster-level test notice (spec §8.1) — cost disclosure. */}
+        {enabledSlots.length > 0 && (
+          <p className="text-xs text-text-muted">
+            Live model tests send a small generation request and may incur provider cost.
+          </p>
+        )}
+        {/* Per-row model test controls (spec §8.1). */}
+        <div className="space-y-1">
+          {suite.modelSlots.map((slot) => (
+            <div key={`probe-${slot.id}`} className="flex items-center gap-2">
+              <ModelProbeControl
+                providerId={slot.providerId}
+                model={slot.slug}
+                slotLabel={`${slot.providerId}:${slot.slug}`}
+                disabled={!slot.enabled}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Default Judge */}
@@ -176,8 +196,12 @@ export function SuiteSettings({
           models={models}
           onCommit={setDefaultJudge}
         />
+        <ModelProbeControl
+          providerId={suite.defaultJudge.providerId}
+          model={suite.defaultJudge.model}
+          slotLabel={`Judge · ${suite.defaultJudge.providerId}:${suite.defaultJudge.model}`}
+        />
       </div>
-
       {/* Default evaluation */}
       <div className="space-y-2">
         <span className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">

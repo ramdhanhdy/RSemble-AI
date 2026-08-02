@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { ModelProbeControl } from "./ModelProbeControl";
 import type { Action } from "../studio-engine";
 import type { ModelSlot } from "../studio-data";
 import type { CatalogModel, ProviderId } from "../lib/providers/types";
@@ -222,6 +223,12 @@ function SlotRow({
         </button>
       </div>
 
+      {/* Model-route test (spec §8.1) — ephemeral, user-initiated. */}
+      <ModelProbeControl
+        providerId={slot.providerId}
+        model={slot.slug}
+        slotLabel={`${providerBadge} · ${slot.slug}`}
+      />
       {editing && (
         <AddModelCombobox
           models={models}
