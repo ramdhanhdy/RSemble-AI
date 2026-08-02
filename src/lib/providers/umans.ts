@@ -39,7 +39,8 @@ export const umansProvider: LLMProvider = {
         ok: false,
         reason: `Bridge returned HTTP ${res.status}. Check bridge server (npm run dev:bridge).`,
       };
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
       return {
         ok: false,
         reason: "Local bridge unreachable on 127.0.0.1:8787. Umans needs it for CORS. Start it (npm run dev:bridge).",

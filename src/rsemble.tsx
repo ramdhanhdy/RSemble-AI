@@ -15,7 +15,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
 import { isProviderReadySync } from "./lib/providers/registry";
-import type { ProviderId } from "./lib/providers/types";
+import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import { Header, type ConnectionState } from "./ui/Header";
 
 import { type Action, type StudioState, initialState, reducer } from "./studio-engine";
@@ -162,28 +162,46 @@ export default function RSemble() {
   const checkAllReadiness = useCallback(async () => {
     const results = await probeCoordinator.run();
     const map: Record<string, boolean> = {};
-    const mergedCatalog: import("./lib/providers/types").CatalogModel[] = [];
+    const mergedCatalog: CatalogModel[] = [];
+    // Only banner errors for providers the user is actually using. An idle
+    // chatgpt-codex catalog timeout must not interrupt a suite on other providers.
+    const inUse = new Set<ProviderId>([
+      ...state.slots.filter((s) => s.enabled).map((s) => s.providerId),
+      state.critic.providerId,
+    ]);
     let firstError: string | null = null;
     for (const r of results) {
       map[r.id] = r.readiness.ok;
       if (r.catalog.length > 0) mergedCatalog.push(...r.catalog);
-      if (r.error && !firstError) firstError = `${r.id}: ${r.error}`;
+      if (r.error && !firstError && inUse.has(r.id)) {
+        firstError = `${r.id}: ${r.error}`;
+      }
     }
     setReadinessMap(map as Record<ProviderId, boolean>);
     if (mergedCatalog.length > 0) {
       dispatch({ type: "SET_MODELS", models: mergedCatalog });
     }
     setCatalogError(firstError);
-  }, [probeCoordinator]);
+  }, [probeCoordinator, state.slots, state.critic.providerId]);
+
+  const experimentActive = activeOwner?.kind === "experiment";
 
   useEffect(() => {
+    // Suite / compare runs already saturate the bridge and upstreams. Pause the
+    // 10s catalog poller for the duration so probe timeouts don't paint a red
+    // banner over an otherwise healthy run.
+    if (state.running || experimentActive) {
+      setCatalogError(null);
+      probeCoordinator.abort();
+      return;
+    }
     void checkAllReadiness();
     const interval = setInterval(() => void checkAllReadiness(), 10000);
     return () => {
       clearInterval(interval);
       probeCoordinator.abort();
     };
-  }, [checkAllReadiness, probeCoordinator]);
+  }, [checkAllReadiness, probeCoordinator, state.running, experimentActive]);
 
   // ---------------------------------------------------------------------------
   // Global keyboard shortcuts (palette, cheatsheet, focus mode).
@@ -240,7 +258,6 @@ export default function RSemble() {
   const enabledSlots = state.slots.filter((s) => s.enabled);
   const slotsReady = enabledSlots.every((s) => readinessMap[s.providerId] === true);
   const criticReady = readinessMap[state.critic.providerId] === true;
-  const experimentActive = activeOwner?.kind === "experiment";
 
   // Attachment gate (spec §5.1, plan 7.6.8): Run is disabled while any
   // attachment is still reading, or when the §5.1 image-eligibility check

@@ -59,7 +59,8 @@ export const chatgptCodexProvider: LLMProvider = {
         ok: false,
         reason: data.error || "ChatGPT (Codex) not logged in. Run 'codex login'.",
       };
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
       return {
         ok: false,
         reason: "Codex bridge unreachable on 127.0.0.1:8787. Start the bridge (npm run dev:bridge).",
@@ -177,6 +178,7 @@ export const chatgptCodexProvider: LLMProvider = {
         };
       });
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
       if (err instanceof ProviderError) throw err;
       return [];
     }

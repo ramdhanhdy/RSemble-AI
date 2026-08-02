@@ -314,7 +314,8 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
             return true;
           })
           .sort((a, b) => a.id.localeCompare(b.id));
-      } catch {
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") throw err;
         return [];
       }
     },

@@ -86,12 +86,32 @@ async function probeProvider(
     if (!provider.listModels) {
       return { id: provider.id, readiness, catalog: [] };
     }
-    const catalog = await runAbortableStage(
-      () => provider.listModels!(ctrl.signal),
-      ctrl,
-      timeoutMs,
-    );
-    return { id: provider.id, readiness, catalog };
+    try {
+      const catalog = await runAbortableStage(
+        () => provider.listModels!(ctrl.signal),
+        ctrl,
+        timeoutMs,
+      );
+      return { id: provider.id, readiness, catalog };
+    } catch (err) {
+      // Catalog stage failed after readiness already succeeded. Keep the
+      // readiness bit so an unused/slow catalog does not flip the provider
+      // offline mid-run; still surface the catalog error for the banner.
+      const reason =
+        err instanceof ProbeTimeoutError
+          ? "Provider probe timed out"
+          : err instanceof DOMException && err.name === "AbortError"
+            ? "Provider probe aborted"
+            : err instanceof Error
+              ? err.message
+              : String(err);
+      return {
+        id: provider.id,
+        readiness,
+        catalog: [],
+        error: reason,
+      };
+    }
   } catch (err) {
     const reason =
       err instanceof ProbeTimeoutError

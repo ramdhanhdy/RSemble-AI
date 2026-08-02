@@ -44,7 +44,32 @@ describe("provider probe cancellation", () => {
     const [result] = await pending;
 
     expect(observedSignal?.aborted).toBe(true);
-    expect(result.readiness.ok).toBe(false);
+    // Readiness already succeeded; catalog timeout must not flip the provider offline.
+    expect(result.readiness.ok).toBe(true);
+    expect(result.error).toContain("timed out");
+  });
+
+  it("keeps readiness ok when only the catalog stage times out", async () => {
+    vi.useFakeTimers();
+    providers.push(
+      provider({
+        readiness: vi.fn(async () => ({ ok: true as const })),
+        listModels: vi.fn((signal?: AbortSignal) => {
+          return new Promise<CatalogModel[]>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          });
+        }),
+      }),
+    );
+
+    const pending = probeAllProviders(undefined, 25);
+    await vi.advanceTimersByTimeAsync(25);
+    const [result] = await pending;
+
+    expect(result.readiness).toEqual({ ok: true });
+    expect(result.catalog).toEqual([]);
     expect(result.error).toContain("timed out");
   });
 
