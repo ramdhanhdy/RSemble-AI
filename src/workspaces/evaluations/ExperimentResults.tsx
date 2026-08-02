@@ -10,7 +10,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ChevronDown, Crown } from "lucide-react";
 import type { ReactElement } from "react";
 import type {
@@ -86,10 +86,27 @@ export function ExperimentResults({
 }: ExperimentResultsProps): ReactElement {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const evalRepo = useEvaluationRepository();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [runRecords, setRunRecords] = useState<ReadonlyMap<string, RunRecordV2> | null>(null);
   const [suiteName, setSuiteName] = useState<string | null>(null);
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
+
+  // Result-matrix page lives in the URL search params (spec §12.5): deep links
+  // keep the page, invalid/out-of-range values clamp, and filter changes
+  // return to page one.
+  const pageParam = Number(searchParams.get("page") ?? "1");
+  const matrixPage = Number.isFinite(pageParam) && pageParam >= 1 ? Math.floor(pageParam) : 1;
+  const handleMatrixPageChange = useCallback(
+    (next: number) => {
+      const clamped = next >= 1 ? next : 1;
+      const params = new URLSearchParams(searchParams);
+      if (clamped === 1) params.delete("page");
+      else params.set("page", String(clamped));
+      setSearchParams(params, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
   const [recoveryTarget, setRecoveryTarget] = useState<RecoveryTarget>(null);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState<ExperimentRecoveryMessage | null>(null);
@@ -696,6 +713,8 @@ export function ExperimentResults({
           runRecords={runRecords}
           repairablePlans={repairablePlans}
           onRepairRequest={recoveryEnabled ? handleRepairRequest : undefined}
+          page={matrixPage}
+          onPageChange={handleMatrixPageChange}
         />
       ) : (
         <MobileExperimentResults

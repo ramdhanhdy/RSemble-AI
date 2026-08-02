@@ -634,3 +634,137 @@ describe("ExperimentResults — summary (plan 7.2 #13)", () => {
     cleanup(h);
   });
 });
+
+describe("ResultMatrix — large-suite paging and sticky context (Task 14)", () => {
+  function bigAggregation(taskCount: number): ExperimentAggregation {
+    const taskIds = Array.from({ length: taskCount }, (_, i) => `t${i + 1}`);
+    return {
+      taskIds,
+      modelKeys: BASE.modelKeys,
+      cells: taskIds.map((_id, i) => [
+        scored(4, `run-${i}`),
+        scored(3, `run-${i}`),
+        missing("no-score", `run-${i}`),
+      ]),
+      models: BASE.models,
+      winnerKeys: BASE.winnerKeys,
+    };
+  }
+
+  const BIG_TASKS: EvaluationTask[] = Array.from({ length: 250 }, (_, i) => ({
+    id: `t${i + 1}`,
+    title: `Task ${i + 1}${i === 249 ? ": a very long title that should not change row geometry" : ""}`,
+    prompt: `p${i + 1}`,
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: i,
+  }));
+
+  function bigRecords(): ReadonlyMap<string, RunRecordV2> {
+    const map = new Map<string, RunRecordV2>();
+    for (let i = 0; i < 250; i++) map.set(`run-${i}`, makeRunRecord(`run-${i}`));
+    return map;
+  }
+
+  it("mounts exactly 50 task rows on page one of 250", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    // One row per task in <tbody>.
+    const rows = h.$$("tbody tr");
+    expect(rows).toHaveLength(50);
+    cleanup(h);
+  });
+
+  it("shows pagination with range text 1–50 of 250", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("1–50 of 250");
+    cleanup(h);
+  });
+
+  it("pages to the next 50 rows via the Next button", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    const next = h.$$("button").find((b) => b.getAttribute("aria-label") === "Next page")!;
+    act(() => next.click());
+    expect(h.$$("tbody tr")).toHaveLength(50);
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("51–100 of 250");
+    cleanup(h);
+  });
+
+  it("clamps out-of-range page safely", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+        initialPage={999}
+      />,
+    );
+    const text = h.container.textContent ?? "";
+    // Clamped to the last page: 201–250 of 250.
+    expect(text).toContain("201–250 of 250");
+    expect(h.$$("tbody tr")).toHaveLength(50);
+    cleanup(h);
+  });
+
+  it("keeps the first task column sticky-left with an opaque surface", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    const header = h.$("thead th");
+    const firstRowCell = h.$("tbody tr th");
+    const footer = h.$("tfoot th");
+    for (const el of [header, firstRowCell, footer]) {
+      const cls = el?.getAttribute("class") ?? "";
+      expect(cls).toContain("sticky");
+      expect(cls).toContain("left-0");
+      // Opaque surface so scores never bleed through.
+      expect(cls).toMatch(/bg-(panel|card)/);
+    }
+    cleanup(h);
+  });
+
+  it("keeps column headers sticky top and the scroll region keyboard-focusable", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    const modelHeader = h.$$("thead th")[1];
+    expect((modelHeader?.getAttribute("class") ?? "")).toContain("sticky top-0");
+    const region = h.$("[role='region']");
+    expect(region?.getAttribute("tabindex")).toBe("0");
+    cleanup(h);
+  });
+});

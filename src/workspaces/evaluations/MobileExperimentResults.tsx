@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { ReactElement } from "react";
+import { Pagination, PAGE_SIZE } from "../../ui/Pagination";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
@@ -167,6 +168,13 @@ export function MobileExperimentResults({
   const modelIdx = aggregation.modelKeys.indexOf(activeKey);
   const model = aggregation.models[modelIdx];
 
+  // Large-suite paging: 50 task cards per page, stable suite order (spec §12.5).
+  const totalTasks = aggregation.taskIds.length;
+  const pageCount = Math.max(1, Math.ceil(totalTasks / PAGE_SIZE));
+  const [page, setPage] = useState(1);
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pageTaskIds = aggregation.taskIds.slice(pageStart, pageStart + PAGE_SIZE);
+
   return (
     <div className="flex min-w-0 flex-col gap-3 pb-[calc(56px+env(safe-area-inset-bottom))]">
       <div className="flex min-w-0 flex-col gap-1.5">
@@ -208,7 +216,8 @@ export function MobileExperimentResults({
       ) : null}
 
       <ul className="flex min-w-0 flex-col gap-2">
-        {aggregation.taskIds.map((taskId, taskIdx) => {
+        {pageTaskIds.map((taskId) => {
+          const taskIdx = aggregation.taskIds.indexOf(taskId);
           const cell = aggregation.cells[taskIdx]?.[modelIdx];
           if (!cell) return null;
           return (
@@ -226,6 +235,9 @@ export function MobileExperimentResults({
           );
         })}
       </ul>
+      {pageCount > 1 ? (
+        <Pagination page={page} pageCount={pageCount} totalItems={totalTasks} onPageChange={setPage} />
+      ) : null}
     </div>
   );
 }

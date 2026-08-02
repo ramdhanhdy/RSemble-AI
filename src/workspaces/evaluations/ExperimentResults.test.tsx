@@ -2,7 +2,7 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { ExperimentResults } from "./ExperimentResults";
 import type {
@@ -28,12 +28,12 @@ function flush(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function renderWithRouter(node: ReactNode): Harness {
+function renderWithRouter(node: ReactNode, initialEntries: string[] = ["/"]): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(<MemoryRouter>{node}</MemoryRouter>);
+    root.render(<MemoryRouter initialEntries={initialEntries}>{node}</MemoryRouter>);
   });
   return {
     container,
@@ -833,5 +833,100 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     expect(h2.container.textContent).not.toContain("Failed &amp; incomplete attempts");
     expect(h2.container.textContent).not.toContain("Failed & incomplete attempts");
     cleanup(h2);
+  });
+});
+
+describe("ExperimentResults — matrix page in URL (Task 14)", () => {
+  function stubDesktop() {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("min-width: 768"),
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+  }
+
+  function makeBigExperiment(taskCount: number): { experiment: ExperimentRecord; runs: Record<string, RunRecordV2> } {
+    const taskIds = Array.from({ length: taskCount }, (_, i) => `t${i + 1}`);
+    const taskStates: ExperimentTaskState[] = [];
+    const runs: Record<string, RunRecordV2> = {};
+    for (let i = 0; i < taskCount; i++) {
+      const taskId = taskIds[i];
+      const runId = `run-${taskId}`;
+      runs[runId] = makeRun(runId, { [MK_COMPLETE]: 4.0, [MK_PROVISIONAL]: 3.5 });
+      taskStates.push(makeTaskState(taskId, runId));
+    }
+    return {
+      experiment: {
+        id: "exp-big",
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: "sha256:abc",
+        execution: null,
+        snapshot: makeSnapshot(taskIds),
+        tasks: taskStates,
+        status: "completed",
+        revision: 1,
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+      runs,
+    };
+  }
+
+  it("reads the matrix page from the URL search param and clamps out-of-range values", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeBigExperiment(250);
+    const resolveRun = vi.fn(async (runId: string) => runs[runId] ?? null);
+
+    const h = renderWithRouter(
+      <ExperimentResults experiment={experiment} resolveRunRecord={resolveRun} />,
+      ["/experiments/exp-big?page=999"],
+    );
+    await settle();
+    await settle();
+
+    // Clamped to the last page: 201–250 of 250.
+    expect(h.container.textContent ?? "").toContain("201–250 of 250");
+    expect(h.$$("tbody tr")).toHaveLength(50);
+    cleanup(h);
+  });
+
+  it("stores the page in the URL when the Next button is clicked", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeBigExperiment(250);
+    const resolveRun = vi.fn(async (runId: string) => runs[runId] ?? null);
+
+    function LocationProbe() {
+      const location = useLocation();
+      return <span data-testid="location-display">{location.search}</span>;
+    }
+
+    const h = renderWithRouter(
+      <>
+        <LocationProbe />
+        <ExperimentResults experiment={experiment} resolveRunRecord={resolveRun} />
+      </>,
+      ["/experiments/exp-big"],
+    );
+    await settle();
+    await settle();
+
+    const next = h.$$("button").find((b) => b.getAttribute("aria-label") === "Next page")!;
+    await act(async () => {
+      next.click();
+      await flush();
+    });
+    await settle();
+
+    expect(h.container.textContent ?? "").toContain("51–100 of 250");
+    // URL now carries the page.
+    const location = h.$("[data-testid='location-display']");
+    expect(location?.textContent ?? "").toContain("page=2");
+    cleanup(h);
   });
 });

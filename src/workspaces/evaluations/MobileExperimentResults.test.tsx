@@ -350,3 +350,81 @@ describe("MobileExperimentResults — 390px layout (plan 7.3 #5, #6)", () => {
     cleanup(h);
   });
 });
+
+describe("MobileExperimentResults — large-suite paging (Task 14)", () => {
+  function bigAggregation(taskCount: number): ExperimentAggregation {
+    const taskIds = Array.from({ length: taskCount }, (_, i) => `t${i + 1}`);
+    return {
+      taskIds,
+      modelKeys: [KEY_A],
+      cells: taskIds.map((_id, i) => [scored(4, `run-${i}`)]),
+      models: [{ modelKey: KEY_A, mean: 4, scoredTasks: taskCount, totalTasks: taskCount, complete: true }],
+      winnerKeys: [KEY_A],
+    };
+  }
+
+  const BIG_TASKS: EvaluationTask[] = Array.from({ length: 250 }, (_, i) => ({
+    id: `t${i + 1}`,
+    title: `Task ${i + 1}`,
+    prompt: `p${i + 1}`,
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: i,
+  }));
+
+  function bigRecords(): ReadonlyMap<string, RunRecordV2> {
+    const map = new Map<string, RunRecordV2>();
+    for (let i = 0; i < 250; i++) map.set(`run-${i}`, makeRunRecord(`run-${i}`));
+    return map;
+  }
+
+  it("mounts 50 cards or fewer on page one of 250", () => {
+    const h = renderWithRouter(
+      <MobileExperimentResults
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={[SLOTS[0]]}
+        runRecords={bigRecords()}
+      />,
+    );
+    const cards = h.$$("li");
+    expect(cards.length).toBeLessThanOrEqual(50);
+    expect(cards.length).toBeGreaterThan(0);
+    cleanup(h);
+  });
+
+  it("pages with range text and mounts 50 cards on page two", () => {
+    const h = renderWithRouter(
+      <MobileExperimentResults
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={[SLOTS[0]]}
+        runRecords={bigRecords()}
+      />,
+    );
+    expect(h.container.textContent ?? "").toContain("1–50 of 250");
+    const next = h.$$("button").find((b) => b.getAttribute("aria-label") === "Next page")!;
+    act(() => next.click());
+    expect(h.$$("li")).toHaveLength(50);
+    expect(h.container.textContent ?? "").toContain("51–100 of 250");
+    cleanup(h);
+  });
+
+  it("introduces no page-level horizontal overflow", () => {
+    const h = renderWithRouter(
+      <MobileExperimentResults
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={[SLOTS[0]]}
+        runRecords={bigRecords()}
+      />,
+    );
+    const root = h.container.firstElementChild as HTMLElement;
+    const cls = root.getAttribute("class") ?? "";
+    // No class that would force horizontal overflow; the list truncates.
+    expect(cls).not.toContain("overflow-x-auto");
+    expect(cls).not.toContain("w-screen");
+    cleanup(h);
+  });
+});

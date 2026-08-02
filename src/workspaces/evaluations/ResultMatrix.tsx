@@ -13,9 +13,11 @@
 // keyboard-focusable with a persistent outline and never scrolls the page.
 // =============================================================================
 
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Crown } from "lucide-react";
 import type { ReactElement } from "react";
+import { Pagination, PAGE_SIZE } from "../../ui/Pagination";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
@@ -51,6 +53,12 @@ export interface ResultMatrixProps {
   /** Recovery handoff — present only while this surface owns the lease; when
    *  provided, every missing cell renders one action control (spec §11.1). */
   onRepairRequest?: (taskId: string, modelKey: string) => void;
+  /** Initial 1-based page (clamped). Used by tests and deep links. */
+  initialPage?: number;
+  /** Controlled page (1-based) — the URL search param is the source of truth
+   *  when provided with onPageChange (spec §12.5). */
+  page?: number;
+  onPageChange?: (page: number) => void;
 }
 
 /** Truthful closest status token per missing reason; text stays primary.
@@ -206,12 +214,37 @@ export function ResultMatrix({
   runRecords,
   repairablePlans,
   onRepairRequest,
+  initialPage = 1,
+  page,
+  onPageChange,
 }: ResultMatrixProps): ReactElement {
   const slotsByKey = new Map(modelSlots.map((s) => [`${s.providerId}:${s.slug}`, s]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const winners = new Set(aggregation.winnerKeys);
   const showNoWinnerCopy =
     aggregation.winnerKeys.length === 0 && aggregation.models.some((m) => !m.complete);
+
+  // Large-suite paging (spec §12.5): 50 task rows per page, stable suite
+  // order, page state clamped; hidden pages never mount.
+  const totalTasks = aggregation.taskIds.length;
+  const pageCount = Math.max(1, Math.ceil(totalTasks / PAGE_SIZE));
+  const [internalPage, setInternalPage] = useState(() =>
+    Math.min(Math.max(initialPage, 1), pageCount),
+  );
+  const controlled = page !== undefined && onPageChange !== undefined;
+  const currentPage = controlled ? Math.min(Math.max(page!, 1), pageCount) : internalPage;
+  const handlePageChange = (next: number) => {
+    if (controlled) onPageChange!(next);
+    else setInternalPage(next);
+  };
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageTaskIds = aggregation.taskIds.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageTaskIndexes = new Map(pageTaskIds.map((id, i) => [id, pageStart + i]));
+
+  // Sticky first column: the task header, every row header, and footer labels
+  // stay left-0 with an opaque panel surface (spec §12.5).
+  const stickyLeftCls =
+    "sticky left-0 z-10 bg-panel";
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -232,7 +265,7 @@ export function ResultMatrix({
             <tr className="border-b border-edge">
               <th
                 scope="col"
-                className="sticky top-0 z-10 min-w-[200px] bg-panel px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
+                className={`sticky top-0 z-20 min-w-[200px] px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted ${stickyLeftCls}`}
               >
                 Task
               </th>
@@ -259,7 +292,8 @@ export function ResultMatrix({
             </tr>
           </thead>
           <tbody>
-            {aggregation.taskIds.map((taskId, taskIdx) => {
+            {pageTaskIds.map((taskId) => {
+              const taskIdx = pageTaskIndexes.get(taskId) ?? 0;
               const task = taskById.get(taskId);
               const title = task?.title ?? taskId;
               const rowCells = aggregation.cells[taskIdx] ?? [];
@@ -271,7 +305,7 @@ export function ResultMatrix({
               }
               return (
                 <tr key={taskId} className="border-b border-edge last:border-b-0">
-                  <th scope="row" className="max-w-[320px] px-3 py-1 align-middle font-normal">
+                  <th scope="row" className={`max-w-[320px] px-3 py-1 align-middle font-normal ${stickyLeftCls}`}>
                     {rowRunId ? (
                       <Link
                         to={`/runs/${rowRunId}`}
@@ -314,7 +348,7 @@ export function ResultMatrix({
             <tr className="border-t border-edge bg-panel">
               <th
                 scope="row"
-                className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
+                className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted ${stickyLeftCls}`}
               >
                 Mean score
               </th>
@@ -342,7 +376,7 @@ export function ResultMatrix({
             <tr className="border-t border-edge/60 bg-panel">
               <th
                 scope="row"
-                className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
+                className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted ${stickyLeftCls}`}
               >
                 Coverage
               </th>
@@ -366,6 +400,9 @@ export function ResultMatrix({
           </tfoot>
         </table>
       </div>
+      {pageCount > 1 ? (
+        <Pagination page={currentPage} pageCount={pageCount} totalItems={totalTasks} onPageChange={handlePageChange} />
+      ) : null}
     </div>
   );
 }
