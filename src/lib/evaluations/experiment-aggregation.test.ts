@@ -417,3 +417,63 @@ describe("display formatting", () => {
     expect(formatAggregateMean(2.996)).toBe("3.00");
   });
 });
+
+// --- Ranking semantics regression (Task 1.2) ----------------------------------
+
+describe("aggregateExperiment — winner vs provisional ranking", () => {
+  // Exact shape from the implementation plan:
+  //   complete  = { modelKey: "umans:model",  mean: 4.38, scoredTasks: 15, totalTasks: 15, complete: true }
+  //   provisional = { modelKey: "9router:model", mean: 4.54, scoredTasks: 14, totalTasks: 15, complete: false }
+  it("keeps the complete-coverage model winner-eligible over a higher-mean incomplete model", () => {
+    const taskIds = Array.from({ length: 15 }, (_, i) => `t${i + 1}`);
+    const taskStates: ExperimentTaskState[] = [];
+    const runs: Record<string, RunRecordV2> = {};
+    for (let i = 0; i < 15; i++) {
+      const taskId = taskIds[i];
+      const runId = `r-${taskId}`;
+      const scores: Record<string, number> = { "umans:model": 4.38 };
+      if (i < 14) scores["9router:model"] = 4.54;
+      runs[runId] = makeRun(runId, scores);
+      taskStates.push(makeTaskState(taskId, [{ id: `a-${taskId}`, runId, status: "completed" }], `a-${taskId}`));
+    }
+    const snapshot: ExperimentSnapshot = {
+      suiteId: "s",
+      suiteVersion: 1,
+      tasks: taskIds.map((id, i) => ({
+        id, title: `Task ${id}`, prompt: "p", systemPrompt: "",
+        evaluation: { kind: "holistic" as const }, judgeInstructionOverride: "", order: i,
+      })),
+      modelSlots: [
+        { id: "s1", providerId: "umans", provider: "Umans", model: "Model", slug: "model", enabled: true },
+        { id: "s2", providerId: "9router", provider: "9Router", model: "Route", slug: "model", enabled: true },
+      ],
+      defaultJudge: { providerId: "openrouter", model: "judge" },
+      defaultEvaluation: { kind: "holistic" as const },
+      profiles: [],
+      protocolFingerprint: "sha256:abc",
+      createdAt: 1000,
+    };
+    const result = aggregateExperiment({
+      snapshot,
+      taskStates,
+      resolveRunRecord: (runId) => runs[runId] ?? null,
+    });
+
+    // The complete model is the winner.
+    expect(result.winnerKeys).toContain("umans:model");
+    expect(result.winnerKeys).not.toContain("9router:model");
+
+ // The provisional model has a higher mean but is not complete.
+    const provisional = result.models.find((m) => m.modelKey === "9router:model");
+    expect(provisional).toBeTruthy();
+    expect(provisional!.complete).toBe(false);
+    expect(provisional!.mean).toBeGreaterThan(4.38);
+    expect(provisional!.scoredTasks).toBe(14);
+
+    // The complete model has complete coverage.
+    const complete = result.models.find((m) => m.modelKey === "umans:model");
+    expect(complete).toBeTruthy();
+    expect(complete!.complete).toBe(true);
+    expect(complete!.scoredTasks).toBe(15);
+  });
+});
