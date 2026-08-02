@@ -14,7 +14,8 @@
     "typecheck:web": "tsc -b",
     "typecheck:server": "tsc -p server/tsconfig.json",
     "check": "npm run typecheck:web && npm run typecheck:server && npm run test && npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qa:design-motion": "node scripts/cdp-design-motion-qa.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -1,0 +1,113 @@
+{
+  "generatedAt": "2026-08-02T11:59:48.541Z",
+  "baseUrl": "http://localhost:5176/",
+  "probes": [
+    {
+      "name": "desktop-1440x1000-normal",
+      "paletteAnimation": null,
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "activeTag": "BODY",
+      "pass": true,
+      "reason": "expected a linear spinner, no horizontal overflow, and no palette animation"
+    },
+    {
+      "name": "desktop-run-action",
+      "backgroundImage": "none",
+      "visible": true,
+      "pass": true,
+      "reason": "Run action must be a visible solid control, not a gradient"
+    },
+    {
+      "name": "command-palette",
+      "animationName": "none",
+      "focusInPalette": true,
+      "latencyMs": 36,
+      "pass": true,
+      "reason": "palette must open within 500ms, focus its input, and have no entrance animation"
+    },
+    {
+      "name": "connections-open",
+      "focusInDialog": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "focus must enter dialog without horizontal overflow"
+    },
+    {
+      "name": "connections-focus-restored",
+      "restored": true,
+      "pass": true,
+      "reason": "focus must return to the trigger"
+    },
+    {
+      "name": "tablet-1024x768-normal",
+      "paletteAnimation": null,
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "activeTag": "BODY",
+      "pass": true,
+      "reason": "expected a linear spinner, no horizontal overflow, and no palette animation"
+    },
+    {
+      "name": "tablet-768x1024-normal",
+      "paletteAnimation": null,
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "activeTag": "BODY",
+      "pass": true,
+      "reason": "expected a linear spinner, no horizontal overflow, and no palette animation"
+    },
+    {
+      "name": "mobile-390x844-normal",
+      "paletteAnimation": null,
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "activeTag": "BODY",
+      "pass": true,
+      "reason": "expected a linear spinner, no horizontal overflow, and no palette animation"
+    },
+    {
+      "name": "mobile-command-drawer",
+      "focusInDialog": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "mobile drawer must focus and fit"
+    },
+    {
+      "name": "mobile-command-drawer-scroll",
+      "found": true,
+      "reachedEnd": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "mobile drawer content must remain vertically reachable without horizontal overflow"
+    },
+    {
+      "name": "desktop-reduced-motion",
+      "transitionDuration": "0s",
+      "spinnerAnimation": "none",
+      "overflowX": false,
+      "visibleStatus": true,
+      "pass": true,
+      "reason": "reduced motion must remove interaction transitions and movement while retaining visible status text"
+    },
+    {
+      "name": "desktop-200-percent-css-zoom",
+      "overflowX": false,
+      "innerWidth": 720,
+      "innerHeight": 500,
+      "pass": true,
+      "reason": "an effective 200% CSS viewport must fit without horizontal overflow"
+    }
+  ],
+  "screenshots": [
+    "qa-desktop-1440x1000.png",
+    "qa-desktop-run-action.png",
+    "qa-tablet-1024x768.png",
+    "qa-tablet-768x1024.png",
+    "qa-mobile-390x844.png",
+    "qa-mobile-drawer.png",
+    "qa-mobile-drawer-scrolled.png",
+    "qa-desktop-reduced-motion.png",
+    "qa-desktop-200-percent-css-zoom.png"
+  ]
+}
