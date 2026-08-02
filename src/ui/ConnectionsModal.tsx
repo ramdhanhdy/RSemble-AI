@@ -3,16 +3,18 @@
 // Data-driven: provider descriptors live in an array, not hardcoded JSX blocks.
 // =============================================================================
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { Check, Loader2, RefreshCw, X, Zap } from "lucide-react";
 import { listProviders } from "../lib/providers/registry";
 import type { ProviderId, ProviderReadiness } from "../lib/providers/types";
-import { useDialogA11y } from "./useDialogA11y";
+import { DialogSurface } from "./DialogSurface";
 
 interface ConnectionsModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onOpenChange: (open: boolean) => void;
   onRefresh: () => void;
+  handle?: Dialog.Handle<unknown>;
 }
 
 interface ProviderDescriptor {
@@ -93,7 +95,7 @@ function readinessMessage(status: ProviderReadiness): string {
   return status.ok ? "Connection verified." : status.reason;
 }
 
-export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModalProps) {
+export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: ConnectionsModalProps) {
   const [statuses, setStatuses] = useState<Record<ProviderId, ProviderReadiness>>({
     openrouter: { ok: false, reason: "Loading..." },
     "chatgpt-codex": { ok: false, reason: "Loading..." },
@@ -116,8 +118,6 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [testingProvider, setTestingProvider] = useState<ProviderId | null>(null);
   const [testResults, setTestResults] = useState<Partial<Record<ProviderId, ProviderReadiness>>>({});
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useDialogA11y(isOpen, onClose, dialogRef);
 
   const fetchStatuses = async () => {
     const providers = listProviders();
@@ -143,7 +143,6 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
 
   const handleSave = (providerId: ProviderId, label: string) => {
     localStorage.setItem(keyStorageId(providerId), keys[providerId].trim());
@@ -188,20 +187,13 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <DialogSurface
+      open={isOpen}
+      onOpenChange={onOpenChange}
+      title="Provider Connections"
+      handle={handle}
+      className="flex max-w-xl flex-col bg-panel"
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="connections-title"
-        tabIndex={-1}
-        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-edge-bright bg-panel shadow-popover focus:outline-none"
-      >
         <div className="flex shrink-0 items-center justify-between border-b border-edge px-5 py-3">
           <div className="flex items-center gap-2">
             <Zap size={16} className="text-accent" />
@@ -209,7 +201,7 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onOpenChange(false)}
             aria-label="Close connections"
             className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card-hover hover:text-text"
           >
@@ -311,14 +303,13 @@ export function ConnectionsModal({ isOpen, onClose, onRefresh }: ConnectionsModa
         <div className="flex shrink-0 justify-end border-t border-edge px-5 py-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onOpenChange(false)}
             className="min-h-[44px] rounded-sm border border-edge-bright bg-card-hover px-4 font-mono text-xs text-text hover:bg-raised"
           >
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </DialogSurface>
   );
 }
 

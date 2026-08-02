@@ -12,12 +12,23 @@
 // =============================================================================
 
 import { useEffect, useState } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { Command, HelpCircle, Menu } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { HexCubeLogo } from "./brand-icons";
 import { WorkspaceNav } from "./WorkspaceNav";
 
 export type ConnectionState = "ready" | "running" | "degraded" | "offline";
+
+function DetachedDialogTrigger({
+  handle,
+  children,
+}: {
+  handle?: Dialog.Handle<unknown>;
+  children: ReactElement;
+}) {
+  return handle ? <Dialog.Trigger handle={handle} render={children} /> : children;
+}
 
 function livePill(running: boolean, conn: ConnectionState): { label: string; dot: string; text: string } {
   if (running) {
@@ -53,6 +64,9 @@ export function Header({
   onOpenConnections,
   onOpenPalette,
   onOpenHelp,
+  commandDialogHandle,
+  connectionsDialogHandle,
+  cheatsheetDialogHandle,
   connectionState = "ready",
   showToggle = true,
 }: {
@@ -62,6 +76,9 @@ export function Header({
   onOpenConnections?: () => void;
   onOpenPalette?: () => void;
   onOpenHelp?: () => void;
+  commandDialogHandle?: Dialog.Handle<unknown>;
+  connectionsDialogHandle?: Dialog.Handle<unknown>;
+  cheatsheetDialogHandle?: Dialog.Handle<unknown>;
   connectionState?: ConnectionState;
   showToggle?: boolean;
 }) {
@@ -73,14 +90,16 @@ export function Header({
     <header className="relative flex h-14 shrink-0 items-center justify-between gap-2 border-b border-edge bg-shell px-2 sm:px-4">
       <div className="flex min-w-0 items-center gap-2.5">
         {onOpenCommand && (
-          <button
-            type="button"
-            onClick={onOpenCommand}
-            aria-label="Open command pane"
-            className="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-panel hover:text-text md:hidden"
-          >
-            <Menu size={18} />
-          </button>
+          <DetachedDialogTrigger handle={commandDialogHandle}>
+            <button
+              type="button"
+              onClick={onOpenCommand}
+              aria-label="Open command pane"
+              className="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-panel hover:text-text md:hidden"
+            >
+              <Menu size={18} />
+            </button>
+          </DetachedDialogTrigger>
         )}
         <HexCubeLogo size={22} className="shrink-0 text-accent" />
         {/* App name is redundant chrome on tight viewports — the logo carries
@@ -96,22 +115,20 @@ export function Header({
 
       <div className="flex shrink-0 items-center gap-2">
         {onOpenConnections && (
-          <button
-            type="button"
-            onClick={onOpenConnections}
-            aria-label={`Connection status: ${pillLabel}. Manage connections.`}
-            title="Provider connections"
-            className="flex min-h-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright"
-          >
-            <span className={`size-2 rounded-full ${pill.dot}`} aria-hidden="true" />
-            {/* Sacrifice order (DESIGN.md §122-125): at md (768–1023px) the
-                visible label is hidden — the dot + aria-label carry status.
-                The label returns at lg+ after palette/help have their full
-                treatment restored. */}
-            <span className={`hidden lg:inline ${pill.text}`} aria-live="polite">
-              {pillLabel}
-            </span>
-          </button>
+          <DetachedDialogTrigger handle={connectionsDialogHandle}>
+            <button
+              type="button"
+              onClick={onOpenConnections}
+              aria-label={`Connection status: ${pillLabel}. Manage connections.`}
+              title="Provider connections"
+              className="flex min-h-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright"
+            >
+              <span className={`size-2 rounded-full ${pill.dot}`} aria-hidden="true" />
+              <span className={`hidden lg:inline ${pill.text}`} aria-live="polite">
+                {pillLabel}
+              </span>
+            </button>
+          </DetachedDialogTrigger>
         )}
         {/* Palette — two treatments: icon-only at md (768–1023px), full ⌘K
             keycaps at lg+. The icon-only button keeps its accessible name. */}
@@ -144,20 +161,22 @@ export function Header({
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">⌘</kbd>
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">K</kbd>
         </button>
-        <button
-          type="button"
-          aria-disabled={onOpenHelp ? undefined : true}
-          onClick={onOpenHelp}
-          aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts (?)"
-          className={`hidden h-11 w-11 items-center justify-center rounded-md border border-edge bg-panel md:flex ${
-            onOpenHelp
-              ? "text-text-secondary hover:border-edge-bright"
-              : "cursor-not-allowed text-text-secondary opacity-60"
-          }`}
-        >
-          <HelpCircle size={16} />
-        </button>
+        <DetachedDialogTrigger handle={cheatsheetDialogHandle}>
+          <button
+            type="button"
+            aria-disabled={onOpenHelp ? undefined : true}
+            onClick={onOpenHelp}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            className={`hidden h-11 w-11 items-center justify-center rounded-md border border-edge bg-panel md:flex ${
+              onOpenHelp
+                ? "text-text-secondary hover:border-edge-bright"
+                : "cursor-not-allowed text-text-secondary opacity-60"
+            }`}
+          >
+            <HelpCircle size={16} />
+          </button>
+        </DetachedDialogTrigger>
         {showToggle && children}
       </div>
 

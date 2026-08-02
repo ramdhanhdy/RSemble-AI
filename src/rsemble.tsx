@@ -9,6 +9,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { Play, RotateCcw, Square } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -19,7 +20,6 @@ import { Header, type ConnectionState } from "./ui/Header";
 
 import { type Action, type StudioState, initialState, reducer } from "./studio-engine";
 
-import { useDialogA11y } from "./ui/useDialogA11y";
 import { useResizableSplit } from "./ui/useResizableSplit";
 import { ModeToggle } from "./ui/ModeToggle";
 import { ModelList } from "./ui/ModelList";
@@ -82,11 +82,12 @@ export default function RSemble() {
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
+  const commandDialogHandle = useMemo(() => Dialog.createHandle(), []);
+  const connectionsDialogHandle = useMemo(() => Dialog.createHandle(), []);
+  const cheatsheetDialogHandle = useMemo(() => Dialog.createHandle(), []);
 
   const { commandWidth, dragging, onDividerPointerDown, onDividerKeyDown, onDoubleClick, containerRef, min, max } = useResizableSplit();
   const [focusMode, setFocusMode] = useState(false);
-  const commandDrawerRef = useRef<HTMLElement>(null);
-  useDialogA11y(commandOpen, () => setCommandOpen(false), commandDrawerRef);
 
   // Focus mode only applies to the horizontal lg split. At md (stacked) and
   // mobile (drawer) the command pane is already compact, so collapsing to a
@@ -370,6 +371,9 @@ export default function RSemble() {
             onOpenConnections={() => setConnectionsOpen(true)}
             onOpenPalette={() => setPaletteOpen(true)}
             onOpenHelp={() => setCheatsheetOpen(true)}
+            commandDialogHandle={commandDialogHandle}
+            connectionsDialogHandle={connectionsDialogHandle}
+            cheatsheetDialogHandle={cheatsheetDialogHandle}
             connectionState={connectionState}
             showToggle={isCompareRoute}
           >
@@ -437,52 +441,50 @@ export default function RSemble() {
       {/* Mobile bottom navigation — fixed, three workspaces. */}
       <MobileWorkspaceNav />
 
-      {commandOpen && isCompareRoute && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/60 md:hidden"
-            aria-hidden="true"
-            onClick={() => setCommandOpen(false)}
-          />
-          <aside
-            ref={commandDrawerRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Command"
-            tabIndex={-1}
-            className="fixed inset-y-0 left-0 z-50 flex w-[85%] max-w-sm flex-col border-r border-edge bg-panel shadow-2xl focus:outline-none md:hidden"
-          >
-            <div className="flex shrink-0 items-center justify-between border-b border-edge px-4 py-3">
-              <span className="font-mono text-xs uppercase tracking-wider text-text-muted">Command</span>
-              <button
-                type="button"
-                onClick={() => setCommandOpen(false)}
-                aria-label="Close command pane"
-                className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card hover:text-text"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-              <CommandPane
-                state={state}
-                dispatch={dispatch}
-                canRun={canRun}
-                onRun={() => {
-                  if (!canRun) return;
-                  requestRun();
-                  setCommandOpen(false);
-                }}
-                onAbort={abortRun}
-              />
-            </div>
-          </aside>
-        </>
+      {isCompareRoute && (
+        <Dialog.Root
+          handle={commandDialogHandle}
+          open={commandOpen}
+          onOpenChange={setCommandOpen}
+        >
+          <Dialog.Portal>
+            <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 md:hidden" />
+            <Dialog.Viewport className="fixed inset-0 z-50 flex md:hidden">
+              <Dialog.Popup className="motion-state flex h-full w-[85%] max-w-sm origin-left flex-col border-r border-edge bg-panel shadow-2xl">
+                <div className="flex shrink-0 items-center justify-between border-b border-edge px-4 py-3">
+                  <Dialog.Title className="font-mono text-xs uppercase tracking-wider text-text-muted">
+                    Command
+                  </Dialog.Title>
+                  <Dialog.Close
+                    aria-label="Close command pane"
+                    className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card hover:text-text"
+                  >
+                    <CloseIcon />
+                  </Dialog.Close>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+                  <CommandPane
+                    state={state}
+                    dispatch={dispatch}
+                    canRun={canRun}
+                    onRun={() => {
+                      if (!canRun) return;
+                      requestRun();
+                      setCommandOpen(false);
+                    }}
+                    onAbort={abortRun}
+                  />
+                </div>
+              </Dialog.Popup>
+            </Dialog.Viewport>
+          </Dialog.Portal>
+        </Dialog.Root>
       )}
       <ConnectionsModal
         isOpen={connectionsOpen}
-        onClose={() => setConnectionsOpen(false)}
+        onOpenChange={setConnectionsOpen}
         onRefresh={checkAllReadiness}
+        handle={connectionsDialogHandle}
       />
       <CommandPalette
         open={paletteOpen}
@@ -507,7 +509,11 @@ export default function RSemble() {
           void experimentController?.abort();
         }}
       />
-      <ShortcutCheatsheet open={cheatsheetOpen} onClose={() => setCheatsheetOpen(false)} />
+      <ShortcutCheatsheet
+        open={cheatsheetOpen}
+        onOpenChange={setCheatsheetOpen}
+        handle={cheatsheetDialogHandle}
+      />
     </div>
   );
 }
