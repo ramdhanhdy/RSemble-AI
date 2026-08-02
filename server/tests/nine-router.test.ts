@@ -26,8 +26,8 @@ function makeRes(): http.ServerResponse & { written: Buffer[] } {
   const res = new http.ServerResponse(req) as http.ServerResponse & { written: Buffer[] };
   res.written = [];
   res.writeHead = vi.fn(() => res) as never;
-  res.write = vi.fn((chunk: Buffer) => {
-    res.written.push(chunk);
+  res.write = vi.fn((chunk: Buffer | string) => {
+    res.written.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     return true;
   }) as never;
   res.end = vi.fn(() => res) as never;

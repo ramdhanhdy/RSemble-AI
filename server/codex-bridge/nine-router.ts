@@ -49,5 +49,6 @@ export function handleNineRouterProxy(
     upstream,
     routePrefix: "9router",
     providerLabel: "9Router",
+    normalizeCleanSseEof: true,
   });
 }
