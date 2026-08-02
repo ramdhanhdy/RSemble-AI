@@ -1035,8 +1035,110 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     // Repair the missing cell on t1.
     const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
     expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
 
     // Execution owner and lease must be released after completion.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("pause during a repair defers to the boundary and never leaks ownership", async () => {
+    let controllerRef: Harness["controller"] | null = null;
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+      midTask: (request) => {
+        // Pause as soon as the REPAIR task begins (repairs carry
+        // candidateExecution). Never pause the initial run.
+        if (request.candidateExecution) {
+          void controllerRef?.requestPause();
+        }
+      },
+    });
+    controllerRef = h.controller;
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    h.executor.behavior = () => ({ kind: "success" });
+    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // A single repair drains the queue: pause during the last task defers to
+    // the boundary and the run completes. The record is never left "running"
+    // without an owner.
+    const after = await h.evalRepo.getExperiment(expId);
+    expect(after!.status).toBe("completed");
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("persistence failure during a repair stops before another paid call and releases ownership", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+    const callsBefore = h.executor.calls.length;
+
+    // Fail the repair's commit (after run writes succeed, experiment write fails).
+    let tx = 0;
+    const originalCommit = h.store.runInTransaction.bind(h.store);
+    h.store.runInTransaction = async (fn) => {
+      tx += 1;
+      if (tx === 2) h.store.failAfterWrites = 0;
+      return originalCommit(fn);
+    };
+
+    h.executor.behavior = () => ({ kind: "success" });
+    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // The repair executor call happened but no second paid task ran.
+    expect(h.executor.calls.length).toBe(callsBefore + 1);
+    // Ownership released so the user can act again.
+    expect(h.owner.get()).toBeNull();
+  });
+
+  it("a rejecting runRepo.get during planning releases lease and owner", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    // Storage degradation: run record loads reject during repair planning.
+    const originalGet = h.runRepo.get.bind(h.runRepo);
+    h.runRepo.get = async () => {
+      throw new Error("storage unavailable");
+    };
+    try {
+      const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toMatch(/storage unavailable/i);
+    } finally {
+      h.runRepo.get = originalGet;
+    }
+
+    // Lease and owner must be released despite the rejection.
     expect(h.owner.get()).toBeNull();
     expect(h.leaseStore.lease).toBeNull();
   });

@@ -20,6 +20,7 @@ import {
 import type {
   EvaluationSuite,
   EvaluationTask,
+  ExperimentRepairPlan,
   ExperimentTaskState,
   ExperimentTaskAttempt,
 } from "./evaluation-types";
@@ -499,6 +500,88 @@ describe("retryIncomplete", () => {
     // The first attempt is untouched.
     expect(t1.attempts[0].runId).toBe("run-t1-1");
     expect(t1.attempts[0].status).toBe("failed");
+  });
+});
+
+describe("queueRepairs", () => {
+  function terminalEngine(): ExperimentEngine {
+    const engine = makeEngine(["t1", "t2"]);
+    const att1 = startAndBegin(engine);
+    engine.commitTaskTerminal({
+      taskId: "t1",
+      attemptId: att1,
+      runStatus: "partial",
+      epoch: engine.taskEpoch,
+      error: null,
+      now: 7000,
+    });
+    const action = engine.nextAction();
+    if (action.kind !== "begin-task") throw new Error("expected begin-task");
+    engine.beginTask("t2", "att-t2-1", "run-t2-1", 8000);
+    engine.commitTaskTerminal({
+      taskId: "t2",
+      attemptId: "att-t2-1",
+      runStatus: "failed",
+      epoch: engine.taskEpoch,
+      error: null,
+      now: 9000,
+    });
+    return engine; // completed_with_failures (t1 partial, t2 failed)
+  }
+
+  const REPAIR: ExperimentRepairPlan = {
+    kind: "missing-cells",
+    baseRunId: "run-base",
+    requestedModelKeys: ["openrouter:m1"],
+  };
+
+  it("queues repair attempts with fresh IDs and repair metadata", () => {
+    const engine = terminalEngine();
+    let n = 0;
+    const result = engine.queueRepairs(
+      [{ taskId: "t1", repair: REPAIR }, { taskId: "t2", repair: REPAIR }],
+      () => `repair-${n++}`,
+      FENCE,
+      10000,
+    );
+    expect(result.ok).toBe(true);
+    expect(engine.record.status).toBe("running");
+    expect(engine.queuedTaskIds).toEqual(["t1", "t2"]);
+    const t1 = engine.record.tasks[0];
+    expect(t1.attempts).toHaveLength(2);
+    expect(t1.attempts[1].status).toBe("queued");
+    expect(t1.attempts[1].repair).toEqual(REPAIR);
+    expect(t1.attempts[1].id).toBe("repair-0");
+    expect(t1.attempts[1].trial).toBe(1);
+  });
+
+  it("rejects an unknown task id without mutating the record", () => {
+    const engine = terminalEngine();
+    const before = engine.record.tasks.map((t) => ({ ...t }));
+    const result = engine.queueRepairs(
+      [{ taskId: "t-unknown", repair: REPAIR }],
+      () => "repair-x",
+      FENCE,
+      10000,
+    );
+    expect(result.ok).toBe(false);
+    // Status and tasks unchanged — nothing queued, no running leak.
+    expect(engine.record.status).toBe("completed_with_failures");
+    expect(engine.queuedTaskIds).toEqual([]);
+    expect(engine.record.tasks).toEqual(before);
+  });
+
+  it("rejects a duplicate repair for the same task", () => {
+    const engine = terminalEngine();
+    const result = engine.queueRepairs(
+      [{ taskId: "t1", repair: REPAIR }, { taskId: "t1", repair: REPAIR }],
+      () => "repair-x",
+      FENCE,
+      10000,
+    );
+    expect(result.ok).toBe(false);
+    expect(engine.record.status).toBe("completed_with_failures");
+    expect(engine.queuedTaskIds).toEqual([]);
   });
 });
 

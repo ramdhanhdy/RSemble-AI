@@ -479,9 +479,24 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     newIdlePromise();
 
     try {
-      while (engine && engine.record.status === "running") { 
+      while (engine && engine.record.status === "running") {
         const action = engine.nextAction();
-        if (action.kind === "wait") break;
+        if (action.kind === "wait") {
+          // Pause requested between tasks (or before the first repair task
+          // starts): persist the paused status so the record never stays
+          // "running" without an owner.
+          if (engine.pauseRequested && engine.activeTaskId === null) {
+            const pauseRes = engine.requestPause(now());
+            if (pauseRes.ok) {
+              try {
+                await syncExperimentStatus(persistedExperimentRevision);
+              } catch {
+                // Best-effort — the store may be the cause.
+              }
+            }
+          }
+          break;
+        }
 
         const taskId = action.taskId;
         // Find a queued attempt (from retryIncomplete) or generate a new ID
@@ -492,7 +507,13 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         const attemptId = queuedAttempt?.id ?? generateId();
 
         try {
-          await executeTask(taskId, attemptId, fence);
+          // Repairs run through the normal loop so pause-at-boundary, abort,
+          // heartbeat, error handling, and ownership release all apply.
+          if (queuedAttempt?.repair) {
+            await executeRepairTask(taskId, attemptId, queuedAttempt.repair, fence);
+          } else {
+            await executeTask(taskId, attemptId, fence);
+          }
         } catch (err) {
           // Persistence failure or execution error: stop the queue.
           const message = err instanceof Error ? err.message : String(err);
@@ -648,9 +669,19 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     return { ok: true, experimentId: id };
   }
 
-  function requestPause(): void {
-    if (engine) {
-      engine.requestPause(now());
+  async function requestPause(): Promise<void> {
+    if (!engine) return;
+    const wasBetweenTasks = engine.activeTaskId === null;
+    engine.requestPause(now());
+    // Pause between tasks (or before a queued repair starts) takes effect
+    // immediately in the engine: persist the paused status so the record
+    // never stays "running" without an active task or owner.
+    if (wasBetweenTasks && engine.record.status === "paused") {
+      try {
+        await syncExperimentStatus(persistedExperimentRevision);
+      } catch {
+        // Best-effort — the store may be the cause; runLoop also reconciles.
+      }
     }
   }
 
@@ -872,6 +903,10 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
     experimentId = expId;
 
+    // Post-acquisition setup: every exit before runLoop takes ownership must
+    // release the lease and owner. Ownership transfers only after a
+    // successful queue + heartbeat start.
+    let transferredToRunLoop = false;
     try {
       // Pre-load all selected attempt run records for the planner (it needs
       // synchronous resolution; the repository is async).
@@ -914,7 +949,8 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       suite = loadedSuite;
       persistedExperimentRevision = record.revision;
 
-      // Queue the repair attempt.
+      // Queue the repair attempt; the run loop executes it (pause/abort and
+      // ownership semantics all flow through the normal loop).
       const repairPlan: ExperimentRepairPlan = {
         kind: "missing-cells",
         baseRunId: plan.baseRunId,
@@ -927,53 +963,39 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       }
 
       await syncExperimentStatus(persistedExperimentRevision);
-
-      // Get the queued attempt ID and run the repair.
-      const repairTaskState = engine.record.tasks.find((t) => t.taskId === request.taskId);
-      const repairAttempt = repairTaskState?.attempts.find((a) => a.status === "queued");
-      if (!repairAttempt) {
-        return { ok: false, error: "Repair attempt was not queued" };
-      }
-
       startHeartbeat();
-
-      try {
-        await executeRepairTask(request.taskId, repairAttempt.id, plan, fence);
-        await syncExperimentStatus(persistedExperimentRevision);
-        return { ok: true };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        emit({ kind: "error", error: message });
-        return { ok: false, error: message };
-      }
+      transferredToRunLoop = true;
+      void runLoop(fence);
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     } finally {
-      releaseExecution();
-      engine = null;
-      experimentId = null;
-      suite = null;
-      markIdle();
+      if (!transferredToRunLoop) {
+        releaseExecution();
+        engine = null;
+        experimentId = null;
+        suite = null;
+      }
     }
   }
 
   async function executeRepairTask(
     taskId: string,
     attemptId: string,
-    plan: { baseRunId: string; requestedModelKeys: string[]; reusedModelKeys: string[] },
+    repairPlan: ExperimentRepairPlan,
     fence: ExecutionFence,
   ): Promise<void> {
     if (!engine || !suite) throw new Error("Engine or suite not initialized");
     const record = engine.record;
     const task = suite.tasks.find((t) => t.id === taskId)!;
     const taskState = record.tasks.find((t) => t.taskId === taskId)!;
-    const repairPlan: ExperimentRepairPlan = {
-      kind: "missing-cells",
-      baseRunId: plan.baseRunId,
-      requestedModelKeys: plan.requestedModelKeys,
-    };
 
     // Load the base run.
-    const baseRun = await runRepo.get(plan.baseRunId);
-    if (!baseRun) throw new Error(`Base run ${plan.baseRunId} not found`);
+    const baseRun = await runRepo.get(repairPlan.baseRunId);
+    if (!baseRun) throw new Error(`Base run ${repairPlan.baseRunId} not found`);
 
     // Build the seeded fresh run.
     const runId = `run-${generateId()}`;
@@ -997,10 +1019,18 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       slots: suite.modelSlots,
       fence,
       baseRun,
-      requestedModelKeys: plan.requestedModelKeys,
+      requestedModelKeys: repairPlan.requestedModelKeys,
       generateId,
     });
     const seedSummary = builder.deriveSummary(seedRun);
+
+    // Pause requested between queueing and begin (e.g. immediately after
+    // repairMissingCells returns): leave the queued attempt untouched and
+    // return cleanly — the loop sees the paused status and stops; ownership
+    // stays with the paused experiment (spec §5.4).
+    if (engine.record.status !== "running" || engine.pauseRequested) {
+      return;
+    }
 
     // Engine transition: beginTask.
     const beginResult = engine.beginTask(taskId, attemptId, runId, now());
@@ -1022,8 +1052,9 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     emit({ kind: "task-began", taskId, attemptId, runId });
 
     // Build seeded candidates and attempt ID map for the executor.
+    const requestedKeys = new Set(repairPlan.requestedModelKeys);
     const seededCandidates = seedRun.candidates
-      .filter((c) => plan.reusedModelKeys.includes(c.modelKey))
+      .filter((c) => c.acceptedAttemptId !== null && !requestedKeys.has(c.modelKey))
       .map((c) => {
         const attempt = c.attempts[0];
         return {
@@ -1067,7 +1098,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         attachments: [],
         attachmentsToJudge: true,
         candidateExecution: {
-          executeModelKeys: plan.requestedModelKeys,
+          executeModelKeys: repairPlan.requestedModelKeys,
           seededCandidates,
           seededAttemptIdsByCandidateId,
         },
@@ -1132,7 +1163,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
 export interface ExperimentController {
   start(suiteId: string): Promise<StartResult>;
-  requestPause(): void;
+  requestPause(): Promise<void>;
   resume(): Promise<SimpleResult>;
   abort(): Promise<void>;
   retryIncomplete(experimentId: string): Promise<SimpleResult>;

@@ -484,6 +484,20 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       }
       if (repairs.length === 0) return reject("No repairs to queue");
 
+      // Validate every repair task exists and no task is queued twice before
+      // mutating anything — an unknown id would leave the record "running"
+      // with nothing to execute.
+      const seen = new Set<string>();
+      for (const item of repairs) {
+        if (!taskState(item.taskId)) {
+          return reject(`Task ${item.taskId} not found`);
+        }
+        if (seen.has(item.taskId)) {
+          return reject(`Duplicate repair for task ${item.taskId}`);
+        }
+        seen.add(item.taskId);
+      }
+
       let tasks = record.tasks;
       for (const item of repairs) {
         const attempt: ExperimentTaskAttempt = {

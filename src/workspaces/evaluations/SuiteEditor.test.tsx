@@ -157,7 +157,7 @@ function makeValidSuite(id: string): EvaluationSuite {
 function makeStubController(overrides: Partial<ExperimentController> = {}): ExperimentController {
   return {
     start: vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" })),
-    requestPause: vi.fn(),
+    requestPause: vi.fn(async () => {}),
     resume: vi.fn(async () => ({ ok: true as const })),
     abort: vi.fn(async () => {}),
     retryIncomplete: vi.fn(async () => ({ ok: true as const })),

@@ -79,7 +79,7 @@ function makeController(): {
   const listeners = new Set<(e: ExperimentControllerEvent) => void>();
   const controller: ExperimentController = {
     start: vi.fn(async (): Promise<StartResult> => ({ ok: true, experimentId: "exp-1" })),
-    requestPause: vi.fn(),
+    requestPause: vi.fn(async () => {}),
     resume: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
     abort: vi.fn(async () => {}),
     retryIncomplete: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
