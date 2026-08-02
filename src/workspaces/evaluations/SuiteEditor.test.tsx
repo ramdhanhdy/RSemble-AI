@@ -351,6 +351,15 @@ describe("SuiteEditor — run execution", () => {
       await flush();
     });
     await settle();
+    // Preflight confirmation opens; all models untested → Run suite confirm.
+    // The dialog portal renders on document.body.
+    const confirmBtn = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Run suite");
+    expect(confirmBtn).toBeTruthy();
+    await act(async () => {
+      confirmBtn!.click();
+      await flush();
+    });
+    await settle();
     expect(controller.start).toHaveBeenCalledWith("s1");
     expect(h.$("[data-route='experiment-progress']")).toBeTruthy();
     cleanup(h);
@@ -367,6 +376,14 @@ describe("SuiteEditor — run execution", () => {
     const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
     await act(async () => {
       runBtn.click();
+      await flush();
+    });
+    await settle();
+    // Preflight confirmation opens; confirm through it (portal on document.body).
+    const confirmBtn = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Run suite");
+    expect(confirmBtn).toBeTruthy();
+    await act(async () => {
+      confirmBtn!.click();
       await flush();
     });
     await settle();

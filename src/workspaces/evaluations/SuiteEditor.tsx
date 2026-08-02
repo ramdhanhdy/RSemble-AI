@@ -27,6 +27,8 @@ import { ChevronDown, Loader2, Save, Play, AlertCircle, Trophy } from "lucide-re
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import { useExperimentController } from "../../lib/evaluations/experiment-controller-context";
+import { useModelProbe } from "../../ui/ModelProbeContext";
+import { SuitePreflightDialog, type SuitePreflightEntry } from "./SuitePreflightDialog";
 import { useExecutionOwner } from "../../lib/execution-owner-context";
 import type { ExecutionOwner } from "../../lib/execution-owner";
 import { SuiteExperimentHistory } from "./SuiteExperimentHistory";
@@ -87,6 +89,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileRecords, setProfileRecords] = useState<ProfileRecord[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
+  const [preflightOpen, setPreflightOpen] = useState(false);
   const requestIdRef = useRef(0);
 
   // --- Load suite + profile records ---
@@ -277,6 +280,29 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
     }
   }, [controller, persisted, navigate]);
 
+  // --- Suite model preflight (spec §8.5) — one unconditional hook, map lookups. ---
+  const probeContext = useModelProbe();
+  const enabledCandidates = draft?.modelSlots.filter((s) => s.enabled) ?? [];
+  const candidateEntries: SuitePreflightEntry[] = enabledCandidates.map((s) => {
+    const state = probeContext.states[`${s.providerId}:${s.slug}`] ?? { kind: "untested" as const };
+    return {
+      modelKey: `${s.providerId}:${s.slug}`,
+      label: `${s.providerId}:${s.slug}`,
+      state,
+    };
+  });
+  const judgeKey = `${draft?.defaultJudge.providerId ?? "openrouter"}:${draft?.defaultJudge.model ?? ""}`;
+  const judgeEntry: SuitePreflightEntry = {
+    modelKey: judgeKey,
+    label: `Judge · ${judgeKey}`,
+    state: probeContext.states[judgeKey] ?? { kind: "untested" as const },
+  };
+
+  const handleRunAnyway = useCallback(async () => {
+    setPreflightOpen(false);
+    await handleRun();
+  }, [handleRun]);
+
   // --- States ---
   if (!suiteId) {
     return <NoSuiteSelected />;
@@ -377,8 +403,9 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
               onClick={() => {
                 // Run snaps the exact persisted version inside the controller;
                 // success navigates to the live experiment progress route.
+                // Preflight confirmation summarizes model test state first (§8.5).
                 if (canRun) {
-                  void handleRun();
+                  setPreflightOpen(true);
                 }
               }}
               disabled={!canRun}
@@ -472,6 +499,15 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
           )}
         </section>
       </div>
+
+      {/* Suite model preflight confirmation (spec §8.5) */}
+      <SuitePreflightDialog
+        open={preflightOpen}
+        onOpenChange={setPreflightOpen}
+        candidates={candidateEntries}
+        judge={judgeEntry}
+        onRunAnyway={handleRunAnyway}
+      />
     </div>
   );
 }
