@@ -10,7 +10,7 @@
 //
 // Rules (spec §9.2):
 //   1. If [DONE] was observed, end unchanged.
-//   2. If at least one valid content-bearing OpenAI delta was observed and
+//   2. If at least one valid content or reasoning OpenAI delta was observed and
 //      iteration ended normally, append exactly `data: [DONE]\n\n`.
 //   3. If no usable content was observed, end unchanged (empty stream error).
 //   4. If reading threw, the client disconnected, or the upstream was aborted,
@@ -23,7 +23,7 @@ export interface SseTerminationState {
   pending: string;
   /** Whether `data: [DONE]` was observed in any complete event line. */
   sawDone: boolean;
-  /** Whether at least one valid content-bearing OpenAI delta was observed. */
+  /** Whether at least one valid output-bearing OpenAI delta was observed. */
   sawUsableContent: boolean;
 }
 
@@ -63,9 +63,13 @@ export function inspectOpenAiSseChunk(
 
     // Try to parse as an OpenAI chat completion chunk.
     try {
-      const chunk = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
-      const delta = chunk.choices?.[0]?.delta?.content;
-      if (typeof delta === "string" && delta.length > 0) {
+      const chunk = JSON.parse(payload) as {
+        choices?: { delta?: { content?: string; reasoning_content?: string; reasoning?: string } }[];
+      };
+      const delta = chunk.choices?.[0]?.delta;
+      const hasOutput = [delta?.content, delta?.reasoning_content, delta?.reasoning]
+        .some((value) => typeof value === "string" && value.length > 0);
+      if (hasOutput) {
         sawUsableContent = true;
       }
     } catch {

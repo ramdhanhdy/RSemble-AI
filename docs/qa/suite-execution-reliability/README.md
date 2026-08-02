@@ -71,10 +71,10 @@ ownership, geometry, focus, and reduced motion.
   (`spinnerAnimation: "none"`); its static screenshot verifies the resulting
   layout rather than motion over time.
 
-## Actual gate output (recorded 2026-08-02)
+## Actual gate output (recorded 2026-08-03)
 
-- Focused reliability transport gate — PASS: 3 files, 41 tests.
-- `npm run check` — PASS: web and server typechecks, 120 Vitest files / 1,673
+- Focused reliability transport gate — PASS: 3 files, 43 tests.
+- `npm run check` — PASS: web and server typechecks, 120 Vitest files / 1,676
   tests, and production build.
 - `git diff --check` — clean.
 - `npm run qa:suite-reliability` — exit 0; 18 structured probes passed and 16

@@ -107,7 +107,7 @@ A green provider badge means the transport boundary is reachable. It does not me
 
 The 9Router bridge forwards bytes unchanged. Several 9Router backends produce valid content and then close their SSE response cleanly without the sentinel. The browser parser cannot distinguish that valid route convention from a truncated response and rejects it.
 
-The correct boundary is the 9Router bridge. It knows the response arrived through a heterogeneous local router and can normalize only a clean, content-bearing EOF.
+The correct boundary is the 9Router bridge. It knows the response arrived through a heterogeneous local router and can normalize only a clean, output-bearing EOF. Output-bearing includes final content and reasoning deltas; reasoning-only completion still surfaces as empty output to the client rather than as a misleading protocol failure.
 
 ### 6.3 Winner and standings use different semantics
 
@@ -134,7 +134,7 @@ The progress surface renders every attempt as a primary `RecordRow`. Old failure
 | Before | After | Why |
 | --- | --- | --- |
 | Provider-level connection test only | Provider readiness plus explicit live test per selected model | A provider can be healthy while a route is unavailable or protocol-incompatible |
-| Strict `[DONE]` requirement applied after the 9Router bridge passes bytes unchanged | 9Router bridge appends `[DONE]` only after a clean, content-bearing EOF | Restore compatibility without weakening other providers |
+| Strict `[DONE]` requirement applied after the 9Router bridge passes bytes unchanged | 9Router bridge appends `[DONE]` only after a clean, output-bearing EOF | Restore compatibility without weakening other providers |
 | Incomplete highest mean shown as Standings `#1` | Complete-coverage ranking plus separately labeled provisional leader | Winner and rank labels must not contradict each other |
 | Retry action only during progress | Recovery toolbar on terminal results | Put the action next to the missing evidence |
 | Whole-task retry only | Whole-task fallback plus targeted missing-cell repair | Avoid repeat cost while retaining a safe fallback |
@@ -165,7 +165,7 @@ Request contract:
 
 - one short user message asking for the exact token `OK`;
 - `temperature: 0`;
-- `maxTokens: 8`;
+- `maxTokens: 128`, so reasoning routes have enough budget to reach final content;
 - streaming path when the provider uses streaming during real runs;
 - 20-second timeout by default;
 - user-initiated only;
@@ -249,7 +249,7 @@ The 9Router proxy incrementally inspects SSE event boundaries while preserving s
 At upstream EOF:
 
 1. If `[DONE]` was observed, end unchanged.
-2. If at least one valid content-bearing OpenAI delta was observed and iteration ended normally, append exactly:
+2. If at least one valid content or reasoning OpenAI delta was observed and iteration ended normally, append exactly:
 
 ```text
 data: [DONE]\n\n

@@ -155,6 +155,12 @@ export function SuiteSettings({
               <span className="min-w-0 flex-1">
                 <CompactModelLabel providerId={slot.providerId} slug={slot.slug} />
               </span>
+              <ModelProbeControl
+                providerId={slot.providerId}
+                model={slot.slug}
+                slotLabel={`${slot.providerId}:${slot.slug}`}
+                disabled={!slot.enabled}
+              />
               <button
                 type="button"
                 aria-label={`Remove model ${slot.providerId}:${slot.slug}`}
@@ -190,19 +196,6 @@ export function SuiteSettings({
             Live model tests send a small generation request and may incur provider cost.
           </p>
         )}
-        {/* Per-row model test controls (spec §8.1). */}
-        <div className="space-y-1">
-          {suite.modelSlots.map((slot) => (
-            <div key={`probe-${slot.id}`} className="flex items-center gap-2">
-              <ModelProbeControl
-                providerId={slot.providerId}
-                model={slot.slug}
-                slotLabel={`${slot.providerId}:${slot.slug}`}
-                disabled={!slot.enabled}
-              />
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Default Judge */}

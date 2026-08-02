@@ -505,6 +505,36 @@ describe("SuiteEditor — settings disclosure", () => {
 });
 
 describe("SuiteEditor — Test selected models (spec §8.1)", () => {
+  it("puts one model-specific test action inside each candidate row", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          { id: "m1", providerId: "9router", provider: "9Router", model: "A", slug: "cmc/model-a", enabled: true },
+          { id: "m2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "org/model-b", enabled: true },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await settle();
+    await act(async () => h.$("button[aria-expanded='false']")!.click());
+    await settle();
+
+    for (const label of ["9router:cmc/model-a", "openrouter:org/model-b"]) {
+      const checkbox = h.$(`input[aria-label="Enable ${label}"]`);
+      const row = checkbox?.closest("li");
+      const action = row?.querySelector<HTMLButtonElement>(`button[aria-label="Test model ${label}"]`);
+      expect(action).toBeTruthy();
+      expect(action?.textContent?.trim()).toBe("Test");
+      expect(h.$$(`button[aria-label="Test model ${label}"]`)).toHaveLength(1);
+    }
+
+    cleanup(h);
+  });
+
   it("shows the batch test action when enabled candidates exist", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedSuite(

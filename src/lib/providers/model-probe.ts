@@ -10,7 +10,7 @@
 // Request contract (spec §8.2):
 //   - one short user message asking for the exact token "OK"
 //   - temperature: 0
-//   - maxTokens: 8
+//   - maxTokens: 128 (enough for reasoning routes to reach final content)
 //   - streaming path (chatCompletionStream)
 //   - 20-second default timeout
 //   - user-initiated only; no automatic retry; no Judge or fusion stage
@@ -80,7 +80,7 @@ export async function probeModelRoute(
       model,
       messages: [{ role: "user", content: "Reply with the exact token: OK" }],
       temperature: 0,
-      maxTokens: 8,
+      maxTokens: 128,
       signal: ctrl.signal,
     });
 

@@ -132,7 +132,7 @@ await probeModelRoute({
 Assert it:
 
 - uses the exact slug;
-- requests `temperature: 0` and `maxTokens: 8`;
+- requests `temperature: 0` and `maxTokens: 128` so reasoning routes can reach final content;
 - consumes the streaming iterator;
 - returns structured ready or failed state;
 - sanitizes errors.
@@ -166,7 +166,7 @@ git commit -m "test: lock suite reliability regressions"
 
 ## Task 2: Normalize clean 9Router SSE termination
 
-**Objective:** Append one `[DONE]` sentinel only to a normally completed, content-bearing 9Router stream.
+**Objective:** Append one `[DONE]` sentinel only to a normally completed, output-bearing 9Router stream, including reasoning deltas.
 
 **Files:**
 
@@ -1385,7 +1385,7 @@ git commit -m "test: verify suite execution reliability"
 
 ### Transport
 
-- [ ] Only 9Router clean content-bearing EOF is normalized.
+- [ ] Only 9Router clean output-bearing EOF is normalized.
 - [ ] Existing `[DONE]` is never duplicated.
 - [ ] Empty, aborted, and throwing streams remain failures.
 - [ ] Other providers retain current strict behavior.

@@ -60,27 +60,30 @@ export function ModelProbeControl({
     statusText = `${FAILURE_LABELS[state.category] ?? "Failed"} · ${state.message}`;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       <button
         type="button"
         onClick={handleTest}
         disabled={disabled || isTesting}
         aria-label={accessibleName}
         aria-describedby={statusId}
-        className="inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+        className="inline-flex min-h-[44px] w-[68px] shrink-0 items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-2 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
       >
         {isTesting ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : null}
-        <span>Test model</span>
+        <span>{isTesting ? "Testing" : "Test"}</span>
       </button>
-      {state.kind !== "untested" && (
-        <span
-          id={statusId}
-          role={state.kind === "failed" ? "alert" : "status"}
-          className="text-xs text-text-muted"
-        >
-          {statusText}
-        </span>
-      )}
+      <span className="w-48 min-w-0">
+        {state.kind !== "untested" && (
+          <span
+            id={statusId}
+            role={state.kind === "failed" ? "alert" : "status"}
+            title={statusText}
+            className="block truncate text-xs text-text-muted"
+          >
+            {statusText}
+          </span>
+        )}
+      </span>
     </div>
   );
 }

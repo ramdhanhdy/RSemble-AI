@@ -50,7 +50,7 @@ describe("probeModelRoute — contract", () => {
     expect(call[0].model).toBe("cmc/model");
   });
 
-  it("requests temperature 0 and maxTokens 8", async () => {
+  it("requests temperature 0 and enough output budget for reasoning routes to reach final content", async () => {
     const stream = vi.fn(async function* (): AsyncGenerator<string, void, unknown> {
       yield "OK";
     });
@@ -66,7 +66,7 @@ describe("probeModelRoute — contract", () => {
 
     const call = stream.mock.calls[0] as unknown as [{ model: string; temperature?: number; maxTokens?: number }];
     expect(call[0].temperature).toBe(0);
-    expect(call[0].maxTokens).toBe(8);
+    expect(call[0].maxTokens).toBe(128);
   });
 
 
