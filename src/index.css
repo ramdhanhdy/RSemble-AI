@@ -162,6 +162,7 @@ body {
 
   .pressable,
   .motion-state,
+  .disclosure-chevron,
   .rsemble-divider::before {
     transition-duration: 0ms !important;
   }

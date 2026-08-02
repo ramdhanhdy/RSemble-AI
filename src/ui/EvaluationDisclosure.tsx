@@ -40,7 +40,7 @@ export function EvaluationDisclosure({
       >
         <ChevronRight
           size={13}
-          className={`shrink-0 text-text-muted transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`}
+          className={`disclosure-chevron shrink-0 text-text-muted transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`}
         />
         <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
           Evaluation

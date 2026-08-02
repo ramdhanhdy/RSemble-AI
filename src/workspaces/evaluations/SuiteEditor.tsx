@@ -356,7 +356,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
             >
               <ChevronDown
                 size={14}
-                className={settingsOpen ? "shrink-0 rotate-180 transition-transform duration-150 ease-out" : "shrink-0 transition-transform duration-150 ease-out"}
+                className={settingsOpen ? "disclosure-chevron shrink-0 rotate-180 transition-transform duration-150 ease-out" : "disclosure-chevron shrink-0 transition-transform duration-150 ease-out"}
                 aria-hidden="true"
               />
               Settings

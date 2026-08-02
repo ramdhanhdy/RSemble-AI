@@ -164,11 +164,13 @@ async function press(key, code, windowsVirtualKeyCode) {
 async function verifyDialog(name, triggerLabel) {
   await clickButton(triggerLabel);
   await waitFor("Boolean(document.querySelector('[role=dialog]'))", `${name} dialog`);
+  await wait(50);
   const open = await evaluate(`(() => {
     const dialog = document.querySelector('[role=dialog]');
     return { focusInDialog: Boolean(dialog?.contains(document.activeElement)), overflowX: document.documentElement.scrollWidth > innerWidth };
   })()`);
   record(`${name}-open`, { ...open, pass: open.focusInDialog && !open.overflowX, reason: "focus must enter dialog without horizontal overflow" });
+  await screenshot(`qa-${name}-dialog`);
   await press("Escape", "Escape", 27);
   await waitFor("!document.querySelector('[role=dialog]')", `${name} close`);
   const restored = await evaluate("document.activeElement === window.__qaTrigger");
@@ -181,10 +183,76 @@ async function captureViewport(name, viewport) {
   await documentProbe(`${name}-normal`);
   await screenshot(`qa-${name}`);
 }
+async function exerciseActivePipeline(name, expectedAnimations) {
+  await evaluate(`(() => {
+    const input = document.querySelector('textarea');
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    setValue.call(input, 'QA motion probe');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor("!document.querySelector('[data-geometry=\"run-action\"]').disabled", `${name} run action`);
+  await evaluate("document.querySelector('[data-geometry=\"run-action\"]').click()");
+  await waitFor("Boolean(document.querySelector('.connector-dots.animate-dash-march'))", `${name} active connector`);
+  const active = await evaluate(`(() => {
+    const connector = document.querySelector('.connector-dots.animate-dash-march');
+    const spinner = document.querySelector('.animate-spin-ease');
+    return {
+      activeConnectors: document.querySelectorAll('.connector-dots.animate-dash-march').length,
+      connectorAnimation: getComputedStyle(connector).animationName,
+      spinnerAnimation: spinner ? getComputedStyle(spinner).animationName : null,
+      spinnerTiming: spinner ? getComputedStyle(spinner).animationTimingFunction : null,
+      overflowX: document.documentElement.scrollWidth > innerWidth,
+    };
+  })()`);
+  record(name, {
+    ...active,
+    pass: active.activeConnectors === 1
+      && active.connectorAnimation === expectedAnimations.connector
+      && active.spinnerAnimation === expectedAnimations.spinner
+      && (expectedAnimations.spinner === "none" || active.spinnerTiming === "linear")
+      && !active.overflowX,
+    reason: "an active rail must expose one connector and one stage spinner with the expected motion mode",
+  });
+  await screenshot(`qa-${name}`);
+}
 
 try {
   await send("Page.enable");
   await send("Runtime.enable");
+  await send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `(() => {
+      localStorage.setItem('rsemble.key.openrouter', 'qa-motion-probe');
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = String(input);
+        if (url.includes('openrouter.ai/api/v1/models')) {
+          return new Response(JSON.stringify({ data: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.includes('openrouter.ai/api/v1/chat/completions')) {
+          const request = JSON.parse(init?.body ?? '{}');
+          if (request.stream) {
+            const encoder = new TextEncoder();
+            return new Response(new ReadableStream({
+              start(controller) {
+                controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"QA motion probe"}}]}\\n\\n'));
+              },
+            }), {
+              status: 200,
+              headers: { 'Content-Type': 'text/event-stream' },
+            });
+          }
+          return new Response(JSON.stringify({ choices: [{ message: { content: 'QA response' } }] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return nativeFetch(input, init);
+      };
+    })();`,
+  });
 
   await send("Emulation.setEmulatedMedia", { features: [] });
   await captureViewport("desktop-1440x1000", { width: 1440, height: 1000 });
@@ -219,12 +287,17 @@ try {
   await press("Escape", "Escape", 27);
 
   await verifyDialog("connections", "Connection status");
+  await exerciseActivePipeline("desktop-active-pipeline", { connector: "bg-march", spinner: "spin-ease" });
   await captureViewport("tablet-1024x768", { width: 1024, height: 768 });
+  await verifyDialog("connections-tablet-1024", "Connection status");
   await captureViewport("tablet-768x1024", { width: 768, height: 1024, touch: true });
+  await verifyDialog("connections-tablet-768", "Connection status");
 
   await captureViewport("mobile-390x844", { width: 390, height: 844, mobile: true, touch: true });
+  await verifyDialog("connections-mobile-390", "Connection status");
   await clickButton("Open command pane");
   await waitFor("Boolean(document.querySelector('[role=dialog]'))", "mobile command drawer");
+  await wait(50);
   const drawer = await evaluate(`(() => {
     const dialog = document.querySelector('[role=dialog]');
     return { focusInDialog: Boolean(dialog?.contains(document.activeElement)), overflowX: document.documentElement.scrollWidth > innerWidth };
@@ -262,9 +335,12 @@ try {
     document.body.append(spinner);
     const spinnerAnimation = getComputedStyle(spinner).animationName;
     spinner.remove();
+    const disclosureChevron = document.querySelector('.disclosure-chevron');
+    disclosureChevron?.closest('button')?.click();
     return {
       transitionDuration: getComputedStyle(button).transitionDuration,
       spinnerAnimation,
+      disclosureTransitionDuration: disclosureChevron ? getComputedStyle(disclosureChevron).transitionDuration : null,
       overflowX: document.documentElement.scrollWidth > innerWidth,
       visibleStatus: Boolean(status?.textContent?.trim()),
     };
@@ -273,11 +349,13 @@ try {
     ...reduced,
     pass: reduced.transitionDuration.split(",").every((duration) => duration.trim() === "0s")
       && reduced.spinnerAnimation === "none"
+      && reduced.disclosureTransitionDuration === "0s"
       && !reduced.overflowX
       && reduced.visibleStatus,
     reason: "reduced motion must remove interaction transitions and movement while retaining visible status text",
   });
   await screenshot("qa-desktop-reduced-motion");
+  await exerciseActivePipeline("desktop-reduced-active-pipeline", { connector: "none", spinner: "none" });
 
   await send("Emulation.setEmulatedMedia", { features: [] });
   await setViewport({ width: 720, height: 500 });
