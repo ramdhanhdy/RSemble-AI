@@ -532,52 +532,61 @@ export function SuiteList({ repo }: SuiteListProps) {
                   >
                     <Copy size={14} aria-hidden="true" />
                   </button>
-                  {confirmArchiveId === suite.id ? (
-                    <span className="flex items-center gap-0.5">
+                  {/* Stable geometry across the arm-to-confirm swap (identity
+                      spec §5.2 / Task 12): the slot reserves the widest armed
+                      state — "Archive?" (~88px) + gap + cancel (44px) — so
+                      arming never shifts the row's action cluster. */}
+                  <span
+                    data-geometry="suite-archive-slot"
+                    className="flex min-w-[136px] items-center justify-end"
+                  >
+                    {confirmArchiveId === suite.id ? (
+                      <span className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          data-action="confirm-archive"
+                          aria-label={`Confirm archive suite ${suite.name || "Untitled suite"}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleArchive(suite.id);
+                          }}
+                          className="flex min-h-[44px] items-center gap-1 rounded-sm bg-error/[0.12] px-2 text-sm text-error hover:bg-error/[0.2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          <Archive size={14} aria-hidden="true" />
+                          Archive?
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Cancel archive"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setConfirmArchiveId(null);
+                          }}
+                          className="flex h-11 w-11 items-center justify-center rounded-sm text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ) : isArchived ? (
+                      <span className="px-1 font-mono text-xs text-text-muted">Archived</span>
+                    ) : (
                       <button
                         type="button"
-                        data-action="confirm-archive"
-                        aria-label={`Confirm archive suite ${suite.name || "Untitled suite"}`}
+                        aria-label={`Archive suite ${suite.name || "Untitled suite"}`}
+                        title="Archive"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          void handleArchive(suite.id);
+                          setConfirmArchiveId(suite.id);
                         }}
-                        className="flex min-h-[44px] items-center gap-1 rounded-sm bg-error/[0.12] px-2 text-sm text-error hover:bg-error/[0.2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="flex h-11 w-11 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         <Archive size={14} aria-hidden="true" />
-                        Archive?
                       </button>
-                      <button
-                        type="button"
-                        aria-label="Cancel archive"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setConfirmArchiveId(null);
-                        }}
-                        className="flex h-11 w-11 items-center justify-center rounded-sm text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ) : isArchived ? (
-                    <span className="px-1 font-mono text-xs text-text-muted">Archived</span>
-                  ) : (
-                    <button
-                      type="button"
-                      aria-label={`Archive suite ${suite.name || "Untitled suite"}`}
-                      title="Archive"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setConfirmArchiveId(suite.id);
-                      }}
-                      className="flex h-11 w-11 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      <Archive size={14} aria-hidden="true" />
-                    </button>
-                  )}
+                    )}
+                  </span>
                 </div>
               </RecordRow>
             </li>
