@@ -538,7 +538,7 @@ export function SuiteList({ repo }: SuiteListProps) {
                       arming never shifts the row's action cluster. */}
                   <span
                     data-geometry="suite-archive-slot"
-                    className="flex min-w-[136px] items-center justify-end"
+                    className="flex min-w-0 items-center justify-end sm:min-w-[136px]"
                   >
                     {confirmArchiveId === suite.id ? (
                       <span className="flex items-center gap-0.5">

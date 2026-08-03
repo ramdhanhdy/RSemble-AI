@@ -31,7 +31,9 @@ describe("compact state geometry", () => {
   it("reserves the suite archive slot width across the arm-to-confirm swap", () => {
     // Identity spec §5.2 / Task 12: the slot must carry a fixed min-width
     // (widest armed state: "Archive?" + cancel) with end alignment, so arming
-    // the confirm pair never shifts the row's action cluster.
+    // the confirm pair never shifts the row's action cluster. The floor is
+    // responsive (sm:) — on phones the slot takes natural width so the row's
+    // content column is never crushed (Task 14 mobile finding).
     const suiteList = source("src/workspaces/evaluations/SuiteList.tsx");
     expect(suiteList).toContain('data-geometry="suite-archive-slot"');
     expect(suiteList).toMatch(/min-w-\[136px\]/);

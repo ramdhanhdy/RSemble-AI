@@ -33,7 +33,9 @@ export function KindEyebrow({ kind }: { kind: EntityKind }) {
       title={k.def}
     >
       <Icon size={11} aria-hidden="true" />
-      {k.word}
+      {/* Icon-only below sm: the glyph keeps the kind grammar on phones where
+          the row cannot afford the word (Task 14 mobile finding). */}
+      <span className="hidden sm:inline">{k.word}</span>
     </span>
   );
 }

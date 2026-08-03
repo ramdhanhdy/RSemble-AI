@@ -68,9 +68,13 @@ function Inner({
       </span>
       {/* The meta line indents under the title (past the status glyph) only
           when no kind eyebrow is present; with an eyebrow the left edge is
-          the row's anchor, so the meta line aligns flush to it. */}
+          the row's anchor, so the meta line aligns flush to it.
+          Below sm the line wraps (Task 14 mobile finding): the afterSummary
+          cluster and the ml-auto models/time cluster are both shrink-0, so
+          at phone widths the time cluster would overshoot the card edge —
+          wrapping drops it to a second meta line instead of clipping. */}
       <span
-        className={`flex w-full min-w-0 items-center gap-3 text-sm text-text-muted tabular-nums ${
+        className={`flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-text-muted tabular-nums ${
           kind ? "" : "pl-[21px]"
         }`}
       >
