@@ -12,7 +12,7 @@
 // identifies the profile record to load.
 // =============================================================================
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -28,13 +28,16 @@ import {
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type {
   EvaluationProfile,
-  EvaluationProfileRef,
-  EvaluationSuite,
   ProfileRecord,
 } from "../../lib/evaluations/evaluation-types";
+import {
+  suitesUsingProfile,
+  type ProfileUsage,
+} from "../../lib/evaluations/profile-usage";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
 import { EvaluationProfileEditor } from "../../ui/EvaluationProfileEditor";
 import { RecordRow } from "../../ui/RecordRow";
+import { KindEyebrow } from "../../ui/KindEyebrow";
 
 function genId(): string {
   if (
@@ -44,24 +47,6 @@ function genId(): string {
     return crypto.randomUUID();
   }
   return `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/** Does any profile reference in the suite pin this exact profile id+version? */
-function suiteReferencesProfile(
-  suite: EvaluationSuite,
-  profileId: string,
-  version: number,
-): boolean {
-  const refs: EvaluationProfileRef[] = [];
-  if (suite.defaultEvaluation.kind === "profile") {
-    refs.push(suite.defaultEvaluation.profile);
-  }
-  for (const task of suite.tasks) {
-    if (task.evaluation.kind === "profile") {
-      refs.push(task.evaluation.profile);
-    }
-  }
-  return refs.some((r) => r.id === profileId && r.version === version);
 }
 
 export function ProfileDetail({
@@ -77,7 +62,7 @@ export function ProfileDetail({
   const [selectedVersion, setSelectedVersion] = useState(0);
   const [viewed, setViewed] = useState<EvaluationProfile | null>(null);
   const [draft, setDraft] = useState<EvaluationProfile | null>(null);
-  const [pinnedSuites, setPinnedSuites] = useState<EvaluationSuite[]>([]);
+  const [usage, setUsage] = useState<ProfileUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -97,7 +82,7 @@ export function ProfileDetail({
           setRecord(null);
           setViewed(null);
           setDraft(null);
-          setPinnedSuites([]);
+          setUsage([]);
           return;
         }
         setRecord(rec);
@@ -107,9 +92,10 @@ export function ProfileDetail({
         setViewed(prof);
         setDraft(v === rec.latestVersion && prof ? prof : null);
         const suites = await repository.listSuites(true);
-        setPinnedSuites(
-          suites.filter((s) => suiteReferencesProfile(s, profileId, v)),
-        );
+        // Shared tested derivation (identity spec §5.3). Rendering splits the
+        // result into suites pinned at the selected version and suites still
+        // pinned at other versions.
+        setUsage(suitesUsingProfile(suites, profileId));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load profile.");
       } finally {
@@ -232,6 +218,20 @@ export function ProfileDetail({
       setBusy(false);
     }
   }
+
+  // Split the usage derivation by the viewed version: suites pinned at the
+  // selected version render as backlink rows; suites pinned only at other
+  // versions render as a one-line advisory (identity spec §5.3).
+  // NOTE: hooks must stay above the early returns below — same hook count on
+  // every render.
+  const pinnedAtSelected = useMemo(
+    () => usage.filter((u) => u.versions.includes(selectedVersion)),
+    [usage, selectedVersion],
+  );
+  const pinnedElsewhere = useMemo(
+    () => usage.filter((u) => !u.versions.includes(selectedVersion)),
+    [usage, selectedVersion],
+  );
 
   // --- States ---
 
@@ -456,32 +456,58 @@ export function ProfileDetail({
         </div>
       )}
 
-      {/* Suites pinned to this version */}
+      {/* Suites pinned to this version (identity spec §5.3) */}
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
           <Pin size={12} aria-hidden="true" />
           Suites pinned to v{selectedVersion}
         </div>
-        {pinnedSuites.length === 0 ? (
+        {pinnedAtSelected.length === 0 ? (
           <p className="text-sm text-text-muted">
-            No suites pinned to this version.
+            No suite pins this rubric at this version.{" "}
+            <Link
+              to="/evaluations"
+              className="text-text-secondary underline decoration-edge-bright underline-offset-2 hover:text-text"
+            >
+              Browse suites
+            </Link>
           </p>
         ) : (
           <ul className="flex min-w-0 flex-col gap-1.5" role="list">
-            {pinnedSuites.map((suite) => (
+            {pinnedAtSelected.map(({ suite }) => (
               <li key={suite.id} className="min-w-0">
                 <RecordRow
                   variant="list"
                   id={suite.id}
                   title={suite.name}
-                  status={suite.archivedAt != null ? "draft" : "completed"}
+                  status={suite.archivedAt != null ? "aborted" : "ready"}
                   timestamp={suite.updatedAt}
+                  kind={<KindEyebrow kind="suite" />}
                   summary={`v${suite.version} · ${suite.tasks.length} tasks`}
                   href={`/evaluations/${suite.id}`}
                 />
               </li>
             ))}
           </ul>
+        )}
+        {/* Suites still pinned at other versions — a user viewing v2 must see
+            that a suite still pins v1 (identity spec §5.3). */}
+        {pinnedElsewhere.length > 0 && (
+          <p className="text-sm text-text-muted">
+            Also pinned at other versions by:{" "}
+            {pinnedElsewhere.map(({ suite, versions }, i) => (
+              <span key={suite.id}>
+                {i > 0 && ", "}
+                <Link
+                  to={`/evaluations/${suite.id}`}
+                  className="text-text-secondary underline decoration-edge-bright underline-offset-2 hover:text-text"
+                >
+                  {suite.name}
+                </Link>{" "}
+                (v{versions.filter((v) => v !== selectedVersion).join(", v")})
+              </span>
+            ))}
+          </p>
         )}
       </div>
     </div>
