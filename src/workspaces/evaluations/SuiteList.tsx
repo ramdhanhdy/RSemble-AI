@@ -10,6 +10,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertCircle,
   Copy,
@@ -334,6 +335,17 @@ export function SuiteList({ repo }: SuiteListProps) {
           An evaluation suite groups several tasks into a versioned set, executed one at a time
           through the comparison pipeline. Build a suite to compare models across a shared
           workload with a consistent judge and evaluation profile.
+        </p>
+        {/* Identity spec §5.4: teach the split from the suite side. */}
+        <p className="max-w-md text-sm text-text-muted">
+          Judging rules live in{" "}
+          <Link
+            to="/evaluations/profiles"
+            className="text-text-secondary underline decoration-edge-bright underline-offset-2 hover:text-text"
+          >
+            Profiles
+          </Link>
+          ; suites pin them.
         </p>
         {createError && <p className="text-sm text-error">{createError}</p>}
         <div className="flex items-center gap-2">

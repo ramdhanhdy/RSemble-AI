@@ -206,6 +206,17 @@ describe("ProfileList", () => {
     cleanup(h);
   });
 
+  it("empty state cross-links suites so first-run users learn the split", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await settle();
+    const link = h.$("a[href='/evaluations']");
+    expect(link).toBeTruthy();
+    expect(link?.textContent).toContain("Suites");
+    expect(h.container.textContent).toMatch(/pin profiles to score their tasks/i);
+    cleanup(h);
+  });
+
   it("Create profile persists a valid draft that appears in the list", async () => {
     const repo = new InMemoryEvaluationRepository();
     const h = renderWithRouter(<ProfileList repo={repo} />);

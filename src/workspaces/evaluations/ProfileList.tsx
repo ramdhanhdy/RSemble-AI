@@ -13,7 +13,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Plus,
   Copy,
@@ -261,6 +261,16 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
           <p className="text-sm text-text-secondary">No profiles yet.</p>
           <p className="text-sm text-text-muted">
             Create an evaluation profile to define scoring criteria.
+          </p>
+          {/* Identity spec §5.4: teach the split from the profile side. */}
+          <p className="text-sm text-text-muted">
+            <Link
+              to="/evaluations"
+              className="text-text-secondary underline decoration-edge-bright underline-offset-2 hover:text-text"
+            >
+              Suites
+            </Link>{" "}
+            pin profiles to score their tasks.
           </p>
           <button
             type="button"

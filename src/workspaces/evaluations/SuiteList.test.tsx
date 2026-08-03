@@ -94,6 +94,17 @@ describe("SuiteList — empty state", () => {
     cleanup(h);
   });
 
+  it("cross-links profiles so first-run users learn the split", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const link = h.$("a[href='/evaluations/profiles']");
+    expect(link).toBeTruthy();
+    expect(link?.textContent).toContain("Profiles");
+    expect(h.container.textContent).toMatch(/suites pin them/i);
+    cleanup(h);
+  });
+
   it("storage unavailable shows an error, not a create button that lies about saving", async () => {
     const failingRepo = {
       listSuites: vi.fn().mockRejectedValue(new Error("storage down")),
@@ -217,8 +228,9 @@ describe("SuiteList — rows", () => {
       await flush();
     });
     await settle();
-    // Suite removed from default list
-    expect(h.$$("a[href^='/evaluations/']")).toHaveLength(0);
+    // Suite removed from default list — scoped to row links; the empty-state
+    // profiles cross-link (identity spec §5.4) is not a suite row.
+    expect(h.$$("[data-record-row] a[href^='/evaluations/']")).toHaveLength(0);
     // Archived filter restores discoverability
     const showArchived = h.$("input[type='checkbox']") as HTMLInputElement;
     expect(showArchived).toBeTruthy();
@@ -277,8 +289,9 @@ describe("SuiteList — create", () => {
     await settle();
     // Error surfaced, no false success claim
     expect(h.container.textContent).toMatch(/storage|full|free space/i);
-    // No suite appears in the list
-    expect(h.$$("a[href^='/evaluations/']")).toHaveLength(0);
+    // No suite appears in the list — row links only; the empty-state
+    // cross-link is not a suite row.
+    expect(h.$$("[data-record-row] a[href^='/evaluations/']")).toHaveLength(0);
     cleanup(h);
   });
 });
