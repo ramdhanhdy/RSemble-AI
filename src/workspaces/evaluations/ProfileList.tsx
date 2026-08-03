@@ -31,6 +31,7 @@ import type {
 } from "../../lib/evaluations/evaluation-types";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
 import { RecordRow } from "../../ui/RecordRow";
+import { KindEyebrow } from "../../ui/KindEyebrow";
 
 interface ProfileRow {
   record: ProfileRecord;
@@ -285,9 +286,18 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
         {rows.map(({ record, profile }) => {
           const archived = record.archivedAt != null;
           const criteriaCount = profile?.criteria.length ?? 0;
+          // Identity spec §5.4: preview what the rubric actually measures —
+          // first criterion name plus a count of the rest.
+          const firstName = profile?.criteria[0]?.name ?? "";
+          const preview =
+            criteriaCount === 0
+              ? ""
+              : criteriaCount === 1
+                ? firstName
+                : `${firstName} +${criteriaCount - 1} more`;
           const summary = `${criteriaCount} ${
             criteriaCount === 1 ? "criterion" : "criteria"
-          }${archived ? " · Archived" : ""}`;
+          }${preview ? ` · ${preview}` : ""}${archived ? " · Archived" : ""}`;
           const label = profile?.name ?? record.id;
           return (
             <li key={record.id} className="min-w-0">
@@ -295,8 +305,9 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
                 variant="list"
                 id={record.id}
                 title={label}
-                status={archived ? "draft" : "completed"}
+                status={archived ? "aborted" : "reusable"}
                 timestamp={record.updatedAt}
+                kind={<KindEyebrow kind="profile" />}
                 summary={summary}
                 provenance={`v${record.latestVersion}`}
                 href={`/evaluations/profiles/${record.id}`}

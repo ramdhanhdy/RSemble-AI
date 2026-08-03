@@ -145,6 +145,29 @@ async function appendVersion(
 // --- Tests -------------------------------------------------------------------
 
 describe("ProfileList", () => {
+  it("shows the rubric kind eyebrow and reusable status, not completed", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedProfile(repo, "p-1", "Quality");
+    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Rubric");
+    expect(text).toContain("Reusable");
+    expect(text).not.toContain("Completed");
+    cleanup(h);
+  });
+
+  it("previews the first criterion name and counts the rest", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedProfile(repo, "p-1", "Quality", 3);
+    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Criterion 1");
+    expect(text).toContain("+2 more");
+    cleanup(h);
+  });
+
   it("lists latest revisions and rows link to /evaluations/profiles/:id", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedProfile(repo, "p-1", "Quality");
