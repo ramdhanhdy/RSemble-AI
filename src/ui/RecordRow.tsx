@@ -52,17 +52,25 @@ function Inner({
   provenance,
 }: Omit<RecordRowProps, "variant" | "id" | "href" | "children">) {
   return (
-    <>
-      <StatusMark status={status} />
-      <span className="truncate font-mono text-sm text-text">{title}</span>
-      <span className="ml-auto flex items-center gap-3 text-sm text-text-muted tabular-nums">
-        {provenance && <span className="hidden sm:inline">{provenance}</span>}
-        {modelCount != null && <span>{modelCount} models</span>}
-        {source && <span className="uppercase">{source}</span>}
-        {summary && <span className="hidden md:inline">{summary}</span>}
-        <span>{formatRelativeTime(timestamp)}</span>
+    <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+      <span className="flex w-full min-w-0 items-center gap-2">
+        <StatusMark status={status} />
+        <span className="truncate font-mono text-sm text-text">{title}</span>
       </span>
-    </>
+      <span className="flex w-full min-w-0 items-center gap-3 pl-[21px] text-sm text-text-muted tabular-nums">
+        {summary && (
+          <span className="min-w-0 truncate" title={summary}>
+            {summary}
+          </span>
+        )}
+        {provenance && <span className="hidden min-w-0 truncate sm:inline">{provenance}</span>}
+        <span className="ml-auto flex shrink-0 items-center gap-3">
+          {modelCount != null && <span>{modelCount} models</span>}
+          {source && <span className="uppercase">{source}</span>}
+          <span>{formatRelativeTime(timestamp)}</span>
+        </span>
+      </span>
+    </span>
   );
 }
 

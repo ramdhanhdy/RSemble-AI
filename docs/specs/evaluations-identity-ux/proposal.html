@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSemble AI — Suites vs Profiles: The Identity Upgrade</title>
+<style>
+  :root {
+    --canvas: #0a0a0a;
+    --panel: #121212;
+    --card-hover: #1a1a1a;
+    --raised: #181818;
+    --edge: #262626;
+    --edge-bright: #3a3a3a;
+    --accent: #00e5ff;
+    --text: #ededed;
+    --text-2: #a1a1a1;
+    --text-3: #777777;
+    --success: #00ff9d;
+    --warning: #ffb300;
+    --error: #ff4d4d;
+    --mono: "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+    --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--canvas);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- shared bits ---------- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .eyebrow .num { color: var(--accent); }
+  section { padding: 56px 0; border-top: 1px solid var(--edge); }
+  h2 { font-size: 24px; font-weight: 600; margin: 10px 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--text-2); max-width: 680px; }
+  svg { flex: none; }
+
+  /* ---------- hero ---------- */
+  header.hero { padding: 72px 0 56px; }
+  header.hero h1 { font-size: 40px; line-height: 1.12; letter-spacing: -0.02em; font-weight: 650; max-width: 760px; }
+  header.hero h1 em { font-style: normal; color: var(--accent); }
+  header.hero p.sub { margin-top: 16px; color: var(--text-2); max-width: 640px; font-size: 16px; }
+  .meta-row { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .meta-chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    border: 1px solid var(--edge); border-radius: 4px; padding: 5px 10px; color: var(--text-2);
+    background: var(--panel);
+  }
+
+  /* ---------- app mock chrome ---------- */
+  .mock {
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .mock + .mock { margin-top: 16px; }
+  .mock-title {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--text-3); padding: 10px 14px; border-bottom: 1px solid var(--edge);
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .mock-body { padding: 10px 12px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* segmented nav mock */
+  .segnav { display: flex; gap: 2px; border-bottom: 1px solid var(--edge); padding: 8px; background: var(--canvas); }
+  .segnav .item {
+    padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--text-2);
+    display: flex; flex-direction: column; align-items: center; line-height: 1.25;
+  }
+  .segnav .item.active { background: rgba(0,229,255,0.15); color: var(--accent); }
+  .segnav .item .sub {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-3); font-weight: 400;
+  }
+
+  /* record rows */
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid var(--edge); border-radius: 6px;
+    padding: 10px 12px; background: var(--panel);
+    margin-bottom: 8px; min-height: 52px;
+    transition: border-color 150ms cubic-bezier(0.23,1,0.32,1), background-color 150ms cubic-bezier(0.23,1,0.32,1);
+  }
+  .row:hover { border-color: var(--edge-bright); background: var(--card-hover); }
+  .row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+  .row-line1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .row-title { font-family: var(--mono); font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-line2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row-meta { font-size: 12px; color: var(--text-2); }
+  .row-meta.dim { color: var(--text-3); }
+  .prov { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+
+  .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+  .status svg { width: 13px; height: 13px; }
+  .st-draft    { color: var(--text-3); }
+  .st-completed{ color: var(--success); }
+  .st-ready    { color: var(--accent); }
+  .st-reusable { color: var(--text-2); }
+  .st-aborted  { color: var(--text-3); }
+  .st-failed   { color: var(--error); }
+
+  .kind-eyebrow {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--text-3); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  }
+  .kind-eyebrow svg { width: 11px; height: 11px; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--edge); border-radius: 4px; background: var(--canvas);
+    padding: 2px 7px; font-size: 12px; color: var(--text-2); white-space: nowrap;
+  }
+  .chip svg { width: 11px; height: 11px; color: var(--text-3); }
+  .chip.link { border-color: var(--edge-bright); }
+  .chip.link:hover { color: var(--text); }
+  .chip.holistic { color: var(--text-3); }
+
+  .iconbtn {
+    width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text-2); border-radius: 4px; flex: none;
+  }
+  .iconbtn svg { width: 14px; height: 14px; }
+  .iconbtn:hover { background: var(--card-hover); color: var(--text); }
+  .actions { display: flex; gap: 2px; margin-left: auto; }
+
+  /* annotation callouts */
+  .callouts { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .callout {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px solid var(--edge); border-radius: 6px; padding: 10px 12px;
+    background: var(--panel); font-size: 13.5px; color: var(--text-2);
+  }
+  .callout .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 3px; flex: none; margin-top: 1px;
+  }
+  .callout.bad .tag  { color: var(--error);   border: 1px solid rgba(255,77,77,0.4);  background: rgba(255,77,77,0.08); }
+  .callout.good .tag { color: var(--success); border: 1px solid rgba(0,255,157,0.35); background: rgba(0,255,157,0.07); }
+  .callout strong { color: var(--text); font-weight: 600; }
+
+  /* ---------- toggle ---------- */
+  .toggle-bar {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(10,10,10,0.92); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--edge);
+    padding: 12px 0; margin-bottom: 24px;
+  }
+  .toggle-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .seg-toggle {
+    display: inline-flex; border: 1px solid var(--edge-bright); border-radius: 6px; overflow: hidden;
+  }
+  .seg-toggle button {
+    appearance: none; border: 0; background: transparent; color: var(--text-2);
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
+    padding: 9px 20px; cursor: pointer; min-height: 40px;
+    transition: background-color 150ms cubic-bezier(0.23,1,0.32,1), color 150ms cubic-bezier(0.23,1,0.32,1);
+  }
+  .seg-toggle button[aria-pressed="true"] { background: rgba(0,229,255,0.15); color: var(--accent); }
+  .seg-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .toggle-hint { font-size: 12.5px; color: var(--text-3); }
+
+  /* view switching */
+  body[data-view="before"] .after-only { display: none; }
+  body[data-view="after"]  .before-only { display: none; }
+  .view-block { animation: fadein 200ms cubic-bezier(0.23,1,0.32,1); }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .view-block { animation: none; }
+    * { transition: none !important; }
+  }
+
+  /* ---------- insight cards ---------- */
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+  @media (max-width: 800px) { .pair { grid-template-columns: 1fr; } }
+  .entity-card {
+    border: 1px solid var(--edge); border-radius: 8px; padding: 20px;
+    background: var(--panel);
+  }
+  .entity-card h3 { display: flex; align-items: center; gap: 10px; font-size: 17px; margin-bottom: 4px; }
+  .entity-card h3 svg { width: 18px; height: 18px; }
+  .entity-card.workload h3 svg { color: var(--accent); }
+  .entity-card.rubric h3 svg { color: var(--text-2); }
+  .entity-card .kindword { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); }
+  .entity-card p { color: var(--text-2); font-size: 14px; margin-top: 10px; }
+  .entity-card ul { list-style: none; margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .entity-card li { font-size: 13px; color: var(--text-2); display: flex; gap: 8px; }
+  .entity-card li b { color: var(--text); font-weight: 600; min-width: 74px; flex: none; }
+  .vs {
+    display: flex; align-items: center; justify-content: center; margin: 18px 0 0;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--text-3); text-transform: uppercase;
+  }
+
+  /* ---------- relationship diagram ---------- */
+  .diagram-box { border: 1px solid var(--edge); border-radius: 8px; background: var(--panel); padding: 20px; margin-top: 20px; overflow-x: auto; }
+  .diagram-box svg { display: block; margin: 0 auto; }
+
+  /* ---------- upgrade ledger ---------- */
+  .ledger { display: flex; flex-direction: column; gap: 14px; margin-top: 24px; }
+  .ledger-item { border: 1px solid var(--edge); border-radius: 8px; background: var(--panel); padding: 18px 20px; }
+  .ledger-item h4 { font-size: 15.5px; display: flex; gap: 10px; align-items: baseline; }
+  .ledger-item h4 .n { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .ba { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; margin-top: 12px; }
+  @media (max-width: 760px) { .ba { grid-template-columns: 1fr; } .ba .arrow { transform: rotate(90deg); justify-self: center; } }
+  .ba .cell { border: 1px solid var(--edge); border-radius: 6px; padding: 12px; background: var(--canvas); font-size: 13px; }
+  .ba .cell .lbl { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); display: block; margin-bottom: 8px; }
+  .ba .cell.before { border-color: rgba(255,77,77,0.25); }
+  .ba .cell.after  { border-color: rgba(0,255,157,0.22); }
+  .ba .arrow { color: var(--text-3); }
+  .ba code { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--raised); padding: 1px 5px; border-radius: 3px; }
+  .ba .mini { color: var(--text-2); }
+
+  /* ---------- motion ---------- */
+  table.mtable { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13.5px; }
+  table.mtable th {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-3); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--edge-bright);
+  }
+  table.mtable td { padding: 9px 10px; border-bottom: 1px solid var(--edge); color: var(--text-2); vertical-align: top; }
+  table.mtable td:first-child { color: var(--text); }
+  .verdict { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+  .verdict.keep   { color: var(--success); }
+  .verdict.reject { color: var(--error); }
+
+  /* ---------- roadmap ---------- */
+  .roadmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; margin-top: 24px; }
+  .ms {
+    border: 1px solid var(--edge); border-radius: 6px; padding: 12px; background: var(--panel);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .ms .m { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.08em; }
+  .ms b { font-size: 13px; font-weight: 600; }
+  .ms span { font-size: 12px; color: var(--text-3); line-height: 1.4; }
+
+  /* ---------- fence ---------- */
+  .fence { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+  .fence li {
+    list-style: none; display: flex; gap: 10px; align-items: baseline;
+    font-size: 13.5px; color: var(--text-2);
+    border: 1px solid var(--edge); border-radius: 6px; padding: 9px 12px; background: var(--panel);
+  }
+  .fence li::before { content: "✕"; color: var(--warning); font-family: var(--mono); font-size: 12px; flex: none; }
+  .fence li b { color: var(--text); font-weight: 600; }
+
+  footer { padding: 40px 0 64px; color: var(--text-3); font-size: 12.5px; border-top: 1px solid var(--edge); }
+  footer code { font-family: var(--mono); color: var(--text-2); }
+
+  .summary-strip {
+    border: 1px solid rgba(0,229,255,0.35); background: rgba(0,229,255,0.05);
+    border-radius: 8px; padding: 18px 20px; margin-top: 32px; font-size: 14.5px; color: var(--text-2);
+  }
+  .summary-strip strong { color: var(--text); }
+</style>
+</head>
+<body data-view="before">
+
+<!-- ============================================================ HERO -->
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">●</span> RSemble AI · Evaluations UX proposal</p>
+    <h1 style="margin-top:18px;">Two lists. Same face.<br>That's the whole problem — and <em>identity</em> is the fix.</h1>
+    <p class="sub">Suites and Profiles are two genuinely different things wearing one costume. This proposal makes them unmistakable, connects them visibly, and corrects the status vocabulary — without redesigning the app, adding routes, or adding animation.</p>
+    <div class="meta-row">
+      <span class="meta-chip">SPEC · evaluations-identity-ux</span>
+      <span class="meta-chip">0 NEW DEPENDENCIES</span>
+      <span class="meta-chip">0 STORAGE CHANGES</span>
+      <span class="meta-chip">15 TEST-FIRST TASKS</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============================================================ 01 THE CONFUSION -->
+<section id="confusion">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">01</span> THE CONFUSION</p>
+    <h2>Why the two pages feel identical</h2>
+    <p class="lede">This is your Evaluations workspace today, reproduced with the app's real components and tokens. Flip through both lists — the anatomy is the same, and the status labels are actively misleading.</p>
+
+    <div class="two-col" style="margin-top:24px;">
+      <!-- Suites list (current) -->
+      <div class="mock">
+        <div class="mock-title"><span>Suites · /evaluations</span><span>3 suites</span></div>
+        <div class="segnav"><span class="item active">Suites</span><span class="item">Profiles</span></div>
+        <div class="mock-body">
+          <div class="row">
+            <div class="row-main">
+              <div class="row-line1">
+                <span class="status st-draft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Draft</span>
+                <span class="row-title">Support triage battery</span>
+                <span class="prov">v2</span>
+              </div>
+              <div class="row-line2"><span class="row-meta dim">3 tasks</span><span class="row-meta dim">· 2h ago</span></div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+          <div class="row">
+            <div class="row-main">
+              <div class="row-line1">
+                <span class="status st-draft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Draft</span>
+                <span class="row-title">Long-doc synthesis</span>
+                <span class="prov">v5</span>
+              </div>
+              <div class="row-line2"><span class="row-meta dim">6 tasks</span><span class="row-meta dim">· 1d ago</span></div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profiles list (current) -->
+      <div class="mock">
+        <div class="mock-title"><span>Profiles · /evaluations/profiles</span><span>2 profiles</span></div>
+        <div class="segnav"><span class="item">Suites</span><span class="item active">Profiles</span></div>
+        <div class="mock-body">
+          <div class="row">
+            <div class="row-main">
+              <div class="row-line1">
+                <span class="status st-completed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Completed</span>
+                <span class="row-title">Clarity rubric</span>
+                <span class="prov">v3</span>
+              </div>
+              <div class="row-line2"><span class="row-meta dim">4 criteria</span><span class="row-meta dim">· 3h ago</span></div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+          <div class="row">
+            <div class="row-main">
+              <div class="row-line1">
+                <span class="status st-completed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Completed</span>
+                <span class="row-title">Code correctness</span>
+                <span class="prov">v1</span>
+              </div>
+              <div class="row-line2"><span class="row-meta dim">5 criteria</span><span class="row-meta dim">· 5d ago</span></div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callouts">
+      <div class="callout bad"><span class="tag">Problem 1</span><div><strong>Identical anatomy.</strong> Same row shape, same fields, same actions, same "vN" provenance. Nothing on either page says what kind of thing you're looking at.</div></div>
+      <div class="callout bad"><span class="tag">Problem 2</span><div><strong>The status tokens lie.</strong> Every profile shows emerald <strong>✓ Completed</strong> — a run-lifecycle state — even though a rubric never "completes." Every suite shows <strong>Draft</strong>, even suites that are fully runnable and have been run before.</div></div>
+      <div class="callout bad"><span class="tag">Problem 3</span><div><strong>No connection shown.</strong> A suite <em>pins</em> a profile version as its judging rule, but no suite surface ever names it, and you can't tell from the list which suites use which rubrics.</div></div>
+      <div class="callout bad"><span class="tag">Problem 4</span><div><strong>The rows don't earn their space.</strong> Suites don't show whether they've ever been run. Profiles don't preview what they actually measure.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 02 THE INSIGHT -->
+<section id="insight">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">02</span> THE INSIGHT</p>
+    <h2>They are different kinds of things</h2>
+    <p class="lede">The data model already knows the difference. A suite is a workload you execute. A profile is a rubric that scores. The UI just never says so.</p>
+
+    <div class="pair">
+      <div class="entity-card workload">
+        <span class="kindword">Suite = Workload</span>
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>You run it</h3>
+        <p>A versioned set of tasks, candidate models, and a judge. Executing it produces experiments — the model-by-task result matrices.</p>
+        <ul>
+          <li><b>Contains</b><span>tasks, model slots, default judge, pinned evaluation</span></li>
+          <li><b>Verb</b><span>run · duplicate · archive</span></li>
+          <li><b>Produces</b><span>experiment snapshots with results</span></li>
+        </ul>
+      </div>
+      <div class="entity-card rubric">
+        <span class="kindword">Profile = Rubric</span>
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>It judges, it never runs</h3>
+        <p>Scoring criteria with weights and 1/3/5 anchors, plus the instruction the judge model receives. Immutable per version, so old results stay auditable.</p>
+        <ul>
+          <li><b>Contains</b><span>criteria, weights, anchors, judge instruction</span></li>
+          <li><b>Verb</b><span>edit as new version · pin · archive</span></li>
+          <li><b>Produces</b><span>nothing by itself — it is consumed by suites</span></li>
+        </ul>
+      </div>
+    </div>
+    <p class="vs">one direction only · suites consume profiles · a profile never knows about suites</p>
+
+    <div class="summary-strip">
+      <strong>The fix in one line:</strong> give every surface a <strong>kind label</strong> (Workload / Rubric), give each kind an <strong>honest status</strong> (Ready / Reusable), and make the <strong>pin relationship visible in both directions</strong>. Everything else follows.
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 03 BEFORE / AFTER -->
+<section id="after">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">03</span> THE UPGRADE, LIVE</p>
+    <h2>Same workspace, two seconds to understand</h2>
+    <p class="lede">Flip the switch. Same rows, same layout, same routes — the difference is pure identity: kind eyebrows, honest statuses, rubric chips, experiment state, criteria previews, and a nav that teaches the distinction.</p>
+
+    <div class="toggle-bar">
+      <div class="wrap toggle-inner" style="padding:0;">
+        <div class="seg-toggle" role="group" aria-label="View mode">
+          <button id="btn-before" aria-pressed="true" onclick="setView('before')">Current</button>
+          <button id="btn-after" aria-pressed="false" onclick="setView('after')">Proposed</button>
+        </div>
+        <span class="toggle-hint">Nothing about the layout changes — only what the rows communicate.</span>
+      </div>
+    </div>
+
+    <!-- ========== BEFORE VIEW ========== -->
+    <div class="view-block before-only">
+      <div class="mock">
+        <div class="mock-title"><span>Evaluations — today</span></div>
+        <div class="segnav"><span class="item active">Suites</span><span class="item">Profiles</span></div>
+        <div class="mock-body">
+          <div class="row">
+            <div class="row-main">
+              <div class="row-line1"><span class="status st-draft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Draft</span><span class="row-title">Support triage battery</span><span class="prov">v2</span></div>
+              <div class="row-line2"><span class="row-meta dim">3 tasks</span><span class="row-meta dim">· 2h ago</span></div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+          <div class="row">
+            <div class="row-main">
+              <div class="row-line1"><span class="status st-draft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Draft</span><span class="row-title">Long-doc synthesis</span><span class="prov">v5</span></div>
+              <div class="row-line2"><span class="row-meta dim">6 tasks</span><span class="row-meta dim">· 1d ago</span></div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+          <div class="row" style="opacity:.6;">
+            <div class="row-main">
+              <div class="row-line1"><span class="status st-completed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Completed</span><span class="row-title">Clarity rubric</span><span class="prov">v3</span></div>
+              <div class="row-line2"><span class="row-meta dim">4 criteria</span><span class="row-meta dim">· 3h ago</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="callouts">
+        <div class="callout bad"><span class="tag">Reads as</span><div>"Three similar records with versions." You have to open each one to learn what it is, whether it can run, whether it has run, and what it scores with.</div></div>
+      </div>
+    </div>
+
+    <!-- ========== AFTER VIEW ========== -->
+    <div class="view-block after-only">
+      <div class="mock">
+        <div class="mock-title"><span>Evaluations — proposed</span></div>
+        <div class="segnav">
+          <span class="item active">Suites<span class="sub">workloads you run</span></span>
+          <span class="item">Profiles<span class="sub">rubrics that score</span></span>
+        </div>
+        <div class="mock-body">
+          <div class="row">
+            <div class="row-main">
+              <div class="row-line1">
+                <span class="kind-eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>Workload</span>
+                <span class="status st-ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>Ready</span>
+                <span class="row-title">Support triage battery</span>
+                <span class="prov">v2</span>
+              </div>
+              <div class="row-line2">
+                <span class="row-meta">3 tasks · 4 models</span>
+                <span class="chip link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>Clarity rubric v3</span>
+                <span class="row-meta dim">· last run ✓ 2h ago</span>
+              </div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+          <div class="row">
+            <div class="row-main">
+              <div class="row-line1">
+                <span class="kind-eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>Workload</span>
+                <span class="status st-ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>Ready</span>
+                <span class="row-title">Long-doc synthesis</span>
+                <span class="prov">v5</span>
+              </div>
+              <div class="row-line2">
+                <span class="row-meta">6 tasks · 3 models</span>
+                <span class="chip holistic">Holistic judging</span>
+                <span class="row-meta dim">· never run</span>
+              </div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+          <div class="row" style="border-style:dashed;">
+            <div class="row-main">
+              <div class="row-line1">
+                <span class="kind-eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>Rubric</span>
+                <span class="status st-reusable"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>Reusable</span>
+                <span class="row-title">Clarity rubric</span>
+                <span class="prov">v3</span>
+              </div>
+              <div class="row-line2">
+                <span class="row-meta">4 criteria · Accuracy +3 more</span>
+                <span class="row-meta dim">· pinned by 1 suite</span>
+              </div>
+            </div>
+            <div class="actions"><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span></div>
+          </div>
+          <p style="font-size:11.5px;color:var(--text-3);margin:6px 4px 2px;">Dashed row shown here only to display a profile row in the same frame — in the app the two lists stay on their own tabs.</p>
+        </div>
+      </div>
+
+      <div class="callouts">
+        <div class="callout good"><span class="tag">Now reads</span><div><strong>Workload · Ready</strong> vs <strong>Rubric · Reusable</strong> — the kind and its honest state land before you finish the first line. The rubric chip links straight to the profile; the profile row says who pins it.</div></div>
+        <div class="callout good"><span class="tag">Nav teaches</span><div>The active tab carries a sublabel: <strong>Suites / workloads you run</strong> · <strong>Profiles / rubrics that score</strong>. Color-only 150ms transition on the swap — no sliding indicator, no layout motion.</div></div>
+        <div class="callout good"><span class="tag">Empty states</span><div>First-run copy cross-links: the suite empty state points at Profiles, and vice versa. The two concepts are introduced as a pair, never as interchangeable lists.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 04 RELATIONSHIP -->
+<section id="relationship">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">04</span> THE RELATIONSHIP, MADE VISIBLE</p>
+    <h2>One pin, two directions</h2>
+    <p class="lede">The data model already stores everything needed — no new storage, no migration. Both directions become derived, read-only, tested joins.</p>
+
+    <div class="diagram-box">
+      <svg width="860" height="300" viewBox="0 0 860 300" role="img" aria-label="Suite pins a profile version; profile shows backlinks to suites" style="max-width:100%;height:auto;">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#00e5ff" stroke-width="1.5"/></marker>
+          <marker id="arr2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#a1a1a1" stroke-width="1.5"/></marker>
+        </defs>
+        <!-- Suite box -->
+        <rect x="40" y="60" width="300" height="150" rx="8" fill="#121212" stroke="#262626"/>
+        <text x="60" y="90" fill="#777" font-family="ui-monospace,monospace" font-size="10" letter-spacing="2">WORKLOAD</text>
+        <text x="60" y="116" fill="#ededed" font-family="ui-monospace,monospace" font-size="15">Support triage battery</text>
+        <text x="60" y="140" fill="#a1a1a1" font-size="12">3 tasks · 4 models · v2</text>
+        <rect x="60" y="156" width="170" height="26" rx="4" fill="#0a0a0a" stroke="#3a3a3a"/>
+        <text x="72" y="173" fill="#a1a1a1" font-size="12">⚖ Clarity rubric v3</text>
+        <text x="60" y="200" fill="#00e5ff" font-size="11" font-family="ui-monospace,monospace">▶ READY · last run ✓</text>
+        <!-- Profile box -->
+        <rect x="540" y="60" width="280" height="150" rx="8" fill="#121212" stroke="#262626"/>
+        <text x="560" y="90" fill="#777" font-family="ui-monospace,monospace" font-size="10" letter-spacing="2">RUBRIC</text>
+        <text x="560" y="116" fill="#ededed" font-family="ui-monospace,monospace" font-size="15">Clarity rubric</text>
+        <text x="560" y="140" fill="#a1a1a1" font-size="12">4 criteria · weights · anchors</text>
+        <text x="560" y="170" fill="#ededed" font-size="11">USED BY</text>
+        <text x="560" y="192" fill="#a1a1a1" font-size="12">→ Support triage battery · pins v3</text>
+        <!-- arrows -->
+        <path d="M 340 108 C 430 90, 460 90, 536 108" fill="none" stroke="#00e5ff" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="368" y="78" fill="#00e5ff" font-size="11" font-family="ui-monospace,monospace">pins profile v3 (defaultEvaluation)</text>
+        <path d="M 536 180 C 460 205, 430 205, 344 184" fill="none" stroke="#a1a1a1" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arr2)"/>
+        <text x="380" y="236" fill="#a1a1a1" font-size="11" font-family="ui-monospace,monospace">backlinks · derived by scan · tested</text>
+      </svg>
+    </div>
+
+    <div class="callouts" style="margin-top:16px;">
+      <div class="callout good"><span class="tag">Suite → Profile</span><div>Every suite row and the suite editor header show a chip naming the pinned rubric — <strong>⚖ Clarity rubric v3</strong> — linking to the profile. Holistic suites show a muted "Holistic judging" chip. A missing pinned profile surfaces honestly as "Rubric missing."</div></div>
+      <div class="callout good"><span class="tag">Profile → Suites</span><div>ProfileDetail already lists suites pinned to the selected version — that logic gets extracted into a tested <strong>profile-usage</strong> module and gains one missing piece: suites pinned at <strong>other</strong> versions, so v2's page can warn you a suite still pins v1.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 05 THE FOUR UPGRADES -->
+<section id="upgrades">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">05</span> THE FOUR UPGRADES</p>
+    <h2>What changes, precisely</h2>
+
+    <div class="ledger">
+      <div class="ledger-item">
+        <h4><span class="n">U1</span> Entity grammar — every record says what it is</h4>
+        <div class="ba">
+          <div class="cell before"><span class="lbl">Before</span><span class="mini">Rows carry only name + version + timestamp. Nothing distinguishes the two kinds.</span></div>
+          <span class="arrow">→</span>
+          <div class="cell after"><span class="lbl">After</span><span class="mini">An 11px eyebrow on every record: <code>⠿ WORKLOAD</code> or <code>⚖ RUBRIC</code>, with the one-line definition available as a tooltip. Same eyebrow on rows, headers, chips, backlinks.</span></div>
+        </div>
+      </div>
+      <div class="ledger-item">
+        <h4><span class="n">U2</span> Honest status vocabulary — two new tokens, nothing repurposed</h4>
+        <div class="ba">
+          <div class="cell before"><span class="lbl">Before</span><span class="mini">Suites: <code>✎ Draft</code> (all of them). Profiles: <code>✓ Completed</code> (all of them). Run-lifecycle words on things that don't run.</span></div>
+          <span class="arrow">→</span>
+          <div class="cell after"><span class="lbl">After</span><span class="mini">Suites: <code>▶ Ready</code> (cyan) — a runnable workload. Profiles: <code>◉ Reusable</code> (zinc) — a live, pinnable rubric. Archived keeps <code>Aborted</code>. Runs vocabulary untouched.</span></div>
+        </div>
+      </div>
+      <div class="ledger-item">
+        <h4><span class="n">U3</span> Relationships surfaced both ways</h4>
+        <div class="ba">
+          <div class="cell before"><span class="lbl">Before</span><span class="mini">Suite never names its rubric. Profile shows only same-version backlinks, via an untested inline function.</span></div>
+          <span class="arrow">→</span>
+          <div class="cell after"><span class="lbl">After</span><span class="mini">Suite rows + editor show the pinned-rubric chip. Profile detail shows all pinning suites, including other versions, via a shared tested <code>profile-usage</code> module.</span></div>
+        </div>
+      </div>
+      <div class="ledger-item">
+        <h4><span class="n">U4</span> Rows earn their space</h4>
+        <div class="ba">
+          <div class="cell before"><span class="lbl">Before</span><span class="mini">Suite row: <code>3 tasks</code>. Profile row: <code>4 criteria</code>. No signal about runs or what the rubric measures.</span></div>
+          <span class="arrow">→</span>
+          <div class="cell after"><span class="lbl">After</span><span class="mini">Suite row: <code>3 tasks · 4 models · rubric chip · last run ✓ 2h ago</code>. Profile row: <code>4 criteria · Accuracy +3 more · pinned by 1 suite</code>.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 06 MOTION -->
+<section id="motion">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">06</span> MOTION DISCIPLINE</p>
+    <h2>The audit said: add almost nothing</h2>
+    <p class="lede">A full sweep of the codebase found zero motion violations — no <code style="font-family:var(--mono);font-size:12px;color:var(--text);">transition: all</code>, no UI ease-in, no scale(0) entrances. The existing tokens stay the only motion vocabulary. Every candidate went through the four-question gate (frequency · purpose · speed · function):</p>
+
+    <table class="mtable">
+      <thead><tr><th>Candidate</th><th>Gate result</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>Segmented nav active swap</td><td>State indication · tens/day · color only</td><td><span class="verdict keep">Keep — 150ms color transition</span></td></tr>
+        <tr><td>"Used by" disclosure open</td><td>Preventing jarring change · occasional</td><td><span class="verdict keep">Keep — opacity only, stable height</span></td></tr>
+        <tr><td>Archive-confirm arm swap</td><td>Geometry must not shift · occasional</td><td><span class="verdict keep">Keep — fixed action-cluster width</span></td></tr>
+        <tr><td>Row hover lift / transform</td><td>High frequency · data rows must not move</td><td><span class="verdict reject">Reject — color-only hover, forever</span></td></tr>
+        <tr><td>Row entrance stagger on load</td><td>Every navigation · rows are read, not watched</td><td><span class="verdict reject">Reject — too frequent</span></td></tr>
+        <tr><td>Sliding indicator between tabs</td><td>Decoration · color state already suffices</td><td><span class="verdict reject">Reject — no purpose</span></td></tr>
+        <tr><td>FLIP reorder on filter/sort</td><td>DESIGN.md forbids animating row positions</td><td><span class="verdict reject">Reject — settled decision</span></td></tr>
+        <tr><td>Kind-glyph morphing</td><td>"It looks cool" is not a purpose</td><td><span class="verdict reject">Reject — decorative</span></td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:14px;color:var(--text-3);font-size:13px;">This is the Emil Kowalski filter in action: in a dense daily tool, the strongest move is usually deleting motion or not adding it. The upgrade's lever is identity, not animation.</p>
+  </div>
+</section>
+
+<!-- ============================================================ 07 ROADMAP -->
+<section id="roadmap">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">07</span> EXECUTION</p>
+    <h2>Seven milestones, fifteen test-first tasks</h2>
+    <p class="lede">Every task writes its failing test first, touches exact files, and commits separately. Starts only after your in-flight RecordRow/Header work is committed.</p>
+    <div class="roadmap">
+      <div class="ms"><span class="m">M0</span><b>Ground rules</b><span>Contract tests fail until tokens exist</span></div>
+      <div class="ms"><span class="m">M1</span><b>Vocabulary</b><span>Ready / Reusable tokens + DESIGN.md</span></div>
+      <div class="ms"><span class="m">M2</span><b>Derivation</b><span>Tested profile-usage joins</span></div>
+      <div class="ms"><span class="m">M3</span><b>Identity surfaces</b><span>Kind eyebrows, chips, upgraded rows</span></div>
+      <div class="ms"><span class="m">M4</span><b>Detail + nav</b><span>ProfileDetail refactor, editor chip, sublabels</span></div>
+      <div class="ms"><span class="m">M5</span><b>Motion + geometry</b><span>Color continuity, stable confirm width</span></div>
+      <div class="ms"><span class="m">M6</span><b>Evidence</b><span>Full gate, CDP QA, browser matrix</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 08 FENCE -->
+<section id="fence">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">08</span> SCOPE FENCE</p>
+    <h2>What this deliberately does not touch</h2>
+    <ul class="fence">
+      <li><b>No route or navigation restructure</b> — the Suites | Profiles tabs stay; only labels gain sublabels.</li>
+      <li><b>No storage migration</b> — backlinks are derived by scanning existing records.</li>
+      <li><b>No task-first taxonomy</b> — that research stays research; schemas are unchanged.</li>
+      <li><b>No new dependencies</b> — lucide-react, Base UI, and cmdk already cover everything.</li>
+      <li><b>No Compare or Runs behavior change</b> — shared primitives only gain optional, backward-compatible slots.</li>
+      <li><b>No new animation library or entrance effects</b> — the motion audit said the discipline is already right.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    RSemble AI · Evaluations Identity and UX Upgrade · 2026-08-03 ·
+    Spec <code>docs/specs/evaluations-identity-ux/evaluations-identity-ux-spec.md</code> ·
+    Plan <code>docs/specs/evaluations-identity-ux/implementation-plan.md</code>
+  </div>
+</footer>
+
+<script>
+  function setView(v) {
+    document.body.dataset.view = v;
+    document.getElementById('btn-before').setAttribute('aria-pressed', String(v === 'before'));
+    document.getElementById('btn-after').setAttribute('aria-pressed', String(v === 'after'));
+    try { localStorage.setItem('rsemble-ux-view', v); } catch (e) {}
+  }
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('rsemble-ux-view'); } catch (e) {}
+    if (saved === 'after' || saved === 'before') setView(saved);
+  })();
+</script>
+</body>
+</html>

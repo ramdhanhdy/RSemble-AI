@@ -155,19 +155,27 @@ export default function RSemble() {
     umans: false,
     "9router": false,
   });
+  // False until the first probe cycle has settled. While checking, the header
+  // shows a neutral "Checking" pill and no offline banner — an unprobed
+  // provider is unknown, not disconnected.
+  const [readinessSettled, setReadinessSettled] = useState(false);
 
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const probeCoordinator = useMemo(() => createProviderProbeCoordinator(), []);
 
   const checkAllReadiness = useCallback(async () => {
     const results = await probeCoordinator.run();
+    // A cycle aborted by a lifecycle transition (run start, unmount) reports
+    // AbortError, not real provider health — never paint it as offline.
+    if (results.every((r) => r.error === "Provider probe aborted")) return;
+    setReadinessSettled(true);
     const map: Record<string, boolean> = {};
     const mergedCatalog: CatalogModel[] = [];
     // Only banner errors for providers the user is actually using. An idle
     // chatgpt-codex catalog timeout must not interrupt a suite on other providers.
     const inUse = new Set<ProviderId>([
-      ...state.slots.filter((s) => s.enabled).map((s) => s.providerId),
-      state.critic.providerId,
+      ...stateRef.current.slots.filter((s) => s.enabled).map((s) => s.providerId),
+      stateRef.current.critic.providerId,
     ]);
     let firstError: string | null = null;
     for (const r of results) {
@@ -182,7 +190,7 @@ export default function RSemble() {
       dispatch({ type: "SET_MODELS", models: mergedCatalog });
     }
     setCatalogError(firstError);
-  }, [probeCoordinator, state.slots, state.critic.providerId]);
+  }, [probeCoordinator]);
 
   const experimentActive = activeOwner?.kind === "experiment";
 
@@ -197,10 +205,10 @@ export default function RSemble() {
     }
     void checkAllReadiness();
     const interval = setInterval(() => void checkAllReadiness(), 10000);
-    return () => {
-      clearInterval(interval);
-      probeCoordinator.abort();
-    };
+    // Cleanup only clears the interval: aborting the shared coordinator here
+    // would kill an in-flight cycle on unrelated re-renders (slot hydration,
+    // StrictMode remount) and paint its AbortError as a false offline state.
+    return () => clearInterval(interval);
   }, [checkAllReadiness, probeCoordinator, state.running, experimentActive]);
 
   // ---------------------------------------------------------------------------
@@ -249,8 +257,13 @@ export default function RSemble() {
     readinessMap.commandcode ||
     readinessMap.clinepass ||
     readinessMap.umans;
-  const connectionState: ConnectionState =
-    state.running ? "running" : !apiKeyPresent ? "offline" : "ready";
+  const connectionState: ConnectionState = state.running
+    ? "running"
+    : apiKeyPresent
+      ? "ready"
+      : readinessSettled
+        ? "offline"
+        : "checking";
 
   // ---------------------------------------------------------------------------
   // Run gate + requestRun
@@ -405,7 +418,7 @@ export default function RSemble() {
               storage failure. */}
           <GlobalExecutionStripContainer compareRunning={state.running} />
 
-          {!apiKeyPresent && <NoKeyBanner />}
+          {connectionState === "offline" && <NoKeyBanner />}
           {catalogError && (
             <div className="flex shrink-0 items-center gap-2 border-b border-error/40 bg-error/10 px-4 py-2 text-xs text-error">
               <span>

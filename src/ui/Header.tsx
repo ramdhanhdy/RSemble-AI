@@ -18,7 +18,7 @@ import type { ReactElement, ReactNode } from "react";
 import { HexCubeLogo } from "./brand-icons";
 import { WorkspaceNav } from "./WorkspaceNav";
 
-export type ConnectionState = "ready" | "running" | "degraded" | "offline";
+export type ConnectionState = "ready" | "running" | "degraded" | "offline" | "checking";
 
 function DetachedDialogTrigger({
   handle,
@@ -33,6 +33,9 @@ function DetachedDialogTrigger({
 function livePill(running: boolean, conn: ConnectionState): { label: string; dot: string; text: string } {
   if (running) {
     return { label: "Running", dot: "bg-accent animate-pulse-ease", text: "text-accent" };
+  }
+  if (conn === "checking") {
+    return { label: "Checking", dot: "bg-text-muted animate-pulse-ease", text: "text-text-secondary" };
   }
   if (conn === "offline") {
     return { label: "No key", dot: "bg-error", text: "text-error" };
