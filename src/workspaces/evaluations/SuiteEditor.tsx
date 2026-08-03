@@ -40,7 +40,7 @@ import type {
   EvaluationProfileRef,
   ExperimentRecord,
 } from "../../lib/evaluations/evaluation-types";
-import type { ProfileRecord } from "../../lib/evaluations/evaluation-types";
+import type { EvaluationProfile, ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import {
   isSuiteDirty,
@@ -51,6 +51,7 @@ import { StorageError } from "../../lib/persistence/database";
 import { SuiteTaskList } from "./SuiteTaskList";
 import { SuiteTaskEditor } from "./SuiteTaskEditor";
 import { SuiteSettings } from "./SuiteSettings";
+import { ProfileRefChip } from "../../ui/ProfileRefChip";
 
 interface SuiteEditorProps {
   repo: EvaluationRepository | null;
@@ -142,6 +143,33 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
       if (!cancelled) setLatestExperiment(list[0] ?? null);
     }).catch(() => {
       if (!cancelled) setLatestExperiment(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, persisted]);
+
+  // Resolve the persisted default-evaluation pin for the header rubric chip
+  // (identity spec §5.3). Tracks the persisted suite — the version Run uses.
+  const [pinnedProfile, setPinnedProfile] = useState<EvaluationProfile | null>(null);
+  const [pinnedProfileLoaded, setPinnedProfileLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setPinnedProfile(null);
+    setPinnedProfileLoaded(false);
+    if (!repo || !persisted) return;
+    const ev = persisted.defaultEvaluation;
+    if (ev.kind !== "profile") {
+      setPinnedProfileLoaded(true);
+      return;
+    }
+    void repo.getProfile(ev.profile.id, ev.profile.version).then((p) => {
+      if (!cancelled) {
+        setPinnedProfile(p);
+        setPinnedProfileLoaded(true);
+      }
+    }).catch(() => {
+      if (!cancelled) setPinnedProfileLoaded(true);
     });
     return () => {
       cancelled = true;
@@ -359,6 +387,22 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
             <span className="shrink-0 rounded-sm border border-edge px-1.5 py-0.5 font-mono text-xs text-text-secondary tabular-nums">
               v{persisted.version}
             </span>
+            {/* Identity spec §5.3: name the pinned rubric where the suite is
+                configured. Rendered outside the row-link pattern — the header
+                has no nesting constraint. */}
+            {persisted.defaultEvaluation.kind === "profile" && pinnedProfileLoaded ? (
+              pinnedProfile ? (
+                <ProfileRefChip
+                  name={pinnedProfile.name || "Untitled rubric"}
+                  profileId={persisted.defaultEvaluation.profile.id}
+                  version={persisted.defaultEvaluation.profile.version}
+                />
+              ) : (
+                <ProfileRefChip missing />
+              )
+            ) : persisted.defaultEvaluation.kind === "holistic" ? (
+              <ProfileRefChip holistic />
+            ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {latestExperiment ? (
