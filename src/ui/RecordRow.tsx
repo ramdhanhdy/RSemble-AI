@@ -27,6 +27,9 @@ export interface RecordRowProps {
   /** Optional identity slot rendered first on the title line (list variant),
    *  e.g. a KindEyebrow naming the entity kind (identity spec §5.4). */
   kind?: ReactNode;
+  /** Optional node rendered after the summary text on the meta line,
+   *  e.g. a ProfileRefChip or latest-experiment mark (identity spec §5.4). */
+  afterSummary?: ReactNode;
   /** When provided, the list variant renders as a link. */
   href?: string;
   /** Trailing action slot (buttons, menus, etc.). */
@@ -54,6 +57,7 @@ function Inner({
   source,
   provenance,
   kind,
+  afterSummary,
 }: Omit<RecordRowProps, "variant" | "id" | "href" | "children">) {
   return (
     <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
@@ -75,6 +79,7 @@ function Inner({
             {summary}
           </span>
         )}
+        {afterSummary && <span className="flex shrink-0 items-center gap-1">{afterSummary}</span>}
         {provenance && <span className="hidden min-w-0 truncate sm:inline">{provenance}</span>}
         <span className="ml-auto flex shrink-0 items-center gap-3">
           {modelCount != null && <span>{modelCount} models</span>}

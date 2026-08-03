@@ -338,6 +338,106 @@ describe("SuiteList — suite package import", () => {
   });
 });
 
+describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
+  it("shows the workload kind eyebrow and ready status, not draft", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1", { name: "My Battery" })]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Workload");
+    expect(text).toContain("Ready");
+    expect(text).not.toContain("Draft");
+    cleanup(h);
+  });
+
+  it("archived suites keep the aborted status", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1", { archivedAt: Date.now() })]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    // Archived rows only visible with the filter; toggle it.
+    const toggle = h.$("input[type='checkbox']");
+    if (toggle) {
+      await act(async () => {
+        toggle.click();
+        await flush();
+      });
+      await settle();
+    }
+    expect(h.container.textContent).toContain("Aborted");
+    cleanup(h);
+  });
+
+  it("shows the pinned rubric chip linking to the profile", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const now = Date.now();
+    // The repository requires the first profile version to be 1 and at least
+    // one positive-weight criterion.
+    const criterion = {
+      id: "c1",
+      name: "Accuracy",
+      description: "",
+      weight: 1,
+      anchors: { one: "1", three: "3", five: "5" },
+    };
+    await repo.createProfile(
+      { id: "p1", revision: 1, latestVersion: 1, createdAt: now, updatedAt: now, archivedAt: null },
+      { id: "p1", version: 1, name: "Clarity rubric", description: "", judgeInstruction: "", criteria: [criterion], createdAt: now, updatedAt: now },
+    );
+    await seedRepo(repo, [
+      makeSuite("s1", { defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } } }),
+    ]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const chip = h.$("a[href='/evaluations/profiles/p1']");
+    expect(chip).toBeTruthy();
+    expect(chip?.textContent).toContain("Clarity rubric v1");
+    cleanup(h);
+  });
+
+  it("shows a holistic judging chip when the suite uses no profile", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1")]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    expect(h.container.textContent).toContain("Holistic judging");
+    cleanup(h);
+  });
+
+  it("shows rubric missing when the pinned profile no longer exists", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [
+      makeSuite("s1", { defaultEvaluation: { kind: "profile", profile: { id: "gone", version: 1 } } }),
+    ]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    expect(h.container.textContent).toContain("Rubric missing");
+    cleanup(h);
+  });
+
+  it("shows latest experiment status on the row when experiments exist", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1")]);
+    const now = Date.now();
+    await repo.createExperiment({
+      id: "exp1", revision: 1, suiteId: "s1", suiteVersion: 1, protocolFingerprint: "fp",
+      status: "completed", execution: null,
+      snapshot: {
+        suiteId: "s1", suiteVersion: 1, tasks: [], modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "j" },
+        defaultEvaluation: { kind: "holistic" }, profiles: [], protocolFingerprint: "fp", createdAt: now,
+      },
+      tasks: [], createdAt: now, updatedAt: now,
+    });
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Completed");
+    cleanup(h);
+  });
+});
+
 describe("SuiteList — accessibility", () => {
   it("all interactive controls meet 44px target size", async () => {
     const repo = new InMemoryEvaluationRepository();
