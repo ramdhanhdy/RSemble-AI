@@ -48,6 +48,8 @@ describe("StatusMark", () => {
     { status: "failed", icon: "svg" },           // XCircle
     { status: "aborted", icon: "svg" },          // Square
     { status: "interrupted", icon: "svg" },      // Unplug
+    { status: "ready", icon: "svg" },            // CirclePlay — runnable workload (identity spec §5.2)
+    { status: "reusable", icon: "svg" },         // BadgeCheck — live pinnable rubric (identity spec §5.2)
   ];
 
   for (const { status } of cases) {
