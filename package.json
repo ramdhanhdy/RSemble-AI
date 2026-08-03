@@ -16,7 +16,8 @@
     "check": "npm run typecheck:web && npm run typecheck:server && npm run test && npm run build",
     "preview": "vite preview",
     "qa:design-motion": "node scripts/cdp-design-motion-qa.mjs",
-    "qa:suite-reliability": "node scripts/cdp-suite-reliability-qa.mjs"
+    "qa:suite-reliability": "node scripts/cdp-suite-reliability-qa.mjs",
+    "qa:evaluations-identity": "node scripts/cdp-evaluations-identity-qa.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
