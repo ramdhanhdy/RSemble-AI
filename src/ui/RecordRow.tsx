@@ -24,6 +24,9 @@ export interface RecordRowProps {
   modelCount?: number;
   source?: string;
   provenance?: string;
+  /** Optional identity slot rendered first on the title line (list variant),
+   *  e.g. a KindEyebrow naming the entity kind (identity spec §5.4). */
+  kind?: ReactNode;
   /** When provided, the list variant renders as a link. */
   href?: string;
   /** Trailing action slot (buttons, menus, etc.). */
@@ -50,14 +53,23 @@ function Inner({
   modelCount,
   source,
   provenance,
+  kind,
 }: Omit<RecordRowProps, "variant" | "id" | "href" | "children">) {
   return (
     <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
       <span className="flex w-full min-w-0 items-center gap-2">
+        {kind}
         <StatusMark status={status} />
         <span className="truncate font-mono text-sm text-text">{title}</span>
       </span>
-      <span className="flex w-full min-w-0 items-center gap-3 pl-[21px] text-sm text-text-muted tabular-nums">
+      {/* The meta line indents under the title (past the status glyph) only
+          when no kind eyebrow is present; with an eyebrow the left edge is
+          the row's anchor, so the meta line aligns flush to it. */}
+      <span
+        className={`flex w-full min-w-0 items-center gap-3 text-sm text-text-muted tabular-nums ${
+          kind ? "" : "pl-[21px]"
+        }`}
+      >
         {summary && (
           <span className="min-w-0 truncate" title={summary}>
             {summary}
