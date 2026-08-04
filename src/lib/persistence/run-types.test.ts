@@ -419,6 +419,102 @@ describe("isRunSource", () => {
     expect(isRunSource({ kind: "other" })).toBe(false);
     expect(isRunSource(null)).toBe(false);
   });
+
+  it("accepts a missing-cells repair on an experiment source", () => {
+    expect(
+      isRunSource({
+        kind: "experiment",
+        experimentId: "e1",
+        suiteId: "s1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-1",
+        trial: 1,
+        repair: { kind: "missing-cells", baseRunId: "run-base", requestedModelKeys: ["openrouter:m1"] },
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts a compound roster-extension plan (with baseRunId)", () => {
+    expect(
+      isRunSource({
+        kind: "experiment",
+        experimentId: "e1",
+        suiteId: "s1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp2",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-2",
+        trial: 2,
+        repair: { kind: "roster-extension", addedModelKey: "gemini:m3", baseRunId: "run-base" },
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts a full-roster fallback roster-extension plan (no baseRunId)", () => {
+    expect(
+      isRunSource({
+        kind: "experiment",
+        experimentId: "e1",
+        suiteId: "s1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp2",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-2",
+        trial: 2,
+        repair: { kind: "roster-extension", addedModelKey: "gemini:m3" },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a roster-extension plan with blank addedModelKey", () => {
+    expect(
+      isRunSource({
+        kind: "experiment",
+        experimentId: "e1",
+        suiteId: "s1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp2",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-2",
+        trial: 2,
+        repair: { kind: "roster-extension", addedModelKey: "" },
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a roster-extension plan with a blank baseRunId", () => {
+    expect(
+      isRunSource({
+        kind: "experiment",
+        experimentId: "e1",
+        suiteId: "s1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp2",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-2",
+        trial: 2,
+        repair: { kind: "roster-extension", addedModelKey: "gemini:m3", baseRunId: "" },
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a roster-extension plan with credential-shaped identifiers", () => {
+    expect(
+      isRunSource({
+        kind: "experiment",
+        experimentId: "e1",
+        suiteId: "s1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp2",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-2",
+        trial: 2,
+        repair: { kind: "roster-extension", addedModelKey: "sk-secret-key" },
+      }),
+    ).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1013,6 +1109,83 @@ describe("experiment repair provenance schema (Task 8)", () => {
   it("rejects a repair plan with an unknown kind", () => {
     const e = validExperimentWithRepair();
     (e.tasks[0].attempts[0].repair as Record<string, unknown>).kind = "other";
+    expect(isExperimentRecord(e)).toBe(false);
+  });
+
+  it("accepts a roster-extension attempt plan (compound and fallback)", () => {
+    const compound = validExperiment() as unknown as {
+      tasks: Array<{ taskId: string; selectedAttemptId: string | null; attempts: Array<Record<string, unknown>> }>;
+    };
+    compound.tasks[0].attempts.push({
+      id: "att-ext",
+      runId: "run-ext",
+      trial: 1,
+      status: "completed",
+      startedAt: 1,
+      finishedAt: 2,
+      error: null,
+      repair: { kind: "roster-extension", addedModelKey: "gemini:m3", baseRunId: "run-base" },
+    });
+    expect(isExperimentRecord(compound)).toBe(true);
+
+    const fallback = validExperiment() as unknown as {
+      tasks: Array<{ taskId: string; selectedAttemptId: string | null; attempts: Array<Record<string, unknown>> }>;
+    };
+    fallback.tasks[0].attempts.push({
+      id: "att-ext-f",
+      runId: "run-ext-f",
+      trial: 1,
+      status: "partial",
+      startedAt: 1,
+      finishedAt: 2,
+      error: null,
+      repair: { kind: "roster-extension", addedModelKey: "gemini:m3" },
+    });
+    expect(isExperimentRecord(fallback)).toBe(true);
+  });
+
+  it("accepts a record with rosterExtensions history", () => {
+    const e = validExperiment() as Record<string, unknown>;
+    e.rosterExtensions = [
+      {
+        addedModelKey: "gemini:m3",
+        addedSlot: { id: "slot-ext", providerId: "gemini", provider: "Gemini", model: "m3", slug: "m3", enabled: true },
+        priorFingerprint: "fp",
+        extendedAt: 10,
+      },
+    ];
+    expect(isExperimentRecord(e)).toBe(true);
+  });
+
+  it("rejects rosterExtensions with duplicate added keys", () => {
+    const e = validExperiment() as Record<string, unknown>;
+    e.rosterExtensions = [
+      {
+        addedModelKey: "gemini:m3",
+        addedSlot: { id: "slot-ext", providerId: "gemini", provider: "Gemini", model: "m3", slug: "m3", enabled: true },
+        priorFingerprint: "fp",
+        extendedAt: 10,
+      },
+      {
+        addedModelKey: "gemini:m3",
+        addedSlot: { id: "slot-ext-2", providerId: "gemini", provider: "Gemini", model: "m3", slug: "m3", enabled: true },
+        priorFingerprint: "fp2",
+        extendedAt: 20,
+      },
+    ];
+    expect(isExperimentRecord(e)).toBe(false);
+  });
+
+  it("rejects rosterExtensions whose slot identity mismatches the key", () => {
+    const e = validExperiment() as Record<string, unknown>;
+    e.rosterExtensions = [
+      {
+        addedModelKey: "umans:other",
+        addedSlot: { id: "slot-ext", providerId: "gemini", provider: "Gemini", model: "m3", slug: "m3", enabled: true },
+        priorFingerprint: "fp",
+        extendedAt: 10,
+      },
+    ];
     expect(isExperimentRecord(e)).toBe(false);
   });
 });

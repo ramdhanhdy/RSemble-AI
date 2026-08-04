@@ -148,7 +148,7 @@ export interface ExperimentTaskAttempt {
   /** Scored-model coverage for coverage-aware attempt selection (spec §11.5). */
   coverage?: ExperimentAttemptCoverage;
   /** Compound repair metadata for auditable targeted repairs (spec §11.4). */
-  repair?: ExperimentRepairPlan;
+  repair?: ExperimentTaskExecutionPlan;
 }
 
 export interface ExperimentAttemptCoverage {
@@ -160,6 +160,37 @@ export interface ExperimentRepairPlan {
   kind: "missing-cells";
   baseRunId: string;
   requestedModelKeys: string[];
+}
+
+/** Roster-extension attempt provenance (spec §6.4). Rides the persisted
+ *  `repair` field on attempts and run sources; the `kind` discriminant is
+ *  load-bearing. Never derive user-visible "repair" wording from the field
+ *  name. */
+export interface ExperimentRosterExtensionPlan {
+  kind: "roster-extension";
+  /** Model key `providerId:slug` of the added model. */
+  addedModelKey: string;
+  /** Selected attempt run that supplied the reused outputs for this task,
+   *  when the compound path was taken. Absent on full-roster fallback. */
+  baseRunId?: string;
+}
+
+/** Persisted execution-plan discriminant on queued/terminal attempts. The
+ *  property name `repair` is legacy persisted schema kept for compatibility;
+ *  branch on `kind` for behavior and copy. */
+export type ExperimentTaskExecutionPlan =
+  | ExperimentRepairPlan
+  | ExperimentRosterExtensionPlan;
+
+/** Append-only extension history entry (spec §6.5). */
+export interface ExperimentRosterExtension {
+  addedModelKey: string;
+  /** The exact appended slot (stable id shared with the suite, spec §8). */
+  addedSlot: ModelSlot;
+  /** Snapshot fingerprint before this extension. */
+  priorFingerprint: string;
+  /** Epoch ms. */
+  extendedAt: number;
 }
 
 export interface ExperimentTaskState {
@@ -200,6 +231,9 @@ export interface ExperimentRecord {
   tasks: ExperimentTaskState[];
   createdAt: number;
   updatedAt: number;
+  /** Append-only model-addition history (spec §6.5); absent for records
+   *  created before roster extension existed. */
+  rosterExtensions?: ExperimentRosterExtension[];
 }
 
 // --- Experiment task orchestration inputs -------------------------------------
@@ -229,7 +263,7 @@ export interface CommitExperimentTaskTerminalInput {
   /** Scored-model coverage persisted on the terminal attempt (spec §11.5). */
   coverage?: ExperimentAttemptCoverage;
   /** Compound repair metadata persisted on the terminal attempt (spec §11.4). */
-  repair?: ExperimentRepairPlan;
+  repair?: ExperimentTaskExecutionPlan;
 }
 
 // =============================================================================
@@ -468,6 +502,61 @@ function isExperimentRepairPlan(v: unknown): v is ExperimentRepairPlan {
   return true;
 }
 
+function isExperimentRosterExtensionPlan(
+  v: unknown,
+): v is ExperimentRosterExtensionPlan {
+  if (!isRecord(v)) return false;
+  if (v.kind !== "roster-extension") return false;
+  if (!isNonEmptyString(v.addedModelKey)) return false;
+  if (/^(sk-|AIza|Bearer\s)/i.test(v.addedModelKey)) return false;
+  if (v.baseRunId !== undefined) {
+    if (!isNonEmptyString(v.baseRunId)) return false;
+    if (/^(sk-|AIza|Bearer\s)/i.test(v.baseRunId)) return false;
+  }
+  return true;
+}
+
+/** Discriminant union — legacy `missing-cells` plus `roster-extension`.
+ *  Exported for run-source validation in persistence/run-types.ts. */
+export function isExperimentTaskExecutionPlan(
+  v: unknown,
+): v is ExperimentTaskExecutionPlan {
+  return isExperimentRepairPlan(v) || isExperimentRosterExtensionPlan(v);
+}
+
+function isExperimentRosterExtension(v: unknown): v is ExperimentRosterExtension {
+  if (!isRecord(v)) return false;
+  if (!isNonEmptyString(v.addedModelKey)) return false;
+  if (/^(sk-|AIza|Bearer\s)/i.test(v.addedModelKey)) return false;
+  if (!isModelSlot(v.addedSlot)) return false;
+  // Slot identity must match the recorded key exactly.
+  if (`${v.addedSlot.providerId}:${v.addedSlot.slug}` !== v.addedModelKey) return false;
+  if (!isNonEmptyString(v.priorFingerprint)) return false;
+  if (
+    !isNumber(v.extendedAt) ||
+    !Number.isFinite(v.extendedAt) ||
+    v.extendedAt < 0
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** History-wide invariants: unique added keys and unique slot ids. */
+function hasValidRosterExtensionHistory(v: unknown): boolean {
+  if (!Array.isArray(v)) return false;
+  if (!v.every(isExperimentRosterExtension)) return false;
+  const keys = new Set<string>();
+  const slotIds = new Set<string>();
+  for (const entry of v) {
+    if (keys.has(entry.addedModelKey)) return false;
+    keys.add(entry.addedModelKey);
+    if (slotIds.has(entry.addedSlot.id)) return false;
+    slotIds.add(entry.addedSlot.id);
+  }
+  return true;
+}
+
 export function isExperimentTaskAttempt(v: unknown): v is ExperimentTaskAttempt {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
@@ -480,7 +569,7 @@ export function isExperimentTaskAttempt(v: unknown): v is ExperimentTaskAttempt 
   if (v.finishedAt !== null && !isNumber(v.finishedAt)) return false;
   if (v.error !== null && !isPersistedError(v.error)) return false;
   if (v.coverage !== undefined && !isExperimentAttemptCoverage(v.coverage)) return false;
-  if (v.repair !== undefined && !isExperimentRepairPlan(v.repair)) return false;
+  if (v.repair !== undefined && !isExperimentTaskExecutionPlan(v.repair)) return false;
   return true;
 }
 
@@ -523,6 +612,7 @@ export function isExperimentRecord(v: unknown): v is ExperimentRecord {
   if (!Array.isArray(v.tasks) || !v.tasks.every(isExperimentTaskState)) return false;
   if (!isNumber(v.createdAt)) return false;
   if (!isNumber(v.updatedAt)) return false;
+  if (v.rosterExtensions !== undefined && !hasValidRosterExtensionHistory(v.rosterExtensions)) return false;
   if (hasProhibitedKeys(v)) return false;
   return true;
 }

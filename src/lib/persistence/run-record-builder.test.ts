@@ -15,6 +15,7 @@
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
+import type { ModelSlot } from "../../studio-data";
 import type { ChatMessage, ProviderId } from "../providers/types";
 import type { JudgeReport, ConsensusBreakdown, CandidateEvaluation } from "../../studio-data";
 import type { RunSource, ExecutionFence, RunRecordV2 } from "./run-types";
@@ -837,6 +838,93 @@ describe("RunRecordBuilder — compound repair run seed (Task 9)", () => {
     expect(seed.judge.report).toBeNull();
     expect(seed.judge.attempts).toHaveLength(0);
     expect(seed.winnerKeys).toEqual([]);
+  });
+
+  it("tolerates a rotated roster whose requested key has no base-run candidate", () => {
+    // Roster-extension shape (plan 001, A2): the rotated roster contains all
+    // old slots plus one NEW slot that never ran in the base run. The seed
+    // must reuse every accepted old output and leave the new slot unstarted.
+    const builder = createRunRecordBuilder(makeDeps());
+    const baseRun = buildBaseRun();
+    const baseBefore = JSON.parse(JSON.stringify(baseRun));
+
+    const newSlot: ModelSlot = { id: "s3", providerId: "gemini", provider: "Gemini", model: "C", slug: "model-c", enabled: true };
+    const rotatedSlots: ModelSlot[] = [
+      ...TWO_SLOTS.map((s) => ({ ...s, provider: "P" })),
+      newSlot,
+    ];
+    let id = 0;
+    const generateId = () => `fresh-${++id}`;
+
+    const seed = builder.buildRepairRunSeed({
+      runId: "run-extension",
+      source: {
+        kind: "experiment",
+        experimentId: "exp-1",
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp-rotated",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-extension",
+        trial: 1,
+        repair: { kind: "roster-extension", addedModelKey: "gemini:model-c", baseRunId: "run-1" },
+      },
+      task: { title: "Test Task", prompt: "test prompt", systemPrompt: "system prompt", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      slots: rotatedSlots,
+      fence: FENCE,
+      baseRun,
+      requestedModelKeys: ["gemini:model-c"],
+      generateId,
+    });
+
+    // Three candidates: two reused, one fresh.
+    expect(seed.candidates).toHaveLength(3);
+    const reusedA = seed.candidates.find((c) => c.modelKey === "openrouter:model-a")!;
+    const reusedB = seed.candidates.find((c) => c.modelKey === "umans:model-b")!;
+    const freshC = seed.candidates.find((c) => c.modelKey === "gemini:model-c")!;
+
+    expect(reusedA.acceptedAttemptId).not.toBeNull();
+    expect(reusedA.attempts[0].reusedFrom).toEqual({
+      sourceRunId: "run-1",
+      sourceCandidateId: CANDIDATE_S1,
+      sourceAttemptId: "att-base-s1",
+    });
+    expect(reusedB.acceptedAttemptId).not.toBeNull();
+    expect(reusedB.attempts[0].reusedFrom).toEqual({
+      sourceRunId: "run-1",
+      sourceCandidateId: CANDIDATE_S2,
+      sourceAttemptId: "att-base-s2",
+    });
+
+    // New slot: no accepted attempt, no attempts.
+    expect(freshC.acceptedAttemptId).toBeNull();
+    expect(freshC.attempts).toHaveLength(0);
+
+    // Fresh candidate IDs never collide with base-run IDs.
+    for (const c of seed.candidates) {
+      for (const a of c.attempts) {
+        expect(a.attemptId).not.toBe("att-base-s1");
+        expect(a.attemptId).not.toBe("att-base-s2");
+      }
+    }
+
+    // Judge/fusion evidence and winners are empty.
+    expect(seed.judge.attempts).toHaveLength(0);
+    expect(seed.judge.report).toBeNull();
+    expect(seed.fusion.attempts).toHaveLength(0);
+    expect(seed.winnerKeys).toEqual([]);
+
+    // The base run is unmodified.
+    expect(baseRun).toEqual(baseBefore);
+
+    // Valid persisted shape with the roster-extension source.
+    expect(isRunRecordV2(seed)).toBe(true);
+    expect(seed.source).toMatchObject({
+      kind: "experiment",
+      protocolFingerprint: "fp-rotated",
+      repair: { kind: "roster-extension", addedModelKey: "gemini:model-c", baseRunId: "run-1" },
+    });
   });
 });
 

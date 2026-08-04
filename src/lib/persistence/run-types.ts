@@ -25,7 +25,7 @@
 import type { ChatMessage } from "../providers/types";
 import type { ConsensusBreakdown, JudgeReport } from "../../studio-data";
 import type { StageStatus } from "../../studio-engine";
-import { isEvaluationProfile, type EvaluationProfileSnapshot } from "../evaluations/evaluation-types";
+import { isEvaluationProfile, isExperimentTaskExecutionPlan, type EvaluationProfileSnapshot, type ExperimentTaskExecutionPlan } from "../evaluations/evaluation-types";
 
 // --- Status enums -------------------------------------------------------------
 
@@ -104,12 +104,10 @@ export type RunSource =
       taskId: string;
       experimentTaskAttemptId: string;
       trial: number;
-      /** Compound-repair metadata on the experiment branch (spec §11.4). */
-      repair?: {
-        kind: "missing-cells";
-        baseRunId: string;
-        requestedModelKeys: string[];
-      };
+      /** Compound-repair metadata on the experiment branch (spec §11.4);
+       *  widened to the roster-extension discriminant (roster spec §6.4). The
+       *  property name is legacy persisted schema; branch on `kind`. */
+      repair?: ExperimentTaskExecutionPlan;
     };
 
 // --- Run summaries ------------------------------------------------------------
@@ -419,12 +417,7 @@ export function isRunSource(v: unknown): v is RunSource {
       // Experiment run sources require an immutable, non-empty attempt id.
       isNonEmptyString(v.experimentTaskAttemptId) &&
       isNumber(v.trial) &&
-      (v.repair === undefined ||
-        (isRecord(v.repair) &&
-          v.repair.kind === "missing-cells" &&
-          isNonEmptyString(v.repair.baseRunId) &&
-          Array.isArray(v.repair.requestedModelKeys) &&
-          v.repair.requestedModelKeys.every((k): k is string => isNonEmptyString(k))))
+      (v.repair === undefined || isExperimentTaskExecutionPlan(v.repair))
     );
   }
   return false;

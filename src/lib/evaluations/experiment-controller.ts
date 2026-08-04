@@ -509,7 +509,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         try {
           // Repairs run through the normal loop so pause-at-boundary, abort,
           // heartbeat, error handling, and ownership release all apply.
-          if (queuedAttempt?.repair) {
+          if (queuedAttempt?.repair && queuedAttempt.repair.kind === "missing-cells") {
             await executeRepairTask(taskId, attemptId, queuedAttempt.repair, fence);
           } else {
             await executeTask(taskId, attemptId, fence);
