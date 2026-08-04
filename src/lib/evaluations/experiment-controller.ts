@@ -957,7 +957,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         requestedModelKeys: plan.requestedModelKeys,
       };
       const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
-      const queueResult = engine.queueRepairs([{ taskId: request.taskId, repair: repairPlan }], generateId, fence, now());
+      const queueResult = engine.queuePlannedAttempts([{ taskId: request.taskId, repair: repairPlan }], generateId, fence, now());
       if (!queueResult.ok) {
         return { ok: false, error: queueResult.reason ?? "Failed to queue repair" };
       }

@@ -28,10 +28,11 @@ import type {
   EvaluationProfile,
   ExperimentAttemptCoverage,
   ExperimentRecord,
-  ExperimentRepairPlan,
   ExperimentTaskAttempt,
+  ExperimentTaskExecutionPlan,
   ExperimentTaskState,
 } from "./evaluation-types";
+import { isExperimentTaskExecutionPlan } from "./evaluation-types";
 import type { ExecutionFence, PersistedError, RunStatus } from "../persistence/run-types";
 import { createExperimentSnapshot } from "./protocol-fingerprint";
 
@@ -153,8 +154,9 @@ export interface CommitTerminalInput {
   now: number;
   /** Scored-model coverage stored on the terminal attempt (spec §11.5). */
   coverage?: ExperimentAttemptCoverage;
-  /** Compound repair metadata stored on the terminal attempt (spec §11.4). */
-  repair?: ExperimentRepairPlan;
+  /** Compound execution-plan metadata stored on the terminal attempt
+   *  (spec §11.4; widened for roster extension). */
+  repair?: ExperimentTaskExecutionPlan;
 }
 
 export interface ExperimentEngine {
@@ -175,8 +177,11 @@ export interface ExperimentEngine {
   abort(now: number): TransitionResult;
   recoverInterrupted(now: number): TransitionResult;
   retryIncomplete(generateId: () => string, fence: ExecutionFence, now: number): TransitionResult;
-  queueRepairs(
-    repairs: Array<{ taskId: string; repair: ExperimentRepairPlan }>,
+  /** Queue one planned attempt per task (missing-cell repair or roster
+   *  extension). Only terminal records; plans are validated by discriminant
+   *  before any mutation. */
+  queuePlannedAttempts(
+    repairs: Array<{ taskId: string; repair: ExperimentTaskExecutionPlan }>,
     generateId: () => string,
     fence: ExecutionFence,
     now: number,
@@ -473,7 +478,7 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       return OK;
     },
 
-    queueRepairs(repairs, generateId, fence, now) {
+    queuePlannedAttempts(repairs, generateId, fence, now) {
       if (
         record.status !== "completed" &&
         record.status !== "completed_with_failures" &&
@@ -484,9 +489,9 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       }
       if (repairs.length === 0) return reject("No repairs to queue");
 
-      // Validate every repair task exists and no task is queued twice before
-      // mutating anything — an unknown id would leave the record "running"
-      // with nothing to execute.
+      // Validate every repair task exists, no task is queued twice, and every
+      // plan passes its discriminant invariants before mutating anything — an
+      // unknown id would leave the record "running" with nothing to execute.
       const seen = new Set<string>();
       for (const item of repairs) {
         if (!taskState(item.taskId)) {
@@ -496,6 +501,9 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
           return reject(`Duplicate repair for task ${item.taskId}`);
         }
         seen.add(item.taskId);
+        if (!isExperimentTaskExecutionPlan(item.repair)) {
+          return reject(`Invalid execution plan for task ${item.taskId}`);
+        }
       }
 
       let tasks = record.tasks;

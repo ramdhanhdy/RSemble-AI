@@ -467,7 +467,7 @@ describe("rotateExperimentRoster", () => {
   it("rejects a duplicate key and does not mutate the input", () => {
     const exp = makeExperiment();
     const before = JSON.parse(JSON.stringify(exp));
-    const dup = { ...NEW_SLOT, providerId: "openrouter", slug: "org/m1", model: "m1" };
+    const dup: ModelSlot = { ...NEW_SLOT, providerId: "openrouter", slug: "org/m1", model: "m1" };
     const result = rotateExperimentRoster({ experiment: exp, slot: dup, extendedAt: 2000 });
     expect(result.ok).toBe(false);
     expect(exp).toEqual(before);
