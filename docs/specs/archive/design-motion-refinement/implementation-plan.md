@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 18, TypeScript, Vite, Tailwind CSS 3, Vitest, happy-dom, `cmdk`, `@base-ui/react`, Chrome DevTools Protocol QA
 
-**Authority:** `docs/specs/executed/design-motion-refinement/design-motion-refinement-spec.md`, `DESIGN.md`, `UI.md`, `PRODUCT.md`
+**Authority:** `docs/specs/archive/design-motion-refinement/design-motion-refinement-spec.md`, `DESIGN.md`, `UI.md`, `PRODUCT.md`
 
 **Worktree guard:** At plan-writing time, the worktree already contained untracked `docs/research/task-first-evaluation-taxonomy.md` and `.docx`. Do not stage, modify, delete, or include those files in any refinement commit.
 
@@ -969,7 +969,7 @@ git commit -m "test(ui): add design and motion browser QA"
 
 **Files:**
 - Create: `docs/qa/design-motion-refinement/qa-report.md`
-- Modify: `docs/specs/executed/design-motion-refinement/design-motion-refinement-spec.md` only to mark accepted deviations with evidence
+- Modify: `docs/specs/archive/design-motion-refinement/design-motion-refinement-spec.md` only to mark accepted deviations with evidence
 - Modify: `DESIGN.md` only if final verified values need clarification
 
 **Step 1: Run the complete quality gate**
@@ -1036,7 +1036,7 @@ Use the `review-animations` skill on the final diff. Required decision: **Approv
 **Step 7: Commit final evidence**
 
 ```bash
-git add docs/qa/design-motion-refinement/qa-report.md docs/specs/executed/design-motion-refinement/design-motion-refinement-spec.md DESIGN.md
+git add docs/qa/design-motion-refinement/qa-report.md docs/specs/archive/design-motion-refinement/design-motion-refinement-spec.md DESIGN.md
 git commit -m "docs(ui): record design and motion refinement evidence"
 ```
 

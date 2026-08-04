@@ -1,12 +1,14 @@
 # Specs
 
-Specs are split by execution status. Cross-references keep the full paths, so
-`grep docs/specs/` still finds everything.
+Specs are split by status: `archive/` for work that shipped, `pending/` for
+everything else. Cross-references keep the full paths, so `grep docs/specs/`
+still finds everything.
 
-## executed/
+## archive/
 
-Specified, implemented, and verified. Each has commits landing the work; most
-have QA evidence under `docs/qa/`.
+Completed: specified, implemented, and verified. Kept for traceability — do not
+re-execute. Each has commits landing the work; most have QA evidence under
+`docs/qa/`.
 
 | Spec | What shipped | Verification |
 | --- | --- | --- |
@@ -18,11 +20,12 @@ have QA evidence under `docs/qa/`.
 | suite-execution-reliability | preflight, 9Router compat, recovery, ranking, ledger | `docs/qa/suite-execution-reliability/` |
 | 9router-support | 9Router provider adapter + SSE termination | provider registered |
 | evaluations-identity-ux | workload/rubric identity grammar, honest tokens, stable geometry | `docs/qa/evaluations-identity-ux/` |
-| design-motion-refinement | motion refinements + QA captures | `docs/qa/design-motion-refinement/` (spec files themselves were never committed) |
+| design-motion-refinement | motion refinements + QA captures | `docs/qa/design-motion-refinement/` |
 
 ## pending/
 
-Written but not executed as a project.
+Written but not executed as a project. New work should start here — or, if the
+spec is stale, read its grounding audit first.
 
 | Spec | Status |
 | --- | --- |

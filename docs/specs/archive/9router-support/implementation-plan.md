@@ -13,7 +13,7 @@ optional-key and catalog-probe readiness support; pipeline code remains unchange
 **Tech stack:** React 18, TypeScript, Vite, Node `http`, Vitest, existing provider
 registry and SSE parser. No new runtime dependency.
 
-**Companion spec:** `docs/specs/executed/9router-support/9router-support-spec.md`
+**Companion spec:** `docs/specs/archive/9router-support/9router-support-spec.md`
 
 ---
 

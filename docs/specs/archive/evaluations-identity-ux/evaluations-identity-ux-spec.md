@@ -3,7 +3,7 @@
 **Status:** Proposed
 **Date:** 2026-08-03
 **Scope:** Information architecture, semantic identity, relationship surfacing, and restrained motion for the Evaluations workspace (Suites and Profiles)
-**Authority:** `PRODUCT.md`, `DESIGN.md`, `UI.md`, `docs/specs/executed/design-motion-refinement/design-motion-refinement-spec.md`, and this specification, in that order for product scope; this document governs the upgrade itself
+**Authority:** `PRODUCT.md`, `DESIGN.md`, `UI.md`, `docs/specs/archive/design-motion-refinement/design-motion-refinement-spec.md`, and this specification, in that order for product scope; this document governs the upgrade itself
 **Method:** Grounded in emil-design-eng, pick-ui-library, animation-vocabulary, improve-animations, and find-animation-opportunities; applied through the design-system-refinement-planning workflow
 
 ---

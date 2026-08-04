@@ -34,8 +34,8 @@ This specification is subordinate to:
 - `PRODUCT.md`
 - `DESIGN.md`
 - `UI.md`
-- `docs/specs/executed/evaluation-workspaces/evaluation-workspaces-spec.md`
-- `docs/specs/executed/design-motion-refinement/design-motion-refinement-spec.md`
+- `docs/specs/archive/evaluation-workspaces/evaluation-workspaces-spec.md`
+- `docs/specs/archive/design-motion-refinement/design-motion-refinement-spec.md`
 
 Evidence behind the work:
 

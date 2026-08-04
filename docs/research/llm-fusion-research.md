@@ -537,7 +537,7 @@ The following recipe changes are supported by the evidence above, but per the De
 
 ## 10. Recommended Research Program (Superseded)
 
-> **Superseded by the Design Review.** The six-phase program below assumed (a) the "Candidate D" evaluation design, (b) Jaccard error overlap as the primary pair metric, and (c) adoption of score-aware fusion without calibration. All three assumptions were revised. The corrected, staged program is specified in the **Design Revision** section and in the companion Fusion Study specification (`docs/specs/executed/fusion-study/`). The phases below are retained for historical traceability of how the design evolved.
+> **Superseded by the Design Review.** The six-phase program below assumed (a) the "Candidate D" evaluation design, (b) Jaccard error overlap as the primary pair metric, and (c) adoption of score-aware fusion without calibration. All three assumptions were revised. The corrected, staged program is specified in the **Design Revision** section and in the companion Fusion Study specification (`docs/specs/archive/fusion-study/`). The phases below are retained for historical traceability of how the design evolved.
 
 ### Phase 1: Baseline Validation (Existing Infrastructure) *(superseded)*
 
@@ -635,7 +635,7 @@ Implement refine-the-winner as an alternative to blend-all. Compare its quality 
 
 ## 12. Design Revision (Post-Review, July 31, 2026)
 
-This section records corrections made after the research report was reviewed against the current product and UI specifications. The review accepted the product thesis (fusion research is a sound foundation for RSemble's evolution) but changed the experimental design in four significant ways. The companion specification for the revised design lives at `docs/specs/executed/fusion-study/`.
+This section records corrections made after the research report was reviewed against the current product and UI specifications. The review accepted the product thesis (fusion research is a sound foundation for RSemble's evolution) but changed the experimental design in four significant ways. The companion specification for the revised design lives at `docs/specs/archive/fusion-study/`.
 
 ### 12.1 The research question changed: from pair discovery to policy discovery
 

@@ -1,6 +1,6 @@
 # Fusion Study Implementation Plan
 
-> Companion to `docs/specs/executed/fusion-study/fusion-study-spec.md` (v2, advisor-reviewed).
+> Companion to `docs/specs/archive/fusion-study/fusion-study-spec.md` (v2, advisor-reviewed).
 > Grounding: the current codebase — `src/lib/evaluations/` (profiles, suites, experiment
 > orchestration), `src/lib/persistence/` (RunRecordV2 with immutable attempt records),
 > `src/lib/pipeline.ts` (Compare fan-out → Judge → Fuse spine),
