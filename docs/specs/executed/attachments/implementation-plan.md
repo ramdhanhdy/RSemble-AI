@@ -25,7 +25,7 @@ inert until Phase 6.5 wires the UI.
 
 ## Phase 7.0 — Spec lock (docs only)
 
-- [x] 7.0.1 Land `docs/specs/attachments/attachments-spec.md` (this set of files).
+- [x] 7.0.1 Land `docs/specs/executed/attachments/attachments-spec.md` (this set of files).
 - [x] 7.0.2 Add `DECISIONS.md` entry: attachments are **inline base64 only** — no provider Files API, no server-side storage, no text substitute for images.
 - [x] 7.0.3 Add `PROVIDERS.md` section: attachment capability matrix + per-adapter transport (spec §5), including 9router.
 - [x] 7.0.4 Add `PRODUCT.md` §5 IN row ("task attachments: images / PDF / md / docx") and OUT rows (OCR, Files API, persistence, audio/video).

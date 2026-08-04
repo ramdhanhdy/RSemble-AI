@@ -17,7 +17,7 @@ provider-agnostic and preserve strict blind-judge validation.
 architecture, Tailwind CSS. No new runtime dependency.
 
 **Companion spec:**
-`docs/specs/run-recovery-model-selection/run-recovery-model-selection-spec.md`
+`docs/specs/executed/run-recovery-model-selection/run-recovery-model-selection-spec.md`
 
 ---
 
@@ -127,8 +127,8 @@ uncommitted before plan implementation.
 
 ```bash
 git add UI.md PROVIDERS.md \
-  docs/specs/run-recovery-model-selection/run-recovery-model-selection-spec.md \
-  docs/specs/run-recovery-model-selection/implementation-plan.md
+  docs/specs/executed/run-recovery-model-selection/run-recovery-model-selection-spec.md \
+  docs/specs/executed/run-recovery-model-selection/implementation-plan.md
 git commit -m "docs: specify run recovery and model selection fixes"
 ```
 

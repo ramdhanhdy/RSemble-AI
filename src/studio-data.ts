@@ -75,7 +75,7 @@ export interface ConsensusBreakdown {
 }
 
 // ---- Judge explainability (blind evaluation) ----------------------------------
-// See docs/specs/judge-explainability/judge-explainability-spec.md and
+// See docs/specs/executed/judge-explainability/judge-explainability-spec.md and
 // DECISIONS.md #6. The judge never sees RSemble-supplied model/provider identity;
 // the blind label map is resolved only after a valid judge result is parsed.
 

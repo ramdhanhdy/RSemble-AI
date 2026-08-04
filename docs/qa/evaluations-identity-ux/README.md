@@ -1,8 +1,8 @@
 # QA Report — Evaluations Identity & UX Upgrade
 
 Generated against commit at or after `636af31` + mobile fix (see commits below).
-Spec: `docs/specs/evaluations-identity-ux/evaluations-identity-ux-spec.md`
-Plan: `docs/specs/evaluations-identity-ux/implementation-plan.md`
+Spec: `docs/specs/executed/evaluations-identity-ux/evaluations-identity-ux-spec.md`
+Plan: `docs/specs/executed/evaluations-identity-ux/implementation-plan.md`
 
 ## Gates
 

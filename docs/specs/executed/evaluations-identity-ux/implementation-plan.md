@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 18 + TypeScript + Vite + Tailwind, vitest, existing `RecordRow`/`StatusMark` primitives, `lucide-react`.
 
-**Spec:** `docs/specs/evaluations-identity-ux/evaluations-identity-ux-spec.md`
+**Spec:** `docs/specs/executed/evaluations-identity-ux/evaluations-identity-ux-spec.md`
 
 **Baseline commit:** Implementation starts only after the current in-flight worktree changes (`src/rsemble.tsx`, `src/ui/Header.tsx`, `src/ui/RecordRow.tsx`) are committed or stashed. Record the baseline with `git rev-parse --short HEAD` and stamp it below before Task 1.
 

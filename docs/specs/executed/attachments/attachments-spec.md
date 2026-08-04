@@ -276,7 +276,7 @@ Surfaces live with the Task input (`UI.md` §3.1, panel `01 COMMAND`).
 
 - Filenames are sanitized for display and for the prompt block: strip control chars, strip ANSI escapes, collapse whitespace, cap at 120 chars, and never render as HTML (React handles escaping; `Markdown.tsx` is not used for chip names).
 - Status changes announce via a single `aria-live="polite"` region: `chart.png attached`, `report.pdf — text extracted, 12 pages`, `notes.docx failed: …`.
-- All colors from the existing token ladder in `docs/specs/ui-redesign-spec.md` §2.1. Error chips use `error`, warnings `warning`, ready chips `edge`/`text-secondary`. `text-muted` is never used on the interactive chip controls.
+- All colors from the existing token ladder in `docs/specs/pending/ui-redesign-spec.md` §2.1. Error chips use `error`, warnings `warning`, ready chips `edge`/`text-secondary`. `text-muted` is never used on the interactive chip controls.
 - `Escape` while dragging cancels the drop overlay.
 
 ## 9. Cross-cutting effects

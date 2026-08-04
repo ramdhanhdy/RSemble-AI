@@ -9,7 +9,7 @@
 **Tech stack:** React 18, TypeScript, Vite 8, Vitest 4, happy-dom, Tailwind CSS, React Router, Dexie, fake-indexeddb for tests, existing reducer/controller and provider adapters.
 
 **Companion spec:**
-`docs/specs/evaluation-workspaces/evaluation-workspaces-spec.md`
+`docs/specs/executed/evaluation-workspaces/evaluation-workspaces-spec.md`
 
 **Roadmap:**
 `docs/roadmaps/evaluation-workbench-roadmap.md`
@@ -26,8 +26,8 @@ relation: synchronized with origin/master
 tracked modifications: none
 untracked documentation:
   docs/roadmaps/evaluation-workbench-roadmap.md
-  docs/specs/evaluation-workspaces/evaluation-workspaces-spec.md
-  docs/specs/evaluation-workspaces/implementation-plan.md
+  docs/specs/executed/evaluation-workspaces/evaluation-workspaces-spec.md
+  docs/specs/executed/evaluation-workspaces/implementation-plan.md
 ```
 
 Before every phase:
@@ -112,8 +112,8 @@ src/rsemble-shell.test.tsx
 - Modify: `DECISIONS.md`
 - Modify: `CLAUDE.md`
 - Add: `docs/roadmaps/evaluation-workbench-roadmap.md`
-- Add: `docs/specs/evaluation-workspaces/evaluation-workspaces-spec.md`
-- Add: `docs/specs/evaluation-workspaces/implementation-plan.md`
+- Add: `docs/specs/executed/evaluation-workspaces/evaluation-workspaces-spec.md`
+- Add: `docs/specs/executed/evaluation-workspaces/implementation-plan.md`
 
 **Steps:**
 
@@ -246,8 +246,8 @@ npm run typecheck:web
 ```bash
 git add PRODUCT.md DECISIONS.md CLAUDE.md \
   docs/roadmaps/evaluation-workbench-roadmap.md \
-  docs/specs/evaluation-workspaces/evaluation-workspaces-spec.md \
-  docs/specs/evaluation-workspaces/implementation-plan.md \
+  docs/specs/executed/evaluation-workspaces/evaluation-workspaces-spec.md \
+  docs/specs/executed/evaluation-workspaces/implementation-plan.md \
   package.json package-lock.json \
   src/main.tsx src/rsemble.tsx src/index.css \
   src/app-router.tsx src/ui/Header.tsx src/ui/WorkspaceNav.tsx \

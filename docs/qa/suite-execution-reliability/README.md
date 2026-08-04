@@ -1,6 +1,6 @@
 # Suite Execution Reliability — QA Evidence
 
-Automated + browser verification for `docs/specs/suite-execution-reliability/`.
+Automated + browser verification for `docs/specs/executed/suite-execution-reliability/`.
 
 ## Gates
 
