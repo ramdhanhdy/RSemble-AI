@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-02T18:01:07.499Z",
-  "baseUrl": "http://127.0.0.1:5176/",
+  "generatedAt": "2026-08-03T17:15:02.737Z",
+  "baseUrl": "http://localhost:5176/",
   "probes": [
     {
       "name": "compare-model-preflight",
@@ -134,6 +134,16 @@
       "overflowX": false,
       "keyboardOpened": true,
       "tabTrapped": true,
+      "trapDetail": {
+        "count": 24,
+        "lastTag": "BUTTON",
+        "lastLabel": "Done",
+        "lastTabindex": null,
+        "afterTag": "BUTTON",
+        "afterLabel": "Close connections",
+        "afterInDialog": true,
+        "dialogCount": 1
+      },
       "pass": true,
       "reason": "keyboard opens the dialog, focus enters it, and Tab remains trapped without horizontal overflow"
     },

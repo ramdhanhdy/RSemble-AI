@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-02T12:14:14.891Z",
+  "generatedAt": "2026-08-03T17:15:13.915Z",
   "baseUrl": "http://localhost:5176/",
   "probes": [
     {
@@ -22,7 +22,7 @@
       "name": "command-palette",
       "animationName": "none",
       "focusInPalette": true,
-      "latencyMs": 29,
+      "latencyMs": 108,
       "pass": true,
       "reason": "palette must open within 500ms, focus its input, and have no entrance animation"
     },
