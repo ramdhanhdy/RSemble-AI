@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task-First Evaluation Taxonomy — An Explainer</title>
+<style>
+/* ============================================================
+   Task-First Evaluation Taxonomy — explainer
+   Surface: Decide/Learn (long-form study document).
+   Visual language: RSemble dark, editorial serif display.
+   ============================================================ */
+:root{
+  --bg:#0b0e13; --panel:#10151e; --card:#151c28; --raised:#1a2332;
+  --edge:#233042; --edge-bright:#33445c;
+  --ink:#e9eef6; --ink-2:#a9b4c6; --ink-3:#76839b;
+  --cyan:#3dd6ee; --cyan-dim:rgba(61,214,238,.12); --cyan-line:rgba(61,214,238,.35);
+  --amber:#f2b64c; --amber-dim:rgba(242,182,76,.12);
+  --green:#4ade80; --green-dim:rgba(74,222,128,.12);
+  --red:#f87171; --red-dim:rgba(248,113,113,.12);
+  --violet:#a78bfa; --violet-dim:rgba(167,139,250,.12);
+  --serif:Georgia,'Times New Roman',serif;
+  --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:ui-monospace,'Cascadia Mono','SF Mono',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+::selection{background:var(--cyan-dim);color:var(--cyan)}
+a{color:var(--cyan);text-decoration:none}
+a:hover{text-decoration:underline}
+code,.mono{font-family:var(--mono);font-size:.86em}
+
+/* progress bar */
+#progress{position:fixed;top:0;left:0;height:2px;background:var(--cyan);width:0;z-index:100;transition:width .1s linear}
+
+/* layout */
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:230px minmax(0,760px);gap:56px}
+main{grid-column:2;min-width:0;padding:72px 0 120px}
+@media(max-width:960px){.wrap{grid-template-columns:1fr}main{grid-column:1;padding-top:40px}}
+
+/* TOC */
+nav.toc{grid-column:1;position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:72px 0 40px;font-size:13px}
+nav.toc .toc-title{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+nav.toc a{display:block;color:var(--ink-3);padding:5px 0 5px 12px;border-left:1px solid var(--edge);line-height:1.4;transition:color .15s}
+nav.toc a:hover{color:var(--ink-2);text-decoration:none}
+nav.toc a.active{color:var(--cyan);border-left-color:var(--cyan)}
+nav.toc a.l2{padding-left:24px;font-size:12px}
+@media(max-width:960px){nav.toc{display:none}}
+
+/* hero */
+.hero{margin-bottom:88px}
+.hero .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan);margin-bottom:20px}
+.hero h1{font-family:var(--serif);font-size:clamp(34px,5vw,52px);line-height:1.12;font-weight:400;letter-spacing:-.01em;margin-bottom:24px;text-wrap:balance}
+.hero h1 em{font-style:italic;color:var(--cyan)}
+.hero .lede{font-size:19px;color:var(--ink-2);max-width:62ch;margin-bottom:32px}
+.hero .lede strong{color:var(--ink);font-weight:600}
+.meta-line{display:flex;flex-wrap:wrap;gap:8px 20px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.meta-line span b{color:var(--ink-2);font-weight:500}
+
+/* section scaffolding */
+section{margin-bottom:96px;scroll-margin-top:32px}
+.sec-head{display:flex;align-items:baseline;gap:18px;margin-bottom:14px}
+.sec-num{font-family:var(--serif);font-size:40px;color:var(--edge-bright);line-height:1;font-style:italic}
+section h2{font-family:var(--serif);font-size:clamp(26px,3.4vw,34px);font-weight:400;line-height:1.2;text-wrap:balance}
+section h3{font-family:var(--serif);font-size:21px;font-weight:400;margin:40px 0 12px}
+section h4{font-size:13px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:28px 0 10px}
+p{margin-bottom:16px;color:var(--ink-2);max-width:66ch}
+p strong,li strong{color:var(--ink);font-weight:600}
+ul,ol{margin:0 0 16px 22px;color:var(--ink-2)}
+li{margin-bottom:7px;max-width:62ch}
+li::marker{color:var(--ink-3)}
+
+/* callouts */
+.callout{border:1px solid var(--edge);background:var(--panel);border-radius:10px;padding:20px 24px;margin:24px 0}
+.callout .c-label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}
+.callout p{margin-bottom:0}
+.callout.key{border-color:var(--cyan-line);background:linear-gradient(180deg,var(--cyan-dim),transparent 70%)}
+.callout.key .c-label{color:var(--cyan)}
+.callout.warn{border-color:rgba(242,182,76,.35);background:linear-gradient(180deg,var(--amber-dim),transparent 70%)}
+.callout.warn .c-label{color:var(--amber)}
+blockquote{border-left:2px solid var(--cyan);padding:6px 0 6px 20px;margin:24px 0;font-family:var(--serif);font-size:19px;font-style:italic;color:var(--ink);max-width:58ch}
+blockquote cite{display:block;font-family:var(--mono);font-style:normal;font-size:12px;color:var(--ink-3);margin-top:8px}
+
+/* tables */
+.tbl-wrap{overflow-x:auto;margin:20px 0;border:1px solid var(--edge);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:11px 14px;border-bottom:1px solid var(--edge);background:var(--panel);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--edge);color:var(--ink-2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td strong{color:var(--ink)}
+td code{color:var(--cyan);background:var(--cyan-dim);padding:1px 5px;border-radius:4px;white-space:nowrap}
+
+/* cards */
+.card{border:1px solid var(--edge);background:var(--card);border-radius:12px;padding:24px;margin:18px 0}
+.card h5{font-size:15px;font-weight:600;margin-bottom:8px}
+.card p{font-size:14px;margin-bottom:10px}
+
+/* framework cards */
+.fw{border:1px solid var(--edge);border-radius:12px;background:var(--card);margin:14px 0;overflow:hidden}
+.fw-head{display:flex;align-items:center;gap:14px;padding:18px 22px;cursor:pointer;user-select:none}
+.fw-head:hover{background:var(--raised)}
+.fw-badge{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:4px;white-space:nowrap}
+.fw-badge.edu{background:var(--violet-dim);color:var(--violet)}
+.fw-badge.occ{background:var(--amber-dim);color:var(--amber)}
+.fw-badge.ai{background:var(--cyan-dim);color:var(--cyan)}
+.fw-name{font-weight:600;font-size:15.5px;flex:1}
+.fw-name small{display:block;font-weight:400;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.fw-chev{color:var(--ink-3);transition:transform .2s;font-size:12px}
+.fw.open .fw-chev{transform:rotate(90deg)}
+.fw-body{display:none;padding:4px 22px 22px;border-top:1px solid var(--edge)}
+.fw.open .fw-body{display:block}
+.takeaway{margin-top:14px;padding:12px 16px;background:var(--cyan-dim);border-radius:8px;font-size:13.5px}
+.takeaway b{color:var(--cyan);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:4px}
+
+/* bloom matrix */
+.bloom-grid{display:grid;grid-template-columns:130px repeat(6,1fr);gap:3px;margin:20px 0;font-size:12px}
+.bloom-grid .bg-corner,.bloom-grid .bg-col{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:8px 6px;text-align:center;display:flex;align-items:center;justify-content:center;line-height:1.3}
+.bloom-grid .bg-row{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);padding:8px 8px;display:flex;align-items:center;background:var(--panel);border-radius:6px;line-height:1.3}
+.bloom-cell{background:var(--card);border:1px solid var(--edge);border-radius:6px;min-height:46px;padding:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-3);font-size:11px;line-height:1.3;transition:all .15s}
+.bloom-cell:hover{border-color:var(--edge-bright);color:var(--ink-2)}
+.bloom-cell.sel{background:var(--cyan-dim);border-color:var(--cyan);color:var(--cyan)}
+.bloom-detail{border:1px solid var(--edge);border-radius:10px;background:var(--panel);padding:18px 20px;min-height:74px;font-size:14px;color:var(--ink-2)}
+.bloom-detail b{color:var(--cyan)}
+
+/* dok ladder */
+.dok{display:grid;gap:8px;margin:20px 0}
+.dok-row{display:grid;grid-template-columns:88px 1fr;gap:16px;align-items:stretch}
+.dok-lv{font-family:var(--mono);font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;padding:10px 6px;line-height:1.3}
+.dok-lv small{font-size:9px;letter-spacing:.08em;text-transform:uppercase;opacity:.75;margin-top:3px;text-align:center}
+.dok-lv.l1{background:var(--green-dim);color:var(--green)}
+.dok-lv.l2{background:var(--cyan-dim);color:var(--cyan)}
+.dok-lv.l3{background:var(--amber-dim);color:var(--amber)}
+.dok-lv.l4{background:var(--red-dim);color:var(--red)}
+.dok-txt{border:1px solid var(--edge);background:var(--card);border-radius:8px;padding:12px 16px;font-size:13.5px;color:var(--ink-2)}
+.dok-txt b{color:var(--ink)}
+
+/* invariant diagram */
+.invariant{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:12px;align-items:stretch;margin:28px 0}
+.inv-node{border:1px solid var(--edge);background:var(--card);border-radius:10px;padding:18px 16px;text-align:center}
+.inv-node .inv-k{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+.inv-node .inv-v{font-family:var(--serif);font-size:18px}
+.inv-node.t{border-color:var(--amber-line, rgba(242,182,76,.35))}
+.inv-node.e{border-color:var(--cyan-line)}
+.inv-node.c{border-color:rgba(74,222,128,.35)}
+.inv-arrow{display:flex;align-items:center;color:var(--ink-3);font-size:20px}
+@media(max-width:640px){.invariant{grid-template-columns:1fr}.inv-arrow{justify-content:center;transform:rotate(90deg)}}
+
+/* storage architecture */
+.arch{margin:24px 0;display:grid;gap:10px}
+.arch-layer{border:1px solid var(--edge);border-radius:10px;padding:16px 20px;background:var(--card);position:relative}
+.arch-layer .al-name{font-family:var(--mono);font-size:13px;color:var(--cyan);margin-bottom:4px}
+.arch-layer .al-desc{font-size:13.5px;color:var(--ink-2)}
+.arch-layer .al-tag{position:absolute;top:14px;right:16px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--edge);padding:2px 7px;border-radius:4px}
+.arch-note{font-size:12.5px;color:var(--ink-3);padding-left:20px;margin-top:6px;border-left:1px solid var(--edge)}
+
+/* facet chips */
+.facet-demo{border:1px solid var(--edge);border-radius:12px;background:var(--card);padding:22px;margin:20px 0}
+.facet-demo .fd-task{font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:10px 14px;margin-bottom:16px}
+.facet-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.facet-row .fr-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);width:150px;flex-shrink:0}
+.chip{font-family:var(--mono);font-size:11.5px;padding:3px 10px;border-radius:999px;border:1px solid var(--edge);color:var(--ink-2);background:var(--raised)}
+.chip.on{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-dim)}
+.hierarchy-vs{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}
+.hv-box{border:1px solid var(--edge);border-radius:10px;padding:18px;background:var(--card);font-size:13px;color:var(--ink-2)}
+.hv-box h6{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}
+.hv-box.bad h6{color:var(--red)}
+.hv-box.good h6{color:var(--green)}
+@media(max-width:640px){.hierarchy-vs{grid-template-columns:1fr}}
+.tree{font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--ink-3);white-space:pre}
+
+/* irt */
+.irt-lab{border:1px solid var(--edge);border-radius:12px;background:var(--card);padding:24px;margin:20px 0}
+.irt-lab svg{width:100%;height:auto;display:block}
+.irt-controls{display:flex;flex-wrap:wrap;gap:24px;margin-top:16px;font-size:13px}
+.irt-controls label{display:flex;flex-direction:column;gap:6px;color:var(--ink-2);font-family:var(--mono);font-size:12px;min-width:220px;flex:1}
+.irt-controls input[type=range]{accent-color:var(--cyan);width:100%}
+.irt-readout{font-family:var(--mono);font-size:12px;color:var(--cyan)}
+
+/* generations demo */
+.gen-demo{border:1px solid var(--edge);border-radius:12px;background:var(--card);padding:22px;margin:20px 0}
+.gen-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;font-size:13px}
+.gen-row label{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.gen-row input[type=range]{accent-color:var(--cyan);flex:1;min-width:120px;max-width:260px}
+.gen-dots{display:flex;flex-wrap:wrap;gap:5px;margin:12px 0}
+.gen-dot{width:14px;height:14px;border-radius:3px}
+.gen-verdict{font-size:14px;padding:12px 16px;border-radius:8px;background:var(--amber-dim);color:var(--amber);font-family:var(--mono);font-size:12.5px}
+
+/* phases */
+.phases{margin:20px 0;display:grid;gap:0}
+.phase{display:grid;grid-template-columns:52px 1fr;gap:18px;position:relative;padding-bottom:26px}
+.phase::before{content:'';position:absolute;left:25px;top:40px;bottom:0;width:1px;background:var(--edge)}
+.phase:last-child::before{display:none}
+.phase .ph-dot{width:52px;height:52px;border-radius:50%;border:1px solid var(--cyan-line);background:var(--cyan-dim);display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-style:italic;font-size:20px;color:var(--cyan);flex-shrink:0}
+.phase h5{font-size:16px;font-weight:600;margin-bottom:4px}
+.phase p{font-size:14px;margin:0}
+.phase .ph-gate{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:6px}
+
+/* source list */
+.src-list{columns:2;column-gap:32px;font-size:13.5px;margin:16px 0 0 0;list-style:none}
+.src-list li{margin-bottom:8px;break-inside:avoid}
+.src-list .src-tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);display:block}
+@media(max-width:700px){.src-list{columns:1}}
+
+footer{border-top:1px solid var(--edge);padding:32px 0;color:var(--ink-3);font-size:13px;font-family:var(--mono)}
+.kbd{font-family:var(--mono);font-size:.85em;border:1px solid var(--edge-bright);border-bottom-width:2px;border-radius:5px;padding:1px 6px;background:var(--raised)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div class="wrap">
+
+<nav class="toc">
+  <div class="toc-title">Contents</div>
+  <a href="#big-idea">1 · The Big Idea</a>
+  <a href="#vocabulary">2 · Vocabulary</a>
+  <a href="#diagnosis">3 · Why Task-First</a>
+  <a href="#theory">4 · Theoretical Foundations</a>
+  <a href="#theory-edu" class="l2">4.1 Cognitive &amp; educational</a>
+  <a href="#theory-occ" class="l2">4.2 Occupational frameworks</a>
+  <a href="#theory-ai" class="l2">4.3 AI evaluation benchmarks</a>
+  <a href="#facets">5 · Facets, Not a Tree</a>
+  <a href="#storage">6 · The Storage Model</a>
+  <a href="#provenance">7 · Evidence &amp; Provenance</a>
+  <a href="#statistics">8 · The Statistics</a>
+  <a href="#migration">9 · Migration Roadmap</a>
+  <a href="#risks">10 · Risks &amp; Safeguards</a>
+  <a href="#next">11 · What Comes Next</a>
+  <a href="#sources">Sources</a>
+</nav>
+
+<main>
+
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <div class="eyebrow">RSemble AI · Research Explainer · 2026-08-04</div>
+  <h1>The task is the atom.<br>Everything else is <em>built on it.</em></h1>
+  <p class="lede">A guided tour of the <strong>Task-First Evaluation Storage and Taxonomy</strong> research — why RSemble should store tasks as canonical, versioned objects, how thirteen external frameworks inform the design, and why model capability must always be <strong>inferred from evidence</strong>, never declared.</p>
+  <div class="meta-line">
+    <span>Source <b>docs/research/task-first-evaluation-taxonomy.md</b></span>
+    <span>Status <b>research synthesis — no implementation proposed</b></span>
+    <span>Frameworks surveyed <b>13</b></span>
+    <span>Proposed facets <b>9</b></span>
+    <span>Migration phases <b>6</b></span>
+  </div>
+</div>
+
+<!-- ================= 1 BIG IDEA ================= -->
+<section id="big-idea">
+  <div class="sec-head"><span class="sec-num">1</span><h2>The Big Idea</h2></div>
+  <p>RSemble should move toward <strong>task-first storage</strong> — but should <em>not</em> remove suites. The recommended architecture layers four kinds of records, each with a distinct job:</p>
+
+  <div class="arch">
+    <div class="arch-layer"><span class="al-tag">canonical</span>
+      <div class="al-name">Task Catalog → immutable Task Versions</div>
+      <div class="al-desc">The reusable library of work. A task exists once, with identity, and every revision creates a new immutable version.</div>
+    </div>
+    <div class="arch-layer"><span class="al-tag">protocol</span>
+      <div class="al-name">Suite / Workload Manifest</div>
+      <div class="al-desc">A versioned <em>selection</em> of task versions plus an evaluation protocol. The UI keeps calling this a suite; internally it is a reproducible recipe.</div>
+    </div>
+    <div class="arch-layer"><span class="al-tag">frozen</span>
+      <div class="al-name">Experiment</div>
+      <div class="al-desc">Freezes a suite version and execution configuration into a materialized snapshot, so history survives later catalog edits.</div>
+    </div>
+    <div class="arch-layer"><span class="al-tag">evidence</span>
+      <div class="al-name">Task Observations</div>
+      <div class="al-desc">One model/policy/replicate measured on one task version or instance. The smallest reproducible unit of evidence.</div>
+    </div>
+  </div>
+
+  <p>The central design rule, straight from the document:</p>
+  <blockquote>Store tasks and evidence at the smallest reproducible unit available, but aggregate only at the unit justified by the statistical question.</blockquote>
+  <p>Which concretely means:</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>Unit</th><th>Role</th></tr>
+    <tr><td><strong>Raw evidence</strong></td><td>observation or attempt</td></tr>
+    <tr><td><strong>Statistical generalization</strong></td><td>the task</td></tr>
+    <tr><td><strong>Comparison</strong></td><td>paired task-level delta</td></tr>
+    <tr><td><strong>Workload / protocol</strong></td><td>suite version</td></tr>
+    <tr><td><strong>Study</strong></td><td>experiment or trial</td></tr>
+  </table></div>
+
+  <p>And the single invariant the entire design protects:</p>
+  <div class="invariant">
+    <div class="inv-node t"><div class="inv-k">declares</div><div class="inv-v">A task has <b>demands</b></div></div>
+    <div class="inv-arrow">→</div>
+    <div class="inv-node e"><div class="inv-k">produces</div><div class="inv-v">A model produces <b>evidence</b></div></div>
+    <div class="inv-arrow">→</div>
+    <div class="inv-node c"><div class="inv-k">inferred</div><div class="inv-v">Capability is <b>inferred</b></div></div>
+  </div>
+  <div class="callout warn">
+    <div class="c-label">Why this invariant matters</div>
+    <p>A successful execution path does <strong>not</strong> reveal every skill a task requires. A model may use extra tools, take an inefficient route, or exploit an incidental affordance. Conflating “what the task needs” with “what one model happened to do” is the root error this whole design exists to prevent.</p>
+  </div>
+</section>
+
+<!-- ================= 2 VOCABULARY ================= -->
+<section id="vocabulary">
+  <div class="sec-head"><span class="sec-num">2</span><h2>Vocabulary: Task, Skill, Capability</h2></div>
+  <p>These three words get conflated across every external framework. RSemble defines them explicitly, because the storage model is built on the distinctions:</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>Concept</th><th>RSemble meaning</th></tr>
+    <tr><td><strong>Task</strong></td><td>A concrete objective or executable workload at the chosen evaluation granularity</td></tr>
+    <tr><td><strong>Task family</strong></td><td>A reusable class of related task instances</td></tr>
+    <tr><td><strong>Task instance</strong></td><td>A concrete prompt, input, file set, dataset snapshot, or environment state</td></tr>
+    <tr><td><strong>Skill demand</strong></td><td>A knowledge or procedure requirement <em>associated with a task</em> — an annotation on the task side</td></tr>
+    <tr><td><strong>Capability</strong></td><td>An ability <em>inferred from performance</em> across related observations — a derived property of the model side</td></tr>
+    <tr><td><strong>Competency</strong></td><td>Demonstrated ability under a defined context, standard, and evidence protocol</td></tr>
+    <tr><td><strong>Procedure</strong></td><td>A method or sequence reusable to solve a task</td></tr>
+    <tr><td><strong>Outcome</strong></td><td>A property expected from the result (correctness, completeness…)</td></tr>
+    <tr><td><strong>Evidence</strong></td><td>Output, trace, artifact, verifier result, score, or judge observation</td></tr>
+    <tr><td><strong>Suite</strong></td><td>A versioned collection of task versions plus an evaluation protocol</td></tr>
+  </table></div>
+  <p>The load-bearing distinction is the one between <strong>skill demand</strong> and <strong>capability</strong>. Demand lives on the task (declared or annotated before anything runs). Capability lives on the model (derived only after evidence exists, and always with uncertainty and provenance attached). A model-profiling view — the idea from the vault notes — is only honest if it respects this direction of inference.</p>
+</section>
+
+<!-- ================= 3 DIAGNOSIS ================= -->
+<section id="diagnosis">
+  <div class="sec-head"><span class="sec-num">3</span><h2>Why Task-First: The Current Diagnosis</h2></div>
+  <p>The research is not a blank-slate redesign. It starts from what RSemble already does well and what structurally blocks the future:</p>
+  <h3>What already works</h3>
+  <ul>
+    <li><strong>Task-level execution exists.</strong> <code>RunRecordV2</code> already represents one task execution with candidates, judge results, fusion results, and winner information.</li>
+    <li><strong>The experiment state machine preserves task invariants:</strong> one active attempt at a time, retries append instead of mutating, selected attempts point at accepted evidence, snapshots stay stable, delayed writes are rejected through epochs and execution fences.</li>
+    <li><strong>Fusion Study already treats the task as the generalization unit</strong> and stores per-task results.</li>
+  </ul>
+  <h3>What blocks</h3>
+  <p>Task <em>definition</em> storage is still suite-owned: <code>EvaluationSuite</code> embeds <code>tasks: EvaluationTask[]</code>, and <code>ExperimentSnapshot</code> copies those definitions into the experiment. The consequences:</p>
+  <ul>
+    <li>the same task is duplicated across suites;</li>
+    <li>task identity is effectively suite-local;</li>
+    <li>cross-suite task analytics require reconstruction;</li>
+    <li>taxonomy assignments would be copied into suite blobs;</li>
+    <li>task revision and suite revision are hard to distinguish;</li>
+    <li>a task cannot naturally accumulate observations across workloads;</li>
+    <li>imported tasks and variants lack explicit lineage.</li>
+  </ul>
+  <div class="callout key">
+    <div class="c-label">The framing</div>
+    <p>Moving task definitions toward canonical task versions would <strong>complete an existing conceptual distinction</strong> — execution is already task-level — rather than replace the current product thesis.</p>
+  </div>
+</section>
+
+<!-- ================= 4 THEORY ================= -->
+<section id="theory">
+  <div class="sec-head"><span class="sec-num">4</span><h2>Theoretical Foundations</h2></div>
+  <p>No reviewed framework is sufficient as RSemble’s complete taxonomy. The sources fall into three classes, and each contributes one durable idea. Expand any card to see what the framework actually is and — more importantly — <strong>what RSemble takes from it</strong>.</p>
+
+  <h3 id="theory-edu">4.1 Cognitive &amp; educational taxonomies</h3>
+  <p>These answer: <em>what kind of thinking does a task demand?</em> They annotate intent — they never measure models.</p>
+
+  <!-- Bloom -->
+  <div class="fw open">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge edu">educational</span>
+      <span class="fw-name">Revised Bloom’s Taxonomy<small>Anderson &amp; Krathwohl, 2001 — two-dimensional: knowledge × cognitive process</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>The 2001 revision made Bloom’s taxonomy <strong>two-dimensional</strong>. One axis is <em>what</em> is being thought about (the knowledge dimension — nouns), the other is <em>how</em> it is being thought about (the cognitive process dimension — verbs). The revision renamed the original nouns to verbs, and promoted <strong>Create</strong> above Evaluate at the top.</p>
+      <h4>The taxonomy table — click a cell</h4>
+      <p style="font-size:13px">Any objective is classified by its verb (column) and its noun (row). An objective can legitimately occupy <em>multiple cells</em> — “write compositions that analyze patterns” lands in both Analyze and Create.</p>
+      <div class="bloom-grid" id="bloomGrid"></div>
+      <div class="bloom-detail" id="bloomDetail">Select a cell to see what that combination means and an example.</div>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Use Bloom for <strong>intended cognitive demand and knowledge type</strong> — an annotation on the task, declared by the author. Never treat a Bloom level as empirical difficulty, and never as measured model capability. “Evaluate” on the task side says nothing about whether a model actually can.</div>
+    </div>
+  </div>
+
+  <!-- Webb -->
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge edu">educational</span>
+      <span class="fw-name">Webb’s Depth of Knowledge (DOK)<small>Norman Webb, late 1990s — complexity of engagement, not difficulty</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>DOK classifies the <strong>complexity of cognitive engagement</strong> a task requires. Its most important teaching is that <strong>complexity ≠ difficulty</strong>. The canonical example: coming up with the 37th digit of π is very <em>difficult</em>, but not <em>complex</em>. The levels act as <strong>ceilings, not steps</strong> — they say how deep the engagement goes, and what comes <em>after</em> the verb decides the level, not the verb itself. “Identify the circle in a group of shapes” and “identify a strategy for addressing attendance using data from multiple sources” use the same verb at completely different depths.</p>
+      <div class="dok">
+        <div class="dok-row"><div class="dok-lv l1">DOK 1<small>recall</small></div><div class="dok-txt"><b>Recall &amp; reproduce.</b> Facts, definitions, terms, well-known procedures. One right answer. <span style="color:var(--ink-3)">“What is the knowledge?”</span></div></div>
+        <div class="dok-row"><div class="dok-lv l2">DOK 2<small>skills &amp; concepts</small></div><div class="dok-txt"><b>Mental processing beyond the habitual.</b> Deciding <em>how</em> to approach; compare, classify, organize, explain relationships. <span style="color:var(--ink-3)">“How can the knowledge be used?”</span></div></div>
+        <div class="dok-row"><div class="dok-lv l3">DOK 3<small>strategic thinking</small></div><div class="dok-txt"><b>Reasoning, planning, evidence.</b> Non-routine problems; original conclusions; justifying an argument. <span style="color:var(--ink-3)">“Why can the knowledge be used?”</span></div></div>
+        <div class="dok-row"><div class="dok-lv l4">DOK 4<small>extended thinking</small></div><div class="dok-txt"><b>DOK-3 complexity plus extended, iterative time.</b> Planning, developing, revising across days. A long project made of DOK-1 chores is <em>not</em> DOK 4. <span style="color:var(--ink-3)">“How else can the knowledge be used?”</span></div></div>
+      </div>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Store <code>cognitive_complexity</code> <strong>separately from</strong> <code>difficulty</code>. They are different axes and collapse into a misleading number when merged — this is one of the nine facets in §5 and one of the nine listed risks.</div>
+    </div>
+  </div>
+
+  <h3 id="theory-occ">4.2 Occupational &amp; competency frameworks</h3>
+  <p>These answer: <em>how do you describe skills as durable, linkable, versioned concepts?</em> Their value to RSemble is structural (identity, relations, provenance), not content — the research explicitly warns against wholesale import of their vocabularies.</p>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge occ">occupational</span>
+      <span class="fw-name">O*NET<small>US Dept. of Labor — separates characteristics, knowledge, skills, abilities, tasks, activities, context</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>O*NET refuses to flatten work into one list. It keeps <strong>worker characteristics, knowledge, skills, abilities, tasks, work activities, work context, experience, and occupational requirements</strong> as separate structures. Crucially, its task records carry metadata about the rating itself: <strong>source, date, population, importance, level, and relevance</strong>. A “skill matters for this task” statement is always a claim made by someone, about some population, at some time.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Model task-to-skill links as <strong>many-to-many relations with provenance and population context</strong> — never a single undifferentiated importance value. This becomes the <code>task_skill</code> relation shape in §6, with fields for annotator, confidence, rationale, and evidence reference.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge occ">occupational</span>
+      <span class="fw-name">ESCO<small>European Commission — versioned, machine-readable, multilingual concept registry (v1.2.1)</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>ESCO is the gold standard for <strong>durable concept identity</strong>: 13,485 knowledge/skill/competence concepts, each with a persistent <strong>URI</strong>, a preferred term and aliases in 27 languages, a hierarchy (four sub-classifications: Knowledge, Skills, Attitudes &amp; values, Language skills), and explicit relations. One honest limitation: it separates knowledge from skills/competences but draws <strong>no internal line between “skill” and “competence.”</strong></p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      If RSemble ever imports external concepts, store the full reference — <code>taxonomyNamespace</code>, <code>conceptUri</code>, <code>taxonomyVersion</code>, <code>preferredLabel</code>, <code>aliases</code>, <code>relationType</code>. <strong>Never flatten an external taxonomy into unversioned local strings</strong> — that destroys the version and the ability to follow concept changes.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge occ">occupational</span>
+      <span class="fw-name">SFIA<small>Skills Framework for the Information Age — skills × responsibility levels</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>SFIA splits professional description into <strong>skills</strong> on one axis and <strong>responsibility levels</strong> on the other — where responsibility is composed of autonomy, influence, complexity, knowledge, and behavior. The lesson: proficiency is not one-dimensional “knows more.” Two people with the same skill can differ profoundly in how much ambiguity, judgment, and ownership they can carry.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      A conceptual reference for <strong>agent autonomy</strong> — autonomy, complexity, and judgment are legitimate axes of an evaluation story. But SFIA must never become a direct RSemble score scale; it was built for people in jobs, not models on tasks.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge occ">occupational</span>
+      <span class="fw-name">DigComp &amp; UNESCO AI Competency Framework<small>cross-cutting concerns as first-class dimensions</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>DigComp models digital competence as knowledge, skills, and attitudes spread across five areas — information/data literacy, communication, content creation, <strong>safety</strong>, and problem solving. UNESCO’s AI framework combines human-centeredness, ethics, AI techniques, and system design with Understand/Apply/Create progression. Both treat things like <strong>safety, ethics, and source evaluation as named dimensions in their own right</strong>, not footnotes on technical skill.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Cross-cutting concerns — safety, ethics, privacy, human-centeredness, source evaluation — should be represented as <strong>independent facets or desiderata</strong>, never hidden inside a general technical-skill label.</div>
+    </div>
+  </div>
+
+  <h3 id="theory-ai">4.3 AI benchmark &amp; agent-evaluation taxonomies</h3>
+  <p>These answer: <em>how do you actually annotate and structure evaluation tasks for models?</em> This is where the strongest practical patterns come from.</p>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge ai">ai eval</span>
+      <span class="fw-name">HELM<small>Stanford CRFM — Holistic Evaluation of Language Models: scenarios × metrics</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>HELM’s contribution is making the evaluation design space <strong>explicit</strong>. A scenario is a triple — (task, domain, language) — and a metric is a desideratum: accuracy, calibration, robustness, fairness, bias, toxicity, efficiency. A run is a (scenario, adaptation, metric) triple. HELM measured 98 of the 112 possible core scenario×metric pairs — and the pairs it could not measure were recorded as such. <strong>“Not measured” is a representable state</strong>, not a silent gap.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Task, domain, language, metric, adaptation/scaffold, and risk desideratum must remain <strong>separate entities</strong>. A result exists per task/metric pair where appropriate, and absence of measurement is data too.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge ai">ai eval</span>
+      <span class="fw-name">BIG-bench<small>200+ collaborative tasks — overlapping keyword ontology</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>BIG-bench tags tasks with <strong>overlapping keywords</strong> spanning capabilities, domains, interaction mechanics, formats, stressors, and out-of-distribution behavior. One task legitimately carries many tags. Its history also carries a warning: the public task count <strong>changed between the paper and the repository releases</strong> — rosters drift.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Use many-to-many tags with a <code>tag_type</code>, and <strong>version the taxonomy and the benchmark release separately</strong>. Never treat a keyword count or a roster as permanent.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge ai">ai eval</span>
+      <span class="fw-name">Super-NaturalInstructions<small>1,600+ expert-written NLP tasks across 76 languages</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>A large collection of expert-written tasks annotated with <strong>task type, language, and domain</strong>. Its research purpose — studying generalization to <em>unseen</em> task types — is only possible because task type is an explicit, separable facet rather than something buried in the prompt text.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Task type, language, domain, input/output granularity, and split role should be <strong>separate facets</strong>. You cannot ask “does this model generalize to new task types?” unless task type is a first-class field.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge ai">ai eval</span>
+      <span class="fw-name">GAIA<small>general AI assistants — reasoning, browsing, coding, tools, files</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>GAIA tasks combine reasoning, browsing, coding, tool use, and file/multimodal handling, with difficulty levels partly based on annotator estimates of steps and tools. But the benchmark makes a philosophically important refusal: it <strong>does not claim that one successful solution path reveals a complete capability decomposition</strong>.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Store <strong>intended capabilities and observed execution paths separately</strong> (§6 keeps an intended graph and an observed trace as distinct records). Step counts and tool counts are <em>path observations</em>, not universal task requirements.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge ai">ai eval</span>
+      <span class="fw-name">SkillsBench<small>BenchFlow — 87 tasks, 8 domains, controlled taxonomy enforced by a linter</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>The most directly reusable pattern in the survey. SkillsBench’s core question — do reusable Skills improve agent performance across domains? — requires <code>category</code> to be a clean explanatory variable. Before the taxonomy, 87 tasks carried ~60 free-text categories that mixed domains (“finance”), operations (“Code Translation”), modalities (“spreadsheet”), and tool names (“flink”). The fix: a <strong>controlled vocabulary with separated axes</strong> — <code>category</code> (one value: the primary domain of procedural expertise), plus <code>task_type</code>, <code>modality</code>, <code>interface</code>, <code>skill_type</code>, <code>difficulty</code> (easy ≤60min / medium 1–4h / hard &gt;4h for a median specialist), <code>category_confidence</code>, and optional <code>secondary_category</code>. Enforced by a CI linter against <code>taxonomy.yaml</code>, validated by two independent annotators with adjudicated disagreements.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Called out by name as <strong>a strong practical pattern for RSemble’s first taxonomy implementation</strong>. Reuse the separation of axes and the discipline (controlled vocabulary, linting, independent annotation) — not the benchmark’s exact category labels.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge ai">ai eval</span>
+      <span class="fw-name">ADeLe<small>Annotated-Demand-Levels — demand profiles for tasks, ability profiles for models (Nature, 2026)</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>ADeLe is the most complete realization of the document’s core invariant. It annotates every task instance with <strong>18 demand dimensions</strong> (rubrics for quantitative reasoning, logical reasoning, abstraction, identifying relevant information, critical thinking, calibrating knowns/unknowns, mind modelling, attention, five knowledge domains, atypicality, volume — plus algorithmic unguessability). Running a model over the battery yields per-dimension <strong>characteristic curves</strong> — success rate declining as demand rises — whose area becomes an <strong>ability estimate</strong>. Demand levels belong to tasks; ability levels belong to models; the two are <strong>non-populational</strong> (estimated from a single system, independent of other models).</p>
+      <p style="font-size:13.5px">Its explanatory power is concrete: a model scores 90.5% on GSM8K but only 59.1% on OlymMATH-Easy and 13.3% on OlymMATH-Hard — all marketed as “math reasoning” — because the demand profiles differ on quantitative/logical/inductive axes. GPQA underperforms despite easier reasoning demands because of low <em>specificity</em>: it quietly demands natural- and applied-science knowledge.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      <strong>Demand annotation belongs to tasks. Model capability estimates belong to derived analysis</strong> over observations, and they require uncertainty and provenance. ADeLe also shows demand-based features predict out-of-distribution performance better than embedding or fine-tuned assessors — the long-term payoff of doing task annotation properly.</div>
+    </div>
+  </div>
+
+  <div class="fw">
+    <div class="fw-head" onclick="toggleFw(this)">
+      <span class="fw-badge ai">ai eval</span>
+      <span class="fw-name">Agent Skills specification<small>skill as packaged artifact — deliberately not a capability taxonomy</small></span>
+      <span class="fw-chev">▶</span>
+    </div>
+    <div class="fw-body">
+      <p>The Agent Skills spec packages procedural knowledge as a directory — instructions, scripts, references, assets. It is a <strong>supply-side artifact format</strong>: something you hand to an agent. It says nothing about what a task demands or what a model can do.</p>
+      <div class="takeaway"><b>What RSemble takes from it</b>
+      Keep three different “skill” concepts apart: <strong>skill packages</strong> supplied to an agent, <strong>skill demands</strong> annotated on tasks, and <strong>capabilities</strong> inferred from performance. They share a word and almost nothing else.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5 FACETS ================= -->
+<section id="facets">
+  <div class="sec-head"><span class="sec-num">5</span><h2>Facets, Not a Tree</h2></div>
+  <p>The research’s strongest structural claim: <strong>a single universal skill hierarchy is not appropriate</strong>. Tasks are genuinely multi-dimensional, and forcing them into one tree either duplicates the tree per context or loses information. The alternative is <strong>orthogonal, versioned facets</strong> with typed graph relations — a task simultaneously has a domain, an operation, a cognitive demand, a modality, an interface, and so on.</p>
+
+  <div class="hierarchy-vs">
+    <div class="hv-box bad">
+      <h6>✗ one tree (rejected)</h6>
+      <div class="tree">skills/
+├── engineering/
+│   ├── software/
+│   │   ├── debugging/
+│   │   │   └── python-debugging/
+│   │   └── data-cleaning/
+│   └── …
+└── research/
+    └── …does a task that needs
+       python debugging to clean
+       research data go under
+       engineering or research?</div>
+    </div>
+    <div class="hv-box good">
+      <h6>✓ orthogonal facets (proposed)</h6>
+      <div class="tree">task: "clean this sensor CSV
+       for the study"
+
+domain:        research
+operation:     transform, verify
+cognitive:     application
+modality:      CSV
+interface:     python
+verification:  schema validation
+difficulty:    {declared, human-time,
+                model-relative, …}</div>
+    </div>
+  </div>
+
+  <h3>The nine facets</h3>
+  <p>Hover the task below and toggle facet values — the point is that a task wears many labels at once, from independent vocabularies:</p>
+  <div class="facet-demo">
+    <div class="fd-task">TASK · “Debug the failing payment webhook and fix the retry logic”</div>
+    <div id="facetRows"></div>
+    <p style="font-size:12px;color:var(--ink-3);margin:10px 0 0">Each row is an independent controlled vocabulary. Relations between tasks (variant_of, derived_from, requires, prerequisite_of, holdout_of, calibration_pair_for, …) are typed edges, not parent/child links.</p>
+  </div>
+
+  <h4>Difficulty is not one number</h4>
+  <p>The difficulty facet is itself multi-dimensional, stored as separate values: <code>declared difficulty</code>, <code>cognitive complexity</code> (Webb), <code>operational complexity</code>, <code>human completion time</code>, <code>human success rate</code>, <code>model-relative difficulty</code>, <code>reliability threshold</code>, and <code>uncertainty</code>. Collapsing these into a single “hard” label is one of the nine named risks.</p>
+</section>
+
+<!-- ================= 6 STORAGE ================= -->
+<section id="storage">
+  <div class="sec-head"><span class="sec-num">6</span><h2>The Storage Model</h2></div>
+  <p>Five record families, each with a precise job. The discipline is in what each one <em>refuses</em> to do.</p>
+
+  <div class="card">
+    <h5>Task Catalog — <span class="mono" style="color:var(--cyan)">Task + TaskVersion</span></h5>
+    <p>A task has identity (<code>taskId</code>, lifecycle status, aliases, current version). Every revision produces an <strong>immutable</strong> <code>TaskVersion</code>: content hash, prompt, input/output contract, verification configuration, evaluation-profile reference, taxonomy assignments, difficulty metadata, source/author metadata, and a <code>supersedes</code> pointer.</p>
+    <p style="margin:0"><strong>Subtle point:</strong> task identity is <em>not</em> derived solely from prompt text. The same text with a different environment, scoring protocol, or source snapshot is a different task. The content hash is a deduplication and integrity aid — not the semantic identity.</p>
+  </div>
+  <div class="card">
+    <h5>Task families &amp; instances — reserved now, used later</h5>
+    <p>The current <code>EvaluationTask</code> is closest to a concrete executable task. The model reserves the distinction between a <strong>TaskFamily</strong> (reusable class of related workloads) and a <strong>TaskInstance</strong> (concrete prompt/input/files/environment snapshot) even though the first migration treats current tasks as both.</p>
+  </div>
+  <div class="card">
+    <h5>Suite as workload manifest — <span class="mono" style="color:var(--cyan)">Suite + SuiteVersion + TaskMembership</span></h5>
+    <p>A suite version references task versions and carries the protocol: model pool, judge configuration, evaluation profile, aggregation protocol, protocol fingerprint. Memberships carry context, not just an ID: <code>order</code>, <code>stratum</code>, <code>weight</code>, <code>role</code>, <code>inclusion rationale</code>, <code>holdout/calibration designation</code>. The UI keeps saying “suite”; internally it is a reproducible selection over canonical tasks.</p>
+  </div>
+  <div class="card">
+    <h5>Experiment — frozen for reproducibility</h5>
+    <p>References a suite version and keeps a <strong>materialized snapshot</strong> even after canonical task records evolve. Historical results must stay independent of later catalog edits.</p>
+  </div>
+  <div class="card">
+    <h5>Task Observation — the evidence atom</h5>
+    <p>One measurement: task version + instance + suite version + experiment + policy/treatment + model configuration + sample index + attempt index, plus outputs, score vector, verifier result, judge references, cost, latency, status, provenance. Attempts, retries, and remeasurements stay inspectable — <strong>a retry is not automatically a new independent treatment</strong>.</p>
+  </div>
+  <div class="card">
+    <h5>Intended graph vs. observed trace</h5>
+    <p>For multi-step tasks, two separate structures: the <strong>intended graph</strong> (author-defined steps, dependencies, branches, loops, expected artifacts) and the <strong>observed trace</strong> (model actions, tool calls, intermediate artifacts, failures, actual timing). This is GAIA’s lesson made structural: one model’s solution path never becomes the assumed task decomposition.</p>
+  </div>
+
+  <h3>The skill relation shape</h3>
+  <p>Task-to-skill links are many-to-many records with full provenance (O*NET’s lesson):</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>Field</th><th>Purpose</th></tr>
+    <tr><td><code>task_id</code></td><td>the task side of the link</td></tr>
+    <tr><td><code>taxonomy_namespace</code> + <code>concept_uri</code> + <code>taxonomy_version</code></td><td>external concepts stay <strong>references</strong> (ESCO’s lesson) — never flattened strings</td></tr>
+    <tr><td><code>role</code></td><td><code>target</code> / <code>required</code> / <code>supporting</code> / <code>constraint</code> / <code>observed</code></td></tr>
+    <tr><td><code>level_or_demand</code></td><td>how much of the skill the task needs</td></tr>
+    <tr><td><code>annotation_source</code>, <code>annotator</code>, <code>confidence</code>, <code>rationale</code>, <code>evidence_ref</code></td><td>who said so, and why — labels are claims, not ground truth</td></tr>
+  </table></div>
+  <div class="callout warn">
+    <div class="c-label">required ≠ observed</div>
+    <p>The most important field is the role distinction. A tool or skill appearing in one successful trace is <strong>not necessarily required by the task</strong>. Marking an observed behavior as required is exactly the capability-conflation error from §1.</p>
+  </div>
+</section>
+
+<!-- ================= 7 PROVENANCE ================= -->
+<section id="provenance">
+  <div class="sec-head"><span class="sec-num">7</span><h2>Evidence &amp; Provenance</h2></div>
+  <p>The research maps RSemble onto <strong>W3C PROV</strong>, the standard model of provenance. PROV says everything traceable decomposes into three kinds of things:</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>PROV concept</th><th>Meaning</th><th>RSemble mapping</th></tr>
+    <tr><td><strong>Entities</strong></td><td>things that exist</td><td>task definition, input files, source documents, model output, tool output, score, report</td></tr>
+    <tr><td><strong>Activities</strong></td><td>things that happen</td><td>task execution, model generation, tool call, judge evaluation, verifier execution, aggregation</td></tr>
+    <tr><td><strong>Agents</strong></td><td>things responsible</td><td>model, provider, human annotator, judge model, software version</td></tr>
+  </table></div>
+  <p>And the operational rule — every score RSemble ever shows must be traceable to:</p>
+  <ul>
+    <li>exact task/version and input snapshot;</li>
+    <li>model/provider/version;</li>
+    <li>prompt, scaffold, and tool configuration;</li>
+    <li>raw output and permitted trace artifacts;</li>
+    <li>scoring method and evaluator version;</li>
+    <li>human/reference answer or rubric;</li>
+    <li>provenance and timestamp;</li>
+    <li>uncertainty and known limitations.</li>
+  </ul>
+</section>
+
+<!-- ================= 8 STATISTICS ================= -->
+<section id="statistics">
+  <div class="sec-head"><span class="sec-num">8</span><h2>The Statistics</h2></div>
+  <p>Task-first storage exists to make honest statistics possible. Three ideas carry the weight.</p>
+
+  <h3>8.1 Task-level independence</h3>
+  <p>A suite with 20 tasks and three generations per task is <strong>not</strong> automatically 60 independent observations. Repeated generations estimate <em>within-task</em> variability — they do not create 60 independent workload draws. Try it:</p>
+  <div class="gen-demo">
+    <div class="gen-row"><label>tasks</label><input type="range" id="genTasks" min="1" max="30" value="20"><span class="mono" id="genTasksV">20</span></div>
+    <div class="gen-row"><label>generations per task</label><input type="range" id="genReps" min="1" max="8" value="3"><span class="mono" id="genRepsV">3</span></div>
+    <div class="gen-dots" id="genDots"></div>
+    <div class="gen-verdict" id="genVerdict"></div>
+  </div>
+  <p>The recipe for paired policy comparisons follows directly:</p>
+  <ol>
+    <li>keep repeated generations linked to their task;</li>
+    <li>aggregate within task where appropriate;</li>
+    <li>calculate paired policy deltas <em>per task</em>;</li>
+    <li>bootstrap or permutation-test the task-level delta vector;</li>
+    <li>report wins, ties, losses, uncertainty, cost, and practical thresholds.</li>
+  </ol>
+
+  <h3>8.2 Generalized accuracy — and why IRT is deferred</h3>
+  <p>“Performance on this exact suite version” and “expected performance over a population of similar items” are <strong>different claims</strong>. The database must preserve enough structure to distinguish them. The classical tool for the second claim is <strong>Item Response Theory</strong> — worth understanding because the research explicitly defers it:</p>
+  <div class="card">
+    <h5>IRT in one picture</h5>
+    <p style="font-size:14px">IRT models the probability of a correct response as a function of the model’s latent ability <span class="mono">θ</span> and the item’s difficulty <span class="mono">b</span>. In the simplest (Rasch) form: <span class="mono">p(correct) = σ(θ − b)</span>. The 2PL form adds a discrimination parameter — how steeply the item separates strong from weak models. Ability estimates become <em>item-free</em>: comparable across different test sets.</p>
+    <div class="irt-lab">
+      <svg viewBox="0 0 640 260" id="irtSvg" aria-label="Item response curve: probability of success versus model ability">
+        <line x1="50" y1="210" x2="610" y2="210" stroke="var(--edge)" stroke-width="1"/>
+        <line x1="50" y1="210" x2="50" y2="20" stroke="var(--edge)" stroke-width="1"/>
+        <text x="600" y="232" fill="var(--ink-3)" font-size="11" text-anchor="end" font-family="monospace">model ability θ →</text>
+        <text x="14" y="30" fill="var(--ink-3)" font-size="11" font-family="monospace">p(correct)</text>
+        <text x="14" y="46" fill="var(--ink-3)" font-size="10" font-family="monospace">1.0</text>
+        <line x1="46" y1="42" x2="54" y2="42" stroke="var(--edge)" stroke-width="1"/>
+        <text x="14" y="214" fill="var(--ink-3)" font-size="10" font-family="monospace">0.0</text>
+        <line x1="46" y1="210" x2="54" y2="210" stroke="var(--edge)" stroke-width="1"/>
+        <line id="irtHalf" x1="50" y1="126" x2="610" y2="126" stroke="var(--edge)" stroke-width="1" stroke-dasharray="3 5"/>
+        <path id="irtCurve" fill="none" stroke="var(--cyan)" stroke-width="2.5"/>
+        <line id="irtBLine" x1="300" y1="210" x2="300" y2="126" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <circle id="irtBDot" cx="300" cy="126" r="4.5" fill="var(--amber)"/>
+        <text id="irtBLabel" x="300" y="248" fill="var(--amber)" font-size="11" text-anchor="middle" font-family="monospace">b = difficulty</text>
+      </svg>
+      <div class="irt-controls">
+        <label>item difficulty b <span class="irt-readout" id="irtBVal"></span><input type="range" id="irtB" min="-2" max="2" step="0.1" value="0"></label>
+        <label>discrimination a <span class="irt-readout" id="irtAVal"></span><input type="range" id="irtA" min="0.3" max="3" step="0.1" value="1"></label>
+        <label>mark a model at ability θ <span class="irt-readout" id="irtTVal"></span><input type="range" id="irtT" min="-2" max="2" step="0.1" value="0.8"></label>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink-3);margin:12px 0 0" id="irtExpl"></p>
+    </div>
+    <p style="font-size:14px;margin:14px 0 0">The amber point is the item’s difficulty <span class="mono">b</span>: where the model has a 50/50 chance. Steeper curve = the item discriminates sharply between abilities. Move <span class="mono">θ</span> to read off any model’s success probability on this item.</p>
+  </div>
+  <p>So why defer it? Three reasons from the literature the research cites:</p>
+  <ul>
+    <li><strong>Regime mismatch.</strong> IRT estimators were built for human testing: hundreds-to-thousands of examinees, 20–100 items. AI evaluation inverts this — often fewer than 100 models against tens of thousands of items, with skewed or multimodal ability distributions. Classical estimators become computationally infeasible or unreliable there.</li>
+    <li><strong>Sample-size floors.</strong> Item-parameter recovery is unreliable below roughly 30 models and only stabilizes around ≥100. RSemble’s model pool is far below that today.</li>
+    <li><strong>It is genuinely worth waiting for.</strong> AI evaluation has one advantage human testing lacks: a stateless model can answer the <em>same item repeatedly</em>, so response probabilities are directly observable and the measurement axioms (additive conjoint structure, the Rasch form) can be <strong>tested</strong> rather than assumed. When coverage and sample size justify it, IRT-style modeling becomes far more defensible for AI than it ever was for humans.</li>
+  </ul>
+  <div class="callout key">
+    <div class="c-label">RSemble’s stance</div>
+    <p>Defer latent-ability modeling until the data justifies it — and meanwhile preserve the item-level structure (task versions × observations) that would make such modeling possible later. This is exactly why “full latent ability or IRT modeling before enough cross-task data exists” is on the <em>do-not-implement-first</em> list.</p>
+  </div>
+
+  <h3>8.3 Fusion Study implications</h3>
+  <p>The task remains the generalization unit for Fusion Study. Candidate generation, ranking, fusion, and refinement get compared on shared task evidence, reporting at minimum: per-task policy score, per-task paired delta, criterion-level score vector, verifier result where available, cost and latency, wins/ties/losses, uncertainty, and <strong>claim level</strong>. A suite aggregate is never sufficient evidence for a policy recommendation — and the existing Fusion Study separation of selection headroom vs. synthesis headroom stays intact.</p>
+</section>
+
+<!-- ================= 9 MIGRATION ================= -->
+<section id="migration">
+  <div class="sec-head"><span class="sec-num">9</span><h2>Migration Roadmap</h2></div>
+  <p>The safest migration is incremental — six phases, each additive, each gated on the stability of the one before:</p>
+  <div class="phases">
+    <div class="phase"><div class="ph-dot">1</div><div><h5>Canonical task identity</h5><p>Add task catalog records and immutable task versions while retaining the current embedded task representation. Nothing is removed; nothing breaks.</p><div class="ph-gate">gate: identity exists alongside the status quo</div></div></div>
+    <div class="phase"><div class="ph-dot">2</div><div><h5>Suite membership references</h5><p>Allow suite versions to reference canonical task versions. Continue materializing full task snapshots for existing experiments and imports.</p><div class="ph-gate">gate: old experiments still reproduce exactly</div></div></div>
+    <div class="phase"><div class="ph-dot">3</div><div><h5>Task-level observation index</h5><p>Index existing run records by task version, suite version, experiment, model, policy, sample, and attempt. Detailed artifacts stay in the existing run store.</p><div class="ph-gate">gate: cross-suite task queries become possible</div></div></div>
+    <div class="phase"><div class="ph-dot">4</div><div><h5>Initial faceted metadata</h5><p>Start small — a controlled vocabulary for domain, taskType, modality, interface, skillType, verification, difficulty (the SkillsBench axis pattern). Detailed cognitive-demand annotation only after identity and observation layers are stable.</p><div class="ph-gate">gate: vocabulary lints, annotators agree</div></div></div>
+    <div class="phase"><div class="ph-dot">5</div><div><h5>Task analytics</h5><p>Task-level views: model scores, policy wins/ties/losses, criterion-level error patterns, complementarity, synthesis headroom, taxonomy coverage, difficulty and uncertainty, suite membership comparisons.</p><div class="ph-gate">gate: the transposed ledger — the model-profiling idea becomes buildable</div></div></div>
+    <div class="phase"><div class="ph-dot">6</div><div><h5>Capability analysis</h5><p>Only after sufficient cross-task observations: broader capability profiles, as <strong>derived, versioned analyses</strong> — never mutable fields on model records.</p><div class="ph-gate">gate: profiles carry uncertainty and provenance</div></div></div>
+  </div>
+  <div class="callout key">
+    <div class="c-label">The ordering principle</div>
+    <p>Identity first, then references, then indexing, then annotation, then analytics, then capability inference. Each phase earns the next. Capability estimation is last because it is the most inferential — the tip of the pyramid built on all the layers below.</p>
+  </div>
+</section>
+
+<!-- ================= 10 RISKS ================= -->
+<section id="risks">
+  <div class="sec-head"><span class="sec-num">10</span><h2>Risks &amp; Safeguards</h2></div>
+  <p>The document closes with nine named risks, each paired with the safeguard that neutralizes it:</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>Risk</th><th>Safeguard</th></tr>
+    <tr><td>One giant skill hierarchy becomes unmaintainable</td><td>Independent facets and typed relations</td></tr>
+    <tr><td>Taxonomy labels are mistaken for ground truth</td><td>Store annotation source, confidence, rationale, and taxonomy version</td></tr>
+    <tr><td>Difficulty collapses into one misleading number</td><td>Store cognitive, operational, human, model-relative, and reliability dimensions separately</td></tr>
+    <tr><td>Observed tools are treated as required skills</td><td>Keep intended requirements separate from observed traces</td></tr>
+    <tr><td>Retries are counted as independent evidence</td><td>Model attempts, treatments, and remeasurements explicitly</td></tr>
+    <tr><td>Historical benchmark results silently change</td><td>Version task rosters, taxonomies, suite manifests, and protocol fingerprints</td></tr>
+    <tr><td>Aggregate scores hide heterogeneous task behavior</td><td>Preserve task/item observations and report task-level uncertainty</td></tr>
+    <tr><td>External occupational taxonomies are over-applied</td><td>Use external schemes as references and mappings, not as the core ontology</td></tr>
+    <tr><td>Latent ability estimates are overinterpreted</td><td>Defer IRT-style modeling until coverage and sample size justify it</td></tr>
+  </table></div>
+  <h3>And the explicit do-not-implement-first list</h3>
+  <ul>
+    <li>a single global skill tree;</li>
+    <li>a single scalar difficulty field;</li>
+    <li>global model rankings across unrelated suites;</li>
+    <li>full latent-ability / IRT modeling before enough cross-task data exists;</li>
+    <li>automatic skill inference treated as ground truth;</li>
+    <li>wholesale import of ESCO, O*NET, SFIA, ADeLe, or SkillsBench vocabularies.</li>
+  </ul>
+</section>
+
+<!-- ================= 11 NEXT ================= -->
+<section id="next">
+  <div class="sec-head"><span class="sec-num">11</span><h2>What Comes Next</h2></div>
+  <p>The research names its successor artifact explicitly:</p>
+  <blockquote>The next reviewed design artifact should be the <strong>Task Catalog and Workload Manifest Specification</strong>.<cite>— closing recommendation of the research document</cite></blockquote>
+  <p>It must define ten things: task and task-version identity; task-family and task-instance boundaries; suite-version membership references; experiment snapshot rules; task observation indexing; taxonomy namespace and facet assignment contracts; verifier, judge, and score provenance; intended task graphs and observed traces; migration compatibility with current suite blobs and experiment snapshots; and acceptance tests for reproducibility and task-level aggregation.</p>
+  <p>And the sequencing note that matters most: <strong>the broader skill taxonomy and capability inference layer should follow this foundation, not precede it.</strong></p>
+  <div class="callout key">
+    <div class="c-label">Connection to the vault ideas</div>
+    <p>This is the missing foundation flagged in the <em>RSemble Model Add-On and Profiling</em> idea note. <strong>Add-model-to-finished-run</strong> (idea 1) is observing a new model on existing task versions — it needs canonical task identity and the observation index (phases 1–3). <strong>Model profiling</strong> (idea 2) is capability analysis over accumulated observations — phase 6, the last thing built, and only honest because every layer beneath it preserves the task→evidence→capability direction of inference.</p>
+  </div>
+</section>
+
+<!-- ================= SOURCES ================= -->
+<section id="sources">
+  <div class="sec-head"><span class="sec-num">§</span><h2>Source Map</h2></div>
+  <p>All frameworks above are drawn from the research document’s own source map:</p>
+  <ul class="src-list">
+    <li><span class="src-tag">educational</span><a href="https://www.wcu.edu/WebFiles/PDFs/BloomsRevisedTaxonomyTable.pdf" target="_blank" rel="noopener">Revised Bloom taxonomy (Anderson &amp; Krathwohl table)</a></li>
+    <li><span class="src-tag">educational</span><a href="https://www.webbalign.org/dok-primer" target="_blank" rel="noopener">Webb’s Depth of Knowledge primer</a></li>
+    <li><span class="src-tag">occupational</span><a href="https://www.onetcenter.org/content.html" target="_blank" rel="noopener">O*NET Content Model</a></li>
+    <li><span class="src-tag">occupational</span><a href="https://esco.ec.europa.eu/en/classification" target="_blank" rel="noopener">ESCO classification</a></li>
+    <li><span class="src-tag">occupational</span><a href="https://joint-research-centre.ec.europa.eu/oldpage-digcomp/digcomp-framework_en" target="_blank" rel="noopener">DigComp framework</a></li>
+    <li><span class="src-tag">occupational</span><a href="https://www.unesco.org/en/articles/ai-competency-framework-students" target="_blank" rel="noopener">UNESCO AI Competency Framework</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://aclanthology.org/2022.emnlp-main.340/" target="_blank" rel="noopener">Super-NaturalInstructions</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://arxiv.org/abs/2206.04615v3" target="_blank" rel="noopener">BIG-bench</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://doi.org/10.48550/arxiv.2211.09110" target="_blank" rel="noopener">HELM (Holistic Evaluation of Language Models)</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://arxiv.org/html/2311.12983" target="_blank" rel="noopener">GAIA</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://arxiv.org/html/2503.14499v3" target="_blank" rel="noopener">METR methodology</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://github.com/benchflow-ai/skillsbench/blob/main/taxonomy.md" target="_blank" rel="noopener">SkillsBench taxonomy</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://kinds-of-intelligence-cfi.github.io/ADELE/" target="_blank" rel="noopener">ADeLe (General Scales Unlock AI Evaluation)</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://agentskills.io/specification" target="_blank" rel="noopener">Agent Skills specification</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://inspect.aisi.org.uk/" target="_blank" rel="noopener">Inspect AI</a></li>
+    <li><span class="src-tag">ai eval</span><a href="https://github.com/EleutherAI/lm-evaluation-harness" target="_blank" rel="noopener">lm-evaluation-harness</a></li>
+    <li><span class="src-tag">provenance</span><a href="https://www.w3.org/TR/prov-o/" target="_blank" rel="noopener">W3C PROV-O</a></li>
+    <li><span class="src-tag">process</span><a href="https://www.omg.org/spec/BPMN/2.0.1/PDF" target="_blank" rel="noopener">BPMN 2.0.1</a></li>
+    <li><span class="src-tag">statistics</span><a href="https://www.nist.gov/publications/expanding-ai-evaluation-toolbox-statistical-models" target="_blank" rel="noopener">NIST AI 800-3 statistical models</a></li>
+    <li><span class="src-tag">statistics</span><a href="https://airc.nist.gov/airmf-resources/airmf/5-sec-core/" target="_blank" rel="noopener">NIST AI Risk Management Framework</a></li>
+  </ul>
+</section>
+
+<footer>
+  RSemble AI · research explainer · generated 2026-08-04 from docs/research/task-first-evaluation-taxonomy.md (2026-08-01). Research synthesis — no implementation proposed.
+</footer>
+
+</main>
+</div>
+
+<script>
+/* ---------- framework accordions ---------- */
+function toggleFw(head){ head.parentElement.classList.toggle('open'); }
+
+/* ---------- reading progress + toc spy ---------- */
+const progress = document.getElementById('progress');
+const tocLinks = [...document.querySelectorAll('nav.toc a')];
+const sections = tocLinks.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+function onScroll(){
+  const h = document.documentElement;
+  const pct = h.scrollTop / (h.scrollHeight - h.clientHeight) * 100;
+  progress.style.width = pct + '%';
+  let current = sections[0];
+  for (const s of sections){ if (s.getBoundingClientRect().top <= 120) current = s; }
+  tocLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current.id));
+}
+window.addEventListener('scroll', onScroll, {passive:true});
+onScroll();
+
+/* ---------- bloom matrix ---------- */
+const bloomRows = ['Factual','Conceptual','Procedural','Metacognitive'];
+const bloomCols = ['Remember','Understand','Apply','Analyze','Evaluate','Create'];
+const bloomExamples = {
+  'Factual|Remember':'List the HTTP status codes. Recalling discrete facts.',
+  'Factual|Understand':'Explain what a 404 status code means in your own words.',
+  'Conceptual|Analyze':'Compare REST and RPC architectures and attribute their trade-offs to design principles.',
+  'Procedural|Apply':'Execute the standard git rebase workflow on a feature branch.',
+  'Procedural|Evaluate':'Critique a debugging procedure for completeness before running it.',
+  'Metacognitive|Create':'Design your own learning plan for an unfamiliar framework, monitoring what you do and don’t know.',
+  'Conceptual|Evaluate':'Judge which of two data models better fits the domain, with criteria.',
+  'Metacognitive|Evaluate':'Check whether your confidence in an answer is calibrated against the evidence you actually have.',
+};
+const grid = document.getElementById('bloomGrid');
+grid.innerHTML = '<div class="bg-corner">knowledge ↓ / process →</div>' +
+  bloomCols.map(c => `<div class="bg-col">${c}</div>`).join('') +
+  bloomRows.flatMap((r,ri) => [
+    `<div class="bg-row">${r}</div>`,
+    ...bloomCols.map((c,ci) => {
+      const key = r+'|'+c;
+      const ex = bloomExamples[key] || `${c} something involving ${r.toLowerCase()} knowledge — e.g. a task objective classified in cell ${String.fromCharCode(65+ri)}${ci+1}.`;
+      return `<div class="bloom-cell" data-ex="${ex.replace(/"/g,'&quot;')}" data-key="${key}">${c}</div>`;
+    })
+  ]).join('');
+grid.addEventListener('click', e => {
+  const cell = e.target.closest('.bloom-cell'); if (!cell) return;
+  grid.querySelectorAll('.bloom-cell').forEach(c => c.classList.remove('sel'));
+  cell.classList.add('sel');
+  document.getElementById('bloomDetail').innerHTML =
+    `<b>${cell.dataset.key.replace('|',' × ')}</b> — ${cell.dataset.ex}`;
+});
+
+/* ---------- facet explorer ---------- */
+const facets = [
+  ['domain', ['software engineering','research','finance','mathematics','cybersecurity','document production'], 0],
+  ['task operation', ['retrieve','summarize','classify','extract','calculate','analyze','debug','implement','transform','plan','verify','rank','critique','design','generate'], 6],
+  ['cognitive demand', ['recall','comprehension','application','analysis','evaluation','creation','quantitative reasoning','logical reasoning','critical thinking','planning'], 3],
+  ['procedural skill type', ['domain procedure','tool workflow','library/API usage','debugging heuristic','data-cleaning procedure','mathematical method','verification protocol'], 3],
+  ['modality & artifact', ['text','source code','JSON','CSV','spreadsheet','PDF','image','database','time series'], 1],
+  ['interface & environment', ['chat','terminal','Python','browser','GUI','compiler/toolchain','sandbox','multi-agent environment'], 2],
+  ['verification', ['exact match','numeric tolerance','schema validation','unit tests','custom checker','reference comparison','human rubric','LLM judge'], 3],
+];
+const fr = document.getElementById('facetRows');
+fr.innerHTML = facets.map(([name, vals, on]) =>
+  `<div class="facet-row"><span class="fr-label">${name}</span>` +
+  vals.map((v,i) => `<span class="chip${i===on?' on':''}" onclick="this.classList.toggle('on')">${v}</span>`).join('') +
+  `</div>`).join('') +
+  `<div class="facet-row"><span class="fr-label">difficulty (multi-field)</span>` +
+  ['declared','cognitive complexity','operational complexity','human time','human success rate','model-relative','reliability threshold','uncertainty']
+    .map(v => `<span class="chip">${v}</span>`).join('') + `</div>`;
+
+/* ---------- independence demo ---------- */
+const genTasks = document.getElementById('genTasks'), genReps = document.getElementById('genReps');
+const taskColors = ['#3dd6ee','#f2b64c','#4ade80','#a78bfa','#f87171','#7dd3fc','#fbbf24','#86efac','#c4b5fd','#fda4af'];
+function renderGen(){
+  const t = +genTasks.value, r = +genReps.value;
+  document.getElementById('genTasksV').textContent = t;
+  document.getElementById('genRepsV').textContent = r;
+  const dots = document.getElementById('genDots');
+  let html = '';
+  for (let i = 0; i < t; i++){
+    const c = taskColors[i % taskColors.length];
+    for (let j = 0; j < r; j++) html += `<span class="gen-dot" style="background:${c};opacity:${1 - j*0.18}"></span>`;
+  }
+  dots.innerHTML = html;
+  document.getElementById('genVerdict').textContent =
+    `${t} × ${r} = ${t*r} rows of data — but only ${t} independent workload draws. The extra ${t*(r-1)} generations estimate within-task variability, not new tasks.`;
+}
+genTasks.addEventListener('input', renderGen);
+genReps.addEventListener('input', renderGen);
+renderGen();
+
+/* ---------- IRT lab ---------- */
+const irtB = document.getElementById('irtB'), irtA = document.getElementById('irtA'), irtT = document.getElementById('irtT');
+function sigmoid(x){ return 1/(1+Math.exp(-x)); }
+function renderIRT(){
+  const b = +irtB.value, a = +irtA.value, th = +irtT.value;
+  document.getElementById('irtBVal').textContent = 'b = ' + b.toFixed(1);
+  document.getElementById('irtAVal').textContent = 'a = ' + a.toFixed(1);
+  document.getElementById('irtTVal').textContent = 'θ = ' + th.toFixed(1);
+  const X0=50, X1=610, Y0=210, Y1=42, span=4; // theta from -2..2
+  const px = th => X0 + (th+2)/span*(X1-X0);
+  const py = p => Y0 - p*(Y0-Y1);
+  let d = '';
+  for (let i=0;i<=200;i++){
+    const t = -2 + i/200*span;
+    const p = sigmoid(a*(t-b));
+    d += (i? 'L':'M') + px(t).toFixed(1) + ' ' + py(p).toFixed(1) + ' ';
+  }
+  document.getElementById('irtCurve').setAttribute('d', d);
+  const bx = px(b);
+  document.getElementById('irtBLine').setAttribute('x1', bx);
+  document.getElementById('irtBLine').setAttribute('x2', bx);
+  document.getElementById('irtBDot').setAttribute('cx', bx);
+  document.getElementById('irtBLabel').setAttribute('x', bx);
+  const p = sigmoid(a*(th-b));
+  // model marker
+  let mk = document.getElementById('irtMark');
+  if (!mk){
+    const svg = document.getElementById('irtSvg');
+    mk = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    mk.id='irtMark'; mk.setAttribute('r','5'); mk.setAttribute('fill','var(--green)');
+    svg.appendChild(mk);
+    const ml = document.createElementNS('http://www.w3.org/2000/svg','text');
+    ml.id='irtMarkLabel'; ml.setAttribute('fill','var(--green)'); ml.setAttribute('font-size','11');
+    ml.setAttribute('font-family','monospace'); svg.appendChild(ml);
+  }
+  mk.setAttribute('cx', px(th)); mk.setAttribute('cy', py(p));
+  const ml = document.getElementById('irtMarkLabel');
+  ml.setAttribute('x', Math.min(px(th)+8, 520)); ml.setAttribute('y', py(p)-8);
+  ml.textContent = `p(correct) = ${(p*100).toFixed(0)}%`;
+  document.getElementById('irtExpl').textContent =
+    `A model at θ=${th.toFixed(1)} facing this item (b=${b.toFixed(1)}, a=${a.toFixed(1)}) succeeds about ${(p*100).toFixed(0)}% of the time. Higher difficulty b shifts the curve right; higher discrimination a steepens it. The Rasch model is this exact S-curve with a=1.`;
+}
+[irtB, irtA, irtT].forEach(el => el.addEventListener('input', renderIRT));
+renderIRT();
+</script>
+</body>
+</html>
