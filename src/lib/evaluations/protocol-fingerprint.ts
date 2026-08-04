@@ -8,7 +8,15 @@
 // timestamps, execution status, outputs, and display-only metadata.
 // =============================================================================
 
-import type { EvaluationSuite, EvaluationProfile, ExperimentSnapshot } from "./evaluation-types";
+import type {
+  EvaluationSuite,
+  EvaluationProfile,
+  EvaluationTask,
+  EvaluationSelection,
+  ExperimentSnapshot,
+} from "./evaluation-types";
+import type { ModelSlot } from "../../studio-data";
+import type { ProviderId } from "../providers/types";
 
 /**
  * Recursively sort object keys to produce canonical JSON.
@@ -30,15 +38,24 @@ function sortKeys(value: unknown): unknown {
 }
 
 /**
- * Build the canonical fingerprint input from a suite and its pinned profiles.
- * Only semantic content is included — no IDs, timestamps, statuses, or metadata.
+ * Semantic pieces that make up the canonical fingerprint input. Extracted so
+ * the suite-based and snapshot-based computations share ONE input builder and
+ * can never diverge (roster spec §B3). Only semantic content is included — no
+ * IDs, timestamps, statuses, or metadata.
  */
-export function buildFingerprintInput(
-  suite: EvaluationSuite,
-  profiles: EvaluationProfile[],
-): unknown {
+interface SemanticFingerprintPieces {
+  tasks: Array<
+    Pick<EvaluationTask, "title" | "prompt" | "systemPrompt" | "evaluation" | "judgeInstructionOverride" | "order">
+  >;
+  modelSlots: Array<Pick<ModelSlot, "providerId" | "slug" | "model" | "enabled">>;
+  defaultJudge: { providerId: ProviderId; model: string };
+  defaultEvaluation: EvaluationSelection;
+  profiles: EvaluationProfile[];
+}
+
+function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
   return {
-    tasks: suite.tasks.map((t) => ({
+    tasks: pieces.tasks.map((t) => ({
       title: t.title,
       prompt: t.prompt,
       systemPrompt: t.systemPrompt,
@@ -46,18 +63,18 @@ export function buildFingerprintInput(
       judgeInstructionOverride: t.judgeInstructionOverride,
       order: t.order,
     })),
-    modelSlots: suite.modelSlots.map((s) => ({
+    modelSlots: pieces.modelSlots.map((s) => ({
       providerId: s.providerId,
       slug: s.slug,
       model: s.model,
       enabled: s.enabled,
     })),
     defaultJudge: {
-      providerId: suite.defaultJudge.providerId,
-      model: suite.defaultJudge.model,
+      providerId: pieces.defaultJudge.providerId,
+      model: pieces.defaultJudge.model,
     },
-    defaultEvaluation: suite.defaultEvaluation,
-    profiles: profiles.map((p) => ({
+    defaultEvaluation: pieces.defaultEvaluation,
+    profiles: pieces.profiles.map((p) => ({
       id: p.id,
       version: p.version,
       name: p.name,
@@ -71,6 +88,22 @@ export function buildFingerprintInput(
 }
 
 /**
+ * Build the canonical fingerprint input from a suite and its pinned profiles.
+ */
+export function buildFingerprintInput(
+  suite: EvaluationSuite,
+  profiles: EvaluationProfile[],
+): unknown {
+  return semanticFingerprintInput({
+    tasks: suite.tasks,
+    modelSlots: suite.modelSlots,
+    defaultJudge: suite.defaultJudge,
+    defaultEvaluation: suite.defaultEvaluation,
+    profiles,
+  });
+}
+
+/**
  * Compute the protocol fingerprint for a suite + profiles.
  * Returns `sha256:<lowercase hex>`.
  */
@@ -79,6 +112,26 @@ export function computeProtocolFingerprint(
   profiles: EvaluationProfile[],
 ): string {
   const input = buildFingerprintInput(suite, profiles);
+  const canonical = canonicalJsonString(input);
+  const hash = sha256Hex(canonical);
+  return `sha256:${hash}`;
+}
+
+/**
+ * Compute the protocol fingerprint from an experiment snapshot's semantic
+ * content. Shares the single input builder with the suite-based computation so
+ * the two can never diverge (roster spec §B3). Returns `sha256:<hex>`.
+ */
+export function computeSnapshotProtocolFingerprint(
+  snapshot: ExperimentSnapshot,
+): string {
+  const input = semanticFingerprintInput({
+    tasks: snapshot.tasks,
+    modelSlots: snapshot.modelSlots,
+    defaultJudge: snapshot.defaultJudge,
+    defaultEvaluation: snapshot.defaultEvaluation,
+    profiles: snapshot.profiles,
+  });
   const canonical = canonicalJsonString(input);
   const hash = sha256Hex(canonical);
   return `sha256:${hash}`;
