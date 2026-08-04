@@ -1,5 +1,12 @@
 # UI Redesign Spec — "Command Deck" Look
 
+> ⚠️ **STALE — DO NOT IMPLEMENT AS WRITTEN** (audit 2026-08-04).
+> This spec predates 140 commits: the app is now a three-workspace shell, and
+> most of this spec already shipped through other components (PipelineRail,
+> useResizableSplit, run-history/cost, CommandPalette, provenance gutter, …).
+> Its palette and icon-rail sections conflict with current DESIGN.md decisions.
+> See `ui-redesign-grounding-audit.md` in this directory before touching it.
+
 > Reference: target screenshot (dark blue-tinted shell, icon rail, numbered panels,
 > gradient Run CTA, illustrated empty state).
 > This spec describes the delta from the current Split Workspace (see `DESIGN.md`,

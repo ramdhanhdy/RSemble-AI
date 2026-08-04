@@ -26,4 +26,4 @@ Written but not executed as a project.
 
 | Spec | Status |
 | --- | --- |
-| ui-redesign-spec.md | The "Command Deck" vision shipped only partially and piecemeal: command palette ✓, live pipeline strip ✓, resizable split ✓. Not shipped: icon rail, numbered panels, run cost estimates. Treat as a direction document to re-scope or retire. |
+| ui-redesign-spec.md | **Stale (audit 2026-08-04)** — predates 140 commits; most items already shipped via other components; palette and icon-rail sections conflict with current DESIGN.md. See `ui-redesign-grounding-audit.md`. Genuinely unshipped remnants: gradient CTA, focus mode (⌘\), self-judge warning, compare diff highlighting. |
