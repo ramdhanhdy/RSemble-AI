@@ -46,8 +46,9 @@ import {
   type ExperimentEngine,
 } from "./experiment-engine";
 import { planMissingCellRepair } from "./experiment-repair";
+import { planRosterExtension, rotateExperimentRoster } from "./experiment-roster-extension";
 import { aggregateExperiment } from "./experiment-aggregation";
-import type { ExperimentRepairPlan } from "./evaluation-types";
+import type { ExperimentRepairPlan, ExperimentTaskExecutionPlan } from "./evaluation-types";
 import type {
   RunRecordV2,
   FullRunSummaryV2,
@@ -58,6 +59,7 @@ import type {
 import type { AdHocEvaluationConfig } from "./evaluation-profile-adhoc";
 import { HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
 import type { Candidate } from "../../studio-data";
+import type { ModelSlot } from "../../studio-data";
 import type { ProviderId } from "../providers/types";
 
 // --- Events -------------------------------------------------------------------
@@ -161,6 +163,9 @@ function taskEvaluationConfig(
   return { kind: "profile", ref: sel.profile, profile: snapshot };
 }
 
+/** The experiment branch of RunSource (for spreading repair metadata). */
+type ExperimentSource = Extract<RunSource, { kind: "experiment" }>;
+
 /** Build the experiment RunSource for a task attempt. */
 function experimentRunSource(
   experiment: ExperimentRecord,
@@ -168,7 +173,7 @@ function experimentRunSource(
   taskId: string,
   attemptId: string,
   trial: number,
-): RunSource {
+): ExperimentSource {
   return {
     kind: "experiment",
     experimentId: experiment.id,
@@ -354,11 +359,14 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
   }
 
   /** Execute a single task: begin, run executor, commit. Returns the final
-   *  run status or throws on persistence failure. */
+   *  run status or throws on persistence failure. An optional `plan` rides
+   *  the run source and the terminal attempt (roster-extension full-roster
+   *  fallback — plan 001, D3). */
   async function executeTask(
     taskId: string,
     attemptId: string,
     fence: ExecutionFence,
+    plan?: ExperimentTaskExecutionPlan,
   ): Promise<RunStatus> {
     if (!engine || !suite) throw new Error("Engine or suite not initialized");
     const record = engine.record;
@@ -369,7 +377,8 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     const trial = taskState?.attempts.find((a) => a.id === attemptId)?.trial ?? 0;
 
     const runId = `run-${generateId()}`;
-    const runSource = experimentRunSource(record, suite, taskId, attemptId, trial);
+    const baseSource = experimentRunSource(record, suite, taskId, attemptId, trial);
+    const runSource: RunSource = plan ? { ...baseSource, repair: plan } : baseSource;
     const evalConfig = taskEvaluationConfig(task, suite, record.snapshot.profiles);
 
     // Build initial run + summary.
@@ -449,6 +458,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       error: null,
       now: now(),
       coverage,
+      ...(plan ? { repair: plan } : {}),
     });
     if (!commitResult.ok) throw new Error(commitResult.reason ?? "commitTaskTerminal failed");
 
@@ -463,6 +473,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       expectedExperimentRevision: persistedExperimentRevision,
       fence,
       coverage,
+      ...(plan ? { repair: plan } : {}),
     });
     persistedExperimentRevision = commitRev.experimentRevision;
 
@@ -507,10 +518,18 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         const attemptId = queuedAttempt?.id ?? generateId();
 
         try {
-          // Repairs run through the normal loop so pause-at-boundary, abort,
-          // heartbeat, error handling, and ownership release all apply.
-          if (queuedAttempt?.repair && queuedAttempt.repair.kind === "missing-cells") {
-            await executeRepairTask(taskId, attemptId, queuedAttempt.repair, fence);
+          // Compound attempts run through the normal loop so pause-at-boundary,
+          // abort, heartbeat, error handling, and ownership release all apply.
+          if (queuedAttempt?.repair) {
+            const plan = queuedAttempt.repair;
+            if (plan.kind === "missing-cells" || plan.baseRunId !== undefined) {
+              // Compound path: reuse accepted outputs + execute selected keys.
+              await executeCompoundTask(taskId, attemptId, plan, fence);
+            } else {
+              // Roster-extension full-roster fallback (plan 001, D3): execute
+              // the rotated roster with no seeding, carrying provenance.
+              await executeTask(taskId, attemptId, fence, plan);
+            }
           } else {
             await executeTask(taskId, attemptId, fence);
           }
@@ -982,10 +1001,120 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     }
   }
 
-  async function executeRepairTask(
+  /** Roster extension (roster spec §9.1, plan 001 D): extend a terminal
+   *  experiment's snapshot roster with one new model, then execute only that
+   *  model across every task. Reuses the compound execution path for reusable
+   *  tasks and falls back to a full-roster attempt per task otherwise. The
+   *  rotated snapshot + queued attempts persist in ONE CAS so a failure can
+   *  never strand a rotated-but-unqueued record. */
+  async function addModelAndRun(
+    expId: string,
+    input: { slot: ModelSlot },
+  ): Promise<StartResult> {
+    const record = await evalRepo.getExperiment(expId);
+    if (!record) return { ok: false, error: `Experiment ${expId} not found` };
+    // Acquire cross-tab lease.
+    let leaseInfo: LeaseInfo;
+    try {
+      leaseInfo = await lease.acquire();
+    } catch (err) {
+      if (err instanceof LeaseError) {
+        return { ok: false, error: `Another tab is active (${err.message})` };
+      }
+      throw err;
+    }
+
+    if (!owner.tryAcquire({ kind: "experiment", id: expId })) {
+      await lease.release();
+      return { ok: false, error: "Another execution is active" };
+    }
+
+    experimentId = expId;
+
+    let transferredToRunLoop = false;
+    try {
+      // Pre-load every selected attempt run for the planner (synchronous
+      // resolution; the repository is async) — same pattern as repair.
+      const runCache = new Map<string, RunRecordV2>();
+      for (const ts of record.tasks) {
+        const selected = ts.selectedAttemptId
+          ? ts.attempts.find((a) => a.id === ts.selectedAttemptId)
+          : undefined;
+        if (selected?.runId) {
+          const run = await runRepo.get(selected.runId);
+          if (run) runCache.set(selected.runId, run);
+        }
+      }
+      const resolveRunRecord = (runId: string): RunRecordV2 | null => runCache.get(runId) ?? null;
+
+      // Validate + plan through the pure planner (rejects duplicates,
+      // non-terminal records, invalid/disabled slots before any paid call).
+      const planResult = planRosterExtension({
+        experiment: record,
+        slot: input.slot,
+        resolveRunRecord,
+      });
+      if (!planResult.ok) {
+        return { ok: false, error: planResult.reason };
+      }
+      const plan = planResult.plan;
+
+      // Rotate the snapshot in memory: append the slot, recompute the
+      // fingerprint, append the history entry. The record stays terminal —
+      // the engine queue transition owns `running`.
+      const rotation = rotateExperimentRoster({
+        experiment: record,
+        slot: plan.addedSlot,
+        extendedAt: now(),
+      });
+      if (!rotation.ok) {
+        return { ok: false, error: rotation.reason };
+      }
+      const rotatedRecord = rotation.record;
+
+      // Rebuild the execution suite from the ROTATED snapshot and create the
+      // engine from the rotated record.
+      const loadedSuite = pinnedSuiteFromSnapshot(rotatedRecord);
+      engine = createExperimentEngine(rotatedRecord);
+      suite = loadedSuite;
+      persistedExperimentRevision = record.revision;
+
+      // Queue one attempt per task through the neutral transition.
+      const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
+      const queued = plan.taskPlans.map((tp) => ({ taskId: tp.taskId, repair: tp.executionPlan }));
+      const queueResult = engine.queuePlannedAttempts(queued, generateId, fence, now());
+      if (!queueResult.ok) {
+        return { ok: false, error: queueResult.reason ?? "Failed to queue extension" };
+      }
+
+      // ONE CAS writes the rotated record + queued attempts together against
+      // the original revision. A stale CAS releases ownership with no paid call.
+      await syncExperimentStatus(persistedExperimentRevision);
+
+      startHeartbeat();
+      transferredToRunLoop = true;
+      void runLoop(fence);
+      return { ok: true, experimentId: expId };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (!transferredToRunLoop) {
+        releaseExecution();
+        engine = null;
+        experimentId = null;
+        suite = null;
+      }
+    }
+  }
+
+  /** Execute one compound attempt: reuse accepted outputs from a base run,
+   *  execute only the requested model keys, and run one fresh blind Judge pass
+   *  over the reconstructed candidate set. Handles both the `missing-cells`
+   *  repair plan and the `roster-extension` compound plan (plan 001, D3). */
+  async function executeCompoundTask(
     taskId: string,
     attemptId: string,
-    repairPlan: ExperimentRepairPlan,
+    plan: ExperimentTaskExecutionPlan,
     fence: ExecutionFence,
   ): Promise<void> {
     if (!engine || !suite) throw new Error("Engine or suite not initialized");
@@ -994,8 +1123,16 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     const taskState = record.tasks.find((t) => t.taskId === taskId)!;
 
     // Load the base run.
-    const baseRun = await runRepo.get(repairPlan.baseRunId);
-    if (!baseRun) throw new Error(`Base run ${repairPlan.baseRunId} not found`);
+    const baseRunId = plan.kind === "missing-cells" ? plan.baseRunId : plan.baseRunId!;
+    const baseRun = await runRepo.get(baseRunId);
+    if (!baseRun) throw new Error(`Base run ${baseRunId} not found`);
+
+    // Model keys to execute: the repair's requested keys, or exactly the
+    // added model for a roster-extension compound attempt.
+    const requestedModelKeys: string[] =
+      plan.kind === "missing-cells"
+        ? plan.requestedModelKeys
+        : [plan.addedModelKey];
 
     // Build the seeded fresh run.
     const runId = `run-${generateId()}`;
@@ -1008,7 +1145,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       taskId,
       experimentTaskAttemptId: attemptId,
       trial: taskState.attempts.find((a) => a.id === attemptId)?.trial ?? 0,
-      repair: repairPlan,
+      repair: plan,
     };
 
     const seedRun = builder.buildRepairRunSeed({
@@ -1019,7 +1156,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       slots: suite.modelSlots,
       fence,
       baseRun,
-      requestedModelKeys: repairPlan.requestedModelKeys,
+      requestedModelKeys,
       generateId,
     });
     const seedSummary = builder.deriveSummary(seedRun);
@@ -1052,7 +1189,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     emit({ kind: "task-began", taskId, attemptId, runId });
 
     // Build seeded candidates and attempt ID map for the executor.
-    const requestedKeys = new Set(repairPlan.requestedModelKeys);
+    const requestedKeys = new Set(requestedModelKeys);
     const seededCandidates = seedRun.candidates
       .filter((c) => c.acceptedAttemptId !== null && !requestedKeys.has(c.modelKey))
       .map((c) => {
@@ -1098,7 +1235,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         attachments: [],
         attachmentsToJudge: true,
         candidateExecution: {
-          executeModelKeys: repairPlan.requestedModelKeys,
+          executeModelKeys: requestedModelKeys,
           seededCandidates,
           seededAttemptIdsByCandidateId,
         },
@@ -1125,7 +1262,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       error: null,
       now: now(),
       coverage,
-      repair: repairPlan,
+      repair: plan,
     });
     if (!commitResult.ok) throw new Error(commitResult.reason ?? "commitTaskTerminal failed");
 
@@ -1139,7 +1276,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       expectedExperimentRevision: persistedExperimentRevision,
       fence,
       coverage,
-      repair: repairPlan,
+      repair: plan,
     });
     persistedExperimentRevision = commitRev.experimentRevision;
 
@@ -1155,6 +1292,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     abort,
     retryIncomplete,
     repairMissingCells,
+    addModelAndRun,
     recoverOnStartup,
     subscribe,
     whenIdle,
@@ -1171,6 +1309,12 @@ export interface ExperimentController {
     experimentId: string,
     request: { taskId: string; modelKeys: string[] },
   ): Promise<SimpleResult>;
+  /** Roster extension (roster spec §9.1): extend a terminal experiment with
+   *  one new model and execute only that model across every task. */
+  addModelAndRun(
+    experimentId: string,
+    input: { slot: ModelSlot },
+  ): Promise<StartResult>;
   recoverOnStartup(): Promise<number>;
   subscribe(listener: (e: ExperimentControllerEvent) => void): () => void;
   whenIdle(): Promise<void>;

@@ -84,6 +84,7 @@ function makeController(): {
     abort: vi.fn(async () => {}),
     retryIncomplete: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
     repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+    addModelAndRun: vi.fn(async (): Promise<StartResult> => ({ ok: true, experimentId: "exp-1" })),
     recoverOnStartup: vi.fn(async () => 0),
     subscribe: vi.fn((listener: (e: ExperimentControllerEvent) => void) => {
       listeners.add(listener);

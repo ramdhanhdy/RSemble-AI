@@ -162,6 +162,7 @@ function makeStubController(overrides: Partial<ExperimentController> = {}): Expe
     abort: vi.fn(async () => {}),
     retryIncomplete: vi.fn(async () => ({ ok: true as const })),
     repairMissingCells: vi.fn(async () => ({ ok: true as const })),
+    addModelAndRun: vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" })),
     recoverOnStartup: vi.fn(async () => 0),
     subscribe: vi.fn(() => () => {}),
     whenIdle: vi.fn(async () => {}),
