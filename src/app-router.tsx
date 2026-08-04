@@ -13,7 +13,7 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, Link, useParams } from "react-router-dom";
 import { useEvaluationRepository, useFusionStudyRepository } from "./lib/persistence/repository-context";
-import type { CatalogModel } from "./lib/providers/types";
+import type { CatalogModel, ProviderId } from "./lib/providers/types";
 
 // Route-level code splitting: Compare is the default surface and stays in the
 // main chunk; Runs, Evaluations (suites, profiles, fusion study), and
@@ -58,7 +58,17 @@ function withSuspense(node: React.ReactNode): React.ReactNode {
   return <Suspense fallback={<RouteFallback />}>{node}</Suspense>;
 }
 
-export function AppRoutes({ compareOutlet, models }: { compareOutlet: React.ReactNode; models: CatalogModel[] }) {
+export function AppRoutes({
+  compareOutlet,
+  models,
+  availableProviderIds,
+}: {
+  compareOutlet: React.ReactNode;
+  models: CatalogModel[];
+  /** Providers currently ready (registry order) — powers the add-model picker
+   *  on terminal experiment results (roster spec F1). */
+  availableProviderIds?: ProviderId[];
+}) {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/compare" replace />} />
@@ -80,7 +90,12 @@ export function AppRoutes({ compareOutlet, models }: { compareOutlet: React.Reac
 
       {/* Experiment progress/results — top-level route (spec §5.1). Terminal
           records render results; non-terminal render live progress. */}
-      <Route path="/experiments/:experimentId" element={withSuspense(<ExperimentRoute />)} />
+      <Route
+        path="/experiments/:experimentId"
+        element={withSuspense(
+          <ExperimentRoute models={models} availableProviderIds={availableProviderIds ?? []} />,
+        )}
+      />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

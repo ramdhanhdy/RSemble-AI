@@ -14,7 +14,7 @@ import { Play, RotateCcw, Square } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
-import { isProviderReadySync } from "./lib/providers/registry";
+import { isProviderReadySync, listProviders } from "./lib/providers/registry";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import { Header, type ConnectionState } from "./ui/Header";
 
@@ -193,6 +193,14 @@ export default function RSemble() {
   }, [probeCoordinator]);
 
   const experimentActive = activeOwner?.kind === "experiment";
+
+  // Providers currently ready, in the registry's stable order (roster spec
+  // F1). Drives the add-model picker on terminal experiment results; catalog
+  // population is a separate concern handled by state.models.
+  const availableProviderIds = useMemo<ProviderId[]>(
+    () => listProviders().filter((p) => readinessMap[p.id] === true).map((p) => p.id),
+    [readinessMap],
+  );
 
   useEffect(() => {
     // Suite / compare runs already saturate the bridge and upstreams. Pause the
@@ -466,6 +474,7 @@ export default function RSemble() {
                 </div>
               }
               models={state.models}
+              availableProviderIds={availableProviderIds}
             />
           </div>
         </div>

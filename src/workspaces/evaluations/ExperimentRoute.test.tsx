@@ -19,6 +19,7 @@ const { mockController, mockEvalRepo, mockRunRepo } = vi.hoisted(() => {
     abort: vi.fn(async () => {}),
     retryIncomplete: vi.fn(async () => ({ ok: true })),
     repairMissingCells: vi.fn(async () => ({ ok: true })),
+    addModelAndRun: vi.fn(async () => ({ ok: true, experimentId: "exp-1" })),
     recoverOnStartup: vi.fn(async () => 0),
     subscribe: vi.fn(() => () => {}),
     whenIdle: vi.fn(async () => {}),
@@ -33,6 +34,10 @@ const { mockController, mockEvalRepo, mockRunRepo } = vi.hoisted(() => {
 vi.mock("../../lib/evaluations/experiment-controller-context", () => ({
   useExperimentController: () => mockController,
   useExecutionLease: () => null,
+}));
+
+vi.mock("../../lib/execution-owner-context", () => ({
+  useExecutionOwner: () => ({ registry: null, owner: null }),
 }));
 
 vi.mock("../../lib/persistence/repository-context", () => ({
@@ -190,6 +195,44 @@ describe("ExperimentRoute", () => {
     expect(text).toContain("Experiment not found.");
     const back = h.$('a[href="/evaluations"]');
     expect(back).not.toBeNull();
+    cleanup(h);
+  });
+
+  it("shows the add-model action on a terminal experiment with a ready provider and no owner", async () => {
+    mockEvalRepo.getExperiment.mockResolvedValue(makeExperiment("completed"));
+    mockEvalRepo.getSuite.mockResolvedValue(null);
+    mockRunRepo.get.mockResolvedValue(null);
+    const h = renderWithRouter(
+      <ExperimentRoute models={[]} availableProviderIds={["openrouter"]} />,
+    );
+    await settle();
+    expect(h.$('[data-testid="add-model-action"]')).not.toBeNull();
+    cleanup(h);
+  });
+
+  it("hides the add-model action when another in-tab execution owns the registry", async () => {
+    mockEvalRepo.getExperiment.mockResolvedValue(makeExperiment("completed"));
+    mockEvalRepo.getSuite.mockResolvedValue(null);
+    mockRunRepo.get.mockResolvedValue(null);
+    const h = renderWithRouter(
+      <ExperimentRoute
+        models={[]}
+        availableProviderIds={["openrouter"]}
+        executionOwner={{ kind: "compare", id: "run-1" }}
+      />,
+    );
+    await settle();
+    expect(h.$('[data-testid="add-model-action"]')).toBeNull();
+    cleanup(h);
+  });
+
+  it("hides the add-model action when no provider is ready", async () => {
+    mockEvalRepo.getExperiment.mockResolvedValue(makeExperiment("completed"));
+    mockEvalRepo.getSuite.mockResolvedValue(null);
+    mockRunRepo.get.mockResolvedValue(null);
+    const h = renderWithRouter(<ExperimentRoute models={[]} availableProviderIds={[]} />);
+    await settle();
+    expect(h.$('[data-testid="add-model-action"]')).toBeNull();
     cleanup(h);
   });
 });

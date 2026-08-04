@@ -14,6 +14,8 @@ import type {
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import type { CandidateEvaluation, ModelSlot } from "../../studio-data";
+import { RepositoryContext } from "../../lib/persistence/repository-context";
+import { StorageError } from "../../lib/persistence/database";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -293,6 +295,7 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
     return {
       retryIncomplete: vi.fn(async () => retryResult),
       repairMissingCells: vi.fn(async () => ({ ok: true })),
+      addModelAndRun: vi.fn(async () => ({ ok: true, experimentId: "exp-1" })),
       requestPause: vi.fn(async () => {}),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
@@ -927,6 +930,603 @@ describe("ExperimentResults — matrix page in URL (Task 14)", () => {
     // URL now carries the page.
     const location = h.$("[data-testid='location-display']");
     expect(location?.textContent ?? "").toContain("page=2");
+    cleanup(h);
+  });
+});
+
+// =============================================================================
+// Roster extension — add-model surface (plan 001, F5)
+// =============================================================================
+
+describe("ExperimentResults — add model (roster extension)", () => {
+  /** Desktop media query so the header/matrix desktop layout renders. */
+  function stubDesktop() {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("min-width: 768"),
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+  }
+
+  /** Type into a React-controlled input without testing-library. */
+  function typeInto(input: HTMLInputElement, value: string) {
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  /** Run record whose source identifies it as this experiment's selected run,
+   *  with one reusable accepted candidate per model key — compound material. */
+  function makeCompoundRun(
+    runId: string,
+    taskId: string,
+    attemptId: string,
+    modelKeys: string[],
+  ): RunRecordV2 {
+    const candidates = modelKeys.map((modelKey, i) => ({
+      candidateId: `cand-${runId}-${i}`,
+      slotId: `slot-${i}`,
+      modelKey,
+      providerId: modelKey.split(":")[0] as RunRecordV2["candidates"][number]["providerId"],
+      model: modelKey,
+      slug: modelKey.split(":")[1],
+      acceptedAttemptId: `att-cand-${runId}-${i}`,
+      attempts: [
+        {
+          attemptId: `att-cand-${runId}-${i}`,
+          messages: [{ role: "user" as const, content: "hi" }],
+          startedAt: 10,
+          finishedAt: 20,
+          status: "completed" as const,
+          output: "out",
+          tokensIn: 5,
+          tokensOut: 5,
+          error: null,
+        },
+      ],
+    }));
+    return {
+      schemaVersion: 2,
+      id: runId,
+      revision: 1,
+      execution: { ownerId: "tab-1", fence: 1 },
+      createdAt: 1000,
+      updatedAt: 1000,
+      completedAt: 1100,
+      status: "completed",
+      mode: "rank",
+      source: {
+        kind: "experiment",
+        experimentId: "exp-1",
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: "sha256:abc",
+        taskId,
+        experimentTaskAttemptId: attemptId,
+        trial: 0,
+      },
+      task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      candidates,
+      judge: { status: "done", acceptedAttemptId: "j1", report: null, consensus: null, attempts: [] },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    };
+  }
+
+  /** Completed 2-task experiment where both selected runs are compound-reusable. */
+  function makeExtendableExperiment(): {
+    experiment: ExperimentRecord;
+    runs: Record<string, RunRecordV2>;
+  } {
+    const taskIds = ["t1", "t2"];
+    const runs: Record<string, RunRecordV2> = {};
+    const taskStates: ExperimentTaskState[] = taskIds.map((taskId) => {
+      const runId = `run-${taskId}`;
+      runs[runId] = makeCompoundRun(runId, taskId, `att-${taskId}`, [
+        MK_COMPLETE,
+        MK_PROVISIONAL,
+      ]);
+      return makeTaskState(taskId, runId);
+    });
+    const experiment: ExperimentRecord = {
+      id: "exp-1",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      protocolFingerprint: "sha256:abc",
+      execution: null,
+      snapshot: makeSnapshot(taskIds),
+      tasks: taskStates,
+      status: "completed",
+      revision: 1,
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    return { experiment, runs };
+  }
+
+  function makeControllerWithAddModel(result: { ok: true; experimentId: string } | { ok: false; error: string }) {
+    return {
+      retryIncomplete: vi.fn(async () => ({ ok: true })),
+      repairMissingCells: vi.fn(async () => ({ ok: true })),
+      addModelAndRun: vi.fn(async () => result),
+      requestPause: vi.fn(async () => {}),
+      recoverOnStartup: vi.fn(async () => 0),
+      subscribe: vi.fn(() => () => {}),
+      whenIdle: vi.fn(async () => {}),
+    } as unknown as ExperimentController;
+  }
+
+  const READY = ["openrouter" as const];
+  const NOT_READY: never[] = [];
+
+  function findAddModelButton(h: Harness): HTMLButtonElement | undefined {
+    return h.$$("button").find((b) => b.textContent?.trim() === "Add model") as
+      | HTMLButtonElement
+      | undefined;
+  }
+
+  it("places Add model in the header action row, never in the recovery toolbar", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+    const controller = makeControllerWithAddModel({ ok: true, experimentId: "exp-1" });
+    const h = renderWithRouter(
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+        models={[]}
+        availableProviderIds={READY}
+      />,
+    );
+    await settle();
+    await settle();
+
+    const action = h.$('[data-testid="add-model-action"]');
+    expect(action).toBeTruthy();
+    // It sits next to Back to suite in the header.
+    expect(action?.closest("header")).toBeTruthy();
+    // The recovery toolbar (absent here: no missing cells) contains nothing
+    // add-model-shaped, and the action is not inside any [aria-label=Recovery].
+    expect(action?.closest('[aria-label="Recovery"]')).toBeNull();
+    cleanup(h);
+  });
+
+  it("is absent when execution actions are disabled (another in-tab owner)", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+    const controller = makeControllerWithAddModel({ ok: true, experimentId: "exp-1" });
+    const h = renderWithRouter(
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+        models={[]}
+        availableProviderIds={READY}
+        executionActionsEnabled={false}
+      />,
+    );
+    await settle();
+    await settle();
+
+    expect(findAddModelButton(h)).toBeUndefined();
+    // Recovery controls are gated by the same generalized gate.
+    expect(h.$('[aria-label="Recovery"]')).toBeNull();
+    cleanup(h);
+  });
+
+  it("is absent without a controller or without a ready provider", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+
+    const h1 = renderWithRouter(
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        models={[]}
+        availableProviderIds={READY}
+      />,
+    );
+    await settle();
+    await settle();
+    expect(findAddModelButton(h1)).toBeUndefined();
+    cleanup(h1);
+
+    const controller = makeControllerWithAddModel({ ok: true, experimentId: "exp-1" });
+    const h2 = renderWithRouter(
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+        models={[]}
+        availableProviderIds={NOT_READY}
+      />,
+    );
+    await settle();
+    await settle();
+    expect(findAddModelButton(h2)).toBeUndefined();
+    cleanup(h2);
+  });
+
+  it("opens the picker with an empty catalog and accepts a raw slug on a ready provider", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+    const controller = makeControllerWithAddModel({ ok: true, experimentId: "exp-1" });
+    const h = renderWithRouter(
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+        models={[]}
+        availableProviderIds={READY}
+      />,
+    );
+    await settle();
+    await settle();
+
+    await act(async () => {
+      findAddModelButton(h)!.click();
+      await flush();
+    });
+    await settle();
+    expect(document.body.textContent).toContain("Add model to results");
+
+    // Empty catalog still permits raw-slug entry (openrouter needs a slash).
+    const input = document.body.querySelector<HTMLInputElement>("input#model-search");
+    expect(input).not.toBeNull();
+    typeInto(input!, "deepseek/deepseek-chat");
+    await settle();
+
+    const slugButton = [...document.body.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("deepseek/deepseek-chat"),
+    );
+    expect(slugButton).toBeTruthy();
+    await act(async () => {
+      slugButton!.click();
+      await flush();
+    });
+    await settle();
+
+    // Committed slot shows with a Change model action and the planner preview.
+    expect(document.body.textContent).toContain("Change model");
+    const preview = document.body.querySelector("[data-cost-preview]");
+    expect(preview?.textContent).toContain("2 candidate calls + 2 Judge calls across 2 tasks.");
+    expect(preview?.textContent).toContain("4 accepted candidate outputs will be reused.");
+    cleanup(h);
+  });
+
+  it("excludes roster and history keys from the picker", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+    const withHistory: ExperimentRecord = {
+      ...experiment,
+      rosterExtensions: [
+        {
+          addedModelKey: "deepseek:deepseek-chat",
+          addedSlot: {
+            id: "slot-x",
+            providerId: "deepseek",
+            provider: "DeepSeek",
+            model: "deepseek-chat",
+            slug: "deepseek-chat",
+            enabled: true,
+          },
+          priorFingerprint: "sha256:abc",
+          extendedAt: 1234,
+        },
+      ],
+    };
+    const controller = makeControllerWithAddModel({ ok: true, experimentId: "exp-1" });
+    const h = renderWithRouter(
+      <ExperimentResults
+        experiment={withHistory}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+        models={[
+          { providerId: "umans" as const, id: "model", name: "Model" },
+          { providerId: "deepseek" as const, id: "deepseek-chat", name: "DeepSeek Chat" },
+        ]}
+        availableProviderIds={READY}
+      />,
+    );
+    await settle();
+    await settle();
+
+    // History disclosure lists the extension without any matrix badge copy.
+    const history = h.$('[data-testid="roster-extensions"]');
+    expect(history?.textContent).toContain("Roster extensions (1)");
+    expect(history?.textContent).toContain("deepseek-chat");
+    // Standings carry no recently-added language.
+    const standings = h.$('[aria-label="Aggregate scores"]');
+    expect(standings?.textContent).not.toContain("recently added");
+
+    // In the picker, roster keys are excluded from raw entry under their own
+    // provider tab. Switch to the Umans tab and type the taken slug.
+    await act(async () => {
+      findAddModelButton(h)!.click();
+      await flush();
+    });
+    await settle();
+    const umansTab = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Umans",
+    );
+    expect(umansTab).toBeTruthy();
+    await act(async () => {
+      umansTab!.click();
+      await flush();
+    });
+    await settle();
+    const input = document.body.querySelector<HTMLInputElement>("input#model-search");
+    typeInto(input!, "model");
+    await settle();
+    expect(document.body.textContent).toContain("already added");
+
+    // History keys are equally excluded: DeepSeek tab, taken history slug.
+    const deepseekTab = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "DeepSeek",
+    );
+    expect(deepseekTab).toBeTruthy();
+    await act(async () => {
+      deepseekTab!.click();
+      await flush();
+    });
+    await settle();
+    typeInto(document.body.querySelector<HTMLInputElement>("input#model-search")!, "deepseek-chat");
+    await settle();
+    expect(document.body.textContent).toContain("already added");
+    cleanup(h);
+  });
+
+  it("saves the suite before calling the controller and hands off on success", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+    const controller = makeControllerWithAddModel({ ok: true, experimentId: "exp-1" });
+    const calls: string[] = [];
+    const saveSuite = vi.fn(async () => {
+      calls.push("saveSuite");
+      return 2;
+    });
+    (controller.addModelAndRun as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      calls.push("addModelAndRun");
+      return { ok: true, experimentId: "exp-1" };
+    });
+    const evalRepo = {
+      getSuite: vi.fn(async () => ({
+        id: "suite-1",
+        revision: 1,
+        version: 1,
+        name: "PulseFit Advanced",
+        description: "",
+        tasks: [],
+        modelSlots: SLOTS,
+        defaultJudge: { providerId: "openrouter" as const, model: "judge" },
+        defaultEvaluation: { kind: "holistic" as const },
+        createdAt: 1000,
+        updatedAt: 1000,
+        archivedAt: null,
+      })),
+      saveSuite,
+    };
+    const h = renderWithRouter(
+      <RepositoryContext.Provider
+        value={{
+          runRepo: null,
+          evalRepo: evalRepo as never,
+          fusionRepo: null,
+          db: null,
+          storageState: "ready",
+          retry: () => undefined,
+        }}
+      >
+        <ExperimentResults
+          experiment={experiment}
+          resolveRunRecord={async (id) => runs[id] ?? null}
+          controller={controller}
+          models={[]}
+          availableProviderIds={READY}
+        />
+      </RepositoryContext.Provider>,
+    );
+    await settle();
+    await settle();
+
+    await act(async () => {
+      findAddModelButton(h)!.click();
+      await flush();
+    });
+    await settle();
+    typeInto(document.body.querySelector<HTMLInputElement>("input#model-search")!, "deepseek/deepseek-chat");
+    await settle();
+    const slugButton = [...document.body.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("deepseek/deepseek-chat"),
+    );
+    await act(async () => {
+      slugButton!.click();
+      await flush();
+    });
+    await settle();
+
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent === "Add and run",
+    ) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    await act(async () => {
+      confirm.click();
+      await flush();
+      await flush();
+    });
+    await settle();
+
+    expect(calls).toEqual(["saveSuite", "addModelAndRun"]);
+    // Raw slug commits under the selected provider tab (openrouter here),
+    // with the typed slug intact — provider namespaces stay separate.
+    expect(controller.addModelAndRun).toHaveBeenCalledWith("exp-1", {
+      slot: expect.objectContaining({ providerId: "openrouter", slug: "deepseek/deepseek-chat" }),
+    });
+    // Dialog closed; handoff copy is on the results surface.
+    const handoff = h.$('[data-testid="add-model-handoff"]');
+    expect(handoff?.textContent).toContain("Add-model run started — navigate to the progress view to watch it.");
+    cleanup(h);
+  });
+
+  it("still calls the controller once when suite sync conflicts, and appends the warning to the handoff", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+    const controller = makeControllerWithAddModel({ ok: true, experimentId: "exp-1" });
+    const saveSuite = vi.fn(async () => {
+      throw new StorageError("conflict", "Stale revision");
+    });
+    const evalRepo = {
+      getSuite: vi.fn(async () => ({
+        id: "suite-1",
+        revision: 1,
+        version: 1,
+        name: "PulseFit Advanced",
+        description: "",
+        tasks: [],
+        modelSlots: SLOTS,
+        defaultJudge: { providerId: "openrouter" as const, model: "judge" },
+        defaultEvaluation: { kind: "holistic" as const },
+        createdAt: 1000,
+        updatedAt: 1000,
+        archivedAt: null,
+      })),
+      saveSuite,
+    };
+    const h = renderWithRouter(
+      <RepositoryContext.Provider
+        value={{
+          runRepo: null,
+          evalRepo: evalRepo as never,
+          fusionRepo: null,
+          db: null,
+          storageState: "ready",
+          retry: () => undefined,
+        }}
+      >
+        <ExperimentResults
+          experiment={experiment}
+          resolveRunRecord={async (id) => runs[id] ?? null}
+          controller={controller}
+          models={[]}
+          availableProviderIds={READY}
+        />
+      </RepositoryContext.Provider>,
+    );
+    await settle();
+    await settle();
+
+    await act(async () => {
+      findAddModelButton(h)!.click();
+      await flush();
+    });
+    await settle();
+    typeInto(document.body.querySelector<HTMLInputElement>("input#model-search")!, "deepseek/deepseek-chat");
+    await settle();
+    const slugButton = [...document.body.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("deepseek/deepseek-chat"),
+    );
+    await act(async () => {
+      slugButton!.click();
+      await flush();
+    });
+    await settle();
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent === "Add and run",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      confirm.click();
+      await flush();
+      await flush();
+    });
+    await settle();
+
+    expect(controller.addModelAndRun).toHaveBeenCalledTimes(1);
+    const handoff = h.$('[data-testid="add-model-handoff"]');
+    expect(handoff?.textContent).toContain("Add-model run started");
+    expect(handoff?.textContent).toContain("Suite was modified elsewhere");
+    cleanup(h);
+  });
+
+  it("skips the suite write when sync is unchecked and keeps the dialog open on controller failure", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+    const controller = makeControllerWithAddModel({ ok: false, error: "Another tab owns the lease." });
+    const saveSuite = vi.fn();
+    const evalRepo = {
+      getSuite: vi.fn(async () => null),
+      saveSuite,
+    };
+    const h = renderWithRouter(
+      <RepositoryContext.Provider
+        value={{
+          runRepo: null,
+          evalRepo: evalRepo as never,
+          fusionRepo: null,
+          db: null,
+          storageState: "ready",
+          retry: () => undefined,
+        }}
+      >
+        <ExperimentResults
+          experiment={experiment}
+          resolveRunRecord={async (id) => runs[id] ?? null}
+          controller={controller}
+          models={[]}
+          availableProviderIds={READY}
+        />
+      </RepositoryContext.Provider>,
+    );
+    await settle();
+    await settle();
+
+    await act(async () => {
+      findAddModelButton(h)!.click();
+      await flush();
+    });
+    await settle();
+    // Uncheck suite sync.
+    const checkbox = document.body.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    await act(async () => {
+      checkbox!.click();
+      await flush();
+    });
+    typeInto(document.body.querySelector<HTMLInputElement>("input#model-search")!, "deepseek/deepseek-chat");
+    await settle();
+    const slugButton = [...document.body.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("deepseek/deepseek-chat"),
+    );
+    await act(async () => {
+      slugButton!.click();
+      await flush();
+    });
+    await settle();
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent === "Add and run",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      confirm.click();
+      await flush();
+      await flush();
+    });
+    await settle();
+
+    expect(saveSuite).not.toHaveBeenCalled();
+    expect(controller.addModelAndRun).toHaveBeenCalledTimes(1);
+    // Dialog stays open with the controller error in the alert region.
+    expect(document.body.textContent).toContain("Add model to results");
+    const alert = document.body.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("Another tab owns the lease.");
     cleanup(h);
   });
 });
