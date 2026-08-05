@@ -1,0 +1,307 @@
+{
+  "kind": "rsemble-suite-package",
+  "schemaVersion": 1,
+  "name": "PulseFit Business Analytics - Advanced Suite",
+  "description": "Fifteen self-contained, research-informed cases for a D2C fitness subscription business. The suite tests metric semantics and governance, cohort economics, experiment integrity, causal incrementality and geo inference, pricing and revenue quality, subscription finance and forecasting, uplift targeting, AI feature economics, constrained allocation, competitive response, and expansion risk. Every case contains sufficient data for a defensible decision and a task-specific judge calibration key.",
+  "profiles": [
+    {
+      "id": "profile-pulsefit-advanced-analytics",
+      "name": "PulseFit Advanced Analytics — Five-Level Anchors",
+      "description": "Scores quantitative business analysis on correctness, causal reasoning, economics, decision quality, domain fluency, and executive communication using a fully anchored five-level scale. Score 3 is the competent professional baseline; scores 4 and 5 require affirmative evidence beyond basic task completion.",
+      "judgeInstruction": "Use the task-specific calibration facts as the answer key. Score demonstrated reasoning, not vocabulary, confidence, length, or polish. Score every candidate against the same absolute standard as if it were evaluated alone; the quality of the other candidates must not raise or lower its scores.\n\nUse INTEGER criterion scores only: 1, 2, 3, 4, or 5. Apply the highest level whose complete anchor is supported by concrete evidence in the answer. If the answer falls between two levels, choose the lower level. Score 3 means a competent professional response that successfully handles the criterion. Score 4 means clearly strong performance that exceeds the competent baseline in a material way. Score 5 is exceptional and should be rare: every condition in the Score 5 anchor must be demonstrated, no material weakness may remain on that criterion, and the answer must add decision-relevant rigor rather than merely satisfy the prompt. Do not award 4 or 5 because an answer is the best in a weak cohort.\n\nFor each criterion rationale, identify the evidence that earns the selected level and the most important unmet condition preventing the next level. A confident answer built on a mislabeled denominator, attributed rather than incremental outcomes, invalid experimental data, or cash/revenue confusion cannot score above 2 on the affected criterion. Penalize fabricated facts. Reward explicit assumptions and sensitivity analysis only when they change, bound, or protect the decision; do not reward generic caveat lists. The canonical overall score should be derived from the weighted criterion vector, not from a separate holistic impression.",
+      "criteria": [
+        {
+          "id": "quantitative-correctness",
+          "name": "Quantitative correctness",
+          "description": "Are calculations, denominators, units, and comparisons correct and reproducible from the case data?\nScore 2: Completes some relevant calculations, but at least one decision-critical denominator, unit, comparison, or arithmetic step is wrong, missing, or not reproducible. The main direction may be partly right, but the quantitative case is materially unreliable.\nScore 4: Shows all decisive calculations correctly and auditably, labels units and denominators, reconciles apparent contradictions, and distinguishes exact results from approximations. Only small, non-material opportunities for clarification remain.",
+          "weight": 2,
+          "anchors": {
+            "one": "Uses the wrong denominator or metric, makes material arithmetic errors, or asserts a direction contradicted by the data; the resulting conclusion is not decision-reliable.",
+            "two": "Completes some relevant calculations, but at least one decision-critical denominator, unit, comparison, or arithmetic step is wrong, missing, or not reproducible. The main direction may be partly right, but the quantitative case is materially unreliable.",
+            "three": "Gets all decision-critical calculations and the main direction correct at a competent professional level. Units and denominators are mostly clear, and any remaining error or omission is minor enough that it does not change the recommendation.",
+            "four": "Shows all decisive calculations correctly and auditably, labels units and denominators, reconciles apparent contradictions, and distinguishes exact results from approximations. Only small, non-material opportunities for clarification remain.",
+            "five": "Demonstrates exceptional quantitative command: the full decisive math is correct, cross-checked, and easy to reproduce; hidden denominator or unit traps are resolved; and a decision-relevant bound, threshold, reconciliation, or sensitivity analysis adds material insight beyond merely completing the requested calculations. No material quantitative weakness remains."
+          }
+        },
+        {
+          "id": "causal-statistical-reasoning",
+          "name": "Causal and statistical reasoning",
+          "description": "Does the answer distinguish description, prediction, attribution, and causal effect while checking whether the evidence is trustworthy?\nScore 2: Notices at least one validity threat but handles it incompletely or incorrectly. The answer may name bias, confounding, peeking, contamination, or missing data without tracing its likely effect on the estimate or without proposing a credible resolution.\nScore 4: Identifies all major decision-relevant validity threats, explains how each changes bias or uncertainty, and specifies a concrete analysis population, counterfactual, holdout, rerun, or measurement design capable of resolving the decision.",
+          "weight": 2,
+          "anchors": {
+            "one": "Treats correlation or attribution as causation, accepts compromised experimental evidence, ignores an explicit data-quality failure, or recommends action from an invalid estimate without qualification.",
+            "two": "Notices at least one validity threat but handles it incompletely or incorrectly. The answer may name bias, confounding, peeking, contamination, or missing data without tracing its likely effect on the estimate or without proposing a credible resolution.",
+            "three": "Correctly distinguishes descriptive, predictive, attributional, and causal claims where relevant; identifies the main decision-relevant validity threat and its likely direction; and proposes a credible counterfactual, holdout, rerun, or measurement design. A secondary threat or implementation detail may remain underdeveloped.",
+            "four": "Identifies all major decision-relevant validity threats, explains how each changes bias or uncertainty, and specifies a concrete analysis population, counterfactual, holdout, rerun, or measurement design capable of resolving the decision.",
+            "five": "Demonstrates exceptional causal and statistical judgment: all material threats are identified and prioritized, their likely bias or uncertainty is traced explicitly, and the answer adds a useful diagnostic bound, falsification check, sensitivity analysis, or precommitted decision rule that protects against the remaining uncertainty. No material validity weakness remains."
+          }
+        },
+        {
+          "id": "unit-economics-finance",
+          "name": "Unit economics and finance",
+          "description": "Does the answer translate user behavior into contribution economics and keep revenue, cash, margin, payback, and LTV concepts distinct?\nScore 2: Computes a relevant economic quantity but omits or mishandles a decision-critical cost, time horizon, cohort distinction, refund effect, or accounting boundary. The answer is directionally useful but not safe for the decision.\nScore 4: Uses net contribution economics at the correct unit and horizon, incorporates all stated costs and refunds, reconciles operating and accounting views where needed, and quantifies the key tradeoff, threshold, or sensitivity.",
+          "weight": 1.5,
+          "anchors": {
+            "one": "Optimizes a vanity metric, ignores decisive variable costs or refunds, or materially confuses cash collection, recognized revenue, contribution, payback, or lifetime value.",
+            "two": "Computes a relevant economic quantity but omits or mishandles a decision-critical cost, time horizon, cohort distinction, refund effect, or accounting boundary. The answer is directionally useful but not safe for the decision.",
+            "three": "Computes the main decision-relevant contribution, payback, or value measure at the correct unit and horizon; keeps cash, revenue, margin, and value mostly distinct; and states the most important limitation of the available data.",
+            "four": "Uses net contribution economics at the correct unit and horizon, incorporates all stated costs and refunds, reconciles operating and accounting views where needed, and quantifies the key tradeoff, threshold, or sensitivity.",
+            "five": "Demonstrates exceptional economic and financial reasoning: all material cash, revenue, margin, timing, cohort, and terminal-value distinctions are reconciled; the answer identifies what is not economically identified; and it derives a decision-changing bound, break-even threshold, scenario range, or marginal-value insight beyond the basic requested calculation. No material economic weakness remains."
+          }
+        },
+        {
+          "id": "decision-quality",
+          "name": "Decision quality",
+          "description": "Is the recommendation decisive, economically coherent, and paired with explicit thresholds or next actions?\nScore 2: States a decision, but it is weakly connected to the quantitative evidence, overlooks a major downside, or offers only vague safeguards and next steps. The recommendation would be difficult to execute or falsify.\nScore 4: Makes a decisive, economically coherent recommendation; names the strongest downside or alternative; and specifies measurable thresholds, safeguards, or kill/scale triggers that make the decision operational.",
+          "weight": 1.5,
+          "anchors": {
+            "one": "Provides no actionable decision, chooses an option contradicted by its own analysis, or substitutes a generic framework or list of possibilities for judgment.",
+            "two": "States a decision, but it is weakly connected to the quantitative evidence, overlooks a major downside, or offers only vague safeguards and next steps. The recommendation would be difficult to execute or falsify.",
+            "three": "Makes a clear and plausible decision tied to the main quantified evidence, acknowledges the most important tradeoff or uncertainty, and gives a concrete next action or test. Some thresholds, safeguards, or contingency logic may remain broad.",
+            "four": "Makes a decisive, economically coherent recommendation; names the strongest downside or alternative; and specifies measurable thresholds, safeguards, or kill/scale triggers that make the decision operational.",
+            "five": "Demonstrates exceptional judgment under uncertainty: the recommendation remains coherent across the relevant scenarios, explicitly explains why the strongest alternative is not preferred, preserves option value where appropriate, and provides precise, falsifiable triggers and contingency actions. No material decision gap remains."
+          }
+        },
+        {
+          "id": "subscription-domain-fluency",
+          "name": "Subscription analytics fluency",
+          "description": "Does the answer use subscription and growth concepts precisely in the context where they matter?\nScore 2: Uses most concepts correctly but misses a decision-critical lifecycle, cohort, channel, plan-duration, renewal, or replacement-cost implication, causing an incomplete or partly misleading interpretation.\nScore 4: Integrates acquisition quality, lifecycle retention, cohort and plan duration, contribution margin, renewal behavior, and replacement cost precisely where the task requires, without importing unsupported benchmarks.",
+          "weight": 1,
+          "anchors": {
+            "one": "Misuses or materially confuses core concepts such as CAC, retention, renewal, MRR, NRR, incrementality, plan mix, contribution margin, or subscriber lifecycle.",
+            "two": "Uses most concepts correctly but misses a decision-critical lifecycle, cohort, channel, plan-duration, renewal, or replacement-cost implication, causing an incomplete or partly misleading interpretation.",
+            "three": "Uses the relevant subscription and growth concepts correctly and connects the key lifecycle, cohort, channel, plan, retention, or contribution implications needed for a competent decision.",
+            "four": "Integrates acquisition quality, lifecycle retention, cohort and plan duration, contribution margin, renewal behavior, and replacement cost precisely where the task requires, without importing unsupported benchmarks.",
+            "five": "Demonstrates exceptional subscription-domain fluency by surfacing a subtle but decision-critical interaction among acquisition, lifecycle retention, plan design, renewal, contribution, replacement cost, or measurement semantics and using it to materially improve the recommendation. No core concept is misused or left materially disconnected."
+          }
+        },
+        {
+          "id": "executive-communication",
+          "name": "Executive communication",
+          "description": "Is the response concise, verdict-first, transparent about uncertainty, and usable by the named decision-maker?\nScore 2: Contains a discernible recommendation but is poorly prioritized, difficult to audit, materially overlong, or vague about assumptions, confidence, and next actions.\nScore 4: Is concise, verdict-first, and decision-maker appropriate; makes the decisive evidence easy to audit; separates facts, assumptions, and uncertainty cleanly; and closes with prioritized actions.",
+          "weight": 1,
+          "anchors": {
+            "one": "Buries or omits the verdict, presents an unstructured wall of text, leaves decisive figures unclear, or states unsupported numbers as facts.",
+            "two": "Contains a discernible recommendation but is poorly prioritized, difficult to audit, materially overlong, or vague about assumptions, confidence, and next actions.",
+            "three": "Provides a clear, structured, mostly verdict-first response; makes the decisive math reasonably easy to follow; distinguishes key facts from assumptions; and ends with usable actions. Some compression or prioritization could improve.",
+            "four": "Is concise, verdict-first, and decision-maker appropriate; makes the decisive evidence easy to audit; separates facts, assumptions, and uncertainty cleanly; and closes with prioritized actions.",
+            "five": "Is exceptionally board-ready: it compresses the full decision, decisive math, uncertainty, tradeoff, and next action into a highly clear structure without losing rigor, introducing clutter, or leaving ambiguity. Every included detail earns its place and no material communication weakness remains."
+          }
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-pulsefit-funnel-truth",
+      "title": "The acquisition dashboard is using the wrong CAC",
+      "prompt": "PulseFit sells a $20/month fitness subscription. Net contribution after app-store fees and variable service costs is 75% of subscription revenue, or $15 per paid month. The CEO opens the quarterly review with: \"Acquisition cost is stable and installs are up, so growth is healthy.\"\n\nPRIOR QUARTER TOTALS\n- Paid-media spend: $760,000\n- Paid-media installs: 42,222\n- New paid subscribers from paid media: 8,000\n- Organic installs: 9,000\n- New paid subscribers from organic: 1,800\n\nCURRENT QUARTER BY SOURCE\nSource        Spend      Installs   New paid   Avg paid months in first 90 days\nPaid social  $480,000     24,000       3,000              1.75\nSearch       $180,000      9,000       2,000              2.10\nInfluencer   $180,000     12,000       1,000              1.45\nReferral      $60,000      6,000       1,500              2.35\nOrganic            $0     10,000       2,000              2.20\n\nThe dashboard labels spend / installs as \"CAC.\" It also reports a company-wide acquisition cost using all installs, including organic installs, in the denominator.\n\nQUESTIONS\n1. Audit the CEO's claim. Calculate prior-versus-current paid CPI, paid CAC per new paid subscriber, and the blended figure the dashboard is showing. Explain precisely why the dashboard label and blend are misleading.\n2. For each current source, calculate 90-day realized contribution per new paid subscriber and contribution/CAC for paid sources. Do not call this full LTV.\n3. Give a cut/hold/scale decision for each paid source. State what evidence you need before extrapolating from 90-day contribution to LTV or approving more budget.\n4. Write the three-line correction you would put at the top of the executive dashboard.",
+      "systemPrompt": "You are the acting VP of growth analytics. Lead with the corrected verdict, show audit-ready math, and distinguish installs, paid starts, and paid months.",
+      "judgeInstructionOverride": "Calibration facts: prior paid CPI = $760,000/42,222 = about $18.00 and prior paid CAC = $760,000/8,000 = $95.00. Current paid CPI = $900,000/51,000 = $17.65, a roughly 2% improvement, while current paid CAC = $900,000/7,500 = $120.00, a 26.3% deterioration; spend rose 18.4% while paid starts fell 6.25%. The dashboard's all-install figure is $760,000/51,222 = $14.84 prior and $900,000/61,000 = $14.75 current, which looks stable only because it uses installs rather than customers and mixes zero-spend organic volume into the denominator. Current channel CACs are social $160, search $90, influencer $180, referral $40. Ninety-day contribution per new payer is social $26.25, search $31.50, influencer $21.75, referral $35.25, organic $33.00. Realized contribution/CAC is about 0.16x, 0.35x, 0.12x, and 0.88x respectively. Full LTV is not identified without later survival/renewal and cost data. Strong answers stop or sharply constrain influencer, protect/expand referral subject to marginal capacity and fraud checks, prefer search to social, and require cohort survival/payback plus marginal rather than average returns before scaling.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-cohort-ltv",
+      "title": "Annual subscribers look better until CAC enters the model",
+      "prompt": "PulseFit is comparing monthly and annual acquisition. Use a 12-month observed-value window; do not invent value after month 12. Net contribution margin before refunds is 70% for both plans.\n\nMONTHLY PLAN\n- Price: $20, billed at the start of each active month\n- CAC per new payer: $70\n- Refund rate per charge: 2%\n- Probability a new payer is active at the start of billing months 1 through 12:\n  100%, 82%, 70%, 62%, 56%, 50%, 45%, 41%, 38%, 35%, 32%, 30%\n\nANNUAL PLAN\n- Price: $144, collected up front for 12 months of service\n- CAC per new payer: $95\n- Full-refund rate: 8%\n- The first renewal occurs after this analysis window, so no renewal outcome is observed\n\nThe growth lead says, \"Annual wins: it collects more cash and annual customers cannot churn during the year.\"\n\nQUESTIONS\n1. Calculate expected billed months and 12-month net contribution per new payer for the monthly plan. Calculate the same 12-month contribution value for the annual plan.\n2. Calculate 12-month contribution/CAC for both plans and reconcile the ranking with the growth lead's claim.\n3. Identify at least three reasons these are not full lifetime values and explain which missing observation is most decision-critical.\n4. Decide how you would allocate the next acquisition test across plan types, including a quantitative success threshold.",
+      "systemPrompt": "You are a finance-minded growth analyst. Keep cash timing, service commitment, retention, contribution, and lifetime value distinct.",
+      "judgeInstructionOverride": "Calibration facts: expected monthly-plan bills in the observed window are the sum of the 12 survival probabilities = 6.41. Monthly 12-month net contribution = 6.41 x $20 x 70% x 98% = $87.95 per payer. Annual net contribution = $144 x 70% x 92% = $92.74. Annual is $4.79 higher per payer before CAC, but monthly contribution/CAC = 1.26x and annual = 0.98x because annual CAC is higher. Neither figure is full LTV: the monthly cohort still has 30% active at month 12, annual renewal is completely unobserved, refund timing and later service costs may differ, and acquisition mix may select different customers. The most critical missing observation is annual renewal/net value after the renewal boundary, paired with comparable post-12-month monthly survival. Strong allocation answers do not shift all spend to annual; they preserve randomized plan exposure and require annual CAC below about $73.81 to match monthly's observed 1.26x ratio at the stated contribution, or require annual contribution to rise above about $119.35 at CAC $95.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-experiment-integrity",
+      "title": "A winning paywall test with broken assignment data",
+      "prompt": "PulseFit tested an annual-first paywall (B) against its monthly-first paywall (A). The randomizer was configured 50/50 for all eligible users.\n\nREPORTED EXPOSURE DATA AFTER 14 DAYS\n- A: 50,000 exposed users; 3,500 paid starts (7.00%)\n- B: 47,200 exposed users; 3,682 paid starts (7.80%)\n- The analyst reports an 11.4% relative conversion lift and p = 0.01\n\nTEST OPERATIONS\n- The pre-registered duration was 28 days, but the team checked significance daily and wants to stop now. No sequential-testing correction was configured.\n- Android users who hit a B-only checkout crash are absent from the exposure table because the exposure event fires after the checkout screen loads. Crash logs suggest about 2,600 affected sessions, but identity joins are incomplete.\n- B sells more annual plans. Refund, chargeback, support-contact, and renewal data are immature.\n\nQUESTIONS\n1. Reproduce the naive conversion lift, then test the 50/50 sample split using the expected count under equal allocation. You may use chi-square = sum((observed - expected)^2 / expected); a value above 10.83 for 1 degree of freedom is p < 0.001.\n2. Decide whether the reported lift is decision-grade. Explain the direction of likely bias from the missing B crash sessions and the separate risk from daily peeking.\n3. Specify the analysis population, primary outcome, data-quality checks, and guardrails for a clean rerun.\n4. Give a ship/no-ship decision today and an explicit rule for the next decision.",
+      "systemPrompt": "You chair PulseFit's experiment review. Protect causal validity even when the headline result is commercially attractive.",
+      "judgeInstructionOverride": "Calibration facts: naive relative lift = (7.80%-7.00%)/7.00% = 11.4%. Total observed exposure is 97,200, so equal expected counts are 48,600 per arm. Chi-square = 2 x (1,400^2/48,600) = 80.66, far beyond the supplied p < 0.001 threshold: this is severe sample-ratio mismatch. Because B-only crashers are omitted after assignment, the observed B denominator excludes likely non-converters and biases B conversion upward. Adding 2,600 crash sessions as non-converting eligible assignments would make B roughly 3,682/49,800 = 7.39%, but incomplete joins mean this is only a diagnostic bound, not a corrected causal estimate. Daily uncorrected peeking separately inflates false positives. Strong answers say no broad ship today, analyze intention-to-treat from assignment logs, repair exposure logging, run an A/A or telemetry validation, pre-register duration and sequential method, use a mature net-contribution outcome per eligible assigned user, and guard refund/chargeback, crash, support burden, and retention/renewal.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-incrementality",
+      "title": "Attribution says scale; incrementality says reallocate",
+      "prompt": "PulseFit's media dashboard ranks channels by platform-attributed CAC. Finance instead ran randomized holdouts or matched-geo tests and estimated incremental new paid subscribers. Treat the incrementality estimates below as unbiased point estimates for this exercise. Expected 12-month net contribution per incremental new payer is $150 before acquisition spend.\n\nChannel         Spend     Attributed new paid   Incremental new paid\nPaid social    $300,000          6,000                 3,000\nBranded search $120,000          4,000                   600\nInfluencer     $150,000          2,500                 2,000\nReferral        $80,000          3,000                 2,800\n\nThe CMO proposes moving another $200,000 into branded search because its attributed CAC is lowest.\n\nQUESTIONS\n1. Calculate attributed CAC, incremental CAC, attributed-to-incremental conversion ratio, and contribution iROAS for each channel.\n2. Explain why attributed conversions can exceed incremental conversions, especially for branded search.\n3. Reject or approve the CMO proposal. Give a reallocation and a test design for the next $200,000.\n4. State two reasons average historical iROAS is not automatically the marginal return on the next dollar.",
+      "systemPrompt": "You own marketing measurement. Optimize causal contribution, not platform credit, and make uncertainty operational.",
+      "judgeInstructionOverride": "Calibration facts: attributed CACs are social $50, branded search $30, influencer $60, referral $26.67. Incremental CACs are social $100, branded search $200, influencer $75, referral $28.57. Attributed/incremental count ratios are 2.0x, 6.67x, 1.25x, and 1.07x. Contribution iROAS = incremental payers x $150 / spend: social 1.50x, branded search 0.75x, influencer 2.00x, referral 5.25x. Branded search likely harvests existing intent or retags users who would have converted organically; attribution answers who received credit, not the counterfactual. Strong answers reject a blind $200k branded-search increase, prioritize experimentally bounded referral capacity and then influencer/social based on marginal lift, preserve holdouts, and mention saturation/diminishing returns, audience expansion, creative changes, auction effects, and estimate uncertainty as reasons average iROAS may not transport to new spend.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-pricing-value",
+      "title": "The paywall with the most cash is not the proven winner",
+      "prompt": "PulseFit ran three paywall cells among comparable eligible visitors. Use the supplied mature 12-month outcomes and assume randomization and telemetry checks passed. Net contribution margin after platform fees and variable delivery costs is 70% on non-refunded revenue.\n\nA - MONTHLY ONLY\n- Visitor-to-paid conversion: 8.0%\n- Price: $20 per bill\n- Expected bills in 12 months per new payer: 5.0\n- Full-refund rate: 3%\n\nB - ANNUAL FIRST\n- Visitor-to-paid conversion: 6.2%\n- Price: $120 up front\n- Full-refund rate: 8%\n\nC - PLAN CHOICE\n- Visitor-to-paid conversion: 7.5%\n- Mix among payers: 45% annual, 55% monthly\n- Plan-specific price, bills, and refund rates equal A and B\n\nEstimated 95% intervals for 12-month net contribution per eligible visitor:\n- A: $5.10 to $5.76\n- B: $4.40 to $5.18\n- C: $5.00 to $5.82\n\nThe CEO prefers B because annual cash is collected sooner.\n\nQUESTIONS\n1. Calculate expected 12-month net contribution per eligible visitor for A, B, and C. Rank the point estimates.\n2. Interpret the confidence intervals. What is and is not established about A versus C and about B versus A?\n3. Recommend a default paywall and explain how cash timing should enter the decision without replacing contribution economics.\n4. Propose one follow-up segmentation analysis and one guardrail against a misleading aggregate winner.",
+      "systemPrompt": "You advise the pricing committee. Use value per eligible visitor as the common unit and do not confuse earlier cash with more earned value.",
+      "judgeInstructionOverride": "Calibration facts: A = 8.0% x 97% x 5 x $20 x 70% = $5.432 per visitor. B = 6.2% x 92% x $120 x 70% = $4.791. C = 7.5% x [45% x 92% x $120 x 70% + 55% x 97% x 5 x $20 x 70%] = $5.409. Point ranking is A, C, B, but A and C are essentially tied and their intervals overlap heavily; there is no established winner between them. B's point estimate is worse than A and intervals overlap slightly, so evidence suggests but does not prove a loss at a simple 95% pairwise standard. Strong answers choose A or C provisionally based on customer choice/strategy, do not choose B solely for cash timing, and suggest heterogeneous treatment effects by acquisition source, geography, tenure intent, or price sensitivity while guarding plan-mix Simpson effects, refunds, retention, and multiplicity.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-mrr-cash-bridge",
+      "title": "Cash is up while subscription health is down",
+      "prompt": "PulseFit's opening monthly recurring revenue (MRR) was $10.00 million. During the month, the MRR bridge was:\n- New-customer MRR: +$1.20m\n- Expansion from existing customers: +$0.20m\n- Contraction from existing customers: -$0.15m\n- Churned existing-customer MRR: -$1.10m\n- Reactivated existing-customer MRR: +$0.10m\n\nSeparately, on the first day of the quarter PulseFit collected $6.00m of cash from new one-year subscriptions that provide service evenly over 12 months. For this case, recognize that subscription revenue straight-line: $0.50m per month. Ignore taxes and refunds. The CFO tells the board, \"The quarter is already strong because we booked $6m of annual revenue and cash is up.\"\n\nQUESTIONS\n1. Build the MRR bridge and calculate ending MRR, gross revenue retention (GRR), and net revenue retention (NRR). Include reactivation in NRR for this case and exclude new-customer MRR from both retention rates.\n2. After three months, how much of the $6m is recognized revenue and how much remains deferred? Explain the relationship to cash.\n3. Diagnose subscription health using both the MRR bridge and annual cash collection. What claim in the CFO's sentence is wrong?\n4. Give the board three metrics that prevent this mistake next quarter and one action threshold.",
+      "systemPrompt": "You are the board's analytics lead. Reconcile operating metrics, accrual revenue, and cash without giving accounting advice beyond the stated case rules.",
+      "judgeInstructionOverride": "Calibration facts: ending MRR = $10.00m + $1.20m + $0.20m - $0.15m - $1.10m + $0.10m = $10.25m. GRR = ($10.00m - $1.10m - $0.15m)/$10.00m = 87.5%. With the case's instructed definition, NRR = ($10.00m + $0.20m - $0.15m - $1.10m + $0.10m)/$10.00m = 90.5%. New MRR masks a weak existing base. After three months, $1.50m is recognized and $4.50m remains deferred; cash collected is $6m but it is not all quarter revenue. Strong answers explicitly correct 'booked $6m of annual revenue,' monitor the MRR/ARR bridge, GRR/NRR by cohort or plan, recognized revenue versus billings/cash and deferred revenue, and set a concrete retention or burn/payback trigger.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-uplift-targeting",
+      "title": "The highest-risk churn segment is the wrong retention target",
+      "prompt": "PulseFit has a churn-risk model and wants to send save offers to the highest-risk subscribers. Before launch, analytics randomized an offer versus no offer within each risk band. Each arm contains 5,000 subscribers. A retained subscriber produces $200 of expected future net contribution. Offer cost is incurred for every treated subscriber, whether or not they renew.\n\nRisk band    Control renewal   Treated renewal   Offer cost per treated subscriber\nHigh              20%                24%                       $20\nMedium            55%                63%                        $8\nLow               85%                86%                        $4\n\nThe CRM director says, \"High risk has the lowest renewal, so it must be our best target.\"\n\nQUESTIONS\n1. For each band, calculate incremental renewal rate, incremental renewals, incremental contribution, offer cost, and net incremental profit.\n2. Which band should receive the offer under these economics? Reconcile the answer with the churn-risk ranking.\n3. Explain the difference between predicting churn and predicting treatment effect. Name the users the risk model alone cannot distinguish.\n4. Design the production targeting policy and ongoing holdout needed to learn safely after launch.",
+      "systemPrompt": "You lead lifecycle decision science. Optimize incremental profit, not response rate or churn risk alone.",
+      "judgeInstructionOverride": "Calibration facts: high-risk uplift = 4 percentage points, 200 incremental renewals, $40,000 incremental contribution, $100,000 offer cost, net -$60,000. Medium uplift = 8 points, 400 renewals, $80,000 contribution, $40,000 cost, net +$40,000. Low uplift = 1 point, 50 renewals, $10,000 contribution, $20,000 cost, net -$10,000. Only medium should be targeted under the point estimates. Churn propensity predicts baseline risk; uplift estimates change caused by treatment. A risk model alone cannot separate persuadables from sure things, lost causes, and people harmed or annoyed by treatment. Strong answers deploy a value-aware uplift/profit threshold, preserve randomized no-offer holdouts within eligible segments, monitor treatment cost and longer-term behavior, and revisit uncertainty before individual-level over-targeting.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-ai-coach-economics",
+      "title": "AI coaching lifts retention but destroys contribution",
+      "prompt": "PulseFit tested an AI coach among randomly assigned new paid subscribers, 20,000 per arm, for six months. Subscription price is $20/month and contribution margin before AI inference cost is 75%, or $15 per paid month.\n\nCONTROL\n- Average paid months per assigned subscriber during the six-month window: 3.40\n- Six-month retention: 34%\n\nAI COACH\n- Average paid months per assigned subscriber: 3.65\n- Six-month retention: 38%\n- Average inference cost: $2.40 per paid subscriber-month\n- Support contacts: 18% higher than control; their cost is not included above\n\nThe product lead says, \"Retention is up four points, so this is an obvious full rollout.\"\n\nQUESTIONS\n1. Calculate six-month contribution per assigned subscriber in each arm before support cost and the incremental contribution of AI.\n2. Calculate the maximum average inference cost per AI paid month that would make the two arms break even on six-month contribution before support cost.\n3. Decide whether to roll out, stop, or redesign. Explain why a retention lift can coexist with worse economics.\n4. Propose a follow-up test that can identify a profitable target population without using post-treatment behavior to choose who receives treatment.",
+      "systemPrompt": "You sit on the AI investment committee. Treat engagement and retention as mechanisms, not the objective; optimize incremental net contribution and customer value.",
+      "judgeInstructionOverride": "Calibration facts: control contribution = 3.40 x $15 = $51.00 per assigned subscriber. AI contribution = 3.65 x ($15 - $2.40) = $45.99, so AI loses $5.01 per assigned subscriber before the observed support-cost increase. Break-even inference cost c solves 3.65 x ($15 - c) = $51, giving c = about $1.03 per AI paid month; because support cost is omitted, the true allowable inference cost is lower. The retention lift is real under the stated randomization but insufficient to offset cost. Strong answers reject an unguarded full rollout, redesign cost/usage limits or premium pricing, pre-randomize eligibility using baseline features, test heterogeneous treatment effects on held-out data, and avoid selecting 'heavy users' using usage caused by the AI treatment.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-free-tier-response",
+      "title": "A competitor launches free - and every proposed response loses money",
+      "prompt": "PulseFit has 900,000 current subscribers at $20/month and a 75% contribution margin ($15 per active subscriber-month). A funded competitor launches a capable free tier. PulseFit expects the shock to affect price-sensitive subscribers for the next 12 months. Ignore new acquisition and discounting. Assume churn occurs at each month-end and use expected active months over 12 months = [1 - (1 - monthly churn)^12] / monthly churn.\n\nCURRENT BASE\n- Price-sensitive: 270,000 subscribers; shock churn if PulseFit does nothing = 14% monthly\n- Core: 630,000 subscribers; churn remains 3% monthly\n\nPROPOSED RESPONSES\nA. Differentiate with new coaching content: spend $6m now; expected price-sensitive churn becomes 12%; price and core churn unchanged.\nB. Match the competitor's paid price: cut price to $15 for everyone; contribution becomes $11.25 per active month; price-sensitive churn returns to 10%; core churn remains 3%.\nC. Annual defense: 25% of price-sensitive subscribers accept a $120 annual offer immediately, producing $90 contribution each over the year and no churn within the horizon. The other 75% remain monthly at 14% churn. Campaign cost is $1m; core is unchanged.\n\nQUESTIONS\n1. Calculate expected 12-month contribution for doing nothing and for A, B, and C.\n2. Which response has the best 12-month economics? Show the incremental value or loss versus doing nothing.\n3. Give the strongest strategic reason the 12-month point estimate might still be insufficient for the final decision.\n4. Recommend a staged response with one leading indicator, one financial guardrail, and a falsifiable kill/scale rule.",
+      "systemPrompt": "You are head of strategy. Do not assume action is better than inaction; quantify the base case, then account for option value and competitive learning.",
+      "judgeInstructionOverride": "Calibration facts: expected active-month factors are about 5.974 at 14% churn, 6.536 at 12%, 7.176 at 10%, and 10.205 at 3%. Twelve-month contribution is about $120.63m for doing nothing. A produces about $116.91m after its $6m cost, or -$3.72m versus no action. B produces about $94.13m, or -$26.51m. C produces about $119.66m after campaign cost, or -$0.97m. Thus no action has the highest stated 12-month point estimate; C is the least destructive active response. The break-even maximum spend for A's stated churn reduction is only about $2.28m. Strong answers still discuss value beyond 12 months, uncertainty in competitor-induced churn and response effects, acquisition/reputation/product differentiation, and segment migration. A good staged recommendation tests a targeted version of A or C with holdouts and explicit incremental contribution and churn thresholds rather than cutting price for the whole base.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-metric-reconciliation",
+      "title": "Three dashboards, three definitions of a new payer",
+      "prompt": "PulseFit spent $990,000 on acquisition during a four-week campaign. Three systems disagree about the number of new paying customers.\n\nPRODUCT ANALYTICS\n- 13,500 purchase-success events\n- The event is delivered by webhook and retries are not deduplicated\n\nBILLING LEDGER\n- 12,000 unique subscription IDs with a successful first charge\n- Of these, 500 are internal or test accounts\n- 700 belong to customers who paid PulseFit in an earlier period and are reactivations, not first-time payers\n- 300 are second subscriptions purchased by a person already counted during the campaign\n\nMATURE REFUND DATA\n- Among the remaining first-time payers, 600 received a full refund within seven days\n- Refunds arrive with a delay, so the most recent seven acquisition days are not yet mature\n\nThe growth dashboard divides spend by 13,500 and labels the result \"net CAC.\" Leadership wants one number before approving next month's budget.\n\nQUESTIONS\n1. Reconcile the systems. Calculate event-based dashboard CAC, gross first-time-payer CAC, and seven-day net first-time-payer CAC.\n2. Explain why none of the three source counts can be substituted silently for another. Quantify how much higher corrected net CAC is than dashboard CAC.\n3. Write a metric contract for gross new payer and D7 net new payer: entity, inclusion/exclusion rules, event time, maturity rule, and system of record.\n4. Decide what leadership should use today and how you would restate or suppress immature recent cohorts.",
+      "systemPrompt": "You own analytics governance. Reconcile entities and event timing before discussing performance, and make the final metric reproducible by engineering and finance.",
+      "judgeInstructionOverride": "Calibration facts: dashboard event CAC = $990,000/13,500 = $73.33. Gross first-time people = 12,000 - 500 test - 700 reactivations - 300 duplicate subscriptions = 10,500, so gross new-payer CAC = $94.29. D7 net new payers = 10,500 - 600 refunds = 9,900, so D7 net CAC = $100.00. Corrected net CAC is 36.4% higher than the dashboard figure; equivalently, the dashboard understates the corrected value by 26.7%. Events, subscription IDs, and people are different units, while refunds and reactivation status introduce different time windows. Strong answers use billing as the monetary source, a governed identity map to deduplicate people, explicit first-ever-paid history for newness, and a cohort freeze or as-of restatement after seven days; they do not compare mature historical cohorts with immature recent ones without labeling the bias.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-trial-length",
+      "title": "The longer trial wins twelve headlines but loses contribution",
+      "prompt": "PulseFit randomized eligible paywall visitors between a 3-day trial and a 14-day trial. Assignment and exposure counts passed sample-ratio and telemetry checks. The experiment dashboard examined 12 outcomes without a multiplicity correction. It highlights trial-start rate at p = 0.01 and paid-to-date conversion at p = 0.08. The trial-start lift was about 30% in week 1 but about 10% in weeks 2 and 3.\n\nThe experiment has run for 21 days. Users assigned near the end cannot yet have a mature D35 outcome under the 14-day treatment. A pre-treatment subset defined by assignment during days 1-7 has now matured to D35, with 20,000 eligible visitors per arm:\n\nOutcome                                  3-day trial   14-day trial\nTrial-start rate                            15.0%          18.0%\nVisitor-to-paid conversion by D35            4.5%           5.0%\nFull-refund rate among payers                 6.0%          12.0%\nAverage paid bills in first 90 days           2.10           1.80\n\nNet contribution before acquisition cost is $15 per paid bill. For this exercise, assume a fully refunded payer contributes zero across the 90-day window; all non-refunded payers follow the stated average-bills value.\n\nQUESTIONS\n1. Calculate the relative lift in trial starts and D35 paid conversion for the mature subset, then calculate 90-day net contribution per eligible visitor in each arm.\n2. Explain why the dashboard's significant trial-start result is not sufficient for a ship decision. Address multiplicity, outcome maturity, and the changing weekly effect.\n3. Specify a primary outcome, analysis population, stopping rule, and guardrails for the completed experiment.\n4. Make today's decision and give a numerical rule for shipping after all assigned cohorts mature.",
+      "systemPrompt": "You run monetization experimentation. Optimize mature net value per eligible assignment, not the number of favorable intermediate metrics.",
+      "judgeInstructionOverride": "Calibration facts: trial starts rise from 15% to 18%, a 20% relative lift. D35 paid conversion rises from 4.5% to 5.0%, an 11.1% relative lift. Three-day 90-day contribution per eligible visitor = 4.5% x 94% x 2.10 x $15 = $1.332. Fourteen-day value = 5.0% x 88% x 1.80 x $15 = $1.188, a loss of about $0.144 or 10.8% per eligible visitor despite higher conversion. Testing 12 outcomes without correction raises false-positive risk; trial starts are a mechanism, not the objective; the full cohort is differentially immature; and decay from 30% to 10% suggests a time-varying or novelty effect that may not persist. Strong answers do not broadly ship today, use intention-to-treat by eligible assignment, pre-register D35 or later net contribution per eligible visitor, complete the planned maturity window with a valid sequential or fixed-horizon rule, and guard refunds, support burden, retention, and customer complaints. A defensible ship rule requires the confidence interval for incremental mature net contribution to clear zero or a predeclared business threshold while guardrails pass.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-geo-rollout",
+      "title": "A January geo launch grows 35% and still has negative lift",
+      "prompt": "PulseFit launched a new social workout feature in four treatment regions and selected four control regions before launch. During the pre-period, treatment regions averaged 10,000 weekly new paid subscribers and controls averaged 8,000. Pre-period percentage trends were stable and closely parallel. During the post-period, treatment averaged 13,500 and controls 11,200.\n\nJanuary demand increased nationally during the post-period. The feature also appeared in a national PR campaign, and about 15% of users regularly travel across treatment-control borders. Engineering estimates that some control users saw or heard about the feature, but exposure cannot yet be joined reliably.\n\nThe product team says, \"Treatment grew 35%, so the launch created 3,500 weekly subscribers.\"\n\nQUESTIONS\n1. Calculate the naive treatment before/after change, the unscaled difference-in-differences in counts, and a baseline-scaled counterfactual using the control's percentage growth.\n2. What does each estimate assume, and which is most decision-relevant given the different regional baselines?\n3. Explain how January seasonality, PR exposure, travel, and cross-region access affect identification and the likely direction of contamination bias.\n4. Make the rollout decision and design a cleaner follow-up geo test, including the unit of randomization, exclusion buffer, pre-period checks, and primary outcome.",
+      "systemPrompt": "You are PulseFit's causal measurement lead. Build the counterfactual explicitly and do not award the treatment national seasonality.",
+      "judgeInstructionOverride": "Calibration facts: naive treatment growth is 13,500 - 10,000 = 3,500, or 35%. Control grows 3,200, or 40%. Unscaled count difference-in-differences is 3,500 - 3,200 = +300, but this ignores that treatment's baseline is 25% larger. Scaling the control's 40% growth to treatment gives a 14,000 counterfactual, so estimated effect is 13,500 - 14,000 = -500 weekly payers, or about -3.6%. With stable parallel percentage trends, the scaled estimate is more relevant than raw count DiD. January invalidates naive before/after but is absorbed only if controls represent the same shock. PR, travel, and cross-border access violate isolation; positive control exposure generally biases the treatment-control contrast toward zero, although nonrandom spillovers can make the exact direction uncertain. Strong answers do not claim positive lift, pause broad rollout or treat it as unproven, randomize sufficiently separated geo clusters, use buffer geos, prevent national messaging during measurement, validate pre-trends, monitor cross-geo exposure, and use incremental paid subscribers or contribution as the primary outcome.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-renewal-forecast",
+      "title": "Forecasting through an annual renewal cliff",
+      "prompt": "PulseFit is building a Q4 contribution forecast. At the start of Q4 it has 300,000 active monthly subscribers. Monthly price is $20 and contribution is $15 per billed active month. Monthly churn is expected to remain 8%, occurring at month-end. Assume subscribers active at the start of each month are billed, so Q4 expected active months are N x [1 + (1 - churn) + (1 - churn)^2].\n\nA separate cohort of 120,000 annual subscribers reaches its first renewal on the first day of Q4. Annual renewal price is $144 and contribution margin is 70%. Because PulseFit introduced annual plans only one year ago, this cohort has no observed renewal yet. Comparable external cohorts support a downside/base/upside gross renewal range of 50%/60%/70%. Five percent of renewal charges are expected to receive a full refund. Recognize annual subscription revenue evenly over 12 months; Q4 contains three months.\n\nThe planning spreadsheet assumes all 120,000 annual subscribers renew and counts all renewal cash as Q4 contribution.\n\nQUESTIONS\n1. Calculate expected Q4 monthly-plan subscriber-months, contribution, and ending monthly subscribers.\n2. Under the downside, base, and upside annual-renewal cases, calculate net renewals after refunds, cash collected, Q4 recognized revenue, and Q4 contribution from the annual cohort.\n3. Build the total Q4 contribution range combining monthly and annual cohorts. Explain why the spreadsheet's treatment of the annual cohort is wrong.\n4. Recommend how the board should approve the forecast and name the leading indicators that would update the range before quarter-end.",
+      "systemPrompt": "You lead FP&A analytics. Treat right-censored renewal behavior as scenario uncertainty and keep cash, recognized revenue, and contribution distinct.",
+      "judgeInstructionOverride": "Calibration facts: monthly expected subscriber-months = 300,000 x (1 + 0.92 + 0.92^2) = 829,920; Q4 monthly contribution = $12.4488m; expected ending subscribers after three month-end churn events = 300,000 x 0.92^3 = about 233,606. Annual net renewals after 5% refunds are 57,000 downside, 68,400 base, and 79,800 upside. Cash collected is $8.208m, $9.8496m, and $11.4912m. Q4 recognized annual revenue is one quarter of cash: $2.052m, $2.4624m, and $2.8728m; Q4 annual contribution at 70% is $1.4364m, $1.72368m, and $2.01096m. Total Q4 contribution range is $13.8852m to $14.45976m, with base $14.17248m. The spreadsheet ignores right-censored first renewal, refunds, revenue recognition, and margin. Strong answers approve a scenario range rather than a 100% point forecast and update it using billing retry success, cancellation intent, active-renewal engagement, early renewal/refund observations, and comparable-cohort calibration without leaking post-period facts into the initial forecast.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-constrained-allocation",
+      "title": "The highest expected-return portfolio breaches the downside guardrail",
+      "prompt": "PulseFit can commit at most $1.0m next quarter. Investments are indivisible tranches; tranche 2 of a lever can be selected only if tranche 1 is selected. Values below are incremental 12-month contribution before investment cost, in $000s. Assume estimates are comparable and additive for this exercise.\n\nTranche          Cost   Expected contribution   Downside contribution\nReferral 1        100            240                    240\nReferral 2        100            170                    170\nSearch 1          200            300                    300\nSearch 2          200            220                    220\nRetention 1       150            310                    310\nRetention 2       150            210                    210\nAI coach           250            450                    180\nContent library    300            420                    330\n\nThe board requires portfolio downside net contribution - downside contribution minus spend - of at least $500k. The growth lead ranks projects using historical average channel ROI and wants to fund AI first.\n\nQUESTIONS\n1. Calculate expected and downside net contribution for every tranche. Identify diminishing marginal returns within each two-tranche lever.\n2. Find the portfolio with the highest expected net contribution if there is no downside guardrail. Then find the highest-expected portfolio satisfying both the $1.0m budget and $500k downside-net guardrail.\n3. Explain why ranking by average historical ROI or expected return alone can produce the wrong allocation.\n4. Recommend an execution sequence and learning plan if actual marginal returns can differ from these estimates.",
+      "systemPrompt": "You are allocating the board's growth capital. Respect prerequisites, capacity, marginal returns, and the downside constraint; show the selected portfolio explicitly.",
+      "judgeInstructionOverride": "Calibration facts: all values are in $000s. Expected/downside net by tranche is Referral 1 = 140/140, Referral 2 = 70/70, Search 1 = 100/100, Search 2 = 20/20, Retention 1 = 160/160, Retention 2 = 60/60, AI = 200/-70, Content = 120/30. The second tranche has lower marginal net value for referral, search, and retention. Without the guardrail, the expected-optimal portfolio is Referral 1+2, Search 1, Retention 1+2, and AI: spend $950k, expected net $730k, downside net $460k, so it breaches the $500k guardrail. The constrained optimum is Referral 1+2, Search 1, Retention 1+2, and Content: spend $1.0m, expected net $650k, downside net $560k. Strong answers do not rank on average channel ROI, because allocation depends on the next tranche, prerequisites, saturation, opportunity cost, and joint downside. They stage reversible/high-confidence tranches first, instrument incremental contribution, preserve holdouts where possible, and re-optimize at predeclared checkpoints rather than treating the point estimates as permanent.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    },
+    {
+      "id": "task-pulsefit-international-expansion",
+      "title": "International expansion under FX risk and pilot selection bias",
+      "prompt": "PulseFit is choosing one international market for a staged launch. All monetary values below are already translated to USD at today's exchange rates. Store fees equal 15% of non-refunded subscription revenue. Refunds reverse subscription revenue, but variable service cost has already been incurred and is not recovered.\n\nMARKET A\n- 100,000 eligible paywall visitors per month\n- Visitor-to-paid conversion: 4.5%\n- Monthly price: $8\n- Expected paid bills in the first 12 months per payer: 6\n- Refund rate per bill: 4%\n- Variable service cost: $1 per paid bill\n- Launch/localization cost: $700,000; acquisition spend: $600,000\n\nMARKET B\n- 70,000 eligible paywall visitors per month\n- Visitor-to-paid conversion: 6.0%\n- Monthly price: $12\n- Expected paid bills: 4\n- Refund rate per bill: 7%\n- Variable service cost: $1.50 per paid bill\n- Launch/localization cost: $900,000; acquisition spend: $500,000\n\nThe conversion and retention assumptions come from an English-language opt-in pilot promoted to PulseFit's existing followers. Local prices are fixed in local currency. In an FX downside, each local currency depreciates 15% against USD while USD-denominated service, launch, and acquisition costs remain unchanged. Visitor volume and behavior are assumed unchanged only for the arithmetic stress test.\n\nQUESTIONS\n1. At current FX, calculate expected 12-month contribution per payer, contribution per eligible visitor, total contribution, and net contribution after launch and acquisition costs for both markets.\n2. Repeat the net-contribution comparison under the 15% FX downside.\n3. Which market would you advance, if either? Explain why the opt-in English pilot may not transport to the launch population and identify the most decision-sensitive assumptions.\n4. Design a staged local pilot with financial, product, and measurement kill/scale thresholds.",
+      "systemPrompt": "You advise international expansion. Use the supplied economics, stress currency exposure, and separate arithmetic attractiveness from evidence that transports to local customers.",
+      "judgeInstructionOverride": "Calibration facts: use contribution per payer = expected bills x [price x 85% x (1 - refund rate) - variable service cost]. At current FX, Market A = 6 x [$8 x 85% x 96% - $1] = $33.168 per payer; per eligible visitor = $1.49256; annual total = $1.791072m; net after $1.3m launch/acquisition cost = $0.491072m. Market B = 4 x [$12 x 85% x 93% - $1.50] = $31.944; per visitor = $1.91664; annual total = $1.609978m; net after $1.4m = $0.209978m. Under 15% currency depreciation, A net falls to about $0.173811m and B to about -$0.076879m. A has the better stated base and downside economics, but the English opt-in follower pilot is selected on existing affinity, language, and channel and cannot establish local-market conversion or retention. Strong answers advance only a staged A pilot, or defer both if evidence standards are strict, and predeclare thresholds for local eligible-to-paid conversion, mature net contribution per visitor, refunds, paid-month survival, support/localization quality, and an FX-adjusted margin floor using a representative local acquisition sample.",
+      "evaluation": {
+        "kind": "inherit"
+      }
+    }
+  ],
+  "modelSlots": [
+    {
+      "id": "slot-glm-advanced",
+      "providerId": "openrouter",
+      "provider": "Z-AI",
+      "model": "GLM 5.2",
+      "slug": "z-ai/glm-5.2",
+      "enabled": true
+    },
+    {
+      "id": "slot-deepseek-advanced",
+      "providerId": "openrouter",
+      "provider": "DeepSeek",
+      "model": "DeepSeek V4 Flash",
+      "slug": "deepseek/deepseek-v4-flash",
+      "enabled": true
+    },
+    {
+      "id": "slot-minimax-advanced",
+      "providerId": "openrouter",
+      "provider": "MiniMax",
+      "model": "MiniMax M2.5",
+      "slug": "minimax/minimax-m2.5",
+      "enabled": true
+    },
+    {
+      "id": "slot-gpt-advanced",
+      "providerId": "openrouter",
+      "provider": "OpenAI",
+      "model": "GPT-5.6 Sol",
+      "slug": "openai/gpt-5.6-sol",
+      "enabled": true
+    },
+    {
+      "id": "slot-gemini-advanced",
+      "providerId": "openrouter",
+      "provider": "Google",
+      "model": "Gemini 3.1 Pro",
+      "slug": "google/gemini-3.1-pro",
+      "enabled": true
+    },
+    {
+      "id": "slot-kimi-advanced",
+      "providerId": "openrouter",
+      "provider": "Moonshot",
+      "model": "Kimi K3",
+      "slug": "moonshotai/kimi-k3",
+      "enabled": true
+    }
+  ],
+  "defaultJudge": {
+    "providerId": "openrouter",
+    "model": "z-ai/glm-5.2"
+  },
+  "defaultEvaluation": {
+    "kind": "profile",
+    "profile": {
+      "id": "profile-pulsefit-advanced-analytics",
+      "version": 1
+    }
+  }
+}

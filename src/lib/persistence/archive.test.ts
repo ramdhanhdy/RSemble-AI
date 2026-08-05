@@ -572,6 +572,90 @@ describe("importWorkbenchArchive", () => {
   });
 });
 
+// --- 6.5 Accounting provenance round-trip --------------------------------------
+
+describe("archive accounting provenance", () => {
+  it("round-trips usage, cost, pricing, and reasoning fields; old v2 stays readable", async () => {
+    const rich = makeRun("run-accounting");
+    rich.candidates[0].attempts[0].usage = {
+      inputTokens: 12,
+      outputTokens: 34,
+      reasoningTokens: 5,
+      cacheReadTokens: 2,
+      cacheWriteTokens: null,
+    };
+    rich.candidates[0].attempts[0].cost = {
+      usd: 0.000456,
+      source: "provider-reported",
+    };
+    rich.judge = {
+      status: "done",
+      acceptedAttemptId: "j-1",
+      report: null,
+      consensus: null,
+      attempts: [{
+        attemptId: "j-1",
+        providerId: "openrouter",
+        model: "judge",
+        instruction: "",
+        messages: [],
+        blindLabelToCandidateId: {},
+        candidateAttemptIdsByCandidateId: {},
+        startedAt: 1000,
+        finishedAt: 2000,
+        status: "completed",
+        error: null,
+        report: null,
+        consensus: null,
+        usage: { inputTokens: 40, outputTokens: 10, reasoningTokens: null, cacheReadTokens: null, cacheWriteTokens: null },
+        cost: { usd: 0.0002, source: "catalog-estimate" },
+      }],
+    };
+    rich.reasoning = {
+      candidates: {
+        "openrouter:foo": { requested: "high", effective: "high", source: "catalog" },
+      },
+      judge: { requested: "medium", effective: "high", source: "provider-docs" },
+    };
+
+    await db.runSummaries.put(summaryRow(makeFullSummary("run-accounting")));
+    await db.runDetails.put(detailRow(rich));
+
+    const archive = await exportWorkbenchArchive(db);
+    const check = parseWorkbenchArchive(JSON.parse(JSON.stringify(archive)));
+    expect(check.ok).toBe(true);
+    const restored = archive.runs.details.find((r) => r.id === "run-accounting")!;
+    expect(restored.candidates[0].attempts[0].usage).toEqual(rich.candidates[0].attempts[0].usage);
+    expect(restored.candidates[0].attempts[0].cost).toEqual(rich.candidates[0].attempts[0].cost);
+    expect(restored.judge.attempts[0].cost).toEqual(rich.judge.attempts[0].cost);
+    expect(restored.reasoning).toEqual(rich.reasoning);
+
+    // Old v2 records without the new fields remain valid and readable.
+    const legacy = makeRun("run-legacy");
+    const legacyCheck = parseWorkbenchArchive(JSON.parse(JSON.stringify({
+      ...emptyArchive(),
+      runs: { summaries: [makeFullSummary("run-legacy")], details: [legacy] },
+    })));
+    expect(legacyCheck.ok).toBe(true);
+  });
+
+  it("rejects negative or non-finite token/cost values", () => {
+    const bad = makeRun("run-bad");
+    bad.candidates[0].attempts[0].usage = {
+      inputTokens: -1,
+      outputTokens: 10,
+      reasoningTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+    };
+    const check = parseWorkbenchArchive(JSON.parse(JSON.stringify({
+      ...emptyArchive(),
+      runs: { summaries: [], details: [bad] },
+    })));
+    expect(check.ok).toBe(false);
+  });
+});
+
 // --- 7. Run Markdown export from the persisted record ---------------------------
 
 describe("buildRunExportMarkdown", () => {

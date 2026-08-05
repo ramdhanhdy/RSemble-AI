@@ -17,10 +17,20 @@
 //     abort (AbortError propagates as-is).
 // =============================================================================
 
+import type { CostRecord, UsageBreakdown } from "./types";
 import { ProviderError, type ProviderId } from "./types";
+import { parseOpenAICompatibleUsage, parseProviderReportedCost } from "./usage";
 
 export interface SseChunk {
   choices?: { delta?: { content?: string } }[];
+  usage?: unknown;
+  cost?: unknown;
+}
+
+/** Mutable sink for final-chunk accounting metadata (OpenAI-compat streams). */
+export interface SseMeta {
+  usage: UsageBreakdown | null;
+  cost: CostRecord | null;
 }
 
 /**
@@ -34,6 +44,7 @@ export async function* readSseChatStream(
   providerId: ProviderId,
   label: string,
   signal?: AbortSignal,
+  meta?: SseMeta,
 ): AsyncGenerator<string, void, unknown> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -69,9 +80,6 @@ export async function* readSseChatStream(
         buffer = buffer.slice(nl + 1);
         if (line.length === 0 || !line.startsWith("data:")) continue;
         const payload = line.slice(5).trim();
-        if (import.meta.env && import.meta.env.DEV) {
-          console.debug("[sse]", payload.slice(0, 200));
-        }
         if (payload === "[DONE]") {
           sawDone = true;
           if (!yieldedAny) {
@@ -84,6 +92,12 @@ export async function* readSseChatStream(
         }
         try {
           const chunk = JSON.parse(payload) as SseChunk;
+          // Final accounting chunk: no content delta, but carries usage/cost.
+          if (chunk.usage && meta) meta.usage = parseOpenAICompatibleUsage(chunk.usage);
+          if (chunk.cost !== undefined && meta) {
+            const reported = parseProviderReportedCost(chunk.cost);
+            if (reported) meta.cost = reported;
+          }
           const delta = chunk.choices?.[0]?.delta?.content;
           if (delta) {
             yieldedAny = true;

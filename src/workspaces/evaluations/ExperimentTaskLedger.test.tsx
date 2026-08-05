@@ -2,6 +2,7 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { ExperimentTaskLedger } from "./ExperimentTaskLedger";
 import type {
   ExperimentController,
@@ -35,7 +36,7 @@ function render(node: React.ReactNode): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  act(() => root.render(node));
+  act(() => root.render(<MemoryRouter>{node}</MemoryRouter>));
   return {
     container,
     root,
@@ -258,21 +259,11 @@ describe("ExperimentTaskLedger — stress", () => {
     expect(primaryRows.length).toBe(50);
     expect(h.container.textContent).toContain("1–50 of 250");
 
-    // Attempt rows do not mount until disclosure opens.
-    expect(h.$$("[data-attempt-row]")).toHaveLength(0);
-    const firstToggle = primaryRows[0].querySelector<HTMLButtonElement>("[data-attempt-toggle]")!;
-    expect(firstToggle).not.toBeNull();
-    await act(async () => {
-      firstToggle.click();
-      await flush();
-    });
-    const attemptRows = h.$$("[data-attempt-row]");
-    expect(attemptRows).toHaveLength(3);
-    await act(async () => {
-      firstToggle.click();
-      await flush();
-    });
-    expect(h.$$("[data-attempt-row]")).toHaveLength(0);
+    // Historical attempt records remain in the fixture but never mount in this view.
+    expect(h.$$('[data-attempt-row]')).toHaveLength(0);
+    expect(h.$$('[data-attempt-toggle]')).toHaveLength(0);
+    expect(h.container.textContent).not.toMatch(/Attempt [0-9]+/);
+    expect(h.$('a[href="/runs/run-task-000"]')).not.toBeNull();
 
     // Current task and Pause/Abort controls sit in the instrument header, before the rows.
     const instrument = h.$("[data-ledger-instrument]")!;
@@ -355,7 +346,8 @@ describe("ExperimentTaskLedger — controls and counts", () => {
     expect(text).toContain("1 completed");
     expect(text).toContain("1 queued");
     expect(text).toContain("0:05");
-    expect(text).toContain("Attempt 1");
+    expect(h.$('a[href="/runs/run-2"]')?.textContent).toContain("View run");
+    expect(text).not.toMatch(/Attempt [0-9]+/);
     expect(text).toContain("Completed");
     expect(text).toContain("Running");
     expect(text).toContain("Queued");
@@ -369,6 +361,11 @@ describe("ExperimentTaskLedger — controls and counts", () => {
     );
     await settle();
     const pause = findButton(h, "Pause after current task")!;
+    // The boundary note renders beside Pause in the instrument header while
+    // running — it is never a stray footer line.
+    const note = h.container.querySelector("[data-pause-note]");
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain("Takes effect when the current task finishes.");
     await act(async () => {
       pause.click();
       await flush();
@@ -405,6 +402,8 @@ describe("ExperimentTaskLedger — controls and counts", () => {
     const h = render(<ExperimentTaskLedger experiment={paused} controller={controller} now={now} />);
     await settle();
     expect(findButton(h, "Pause after current task")).toBeNull();
+    // The boundary note belongs to the running state only.
+    expect(h.container.querySelector("[data-pause-note]")).toBeNull();
     const resume = findButton(h, "Resume")!;
     await act(async () => {
       resume.click();
@@ -442,7 +441,7 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
           selectedAttemptId: null,
           attempts: [makeAttempt("att-1", "completed", { coverage: makeCoverage(8, 8), startedAt: now - 60_000 })],
         },
-        { taskId: "task-2", selectedAttemptId: null, attempts: [makeAttempt("att-2", "failed", { startedAt: now - 30_000 })] },
+        { taskId: "task-2", selectedAttemptId: null, attempts: [makeAttempt("att-2", "failed", { startedAt: now - 30_000, error: { message: "Judge unavailable" } })] },
         {
           taskId: "task-3",
           selectedAttemptId: null,
@@ -560,21 +559,17 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
     cleanup(h);
   });
 
-  it("keeps attempt history collapsed by default and mounts rows only on disclosure", async () => {
+  it("renders current task errors without exposing numbered history", async () => {
     const h = render(
       <ExperimentTaskLedger experiment={makeMixedExperiment()} controller={makeController()} now={Date.now()} />,
     );
     await settle();
-    expect(h.$$("[data-attempt-row]")).toHaveLength(0);
-    const toggle = h.$$("[data-attempt-toggle]")[1]; // task-2 has a failed attempt
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => {
-      toggle.click();
-      await flush();
-    });
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(h.$$("[data-attempt-row]")).toHaveLength(1);
-    expect(h.container.textContent).toContain("Attempt 1");
+    expect(h.$$('[data-attempt-row]')).toHaveLength(0);
+    expect(h.$$('[data-attempt-toggle]')).toHaveLength(0);
+    expect(h.container.textContent).toContain("Error details");
+    expect(h.container.textContent).not.toMatch(/Attempt [0-9]+/);
+    const details = h.$("details");
+    expect(details?.querySelector("summary")?.textContent).toBe("Error details");
     cleanup(h);
   });
 });

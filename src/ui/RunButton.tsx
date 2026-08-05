@@ -5,7 +5,9 @@
 
 import { Play, Square } from "lucide-react";
 import { estimateAttachmentTokens, estimateRunCost, estimateRunTime } from "../lib/cost";
+import type { ProviderId } from "../lib/providers/types";
 import type { Attachment } from "../lib/attachments/types";
+import type { Mode } from "../studio-data";
 
 export function RunButton({
   running,
@@ -18,6 +20,9 @@ export function RunButton({
   onAbort,
   blockReason,
   attachments,
+  mode = "rank",
+  judge,
+  providerIdsBySlug = {},
 }: {
   running: boolean;
   canRun: boolean;
@@ -30,12 +35,26 @@ export function RunButton({
   /** Why Run is disabled beyond the base gates (attachments not ready / blocked). */
   blockReason?: string | null;
   attachments?: Attachment[];
+  mode?: Mode;
+  /** Judge ref for forecast pricing. */
+  judge?: { providerId: ProviderId; model: string };
+  /** Slug → providerId for exact catalog pricing. */
+  providerIdsBySlug?: Record<string, ProviderId>;
 }) {
   const attachmentTokens = attachments ? estimateAttachmentTokens(attachments) : 0;
-  const cost = hasPrompt && enabledCount > 0 ? estimateRunCost(prompt, enabledSlugs, attachmentTokens) : null;
+  const cost =
+    hasPrompt && enabledCount > 0
+      ? estimateRunCost(prompt, enabledSlugs, attachmentTokens, {
+          providerIds: providerIdsBySlug,
+          mode,
+          judgeProvider: judge?.providerId,
+          judgeModel: judge?.model,
+        })
+      : null;
   const time = enabledCount > 0 ? estimateRunTime(enabledSlugs) : 0;
 
   const costStr = cost?.totalCostUsd != null ? `~$${cost.totalCostUsd.toFixed(2)}` : null;
+  const partialCost = cost?.partial === true;
   const timeStr = time > 0 ? `~${time}s` : null;
   const forecast = costStr && timeStr ? `${costStr} · ${timeStr}` : costStr ?? timeStr;
 
@@ -48,7 +67,9 @@ export function RunButton({
         : blockReason
           ? blockReason
           : canRun
-            ? `${enabledCount} model${enabledCount === 1 ? "" : "s"} · 1 judge${forecast ? ` · ${forecast}` : ""}`
+            ? `${enabledCount} model${enabledCount === 1 ? "" : "s"} · 1 judge${mode === "fuse" ? " + fusion" : ""}${
+                forecast ? ` · ${forecast}${partialCost ? " (partial)" : ""}` : ""
+              }`
             : "Waiting for provider connections";
 
   const look = running

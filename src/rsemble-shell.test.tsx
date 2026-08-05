@@ -235,9 +235,7 @@ describe("RSemble workspace shell", () => {
     // available even during execution (spec §5.2).
     const h = render(
       <MemoryRouter initialEntries={["/compare"]}>
-        <Header running={true} connectionState="running" onOpenConnections={() => undefined}>
-          <span data-testid="toggle-stub" />
-        </Header>
+        <Header running={true} connectionState="running" onOpenConnections={() => undefined} />
       </MemoryRouter>,
     );
     const nav = h.$('nav[aria-label="Primary"]');

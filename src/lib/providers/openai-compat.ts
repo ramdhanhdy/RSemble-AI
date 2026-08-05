@@ -17,6 +17,7 @@ import {
 import { readSseChatStream } from "./sse-stream";
 import { toOpenAIMessages } from "./content";
 import { setModelCapabilities } from "./capabilities";
+import { nativeReasoningPayload } from "./reasoning";
 
 export interface OpenAICompatConfig {
   id: ProviderId;
@@ -210,6 +211,12 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         );
       }
       assertTransportable(opts.messages);
+      let reasoning: Record<string, unknown>;
+      try {
+        reasoning = nativeReasoningPayload(id, opts.model, opts.reasoningEffort, opts.reasoningStrict).payload;
+      } catch (error) {
+        throw new ProviderError(error instanceof Error ? error.message : String(error), id);
+      }
 
       let res: Response;
       try {
@@ -222,6 +229,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
             temperature: opts.temperature,
             max_tokens: opts.maxTokens,
             stream: false,
+            ...reasoning,
           }),
           signal: opts.signal,
         });
@@ -249,6 +257,12 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         );
       }
       assertTransportable(opts.messages);
+      let reasoning: Record<string, unknown>;
+      try {
+        reasoning = nativeReasoningPayload(id, opts.model, opts.reasoningEffort, opts.reasoningStrict).payload;
+      } catch (error) {
+        throw new ProviderError(error instanceof Error ? error.message : String(error), id);
+      }
 
       let res: Response;
       try {
@@ -261,6 +275,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
             temperature: opts.temperature,
             max_tokens: opts.maxTokens,
             stream: true,
+            ...reasoning,
           }),
           signal: opts.signal,
         });

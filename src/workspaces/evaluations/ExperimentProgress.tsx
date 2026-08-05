@@ -16,6 +16,8 @@ import { StatusMark } from "../../ui/StatusMark";
 import { ExperimentTaskLedger } from "./ExperimentTaskLedger";
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
+import { deriveActiveOperationScope } from "../../lib/evaluations/experiment-task-ledger";
+
 
 export interface ExperimentProgressProps {
   experiment: ExperimentRecord;
@@ -71,16 +73,14 @@ export function ExperimentProgress({
   const controllerUnavailable = controller === null;
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  // While a roster extension is active, say WHAT is running: exactly the
-  // added model, with prior outputs reused — so an attempt never reads as a
-  // full-roster rerun (plan 001 hotfix H6).
-  const latestExtension =
-    experiment.rosterExtensions && experiment.rosterExtensions.length > 0
-      ? experiment.rosterExtensions[experiment.rosterExtensions.length - 1]
-      : null;
-  const showExtensionScope =
-    latestExtension !== null &&
-    (experiment.status === "running" || experiment.status === "paused");
+  // Live scope comes from the active attempt plan, never rosterExtensions history.
+  const activeScope = deriveActiveOperationScope(experiment);
+  const scopeModelLabel =
+    activeScope === null
+      ? ""
+      : activeScope.modelKeys.length === 1
+        ? activeScope.modelKeys[0]!
+        : activeScope.modelKeys.join(", ");
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4">
@@ -93,14 +93,31 @@ export function ExperimentProgress({
         <p className="text-xs text-text-muted">
           Started {new Date(experiment.createdAt).toLocaleString()} ({timeZone})
         </p>
-        {showExtensionScope && (
+        {activeScope !== null && (
           <p
             data-extension-scope=""
+            data-operation-kind={activeScope.kind}
             className="rounded-md border border-accent/40 bg-panel px-3 py-2 text-xs text-text-secondary"
           >
-            Roster extension in progress: running{" "}
-            <span className="font-mono text-text">{latestExtension!.addedModelKey}</span> only.
-            Other models reuse their accepted evidence; one fresh Judge pass per task.
+            {activeScope.kind === "targeted-mixed" ? (
+              <>
+                Targeted completion in progress
+                {scopeModelLabel ? (
+                  <>
+                    :{" "}
+                    <span className="font-mono text-text">{scopeModelLabel}</span>
+                  </>
+                ) : null}
+                . Other accepted evidence is reused; one fresh Judge pass per task.
+              </>
+            ) : (
+              <>
+                {activeScope.label}: running{" "}
+                <span className="font-mono text-text">{scopeModelLabel}</span>
+                {activeScope.modelKeys.length === 1 ? " only" : ""}. Other accepted
+                evidence is reused; one fresh Judge pass per task.
+              </>
+            )}
           </p>
         )}
       </header>
@@ -138,9 +155,6 @@ export function ExperimentProgress({
             Back to suite
           </Link>
         </div>
-        {experiment.status === "running" && (
-          <p className="text-xs text-text-muted">Takes effect when the current task finishes.</p>
-        )}
         {controllerUnavailable && (
           <p className="text-xs text-text-muted">
             Execution controller unavailable (storage not ready).

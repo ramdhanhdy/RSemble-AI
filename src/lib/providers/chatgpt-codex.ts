@@ -11,12 +11,21 @@ import {
 } from "./types";
 import { readSseChatStream } from "./sse-stream";
 import { setProviderCapabilities } from "./capabilities";
+import { nativeReasoningPayload } from "./reasoning";
 
 function getBridgeUrl(): string {
   return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
     /\/$/,
     ""
   );
+}
+
+function validateReasoning(opts: ChatOptions): void {
+  try {
+    nativeReasoningPayload("chatgpt-codex", opts.model, opts.reasoningEffort, opts.reasoningStrict);
+  } catch (error) {
+    throw new ProviderError(error instanceof Error ? error.message : String(error), "chatgpt-codex");
+  }
 }
 
 export const chatgptCodexProvider: LLMProvider = {
@@ -70,6 +79,7 @@ export const chatgptCodexProvider: LLMProvider = {
 
   async chatCompletion(opts: ChatOptions): Promise<string> {
     const baseUrl = getBridgeUrl();
+    validateReasoning(opts);
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -116,6 +126,7 @@ export const chatgptCodexProvider: LLMProvider = {
 
   async *chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
     const baseUrl = getBridgeUrl();
+    validateReasoning(opts);
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/v1/chat/completions`, {

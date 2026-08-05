@@ -17,12 +17,12 @@
 
 | Phase | Scope | Priority | Effort | Depends on | Status |
 |---|---|---:|---:|---|---|
-| 0 | Characterize current regressions | P0 | S | — | TODO |
-| 1 | Truthful progress scope + cancelled probes | P0 | S–M | 0 | TODO |
-| 2 | Simplify experiment/header/run-time UX | P2 | M | 1 | TODO |
-| 3 | Reasoning-effort request and provenance contract | P1 | L | 1 | TODO |
-| 4 | Provider usage and pricing provenance | P1 | L | 3 | TODO |
-| 5 | Integrated QA, docs, and archive compatibility | P1 | M | 2–4 | TODO |
+| 0 | Characterize current regressions | P0 | S | — | DONE |
+| 1 | Truthful progress scope + cancelled probes | P0 | S–M | 0 | DONE |
+| 2 | Simplify experiment/header/run-time UX | P2 | M | 1 | DONE |
+| 3 | Reasoning-effort request and provenance contract | P1 | L | 1 | DONE |
+| 4 | Provider usage and pricing provenance | P1 | L | 3 | DONE |
+| 5 | Integrated QA, docs, and archive compatibility | P1 | M | 2–4 | DONE |
 
 Phases 3 and 4 both touch every provider adapter. Execute them sequentially;
 parallel implementations will create conflicting request/response contracts.
@@ -325,17 +325,17 @@ Do not claim all providers have exact pricing or equivalent reasoning levels.
 
 ## Done criteria
 
-- [ ] Active DeepSeek missing-cell repair cannot display Umans scope.
-- [ ] Lifecycle-cancelled probe cycles cannot update readiness, catalog, or errors.
-- [ ] Experiment UI contains no numbered attempt/trial concept.
-- [ ] Global workspace navigation is route-invariant; Rank/Fuse is Compare-local.
-- [ ] Run detail shows explicit start, terminal time, relative terminal age, and duration.
-- [ ] Candidate, Judge, and Fusion usage/cost carry reported/estimated/unknown provenance.
-- [ ] Reused outputs are not double-charged.
-- [ ] Candidate/Judge reasoning policies are configurable, validated, persisted, and fingerprinted.
-- [ ] Existing records and archives remain readable.
-- [ ] `npm run check` exits 0.
-- [ ] No unrelated dirty-worktree changes were reverted or overwritten.
+- [x] Active DeepSeek missing-cell repair cannot display Umans scope.
+- [x] Lifecycle-cancelled probe cycles cannot update readiness, catalog, or errors.
+- [x] Experiment UI contains no numbered attempt/trial concept.
+- [x] Global workspace navigation is route-invariant; Rank/Fuse is Compare-local.
+- [x] Run detail shows explicit start, terminal time, relative terminal age, and duration.
+- [x] Candidate, Judge, and Fusion usage/cost carry reported/estimated/unknown provenance.
+- [x] Reused outputs are not double-charged.
+- [x] Candidate/Judge reasoning policies are configurable, validated, persisted, and fingerprinted.
+- [x] Existing records and archives remain readable.
+- [x] `npm run check` exits 0.
+- [x] No unrelated dirty-worktree changes were reverted or overwritten.
 
 ## STOP conditions
 

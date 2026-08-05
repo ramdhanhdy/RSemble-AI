@@ -136,7 +136,7 @@ function SlotRow({
   const providerBadge = PROVIDER_LABELS[slot.providerId] ?? "OpenRouter";
   const repo = useRunRepository();
   const telemetry = useModelTelemetry(repo, modelKey(slot.providerId, slot.slug));
-  const pricing = pricingFor(slot.slug);
+  const pricing = pricingFor(slot.providerId as ProviderId, slot.slug);
 
   return (
     <li

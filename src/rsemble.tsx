@@ -164,10 +164,11 @@ export default function RSemble() {
   const probeCoordinator = useMemo(() => createProviderProbeCoordinator(), []);
 
   const checkAllReadiness = useCallback(async () => {
-    const results = await probeCoordinator.run();
-    // A cycle aborted by a lifecycle transition (run start, unmount) reports
-    // AbortError, not real provider health — never paint it as offline.
-    if (results.every((r) => r.error === "Provider probe aborted")) return;
+    const cycle = await probeCoordinator.run();
+    // Lifecycle cancellation (run/experiment start) must not mutate health,
+    // catalog, or error banner — even when some providers already finished.
+    if (cycle.status === "cancelled") return;
+    const results = cycle.results;
     setReadinessSettled(true);
     const map: Record<string, boolean> = {};
     const mergedCatalog: CatalogModel[] = [];
@@ -416,10 +417,7 @@ export default function RSemble() {
             connectionsDialogHandle={connectionsDialogHandle}
             cheatsheetDialogHandle={cheatsheetDialogHandle}
             connectionState={connectionState}
-            showToggle={isCompareRoute}
-          >
-            <ModeToggle mode={state.mode} onChange={handleModeChange} disabled={state.running} />
-          </Header>
+          />
 
           {/* Global execution awareness strip (spec §5.5) — visible on every
               workspace except the exact owning progress route; never hides a
@@ -441,36 +439,45 @@ export default function RSemble() {
           <div className="flex min-h-0 flex-1 flex-col pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0">
             <AppRoutes
               compareOutlet={
-                <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
-                  <section
-                    aria-label="Command"
-                    className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
-                      focusActive ? "lg:!w-14 lg:!overflow-hidden lg:!border-r" : "lg:w-[var(--cmd-w)]"
-                    } md:w-full`}
-                    style={focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }}
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <div
+                    data-compare-toolbar=""
+                    className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
                   >
-                    {focusActive ? (
-                      <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
-                    ) : (
-                      <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
+                    <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Finish</span>
+                    <ModeToggle mode={state.mode} onChange={handleModeChange} disabled={state.running} />
+                  </div>
+                  <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
+                    <section
+                      aria-label="Command"
+                      className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
+                        focusActive ? "lg:!w-14 lg:!overflow-hidden lg:!border-r" : "lg:w-[var(--cmd-w)]"
+                      } md:w-full`}
+                      style={focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }}
+                    >
+                      {focusActive ? (
+                        <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
+                      ) : (
+                        <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
+                      )}
+                    </section>
+
+                    {!focusActive && (
+                      <Divider
+                        dragging={dragging}
+                        value={commandWidth}
+                        min={min}
+                        max={max}
+                        onPointerDown={onDividerPointerDown}
+                        onKeyDown={onDividerKeyDown}
+                        onDoubleClick={onDoubleClick}
+                      />
                     )}
-                  </section>
 
-                  {!focusActive && (
-                    <Divider
-                      dragging={dragging}
-                      value={commandWidth}
-                      min={min}
-                      max={max}
-                      onPointerDown={onDividerPointerDown}
-                      onKeyDown={onDividerKeyDown}
-                      onDoubleClick={onDoubleClick}
-                    />
-                  )}
-
-                  <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
-                    <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} onRetryJudge={retryJudge} />
-                  </section>
+                    <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
+                      <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} onRetryJudge={retryJudge} />
+                    </section>
+                  </div>
                 </div>
               }
               models={state.models}
@@ -708,6 +715,8 @@ function CommandPane({
         critic={state.critic}
         models={state.models}
         dispatch={dispatch}
+        reasoningPolicy={state.reasoningPolicy}
+        slots={state.slots}
         judgeInstruction={state.judgeInstruction}
         attachments={state.attachments}
         attachmentsToJudge={state.attachmentsToJudge}
@@ -727,6 +736,11 @@ function CommandPane({
         onAbort={onAbort}
         blockReason={blockReason}
         attachments={state.attachments}
+        mode={state.mode}
+        judge={state.critic}
+        providerIdsBySlug={Object.fromEntries(
+          state.slots.filter((s) => s.enabled).map((s) => [s.slug, s.providerId]),
+        )}
       />
     </div>
   );

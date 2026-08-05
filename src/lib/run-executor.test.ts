@@ -177,6 +177,34 @@ describe("RunExecutor — executeTask", () => {
     expect(calls).toContain("fusion-start");
   });
 
+  it("persists Unknown cost when the provider exposes no native usage", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock
+      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce("fused answer");
+    const executor = createRunExecutor({ random: () => 0.999 });
+    const { events } = makeEvents();
+    const terminalInputs: Record<string, unknown[]> = { judge: [], fusion: [] };
+    const capture =
+      (key: "judge" | "fusion") =>
+      async (_attemptId: string, input: unknown): Promise<void> => {
+        terminalInputs[key].push(input);
+      };
+    events.onJudgeTerminal = vi.fn(capture("judge")) as never;
+    events.onFusionTerminal = vi.fn(capture("fusion")) as never;
+    await executor.executeTask(makeRequest("fuse"), events, new AbortController().signal);
+
+    const candidateTerminals = vi.mocked(events.onCandidateAttemptTerminal).mock.calls;
+    for (const [, , input] of candidateTerminals) {
+      // No native usage on the mocked stream → honest Unknown fallback cost.
+      expect((input as { cost: unknown }).cost).toEqual({ usd: null, source: "unknown" });
+    }
+    const judgeInputs = terminalInputs.judge;
+    const fusionInputs = terminalInputs.fusion;
+    expect(judgeInputs[judgeInputs.length - 1]).toMatchObject({ cost: { usd: null, source: "unknown" } });
+    expect(fusionInputs[fusionInputs.length - 1]).toMatchObject({ cost: { usd: null, source: "unknown" } });
+  });
+
   it("does not call Fusion when Judge fails", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     chatCompletionMock.mockResolvedValueOnce("malformed");

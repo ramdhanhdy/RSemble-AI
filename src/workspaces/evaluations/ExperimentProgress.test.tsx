@@ -18,6 +18,7 @@ import type {
 } from "../../lib/evaluations/evaluation-types";
 import type { ModelSlot } from "../../studio-data";
 
+
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 interface Harness {
@@ -190,6 +191,113 @@ describe("ExperimentProgress", () => {
     cleanup(h);
   });
 
+  it("derives missing-result scope from the live plan, not the latest extension history", async () => {
+    const deepSeekKey = "deepseek:deepseek-v4-flash";
+    const umansKey = "umans:umans-glm-5.2";
+    const historySlot = (key: string, id: string, providerId: ModelSlot["providerId"]): ModelSlot => {
+      const [, slug] = key.split(":");
+      return {
+        id,
+        providerId,
+        provider: providerId === "deepseek" ? "DeepSeek" : "Umans",
+        model: slug,
+        slug,
+        enabled: true,
+      };
+    };
+    const experiment = makeExperiment({
+      rosterExtensions: [
+        {
+          addedModelKey: deepSeekKey,
+          addedSlot: historySlot(deepSeekKey, "history-deepseek", "deepseek"),
+          priorFingerprint: "fp-0",
+          extendedAt: Date.now() - 2_000,
+        },
+        {
+          addedModelKey: umansKey,
+          addedSlot: historySlot(umansKey, "history-umans", "umans"),
+          priorFingerprint: "fp-1",
+          extendedAt: Date.now() - 1_000,
+        },
+      ],
+      tasks: [
+        taskState("task-1", [makeAttempt("att-1", "completed")]),
+        taskState("task-2", [
+          makeAttempt("att-live", "running", {
+            repair: {
+              kind: "missing-cells",
+              baseRunId: "run-base",
+              requestedModelKeys: [deepSeekKey],
+            },
+          }),
+        ]),
+        taskState("task-3", [makeAttempt("att-3", "queued")]),
+      ],
+    });
+    const { controller } = makeController();
+    const h = renderWithRouter(<ExperimentProgress experiment={experiment} controller={controller} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Completing missing results");
+    expect(text).toContain(deepSeekKey);
+    expect(text).not.toContain(umansKey);
+    expect(text).not.toContain("Roster extension in progress");
+    cleanup(h);
+  });
+
+  it("keeps a genuine roster-extension plan in the extension scope", async () => {
+    const extensionKey = "umans:umans-glm-5.2";
+    const experiment = makeExperiment({
+      tasks: [
+        taskState("task-1", [
+          makeAttempt("att-extension", "running", {
+            repair: { kind: "roster-extension", addedModelKey: extensionKey, baseRunId: "run-base" },
+          }),
+        ]),
+        taskState("task-2", [makeAttempt("att-2", "queued")]),
+        taskState("task-3", [makeAttempt("att-3", "queued")]),
+      ],
+    });
+    const { controller } = makeController();
+    const h = renderWithRouter(<ExperimentProgress experiment={experiment} controller={controller} />);
+    await settle();
+    expect(h.container.textContent).toContain("Roster extension in progress");
+    expect(h.container.textContent).toContain(extensionKey);
+    cleanup(h);
+  });
+
+  it("uses a queued plan for paused targeted work", async () => {
+    const key = "deepseek:deepseek-v4-flash";
+    const experiment = makeExperiment({
+      status: "paused",
+      tasks: [
+        taskState("task-1", [
+          makeAttempt("att-queued", "queued", {
+            repair: { kind: "missing-cells", baseRunId: "run-base", requestedModelKeys: [key] },
+          }),
+        ]),
+        taskState("task-2", [makeAttempt("att-2", "queued")]),
+        taskState("task-3", [makeAttempt("att-3", "queued")]),
+      ],
+    });
+    const { controller } = makeController();
+    const h = renderWithRouter(<ExperimentProgress experiment={experiment} controller={controller} />);
+    await settle();
+    expect(h.container.textContent).toContain("Completing missing results");
+    expect(h.container.textContent).toContain(key);
+    cleanup(h);
+  });
+
+  it("does not show targeted scope for a normal full run", async () => {
+    const { controller } = makeController();
+    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    await settle();
+    expect(h.$("[data-extension-scope]")).toBeNull();
+    expect(h.container.textContent).not.toContain("Completing missing results");
+    expect(h.container.textContent).not.toContain("Roster extension in progress");
+    cleanup(h);
+  });
+
   it("renders one primary ledger row per task with StatusMark text, never color-only (plan 7.1 #2)", async () => {
     const { controller } = makeController();
     const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
@@ -215,20 +323,14 @@ describe("ExperimentProgress", () => {
     cleanup(h);
   });
 
-  it("renders the ledger instrument header and keeps attempt history collapsed (plan 7.1 #2)", async () => {
+  it("keeps the task ledger free of numbered attempt chrome", async () => {
     const { controller } = makeController();
     const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
     await settle();
     expect(h.$("[data-ledger-instrument]")).not.toBeNull();
-    // Attempt history rows only mount after disclosure opens.
-    expect(h.$$("[data-attempt-row]")).toHaveLength(0);
-    const toggle = h.$$("[data-attempt-toggle]")[0];
-    await act(async () => {
-      toggle.click();
-      await flush();
-    });
-    expect(h.$$("[data-attempt-row]")).toHaveLength(1);
-    expect(h.container.textContent).toContain("Attempt 1");
+    expect(h.$$('[data-attempt-row]')).toHaveLength(0);
+    expect(h.$$('[data-attempt-toggle]')).toHaveLength(0);
+    expect(h.container.textContent).not.toMatch(/Attempt [0-9]+/);
     cleanup(h);
   });
 
@@ -239,7 +341,6 @@ describe("ExperimentProgress", () => {
     const text = h.container.textContent ?? "";
     // Attempt started 5s before fixture creation → m:ss render
     expect(text).toContain("0:05");
-    expect(text).toContain("Attempt 1");
     cleanup(h);
   });
 
@@ -249,7 +350,14 @@ describe("ExperimentProgress", () => {
     await settle();
     const pause = findButton(h, "Pause after current task");
     expect(pause).not.toBeNull();
-    expect(h.container.textContent).toContain("Takes effect when the current task finishes.");
+    // The boundary note lives in the ledger instrument header next to the
+    // Pause button — never orphaned in the footer below "Back to suite".
+    const instrument = h.container.querySelector("[data-ledger-instrument]");
+    expect(instrument).not.toBeNull();
+    expect(instrument!.textContent).toContain("Takes effect when the current task finishes.");
+    const footer = h.container.querySelector("footer");
+    expect(footer).not.toBeNull();
+    expect(footer!.textContent).not.toContain("Takes effect when the current task finishes.");
     await act(async () => {
       pause!.click();
       await flush();

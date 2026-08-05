@@ -77,6 +77,7 @@ export function createRunController(deps: RunControllerDeps) {
             evaluation: s.evaluation,
             attachments: s.attachments,
             attachmentsToJudge: s.attachmentsToJudge,
+            reasoningPolicy: { ...s.reasoningPolicy },
           },
         });
         if (recorder) {
@@ -91,6 +92,8 @@ export function createRunController(deps: RunControllerDeps) {
             // The eligibility gate may have filtered slots (spec §5.1) — the
             // record must match the fanout that actually ran.
             slots: slotsOverride ?? s.slots,
+            critic: s.critic,
+            reasoningPolicy: { ...s.reasoningPolicy },
             fence: { ownerId: "tab-1", fence: epoch },
             // Attachment metadata only — never bytes or text (spec §9).
             attachments: s.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })),
@@ -242,6 +245,7 @@ export function createRunController(deps: RunControllerDeps) {
       judgeInstruction: s.judgeInstruction,
       attachments: s.attachments,
       attachmentsToJudge: s.attachmentsToJudge,
+      reasoningPolicy: { ...s.reasoningPolicy },
     }, events, abort.signal);
 
     // Insufficient candidates check
@@ -318,6 +322,7 @@ export function createRunController(deps: RunControllerDeps) {
       // even if the user edited the command pane since the run (plan 7.6.6).
       attachments: s.runContext?.attachments ?? [],
       attachmentsToJudge: s.runContext?.attachmentsToJudge ?? true,
+      reasoningPolicy: { ...(s.runContext?.reasoningPolicy ?? s.reasoningPolicy) },
       retryCandidateId: candidate.id,
       retrySlotId: slot.id,
       peerCandidates,
@@ -376,6 +381,7 @@ export function createRunController(deps: RunControllerDeps) {
       judgeInstruction: s.judgeInstruction,
       attachments: ctx.attachments,
       attachmentsToJudge: ctx.attachmentsToJudge,
+      reasoningPolicy: { ...(ctx.reasoningPolicy ?? s.reasoningPolicy) },
       candidateAttemptIdsByCandidateId,
     }, events, abort.signal);
   };
@@ -435,6 +441,7 @@ export function createRunController(deps: RunControllerDeps) {
         judgeInstruction: s.judgeInstruction,
         attachments: s.attachments,
         attachmentsToJudge: s.attachmentsToJudge,
+        reasoningPolicy: { ...(s.runContext?.reasoningPolicy ?? s.reasoningPolicy) },
         judgeAttemptId,
         blindLabelToCandidateId,
         candidateAttemptIdsByCandidateId,

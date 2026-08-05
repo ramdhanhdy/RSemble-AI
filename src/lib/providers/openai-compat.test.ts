@@ -347,6 +347,22 @@ describe("createOpenAICompatProvider — supportsImages gate (7.4.2)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("sets stream=true on the streaming request body", async () => {
+    stubKey();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider(config);
+    const stream = provider.chatCompletionStream({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    await expect(stream.next()).resolves.toMatchObject({ value: "ok" });
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(body.stream).toBe(true);
+  });
+
   it("passes string content through untouched even with the gate on", async () => {
     const fetchMock = stubKeyAndOkChat();
     vi.stubGlobal("fetch", fetchMock);

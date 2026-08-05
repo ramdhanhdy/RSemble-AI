@@ -16,7 +16,7 @@ import type {
   ExperimentSnapshot,
 } from "./evaluation-types";
 import type { ModelSlot } from "../../studio-data";
-import type { ProviderId } from "../providers/types";
+import { DEFAULT_REASONING_POLICY, type ProviderId, type ReasoningPolicy } from "../providers/types";
 
 /**
  * Recursively sort object keys to produce canonical JSON.
@@ -51,6 +51,7 @@ interface SemanticFingerprintPieces {
   defaultJudge: { providerId: ProviderId; model: string };
   defaultEvaluation: EvaluationSelection;
   profiles: EvaluationProfile[];
+  reasoningPolicy: ReasoningPolicy;
 }
 
 function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
@@ -74,6 +75,7 @@ function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
       model: pieces.defaultJudge.model,
     },
     defaultEvaluation: pieces.defaultEvaluation,
+    reasoningPolicy: pieces.reasoningPolicy,
     profiles: pieces.profiles.map((p) => ({
       id: p.id,
       version: p.version,
@@ -99,6 +101,7 @@ export function buildFingerprintInput(
     modelSlots: suite.modelSlots,
     defaultJudge: suite.defaultJudge,
     defaultEvaluation: suite.defaultEvaluation,
+    reasoningPolicy: suite.reasoningPolicy ?? DEFAULT_REASONING_POLICY,
     profiles,
   });
 }
@@ -130,6 +133,7 @@ export function computeSnapshotProtocolFingerprint(
     modelSlots: snapshot.modelSlots,
     defaultJudge: snapshot.defaultJudge,
     defaultEvaluation: snapshot.defaultEvaluation,
+    reasoningPolicy: snapshot.reasoningPolicy ?? DEFAULT_REASONING_POLICY,
     profiles: snapshot.profiles,
   });
   const canonical = canonicalJsonString(input);
@@ -155,6 +159,9 @@ export function createExperimentSnapshot(
     modelSlots: JSON.parse(JSON.stringify(suite.modelSlots)),
     defaultJudge: { ...suite.defaultJudge },
     defaultEvaluation: suite.defaultEvaluation,
+    reasoningPolicy: suite.reasoningPolicy
+      ? { ...suite.reasoningPolicy }
+      : { ...DEFAULT_REASONING_POLICY },
     profiles: JSON.parse(JSON.stringify(profiles)),
     protocolFingerprint: fingerprint,
     createdAt: now,

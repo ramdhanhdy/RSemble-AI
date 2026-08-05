@@ -101,6 +101,17 @@ describe("computeSnapshotProtocolFingerprint", () => {
     expect(computeSnapshotProtocolFingerprint(changeProvider)).not.toBe(baseFp);
   });
 
+  it("changes when candidate or Judge reasoning effort changes", () => {
+    const base = createExperimentSnapshot(makeSuite(), PROFILES, 1000);
+    const changed: ExperimentSnapshot = {
+      ...base,
+      reasoningPolicy: { candidates: "low", judge: "high" },
+    };
+    expect(computeSnapshotProtocolFingerprint(changed)).not.toBe(
+      computeSnapshotProtocolFingerprint(base),
+    );
+  });
+
   it("ignores slot id and display provider (non-semantic fields)", () => {
     const base = createExperimentSnapshot(makeSuite(), PROFILES, 1000);
     const baseFp = computeSnapshotProtocolFingerprint(base);

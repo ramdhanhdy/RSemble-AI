@@ -853,7 +853,7 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     cleanup(h);
   });
 
-  it("a repaired cell disappears from current coverage issues after the selected attempt changes, while its old failure stays in history", async () => {
+  it("a repaired cell disappears from current coverage issues without exposing attempt history", async () => {
     const runOld = makeRun("run-old", { [MK_COMPLETE]: 4.0 });
     const runNew = makeRun("run-new", { [MK_COMPLETE]: 4.0, [MK_PROVISIONAL]: 4.3 });
     const taskId = "t2";
@@ -894,8 +894,7 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     expect(issues1?.textContent).toContain("No score");
     cleanup(h1);
 
-    // After the repair: the new completed attempt is selected; the cell is scored
-    // and disappears from current issues — but the old failure stays in history.
+    // After the repair: the new completed attempt is selected and the cell is scored.
     const after: ExperimentRecord = {
       ...base,
       revision: 2,
@@ -919,15 +918,9 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     await settle();
     await settle();
     expect(h2.$('[data-testid="coverage-issues"]')).toBeNull();
-    const history = h2.$('[data-testid="attempt-history"]');
-    expect(history).not.toBeNull();
-    expect(history?.textContent).toContain("Task t2");
-    const oldRunLink = h2.$$("a").find((a) => a.getAttribute("href") === "/runs/run-old");
-    expect(oldRunLink).not.toBeUndefined();
-    // Historical failures live ONLY inside the collapsed disclosure — the old
-    // default-visible list must not resurface them twice.
-    expect(h2.container.textContent).not.toContain("Failed &amp; incomplete attempts");
-    expect(h2.container.textContent).not.toContain("Failed & incomplete attempts");
+    expect(h2.$('[data-testid="attempt-history"]')).toBeNull();
+    expect(h2.$$('a').some((a) => a.getAttribute("href") === "/runs/run-old")).toBe(false);
+    expect(h2.container.textContent).not.toMatch(/Attempt [0-9]+/);
     cleanup(h2);
   });
 });

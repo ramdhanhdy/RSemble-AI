@@ -14,7 +14,7 @@
 import { useEffect, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Command, HelpCircle, Menu } from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
 import { HexCubeLogo } from "./brand-icons";
 import { WorkspaceNav } from "./WorkspaceNav";
 
@@ -62,7 +62,6 @@ function useRunElapsed(running: boolean): number {
 
 export function Header({
   running,
-  children,
   onOpenCommand,
   onOpenConnections,
   onOpenPalette,
@@ -71,10 +70,8 @@ export function Header({
   connectionsDialogHandle,
   cheatsheetDialogHandle,
   connectionState = "ready",
-  showToggle = true,
 }: {
   running: boolean;
-  children: ReactNode;
   onOpenCommand?: () => void;
   onOpenConnections?: () => void;
   onOpenPalette?: () => void;
@@ -83,14 +80,13 @@ export function Header({
   connectionsDialogHandle?: Dialog.Handle<unknown>;
   cheatsheetDialogHandle?: Dialog.Handle<unknown>;
   connectionState?: ConnectionState;
-  showToggle?: boolean;
 }) {
   const pill = livePill(running, connectionState);
   const elapsed = useRunElapsed(running);
   const pillLabel = running ? `Running · ${elapsed}s` : pill.label;
 
   return (
-    <header className="relative flex h-14 shrink-0 items-center justify-between gap-2 border-b border-edge bg-shell px-2 sm:px-4">
+    <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-edge bg-shell px-2 sm:px-4">
       <div className="flex min-w-0 items-center gap-2.5">
         {onOpenCommand && (
           <DetachedDialogTrigger handle={commandDialogHandle}>
@@ -98,25 +94,21 @@ export function Header({
               type="button"
               onClick={onOpenCommand}
               aria-label="Open command pane"
-              className="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-panel hover:text-text md:hidden"
+              className="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-panel hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:hidden"
             >
-              <Menu size={18} />
+              <Menu size={18} aria-hidden="true" />
             </button>
           </DetachedDialogTrigger>
         )}
         <HexCubeLogo size={22} className="shrink-0 text-accent" />
-        {/* App name is redundant chrome on tight viewports — the logo carries
-            identity. Keep it from sm up so the header never clips at 390px. */}
         <span className="hidden text-base font-semibold tracking-tight sm:inline">RSemble AI</span>
       </div>
 
-      {/* Desktop primary navigation — hidden on mobile (<768px) where the
-          fixed bottom MobileWorkspaceNav is used instead. */}
-      <div className="hidden md:block">
+      <div className="hidden min-w-0 justify-self-center md:block">
         <WorkspaceNav />
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex min-w-0 items-center justify-self-end gap-2">
         {onOpenConnections && (
           <DetachedDialogTrigger handle={connectionsDialogHandle}>
             <button
@@ -124,7 +116,7 @@ export function Header({
               onClick={onOpenConnections}
               aria-label={`Connection status: ${pillLabel}. Manage connections.`}
               title="Provider connections"
-              className="flex min-h-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright"
+              className="flex min-h-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <span className={`size-2 rounded-full ${pill.dot}`} aria-hidden="true" />
               <span className={`hidden lg:inline ${pill.text}`} aria-live="polite">
@@ -133,8 +125,6 @@ export function Header({
             </button>
           </DetachedDialogTrigger>
         )}
-        {/* Palette — two treatments: icon-only at md (768–1023px), full ⌘K
-            keycaps at lg+. The icon-only button keeps its accessible name. */}
         <button
           type="button"
           aria-disabled={onOpenPalette ? undefined : true}
@@ -145,9 +135,9 @@ export function Header({
             onOpenPalette
               ? "text-text-secondary hover:border-edge-bright"
               : "cursor-not-allowed text-text-secondary opacity-60"
-          }`}
+          } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
         >
-          <Command size={16} />
+          <Command size={16} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -159,7 +149,7 @@ export function Header({
             onOpenPalette
               ? "text-text-secondary hover:border-edge-bright"
               : "cursor-not-allowed text-text-secondary opacity-60"
-          }`}
+          } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
         >
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">⌘</kbd>
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">K</kbd>
@@ -175,14 +165,12 @@ export function Header({
               onOpenHelp
                 ? "text-text-secondary hover:border-edge-bright"
                 : "cursor-not-allowed text-text-secondary opacity-60"
-            }`}
+            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
           >
-            <HelpCircle size={16} />
+            <HelpCircle size={16} aria-hidden="true" />
           </button>
         </DetachedDialogTrigger>
-        {showToggle && children}
       </div>
-
     </header>
   );
 }

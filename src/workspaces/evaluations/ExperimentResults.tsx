@@ -11,12 +11,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, Crown } from "lucide-react";
+import { Crown } from "lucide-react";
 import type { ReactElement } from "react";
-import type {
-  ExperimentRecord,
-  ExperimentTaskAttempt,
-} from "../../lib/evaluations/evaluation-types";
+import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import { useEvaluationRepository } from "../../lib/persistence/repository-context";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
@@ -91,13 +88,6 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-/** Attempt statuses that belong in the §12.3 non-completed summary. */
-const ISSUE_STATUSES: ReadonlySet<ExperimentTaskAttempt["status"]> = new Set([
-  "failed",
-  "partial",
-  "interrupted",
-  "aborted",
-]);
 
 export function ExperimentResults({
   experiment,
@@ -514,13 +504,6 @@ export function ExperimentResults({
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const startedText = `${new Date(experiment.createdAt).toLocaleString()} · ${timeZone}`;
 
-  const issueAttempts: { taskTitle: string; attempt: ExperimentTaskAttempt }[] = [];
-  for (const taskState of experiment.tasks) {
-    const taskTitle = taskById.get(taskState.taskId)?.title ?? taskState.taskId;
-    for (const attempt of taskState.attempts) {
-      if (ISSUE_STATUSES.has(attempt.status)) issueAttempts.push({ taskTitle, attempt });
-    }
-  }
 
   // Coverage issues derive from CURRENT aggregation cells (spec §12.4 #6): a
   // repaired cell leaves this list as soon as the selected attempt changes.
@@ -529,10 +512,15 @@ export function ExperimentResults({
     taskTitle: string;
     modelKey: string;
     reason: MissingReason;
+    runId: string | null;
   }[] = [];
   aggregation.cells.forEach((row, taskIdx) => {
     const taskId = aggregation.taskIds[taskIdx];
     const taskTitle = taskById.get(taskId)?.title ?? taskId;
+    // Fall back to the latest attempt's run id so failed-task evidence stays
+    // reachable even before an attempt is selected (spec 02).
+    const state = experiment.tasks.find((t) => t.taskId === taskId);
+    const latestRunId = state?.attempts[state.attempts.length - 1]?.runId ?? null;
     row.forEach((cell, modelIdx) => {
       if (cell.kind === "missing") {
         coverageIssues.push({
@@ -540,6 +528,7 @@ export function ExperimentResults({
           taskTitle,
           modelKey: aggregation.modelKeys[modelIdx],
           reason: cell.reason,
+          runId: cell.runId ?? latestRunId,
         });
       }
     });
@@ -777,7 +766,7 @@ export function ExperimentResults({
             Coverage issues
           </h2>
           <ul className="flex min-w-0 flex-col">
-            {coverageIssues.map(({ taskId, taskTitle, modelKey, reason }) => (
+            {coverageIssues.map(({ taskId, taskTitle, modelKey, reason, runId }) => (
               <li
                 key={`${taskId}:${modelKey}`}
                 className="flex min-h-[44px] min-w-0 flex-wrap items-center gap-2 border-b border-edge py-1 last:border-b-0"
@@ -786,52 +775,20 @@ export function ExperimentResults({
                 <span className="min-w-0 truncate text-sm text-text">{taskTitle}</span>
                 <span className="font-mono text-xs text-text-muted">{modelKey}</span>
                 <span className="text-xs text-text-secondary">{MISSING_CELL_DISPLAY[reason].text}</span>
+                {runId ? (
+                  <Link
+                    to={`/runs/${runId}`}
+                    className="inline-flex min-h-[44px] items-center px-2 text-sm text-accent transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    View run
+                  </Link>
+                ) : null}
               </li>
             ))}
           </ul>
         </section>
       ) : null}
 
-      {/* Attempt history — historical failed attempts behind a disclosure (spec §12.4 #7).
-          Old failures remain inspectable here after a repair succeeds. */}
-      {issueAttempts.length > 0 ? (
-        <section
-          aria-label="Attempt history"
-          data-testid="attempt-history"
-          className="flex min-w-0 flex-col gap-1"
-        >
-          <details className="group min-w-0">
-            <summary className="flex min-h-[44px] min-w-0 cursor-pointer list-none items-center gap-2 text-xs font-medium uppercase tracking-wide text-text-muted transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
-              <ChevronDown
-                size={14}
-                aria-hidden="true"
-                className="shrink-0 transition-transform duration-150 group-open:rotate-180"
-              />
-              Attempt history ({issueAttempts.length})
-            </summary>
-            <ul className="flex min-w-0 flex-col">
-              {issueAttempts.map(({ taskTitle, attempt }) => (
-                <li
-                  key={attempt.id}
-                  className="flex min-h-[44px] min-w-0 flex-wrap items-center gap-2 border-b border-edge py-1 last:border-b-0"
-                >
-                  <StatusMark status={attempt.status} />
-                  <span className="min-w-0 truncate text-sm text-text">{taskTitle}</span>
-                  <span className="text-xs text-text-muted">Attempt {attempt.trial + 1}</span>
-                  {attempt.runId ? (
-                    <Link
-                      to={`/runs/${attempt.runId}`}
-                      className="inline-flex min-h-[44px] items-center px-2 text-sm text-accent transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      View run
-                    </Link>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </details>
-        </section>
-      ) : null}
 
       {/* Recovery toolbar (spec §11.1) — above the matrix, only while this surface
           owns the lease. Reports repairable vs fallback counts and offers the

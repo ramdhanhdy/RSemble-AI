@@ -53,6 +53,22 @@ describe("DeepSeek browser-direct adapter", () => {
     expect(JSON.parse(String(init.body))).toMatchObject({ model: "deepseek-v4-flash", stream: false });
   });
 
+  it("forwards the documented DeepSeek effort shape", async () => {
+    stubLocalStorage("test-key");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await deepseekProvider.chatCompletion({
+      model: "deepseek-v4-flash",
+      messages: [{ role: "user", content: "hello" }],
+      reasoningEffort: "high",
+    });
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(body.thinking).toEqual({ type: "enabled" });
+    expect(body.reasoning_effort).toBe("high");
+  });
+
   it("readiness is a sync credential check against the stored key", async () => {
     stubLocalStorage("");
     const missing = deepseekProvider.readiness();

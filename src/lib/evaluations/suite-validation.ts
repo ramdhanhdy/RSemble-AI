@@ -7,6 +7,8 @@
 // =============================================================================
 
 import type { EvaluationSuite } from "./evaluation-types";
+import { DEFAULT_REASONING_POLICY } from "../providers/types";
+import { capabilitiesForModel, commonReasoningEfforts, resolveReasoningEffort } from "../providers/reasoning";
 import { modelKey } from "../history-cache";
 
 export interface SuiteValidationResult {
@@ -62,6 +64,35 @@ export function validateSuiteForExecution(suite: EvaluationSuite): SuiteValidati
   // Judge
   if (!suite.defaultJudge.model.trim()) {
     errors.push({ field: "defaultJudge", message: "Judge model is required." });
+  }
+
+  const reasoningPolicy = suite.reasoningPolicy ?? DEFAULT_REASONING_POLICY;
+  if (reasoningPolicy.candidates !== "provider-default") {
+    const incompatible = enabledSlots.filter((slot) =>
+      !capabilitiesForModel(slot.providerId, slot.slug).supportedEfforts.includes(reasoningPolicy.candidates),
+    );
+    if (incompatible.length > 0) {
+      errors.push({
+        field: "reasoningPolicy.candidates",
+        message: `Candidate effort ${reasoningPolicy.candidates} is unavailable for: ${incompatible.map((slot) => `${slot.providerId}:${slot.slug}`).join(", ")}. Choose a common strict level or Provider default.`,
+      });
+    }
+  }
+  const commonEfforts = commonReasoningEfforts(enabledSlots);
+  if (!commonEfforts.includes(reasoningPolicy.candidates)) {
+    errors.push({
+      field: "reasoningPolicy.candidates",
+      message: `Candidate effort ${reasoningPolicy.candidates} is not common to all enabled models.`,
+    });
+  }
+  const judgeResolution = resolveReasoningEffort(
+    suite.defaultJudge.providerId,
+    suite.defaultJudge.model,
+    reasoningPolicy.judge,
+    true,
+  );
+  if (!judgeResolution.ok) {
+    errors.push({ field: "reasoningPolicy.judge", message: judgeResolution.reason });
   }
 
   return { valid: errors.length === 0, errors };

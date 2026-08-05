@@ -30,6 +30,9 @@ import type { ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import { ProviderTabs, PROVIDER_LABELS } from "../../ui/ProviderTabs";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import { modelKey } from "../../lib/history-cache";
+import { DEFAULT_REASONING_POLICY } from "../../lib/providers/types";
+import { capabilitiesForModel, commonReasoningEfforts } from "../../lib/providers/reasoning";
+import { ReasoningEffortPicker } from "../../ui/ReasoningEffortPicker";
 
 interface SuiteSettingsProps {
   suite: EvaluationSuite;
@@ -51,6 +54,9 @@ export function SuiteSettings({
 }: SuiteSettingsProps) {
   const { testBatch } = useModelProbe();
   const enabledSlots = suite.modelSlots.filter((s) => s.enabled);
+  const reasoningPolicy = suite.reasoningPolicy ?? DEFAULT_REASONING_POLICY;
+  const candidateEfforts = commonReasoningEfforts(suite.modelSlots);
+  const judgeEfforts = capabilitiesForModel(suite.defaultJudge.providerId, suite.defaultJudge.model).supportedEfforts;
   const takenKeys = useMemo(
     () => new Set(enabledSlots.map((s) => modelKey(s.providerId, s.slug))),
     [enabledSlots],
@@ -226,6 +232,29 @@ export function SuiteSettings({
           onChange={setDefaultEvaluation}
         />
       </div>
+
+      <section aria-label="Suite reasoning policy" className="space-y-3 rounded-md border border-edge bg-card p-2.5">
+        <div>
+          <h3 className="font-mono text-xs uppercase tracking-wide text-text-secondary">Reasoning policy</h3>
+          <p className="mt-1 text-xs text-text-secondary">
+            Named effort is a controlled request, not proof that model families spend equal compute.
+          </p>
+        </div>
+        <ReasoningEffortPicker
+          label="Candidate effort"
+          value={reasoningPolicy.candidates}
+          options={candidateEfforts}
+          onChange={(candidates) => onChange({ reasoningPolicy: { ...reasoningPolicy, candidates } })}
+          description="Only common strict levels for enabled candidates are offered."
+        />
+        <ReasoningEffortPicker
+          label="Judge effort"
+          value={reasoningPolicy.judge}
+          options={judgeEfforts}
+          onChange={(judge) => onChange({ reasoningPolicy: { ...reasoningPolicy, judge } })}
+          description="Provider default leaves the model's native effort unchanged."
+        />
+      </section>
     </div>
   );
 }

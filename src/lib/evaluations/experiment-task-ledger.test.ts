@@ -137,7 +137,6 @@ describe("buildTaskLedger", () => {
     expect(row1.status).toBe("completed");
     expect(row1.scoredModels).toBe(8);
     expect(row1.totalModels).toBe(8);
-    expect(row1.trialCount).toBe(3);
     expect(row1.history).toHaveLength(3);
 
     expect(row2.currentAttemptId).toBe("att-run");
@@ -145,7 +144,6 @@ describe("buildTaskLedger", () => {
 
     expect(row3.currentAttemptId).toBeNull();
     expect(row3.status).toBe("queued");
-    expect(row3.trialCount).toBe(0);
     expect(row3.history).toHaveLength(0);
   });
 
@@ -278,7 +276,6 @@ describe("buildTaskLedger", () => {
     expect(row.title).toBe("Alpha");
     expect(row.scoredModels).toBe(6);
     expect(row.totalModels).toBe(SLOT_COUNT);
-    expect(row.trialCount).toBe(1);
     expect(row.history[0].id).toBe("a1");
 
     // No coverage metadata → scored falls back to 0, total to slot count.
@@ -301,7 +298,6 @@ describe("filterTaskLedgerRows", () => {
       status,
       scoredModels: 0,
       totalModels: SLOT_COUNT,
-      trialCount: 1,
       currentAttemptId: null,
       history: [],
     };
@@ -361,9 +357,9 @@ describe("filterTaskLedgerRows", () => {
 
 describe("searchTaskLedgerRows", () => {
   const rows: TaskLedgerRow[] = [
-    { taskId: "task-1", order: 1, title: "Draft release notes", status: "completed", scoredModels: 8, totalModels: 8, trialCount: 1, currentAttemptId: "a", history: [] },
-    { taskId: "task-2", order: 2, title: "Write a haiku", status: "running", scoredModels: 0, totalModels: 8, trialCount: 1, currentAttemptId: "b", history: [] },
-    { taskId: "task-3", order: 3, title: "Summarize logs", status: "queued", scoredModels: 0, totalModels: 8, trialCount: 0, currentAttemptId: null, history: [] },
+    { taskId: "task-1", order: 1, title: "Draft release notes", status: "completed", scoredModels: 8, totalModels: 8, currentAttemptId: "a", history: [] },
+    { taskId: "task-2", order: 2, title: "Write a haiku", status: "running", scoredModels: 0, totalModels: 8, currentAttemptId: "b", history: [] },
+    { taskId: "task-3", order: 3, title: "Summarize logs", status: "queued", scoredModels: 0, totalModels: 8, currentAttemptId: null, history: [] },
   ];
 
   it("matches title substrings case-insensitively without reordering", () => {
@@ -393,7 +389,6 @@ describe("pageTaskLedgerRows", () => {
       status: "completed" as const,
       scoredModels: 8,
       totalModels: 8,
-      trialCount: 1,
       currentAttemptId: null,
       history: [],
     }));

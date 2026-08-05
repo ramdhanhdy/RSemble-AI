@@ -138,6 +138,7 @@ function pinnedSuiteFromSnapshot(record: ExperimentRecord): EvaluationSuite {
     modelSlots: s.modelSlots.map((m) => ({ ...m })),
     defaultJudge: { ...s.defaultJudge },
     defaultEvaluation: { ...s.defaultEvaluation },
+    reasoningPolicy: s.reasoningPolicy ? { ...s.reasoningPolicy } : undefined,
     createdAt: s.createdAt,
     updatedAt: s.createdAt,
     archivedAt: null,
@@ -351,6 +352,8 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         candidateMessages: [],
       },
       slots: suite.modelSlots,
+      critic: suite.defaultJudge,
+      reasoningPolicy: suite.reasoningPolicy,
       fence,
     });
     const summary = builder.deriveSummary(run);
@@ -491,6 +494,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         // ad-hoc Compare feature; suites never persist them).
         attachments: [],
         attachmentsToJudge: true,
+        reasoningPolicy: suite.reasoningPolicy,
       },
       events,
       abortController.signal,
@@ -1274,6 +1278,8 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       task: { title: task.title, prompt: task.prompt, systemPrompt: task.systemPrompt, temperature: 0.7 },
       evaluation: { profile: null, candidateMessages: [] },
       slots: suite.modelSlots,
+      critic: suite.defaultJudge,
+      reasoningPolicy: suite.reasoningPolicy,
       fence,
       baseRun,
       requestedModelKeys,
@@ -1363,6 +1369,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         judgeInstruction: task.judgeInstructionOverride,
         attachments: [],
         attachmentsToJudge: true,
+        reasoningPolicy: suite.reasoningPolicy,
         candidateExecution: {
           executeModelKeys: requestedModelKeys,
           seededCandidates,

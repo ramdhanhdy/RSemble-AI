@@ -7,7 +7,7 @@
 // =============================================================================
 
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunStatus, RunSummary } from "../../lib/persistence/run-types";
-
+import { DEFAULT_REASONING_POLICY, type CostRecord, type RunReasoningProvenance } from "../../lib/providers/types";
 // --- Relative time -----------------------------------------------------------
 
 export function formatRelativeTime(ts: number): string {
@@ -20,6 +20,16 @@ export function formatRelativeTime(ts: number): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.round(hr / 24);
   return `${day}d ago`;
+}
+
+export function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
 // --- Run row view model -------------------------------------------------------
@@ -98,7 +108,16 @@ export interface DetailSection {
   status?: string;
   timestamp?: string;
   relativeTime?: string;
+  startedRelativeTime?: string;
   source?: string;
+  timeZone?: string;
+  startedAt?: number;
+  completedAt?: number | null;
+  completedTimestamp?: string;
+  completionLabel?: "Completed" | "Ended";
+  duration?: string;
+  runningDuration?: string;
+  reasoning?: RunReasoningProvenance;
   winners?: string[];
   modelCount?: number;
   [key: string]: unknown;
@@ -112,15 +131,49 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
   if (!record) return null;
 
   const sections: DetailSection[] = [];
+  const fallbackCandidateReasoning: RunReasoningProvenance["candidates"] = {};
+  for (const candidate of record.candidates) {
+    fallbackCandidateReasoning[candidate.modelKey] = {
+      requested: DEFAULT_REASONING_POLICY.candidates,
+      effective: DEFAULT_REASONING_POLICY.candidates,
+      source: "unknown",
+    };
+  }
+  const reasoningProvenance: RunReasoningProvenance = record.reasoning ?? {
+    candidates: fallbackCandidateReasoning,
+    judge: {
+      requested: DEFAULT_REASONING_POLICY.judge,
+      effective: DEFAULT_REASONING_POLICY.judge,
+      source: "unknown",
+    },
+  };
 
-  // 1. Header — always present
-  const exactDate = new Date(record.createdAt);
+  // 1. Header — always present. Completion is an immutable event when present;
+  // older records may have only the start timestamp.
+  const startedAt = record.createdAt;
+  const completedAt = record.completedAt;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const startedTimestamp = new Date(startedAt).toLocaleString();
+  const startedRelativeTime = formatRelativeTime(startedAt);
+  const hasCompletion = completedAt !== null;
+  const completedTimestamp = hasCompletion ? new Date(completedAt).toLocaleString() : undefined;
+  const completedRelativeTime = hasCompletion ? formatRelativeTime(completedAt) : undefined;
+  const completionLabel =
+    hasCompletion && record.status === "completed" ? "Completed" : hasCompletion ? "Ended" : undefined;
   sections.push({
     id: "header",
     title: record.task.title,
     status: record.status,
-    timestamp: exactDate.toLocaleString(),
-    relativeTime: formatRelativeTime(record.createdAt),
+    timestamp: startedTimestamp,
+    relativeTime: completedRelativeTime ?? startedRelativeTime,
+    startedRelativeTime,
+    startedAt,
+    completedAt,
+    completedTimestamp,
+    completionLabel,
+    duration: hasCompletion ? formatDuration(completedAt - startedAt) : undefined,
+    runningDuration: record.status === "running" ? formatDuration(Date.now() - startedAt) : undefined,
+    timeZone,
     source: record.source.kind === "experiment" ? "experiment" : "ad hoc",
   });
 
@@ -143,6 +196,50 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
     winners: record.winnerKeys,
     modelCount: record.candidates.length,
     status: record.status,
+  });
+
+  // 3.5 Cost breakdown — incremental totals, never double-counting reused
+  // source outputs. Each stage reports Reported / Estimated / Unknown.
+  const acceptedCandidateCosts: { label: string; usd: number; source: string }[] = [];
+  let totalUsd = 0;
+  let anyReported = false;
+  let anyEstimated = false;
+  let anyUnknown = false;
+  const addStageCost = (label: string, cost: CostRecord | null | undefined, done: boolean): void => {
+    if (cost?.usd !== null && cost?.usd !== undefined && Number.isFinite(cost.usd)) {
+      acceptedCandidateCosts.push({ label, usd: cost.usd, source: cost.source });
+      totalUsd += cost.usd;
+      if (cost.source === "provider-reported") anyReported = true;
+      else if (cost.source === "catalog-estimate") anyEstimated = true;
+    } else if (done) {
+      anyUnknown = true;
+    }
+  };
+  for (const c of record.candidates) {
+    const accepted = c.acceptedAttemptId
+      ? c.attempts.find((a) => a.attemptId === c.acceptedAttemptId)
+      : undefined;
+    // A reused output carries zero incremental cost in this run — the source
+    // run already paid for it (spec 06: never double-count reused evidence).
+    if (!accepted?.reusedFrom) {
+      addStageCost(c.modelKey, accepted?.cost, accepted !== undefined);
+    }
+  }
+  const judgeAccepted = record.judge.acceptedAttemptId
+    ? record.judge.attempts.find((a) => a.attemptId === record.judge.acceptedAttemptId)
+    : undefined;
+  addStageCost("Judge", judgeAccepted?.cost, record.judge.status === "done");
+  const fusionAccepted = record.fusion.acceptedAttemptId
+    ? record.fusion.attempts.find((a) => a.attemptId === record.fusion.acceptedAttemptId)
+    : undefined;
+  addStageCost("Fusion", fusionAccepted?.cost, record.fusion.status === "done");
+  const dominant = anyReported ? "provider-reported" : anyEstimated ? "catalog-estimate" : "unknown";
+  sections.push({
+    id: "cost-breakdown",
+    stages: acceptedCandidateCosts,
+    totalUsd,
+    source: dominant,
+    unknown: anyUnknown,
   });
 
   // 4. Candidates selector — always present
@@ -214,6 +311,7 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
     systemPrompt: record.task.systemPrompt,
     temperature: record.task.temperature,
     modelRoster: record.candidates.map((c) => c.modelKey),
+    reasoning: reasoningProvenance,
   });
 
   return { sections };

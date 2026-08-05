@@ -14,8 +14,11 @@ import { selectAttemptId } from "./experiment-engine";
 import type {
   ExperimentRecord,
   ExperimentTaskAttempt,
+  ExperimentTaskExecutionPlan,
   ExperimentTaskState,
 } from "./evaluation-types";
+
+
 
 export type TaskLedgerFilter = "all" | "active" | "issues" | "queued" | "complete";
 
@@ -27,7 +30,6 @@ export interface TaskLedgerRow {
   status: string;
   scoredModels: number;
   totalModels: number;
-  trialCount: number;
   currentAttemptId: string | null;
   history: ExperimentTaskAttempt[];
 }
@@ -107,6 +109,108 @@ export function currentAttemptOf(task: ExperimentTaskState): ExperimentTaskAttem
   return task.attempts[task.attempts.length - 1] ?? null;
 }
 
+/** Live progress banner scope. History (`rosterExtensions`) is never consulted. */
+export type ActiveOperationScope =
+  | {
+      kind: "missing-cells";
+      modelKeys: string[];
+      label: "Completing missing results";
+    }
+  | {
+      kind: "roster-extension";
+      modelKeys: string[];
+      label: "Roster extension in progress";
+    }
+  | {
+      kind: "targeted-mixed";
+      modelKeys: string[];
+      label: "Targeted completion in progress";
+    };
+
+function planModelKeys(plan: ExperimentTaskExecutionPlan): string[] {
+  if (plan.kind === "missing-cells") return [...plan.requestedModelKeys];
+  return [plan.addedModelKey];
+}
+
+/**
+ * Derive the active targeted-operation banner from live/queued attempt plans.
+ * Prefers running attempts via `currentAttemptOf`; while paused with no runner,
+ * falls back to queued plans. Never reads `rosterExtensions` history.
+ */
+export function deriveActiveOperationScope(
+  experiment: ExperimentRecord,
+): ActiveOperationScope | null {
+  if (experiment.status !== "running" && experiment.status !== "paused") {
+    return null;
+  }
+
+  const livePlans: ExperimentTaskExecutionPlan[] = [];
+  for (const task of experiment.tasks) {
+    const current = currentAttemptOf(task);
+    if (!current?.repair) continue;
+    if (current.status === "running") {
+      livePlans.push(current.repair);
+      continue;
+    }
+    // Paused experiments keep truthful scope from queued planned work.
+    if (
+      experiment.status === "paused" &&
+      current.status === "queued" &&
+      current.repair
+    ) {
+      livePlans.push(current.repair);
+    }
+  }
+
+  // If nothing is running, still surface any queued plan while the experiment
+  // is running (between tasks) so the banner does not flicker to history.
+  if (livePlans.length === 0 && experiment.status === "running") {
+    for (const task of experiment.tasks) {
+      for (const attempt of task.attempts) {
+        if (attempt.status === "queued" && attempt.repair) {
+          livePlans.push(attempt.repair);
+        }
+      }
+    }
+  }
+
+  if (livePlans.length === 0) return null;
+
+  const kinds = new Set(livePlans.map((p) => p.kind));
+  const keySets = livePlans.map((p) => planModelKeys(p).slice().sort().join("\0"));
+  const uniqueKeySets = new Set(keySets);
+  const modelKeys = [...new Set(livePlans.flatMap(planModelKeys))];
+
+  if (kinds.size > 1 || uniqueKeySets.size > 1) {
+    if (import.meta.env?.DEV) {
+      console.warn(
+        "[experiment] inconsistent active operation plans; rendering neutral targeted banner",
+        { kinds: [...kinds], modelKeys },
+      );
+    }
+    return {
+      kind: "targeted-mixed",
+      modelKeys,
+      label: "Targeted completion in progress",
+    };
+  }
+
+  const plan = livePlans[0]!;
+  if (plan.kind === "missing-cells") {
+    return {
+      kind: "missing-cells",
+      modelKeys: planModelKeys(plan),
+      label: "Completing missing results",
+    };
+  }
+  return {
+    kind: "roster-extension",
+    modelKeys: planModelKeys(plan),
+    label: "Roster extension in progress",
+  };
+}
+
+
 export function buildTaskLedger(experiment: ExperimentRecord): TaskLedgerContext {
   const stateByTaskId = new Map(experiment.tasks.map((t) => [t.taskId, t]));
   const slotCount = experiment.snapshot.modelSlots.length;
@@ -125,7 +229,6 @@ export function buildTaskLedger(experiment: ExperimentRecord): TaskLedgerContext
         status: current?.status ?? "queued",
         scoredModels: current?.coverage?.scoredModelKeys.length ?? 0,
         totalModels: current?.coverage?.totalModels ?? slotCount,
-        trialCount: attempts.length,
         currentAttemptId: current?.id ?? null,
         history: attempts,
       };

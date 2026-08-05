@@ -16,7 +16,7 @@
 //    immutable EvaluationProfile versions
 // =============================================================================
 
-import type { CriticRef } from "../providers/types";
+import type { CriticRef, ReasoningEffort, ReasoningPolicy } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
 import {
   isExecutionFence,
@@ -123,6 +123,8 @@ export interface EvaluationSuite {
   modelSlots: ModelSlot[];
   defaultJudge: CriticRef;
   defaultEvaluation: EvaluationSelection;
+  /** Optional for backward compatibility; absent means provider-default. */
+  reasoningPolicy?: ReasoningPolicy;
   createdAt: number;
   updatedAt: number;
   archivedAt: number | null;
@@ -206,6 +208,8 @@ export interface ExperimentSnapshot {
   modelSlots: ModelSlot[];
   defaultJudge: CriticRef;
   defaultEvaluation: EvaluationSelection;
+  /** Optional for imported pre-policy snapshots. */
+  reasoningPolicy?: ReasoningPolicy;
   profiles: EvaluationProfileSnapshot[];
   protocolFingerprint: string;
   createdAt: number;
@@ -319,6 +323,28 @@ function isBoolean(v: unknown): v is boolean {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+const REASONING_EFFORT_VALUES: readonly ReasoningEffort[] = [
+  "provider-default",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === "string" && REASONING_EFFORT_VALUES.includes(value as ReasoningEffort);
+}
+
+export function isReasoningPolicy(value: unknown): value is ReasoningPolicy {
+  return (
+    isRecord(value) &&
+    isReasoningEffort(value.candidates) &&
+    isReasoningEffort(value.judge)
+  );
 }
 
 function hasProhibitedKeys(v: unknown): boolean {
@@ -470,6 +496,7 @@ export function isEvaluationSuite(v: unknown): v is EvaluationSuite {
   if (!Array.isArray(v.modelSlots) || !v.modelSlots.every(isModelSlot)) return false;
   if (!isCriticRef(v.defaultJudge)) return false;
   if (!isEvaluationSelection(v.defaultEvaluation)) return false;
+  if (v.reasoningPolicy !== undefined && !isReasoningPolicy(v.reasoningPolicy)) return false;
   if (!isNumber(v.createdAt)) return false;
   if (!isNumber(v.updatedAt)) return false;
   if (v.archivedAt !== null && !isNumber(v.archivedAt)) return false;
@@ -591,6 +618,7 @@ export function isExperimentSnapshot(v: unknown): v is ExperimentSnapshot {
   if (!Array.isArray(v.modelSlots) || !v.modelSlots.every(isModelSlot)) return false;
   if (!isCriticRef(v.defaultJudge)) return false;
   if (!isEvaluationSelection(v.defaultEvaluation)) return false;
+  if (v.reasoningPolicy !== undefined && !isReasoningPolicy(v.reasoningPolicy)) return false;
   if (!Array.isArray(v.profiles) || !v.profiles.every(isEvaluationProfile)) return false;
   if (!isNonEmptyString(v.protocolFingerprint)) return false;
   if (!isNumber(v.createdAt)) return false;
