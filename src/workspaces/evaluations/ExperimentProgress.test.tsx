@@ -128,7 +128,7 @@ function makeAttempt(
   status: ExperimentTaskAttempt["status"],
   overrides: Partial<ExperimentTaskAttempt> = {},
 ): ExperimentTaskAttempt {
-  return { id, runId: null, trial: 1, status, startedAt: null, finishedAt: null, error: null, ...overrides };
+  return { id, runId: null, trial: 0, status, startedAt: null, finishedAt: null, error: null, ...overrides };
 }
 
 function taskState(taskId: string, attempts: ExperimentTaskAttempt[]): ExperimentTaskState {
@@ -228,7 +228,7 @@ describe("ExperimentProgress", () => {
       await flush();
     });
     expect(h.$$("[data-attempt-row]")).toHaveLength(1);
-    expect(h.container.textContent).toContain("Trial 1");
+    expect(h.container.textContent).toContain("Attempt 1");
     cleanup(h);
   });
 
@@ -239,7 +239,7 @@ describe("ExperimentProgress", () => {
     const text = h.container.textContent ?? "";
     // Attempt started 5s before fixture creation → m:ss render
     expect(text).toContain("0:05");
-    expect(text).toContain("Trial 1");
+    expect(text).toContain("Attempt 1");
     cleanup(h);
   });
 

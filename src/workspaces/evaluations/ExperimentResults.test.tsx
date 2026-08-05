@@ -538,6 +538,99 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     cleanup(h);
   });
 
+  it("retries the clicked added model, not the newest failed roster extension", async () => {
+    stubDesktop();
+    const deepSeekKey = "deepseek:deepseek-v4-flash";
+    const umansGlmKey = "umans:umans-glm-5.2";
+    const deepSeekSlot: ModelSlot = {
+      id: "slot-deepseek",
+      providerId: "deepseek",
+      provider: "DeepSeek",
+      model: "DeepSeek V4 Flash",
+      slug: "deepseek-v4-flash",
+      enabled: true,
+    };
+    const umansGlmSlot: ModelSlot = {
+      id: "slot-umans-glm",
+      providerId: "umans",
+      provider: "Umans",
+      model: "Umans GLM 5.2",
+      slug: "umans-glm-5.2",
+      enabled: true,
+    };
+    const baseRun = makeExperimentRun("run-t1", { [MK_COMPLETE]: 4.2 }, "t1");
+    const originalSnapshot = makeSnapshot(["t1"]);
+    const experiment: ExperimentRecord = {
+      id: "exp-rep",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      protocolFingerprint: "sha256:current",
+      execution: null,
+      snapshot: {
+        ...originalSnapshot,
+        modelSlots: [SLOTS[0], deepSeekSlot, umansGlmSlot],
+        protocolFingerprint: "sha256:current",
+      },
+      tasks: [makeTaskState("t1", "run-t1", "completed")],
+      rosterExtensions: [
+        {
+          addedModelKey: deepSeekKey,
+          addedSlot: deepSeekSlot,
+          priorFingerprint: "sha256:abc",
+          extendedAt: 1100,
+        },
+        {
+          addedModelKey: umansGlmKey,
+          addedSlot: umansGlmSlot,
+          priorFingerprint: "sha256:after-deepseek",
+          extendedAt: 1200,
+        },
+      ],
+      status: "completed_with_failures",
+      revision: 1,
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    const controller = makeController();
+    const h = renderWithRouter(
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => (id === baseRun.id ? baseRun : null)}
+        controller={controller}
+      />,
+    );
+    await settle();
+    await settle();
+
+    expect(h.$('[aria-label="Recovery"]')?.textContent).toContain(
+      "2 missing results — 2 repairable, 0 need a full task retry.",
+    );
+    const actions = h.$$("button").filter((button) =>
+      button.textContent?.includes("Complete missing result"),
+    );
+    expect(actions).toHaveLength(2);
+    await act(async () => {
+      actions[0].click();
+      await flush();
+    });
+    await settle();
+    expect(document.body.textContent).toContain(deepSeekKey);
+
+    const confirm = document.body.querySelector<HTMLButtonElement>("[data-recovery-confirm]");
+    await act(async () => {
+      confirm!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(controller.repairMissingCells).toHaveBeenCalledWith("exp-rep", {
+      taskId: "t1",
+      modelKeys: [deepSeekKey],
+    });
+    expect(controller.retryIncomplete).not.toHaveBeenCalled();
+    cleanup(h);
+  });
+
   it("shows Retry incomplete task on a non-repairable cell and confirms through the full-roster fallback", async () => {
     stubDesktop();
     const { experiment, runs } = makeRepairableExperiment();
@@ -1284,6 +1377,42 @@ describe("ExperimentResults — add model (roster extension)", () => {
     typeInto(document.body.querySelector<HTMLInputElement>("input#model-search")!, "deepseek-chat");
     await settle();
     expect(document.body.textContent).toContain("already added");
+    cleanup(h);
+  });
+
+  it("restores focus to the header action when the dialog closes", async () => {
+    stubDesktop();
+    const { experiment, runs } = makeExtendableExperiment();
+    const controller = makeControllerWithAddModel({ ok: false, error: "nope." });
+    const h = renderWithRouter(
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+        models={[]}
+        availableProviderIds={READY}
+      />,
+    );
+    await settle();
+    await settle();
+
+    // Open then close the dialog via its Cancel button.
+    await act(async () => {
+      findAddModelButton(h)!.click();
+      await flush();
+    });
+    await settle();
+    const cancel = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent === "Cancel",
+    );
+    await act(async () => {
+      cancel!.click();
+      await flush();
+    });
+    await settle();
+
+    // Focus lands back on the header trigger, not body.
+    expect(document.activeElement).toBe(findAddModelButton(h));
     cleanup(h);
   });
 

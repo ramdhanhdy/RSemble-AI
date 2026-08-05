@@ -174,7 +174,7 @@ export interface ExperimentEngine {
   commitTaskTerminal(input: CommitTerminalInput): TransitionResult;
   requestPause(now: number): TransitionResult;
   resume(fence: ExecutionFence, now: number): TransitionResult;
-  abort(now: number): TransitionResult;
+  abort(now: number, error?: PersistedError | null): TransitionResult;
   recoverInterrupted(now: number): TransitionResult;
   retryIncomplete(generateId: () => string, fence: ExecutionFence, now: number): TransitionResult;
   /** Queue one planned attempt per task (missing-cell repair or roster
@@ -378,7 +378,7 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       return OK;
     },
 
-    abort(now) {
+    abort(now, error = null) {
       if (
         record.status !== "running" &&
         record.status !== "paused" &&
@@ -393,22 +393,34 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       queue = [];
       pauseRequestedFlag = false;
 
-      let tasks = record.tasks;
-      if (activeTaskId !== null && activeAttemptId !== null) {
-        const task = taskState(activeTaskId);
-        if (task) {
-          const updatedTask: ExperimentTaskState = {
-            ...task,
-            attempts: task.attempts.map((a) =>
-              a.id === activeAttemptId && a.status === "running"
-                ? { ...a, status: "aborted" as const, finishedAt: now }
-                : a,
-            ),
-          };
-          updatedTask.selectedAttemptId = selectAttemptId(updatedTask);
-          tasks = record.tasks.map((t) => (t.taskId === updatedTask.taskId ? updatedTask : t));
-        }
-      }
+      // Finalize EVERY non-terminal attempt, not just the active one. Queued
+      // attempts (roster extensions, retries) that abort leaves as "queued"
+      // render as Running forever and can never be retried — a zombie state
+      // observed in production (plan 001 hotfix H1). Aborted attempts keep
+      // their repair plan so retryIncomplete can re-queue them.
+      const tasks = record.tasks.map((task) => {
+        let changed = false;
+        const attempts = task.attempts.map((a) => {
+          if (a.status === "running") {
+            changed = true;
+            return {
+              ...a,
+              status: "aborted" as const,
+              finishedAt: now,
+              ...(error !== null ? { error } : {}),
+            };
+          }
+          if (a.status === "queued") {
+            changed = true;
+            return { ...a, status: "aborted" as const, finishedAt: now };
+          }
+          return a;
+        });
+        if (!changed) return task;
+        const updatedTask: ExperimentTaskState = { ...task, attempts };
+        updatedTask.selectedAttemptId = selectAttemptId(updatedTask);
+        return updatedTask;
+      });
       activeTaskId = null;
       activeAttemptId = null;
       record = { ...record, tasks, status: "aborted", execution: null, updatedAt: now };
@@ -455,11 +467,33 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       ) {
         return reject(`Cannot retry while ${record.status}`);
       }
-      const eligible = record.tasks.filter(taskNeedsRetry);
+      // A task is eligible when it has no accepted completed attempt, OR its
+      // newest attempt carries a repair/extension plan that ended
+      // failed/aborted/interrupted — re-running that same plan finishes the
+      // interrupted work (plan 001 hotfix H3). Without the second rule a
+      // failed roster extension is a dead end: the older completed attempt
+      // keeps taskNeedsRetry false while the planner rejects re-adding the
+      // model as a duplicate.
+      const eligible: Array<{ task: ExperimentTaskState; plan?: ExperimentTaskExecutionPlan }> = [];
+      for (const task of record.tasks) {
+        if (taskNeedsRetry(task)) {
+          eligible.push({ task });
+          continue;
+        }
+        const newest = task.attempts[task.attempts.length - 1];
+        if (
+          newest?.repair &&
+          (newest.status === "failed" ||
+            newest.status === "aborted" ||
+            newest.status === "interrupted")
+        ) {
+          eligible.push({ task, plan: newest.repair });
+        }
+      }
       if (eligible.length === 0) return reject("No incomplete tasks to retry");
 
       let tasks = record.tasks;
-      for (const task of eligible) {
+      for (const { task, plan } of eligible) {
         const attempt: ExperimentTaskAttempt = {
           id: generateId(),
           runId: null,
@@ -468,12 +502,13 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
           startedAt: null,
           finishedAt: null,
           error: null,
+          ...(plan !== undefined ? { repair: plan } : {}),
         };
         tasks = tasks.map((t) =>
           t.taskId === task.taskId ? { ...t, attempts: [...t.attempts, attempt] } : t,
         );
       }
-      queue = eligible.map((t) => t.taskId);
+      queue = eligible.map(({ task }) => task.taskId);
       record = { ...record, tasks, status: "running", execution: fence, updatedAt: now };
       return OK;
     },

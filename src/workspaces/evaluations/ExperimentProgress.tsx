@@ -71,6 +71,17 @@ export function ExperimentProgress({
   const controllerUnavailable = controller === null;
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+  // While a roster extension is active, say WHAT is running: exactly the
+  // added model, with prior outputs reused — so an attempt never reads as a
+  // full-roster rerun (plan 001 hotfix H6).
+  const latestExtension =
+    experiment.rosterExtensions && experiment.rosterExtensions.length > 0
+      ? experiment.rosterExtensions[experiment.rosterExtensions.length - 1]
+      : null;
+  const showExtensionScope =
+    latestExtension !== null &&
+    (experiment.status === "running" || experiment.status === "paused");
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex flex-col gap-1">
@@ -82,6 +93,16 @@ export function ExperimentProgress({
         <p className="text-xs text-text-muted">
           Started {new Date(experiment.createdAt).toLocaleString()} ({timeZone})
         </p>
+        {showExtensionScope && (
+          <p
+            data-extension-scope=""
+            className="rounded-md border border-accent/40 bg-panel px-3 py-2 text-xs text-text-secondary"
+          >
+            Roster extension in progress: running{" "}
+            <span className="font-mono text-text">{latestExtension!.addedModelKey}</span> only.
+            Other models reuse their accepted evidence; one fresh Judge pass per task.
+          </p>
+        )}
       </header>
 
       {controllerError !== null && (

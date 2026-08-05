@@ -11,33 +11,17 @@
 // recreated on navigation, so an active experiment survives route changes.
 // =============================================================================
 
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, type ReactNode } from "react";
 import { RepositoryContext } from "../persistence/repository-context";
 import { DexieExperimentStore, createExperimentUnitOfWork } from "../persistence/experiment-unit-of-work";
 import { createExecutionLease, type ExecutionLease } from "../execution-lease";
 import { createRunExecutor } from "../run-executor";
 import { useExecutionOwner } from "../execution-owner-context";
 import { createExperimentController, type ExperimentController } from "./experiment-controller";
-
-export interface ExperimentControllerContextValue {
-  controller: ExperimentController | null;
-  /** The tab's cross-tab execution lease — shared with the controller. The
-   *  global execution strip subscribes to it for "owned by another tab" states. */
-  lease: ExecutionLease | null;
-}
-
-const ExperimentControllerContext = createContext<ExperimentControllerContextValue>({
-  controller: null,
-  lease: null,
-});
-
-export function useExperimentController(): ExperimentController | null {
-  return useContext(ExperimentControllerContext).controller;
-}
-
-export function useExecutionLease(): ExecutionLease | null {
-  return useContext(ExperimentControllerContext).lease;
-}
+import {
+  ExperimentControllerContext,
+  type ExperimentControllerContextValue,
+} from "./experiment-controller-hooks";
 
 export function ExperimentControllerProvider({ children }: { children: ReactNode }) {
   const { db, evalRepo, runRepo } = useContext(RepositoryContext);

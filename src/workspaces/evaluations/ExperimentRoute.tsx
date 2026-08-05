@@ -19,7 +19,7 @@ import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
 import type { ExecutionOwner } from "../../lib/execution-owner";
 import { useExecutionOwner } from "../../lib/execution-owner-context";
-import { useExperimentController } from "../../lib/evaluations/experiment-controller-context";
+import { useExperimentController } from "../../lib/evaluations/experiment-controller-hooks";
 import { ExperimentProgress } from "./ExperimentProgress";
 import { ExperimentResults } from "./ExperimentResults";
 

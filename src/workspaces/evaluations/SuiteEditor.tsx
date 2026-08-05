@@ -26,7 +26,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { ChevronDown, Loader2, Save, Play, AlertCircle, Trophy } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
-import { useExperimentController } from "../../lib/evaluations/experiment-controller-context";
+import { useExperimentController } from "../../lib/evaluations/experiment-controller-hooks";
 import { useModelProbe } from "../../ui/ModelProbeContext";
 import { SuitePreflightDialog, type SuitePreflightEntry } from "./SuitePreflightDialog";
 import { useExecutionOwner } from "../../lib/execution-owner-context";

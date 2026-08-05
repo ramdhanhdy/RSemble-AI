@@ -116,7 +116,7 @@ function makeAttempt(
   return {
     id,
     runId: null,
-    trial: 1,
+    trial: 0,
     status,
     startedAt: null,
     finishedAt: null,
@@ -355,7 +355,7 @@ describe("ExperimentTaskLedger — controls and counts", () => {
     expect(text).toContain("1 completed");
     expect(text).toContain("1 queued");
     expect(text).toContain("0:05");
-    expect(text).toContain("Trial 1");
+    expect(text).toContain("Attempt 1");
     expect(text).toContain("Completed");
     expect(text).toContain("Running");
     expect(text).toContain("Queued");
@@ -574,7 +574,7 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
     });
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(h.$$("[data-attempt-row]")).toHaveLength(1);
-    expect(h.container.textContent).toContain("Trial 1");
+    expect(h.container.textContent).toContain("Attempt 1");
     cleanup(h);
   });
 });

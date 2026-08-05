@@ -6,11 +6,12 @@
 // validates through it, then executes with the executor.
 //
 // Repairability (spec §11.2): a missing cell is target-repairable only when
-//   - the task has a selected partial attempt;
+//   - the task has a selected partial attempt, or a selected completed attempt
+//     from a trusted pre-extension protocol snapshot;
 //   - its selected run record is available;
 //   - that run has accepted outputs for at least one other candidate;
 //   - the cell reason is "no-score";
-//   - the experiment snapshot and protocol fingerprint are unchanged;
+//   - the protocol is unchanged, except for append-only roster extensions;
 //   - the target model remains in the immutable snapshot roster.
 // `no-attempt`, `no-accepted-attempt`, and `evidence-missing` require a full
 // task retry.
@@ -93,7 +94,8 @@ export function planMissingCellRepair(input: {
     }
   }
 
-  // The task must have a selected partial attempt whose run is available.
+  // The task must have a selected attempt whose run is available. Status and
+  // protocol-lineage eligibility are checked together below.
   const taskState = experiment.tasks.find((t) => t.taskId === request.taskId);
   const selectedAttempt = taskState?.selectedAttemptId
     ? taskState.attempts.find((a) => a.id === taskState.selectedAttemptId)
@@ -105,12 +107,8 @@ export function planMissingCellRepair(input: {
   if (!baseRun) {
     return { ok: false, reason: "Selected run record is unavailable — evidence-missing cells require a full task retry." };
   }
-  if (selectedAttempt.status !== "partial") {
-    return { ok: false, reason: "Targeted repair requires a selected partial attempt." };
-  }
-
-  // Verify the base run is from this experiment, this task, and this
-  // protocol — never reuse outputs across experiment/task/protocol boundaries.
+  // Verify the base run is from this experiment, task, and protocol lineage —
+  // never reuse outputs across experiment/task/protocol boundaries.
   if (baseRun.id !== selectedAttempt.runId) {
     return { ok: false, reason: "Base run ID does not match the selected attempt." };
   }
@@ -127,8 +125,34 @@ export function planMissingCellRepair(input: {
   if (src.taskId !== request.taskId) {
     return { ok: false, reason: "Base run belongs to a different task." };
   }
-  if (src.protocolFingerprint !== experiment.protocolFingerprint) {
-    return { ok: false, reason: "Base run protocol fingerprint does not match the experiment." };
+  const sameProtocol = src.protocolFingerprint === experiment.protocolFingerprint;
+  const extensionHistory = experiment.rosterExtensions ?? [];
+  const ancestorIndex = extensionHistory.findIndex(
+    (extension) => extension.priorFingerprint === src.protocolFingerprint,
+  );
+  const allowedExtensionKeys = new Set(
+    ancestorIndex >= 0
+      ? extensionHistory.slice(ancestorIndex).map((extension) => extension.addedModelKey)
+      : [],
+  );
+  const trustedRosterExtension =
+    !sameProtocol &&
+    ancestorIndex >= 0 &&
+    requested.every((modelKey) => allowedExtensionKeys.has(modelKey));
+  if (!sameProtocol && !trustedRosterExtension) {
+    return {
+      ok: false,
+      reason: "Base run protocol fingerprint does not match the experiment or its roster-extension lineage.",
+    };
+  }
+  if (
+    selectedAttempt.status !== "partial" &&
+    !(selectedAttempt.status === "completed" && trustedRosterExtension)
+  ) {
+    return {
+      ok: false,
+      reason: "Targeted repair requires a selected partial attempt or a trusted pre-extension completed attempt.",
+    };
   }
 
   // The selected run must have accepted outputs for at least one other

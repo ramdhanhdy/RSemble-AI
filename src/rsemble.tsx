@@ -48,7 +48,7 @@ import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts"
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import { useExecutionOwner } from "./lib/execution-owner-context";
-import { useExperimentController } from "./lib/evaluations/experiment-controller-context";
+import { useExperimentController } from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 
 export default function RSemble() {

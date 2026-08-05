@@ -190,6 +190,51 @@ describe("planMissingCellRepair", () => {
     expect(result.plan.judgeCalls).toBe(1);
   });
 
+  it("repairs models added after a selected completed run using trusted extension lineage", () => {
+    const baseRun = makeRun("run-base", [MK1]);
+    const taskStates = [
+      makeTaskState("t1", [makeAttempt("att-t1", "run-base", "completed")], "att-t1"),
+    ];
+    const original = makeExperiment(["t1"], taskStates);
+    const experiment: ExperimentRecord = {
+      ...original,
+      protocolFingerprint: "sha256:current",
+      snapshot: { ...original.snapshot, protocolFingerprint: "sha256:current" },
+      rosterExtensions: [
+        {
+          addedModelKey: MK2,
+          addedSlot: SLOTS[1],
+          priorFingerprint: "sha256:abc",
+          extendedAt: 1100,
+        },
+        {
+          addedModelKey: MK3,
+          addedSlot: SLOTS[2],
+          priorFingerprint: "sha256:after-m2",
+          extendedAt: 1200,
+        },
+      ],
+    };
+    const aggregation = aggregateExperiment({
+      snapshot: experiment.snapshot,
+      taskStates,
+      resolveRunRecord: () => baseRun,
+    });
+
+    const result = planMissingCellRepair({
+      experiment,
+      aggregation,
+      request: { taskId: "t1", modelKeys: [MK2, MK3] },
+      resolveRunRecord: () => baseRun,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.requestedModelKeys).toEqual([MK2, MK3]);
+    expect(result.plan.reusedModelKeys).toEqual([MK1]);
+    expect(result.plan.candidateCalls).toBe(2);
+  });
+
   it("plans several missing cells on the same task as one plan", () => {
     const { experiment } = makeRepairableFixture();
     const run2 = makeRun("run-base", [MK1]);

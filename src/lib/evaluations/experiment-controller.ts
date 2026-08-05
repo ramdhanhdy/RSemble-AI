@@ -61,6 +61,7 @@ import { HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
 import type { Candidate } from "../../studio-data";
 import type { ModelSlot } from "../../studio-data";
 import type { ProviderId } from "../providers/types";
+import { devTerminalLog } from "../dev-terminal-log";
 
 // --- Events -------------------------------------------------------------------
 
@@ -201,6 +202,8 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
   let persistedExperimentRevision = 0;
   let abortController: AbortController | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let heartbeatWorker: Worker | undefined;
+  let visibilityHandler: (() => void) | undefined;
   let idleResolve: (() => void) | null = null;
   let idlePromise: Promise<void> = new Promise<void>((resolve) => {
     idleResolve = resolve;
@@ -247,19 +250,57 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
   // --- Lease / owner lifecycle ------------------------------------------------
 
   function startHeartbeat(): void {
-    clearInterval(heartbeatTimer);
+    stopHeartbeat();
     const interval = deps.heartbeatMs > 0 ? deps.heartbeatMs : 3000;
-    heartbeatTimer = setInterval(() => {
+    const tick = () => {
       void lease.renew().catch(() => {
         // Lease lost — abort the active execution.
         void abortInternal("Lease lost");
       });
-    }, interval);
+    };
+    // Browsers throttle setInterval in hidden tabs to ~1/minute, which
+    // expires the 10s execution lease and makes the app abort its OWN
+    // running experiment (observed live 2026-08: user left the screen
+    // mid-extension, came back to an aborted run). Ticking from a dedicated
+    // Worker keeps renewals at full cadence while the tab is hidden (H5).
+    try {
+      if (
+        typeof Worker !== "undefined" &&
+        typeof Blob !== "undefined" &&
+        typeof URL !== "undefined" &&
+        typeof URL.createObjectURL === "function"
+      ) {
+        const blob = new Blob([`setInterval(() => postMessage(0), ${interval});`], {
+          type: "application/javascript",
+        });
+        heartbeatWorker = new Worker(URL.createObjectURL(blob));
+        heartbeatWorker.onmessage = tick;
+      } else {
+        heartbeatTimer = setInterval(tick, interval);
+      }
+    } catch {
+      heartbeatTimer = setInterval(tick, interval);
+    }
+    // Belt and braces: renew immediately when the tab becomes visible again.
+    if (typeof document !== "undefined") {
+      visibilityHandler = () => {
+        if (document.visibilityState === "visible") tick();
+      };
+      document.addEventListener("visibilitychange", visibilityHandler);
+    }
   }
 
   function stopHeartbeat(): void {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
+    if (heartbeatWorker) {
+      heartbeatWorker.terminate();
+      heartbeatWorker = undefined;
+    }
+    if (visibilityHandler && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", visibilityHandler);
+      visibilityHandler = undefined;
+    }
   }
 
   function releaseExecution(): void {
@@ -379,6 +420,14 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     const runId = `run-${generateId()}`;
     const baseSource = experimentRunSource(record, suite, taskId, attemptId, trial);
     const runSource: RunSource = plan ? { ...baseSource, repair: plan } : baseSource;
+    devTerminalLog("experiment.task.created", {
+      experimentId: record.id,
+      runId,
+      taskId,
+      experimentAttemptId: attemptId,
+      stage: "begin",
+      status: "queued",
+    }, "info");
     const evalConfig = taskEvaluationConfig(task, suite, record.snapshot.profiles);
 
     // Build initial run + summary.
@@ -417,6 +466,14 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
     // Execute via the shared executor.
     abortController = new AbortController();
+    devTerminalLog("experiment.task.execution.started", {
+      experimentId: record.id,
+      runId,
+      taskId,
+      experimentAttemptId: attemptId,
+      stage: plan?.kind === "roster-extension" ? "roster-extension" : "full-run",
+      status: "running",
+    }, "info");
     await executor.executeTask(
       {
         source: runSource,
@@ -443,6 +500,14 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Read the final run from the repo.
     const finalRun = await runRepo.get(runId);
     if (!finalRun) throw new Error(`Run ${runId} not found after execution`);
+    devTerminalLog("experiment.task.execution.finished", {
+      experimentId: record.id,
+      runId,
+      taskId,
+      experimentAttemptId: attemptId,
+      stage: "execution",
+      status: finalRun.status,
+    }, finalRun.status === "completed" ? "info" : "warn");
     const finalSummary = builder.deriveSummary(finalRun);
 
     // Engine transition: commitTaskTerminal with scored coverage derived from
@@ -476,6 +541,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       ...(plan ? { repair: plan } : {}),
     });
     persistedExperimentRevision = commitRev.experimentRevision;
+
+    devTerminalLog("experiment.task.persisted", {
+      experimentId: record.id,
+      runId,
+      taskId,
+      experimentAttemptId: attemptId,
+      stage: "persistence",
+      status: finalRun.status,
+    }, "info");
 
     // Sync experiment status (completed, completed_with_failures, paused).
     await syncExperimentStatus(persistedExperimentRevision);
@@ -536,13 +610,27 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         } catch (err) {
           // Persistence failure or execution error: stop the queue.
           const message = err instanceof Error ? err.message : String(err);
+          devTerminalLog("experiment.task.failed", {
+            experimentId: engine?.record.id,
+            taskId,
+            experimentAttemptId: attemptId,
+            stage: "controller",
+            status: "failed",
+            error: message,
+            ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+          }, "error");
           emit({ kind: "error", error: message });
           // Abort the engine if it hasn't reached a terminal state.
           // The engine may have already committed the task terminal in
           // memory while the UoW persistence failed — activeTaskId is null
           // but the status is still "running". Abort regardless.
           if (engine && !isTerminal(engine.record.status)) {
-            engine.abort(now());
+            // Finalize the active run record before the engine abort so the
+            // Runs page never shows a run as "running" after the experiment
+            // died (plan 001 hotfix H2), then persist the error message on
+            // the affected attempts so the user sees WHY it stopped (H4).
+            await finalizeActiveRunRecord();
+            engine.abort(now(), { message, category: "execution" });
             try {
               await syncExperimentStatus(persistedExperimentRevision);
             } catch {
@@ -572,7 +660,42 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
   // --- Abort ------------------------------------------------------------------
 
-  async function abortInternal(_reason: string): Promise<void> {
+  /** Mark the active attempt's run record terminal (best-effort). Shared by
+   *  user abort, lease-loss abort, and the runLoop error path — without it
+   *  the Runs page keeps showing "running" for a dead experiment. */
+  async function finalizeActiveRunRecord(): Promise<void> {
+    if (!engine) return;
+    const activeTaskId = engine.activeTaskId;
+    const activeAttemptId = engine.activeAttemptId;
+    if (!activeTaskId || !activeAttemptId) return;
+    const taskState = engine.record.tasks.find((t) => t.taskId === activeTaskId);
+    const attempt = taskState?.attempts.find((a) => a.id === activeAttemptId);
+    if (!attempt?.runId) return;
+    try {
+      const run = await runRepo.get(attempt.runId);
+      if (run && run.status === "running") {
+        const state: RunRecordBuilderState = { record: run };
+        const expectedRunRevision = run.revision;
+        builder.applyAborted(state, run);
+        const summary = builder.deriveSummary(run);
+        // CAS against the pre-mutation revision — applyAborted bumps
+        // record.revision in memory; the stored row is one behind.
+        await runRepo.update(run, summary, expectedRunRevision);
+      }
+    } catch {
+      // Best-effort — the run may not be persistable.
+    }
+  }
+
+  async function abortInternal(reason: string): Promise<void> {
+    devTerminalLog("experiment.execution.aborted", {
+      experimentId: engine?.record.id ?? experimentId ?? undefined,
+      taskId: engine?.activeTaskId ?? undefined,
+      experimentAttemptId: engine?.activeAttemptId ?? undefined,
+      stage: reason === "Lease lost" ? "lease" : "controller",
+      status: "aborted",
+      error: reason,
+    }, reason === "Lease lost" ? "error" : "warn");
     if (abortController) {
       abortController.abort();
       abortController = null;
@@ -580,28 +703,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     if (engine) {
       // Mark the active run as aborted before aborting the engine, so the
       // run record reaches a terminal state (not left "running").
-      const activeTaskId = engine.activeTaskId;
-      const activeAttemptId = engine.activeAttemptId;
-      if (activeTaskId && activeAttemptId) {
-        const taskState = engine.record.tasks.find((t) => t.taskId === activeTaskId);
-        const attempt = taskState?.attempts.find((a) => a.id === activeAttemptId);
-        if (attempt?.runId) {
-          try {
-            const run = await runRepo.get(attempt.runId);
-            if (run && run.status === "running") {
-              const state: RunRecordBuilderState = { record: run };
-              const expectedRunRevision = run.revision;
-              builder.applyAborted(state, run);
-              const summary = builder.deriveSummary(run);
-              // CAS against the pre-mutation revision — applyAborted bumps
-              // record.revision in memory; the stored row is one behind.
-              await runRepo.update(run, summary, expectedRunRevision);
-            }
-          } catch {
-            // Best-effort — the run may not be persistable.
-          }
-        }
-      }
+      await finalizeActiveRunRecord();
       engine.abort(now());
       try {
         await syncExperimentStatus(persistedExperimentRevision);
@@ -1058,6 +1160,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         return { ok: false, error: planResult.reason };
       }
       const plan = planResult.plan;
+      devTerminalLog("experiment.roster-extension.planned", {
+        experimentId: record.id,
+        modelKey: plan.addedModelKey,
+        stage: "planning",
+        status: "ready",
+        candidateCalls: plan.candidateCalls,
+        judgeCalls: plan.judgeCalls,
+        reusedOutputs: plan.reusedOutputCount,
+      }, "info");
 
       // Rotate the snapshot in memory: append the slot, recompute the
       // fingerprint, append the history entry. The record stays terminal —
@@ -1147,6 +1258,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       trial: taskState.attempts.find((a) => a.id === attemptId)?.trial ?? 0,
       repair: plan,
     };
+    devTerminalLog("experiment.task.created", {
+      experimentId: record.id,
+      runId,
+      taskId,
+      experimentAttemptId: attemptId,
+      modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
+      stage: plan.kind,
+      status: "queued",
+    }, "info");
 
     const seedRun = builder.buildRepairRunSeed({
       runId,
@@ -1223,6 +1343,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     const events = makeEvents(runId, recorder);
 
     abortController = new AbortController();
+    devTerminalLog("experiment.task.execution.started", {
+      experimentId: record.id,
+      runId,
+      taskId,
+      experimentAttemptId: attemptId,
+      modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
+      stage: plan.kind,
+      status: "running",
+    }, "info");
     await executor.executeTask(
       {
         source: runSource,
@@ -1248,6 +1377,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Read the final run.
     const finalRun = await runRepo.get(runId);
     if (!finalRun) throw new Error(`Run ${runId} not found after repair execution`);
+    devTerminalLog("experiment.task.execution.finished", {
+      experimentId: record.id,
+      runId,
+      taskId,
+      experimentAttemptId: attemptId,
+      modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
+      stage: plan.kind,
+      status: finalRun.status,
+    }, finalRun.status === "completed" ? "info" : "warn");
     const finalSummary = builder.deriveSummary(finalRun);
 
     // Derive coverage from the accepted Judge report.
@@ -1279,6 +1417,16 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       repair: plan,
     });
     persistedExperimentRevision = commitRev.experimentRevision;
+
+    devTerminalLog("experiment.task.persisted", {
+      experimentId: record.id,
+      runId,
+      taskId,
+      experimentAttemptId: attemptId,
+      modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
+      stage: "persistence",
+      status: finalRun.status,
+    }, "info");
 
     await syncExperimentStatus(persistedExperimentRevision);
     emit({ kind: "task-terminal", taskId, attemptId, status: finalRun.status });

@@ -31,7 +31,7 @@ const { mockController, mockEvalRepo, mockRunRepo } = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../lib/evaluations/experiment-controller-context", () => ({
+vi.mock("../../lib/evaluations/experiment-controller-hooks", () => ({
   useExperimentController: () => mockController,
   useExecutionLease: () => null,
 }));

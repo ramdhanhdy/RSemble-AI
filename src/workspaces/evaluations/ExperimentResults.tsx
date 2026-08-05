@@ -9,7 +9,7 @@
 // below that the model-selectable mobile adaptation.
 // =============================================================================
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChevronDown, Crown } from "lucide-react";
 import type { ReactElement } from "react";
@@ -227,6 +227,17 @@ export function ExperimentResults({
 
   // --- Roster extension: dialog planning + confirm (plan F2–F4) -------------
   const addModelTakenKeys = takenModelKeys(experiment);
+  const addModelActionRef = useRef<HTMLButtonElement>(null);
+  // The dialog is opened imperatively (not via Dialog.Trigger), so Base UI
+  // cannot restore focus on close. Return it to the header action ourselves
+  // (keyboard-only flow, plan G2 scenario 6).
+  const addModelWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (addModelWasOpenRef.current && !addModelOpen) {
+      addModelActionRef.current?.focus();
+    }
+    addModelWasOpenRef.current = addModelOpen;
+  }, [addModelOpen]);
 
   const openAddModel = useCallback(() => {
     setAddModelSlot(null);
@@ -572,6 +583,7 @@ export function ExperimentResults({
               type="button"
               onClick={openAddModel}
               data-testid="add-model-action"
+              ref={addModelActionRef}
               className="inline-flex min-h-[44px] items-center rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               Add model
@@ -805,7 +817,7 @@ export function ExperimentResults({
                 >
                   <StatusMark status={attempt.status} />
                   <span className="min-w-0 truncate text-sm text-text">{taskTitle}</span>
-                  <span className="text-xs text-text-muted">Trial {attempt.trial}</span>
+                  <span className="text-xs text-text-muted">Attempt {attempt.trial + 1}</span>
                   {attempt.runId ? (
                     <Link
                       to={`/runs/${attempt.runId}`}

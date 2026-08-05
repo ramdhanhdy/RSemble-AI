@@ -5,7 +5,7 @@
 // Derives one primary row per task from an ExperimentRecord without touching
 // run records: current attempt follows the Task 8 selection rules (explicit
 // selectedAttemptId, else a live running attempt, else selectAttemptId's
-// evidence policy, else the newest attempt), and status/coverage/trial/time
+// evidence policy, else the newest attempt), and status/coverage/attempt/time
 // columns are derived from that attempt. Filtering, search, and page slicing
 // never mutate the canonical row order.
 // =============================================================================

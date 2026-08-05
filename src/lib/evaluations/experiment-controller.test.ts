@@ -1229,6 +1229,56 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     expect(h.leaseStore.lease).toBeNull();
   });
 
+  it("retries a failed added-model run with the same targeted extension plan", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    // Reproduce the reported workflow: start from completed Results, add one
+    // model, then let the fresh Judge stage fail after the paid model call.
+    h.executor.behavior = (request) =>
+      request.source.kind === "experiment" && request.source.repair?.kind === "roster-extension"
+        ? { kind: "judge-fails" }
+        : { kind: "success" };
+    const extension = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(extension.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    const failed = await h.evalRepo.getExperiment(expId);
+    const failedAttempts = failed!.tasks[0].attempts;
+    const failedAttempt = failedAttempts[failedAttempts.length - 1];
+    expect(failedAttempt.status).toBe("failed");
+    expect(failedAttempt.repair).toMatchObject({
+      kind: "roster-extension",
+      addedModelKey: EXT_KEY,
+      baseRunId: expect.any(String),
+    });
+    // The prior completed evidence remains selected until retry succeeds.
+    expect(failed!.tasks[0].selectedAttemptId).toBe(failed!.tasks[0].attempts[0].id);
+
+    // This is the controller action used by Retry on the Results page. It
+    // must preserve the roster-extension plan instead of falling back to a
+    // duplicate add or a full original-roster retry.
+    h.executor.behavior = () => ({ kind: "success" });
+    const retry = await h.controller.retryIncomplete(expId);
+    expect(retry.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    const retryCall = h.executor.calls[h.executor.calls.length - 1];
+    expect(retryCall.candidateExecution?.executeModelKeys).toEqual([EXT_KEY]);
+    if (retryCall.source.kind !== "experiment") throw new Error("expected experiment source");
+    expect(retryCall.source.repair).toEqual(failedAttempt.repair);
+
+    const recovered = await h.evalRepo.getExperiment(expId);
+    const recoveredAttempts = recovered!.tasks[0].attempts;
+    const recoveredAttempt = recoveredAttempts[recoveredAttempts.length - 1];
+    expect(recoveredAttempt.status).toBe("completed");
+    expect(recovered!.tasks[0].selectedAttemptId).toBe(recoveredAttempt.id);
+    expect(recovered!.status).toBe("completed");
+  });
+
   it("falls back to a full-roster attempt for a task with no reusable evidence", async () => {
     const h = makeHarness({
       behavior: (request) =>
@@ -1396,9 +1446,9 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     const res = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
     expect(res.ok).toBe(true);
     await h.controller.whenIdle();
-    // t1 extension aborted; t2's queued extension attempt survives (the
-    // engine clears the queue on abort) but NEVER executes — no third
-    // extension call, and t2's prior selected evidence stays authoritative.
+    // t1 extension aborted; t2's queued extension attempt is also finalized
+    // as aborted so it cannot render as running forever or become a zombie.
+    // It NEVER executes, and t2's prior selected evidence stays authoritative.
     expect(h.executor.calls).toHaveLength(3); // 2 initial + 1 extension
     const after = await h.evalRepo.getExperiment(expId);
     expect(after!.status).toBe("aborted");
@@ -1407,7 +1457,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     expect(t1.selectedAttemptId).toBe(t1.attempts[0].id);
     const t2 = after!.tasks[1];
     expect(t2.attempts).toHaveLength(2);
-    expect(t2.attempts[1].status).toBe("queued");
+    expect(t2.attempts[1].status).toBe("aborted");
     expect(t2.selectedAttemptId).toBe(t2.attempts[0].id);
     // Extension history survives abort.
     expect(after!.rosterExtensions).toHaveLength(1);

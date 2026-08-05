@@ -52,6 +52,7 @@ import {
 } from "./pipeline";
 import type { AdHocEvaluationConfig } from "./evaluations/evaluation-profile-adhoc";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
+import { devTerminalLog, type DevTerminalFields } from "./dev-terminal-log";
 
 // --- Request types -----------------------------------------------------------
 
@@ -252,6 +253,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     return sanitizePersistedError(err, ctx, now, configuredCredentialValues());
   }
 
+  function sourceFields(source: RunSource | undefined): DevTerminalFields {
+    if (!source || source.kind !== "experiment") return {};
+    return {
+      experimentId: source.experimentId,
+      taskId: source.taskId,
+      experimentAttemptId: source.experimentTaskAttemptId,
+    };
+  }
+
   // --- Candidate fanout (shared by executeTask and retryCandidate) -----------
 
   async function runCandidateStream(
@@ -260,11 +270,20 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     temperature: number,
     events: RunExecutorEvents,
     signal: AbortSignal,
+    diagnostics: { source?: RunSource; attemptId: string },
   ): Promise<{ content: string; segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; finishedAt: number } | { error: PersistedError } | null> {
     const provider = getProvider(job.providerId);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
     signal.addEventListener("abort", onAbort);
+    const requestStartedAt = Date.now();
+    const context = {
+      ...sourceFields(diagnostics.source),
+      attemptId: diagnostics.attemptId,
+      modelKey: `${job.providerId}:${job.slug}`,
+      stage: "candidate",
+    };
+    devTerminalLog("provider.request.started", context, "info");
     try {
       let content = "";
       for await (const delta of provider.chatCompletionStream({
@@ -282,13 +301,28 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       const summary = summarize(content);
       const tokensIn = estimateTokens(messages.map((m) => m.content).join(""));
       const tokensOut = estimateTokens(content);
+      devTerminalLog("provider.request.completed", {
+        ...context,
+        status: "completed",
+        durationMs: Date.now() - requestStartedAt,
+        tokensIn,
+        tokensOut,
+      }, "info");
       return { content, segments, summary, tokensIn, tokensOut, finishedAt: now() };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return null;
       if (isAborted(signal)) return null;
       // Provider errors fail this candidate (not the whole run); return the
       // bounded sanitized error so the caller records it on the attempt.
-      return { error: sanitizeError(err, { category: "provider", stage: "candidate", model: job.slug }) };
+      const error = sanitizeError(err, { category: "provider", stage: "candidate", model: job.slug });
+      devTerminalLog("provider.request.failed", {
+        ...context,
+        status: "failed",
+        durationMs: Date.now() - requestStartedAt,
+        error: error.message,
+        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+      }, "error");
+      return { error };
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
@@ -298,7 +332,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runJudge(
     done: Candidate[],
-    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction: string; attachments: Attachment[]; attachmentsToJudge: boolean },
+    request: { source?: RunSource; task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction: string; attachments: Attachment[]; attachmentsToJudge: boolean },
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
     signal: AbortSignal,
@@ -319,6 +353,13 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     );
     const attemptId = generateId();
     const startedAt = now();
+    const judgeLogStartedAt = Date.now();
+    const judgeContext = {
+      ...sourceFields(request.source),
+      attemptId,
+      modelKey: `${request.critic.providerId}:${request.critic.model}`,
+      stage: "judge",
+    };
 
     const blindLabelToCandidateId: Record<string, string> = {};
     for (const { label, candidateId } of blindSet.labelMap) {
@@ -345,6 +386,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
     signal.addEventListener("abort", onAbort);
+    devTerminalLog("judge.request.started", judgeContext, "info");
     try {
       const content = await provider.chatCompletion({
         model: request.critic.model,
@@ -362,6 +404,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       await events.onJudgeTerminal(attemptId, {
         status: "completed", report, consensus: breakdown, error: null, finishedAt: now(),
       });
+      devTerminalLog("judge.request.completed", {
+        ...judgeContext,
+        status: "completed",
+        durationMs: Date.now() - judgeLogStartedAt,
+      }, "info");
       return { ok: true, attemptId, report, consensus: breakdown, scoresById, blindSet };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -371,10 +418,18 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         return { ok: false };
       }
       if (isAborted(signal)) return { ok: false };
+      const error = sanitizeError(err, { category: "provider", stage: "judge", model: request.critic.model });
       await events.onJudgeTerminal(attemptId, {
         status: "failed", report: null, consensus: null,
-        error: sanitizeError(err, { category: "provider", stage: "judge", model: request.critic.model }), finishedAt: now(),
+        error, finishedAt: now(),
       }).catch(() => {});
+      devTerminalLog("judge.request.failed", {
+        ...judgeContext,
+        status: "failed",
+        durationMs: Date.now() - judgeLogStartedAt,
+        error: error.message,
+        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+      }, "error");
       return { ok: false };
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -546,7 +601,10 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
           if (isAborted(signal)) return;
 
-          const result = await runCandidateStream(job, messages, request.task.temperature, events, signal);
+          const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
+            source: request.source,
+            attemptId,
+          });
           if (!result || "error" in result) {
             if (isAborted(signal) && !result) return;
             await events.onCandidateAttemptTerminal(job.id, attemptId, {
@@ -622,7 +680,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
       const judgeResult = await runJudge(
         done,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+        { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
         candidateAttemptIds,
         events,
         signal,
@@ -683,7 +741,10 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
         if (isAborted(signal)) return;
 
-        const result = await runCandidateStream(job, messages, request.task.temperature, events, signal);
+        const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
+          source: request.source,
+          attemptId,
+        });
         if (!result || "error" in result) {
           if (isAborted(signal) && !result) return;
           await events.onCandidateAttemptTerminal(job.id, attemptId, {
@@ -755,7 +816,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       done,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+      { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
       candidateAttemptIds,
       events,
       signal,
@@ -817,7 +878,10 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     if (isAborted(signal)) return;
 
-    const result = await runCandidateStream(job, messages, request.task.temperature, events, signal);
+    const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
+      source: request.source,
+      attemptId,
+    });
     if (!result || "error" in result) {
       if (!isAborted(signal) || (result && "error" in result)) {
         await events.onCandidateAttemptTerminal(job.id, attemptId, {
@@ -879,7 +943,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       allDone,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+      { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
       candidateAttemptIds,
       events,
       signal,

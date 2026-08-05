@@ -2,7 +2,7 @@
 // ExperimentTaskLedger — scalable task progress ledger (spec §12.2-12.3, Task 13)
 //
 // One primary row per task with stable columns (index, title, status, coverage,
-// trial, time, action) below a sticky instrument header that pins the current
+// attempt, time, action) below a sticky instrument header that pins the current
 // task and Pause/Resume + Abort controls to the top of the route scroller.
 // Attempt history lives behind a collapsed disclosure and only mounts when
 // opened, so 250-task suites stay bounded: at most PAGE_SIZE primary rows are
@@ -61,6 +61,12 @@ function attemptTime(attempt: ExperimentTaskAttempt | null, now: number): string
   }
   const ts = attempt.finishedAt ?? attempt.startedAt;
   return ts === null ? "—" : formatRelativeTime(ts);
+}
+
+/** Stored trial indices are a zero-based implementation detail. User-facing
+ * attempts are actions, so number them from one. */
+function attemptLabel(attempt: ExperimentTaskAttempt): string {
+  return `Attempt ${attempt.trial + 1}`;
 }
 
 export function ExperimentTaskLedger({
@@ -217,7 +223,7 @@ export function ExperimentTaskLedger({
                       : "—"}
                   </span>
                   <span className="text-text-secondary">
-                    {attempt ? `Trial ${attempt.trial}` : "—"}
+                    {attempt ? attemptLabel(attempt) : "—"}
                   </span>
                   <span className="tabular-nums text-text-secondary">{attemptTime(attempt, now)}</span>
                 </div>
@@ -255,7 +261,7 @@ export function ExperimentTaskLedger({
                       className="flex flex-wrap items-center gap-x-4 gap-y-1 px-2 py-1 text-sm"
                     >
                       <StatusMark status={attempt.status} />
-                      <span className="text-text-secondary">Trial {attempt.trial}</span>
+                      <span className="text-text-secondary">{attemptLabel(attempt)}</span>
                       <span className="tabular-nums text-text-muted">
                         {attempt.coverage
                           ? `${attempt.coverage.scoredModelKeys.length}/${attempt.coverage.totalModels}`

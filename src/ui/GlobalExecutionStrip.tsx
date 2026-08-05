@@ -20,7 +20,7 @@ import { StatusMark } from "./StatusMark";
 import type { ExperimentRecord } from "../lib/evaluations/evaluation-types";
 import { useExecutionOwner } from "../lib/execution-owner-context";
 import { useEvaluationRepository, useStorageState } from "../lib/persistence/repository-context";
-import { useExecutionLease } from "../lib/evaluations/experiment-controller-context";
+import { useExecutionLease } from "../lib/evaluations/experiment-controller-hooks";
 
 // --- View model ---------------------------------------------------------------
 
