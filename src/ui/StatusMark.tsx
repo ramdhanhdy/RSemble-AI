@@ -1,7 +1,9 @@
 import { forwardRef } from "react";
 import {
+  BadgeCheck,
   Check,
   CircleDashed,
+  CirclePlay,
   FilePenLine,
   Loader2,
   Pause,
@@ -26,7 +28,9 @@ export type StatusMarkStatus =
   | "partial"
   | "failed"
   | "aborted"
-  | "interrupted";
+  | "interrupted"
+  | "ready"
+  | "reusable";
 
 interface StatusConfig {
   label: string;
@@ -68,6 +72,8 @@ const STATUS_MAP: Record<StatusMarkStatus, StatusConfig> = {
   failed:                     { label: "Failed",      icon: XCircle,         color: "text-error",        spin: false },
   aborted:                    { label: "Aborted",     icon: Square,          color: "text-text-muted",   spin: false },
   interrupted:                { label: "Interrupted", icon: Unplug,          color: "text-warning",      spin: false },
+  ready:                      { label: "Ready",       icon: CirclePlay,      color: "text-accent",       spin: false },
+  reusable:                   { label: "Reusable",    icon: BadgeCheck,      color: "text-text-muted",   spin: false },
 };
 
 export function StatusMark({
@@ -87,12 +93,17 @@ export function StatusMark({
   return (
     <span
       data-status-mark=""
-      className={`inline-flex items-center gap-1.5 text-sm ${cfg.color}`}
+      className={`motion-state inline-flex items-center gap-1.5 text-sm ${cfg.color}`}
     >
-      <Icon
-        size={size}
-        className={shouldSpin ? "animate-spin-ease" : undefined}
-      />
+      <span
+        data-status-icon=""
+        className="flex size-4 shrink-0 items-center justify-center"
+      >
+        <Icon
+          size={size}
+          className={shouldSpin ? "animate-spin-ease" : undefined}
+        />
+      </span>
       <span className="tabular-nums">{cfg.label}</span>
     </span>
   );

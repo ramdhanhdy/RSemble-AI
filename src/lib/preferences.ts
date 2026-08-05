@@ -13,6 +13,7 @@ const PROVIDER_IDS: Record<ProviderId, true> = {
   openrouter: true,
   "chatgpt-codex": true,
   gemini: true,
+  deepseek: true,
   commandcode: true,
   clinepass: true,
   umans: true,

@@ -14,7 +14,7 @@ import type {
   ConsensusBreakdown,
   ModelSlot,
 } from "../../studio-data";
-import type { ChatMessage } from "../providers/types";
+import type { ChatMessage, CostRecord, ReasoningPolicy, ReasoningSettingProvenance, RunReasoningProvenance, UsageBreakdown } from "../providers/types";
 import type {
   RunRecordV2,
   FullRunSummaryV2,
@@ -31,6 +31,7 @@ import type {
 } from "./run-types";
 import type { EvaluationProfileSnapshot } from "../evaluations/evaluation-types";
 import { candidateIdForSlot } from "../pipeline";
+import { resolveReasoningEffort } from "../providers/reasoning";
 
 // --- Input shapes (mirror executor event payloads) ---------------------------
 
@@ -41,9 +42,30 @@ export interface FanoutStartInput {
   task: { title: string; prompt: string; systemPrompt: string; temperature: number };
   evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
   slots: ModelSlot[];
+  critic?: { providerId: string; model: string };
   fence: ExecutionFence;
   /** Attachment metadata for the record (plan 7.7.2) — never bytes/text. */
   attachments?: TaskAttachmentMeta[];
+  reasoningPolicy?: ReasoningPolicy;
+}
+
+export interface RepairRunSeedInput {
+  runId: string;
+  /** Source of the new run — experiment branch carries repair metadata. */
+  source: RunSource;
+  task: { title: string; prompt: string; systemPrompt: string; temperature: number };
+  evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
+  /** Snapshot roster slots (full candidate set for the new Judge pass). */
+  critic?: { providerId: string; model: string };
+  slots: ModelSlot[];
+  fence: ExecutionFence;
+  /** The base run whose accepted candidate outputs are reused. */
+  baseRun: RunRecordV2;
+  /** Model keys to re-execute (requested) vs reuse (everything else). */
+  requestedModelKeys: string[];
+  reasoningPolicy?: ReasoningPolicy;
+  /** Fresh candidate/attempt ID generator (avoids collisions with base run). */
+  generateId: () => string;
 }
 
 export interface CandidateAttemptStartInput {
@@ -57,6 +79,8 @@ export interface CandidateTerminalInput {
   output: string | null;
   tokensIn: number | null;
   tokensOut: number | null;
+  usage?: UsageBreakdown | null;
+  cost?: CostRecord | null;
   error: PersistedError | null;
   finishedAt: number;
 }
@@ -75,6 +99,8 @@ export interface JudgeTerminalInput {
   status: AttemptStatus;
   report: JudgeReport | null;
   consensus: ConsensusBreakdown | null;
+  usage?: UsageBreakdown | null;
+  cost?: CostRecord | null;
   error: PersistedError | null;
   finishedAt: number;
 }
@@ -91,6 +117,8 @@ export interface FusionAttemptStartInput {
 export interface FusionTerminalInput {
   status: AttemptStatus;
   result: string | null;
+  usage?: UsageBreakdown | null;
+  cost?: CostRecord | null;
   error: PersistedError | null;
   finishedAt: number;
 }
@@ -105,6 +133,34 @@ export interface RunRecordBuilderState {
 
 export interface BuilderDeps {
   now: () => number;
+}
+
+function buildReasoningProvenance(
+  policy: ReasoningPolicy,
+  slots: ModelSlot[],
+  judge: { providerId: string; model: string },
+): RunReasoningProvenance {
+  const setting = (providerId: string, model: string, requested: ReasoningPolicy["candidates"]): ReasoningSettingProvenance => {
+    const resolution = resolveReasoningEffort(providerId as ModelSlot["providerId"], model, requested);
+    return resolution.ok
+      ? { requested, effective: resolution.effective, source: resolution.capabilities.source }
+      : { requested, effective: "provider-default", source: "unknown" };
+  };
+  const candidates: Record<string, ReasoningSettingProvenance> = {};
+  for (const slot of slots) {
+    if (slot.enabled) candidates[modelKeyOfSlot(slot)] = setting(slot.providerId, slot.slug, policy.candidates);
+  }
+  const judgeResolution = resolveReasoningEffort(judge.providerId as ModelSlot["providerId"], judge.model, policy.judge);
+  return {
+    candidates,
+    judge: judgeResolution.ok
+      ? { requested: policy.judge, effective: judgeResolution.effective, source: judgeResolution.capabilities.source }
+      : { requested: policy.judge, effective: "provider-default", source: "unknown" },
+  };
+}
+
+function modelKeyOfSlot(slot: ModelSlot): string {
+  return `${slot.providerId}:${slot.slug}`;
 }
 
 // --- Factory -----------------------------------------------------------------
@@ -158,6 +214,9 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
         ? { attachments: input.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })) }
         : {}),
       evaluation: { profile: input.evaluation.profile, candidateMessages: input.evaluation.candidateMessages },
+      ...(input.reasoningPolicy && input.critic
+        ? { reasoning: buildReasoningProvenance(input.reasoningPolicy, input.slots, input.critic) }
+        : {}),
       candidates,
       judge: {
         status: "idle",
@@ -175,6 +234,104 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     };
     _state.record = record;
     return record;
+  }
+
+  /**
+   * Build a fresh compound-repair run seed (spec §11.3–11.4):
+   *  - fresh run/candidate/attempt IDs;
+   *  - copied accepted outputs + messages for reused candidates with explicit
+   *    `reusedFrom` provenance;
+   *  - unstarted target candidates (the executor will call them);
+   *  - empty Judge and fusion evidence;
+   *  - repair metadata in the run source;
+   *  - NO copied winner or score report (the new Judge pass is fresh).
+   */
+  function buildRepairRunSeed(input: RepairRunSeedInput): RunRecordV2 {
+    const ts = now();
+    const requested = new Set(input.requestedModelKeys);
+    const baseByKey = new Map(input.baseRun.candidates.map((c) => [c.modelKey, c]));
+
+    const candidates: PersistedCandidate[] = input.slots
+      .filter((s) => s.enabled)
+      .map((slot) => {
+        const key = `${slot.providerId}:${slot.slug}`;
+        const candidateId = candidateIdForSlot(slot.id);
+        const base = baseByKey.get(key);
+
+        if (!requested.has(key) && base?.acceptedAttemptId) {
+          // Reuse: copy the accepted output + messages with provenance and a
+          // FRESH attempt ID (never reuse the base attempt id). The fresh
+          // attempt is already completed, set it as the candidate's accepted
+          // pointer so a subsequent repair planner can reuse this result.
+          const sourceAttempt = base.attempts.find((a) => a.attemptId === base.acceptedAttemptId);
+          if (sourceAttempt) {
+            const freshAttemptId = input.generateId();
+            return {
+              candidateId,
+              slotId: slot.id,
+              modelKey: key,
+              providerId: slot.providerId,
+              model: slot.model,
+              slug: slot.slug,
+              acceptedAttemptId: freshAttemptId,
+              attempts: [
+                {
+                  attemptId: freshAttemptId,
+                  messages: sourceAttempt.messages,
+                  startedAt: sourceAttempt.startedAt,
+                  finishedAt: sourceAttempt.finishedAt,
+                  status: "completed",
+                  output: sourceAttempt.output,
+                  tokensIn: sourceAttempt.tokensIn,
+                  tokensOut: sourceAttempt.tokensOut,
+                  error: null,
+                  reusedFrom: {
+                    sourceRunId: input.baseRun.id,
+                    sourceCandidateId: base.candidateId,
+                    sourceAttemptId: sourceAttempt.attemptId,
+                  },
+                },
+              ],
+            };
+          }
+        }
+
+        // Requested (or non-reusable) candidate: unstarted, executor fills it.
+        return {
+          candidateId,
+          slotId: slot.id,
+          modelKey: key,
+          providerId: slot.providerId,
+          model: slot.model,
+          slug: slot.slug,
+          acceptedAttemptId: null,
+          attempts: [],
+        };
+      });
+
+    return {
+      schemaVersion: 2,
+      id: input.runId,
+      revision: 1,
+      execution: input.fence,
+      createdAt: ts,
+      updatedAt: ts,
+      completedAt: null,
+      status: "running",
+      mode: "rank",
+      source: input.source,
+      task: { ...input.task },
+      evaluation: { profile: input.evaluation.profile, candidateMessages: input.evaluation.candidateMessages },
+      ...(input.reasoningPolicy && input.critic
+        ? { reasoning: buildReasoningProvenance(input.reasoningPolicy, input.slots, input.critic) }
+        : input.baseRun.reasoning
+          ? { reasoning: input.baseRun.reasoning }
+          : {}),
+      candidates,
+      judge: { status: "idle", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    };
   }
 
   function findCandidate(record: RunRecordV2, candidateId: string): PersistedCandidate | undefined {
@@ -225,6 +382,8 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     attempt.output = input.output;
     attempt.tokensIn = input.tokensIn;
     attempt.tokensOut = input.tokensOut;
+    if (input.usage) attempt.usage = { ...input.usage };
+    if (input.cost) attempt.cost = { ...input.cost };
     attempt.error = input.error;
     attempt.finishedAt = input.finishedAt;
     if (input.status === "completed") {
@@ -284,6 +443,8 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     attempt.status = input.status;
     attempt.report = input.report;
     attempt.consensus = input.consensus;
+    if (input.usage) attempt.usage = { ...input.usage };
+    if (input.cost) attempt.cost = { ...input.cost };
     attempt.error = input.error;
     attempt.finishedAt = input.finishedAt;
     // Move accepted pointer only on success
@@ -341,6 +502,8 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     if (!attempt) return;
     attempt.status = input.status;
     attempt.result = input.result;
+    if (input.usage) attempt.usage = { ...input.usage };
+    if (input.cost) attempt.cost = { ...input.cost };
     attempt.error = input.error;
     attempt.finishedAt = input.finishedAt;
     // Move accepted pointer only on success
@@ -579,6 +742,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
 
   return {
     createInitialState,
+    buildRepairRunSeed,
     applyFanoutStart,
     applyCandidateAttemptStart,
     applyCandidateAttemptTerminal,

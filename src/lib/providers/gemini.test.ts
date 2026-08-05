@@ -232,6 +232,18 @@ describe("gemini chatCompletion — content parts mapping (7.4.1)", () => {
     );
   });
 
+  it("forwards a documented Gemini 3 thinking level", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okGeminiChat());
+    vi.stubGlobal("fetch", fetchMock);
+    await geminiProvider.chatCompletion({
+      model: "gemini-3.6-flash",
+      messages: [{ role: "user", content: "hello" }],
+      reasoningEffort: "low",
+    });
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+  });
+
   it("maps text, image, and file parts to text/inlineData parts", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okGeminiChat());
     vi.stubGlobal("fetch", fetchMock);

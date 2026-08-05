@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { openrouterProvider } from "./openrouter";
 import { ProviderError, type ContentPart } from "./types";
 import { clearModelCapabilities, getModelCapabilities } from "./capabilities";
+import { capabilitiesForModel, clearModelReasoningCapabilities, setModelReasoningCapabilities } from "./reasoning";
 
 function stubKey(): void {
   vi.stubGlobal("localStorage", {
@@ -25,6 +26,7 @@ afterEach(() => {
 
 beforeEach(() => {
   clearModelCapabilities();
+  clearModelReasoningCapabilities();
 });
 
 // ---------------------------------------------------------------------------
@@ -200,6 +202,83 @@ describe("openrouter — capability parsing", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(payload)));
     await openrouterProvider.listModels!();
     expect(getModelCapabilities("openrouter", "no-arch")).toEqual({ image: false, pdf: false });
+  });
+
+  it("forwards an explicitly catalog-supported effort and omits it for provider-default", async () => {
+    stubKey();
+    setModelReasoningCapabilities("openrouter", "reasoning-model", {
+      supportedEfforts: ["provider-default", "low", "high"],
+      source: "catalog",
+      transport: "openrouter",
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: "ok" } }] }))
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: "ok" } }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await openrouterProvider.chatCompletion({
+      model: "reasoning-model",
+      messages: [{ role: "user", content: "hi" }],
+      reasoningEffort: "high",
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.reasoning).toEqual({ effort: "high" });
+    await openrouterProvider.chatCompletion({
+      model: "reasoning-model",
+      messages: [{ role: "user", content: "hi" }],
+      reasoningEffort: "provider-default",
+    });
+    const defaultBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(defaultBody.reasoning).toBeUndefined();
+  });
+
+  it("treats an explicit supported_efforts array as the capability set", async () => {
+    stubKey();
+    const payload = {
+      data: [
+        {
+          id: "restricted",
+          name: "Restricted",
+          reasoning: { mandatory: false, supported_efforts: ["xhigh", "high"], default_effort: "high" },
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(payload)));
+    const models = await openrouterProvider.listModels!();
+    expect(models[0].reasoning?.supportedEfforts).toEqual(["provider-default", "xhigh", "high"]);
+    expect(capabilitiesForModel("openrouter", "restricted").supportedEfforts).toEqual([
+      "provider-default",
+      "xhigh",
+      "high",
+    ]);
+  });
+
+  it("treats a reasoning object without supported_efforts as all levels allowed", async () => {
+    stubKey();
+    // 127 of 338 live catalog models declare reasoning without
+    // supported_efforts (verified 2026-08-06); OpenRouter docs say null or
+    // absent means every effort value is allowed.
+    const payload = {
+      data: [
+        { id: "open-ended", name: "Open Ended", reasoning: { mandatory: false, default_enabled: true } },
+        { id: "null-efforts", name: "Null Efforts", reasoning: { supported_efforts: null } },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(payload)));
+    const models = await openrouterProvider.listModels!();
+    for (const model of models) {
+      expect(model.reasoning?.source).toBe("catalog");
+      expect(model.reasoning?.supportedEfforts).toContain("xhigh");
+      expect(model.reasoning?.supportedEfforts).toContain("minimal");
+    }
+  });
+
+  it("keeps models without a reasoning object at unknown capabilities", async () => {
+    stubKey();
+    const payload = { data: [{ id: "no-reasoning", name: "No Reasoning" }] };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(payload)));
+    const models = await openrouterProvider.listModels!();
+    expect(models[0].reasoning).toBeUndefined();
+    expect(capabilitiesForModel("openrouter", "no-reasoning").source).toBe("unknown");
   });
 });
 

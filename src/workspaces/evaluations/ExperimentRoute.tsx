@@ -16,7 +16,10 @@ import { Link, useParams } from "react-router-dom";
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import { useEvaluationRepository, useRunRepository } from "../../lib/persistence/repository-context";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
-import { useExperimentController } from "../../lib/evaluations/experiment-controller-context";
+import type { CatalogModel, ProviderId } from "../../lib/providers/types";
+import type { ExecutionOwner } from "../../lib/execution-owner";
+import { useExecutionOwner } from "../../lib/execution-owner-context";
+import { useExperimentController } from "../../lib/evaluations/experiment-controller-hooks";
 import { ExperimentProgress } from "./ExperimentProgress";
 import { ExperimentResults } from "./ExperimentResults";
 
@@ -31,11 +34,26 @@ export function isExperimentTerminal(status: ExperimentRecord["status"]): boolea
   return TERMINAL_STATUSES.has(status);
 }
 
-export function ExperimentRoute() {
+export interface ExperimentRouteProps {
+  /** Model catalog shared with the suite editor (roster spec F1). */
+  models?: CatalogModel[];
+  /** Providers currently ready, in registry order (roster spec F1). */
+  availableProviderIds?: ProviderId[];
+  /** Test seam: override the context execution owner (SuiteEditor pattern). */
+  executionOwner?: ExecutionOwner | null;
+}
+
+export function ExperimentRoute({
+  models = [],
+  availableProviderIds = [],
+  executionOwner: ownerProp,
+}: ExperimentRouteProps) {
   const { experimentId } = useParams<{ experimentId: string }>();
   const evalRepo = useEvaluationRepository();
   const runRepo = useRunRepository();
   const controller = useExperimentController();
+  const { owner: ctxOwner } = useExecutionOwner();
+  const owner = ownerProp !== undefined ? ownerProp : ctxOwner;
 
   const [experiment, setExperiment] = useState<ExperimentRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,7 +134,14 @@ export function ExperimentRoute() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {isExperimentTerminal(experiment.status) ? (
-        <ExperimentResults experiment={experiment} resolveRunRecord={resolveRunRecord} />
+        <ExperimentResults
+          experiment={experiment}
+          resolveRunRecord={resolveRunRecord}
+          controller={controller}
+          models={models}
+          availableProviderIds={availableProviderIds}
+          executionActionsEnabled={controller !== null && owner === null}
+        />
       ) : (
         <ExperimentProgress experiment={experiment} controller={controller} />
       )}

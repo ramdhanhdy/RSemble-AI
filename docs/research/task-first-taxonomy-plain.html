@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>What does an AI score really mean? — a plain-language tour of the RSemble evidence model</title>
+<style>
+:root{
+  --paper:#f7f2e9;--paper-2:#fffdf7;--ink:#2b2519;--ink-soft:#5a5244;--ink-faint:#8d8471;
+  --line:#e3d9c4;--line-soft:#efe7d6;
+  --accent:#b9542f;--accent-soft:rgba(185,84,47,.10);--accent-line:rgba(185,84,47,.35);
+  --good:#3f7a66;--good-soft:rgba(63,122,102,.10);
+  --warn:#a97b1c;--warn-soft:rgba(169,123,28,.10);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+  --mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  --max:760px;--chain-h:96px
+}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:calc(var(--chain-h) + 20px)}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);font-size:19px;line-height:1.68;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:var(--accent)}::selection{background:var(--accent-soft)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.skip{position:fixed;left:12px;top:-60px;z-index:1000;background:var(--ink);color:#fff;padding:10px 16px;text-decoration:none;font:600 14px var(--sans)}.skip:focus{top:12px}
+
+/* ---------- the sticky chain ---------- */
+.chain-wrap{position:sticky;top:0;z-index:40;background:rgba(247,242,233,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+.chain{max-width:980px;margin:0 auto;display:flex;align-items:stretch;gap:0;padding:12px 18px;min-height:var(--chain-h)}
+.chain-title{display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:150px;padding-right:16px;border-right:1px solid var(--line)}
+.chain-title b{font:700 12px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+.chain-title span{font-style:italic;color:var(--ink-soft);font-size:13px}
+.nodes{flex:1;display:flex;align-items:center;gap:0;padding-left:16px;overflow-x:auto}
+.node{flex:1;min-width:108px;background:none;border:0;padding:6px 8px;cursor:pointer;text-align:center;font:inherit;color:inherit;position:relative}
+.node-dot{width:34px;height:34px;margin:0 auto 6px;border-radius:50%;border:2px solid var(--line);background:var(--paper-2);display:grid;place-items:center;font:700 15px var(--sans);color:var(--ink-faint);transition:transform .2s var(--ease),background .2s,border-color .2s,color .2s}
+.node-label{font:600 12px var(--sans);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);transition:color .2s}
+.node-fill{margin-top:4px;font-size:11px;color:var(--ink-faint);min-height:30px;font-family:var(--sans);line-height:1.35;opacity:0;transform:translateY(4px);transition:opacity .3s,transform .3s}
+.node:not(:last-child)::after{content:"";position:absolute;top:23px;left:calc(50% + 19px);right:calc(-50% + 19px);height:2px;background:var(--line);z-index:-1;transition:background .3s}
+.node.lit .node-dot{border-color:var(--accent);color:var(--accent);transform:scale(1.08)}
+.node.lit .node-label{color:var(--ink)}
+.node.done .node-dot{background:var(--accent);border-color:var(--accent);color:#fff}
+.node.done .node-label{color:var(--accent)}
+.node.done:not(:last-child)::after{background:var(--accent-line)}
+.node.done .node-fill{opacity:1;transform:translateY(0);color:var(--ink-soft)}
+.node:hover .node-dot{transform:scale(1.14)}
+@media(max-width:760px){.chain-title{display:none}.node{min-width:64px;padding:4px 2px}.node-label{font-size:10px}.node-fill{display:none}.chain{padding:10px 8px;min-height:auto}.node-dot{width:28px;height:28px;font-size:13px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
+:root{--ease:cubic-bezier(.23,1,.32,1)}
+
+/* ---------- article body ---------- */
+main{max-width:var(--max);margin:0 auto;padding:24px 24px 0}
+.chapter{padding:64px 0;border-bottom:1px solid var(--line-soft)}
+.chapter:last-of-type{border-bottom:0}
+.eyebrow{font:700 12px var(--sans);letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:16px}
+h1{font-size:clamp(38px,7vw,58px);line-height:1.04;letter-spacing:-.02em;margin:0 0 24px;font-weight:700}
+h2{font-size:clamp(28px,5vw,40px);line-height:1.12;letter-spacing:-.01em;margin:0 0 18px;font-weight:700}
+h3{font-size:22px;margin:36px 0 10px;font-weight:700}
+p{margin:0 0 18px;color:var(--ink)}
+.lede{font-size:clamp(19px,3vw,23px);color:var(--ink-soft);line-height:1.55}
+.dropcap::first-letter{font-size:3.2em;float:left;line-height:.82;margin:6px 10px 0 0;color:var(--accent);font-weight:700}
+.small-caps{font-variant:small-caps;letter-spacing:.04em}
+aside{font-style:italic;color:var(--ink-faint);font-size:16px}
+.rule{width:64px;height:3px;background:var(--accent);border:0;margin:0 0 28px}
+
+/* term pills */
+.term{border-bottom:2px dotted var(--accent-line);cursor:pointer;position:relative;background:none;font:inherit;padding:0;color:var(--ink)}
+.term-pop{display:none;position:absolute;left:0;bottom:calc(100% + 8px);z-index:30;width:min(320px,80vw);background:var(--paper-2);border:1px solid var(--line);box-shadow:0 14px 34px rgba(43,37,25,.14);padding:14px 16px;font:400 15px/1.5 var(--sans);color:var(--ink-soft);text-align:left;border-radius:8px}
+.term-pop b{display:block;color:var(--accent);font-size:13px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.term.open .term-pop{display:block}
+
+/* quote / callout */
+.pull{border-left:4px solid var(--accent);background:var(--accent-soft);padding:20px 24px;margin:30px 0;font-size:21px;line-height:1.5;color:var(--ink);font-style:italic}
+.pull .who{display:block;margin-top:10px;font:600 12px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-style:normal}
+.note{border:1px solid var(--line);background:var(--paper-2);padding:18px 22px;margin:28px 0;border-radius:8px}
+.note b{font:700 12px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.note p{margin:8px 0 0;color:var(--ink-soft);font-size:17px}
+
+/* the one-example walkthrough card */
+.walk{border:1px solid var(--line);background:var(--paper-2);border-radius:12px;padding:26px;margin:30px 0;box-shadow:0 10px 30px rgba(43,37,25,.06)}
+.walk .wk-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line-soft);padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap}
+.walk .wk-head b{font:700 13px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.walk .wk-head span{font:12px var(--mono);color:var(--ink-faint)}
+.walk p{font-size:17px;color:var(--ink-soft)}
+.walk .big-num{font:700 40px/1 var(--mono);color:var(--ink)}
+.walk .nums{display:flex;gap:34px;flex-wrap:wrap;margin:14px 0}
+.walk .nums div span{display:block;font:600 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-top:4px}
+
+/* gotcha quiz */
+.gotcha{border:1px solid var(--line);background:var(--paper-2);border-radius:12px;padding:26px;margin:34px 0}
+.gotcha .gq{font-size:20px;font-weight:700;margin:0 0 18px}
+.gotcha .gq .tag{display:inline-block;font:700 11px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#fff;background:var(--warn);border-radius:20px;padding:3px 12px;margin-right:10px;vertical-align:middle}
+.opts{display:grid;gap:10px}
+.opt{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);background:var(--paper);padding:14px 16px;border-radius:8px;cursor:pointer;font:400 16px var(--sans);color:var(--ink);text-align:left;width:100%;transition:border-color .15s,background .15s,transform .1s var(--ease)}
+.opt:hover{border-color:var(--accent-line)}
+.opt:active{transform:scale(.99)}
+.opt .letter{flex:0 0 26px;height:26px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font:700 13px var(--sans);color:var(--ink-faint)}
+.opt.right{border-color:var(--good);background:var(--good-soft)}
+.opt.right .letter{border-color:var(--good);color:var(--good)}
+.opt.wrong{border-color:var(--accent);background:var(--accent-soft)}
+.opt.wrong .letter{border-color:var(--accent);color:var(--accent)}
+.opt[disabled]{cursor:default}
+.reveal{margin-top:16px;padding:18px 20px;border-radius:8px;font:400 16px/1.55 var(--sans);color:var(--ink-soft);display:none}
+.reveal.show{display:block;animation:rise .35s var(--ease)}
+.reveal.good{background:var(--good-soft);border:1px solid rgba(63,122,102,.3)}
+.reveal.bad{background:var(--accent-soft);border:1px solid var(--accent-line)}
+.reveal b{color:var(--ink)}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* side-by-side contrast */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:26px 0}
+.pair>div{border:1px solid var(--line);border-radius:10px;padding:20px;background:var(--paper-2)}
+.pair .no{border-color:rgba(185,84,47,.3)}
+.pair .yes{border-color:rgba(63,122,102,.35)}
+.pair h4{margin:0 0 8px;font:700 15px var(--sans)}
+.pair .no h4{color:var(--accent)}.pair .yes h4{color:var(--good)}
+.pair p{font:400 15px/1.5 var(--sans);color:var(--ink-soft);margin:0}
+@media(max-width:640px){.pair{grid-template-columns:1fr}}
+
+/* glossary */
+.gloss{display:grid;gap:0;border-top:1px solid var(--line)}
+.gloss .g{display:grid;grid-template-columns:220px 1fr;gap:18px;padding:18px 0;border-bottom:1px solid var(--line-soft)}
+.gloss .g dt{font-weight:700}
+.gloss .g dt small{display:block;font:400 13px var(--sans);color:var(--ink-faint);margin-top:2px}
+.gloss .g dd{margin:0;font:400 16px/1.55 var(--sans);color:var(--ink-soft)}
+@media(max-width:640px){.gloss .g{grid-template-columns:1fr;gap:6px}}
+
+footer{max-width:var(--max);margin:0 auto;padding:48px 24px 80px;color:var(--ink-faint);font:400 14px var(--sans)}
+footer strong{color:var(--ink)}
+</style>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+
+<!-- ======= STICKY CHAIN ======= -->
+<div class="chain-wrap" aria-label="The five links of the evidence chain">
+  <div class="chain">
+    <div class="chain-title"><b>The evidence chain</b><span>one real question, five links</span></div>
+    <div class="nodes" id="nodes">
+      <button class="node" data-node="0" aria-label="Link 1: the question"><span class="node-dot">1</span><span class="node-label">Question</span><span class="node-fill" data-fill="0"></span></button>
+      <button class="node" data-node="1" aria-label="Link 2: the answer"><span class="node-dot">2</span><span class="node-label">Answer</span><span class="node-fill" data-fill="1"></span></button>
+      <button class="node" data-node="2" aria-label="Link 3: the grade"><span class="node-dot">3</span><span class="node-label">Grade</span><span class="node-fill" data-fill="2"></span></button>
+      <button class="node" data-node="3" aria-label="Link 4: the comparison"><span class="node-dot">4</span><span class="node-label">Compare</span><span class="node-fill" data-fill="3"></span></button>
+      <button class="node" data-node="4" aria-label="Link 5: the claim"><span class="node-dot">5</span><span class="node-label">Claim</span><span class="node-fill" data-fill="4"></span></button>
+    </div>
+  </div>
+</div>
+
+<main id="content">
+
+<!-- ======= CHAPTER 0 : HOOK ======= -->
+<section class="chapter" id="top" data-link="0">
+  <p class="eyebrow">A plain-language tour · no jargon required</p>
+  <h1>What does an AI score actually mean?</h1>
+  <p class="lede">A model takes a test and scores 85. That number feels solid, like a bathroom weight or a bank balance. But it is really shorthand for a dozen choices somebody made. What was on the test? Who marked it? Under what conditions? Answer the question again tomorrow and you might get a different number. This page walks you through how RSemble keeps those choices visible, so a score can be trusted instead of merely believed.</p>
+  <hr class="rule">
+  <p class="dropcap">Here is the honest starting point. A single score does not tell you what a model can do. It tells you what it did, on these particular questions, under these particular conditions, marked by this particular marker. The moment you forget any of those three phrases, the number starts to lie to you. It starts sounding like a fact about the model, when it is really a fact about one narrow encounter.</p>
+  <p>RSemble's answer is not to throw scores away. It is to build a <em>chain of evidence</em> behind every score, so that each link can be inspected on its own. There are five links. To make them concrete, we will follow <strong>one real question</strong> through all five — a question taken from RSemble's own PulseFit test suite.</p>
+  <div class="pull">The whole page has one rule. Remember it and the rest follows.
+    <span class="who">What a task asks for &nbsp;≠&nbsp; what a model actually did &nbsp;≠&nbsp; what the model is capable of</span>
+  </div>
+  <p>The diagram at the top of the page is your map. As you read, each link lights up and fills with a piece of our one example. Scroll on.</p>
+</section>
+
+<!-- ======= CHAPTER 1 : THE QUESTION ======= -->
+<section class="chapter" data-link="0">
+  <p class="eyebrow">Link 1 of 5</p>
+  <h2>First, pin down the question. Exactly.</h2>
+  <p>You cannot fairly compare two students if the exam keeps changing between them. The same is true for AI. So before anything is scored, RSemble freezes the question — every word of the prompt, the data attached to it, and the rules for a correct answer. We call this frozen copy a
+    <button class="term">task version<span class="term-pop"><b>Task version</b>The exact, unchangeable copy of a test question: its wording, its data, and its grading rules. Once frozen, it never silently changes.</span></button>.
+    Freezing matters because AI models are extremely sensitive to small wording changes. Rewrite the same question slightly and you may get a different answer, and you have quietly changed the test.</p>
+
+  <div class="walk">
+    <div class="wk-head"><b>Our example · a real PulseFit task</b><span>task-pulsefit-funnel-truth</span></div>
+    <p>The task reads, in essence: <em>"Our acquisition dashboard says our cost to win a customer is stable. Prove whether that's true, using the numbers below."</em> Attached is a small table of ad spend, installs, and paying customers. A correct answer must spot that the dashboard is dividing by the wrong number.</p>
+    <div class="nums">
+      <div><span class="big-num">$95</span><span>cost per customer, before</span></div>
+      <div><span class="big-num">$120</span><span>cost per customer, now</span></div>
+      <div><span class="big-num">+26%</span><span>the real change the dashboard hides</span></div>
+    </div>
+    <p>The dashboard looks flat because it divides spend by <em>installs</em> (many of which cost nothing) instead of by <em>paying customers</em>. The question is now frozen with those exact numbers. Whatever any model does later, it will be answering <em>this</em> question — not some drifted cousin of it.</p>
+  </div>
+
+  <p>Freezing also gives the question a fingerprint. RSemble stores a checksum — a unique code computed from the question's exact content. If a single comma changes later, the fingerprint changes too, and everyone can see that the question is no longer the same one.
+    <aside>Think of it like sealing the exam paper in an envelope and signing the seal.</aside></p>
+
+  <h3>Why this is easy to get wrong</h3>
+  <p>Most teams keep their questions inside whatever file they happen to run from. Edit the file and every past result suddenly points at a question that no longer exists. You cannot re-check old conclusions because the thing you were measuring has moved. The fix is to give every question its own identity and history, independent of any file that happens to contain it.</p>
+
+  <div class="gotcha" data-gotcha>
+    <p class="gq"><span class="tag">Spot the trap</span>You tweak a question's wording to fix a typo, then compare new scores to old ones. Sound or risky?</p>
+    <div class="opts">
+      <button class="opt" data-right="0"><span class="letter">A</span>Sound — a typo fix can't change what's being measured.</button>
+      <button class="opt" data-right="1"><span class="letter">B</span>Risky — even tiny wording changes can change answers, so old and new scores are no longer from the same test.</button>
+    </div>
+    <div class="reveal" data-reveal><b>B is the careful answer.</b> Models react to phrasing. A typo fix may be harmless — or it may shift results. Either way, the honest move is to record it as a <em>new version</em> of the question, keep the old one intact, and never blend the two as if they were one. That is exactly what a task version buys you.</div>
+  </div>
+</section>
+
+<!-- ======= CHAPTER 2 : THE ANSWER ======= -->
+<section class="chapter" data-link="1">
+  <p class="eyebrow">Link 2 of 5</p>
+  <h2>Next, keep the answer — the exact one, not a paraphrase.</h2>
+  <p>When a model answers, RSemble saves that answer in full, along with everything needed to know how it was produced: which model, which settings, what it was given. We call one saved answer a
+    <button class="term">generation<span class="term-pop"><b>Generation (artifact)</b>One complete answer a model produced, kept word-for-word along with the model and settings that produced it.</span></button>.
+    This matters because a model can answer the same question differently each time. Ask it three times and you may get three different memos. If you only kept the last one, or a summary, you have lost the ability to see how much the model varies.</p>
+
+  <div class="walk">
+    <div class="wk-head"><b>Our example · the model's memo</b><span>one generation, saved in full</span></div>
+    <p>A model answers the CAC question. RSemble stores the entire memo it wrote, plus: the model's name and version, the exact prompt it saw, and its generation settings. If anyone later asks "how did it reach that conclusion?", the full answer is right there — not a memory of it.</p>
+  </div>
+
+  <h3>The trap hiding in this step</h3>
+  <p>Because a model can produce several answers to the same question, it is tempting to count each one as fresh evidence. This is one of the most common mistakes in AI testing, so it gets its own trap below.</p>
+
+  <div class="gotcha" data-gotcha>
+    <p class="gq"><span class="tag">Spot the trap</span>You run a model on 20 questions, 3 times each, and keep all 60 answers. How much <em>question coverage</em> do you have?</p>
+    <div class="opts">
+      <button class="opt" data-right="0"><span class="letter">A</span>60 questions' worth of evidence.</button>
+      <button class="opt" data-right="1"><span class="letter">B</span>20 questions' worth — the 3 repeats tell you how consistent the model is, not how much territory it covered.</button>
+      <button class="opt" data-right="0"><span class="letter">C</span>Somewhere between 20 and 60.</button>
+    </div>
+    <div class="reveal" data-reveal><b>B is right.</b> Re-running the same question measures consistency, not breadth. You still only touched 20 questions. Counting 60 makes coverage look three times wider than it really is. Repeats are useful — they show how stable the model is — but they never add new questions. RSemble keeps the two ideas separate: <em>repeats</em> sharpen a measurement, they don't widen it.</div>
+  </div>
+</section>
+
+<!-- ======= CHAPTER 3 : THE GRADE ======= -->
+<section class="chapter" data-link="2">
+  <p class="eyebrow">Link 3 of 5</p>
+  <h2>Then grade it — and know exactly who's grading.</h2>
+  <p>Some answers can be checked by rules: the arithmetic is right or wrong, the number is correct or not. RSemble runs those checks automatically and they are rock-solid. But many answers need judgment — is the reasoning sound, is the advice sensible? For those, RSemble uses a marker: often another AI, asked to grade against a written rubric. Each recorded grade is an
+    <button class="term">observation<span class="term-pop"><b>Observation</b>One recorded grade of one answer, by one marker, using one rubric. It's a measurement event, not a fact about the model.</span></button>.</p>
+
+  <div class="walk">
+    <div class="wk-head"><b>Our example · two kinds of grading</b><span>checks vs. judgment</span></div>
+    <p><strong>What a rule can check:</strong> did the answer compute $120 correctly? Did it spot the wrong denominator? These are yes/no and reliable.</p>
+    <p><strong>What needs judgment:</strong> was the recommendation sensible? Was the memo clear to an executive? A marker grades these against a rubric — and that grade comes with a warning label, explained next.</p>
+  </div>
+
+  <h3>The marker is fallible — treat it like a witness, not a verdict</h3>
+  <p>Here is the subtle part. An AI marker is itself a model, with its own quirks. Research shows markers can change their grade if you show them the answers in a different order, or if one answer is formatted more cleanly. A marker can be <em>consistent</em> and still be <em>wrong</em>. So RSemble does not take a grade at face value. It asks three questions of every marker:</p>
+
+  <div class="note"><b>1 · Can it repeat itself?</b><p>Give it the same answer twice, and the answers in a different order. Do the grades hold, or do they wobble?</p></div>
+  <div class="note"><b>2 · Is it actually right?</b><p>Test it on answers whose quality is already known. Does it agree with human experts, beyond mere chance?</p></div>
+  <div class="note"><b>3 · Has it drifted?</b><p>A rubric or model gets updated and grades quietly shift. RSemble records the marker's version so old and new grades are never mixed by accident.</p></div>
+
+  <div class="gotcha" data-gotcha>
+    <p class="gq"><span class="tag">Spot the trap</span>A marker grades the same answer <strong>higher</strong> when it's shown first than when it's shown second. What does that tell you?</p>
+    <div class="opts">
+      <button class="opt" data-right="0"><span class="letter">A</span>The answer is genuinely better when seen first.</button>
+      <button class="opt" data-right="1"><span class="letter">B</span>The marker has an order bias. Its grades are partly about position, not quality — so any score built on it is contaminated.</button>
+    </div>
+    <div class="reveal" data-reveal><b>B is right.</b> The answer didn't change; only its position did. That means part of the grade is measuring the marker's habit, not the work. This is why RSemble checks markers against known answers and records conditions. A score built on an unchecked marker can be confidently wrong.</div>
+  </div>
+</section>
+
+<!-- ======= CHAPTER 4 : THE COMPARISON ======= -->
+<section class="chapter" data-link="3">
+  <p class="eyebrow">Link 4 of 5</p>
+  <h2>Now compare — but only like with like.</h2>
+  <p>Scores become meaningful when you put two models' answers side by side. RSemble's whole purpose is to discover which pairs of models combine well, so fair comparison is the point. But comparisons are only fair if both models faced <em>the same</em> questions, graded by <em>the same</em> marker, under <em>the same</em> conditions. This is why the earlier links matter: you can only compare cleanly if the question was frozen and the grading was recorded.</p>
+
+  <div class="walk">
+    <div class="wk-head"><b>Our example · two models, one question</b><span>same question · same marker · same conditions</span></div>
+    <p>Model A and Model B both answer the frozen CAC question. Both memos are checked by the same rule (did it get $120?) and the same marker (was the reasoning sound?). Because every condition matches, any difference in their grades is about the models — not about one of them getting an easier test or a kinder marker.</p>
+  </div>
+
+  <h3>The trap hiding in comparison</h3>
+  <p>The biggest over-reach happens here. It is natural to look at scores on a test and conclude something big about the model in general. But a test is only as wide as its questions.</p>
+
+  <div class="gotcha" data-gotcha>
+    <p class="gq"><span class="tag">Spot the trap</span>Model A outscores Model B on 15 business-analytics questions. A colleague writes: "A is better at business analytics, full stop." Fair conclusion?</p>
+    <div class="opts">
+      <button class="opt" data-right="0"><span class="letter">A</span>Yes — the test measured business analytics, so the result applies to it.</button>
+      <button class="opt" data-right="1"><span class="letter">B</span>Only partly — the result is solid for these 15 questions, but "business analytics in general" is a much wider world the test didn't cover.</button>
+    </div>
+    <div class="reveal" data-reveal><b>B is the honest answer.</b> On these 15 questions, A did better — that's a real, defensible fact. But 15 questions are a small window onto a huge subject. Whether A is "better at business analytics" depends on how well those 15 represent the whole field, which nobody measured. RSemble keeps the safe conclusion ("A scored higher on this set") clearly separate from the big one ("A is better at the skill"), and labels which is which.</div>
+  </div>
+
+  <p>This distinction has two names in the source document, and they are worth knowing because they stop you fooling yourself. Results about <em>the exact questions you ran</em> are a
+    <button class="term">fixed-suite description<span class="term-pop"><b>Fixed-suite description</b>A statement that is only about the specific questions you actually ran. Solid, but narrow.</span></button>.
+    Statements about a broader skill are a
+    <button class="term">population claim<span class="term-pop"><b>Population claim</b>A statement about a whole category of work, beyond the specific questions tested. Requires proof that your questions represent that category.</span></button>,
+    and they are only justified if you deliberately chose questions to represent that wider world.</p>
+</section>
+
+<!-- ======= CHAPTER 5 : THE CLAIM ======= -->
+<section class="chapter" data-link="4">
+  <p class="eyebrow">Link 5 of 5</p>
+  <h2>Finally, say only what the evidence supports.</h2>
+  <p>The last link is a report. But notice what RSemble does <em>not</em> do here: it does not stamp "reasoning = 82" onto a model and store that as a fact. A number like that looks like a property the model carries around, like its weight. It isn't. It is a summary of specific encounters, and it is only true under the conditions of those encounters. So RSemble stores the raw evidence and produces a
+    <button class="term">capability report<span class="term-pop"><b>Capability report</b>A summary computed from stored evidence. It always names the questions, marker, and conditions behind it, and it can be re-computed or updated — never written in stone.</span></button>
+    — a summary that always names the questions, the marker, and the conditions behind it.</p>
+
+  <div class="walk">
+    <div class="wk-head"><b>Our example · what the report actually says</b><span>derived, always re-computable</span></div>
+    <p><strong>Instead of:</strong> "Model A · business analytics: 82."<br>
+    <strong>RSemble writes:</strong> "On the 15 PulseFit questions, graded by marker v3 with rule checks, Model A outscored Model B on 9 of 15. This is about this set, these conditions, this date. Re-run or re-grade and the report updates."</p>
+    <p>The second sentence is longer, but every word in it can be defended. That is the trade RSemble makes on purpose.</p>
+  </div>
+
+  <div class="pair">
+    <div class="no"><h4>What a report should not say</h4><p>"This model is good at reasoning." — a free-floating trait, detached from any specific test, marker, or moment.</p></div>
+    <div class="yes"><h4>What a report should say</h4><p>"Under these conditions, on these questions, the evidence looked like this." — bounded, dated, and re-checkable.</p></div>
+  </div>
+
+  <p>And this closes the loop with the rule from the very top. A report can describe what a task <em>asked for</em>, what a model <em>did</em>, or what we <em>infer</em> it is capable of — but it must always say which of those three it is talking about. Blur them together and you get a number that feels like truth but is really one unrepeatable moment dressed up as a fact.</p>
+</section>
+
+<!-- ======= CHAPTER 6 : PUT IT TOGETHER ======= -->
+<section class="chapter">
+  <p class="eyebrow">Putting it together</p>
+  <h2>The five links, as one chain of custody.</h2>
+  <p>Read back-to-front, the five links are a chain of custody for a conclusion — like a court keeping track of evidence so nothing is lost or tampered with along the way.</p>
+  <div class="note"><b>1 · The question</b><p>A task version — frozen, fingerprinted, never silently changed.</p></div>
+  <div class="note"><b>2 · The answer</b><p>A generation — the model's exact output and the conditions that made it.</p></div>
+  <div class="note"><b>3 · The grade</b><p>An observation — a recorded measurement, with the marker's reliability checked.</p></div>
+  <div class="note"><b>4 · The comparison</b><p>Like with like — same questions, same marker, same conditions.</p></div>
+  <div class="note"><b>5 · The claim</b><p>A capability report — derived, dated, and always honest about its own scope.</p></div>
+  <p>You may notice the technical document lists a few more pieces — <em>manifests</em> that group questions into named tests, and <em>facets</em> that label what kind of thinking a question needs. Those are refinements of links 1 and 4: a manifest is just a named bundle of frozen questions, and a facet is just a label that helps you group questions fairly. They don't add a new idea; they make the chain easier to manage as it grows.</p>
+  <div class="pull">A score is not a fact about a model. It is the end of a chain. Judge the chain, and the score takes care of itself.
+    <span class="who">the idea in one line</span>
+  </div>
+</section>
+
+<!-- ======= GLOSSARY ======= -->
+<section class="chapter">
+  <p class="eyebrow">Keep these words</p>
+  <h2>The terms, in plain English.</h2>
+  <p>The source document uses precise names. They are worth keeping, because each one names a real idea. Here they are without the jargon.</p>
+  <dl class="gloss">
+    <div class="g"><dt>Task version<small>the frozen question</small></dt><dd>The exact, unchangeable copy of a test question plus its data and grading rules. Has a fingerprint so any change is obvious.</dd></div>
+    <div class="g"><dt>Generation<small>the saved answer</small></dt><dd>One complete answer a model produced, kept word-for-word with the model and settings that produced it.</dd></div>
+    <div class="g"><dt>Observation<small>the recorded grade</small></dt><dd>One measurement of one answer by one marker. It is an event, not a fact about the model.</dd></div>
+    <div class="g"><dt>Manifest<small>a named test</small></dt><dd>A bundle of frozen questions grouped together, so you can re-run or re-refer to the same test.</dd></div>
+    <div class="g"><dt>Facet<small>a thinking-style label</small></dt><dd>A label describing what kind of work a question needs (math, judgment, writing). A useful hint, not a measurement of the model.</dd></div>
+    <div class="g"><dt>Fixed-suite description<small>the narrow, solid claim</small></dt><dd>A statement that is only about the specific questions you ran. Defensible but limited.</dd></div>
+    <div class="g"><dt>Population claim<small>the wide, risky claim</small></dt><dd>A statement about a whole skill or category. Only justified if your questions were chosen to represent it.</dd></div>
+    <div class="g"><dt>Capability report<small>the honest summary</small></dt><dd>A summary computed from stored evidence. Names its questions, marker, and conditions; updates when the evidence does.</dd></div>
+  </dl>
+</section>
+
+</main>
+<footer>
+  Written as a plain-language companion to <strong>task-first-evaluation-taxonomy-explainer.html</strong>. Same ideas, told as a story. Example numbers are the real calibration facts from the PulseFit funnel-truth task. No models were run to make this page.
+</footer>
+
+<script>
+(function(){
+  var $=function(s,c){return (c||document).querySelector(s)},
+      $$=function(s,c){return Array.prototype.slice.call((c||document).querySelectorAll(s))};
+
+  /* ---- term pills ---- */
+  $$('.term').forEach(function(t){
+    t.setAttribute('type','button');
+    t.addEventListener('click',function(e){
+      e.stopPropagation();
+      var was=t.classList.contains('open');
+      $$('.term.open').forEach(function(o){o.classList.remove('open')});
+      if(!was)t.classList.add('open');
+    });
+  });
+  document.addEventListener('click',function(){$$('.term.open').forEach(function(o){o.classList.remove('open')})});
+
+  /* ---- gotchas ---- */
+  $$('[data-gotcha]').forEach(function(g){
+    var opts=$$('.opt',g), reveal=$('.reveal',g), done=false;
+    opts.forEach(function(o){
+      o.addEventListener('click',function(){
+        if(done)return; done=true;
+        var right=o.getAttribute('data-right')==='1';
+        o.classList.add(right?'right':'wrong');
+        opts.forEach(function(x){x.disabled=true});
+        // also mark the correct one green for learning
+        opts.forEach(function(x){ if(x.getAttribute('data-right')==='1' && x!==o) x.classList.add('right') });
+        reveal.classList.add('show', right?'good':'bad');
+      });
+    });
+  });
+
+  /* ---- sticky chain state ---- */
+  var nodes=$$('.node'), fills=$$('.node-fill');
+  var fillText=[
+    '“Is our CAC really stable?” — frozen, fingerprinted',
+    'the model’s full memo, kept word-for-word',
+    'rule-check + graded by a vetted marker',
+    'A vs B, same question & marker & conditions',
+    '“A beat B on these 15” — not “A is smarter”'
+  ];
+  var chapters=$$('[data-link]');
+  function setLink(idx){
+    nodes.forEach(function(n,i){
+      var li=+n.getAttribute('data-node');
+      n.classList.toggle('done', li<idx);
+      n.classList.toggle('lit', li===idx);
+      if(li<idx) fills[li].textContent=fillText[li];
+      else if(li===idx) fills[li].textContent=fillText[li];
+      else fills[li].textContent='';
+    });
+  }
+  // scroll-spy
+  var spy=new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if(en.isIntersecting){ setLink(+en.target.getAttribute('data-link')); }
+    });
+  },{rootMargin:'-20% 0px -60% 0px'});
+  chapters.forEach(function(c){spy.observe(c)});
+  // click a node to jump to its chapter
+  nodes.forEach(function(n){
+    n.addEventListener('click',function(){
+      var li=+n.getAttribute('data-node');
+      var target=chapters.filter(function(c){return +c.getAttribute('data-link')===li})[0];
+      if(target) target.scrollIntoView({behavior:'smooth',block:'start'});
+    });
+  });
+  setLink(0);
+})();
+</script>
+</body>
+</html>

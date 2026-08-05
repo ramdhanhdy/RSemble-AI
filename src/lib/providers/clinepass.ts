@@ -39,7 +39,8 @@ export const clinepassProvider: LLMProvider = {
         ok: false,
         reason: `Bridge returned HTTP ${res.status}. Start or restart npm run dev.`,
       };
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
       return {
         ok: false,
         reason: "Local bridge unreachable on 127.0.0.1:8787. ClinePass needs it for browser CORS. Start npm run dev.",

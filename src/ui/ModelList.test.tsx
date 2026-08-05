@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { AddModelCombobox, ModelList } from "./ModelList";
+import { ModelProbeProvider } from "./ModelProbeContext";
 import type { CatalogModel } from "../lib/providers/types";
 import type { ModelSlot } from "../studio-data";
 import type { Action } from "../studio-engine";
@@ -14,7 +15,7 @@ function withRepo(node: React.ReactNode) {
     <RepositoryContext.Provider
       value={{ runRepo: new InMemoryRunRepository(), evalRepo: null, fusionRepo: null, db: null, storageState: "ready", retry: () => {} }}
     >
-      {node}
+      <ModelProbeProvider>{node}</ModelProbeProvider>
     </RepositoryContext.Provider>
   );
 }

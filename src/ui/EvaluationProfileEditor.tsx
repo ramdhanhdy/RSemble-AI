@@ -162,7 +162,7 @@ function CriterionAccordion({
   return (
     <li className="rounded-md border border-edge">
       {/* Collapsed header */}
-      <div className="flex items-center gap-2">
+      <div data-geometry="criterion-header" className="flex items-center gap-2">
         <button
           type="button"
           onClick={onToggle}
@@ -171,7 +171,7 @@ function CriterionAccordion({
         >
           <ChevronDown
             size={13}
-            className={`text-text-muted transition-transform duration-150 ${isOpen ? "" : "-rotate-90"}`}
+            className={`disclosure-chevron shrink-0 text-text-muted transition-transform duration-150 ease-out ${isOpen ? "" : "-rotate-90"}`}
           />
           <span className="flex-1 truncate text-sm text-text">
             {criterion.name || "Untitled criterion"}

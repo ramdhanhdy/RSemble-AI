@@ -77,6 +77,22 @@ describe("validateSuiteForExecution", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("blocks an explicit candidate effort unavailable on enabled models", () => {
+    const result = validateSuiteForExecution(makeSuite({
+      reasoningPolicy: { candidates: "xhigh", judge: "provider-default" },
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.field === "reasoningPolicy.candidates")).toBe(true);
+    expect(result.errors.some((error) => error.message.includes("openrouter:m1"))).toBe(true);
+  });
+
+  it("allows provider-default without claiming compute equivalence", () => {
+    const result = validateSuiteForExecution(makeSuite({
+      reasoningPolicy: { candidates: "provider-default", judge: "provider-default" },
+    }));
+    expect(result.valid).toBe(true);
+  });
+
   it("rejects empty name", () => {
     const result = validateSuiteForExecution(makeSuite({ name: "" }));
     expect(result.valid).toBe(false);

@@ -4,6 +4,13 @@
 // =============================================================================
 import { once } from "node:events";
 import type http from "node:http";
+import {
+  initialSseTerminationState,
+  inspectOpenAiSseChunk,
+  finalizeOpenAiSseState,
+  shouldAppendDone,
+  DONE_SENTINEL,
+} from "./sse-termination.js";
 
 const UMANS_UPSTREAM = "https://api.code.umans.ai";
 
@@ -21,6 +28,9 @@ export interface OpenAIProxyDeps extends UmansProxyDeps {
   upstream: string;
   routePrefix: string;
   providerLabel: string;
+  /** When true, append `data: [DONE]` after a clean content-bearing SSE EOF
+   *  that lacks the sentinel. Enabled only for 9Router (spec §9). */
+  normalizeCleanSseEof?: boolean;
 }
 
 function readBody(req: http.IncomingMessage, res: http.ServerResponse, maxBytes: number): Promise<string | null> {
@@ -142,9 +152,14 @@ export async function handleOpenAICompatibleProxy(
     return;
   }
 
-  res.writeHead(upstream.status, {
-    "Content-Type": upstream.headers.get("content-type") ?? "application/json",
-  });
+  const contentType = upstream.headers.get("content-type") ?? "application/json";
+  const isSse = contentType.includes("text/event-stream");
+  const normalize = deps.normalizeCleanSseEof === true && isSse;
+  let sseState = normalize ? initialSseTerminationState() : null;
+  let needsSseSeparator = false;
+  let completedNormally = false;
+
+  res.writeHead(upstream.status, { "Content-Type": contentType });
 
   if (!upstream.body) {
     clearTimeout(timeout);
@@ -154,13 +169,26 @@ export async function handleOpenAICompatibleProxy(
 
   try {
     for await (const chunk of upstream.body) {
+      if (sseState) {
+        sseState = inspectOpenAiSseChunk(sseState, chunk as Uint8Array);
+      }
       const ok = res.write(chunk);
       if (!ok) await once(res, "drain");
     }
+    if (sseState && sseState.pending.length > 0) {
+      needsSseSeparator = true;
+      sseState = finalizeOpenAiSseState(sseState);
+    }
+    completedNormally = true;
   } catch {
     // Client disconnected or upstream aborted after headers were sent.
+    completedNormally = false;
   } finally {
     clearTimeout(timeout);
+    if (sseState && completedNormally && !res.writableEnded) {
+      if (needsSseSeparator) res.write("\n\n");
+      if (shouldAppendDone(sseState, true)) res.write(DONE_SENTINEL);
+    }
     res.end();
   }
 }

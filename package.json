@@ -14,9 +14,15 @@
     "typecheck:web": "tsc -b",
     "typecheck:server": "tsc -p server/tsconfig.json",
     "check": "npm run typecheck:web && npm run typecheck:server && npm run test && npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qa:design-motion": "node scripts/cdp-design-motion-qa.mjs",
+    "qa:evaluations-identity": "node scripts/cdp-evaluations-identity-qa.mjs",
+    "qa:roster-extension": "node scripts/cdp-experiment-roster-extension-qa.mjs",
+    "qa:suite-reliability": "node scripts/cdp-suite-reliability-qa.mjs"
   },
   "dependencies": {
+    "@base-ui/react": "^1.6.0",
+    "cmdk": "^1.1.1",
     "dexie": "^4.4.4",
     "docx": "^9.7.1",
     "lucide-react": "^0.456.0",

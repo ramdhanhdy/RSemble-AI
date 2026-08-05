@@ -13,8 +13,8 @@
 ## 1. One sentence
 
 **RSemble keeps one pipeline; each model slot routes through a pluggable
-provider adapter (OpenRouter, ChatGPT-via-Codex, Gemini AI Studio, CommandCode,
-ClinePass, Umans, 9Router, and future peers) instead of a single hard-wired
+provider adapter (OpenRouter, ChatGPT-via-Codex, Gemini AI Studio, DeepSeek,
+CommandCode, ClinePass, Umans, 9Router, and future peers) instead of a single hard-wired
 OpenRouter client.**
 ---
 
@@ -81,6 +81,7 @@ It is infrastructure for one auth method, not a second product surface.
 | `openrouter` | OpenRouter | `VITE_OPENROUTER_KEY` (or settings store) | `https://openrouter.ai/api/v1` chat completions + SSE | Live `GET /models` |
 | `chatgpt-codex` | ChatGPT (Codex) | Codex login → `~/.codex/auth.json` (via local bridge) | Local bridge → Codex Responses backend | Bridge `GET /v1/models` (plan-eligible) |
 | `gemini` | Gemini | Google AI Studio API key | `generativelanguage.googleapis.com` | ListModels API and/or curated fallback |
+| `deepseek` | DeepSeek | `VITE_DEEPSEEK_KEY` (or settings store) | `https://api.deepseek.com` OpenAI-compatible; browser-direct (CORS preflight echoes Origin, verified 2026-08) | Live `GET /models` (auth required) |
 | `commandcode` | CommandCode | `VITE_COMMANDCODE_KEY` | OpenAI-compatible | Live `GET /models` |
 | `clinepass` | ClinePass | `VITE_CLINEPASS_KEY` | OpenAI-compatible | Live `GET /models` |
 | `umans` | Umans | `VITE_UMANS_KEY` | OpenAI-compatible via local bridge | Live `GET /models` |
@@ -181,7 +182,7 @@ can run `dev:web-only`. Default `dev` starts both for convenience.
 ### 7.1 Types (`src/lib/providers/types.ts`)
 
 ```ts
-export type ProviderId = "openrouter" | "chatgpt-codex" | "gemini" | "commandcode" | "clinepass" | "umans" | "9router";
+export type ProviderId = "openrouter" | "chatgpt-codex" | "gemini" | "deepseek" | "commandcode" | "clinepass" | "umans" | "9router";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -241,7 +242,7 @@ export class ProviderError extends Error {
 ### 7.2 Registry rules
 
 - `getProvider(id: ProviderId): LLMProvider` — throws if unknown id.
-- `listProviders(): LLMProvider[]` — stable order: openrouter, chatgpt-codex, gemini, commandcode, clinepass, umans, 9router.
+- `listProviders(): LLMProvider[]` — stable order: openrouter, chatgpt-codex, gemini, deepseek, commandcode, clinepass, umans, 9router.
 - No singleton mutable "current provider." Routing is **per slot / per judge**.
 - Adapters must not import React or studio state.
 
@@ -546,6 +547,7 @@ retry, account rotation, and combo resolution.
 |---|---|---|
 | `VITE_OPENROUTER_KEY` | Web → OpenRouter | Existing |
 | `VITE_GEMINI_KEY` | Web → Gemini | Existing |
+| `VITE_DEEPSEEK_KEY` | Web → DeepSeek | Existing |
 | `VITE_COMMANDCODE_KEY` | Web → CommandCode | Existing |
 | `VITE_CLINEPASS_KEY` | Web → ClinePass | Existing |
 | `VITE_UMANS_KEY` | Web → Umans | Existing |
@@ -588,7 +590,7 @@ turn the command pane into a platform console.
 
 - Each row shows **provider badge** (short label or muted text) + model name.
 - **Add model** flow:
-  1. Choose provider (segmented control or select): OpenRouter | ChatGPT | Gemini | CommandCode | ClinePass | Umans | 9Router.
+  1. Choose provider (segmented control or select): OpenRouter | ChatGPT | Gemini | DeepSeek | CommandCode | ClinePass | Umans | 9Router.
   2. Search that provider's catalog (if ready) or enter native model id manually.
 - Manual entry validation:
   - OpenRouter: prefer `org/model` (keep today's hint).

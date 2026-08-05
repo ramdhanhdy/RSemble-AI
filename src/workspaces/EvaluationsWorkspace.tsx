@@ -18,13 +18,17 @@ import { DataArchiveActions } from "../ui/DataArchiveActions";
 interface SegNavEntry {
   to: string;
   label: string;
+  /** Kind sublabel teaching the entity distinction on the active item
+   *  (identity spec §5.4). Rendered on every item for stable geometry; the
+   *  inactive one is visibility-hidden and aria-hidden. */
+  sublabel: string;
   /** End match so /evaluations is active only on the exact index. */
   end?: boolean;
 }
 
 const SEG_NAV: readonly SegNavEntry[] = [
-  { to: "/evaluations", label: "Suites", end: true },
-  { to: "/evaluations/profiles", label: "Profiles" },
+  { to: "/evaluations", label: "Suites", sublabel: "workloads you run", end: true },
+  { to: "/evaluations/profiles", label: "Profiles", sublabel: "rubrics that score" },
 ] as const;
 
 export function EvaluationsWorkspace() {
@@ -38,7 +42,7 @@ export function EvaluationsWorkspace() {
       <div className="flex min-h-0 flex-1 flex-col">
         {/* Compact segmented nav — subordinate to the primary header. */}
         <nav aria-label="Evaluations" className="flex shrink-0 items-center gap-0.5 border-b border-edge p-2">
-          {SEG_NAV.map(({ to, label, end }) => (
+          {SEG_NAV.map(({ to, label, sublabel, end }) => (
             <NavLink
               key={to}
               to={to}
@@ -52,7 +56,20 @@ export function EvaluationsWorkspace() {
                 }`
               }
             >
-              {label}
+              {({ isActive }) => (
+                <span className="flex flex-col items-center leading-tight">
+                  <span>{label}</span>
+                  <span
+                    data-nav-sublabel=""
+                    aria-hidden={!isActive}
+                    className={`font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted ${
+                      isActive ? "" : "invisible"
+                    }`}
+                  >
+                    {sublabel}
+                  </span>
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

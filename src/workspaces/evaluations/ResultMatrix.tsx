@@ -13,9 +13,11 @@
 // keyboard-focusable with a persistent outline and never scrolls the page.
 // =============================================================================
 
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Crown } from "lucide-react";
 import type { ReactElement } from "react";
+import { Pagination, PAGE_SIZE } from "../../ui/Pagination";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
@@ -31,6 +33,14 @@ import {
 import { StatusMark } from "../../ui/StatusMark";
 import type { StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
+import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
+
+/** Planner plans by taskId → modelKey (spec §11.2). Shared with the mobile
+ *  adaptation and the recovery toolbar. */
+export type RepairableCellPlans = ReadonlyMap<
+  string,
+  ReadonlyMap<string, CompoundRepairPlan>
+>;
 
 export interface ResultMatrixProps {
   aggregation: ExperimentAggregation;
@@ -38,6 +48,17 @@ export interface ResultMatrixProps {
   modelSlots: ModelSlot[];
   /** Loaded run records by runId for evidence links. */
   runRecords: ReadonlyMap<string, RunRecordV2>;
+  /** Repairable no-score cells by task + model key (spec §11.2). */
+  repairablePlans?: RepairableCellPlans;
+  /** Recovery handoff — present only while this surface owns the lease; when
+   *  provided, every missing cell renders one action control (spec §11.1). */
+  onRepairRequest?: (taskId: string, modelKey: string) => void;
+  /** Initial 1-based page (clamped). Used by tests and deep links. */
+  initialPage?: number;
+  /** Controlled page (1-based) — the URL search param is the source of truth
+   *  when provided with onPageChange (spec §12.5). */
+  page?: number;
+  onPageChange?: (page: number) => void;
 }
 
 /** Truthful closest status token per missing reason; text stays primary.
@@ -82,16 +103,76 @@ function WinnerBadge(): ReactElement {
   );
 }
 
+function MissingCellContent({
+  reason,
+  runId,
+  taskId,
+  modelKey,
+  repairable,
+  onRepairRequest,
+}: {
+  reason: MissingReason;
+  runId: string | null;
+  taskId: string;
+  modelKey: string;
+  repairable: boolean;
+  onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
+}): ReactElement {
+  const display = MISSING_CELL_DISPLAY[reason];
+  const evidenceHref = runId ? `/runs/${runId}` : null;
+  return (
+    <div className="flex min-h-[44px] min-w-0 flex-col justify-center gap-1 py-1">
+      <span className="flex items-center gap-2">
+        <StatusMark status={display.status} size={12} />
+        <span className="text-xs text-text-secondary">{display.text}</span>
+      </span>
+      {onRepairRequest ? (
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            data-recovery-action={repairable ? "repair-cell" : "retry-task"}
+            onClick={() => onRepairRequest(taskId, modelKey)}
+            className="inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-2.5 text-xs text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {repairable ? "Complete missing result" : "Retry incomplete task"}
+          </button>
+          {evidenceHref ? (
+            <Link
+              to={evidenceHref}
+              className="inline-flex min-h-[44px] items-center px-1 text-xs text-accent transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Evidence
+            </Link>
+          ) : null}
+        </span>
+      ) : evidenceHref ? (
+        <Link
+          to={evidenceHref}
+          className="inline-flex min-h-[44px] items-center px-1 text-xs text-accent transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          View evidence
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
 function CellContent({
   cell,
   modelKey,
   runRecords,
   rowBest,
+  taskId,
+  repairable,
+  onRepairRequest,
 }: {
   cell: CellState;
   modelKey: string;
   runRecords: ReadonlyMap<string, RunRecordV2>;
   rowBest: boolean;
+  taskId: string;
+  repairable: boolean;
+  onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
 }): ReactElement {
   if (cell.kind === "scored") {
     const href = cellEvidenceLink(cell, modelKey, cell.runId ? runRecords.get(cell.runId) : undefined);
@@ -114,12 +195,15 @@ function CellContent({
       <span className={CELL_LINK_CLASSES}>{content}</span>
     );
   }
-  const display = MISSING_CELL_DISPLAY[cell.reason];
   return (
-    <span className="flex min-h-[44px] items-center gap-2">
-      <StatusMark status={display.status} size={12} />
-      <span className="text-xs text-text-secondary">{display.text}</span>
-    </span>
+    <MissingCellContent
+      reason={cell.reason}
+      runId={cell.runId}
+      taskId={taskId}
+      modelKey={modelKey}
+      repairable={repairable}
+      onRepairRequest={onRepairRequest}
+    />
   );
 }
 
@@ -128,12 +212,39 @@ export function ResultMatrix({
   tasks,
   modelSlots,
   runRecords,
+  repairablePlans,
+  onRepairRequest,
+  initialPage = 1,
+  page,
+  onPageChange,
 }: ResultMatrixProps): ReactElement {
   const slotsByKey = new Map(modelSlots.map((s) => [`${s.providerId}:${s.slug}`, s]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const winners = new Set(aggregation.winnerKeys);
   const showNoWinnerCopy =
     aggregation.winnerKeys.length === 0 && aggregation.models.some((m) => !m.complete);
+
+  // Large-suite paging (spec §12.5): 50 task rows per page, stable suite
+  // order, page state clamped; hidden pages never mount.
+  const totalTasks = aggregation.taskIds.length;
+  const pageCount = Math.max(1, Math.ceil(totalTasks / PAGE_SIZE));
+  const [internalPage, setInternalPage] = useState(() =>
+    Math.min(Math.max(initialPage, 1), pageCount),
+  );
+  const controlled = page !== undefined && onPageChange !== undefined;
+  const currentPage = controlled ? Math.min(Math.max(page!, 1), pageCount) : internalPage;
+  const handlePageChange = (next: number) => {
+    if (controlled) onPageChange!(next);
+    else setInternalPage(next);
+  };
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageTaskIds = aggregation.taskIds.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageTaskIndexes = new Map(pageTaskIds.map((id, i) => [id, pageStart + i]));
+
+  // Sticky first column: the task header, every row header, and footer labels
+  // stay left-0 with an opaque panel surface (spec §12.5).
+  const stickyLeftCls =
+    "sticky left-0 z-10 bg-panel";
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -154,7 +265,7 @@ export function ResultMatrix({
             <tr className="border-b border-edge">
               <th
                 scope="col"
-                className="sticky top-0 z-10 min-w-[200px] bg-panel px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
+                className={`sticky top-0 z-20 min-w-[200px] px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted ${stickyLeftCls}`}
               >
                 Task
               </th>
@@ -181,7 +292,8 @@ export function ResultMatrix({
             </tr>
           </thead>
           <tbody>
-            {aggregation.taskIds.map((taskId, taskIdx) => {
+            {pageTaskIds.map((taskId) => {
+              const taskIdx = pageTaskIndexes.get(taskId) ?? 0;
               const task = taskById.get(taskId);
               const title = task?.title ?? taskId;
               const rowCells = aggregation.cells[taskIdx] ?? [];
@@ -193,7 +305,7 @@ export function ResultMatrix({
               }
               return (
                 <tr key={taskId} className="border-b border-edge last:border-b-0">
-                  <th scope="row" className="max-w-[320px] px-3 py-1 align-middle font-normal">
+                  <th scope="row" className={`max-w-[320px] px-3 py-1 align-middle font-normal ${stickyLeftCls}`}>
                     {rowRunId ? (
                       <Link
                         to={`/runs/${rowRunId}`}
@@ -221,6 +333,9 @@ export function ResultMatrix({
                             // Same epsilon as aggregation winner ties (1e-9).
                             Math.abs(cell.score - best) <= 1e-9
                           }
+                          taskId={taskId}
+                          repairable={repairablePlans?.get(taskId)?.has(modelKey) ?? false}
+                          onRepairRequest={onRepairRequest}
                         />
                       </td>
                     );
@@ -233,7 +348,7 @@ export function ResultMatrix({
             <tr className="border-t border-edge bg-panel">
               <th
                 scope="row"
-                className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
+                className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted ${stickyLeftCls}`}
               >
                 Mean score
               </th>
@@ -261,7 +376,7 @@ export function ResultMatrix({
             <tr className="border-t border-edge/60 bg-panel">
               <th
                 scope="row"
-                className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted"
+                className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-muted ${stickyLeftCls}`}
               >
                 Coverage
               </th>
@@ -274,6 +389,9 @@ export function ResultMatrix({
                   >
                     <span className="tabular-nums text-sm text-text-secondary">
                       {model.scoredTasks}/{model.totalTasks} tasks
+                      {!model.complete ? (
+                        <span className="ml-1 text-xs font-medium text-text-muted">Provisional</span>
+                      ) : null}
                     </span>
                   </td>
                 );
@@ -282,6 +400,9 @@ export function ResultMatrix({
           </tfoot>
         </table>
       </div>
+      {pageCount > 1 ? (
+        <Pagination page={currentPage} pageCount={pageCount} totalItems={totalTasks} onPageChange={handlePageChange} />
+      ) : null}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 // RSemble AI — Fusion Study domain types
 //
 // Fusion Studies turn the Rank/Fuse spine into an empirical decision engine
-// (docs/specs/fusion-study/fusion-study-spec.md v2). This module holds the
+// (docs/specs/archive/fusion-study/fusion-study-spec.md v2). This module holds the
 // versioned records: fusion recipes, pool manifests, trials, treatment-changing
 // attempts, measurement-only observations, studies, and playbooks.
 //

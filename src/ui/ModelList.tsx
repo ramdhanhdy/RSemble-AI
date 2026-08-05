@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { ModelProbeControl } from "./ModelProbeControl";
 import type { Action } from "../studio-engine";
 import type { ModelSlot } from "../studio-data";
 import type { CatalogModel, ProviderId } from "../lib/providers/types";
@@ -62,7 +63,7 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
             type="button"
             onClick={() => setAdding(true)}
             aria-label="Add a model"
-            className="flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text"
+            className="pressable flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text"
           >
             <Plus size={13} /> Add model
           </button>
@@ -89,6 +90,12 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
           </li>
         )}
       </ul>
+
+      {slots.length > 0 ? (
+        <p className="mt-2 text-xs text-text-muted">
+          Live model tests send a small generation request and may incur provider cost.
+        </p>
+      ) : null}
 
       {adding && (
         <AddModelCombobox
@@ -129,7 +136,7 @@ function SlotRow({
   const providerBadge = PROVIDER_LABELS[slot.providerId] ?? "OpenRouter";
   const repo = useRunRepository();
   const telemetry = useModelTelemetry(repo, modelKey(slot.providerId, slot.slug));
-  const pricing = pricingFor(slot.slug);
+  const pricing = pricingFor(slot.providerId as ProviderId, slot.slug);
 
   return (
     <li
@@ -143,7 +150,7 @@ function SlotRow({
           onClick={() => dispatch({ type: "TOGGLE_SLOT", id: slot.id })}
           aria-pressed={slot.enabled}
           aria-label={slot.enabled ? `Disable ${slot.model}` : `Enable ${slot.model}`}
-          className="flex h-11 w-11 shrink-0 items-center justify-center"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center"
         >
           <span
             className={`flex h-5 w-5 items-center justify-center rounded-sm border transition-[background-color,border-color] ease-out duration-100 ${
@@ -208,7 +215,7 @@ function SlotRow({
           onClick={editing ? onCancelEdit : onEdit}
           aria-label={`Switch model for ${slot.model}`}
           aria-expanded={editing}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-accent"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-accent"
         >
           <Pencil size={14} />
         </button>
@@ -216,12 +223,18 @@ function SlotRow({
           type="button"
           onClick={() => dispatch({ type: "REMOVE_SLOT", id: slot.id })}
           aria-label={`Remove ${slot.model}`}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-error"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-card-hover hover:text-error"
         >
           <Trash2 size={14} />
         </button>
       </div>
 
+      {/* Model-route test (spec §8.1) — ephemeral, user-initiated. */}
+      <ModelProbeControl
+        providerId={slot.providerId}
+        model={slot.slug}
+        slotLabel={`${providerBadge} · ${slot.slug}`}
+      />
       {editing && (
         <AddModelCombobox
           models={models}
@@ -367,7 +380,7 @@ export function AddModelCombobox({
           type="button"
           onClick={handleClearOrCancel}
           aria-label={query.length > 0 ? "Clear model search" : "Cancel add model"}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text"
         >
           <X size={13} />
         </button>
@@ -407,7 +420,7 @@ export function AddModelCombobox({
           type="button"
           onClick={() => commit(trimmed)}
           aria-label={`${commitLabel} ${trimmed}`}
-          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/[0.06] py-2 font-mono text-sm text-accent hover:bg-accent/[0.12]"
+          className="pressable mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/[0.06] py-2 font-mono text-sm text-accent hover:bg-accent/[0.12]"
         >
           <Plus size={13} /> {commitLabel}
           <span className="max-w-[55%] truncate" title={trimmed}>

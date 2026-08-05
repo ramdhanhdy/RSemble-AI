@@ -5,6 +5,7 @@
 import { chatgptCodexProvider } from "./chatgpt-codex";
 import { clinepassProvider } from "./clinepass";
 import { commandcodeProvider } from "./commandcode";
+import { deepseekProvider } from "./deepseek";
 import { geminiProvider } from "./gemini";
 import { openrouterProvider } from "./openrouter";
 import { nineRouterProvider } from "./nine-router";
@@ -15,6 +16,7 @@ const providers: Record<ProviderId, LLMProvider> = {
   openrouter: openrouterProvider,
   "chatgpt-codex": chatgptCodexProvider,
   gemini: geminiProvider,
+  deepseek: deepseekProvider,
   commandcode: commandcodeProvider,
   clinepass: clinepassProvider,
   umans: umansProvider,
@@ -34,6 +36,7 @@ export function listProviders(): LLMProvider[] {
     providers.openrouter,
     providers["chatgpt-codex"],
     providers.gemini,
+    providers.deepseek,
     providers.commandcode,
     providers.clinepass,
     providers.umans,

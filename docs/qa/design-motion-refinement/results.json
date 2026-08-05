@@ -1,0 +1,179 @@
+{
+  "generatedAt": "2026-08-03T17:15:13.915Z",
+  "baseUrl": "http://localhost:5176/",
+  "probes": [
+    {
+      "name": "desktop-1440x1000-normal",
+      "paletteAnimation": null,
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "activeTag": "BODY",
+      "pass": true,
+      "reason": "expected a linear spinner, no horizontal overflow, and no palette animation"
+    },
+    {
+      "name": "desktop-run-action",
+      "backgroundImage": "none",
+      "visible": true,
+      "pass": true,
+      "reason": "Run action must be a visible solid control, not a gradient"
+    },
+    {
+      "name": "command-palette",
+      "animationName": "none",
+      "focusInPalette": true,
+      "latencyMs": 108,
+      "pass": true,
+      "reason": "palette must open within 500ms, focus its input, and have no entrance animation"
+    },
+    {
+      "name": "connections-open",
+      "focusInDialog": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "focus must enter dialog without horizontal overflow"
+    },
+    {
+      "name": "connections-focus-restored",
+      "restored": true,
+      "pass": true,
+      "reason": "focus must return to the trigger"
+    },
+    {
+      "name": "desktop-active-pipeline",
+      "activeConnectors": 1,
+      "connectorAnimation": "bg-march",
+      "spinnerAnimation": "spin-ease",
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "pass": true,
+      "reason": "an active rail must expose one connector and one stage spinner with the expected motion mode"
+    },
+    {
+      "name": "tablet-1024x768-normal",
+      "paletteAnimation": null,
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "activeTag": "BODY",
+      "pass": true,
+      "reason": "expected a linear spinner, no horizontal overflow, and no palette animation"
+    },
+    {
+      "name": "connections-tablet-1024-open",
+      "focusInDialog": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "focus must enter dialog without horizontal overflow"
+    },
+    {
+      "name": "connections-tablet-1024-focus-restored",
+      "restored": true,
+      "pass": true,
+      "reason": "focus must return to the trigger"
+    },
+    {
+      "name": "tablet-768x1024-normal",
+      "paletteAnimation": null,
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "activeTag": "BODY",
+      "pass": true,
+      "reason": "expected a linear spinner, no horizontal overflow, and no palette animation"
+    },
+    {
+      "name": "connections-tablet-768-open",
+      "focusInDialog": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "focus must enter dialog without horizontal overflow"
+    },
+    {
+      "name": "connections-tablet-768-focus-restored",
+      "restored": true,
+      "pass": true,
+      "reason": "focus must return to the trigger"
+    },
+    {
+      "name": "mobile-390x844-normal",
+      "paletteAnimation": null,
+      "spinnerTiming": "linear",
+      "overflowX": false,
+      "activeTag": "BODY",
+      "pass": true,
+      "reason": "expected a linear spinner, no horizontal overflow, and no palette animation"
+    },
+    {
+      "name": "connections-mobile-390-open",
+      "focusInDialog": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "focus must enter dialog without horizontal overflow"
+    },
+    {
+      "name": "connections-mobile-390-focus-restored",
+      "restored": true,
+      "pass": true,
+      "reason": "focus must return to the trigger"
+    },
+    {
+      "name": "mobile-command-drawer",
+      "focusInDialog": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "mobile drawer must focus and fit"
+    },
+    {
+      "name": "mobile-command-drawer-scroll",
+      "found": true,
+      "reachedEnd": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "mobile drawer content must remain vertically reachable without horizontal overflow"
+    },
+    {
+      "name": "desktop-reduced-motion",
+      "transitionDuration": "0s",
+      "spinnerAnimation": "none",
+      "disclosureTransitionDuration": "0s",
+      "overflowX": false,
+      "visibleStatus": true,
+      "pass": true,
+      "reason": "reduced motion must remove interaction transitions and movement while retaining visible status text"
+    },
+    {
+      "name": "desktop-reduced-active-pipeline",
+      "activeConnectors": 1,
+      "connectorAnimation": "none",
+      "spinnerAnimation": "none",
+      "spinnerTiming": "ease",
+      "overflowX": false,
+      "pass": true,
+      "reason": "an active rail must expose one connector and one stage spinner with the expected motion mode"
+    },
+    {
+      "name": "desktop-200-percent-css-zoom",
+      "overflowX": false,
+      "innerWidth": 720,
+      "innerHeight": 500,
+      "pass": true,
+      "reason": "an effective 200% CSS viewport must fit without horizontal overflow"
+    }
+  ],
+  "screenshots": [
+    "qa-desktop-1440x1000.png",
+    "qa-desktop-run-action.png",
+    "qa-connections-dialog.png",
+    "qa-desktop-active-pipeline.png",
+    "qa-tablet-1024x768.png",
+    "qa-connections-tablet-1024-dialog.png",
+    "qa-tablet-768x1024.png",
+    "qa-connections-tablet-768-dialog.png",
+    "qa-mobile-390x844.png",
+    "qa-connections-mobile-390-dialog.png",
+    "qa-mobile-drawer.png",
+    "qa-mobile-drawer-scrolled.png",
+    "qa-desktop-reduced-motion.png",
+    "qa-desktop-reduced-active-pipeline.png",
+    "qa-desktop-200-percent-css-zoom.png"
+  ]
+}

@@ -157,4 +157,47 @@ describe("RecordRow", () => {
     expect(text.toLowerCase()).toContain("failed");
     cleanup(h);
   });
+
+  // --- Row-width contract regression (Task 1.3) ---
+
+  it("list variant painted surface has a full-width contract (w-full or flex-1) and min-w-0", () => {
+    const h = render(
+      <RecordRow variant="list" {...SAMPLE_ROW} title="Short" />,
+    );
+    // The painted child surface must carry the width contract, not only the wrapper.
+    const surface = h.$("[data-record-row-surface]");
+    expect(surface).toBeTruthy();
+    const cls = surface?.getAttribute("class") ?? "";
+    const hasFullWidth = cls.includes("w-full") || cls.includes("flex-1");
+    const hasMinW0 = cls.includes("min-w-0");
+    expect(hasFullWidth).toBe(true);
+    expect(hasMinW0).toBe(true);
+    cleanup(h);
+  });
+
+  it("short and long titles paint the same row geometry", () => {
+    const shortRow = render(<RecordRow variant="list" {...SAMPLE_ROW} title="Short" />);
+    const longRow = render(
+      <RecordRow
+        variant="list"
+        {...SAMPLE_ROW}
+        title="A very long task title that exceeds normal width and should truncate rather than expand the row"
+      />,
+    );
+    const shortSurface = shortRow.$("[data-record-row-surface]");
+    const longSurface = longRow.$("[data-record-row-surface]");
+    expect(shortSurface).toBeTruthy();
+    expect(longSurface).toBeTruthy();
+    // Both surfaces must carry the same width contract classes.
+    const shortCls = shortSurface?.getAttribute("class") ?? "";
+    const longCls = longSurface?.getAttribute("class") ?? "";
+    const extractWidth = (cls: string) =>
+      cls.includes("w-full") || cls.includes("flex-1");
+    expect(extractWidth(shortCls)).toBe(true);
+    expect(extractWidth(longCls)).toBe(true);
+    expect(shortCls.includes("min-w-0")).toBe(true);
+    expect(longCls.includes("min-w-0")).toBe(true);
+    cleanup(shortRow);
+    cleanup(longRow);
+  });
 });

@@ -1,0 +1,98 @@
+// =============================================================================
+// experiment-ranking.test.ts — display ranking group rules (spec §10.3).
+// =============================================================================
+import { describe, expect, it } from "vitest";
+import { deriveDisplayRanking } from "./experiment-ranking";
+import type { ModelAggregate } from "./experiment-aggregation";
+
+function model(
+  modelKey: string,
+  mean: number | null,
+  complete: boolean,
+  _index: number,
+): ModelAggregate {
+  return {
+    modelKey,
+    mean,
+    scoredTasks: complete ? 15 : 14,
+    totalTasks: 15,
+    complete,
+  };
+}
+
+function order(...keys: string[]): ReadonlyMap<string, number> {
+  return new Map(keys.map((k, i) => [k, i]));
+}
+
+describe("deriveDisplayRanking", () => {
+  it("groups complete models as eligible and incomplete as provisional", () => {
+    const complete = model("umans:model", 4.38, true, 0);
+    const provisional = model("9router:model", 4.54, false, 1);
+    const result = deriveDisplayRanking([complete, provisional], order("umans:model", "9router:model"));
+
+    expect(result.eligible).toEqual([complete]);
+    expect(result.provisional).toEqual([provisional]);
+  });
+
+  it("returns the provisional leader only when its mean exceeds the eligible winner", () => {
+    const complete = model("umans:model", 4.38, true, 0);
+    const provisional = model("9router:model", 4.54, false, 1);
+    const result = deriveDisplayRanking([complete, provisional], order("umans:model", "9router:model"));
+
+    expect(result.provisionalLeader?.modelKey).toBe("9router:model");
+  });
+
+  it("returns no provisional leader when the incomplete mean is lower", () => {
+    const complete = model("umans:model", 4.38, true, 0);
+    const lower = model("9router:model", 4.2, false, 1);
+    const result = deriveDisplayRanking([complete, lower], order("umans:model", "9router:model"));
+
+    expect(result.provisionalLeader).toBeNull();
+  });
+
+  it("returns a provisional leader when no complete model exists", () => {
+    const a = model("9router:a", 4.1, false, 0);
+    const b = model("9router:b", 4.5, false, 1);
+    const result = deriveDisplayRanking([a, b], order("9router:a", "9router:b"));
+
+    expect(result.eligible).toEqual([]);
+    expect(result.provisionalLeader?.modelKey).toBe("9router:b");
+  });
+
+  it("sorts eligible standings by raw mean descending", () => {
+    const low = model("openrouter:low", 4.0, true, 0);
+    const high = model("openrouter:high", 4.8, true, 1);
+    const mid = model("openrouter:mid", 4.4, true, 2);
+    const result = deriveDisplayRanking([low, high, mid], order("openrouter:low", "openrouter:high", "openrouter:mid"));
+
+    expect(result.eligible.map((m) => m.modelKey)).toEqual([
+      "openrouter:high",
+      "openrouter:mid",
+      "openrouter:low",
+    ]);
+  });
+
+  it("preserves snapshot roster order on equal means", () => {
+    const a = model("openrouter:a", 4.0, true, 0);
+    const b = model("openrouter:b", 4.0, true, 1);
+    const result = deriveDisplayRanking([b, a], order("openrouter:a", "openrouter:b"));
+
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["openrouter:a", "openrouter:b"]);
+  });
+
+  it("sorts provisional results by raw mean descending without numeric ranks", () => {
+    const low = model("9router:low", 3.9, false, 0);
+    const high = model("9router:high", 4.6, false, 1);
+    const result = deriveDisplayRanking([low, high], order("9router:low", "9router:high"));
+
+    expect(result.provisional.map((m) => m.modelKey)).toEqual(["9router:high", "9router:low"]);
+  });
+
+  it("sorts null-mean models last within their group", () => {
+    const noScores = model("9router:none", null, false, 0);
+    const scored = model("9router:scored", 3.5, false, 1);
+    const result = deriveDisplayRanking([noScores, scored], order("9router:none", "9router:scored"));
+
+    expect(result.provisional.map((m) => m.modelKey)).toEqual(["9router:scored", "9router:none"]);
+  });
+});

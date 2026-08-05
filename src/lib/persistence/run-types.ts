@@ -22,10 +22,10 @@
 //    token, secret, password, env
 // =============================================================================
 
-import type { ChatMessage } from "../providers/types";
+import type { ChatMessage, CostRecord, ReasoningEffort, RunReasoningProvenance, UsageBreakdown } from "../providers/types";
 import type { ConsensusBreakdown, JudgeReport } from "../../studio-data";
 import type { StageStatus } from "../../studio-engine";
-import { isEvaluationProfile, type EvaluationProfileSnapshot } from "../evaluations/evaluation-types";
+import { isEvaluationProfile, isExperimentTaskExecutionPlan, type EvaluationProfileSnapshot, type ExperimentTaskExecutionPlan } from "../evaluations/evaluation-types";
 
 // --- Status enums -------------------------------------------------------------
 
@@ -104,6 +104,10 @@ export type RunSource =
       taskId: string;
       experimentTaskAttemptId: string;
       trial: number;
+      /** Compound-repair metadata on the experiment branch (spec §11.4);
+       *  widened to the roster-extension discriminant (roster spec §6.4). The
+       *  property name is legacy persisted schema; branch on `kind`. */
+      repair?: ExperimentTaskExecutionPlan;
     };
 
 // --- Run summaries ------------------------------------------------------------
@@ -167,7 +171,18 @@ export interface CandidateAttemptRecord {
   output: string | null;
   tokensIn: number | null;
   tokensOut: number | null;
+  /** Provider-reported or estimated token usage; absent on old records. */
+  usage?: UsageBreakdown;
+  /** Reported / estimated / unknown cost provenance; absent on old records. */
+  cost?: CostRecord;
   error: PersistedError | null;
+  /** Compound-repair provenance: this attempt's output was copied from an
+   *  earlier immutable run's accepted candidate (spec §11.4). */
+  reusedFrom?: {
+    sourceRunId: string;
+    sourceCandidateId: string;
+    sourceAttemptId: string;
+  };
 }
 
 export interface PersistedCandidate {
@@ -195,6 +210,8 @@ export interface JudgeAttemptRecord {
   error: PersistedError | null;
   report: JudgeReport | null;
   consensus: ConsensusBreakdown | null;
+  usage?: UsageBreakdown;
+  cost?: CostRecord;
 }
 
 export interface FusionAttemptRecord {
@@ -209,6 +226,8 @@ export interface FusionAttemptRecord {
   status: AttemptStatus;
   error: PersistedError | null;
   result: string | null;
+  usage?: UsageBreakdown;
+  cost?: CostRecord;
 }
 
 // --- Full run record ----------------------------------------------------------
@@ -228,6 +247,8 @@ export interface RunRecordV2 {
   /** Attachment metadata for the run's task — absent for older records. */
   attachments?: TaskAttachmentMeta[];
   evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
+  /** Requested/effective effort snapshot; absent on pre-policy schema-v2 runs. */
+  reasoning?: RunReasoningProvenance;
   candidates: PersistedCandidate[];
   judge: {
     status: StageStatus;
@@ -292,6 +313,32 @@ function isNumber(v: unknown): v is number {
 /** Canonical record guard for persistence/type-guard modules — reuse, do not redefine. */
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+const REASONING_EFFORT_VALUES: readonly ReasoningEffort[] = [
+  "provider-default",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+function isReasoningSetting(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  return (
+    typeof v.requested === "string" &&
+    REASONING_EFFORT_VALUES.includes(v.requested as ReasoningEffort) &&
+    typeof v.effective === "string" &&
+    REASONING_EFFORT_VALUES.includes(v.effective as ReasoningEffort) &&
+    (v.source === "catalog" || v.source === "provider-docs" || v.source === "unknown")
+  );
+}
+
+function isReasoningProvenance(v: unknown): v is RunReasoningProvenance {
+  if (!isRecord(v) || !isRecord(v.candidates) || !isReasoningSetting(v.judge)) return false;
+  return Object.values(v.candidates).every(isReasoningSetting);
 }
 
 function isStringArray(v: unknown): v is string[] {
@@ -405,13 +452,52 @@ export function isRunSource(v: unknown): v is RunSource {
       isString(v.taskId) &&
       // Experiment run sources require an immutable, non-empty attempt id.
       isNonEmptyString(v.experimentTaskAttemptId) &&
-      isNumber(v.trial)
+      isNumber(v.trial) &&
+      (v.repair === undefined || isExperimentTaskExecutionPlan(v.repair))
     );
   }
   return false;
 }
 
 // --- Attempt records ----------------------------------------------------------
+
+function isReusedFrom(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  const { sourceRunId, sourceCandidateId, sourceAttemptId } = v;
+  if (!isNonEmptyString(sourceRunId) || /^(sk-|AIza|Bearer\s)/i.test(sourceRunId)) return false;
+  if (!isNonEmptyString(sourceCandidateId) || /^(sk-|AIza|Bearer\s)/i.test(sourceCandidateId)) return false;
+  if (!isNonEmptyString(sourceAttemptId) || /^(sk-|AIza|Bearer\s)/i.test(sourceAttemptId)) return false;
+  return true;
+}
+
+function isFiniteNonNegativeNumber(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isTokenField(value: unknown): boolean {
+  return value === null || isFiniteNonNegativeNumber(value);
+}
+
+export function isUsageBreakdown(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  return (
+    isTokenField(v.inputTokens) &&
+    isTokenField(v.outputTokens) &&
+    isTokenField(v.reasoningTokens) &&
+    isTokenField(v.cacheReadTokens) &&
+    isTokenField(v.cacheWriteTokens)
+  );
+}
+
+export function isCostRecord(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  if (!(v.usd === null || isFiniteNonNegativeNumber(v.usd))) return false;
+  return (
+    v.source === "provider-reported" ||
+    v.source === "catalog-estimate" ||
+    v.source === "unknown"
+  );
+}
 
 function isCandidateAttemptRecord(v: unknown): v is CandidateAttemptRecord {
   if (!isRecord(v)) return false;
@@ -424,7 +510,10 @@ function isCandidateAttemptRecord(v: unknown): v is CandidateAttemptRecord {
     (v.output === null || isString(v.output)) &&
     (v.tokensIn === null || isNumber(v.tokensIn)) &&
     (v.tokensOut === null || isNumber(v.tokensOut)) &&
-    (v.error === null || isPersistedError(v.error))
+    (v.error === null || isPersistedError(v.error)) &&
+    (v.reusedFrom === undefined || isReusedFrom(v.reusedFrom)) &&
+    (v.usage === undefined || isUsageBreakdown(v.usage)) &&
+    (v.cost === undefined || isCostRecord(v.cost))
   );
 }
 
@@ -443,7 +532,9 @@ function isJudgeAttemptRecord(v: unknown): v is JudgeAttemptRecord {
     isAttemptStatus(v.status) &&
     (v.error === null || isPersistedError(v.error)) &&
     (v.report === null || isJudgeReport(v.report)) &&
-    (v.consensus === null || isConsensusBreakdown(v.consensus))
+    (v.consensus === null || isConsensusBreakdown(v.consensus)) &&
+    (v.usage === undefined || isUsageBreakdown(v.usage)) &&
+    (v.cost === undefined || isCostRecord(v.cost))
   );
 }
 
@@ -580,6 +671,7 @@ export function isRunRecordV2(v: unknown): v is RunRecordV2 {
   ) {
     return false;
   }
+  if (v.reasoning !== undefined && !isReasoningProvenance(v.reasoning)) return false;
 
   if (!Array.isArray(v.candidates) || !v.candidates.every(isPersistedCandidate)) {
     return false;

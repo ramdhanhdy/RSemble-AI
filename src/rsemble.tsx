@@ -9,17 +9,17 @@
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { Play, RotateCcw, Square } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
-import { isProviderReadySync } from "./lib/providers/registry";
-import type { ProviderId } from "./lib/providers/types";
+import { isProviderReadySync, listProviders } from "./lib/providers/registry";
+import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import { Header, type ConnectionState } from "./ui/Header";
 
 import { type Action, type StudioState, initialState, reducer } from "./studio-engine";
 
-import { useDialogA11y } from "./ui/useDialogA11y";
 import { useResizableSplit } from "./ui/useResizableSplit";
 import { ModeToggle } from "./ui/ModeToggle";
 import { ModelList } from "./ui/ModelList";
@@ -35,9 +35,9 @@ import { ConnectionsModal } from "./ui/ConnectionsModal";
 import { CommandPalette } from "./ui/CommandPalette";
 import { ShortcutCheatsheet } from "./ui/ShortcutCheatsheet";
 import { BrandAvatar } from "./ui/brand-icons";
+import { ModelProbeProvider } from "./ui/ModelProbeContext";
 import { AppRoutes } from "./app-router";
 import { MobileWorkspaceNav } from "./ui/MobileWorkspaceNav";
-
 import { StreamDeltaBuffer } from "./lib/stream-buffer";
 import { createRunController } from "./lib/run-controller";
 import { checkAttachmentEligibility } from "./lib/pipeline";
@@ -48,7 +48,7 @@ import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts"
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import { useExecutionOwner } from "./lib/execution-owner-context";
-import { useExperimentController } from "./lib/evaluations/experiment-controller-context";
+import { useExperimentController } from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 
 export default function RSemble() {
@@ -82,11 +82,12 @@ export default function RSemble() {
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
+  const commandDialogHandle = useMemo(() => Dialog.createHandle(), []);
+  const connectionsDialogHandle = useMemo(() => Dialog.createHandle(), []);
+  const cheatsheetDialogHandle = useMemo(() => Dialog.createHandle(), []);
 
   const { commandWidth, dragging, onDividerPointerDown, onDividerKeyDown, onDoubleClick, containerRef, min, max } = useResizableSplit();
   const [focusMode, setFocusMode] = useState(false);
-  const commandDrawerRef = useRef<HTMLElement>(null);
-  useDialogA11y(commandOpen, () => setCommandOpen(false), commandDrawerRef);
 
   // Focus mode only applies to the horizontal lg split. At md (stacked) and
   // mobile (drawer) the command pane is already compact, so collapsing to a
@@ -148,24 +149,42 @@ export default function RSemble() {
     openrouter: isProviderReadySync("openrouter"),
     "chatgpt-codex": false,
     gemini: isProviderReadySync("gemini"),
+    deepseek: isProviderReadySync("deepseek"),
     commandcode: isProviderReadySync("commandcode"),
     clinepass: isProviderReadySync("clinepass"),
     umans: false,
     "9router": false,
   });
+  // False until the first probe cycle has settled. While checking, the header
+  // shows a neutral "Checking" pill and no offline banner — an unprobed
+  // provider is unknown, not disconnected.
+  const [readinessSettled, setReadinessSettled] = useState(false);
 
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const probeCoordinator = useMemo(() => createProviderProbeCoordinator(), []);
 
   const checkAllReadiness = useCallback(async () => {
-    const results = await probeCoordinator.run();
+    const cycle = await probeCoordinator.run();
+    // Lifecycle cancellation (run/experiment start) must not mutate health,
+    // catalog, or error banner — even when some providers already finished.
+    if (cycle.status === "cancelled") return;
+    const results = cycle.results;
+    setReadinessSettled(true);
     const map: Record<string, boolean> = {};
-    const mergedCatalog: import("./lib/providers/types").CatalogModel[] = [];
+    const mergedCatalog: CatalogModel[] = [];
+    // Only banner errors for providers the user is actually using. An idle
+    // chatgpt-codex catalog timeout must not interrupt a suite on other providers.
+    const inUse = new Set<ProviderId>([
+      ...stateRef.current.slots.filter((s) => s.enabled).map((s) => s.providerId),
+      stateRef.current.critic.providerId,
+    ]);
     let firstError: string | null = null;
     for (const r of results) {
       map[r.id] = r.readiness.ok;
       if (r.catalog.length > 0) mergedCatalog.push(...r.catalog);
-      if (r.error && !firstError) firstError = `${r.id}: ${r.error}`;
+      if (r.error && !firstError && inUse.has(r.id)) {
+        firstError = `${r.id}: ${r.error}`;
+      }
     }
     setReadinessMap(map as Record<ProviderId, boolean>);
     if (mergedCatalog.length > 0) {
@@ -174,14 +193,32 @@ export default function RSemble() {
     setCatalogError(firstError);
   }, [probeCoordinator]);
 
+  const experimentActive = activeOwner?.kind === "experiment";
+
+  // Providers currently ready, in the registry's stable order (roster spec
+  // F1). Drives the add-model picker on terminal experiment results; catalog
+  // population is a separate concern handled by state.models.
+  const availableProviderIds = useMemo<ProviderId[]>(
+    () => listProviders().filter((p) => readinessMap[p.id] === true).map((p) => p.id),
+    [readinessMap],
+  );
+
   useEffect(() => {
+    // Suite / compare runs already saturate the bridge and upstreams. Pause the
+    // 10s catalog poller for the duration so probe timeouts don't paint a red
+    // banner over an otherwise healthy run.
+    if (state.running || experimentActive) {
+      setCatalogError(null);
+      probeCoordinator.abort();
+      return;
+    }
     void checkAllReadiness();
     const interval = setInterval(() => void checkAllReadiness(), 10000);
-    return () => {
-      clearInterval(interval);
-      probeCoordinator.abort();
-    };
-  }, [checkAllReadiness, probeCoordinator]);
+    // Cleanup only clears the interval: aborting the shared coordinator here
+    // would kill an in-flight cycle on unrelated re-renders (slot hydration,
+    // StrictMode remount) and paint its AbortError as a false offline state.
+    return () => clearInterval(interval);
+  }, [checkAllReadiness, probeCoordinator, state.running, experimentActive]);
 
   // ---------------------------------------------------------------------------
   // Global keyboard shortcuts (palette, cheatsheet, focus mode).
@@ -225,11 +262,17 @@ export default function RSemble() {
     readinessMap.openrouter ||
     readinessMap["chatgpt-codex"] ||
     readinessMap.gemini ||
+    readinessMap.deepseek ||
     readinessMap.commandcode ||
     readinessMap.clinepass ||
     readinessMap.umans;
-  const connectionState: ConnectionState =
-    state.running ? "running" : !apiKeyPresent ? "offline" : "ready";
+  const connectionState: ConnectionState = state.running
+    ? "running"
+    : apiKeyPresent
+      ? "ready"
+      : readinessSettled
+        ? "offline"
+        : "checking";
 
   // ---------------------------------------------------------------------------
   // Run gate + requestRun
@@ -237,7 +280,6 @@ export default function RSemble() {
   const enabledSlots = state.slots.filter((s) => s.enabled);
   const slotsReady = enabledSlots.every((s) => readinessMap[s.providerId] === true);
   const criticReady = readinessMap[state.critic.providerId] === true;
-  const experimentActive = activeOwner?.kind === "experiment";
 
   // Attachment gate (spec §5.1, plan 7.6.8): Run is disabled while any
   // attachment is still reading, or when the §5.1 image-eligibility check
@@ -361,6 +403,7 @@ export default function RSemble() {
   }, []);
 
   return (
+    <ModelProbeProvider>
     <div className="flex h-screen w-screen overflow-hidden bg-canvas p-2 text-text antialiased">
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-edge bg-shell">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -370,18 +413,18 @@ export default function RSemble() {
             onOpenConnections={() => setConnectionsOpen(true)}
             onOpenPalette={() => setPaletteOpen(true)}
             onOpenHelp={() => setCheatsheetOpen(true)}
+            commandDialogHandle={commandDialogHandle}
+            connectionsDialogHandle={connectionsDialogHandle}
+            cheatsheetDialogHandle={cheatsheetDialogHandle}
             connectionState={connectionState}
-            showToggle={isCompareRoute}
-          >
-            <ModeToggle mode={state.mode} onChange={handleModeChange} disabled={state.running} />
-          </Header>
+          />
 
           {/* Global execution awareness strip (spec §5.5) — visible on every
               workspace except the exact owning progress route; never hides a
               storage failure. */}
           <GlobalExecutionStripContainer compareRunning={state.running} />
 
-          {!apiKeyPresent && <NoKeyBanner />}
+          {connectionState === "offline" && <NoKeyBanner />}
           {catalogError && (
             <div className="flex shrink-0 items-center gap-2 border-b border-error/40 bg-error/10 px-4 py-2 text-xs text-error">
               <span>
@@ -396,39 +439,49 @@ export default function RSemble() {
           <div className="flex min-h-0 flex-1 flex-col pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0">
             <AppRoutes
               compareOutlet={
-                <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
-                  <section
-                    aria-label="Command"
-                    className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
-                      focusActive ? "lg:!w-14 lg:!overflow-hidden lg:!border-r" : "lg:w-[var(--cmd-w)]"
-                    } md:w-full`}
-                    style={focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }}
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <div
+                    data-compare-toolbar=""
+                    className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
                   >
-                    {focusActive ? (
-                      <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
-                    ) : (
-                      <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
+                    <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Finish</span>
+                    <ModeToggle mode={state.mode} onChange={handleModeChange} disabled={state.running} />
+                  </div>
+                  <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
+                    <section
+                      aria-label="Command"
+                      className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
+                        focusActive ? "lg:!w-14 lg:!overflow-hidden lg:!border-r" : "lg:w-[var(--cmd-w)]"
+                      } md:w-full`}
+                      style={focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }}
+                    >
+                      {focusActive ? (
+                        <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
+                      ) : (
+                        <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
+                      )}
+                    </section>
+
+                    {!focusActive && (
+                      <Divider
+                        dragging={dragging}
+                        value={commandWidth}
+                        min={min}
+                        max={max}
+                        onPointerDown={onDividerPointerDown}
+                        onKeyDown={onDividerKeyDown}
+                        onDoubleClick={onDoubleClick}
+                      />
                     )}
-                  </section>
 
-                  {!focusActive && (
-                    <Divider
-                      dragging={dragging}
-                      value={commandWidth}
-                      min={min}
-                      max={max}
-                      onPointerDown={onDividerPointerDown}
-                      onKeyDown={onDividerKeyDown}
-                      onDoubleClick={onDoubleClick}
-                    />
-                  )}
-
-                  <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
-                    <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} onRetryJudge={retryJudge} />
-                  </section>
+                    <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
+                      <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} onRetryJudge={retryJudge} />
+                    </section>
+                  </div>
                 </div>
               }
               models={state.models}
+              availableProviderIds={availableProviderIds}
             />
           </div>
         </div>
@@ -437,52 +490,50 @@ export default function RSemble() {
       {/* Mobile bottom navigation — fixed, three workspaces. */}
       <MobileWorkspaceNav />
 
-      {commandOpen && isCompareRoute && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/60 md:hidden"
-            aria-hidden="true"
-            onClick={() => setCommandOpen(false)}
-          />
-          <aside
-            ref={commandDrawerRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Command"
-            tabIndex={-1}
-            className="fixed inset-y-0 left-0 z-50 flex w-[85%] max-w-sm flex-col border-r border-edge bg-panel shadow-2xl focus:outline-none md:hidden"
-          >
-            <div className="flex shrink-0 items-center justify-between border-b border-edge px-4 py-3">
-              <span className="font-mono text-xs uppercase tracking-wider text-text-muted">Command</span>
-              <button
-                type="button"
-                onClick={() => setCommandOpen(false)}
-                aria-label="Close command pane"
-                className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card hover:text-text"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-              <CommandPane
-                state={state}
-                dispatch={dispatch}
-                canRun={canRun}
-                onRun={() => {
-                  if (!canRun) return;
-                  requestRun();
-                  setCommandOpen(false);
-                }}
-                onAbort={abortRun}
-              />
-            </div>
-          </aside>
-        </>
+      {isCompareRoute && (
+        <Dialog.Root
+          handle={commandDialogHandle}
+          open={commandOpen}
+          onOpenChange={setCommandOpen}
+        >
+          <Dialog.Portal>
+            <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 md:hidden" />
+            <Dialog.Viewport className="fixed inset-0 z-50 flex md:hidden">
+              <Dialog.Popup className="motion-state flex h-full w-[85%] max-w-sm origin-left flex-col border-r border-edge bg-panel shadow-2xl">
+                <div className="flex shrink-0 items-center justify-between border-b border-edge px-4 py-3">
+                  <Dialog.Title className="font-mono text-xs uppercase tracking-wider text-text-muted">
+                    Command
+                  </Dialog.Title>
+                  <Dialog.Close
+                    aria-label="Close command pane"
+                    className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card hover:text-text"
+                  >
+                    <CloseIcon />
+                  </Dialog.Close>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+                  <CommandPane
+                    state={state}
+                    dispatch={dispatch}
+                    canRun={canRun}
+                    onRun={() => {
+                      if (!canRun) return;
+                      requestRun();
+                      setCommandOpen(false);
+                    }}
+                    onAbort={abortRun}
+                  />
+                </div>
+              </Dialog.Popup>
+            </Dialog.Viewport>
+          </Dialog.Portal>
+        </Dialog.Root>
       )}
       <ConnectionsModal
         isOpen={connectionsOpen}
-        onClose={() => setConnectionsOpen(false)}
+        onOpenChange={setConnectionsOpen}
         onRefresh={checkAllReadiness}
+        handle={connectionsDialogHandle}
       />
       <CommandPalette
         open={paletteOpen}
@@ -507,8 +558,13 @@ export default function RSemble() {
           void experimentController?.abort();
         }}
       />
-      <ShortcutCheatsheet open={cheatsheetOpen} onClose={() => setCheatsheetOpen(false)} />
+      <ShortcutCheatsheet
+        open={cheatsheetOpen}
+        onOpenChange={setCheatsheetOpen}
+        handle={cheatsheetDialogHandle}
+      />
     </div>
+    </ModelProbeProvider>
   );
 }
 
@@ -584,11 +640,11 @@ function FocusStrip({
         disabled={!canRun && !state.running}
         aria-label={state.running ? "Stop run" : "Re-run pipeline"}
         title={state.running ? "Stop run" : blockReason ?? "Re-run pipeline"}
-        className={`mt-auto flex h-11 w-11 items-center justify-center rounded-md transition-[transform,background-color] ease-out duration-150 ${
+        className={`pressable mt-auto flex h-11 w-11 items-center justify-center rounded-md ${
           state.running
             ? "bg-error/20 text-error"
             : canRun
-              ? "bg-accent text-on-accent hover:-translate-y-0.5"
+              ? "bg-accent text-on-accent hover-lift"
               : "border border-edge bg-card text-text-secondary opacity-60 cursor-not-allowed"
         }`}
       >
@@ -659,6 +715,8 @@ function CommandPane({
         critic={state.critic}
         models={state.models}
         dispatch={dispatch}
+        reasoningPolicy={state.reasoningPolicy}
+        slots={state.slots}
         judgeInstruction={state.judgeInstruction}
         attachments={state.attachments}
         attachmentsToJudge={state.attachmentsToJudge}
@@ -678,6 +736,11 @@ function CommandPane({
         onAbort={onAbort}
         blockReason={blockReason}
         attachments={state.attachments}
+        mode={state.mode}
+        judge={state.critic}
+        providerIdsBySlug={Object.fromEntries(
+          state.slots.filter((s) => s.enabled).map((s) => [s.slug, s.providerId]),
+        )}
       />
     </div>
   );
@@ -700,8 +763,9 @@ function ResetButton({
   }, [armed]);
   return (
     <button
+      data-geometry="reset-action"
       type="button"
-      aria-disabled={running ? true : undefined}
+      disabled={running}
       onClick={() => {
         if (running) return;
         if (hasRun && !armed) {
@@ -719,9 +783,7 @@ function ResetButton({
             ? "Click again to discard the current run and reset"
             : "Reset session"
       }
-      className={`flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-md border ${
-        armed ? "px-3" : "w-11"
-      } ${
+      className={`pressable relative flex h-11 min-w-[132px] shrink-0 items-center justify-center rounded-md border ${
         running
           ? "cursor-not-allowed border-edge text-text-secondary opacity-50"
           : armed
@@ -729,8 +791,10 @@ function ResetButton({
             : "border-edge text-text-secondary hover:border-edge-bright hover:text-text"
       }`}
     >
-      {armed && <span>Confirm reset</span>}
-      <RotateCcw size={15} />
+      <span className="absolute inset-0 flex items-center justify-center gap-1.5">
+        {armed && <span>Confirm reset</span>}
+        <RotateCcw size={15} />
+      </span>
     </button>
   );
 }
@@ -771,7 +835,7 @@ function NoKeyBanner() {
     <div className="flex shrink-0 items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning">
       <span>
         <span className="font-semibold">No provider connected.</span> Add an API key for any
-        provider (OpenRouter, Gemini, CommandCode, ClinePass, Umans) via the connection status
+        provider (OpenRouter, Gemini, DeepSeek, CommandCode, ClinePass, Umans) via the connection status
         button in the header — or set <code className="rounded bg-warning/10 px-1">VITE_*_KEY</code> in{" "}
         <code className="rounded bg-warning/10 px-1">.env</code> and restart the dev server to enable live runs.
       </span>

@@ -24,13 +24,19 @@ export interface RecordRowProps {
   modelCount?: number;
   source?: string;
   provenance?: string;
+  /** Optional identity slot rendered first on the title line (list variant),
+   *  e.g. a KindEyebrow naming the entity kind (identity spec §5.4). */
+  kind?: ReactNode;
+  /** Optional node rendered after the summary text on the meta line,
+   *  e.g. a ProfileRefChip or latest-experiment mark (identity spec §5.4). */
+  afterSummary?: ReactNode;
   /** When provided, the list variant renders as a link. */
   href?: string;
   /** Trailing action slot (buttons, menus, etc.). */
   children?: ReactNode;
 }
 
-function formatRelativeTime(ts: number): string {
+export function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const sec = Math.round(diff / 1000);
   if (sec < 60) return `${sec}s ago`;
@@ -50,19 +56,42 @@ function Inner({
   modelCount,
   source,
   provenance,
+  kind,
+  afterSummary,
 }: Omit<RecordRowProps, "variant" | "id" | "href" | "children">) {
   return (
-    <>
-      <StatusMark status={status} />
-      <span className="truncate font-mono text-sm text-text">{title}</span>
-      <span className="ml-auto flex items-center gap-3 text-sm text-text-muted tabular-nums">
-        {provenance && <span className="hidden sm:inline">{provenance}</span>}
-        {modelCount != null && <span>{modelCount} models</span>}
-        {source && <span className="uppercase">{source}</span>}
-        {summary && <span className="hidden md:inline">{summary}</span>}
-        <span>{formatRelativeTime(timestamp)}</span>
+    <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+      <span className="flex w-full min-w-0 items-center gap-2">
+        {kind}
+        <StatusMark status={status} />
+        <span className="truncate font-mono text-sm text-text">{title}</span>
       </span>
-    </>
+      {/* The meta line indents under the title (past the status glyph) only
+          when no kind eyebrow is present; with an eyebrow the left edge is
+          the row's anchor, so the meta line aligns flush to it.
+          Below sm the line wraps (Task 14 mobile finding): the afterSummary
+          cluster and the ml-auto models/time cluster are both shrink-0, so
+          at phone widths the time cluster would overshoot the card edge —
+          wrapping drops it to a second meta line instead of clipping. */}
+      <span
+        className={`flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-text-muted tabular-nums ${
+          kind ? "" : "pl-[21px]"
+        }`}
+      >
+        {summary && (
+          <span className="min-w-0 truncate" title={summary}>
+            {summary}
+          </span>
+        )}
+        {afterSummary && <span className="flex shrink-0 items-center gap-1">{afterSummary}</span>}
+        {provenance && <span className="hidden min-w-0 truncate sm:inline">{provenance}</span>}
+        <span className="ml-auto flex shrink-0 items-center gap-3">
+          {modelCount != null && <span>{modelCount} models</span>}
+          {source && <span className="uppercase">{source}</span>}
+          <span>{formatRelativeTime(timestamp)}</span>
+        </span>
+      </span>
+    </span>
   );
 }
 
@@ -95,8 +124,11 @@ export function RecordRow(props: RecordRowProps) {
   }
 
   // list variant
+  // The painted child (link or div) carries the width contract — flex-1 + min-w-0
+  // so it fills the wrapper while long titles truncate instead of expanding the
+  // row (spec §12.2 row geometry; Task 13).
   const className =
-    "flex min-h-[44px] items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-sm transition-colors duration-150 hover:border-edge-bright";
+    "flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-sm transition-colors duration-150 hover:border-edge-bright";
 
   const inner = (
     <Inner {...rest} />
@@ -107,13 +139,14 @@ export function RecordRow(props: RecordRowProps) {
       {href ? (
         <Link
           to={href}
+          data-record-row-surface=""
           className={className}
           aria-label={`Run: ${rest.title}`}
         >
           {inner}
         </Link>
       ) : (
-        <div className={className}>
+        <div data-record-row-surface="" className={className}>
           {inner}
         </div>
       )}

@@ -150,13 +150,13 @@ export function PipelineRail({
                 <span className={`connector-node ${done ? "bg-success" : ""}`} />
                 <span
                   className={`connector-dots w-10 ${active ? "animate-dash-march" : ""}`}
-                  style={active ? { backgroundImage: "radial-gradient(circle, #22d3ee 1.25px, transparent 1.25px)" } : undefined}
+                  style={active ? { backgroundImage: "radial-gradient(circle, #00e5ff 1.25px, transparent 1.25px)" } : undefined}
                 />
                 <span className={`connector-node ${active || done ? "bg-accent" : ""}`} />
               </div>
             )}
             <div
-              className={`flex min-h-[120px] w-[140px] flex-col gap-1.5 rounded-md border bg-card p-3 transition-[border-color,opacity] ease-out duration-150 ${
+              className={`motion-state flex min-h-[120px] w-[140px] flex-col gap-1.5 rounded-md border bg-card p-3 ${
                 active
                   ? "border-accent glow-accent"
                   : done
@@ -169,17 +169,22 @@ export function PipelineRail({
               }`}
             >
               <div className="flex items-center justify-between">
-                {active ? (
-                  <Loader2 size={14} className="animate-spin-ease text-accent" />
-                ) : done ? (
-                  <Check size={14} className="text-success" />
-                ) : errored ? (
-                  <AlertCircle size={14} className="text-error" />
-                ) : (
-                  <span className={`font-mono text-xs tabular-nums ${highlighted ? "text-accent" : "text-text-muted"}`}>
-                    {i + 1}
-                  </span>
-                )}
+                <span
+                  data-stage-status-icon=""
+                  className="flex size-4 shrink-0 items-center justify-center"
+                >
+                  {active ? (
+                    <Loader2 size={14} className="animate-spin-ease text-accent" />
+                  ) : done ? (
+                    <Check size={14} className="text-success" />
+                  ) : errored ? (
+                    <AlertCircle size={14} className="text-error" />
+                  ) : (
+                    <span className={`font-mono text-xs tabular-nums ${highlighted ? "text-accent" : "text-text-muted"}`}>
+                      {i + 1}
+                    </span>
+                  )}
+                </span>
                 <def.icon size={16} className={highlighted ? (done ? "text-success" : errored ? "text-error" : "text-accent") : "text-text-muted"} />
               </div>
               <span className={`text-sm font-semibold ${highlighted ? "text-text" : "text-text-secondary"}`}>

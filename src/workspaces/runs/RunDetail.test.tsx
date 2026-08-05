@@ -37,6 +37,7 @@ function cleanup(h: Harness) {
 afterEach(() => {
   document.body.innerHTML = "";
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 // --- Test fixtures ------------------------------------------------------------
@@ -204,11 +205,88 @@ describe("RunDetail", () => {
     cleanup(h);
   });
 
+  it("renders start and completion semantic times, terminal age, duration, and timezone", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    const header = h.$("[data-section='header']")!;
+    expect(header.querySelector('time[data-time="started"]')).not.toBeNull();
+    expect(header.querySelector('time[data-time="completed"]')).not.toBeNull();
+    expect(header.textContent).toContain("Duration 1m 00s");
+    expect(header.textContent).toContain(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    cleanup(h);
+  });
+
+  it("uses Ended for a failed record with a completion timestamp", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord({ status: "failed" })} />);
+    const header = h.$("[data-section='header']")!;
+    expect(header.textContent).toContain("Ended");
+    expect(header.querySelector('time[data-time="completed"]')).not.toBeNull();
+    cleanup(h);
+  });
+
+  it("shows running duration without fabricating completion", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1716048045000);
+    const h = renderWithRouter(<RunDetail record={makeFullRecord({ status: "running", completedAt: null })} />);
+    const header = h.$("[data-section='header']")!;
+    expect(header.textContent).toContain("Running for 45s");
+    expect(header.querySelector('time[data-time="completed"]')).toBeNull();
+    expect(header.textContent).not.toContain("Completed");
+    cleanup(h);
+  });
+
+  it("renders start-only semantics for older records without completedAt", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord({ status: "interrupted", completedAt: null })} />);
+    const header = h.$("[data-section='header']")!;
+    expect(header.querySelector('time[data-time="started"]')).not.toBeNull();
+    expect(header.querySelector('time[data-time="completed"]')).toBeNull();
+    expect(header.textContent).not.toContain("Duration");
+    cleanup(h);
+  });
+
   it("candidate section shows blind label mapping", () => {
     const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
     const text = h.container.textContent ?? "";
     // Blind label A appears, mapped to the candidate
     expect(text).toContain("A");
+    cleanup(h);
+  });
+
+  it("reused candidates link to the source run evidence (spec §11.4)", () => {
+    const record = makeFullRecord({
+      candidates: [{
+        candidateId: "c1",
+        slotId: "s1",
+        modelKey: "openrouter:gpt-4o",
+        providerId: "openrouter",
+        model: "GPT-4o",
+        slug: "gpt-4o",
+        acceptedAttemptId: "att-1",
+        attempts: [{
+          attemptId: "att-1",
+          messages: [{ role: "user", content: "Sort the list" }],
+          startedAt: 1716048000000,
+          finishedAt: 1716048030000,
+          status: "completed" as const,
+          output: "def bubble_sort(arr):\n    return sorted(arr)",
+          tokensIn: 15,
+          tokensOut: 30,
+          error: null,
+          // Compound-repair provenance: copied from an earlier immutable run.
+          reusedFrom: {
+            sourceRunId: "run-base-1",
+            sourceCandidateId: "cand-orig",
+            sourceAttemptId: "att-orig",
+          },
+        }],
+      }],
+    });
+    const h = renderWithRouter(<RunDetail record={record} />);
+    const reused = h.$("[data-reused-from]");
+    expect(reused).not.toBeNull();
+    expect(reused?.textContent).toContain("Reused from prior attempt");
+    const link = reused?.querySelector("a");
+    expect(link?.getAttribute("href")).toBe("/runs/run-base-1");
+    expect(link?.textContent).toContain("View source run");
     cleanup(h);
   });
 
@@ -238,6 +316,103 @@ describe("RunDetail", () => {
     if (disclosure) {
       expect(disclosure.getAttribute("aria-expanded")).toBe("false");
     }
+    cleanup(h);
+  });
+
+  it("shows stage cost breakdown with source badges and incremental total", () => {
+    const record = makeFullRecord({
+      candidates: [
+        {
+          candidateId: "c1",
+          slotId: "s1",
+          modelKey: "openrouter:gpt-4o",
+          providerId: "openrouter",
+          model: "GPT-4o",
+          slug: "gpt-4o",
+          acceptedAttemptId: "att-1",
+          attempts: [{
+            attemptId: "att-1",
+            messages: [{ role: "user", content: "Sort the list" }],
+            startedAt: 1716048000000,
+            finishedAt: 1716048030000,
+            status: "completed" as const,
+            output: "def bubble_sort(arr):\n    return sorted(arr)",
+            tokensIn: 15,
+            tokensOut: 30,
+            error: null,
+            cost: { usd: 0.000123, source: "provider-reported" },
+          }],
+        },
+        {
+          candidateId: "c2",
+          slotId: "s2",
+          modelKey: "umans:claude-opus",
+          providerId: "umans",
+          model: "Claude Opus",
+          slug: "claude-opus",
+          acceptedAttemptId: "att-reused",
+          attempts: [{
+            attemptId: "att-reused",
+            messages: [{ role: "user", content: "x" }],
+            startedAt: 1716048000000,
+            finishedAt: 1716048030000,
+            status: "completed" as const,
+            output: "reused",
+            tokensIn: 10,
+            tokensOut: 20,
+            error: null,
+            reusedFrom: { sourceRunId: "run-base", sourceCandidateId: "cand-x", sourceAttemptId: "att-x" },
+          }],
+        },
+      ],
+      judge: {
+        status: "done",
+        acceptedAttemptId: "judge-att-1",
+        report: {
+          labelMap: [{ label: "A", candidateId: "c1" }],
+          evaluationsById: { c1: { candidateId: "c1", blindLabel: "A", overallScore: 4.5, position: "First", rationale: "Good", strengths: [], deductions: [], missedRequirements: [], criterionScores: [] } },
+          comparisons: [],
+        },
+        consensus: null,
+        attempts: [{
+          attemptId: "judge-att-1",
+          providerId: "openrouter",
+          model: "judge-model",
+          instruction: "Evaluate",
+          messages: [{ role: "user", content: "Evaluate" }],
+          blindLabelToCandidateId: { A: "c1" },
+          candidateAttemptIdsByCandidateId: { c1: "att-1" },
+          startedAt: 1716048030000,
+          finishedAt: 1716048050000,
+          status: "completed",
+          error: null,
+          report: null,
+          consensus: null,
+          cost: { usd: 0.000321, source: "provider-reported" },
+        }],
+      },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    });
+    const h = renderWithRouter(<RunDetail record={record} />);
+    const costSection = h.$("[data-section='cost-breakdown']");
+    expect(costSection).not.toBeNull();
+    expect(costSection?.textContent).toContain("openrouter:gpt-4o");
+    expect(costSection?.textContent).toContain("Judge");
+    expect(costSection?.textContent).toContain("provider-reported");
+    // Reused candidate is NOT charged again.
+    expect(costSection?.textContent).not.toContain("claude-opus");
+    const total = costSection?.querySelector("[data-cost-total]");
+    expect(total?.textContent).toContain("0.000444");
+    cleanup(h);
+  });
+
+  it("shows provider-default for imported records without reasoning provenance", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    const disclosure = h.$("[data-section='task-config'] button")!;
+    act(() => disclosure.click());
+    const provenance = h.$("[data-reasoning-provenance]");
+    expect(provenance?.textContent).toContain("requested provider-default");
+    expect(provenance?.textContent).toContain("effective provider-default");
     cleanup(h);
   });
 

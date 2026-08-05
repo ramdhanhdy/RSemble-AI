@@ -86,12 +86,32 @@ async function probeProvider(
     if (!provider.listModels) {
       return { id: provider.id, readiness, catalog: [] };
     }
-    const catalog = await runAbortableStage(
-      () => provider.listModels!(ctrl.signal),
-      ctrl,
-      timeoutMs,
-    );
-    return { id: provider.id, readiness, catalog };
+    try {
+      const catalog = await runAbortableStage(
+        () => provider.listModels!(ctrl.signal),
+        ctrl,
+        timeoutMs,
+      );
+      return { id: provider.id, readiness, catalog };
+    } catch (err) {
+      // Catalog stage failed after readiness already succeeded. Keep the
+      // readiness bit so an unused/slow catalog does not flip the provider
+      // offline mid-run; still surface the catalog error for the banner.
+      const reason =
+        err instanceof ProbeTimeoutError
+          ? "Provider probe timed out"
+          : err instanceof DOMException && err.name === "AbortError"
+            ? "Provider probe aborted"
+            : err instanceof Error
+              ? err.message
+              : String(err);
+      return {
+        id: provider.id,
+        readiness,
+        catalog: [],
+        error: reason,
+      };
+    }
   } catch (err) {
     const reason =
       err instanceof ProbeTimeoutError
@@ -134,15 +154,21 @@ export async function probeAllProviders(
   });
 }
 
+export type ProbeCycleResult =
+  | { status: "completed"; results: ProviderProbeResult[] }
+  | { status: "cancelled" };
+
 export interface ProviderProbeCoordinator {
-  run(signal?: AbortSignal, timeoutMs?: number): Promise<ProviderProbeResult[]>;
+  run(signal?: AbortSignal, timeoutMs?: number): Promise<ProbeCycleResult>;
   abort(): void;
 }
 
 /** Single-flight wrapper so a slow polling cycle cannot overlap the next tick. */
 export function createProviderProbeCoordinator(): ProviderProbeCoordinator {
-  let inFlight: Promise<ProviderProbeResult[]> | null = null;
+  let inFlight: Promise<ProbeCycleResult> | null = null;
   let activeCtrl: AbortController | null = null;
+  /** True once abort() is called for the active cycle — wins over partial results. */
+  let cycleCancelled = false;
 
   return {
     run(signal?: AbortSignal, timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -150,18 +176,40 @@ export function createProviderProbeCoordinator(): ProviderProbeCoordinator {
 
       const ctrl = new AbortController();
       activeCtrl = ctrl;
-      const forwardAbort = () => ctrl.abort();
+      cycleCancelled = false;
+      const forwardAbort = () => {
+        cycleCancelled = true;
+        ctrl.abort();
+      };
       signal?.addEventListener("abort", forwardAbort, { once: true });
-      if (signal?.aborted) ctrl.abort();
+      if (signal?.aborted) {
+        cycleCancelled = true;
+        ctrl.abort();
+      }
 
-      inFlight = probeAllProviders(ctrl.signal, timeoutMs).finally(() => {
-        signal?.removeEventListener("abort", forwardAbort);
-        if (activeCtrl === ctrl) activeCtrl = null;
-        inFlight = null;
-      });
+      inFlight = (async (): Promise<ProbeCycleResult> => {
+        try {
+          const results = await probeAllProviders(ctrl.signal, timeoutMs);
+          if (cycleCancelled || ctrl.signal.aborted) {
+            return { status: "cancelled" };
+          }
+          return { status: "completed", results };
+        } catch {
+          if (cycleCancelled || ctrl.signal.aborted) {
+            return { status: "cancelled" };
+          }
+          throw new Error("Provider probe cycle failed unexpectedly");
+        } finally {
+          signal?.removeEventListener("abort", forwardAbort);
+          if (activeCtrl === ctrl) activeCtrl = null;
+          inFlight = null;
+          cycleCancelled = false;
+        }
+      })();
       return inFlight;
     },
     abort() {
+      cycleCancelled = true;
       activeCtrl?.abort();
     },
   };

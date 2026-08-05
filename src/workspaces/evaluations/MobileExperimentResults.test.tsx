@@ -10,6 +10,7 @@ import type {
   ExperimentAggregation,
   MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
+import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
 import type {
   PersistedCandidate,
@@ -251,7 +252,77 @@ describe("MobileExperimentResults — evidence links (plan 7.3 #4)", () => {
   });
 });
 
-// --- 5/6. 390px layout discipline -----------------------------------------------------
+// --- 7. Recovery actions (spec §11.1) ---------------------------------------------------
+
+describe("MobileExperimentResults — recovery actions (spec §11.1)", () => {
+  const PLAN_C: CompoundRepairPlan = {
+    taskId: "t2",
+    baseRunId: "run-2",
+    requestedModelKeys: [KEY_C],
+    reusedModelKeys: [KEY_A, KEY_B],
+    candidateCalls: 1,
+    judgeCalls: 1,
+  };
+  const REPAIRABLE = new Map([["t2", new Map([[KEY_C, PLAN_C]])]]);
+
+  function renderWithRecovery(
+    onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined = vi.fn(),
+  ): Harness {
+    return renderWithRouter(
+      <MobileExperimentResults
+        aggregation={BASE}
+        tasks={TASKS}
+        modelSlots={SLOTS}
+        runRecords={RECORDS}
+        repairablePlans={REPAIRABLE}
+        onRepairRequest={onRepairRequest}
+      />,
+      ["/experiments/exp-1"],
+    );
+  }
+
+  it("shows Complete missing result on repairable cells and Retry incomplete task otherwise", () => {
+    const h = renderWithRecovery();
+    switchModel(h, KEY_C);
+    const rows = h.$$("li");
+    expect(rows[1].querySelector("button")?.textContent).toContain("Complete missing result");
+    expect(rows[2].querySelector("button")?.textContent).toContain("Retry incomplete task");
+    cleanup(h);
+  });
+
+  it("clicking a cell action reports the exact task and model key", () => {
+    const onRepairRequest = vi.fn();
+    const h = renderWithRecovery(onRepairRequest);
+    switchModel(h, KEY_C);
+    const rows = h.$$("li");
+    act(() => (rows[1].querySelector("button") as HTMLButtonElement).click());
+    expect(onRepairRequest).toHaveBeenCalledWith("t2", KEY_C);
+    act(() => (rows[2].querySelector("button") as HTMLButtonElement).click());
+    expect(onRepairRequest).toHaveBeenCalledWith("t3", KEY_C);
+    cleanup(h);
+  });
+
+  it("keeps 44px action targets and never nests links inside buttons", () => {
+    const h = renderWithRecovery();
+    switchModel(h, KEY_C);
+    const rows = h.$$("li");
+    const action = rows[1].querySelector("button") as HTMLButtonElement;
+    expect(action.className).toContain("min-h-[44px]");
+    expect(action.className).toContain("focus-visible:ring-2");
+    expect(action.className).toContain("focus-visible:ring-accent");
+    expect(rows[1].querySelector("a button")).toBeNull();
+    expect(rows[1].querySelector("button a")).toBeNull();
+    cleanup(h);
+  });
+
+  it("renders no action buttons when no recovery handler is wired", () => {
+    const h = renderMobile();
+    switchModel(h, KEY_C);
+    expect(h.$$("button")).toHaveLength(0);
+    cleanup(h);
+  });
+});
+
 
 describe("MobileExperimentResults — 390px layout (plan 7.3 #5, #6)", () => {
   it("has no horizontal scrolling and no fixed widths above 390px", () => {
@@ -276,6 +347,84 @@ describe("MobileExperimentResults — 390px layout (plan 7.3 #5, #6)", () => {
     // inset so the surface stays clear of the fixed nav even when mounted
     // outside the app shell's own clearance wrapper.
     expect(root.getAttribute("class") ?? "").toContain("pb-[calc(56px+env(safe-area-inset-bottom))]");
+    cleanup(h);
+  });
+});
+
+describe("MobileExperimentResults — large-suite paging (Task 14)", () => {
+  function bigAggregation(taskCount: number): ExperimentAggregation {
+    const taskIds = Array.from({ length: taskCount }, (_, i) => `t${i + 1}`);
+    return {
+      taskIds,
+      modelKeys: [KEY_A],
+      cells: taskIds.map((_id, i) => [scored(4, `run-${i}`)]),
+      models: [{ modelKey: KEY_A, mean: 4, scoredTasks: taskCount, totalTasks: taskCount, complete: true }],
+      winnerKeys: [KEY_A],
+    };
+  }
+
+  const BIG_TASKS: EvaluationTask[] = Array.from({ length: 250 }, (_, i) => ({
+    id: `t${i + 1}`,
+    title: `Task ${i + 1}`,
+    prompt: `p${i + 1}`,
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: i,
+  }));
+
+  function bigRecords(): ReadonlyMap<string, RunRecordV2> {
+    const map = new Map<string, RunRecordV2>();
+    for (let i = 0; i < 250; i++) map.set(`run-${i}`, makeRunRecord(`run-${i}`));
+    return map;
+  }
+
+  it("mounts 50 cards or fewer on page one of 250", () => {
+    const h = renderWithRouter(
+      <MobileExperimentResults
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={[SLOTS[0]]}
+        runRecords={bigRecords()}
+      />,
+    );
+    const cards = h.$$("li");
+    expect(cards.length).toBeLessThanOrEqual(50);
+    expect(cards.length).toBeGreaterThan(0);
+    cleanup(h);
+  });
+
+  it("pages with range text and mounts 50 cards on page two", () => {
+    const h = renderWithRouter(
+      <MobileExperimentResults
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={[SLOTS[0]]}
+        runRecords={bigRecords()}
+      />,
+    );
+    expect(h.container.textContent ?? "").toContain("1–50 of 250");
+    const next = h.$$("button").find((b) => b.getAttribute("aria-label") === "Next page")!;
+    act(() => next.click());
+    expect(h.$$("li")).toHaveLength(50);
+    expect(h.container.textContent ?? "").toContain("51–100 of 250");
+    cleanup(h);
+  });
+
+  it("introduces no page-level horizontal overflow", () => {
+    const h = renderWithRouter(
+      <MobileExperimentResults
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={[SLOTS[0]]}
+        runRecords={bigRecords()}
+      />,
+    );
+    const root = h.container.firstElementChild as HTMLElement;
+    const cls = root.getAttribute("class") ?? "";
+    // No class that would force horizontal overflow; the list truncates.
+    expect(cls).not.toContain("overflow-x-auto");
+    expect(cls).not.toContain("w-screen");
     cleanup(h);
   });
 });

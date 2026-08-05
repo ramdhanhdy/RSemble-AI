@@ -145,6 +145,29 @@ async function appendVersion(
 // --- Tests -------------------------------------------------------------------
 
 describe("ProfileList", () => {
+  it("shows the rubric kind eyebrow and reusable status, not completed", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedProfile(repo, "p-1", "Quality");
+    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Rubric");
+    expect(text).toContain("Reusable");
+    expect(text).not.toContain("Completed");
+    cleanup(h);
+  });
+
+  it("previews the first criterion name and counts the rest", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedProfile(repo, "p-1", "Quality", 3);
+    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Criterion 1");
+    expect(text).toContain("+2 more");
+    cleanup(h);
+  });
+
   it("lists latest revisions and rows link to /evaluations/profiles/:id", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedProfile(repo, "p-1", "Quality");
@@ -180,6 +203,17 @@ describe("ProfileList", () => {
     expect(h.container.textContent).toMatch(/No profiles yet/i);
     const createBtn = h.$("button[data-action='create-profile']");
     expect(createBtn).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("empty state cross-links suites so first-run users learn the split", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await settle();
+    const link = h.$("a[href='/evaluations']");
+    expect(link).toBeTruthy();
+    expect(link?.textContent).toContain("Suites");
+    expect(h.container.textContent).toMatch(/pin profiles to score their tasks/i);
     cleanup(h);
   });
 

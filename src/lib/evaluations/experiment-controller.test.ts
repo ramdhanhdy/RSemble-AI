@@ -32,6 +32,9 @@ import type { RunExecutor, RunExecutorEvents, RunRequest } from "../run-executor
 import { candidateIdForSlot } from "../pipeline";
 import type { JudgeReport } from "../../studio-data";
 import type { ModelSlot } from "../../studio-data";
+import { StorageError } from "../persistence/database";
+import { rotateExperimentRoster } from "./experiment-roster-extension";
+import { createExperimentRecord } from "./experiment-engine";
 
 // --- Fixtures -------------------------------------------------------------------
 
@@ -575,6 +578,93 @@ describe("experiment-controller — retry incomplete tasks", () => {
     expect(taskIds(h.executor)).toEqual(["t1", "t2", "t2"]);
     expect(experiment!.status).toBe("completed");
   });
+
+  it("partial attempts persist scored-model coverage so selection prefers higher coverage", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t2"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const result = await h.controller.start("suite-1");
+    expect(result.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    let experiment = await h.evalRepo.getExperiment(result.ok ? result.experimentId : "");
+    const t2 = experiment!.tasks[1];
+    // t2 was partial: one candidate failed → 1/2 scored coverage persisted.
+    expect(t2.attempts[0].status).toBe("partial");
+    expect(t2.attempts[0].coverage).toBeTruthy();
+    expect(t2.attempts[0].coverage!.totalModels).toBe(2);
+    expect(t2.attempts[0].coverage!.scoredModelKeys).toHaveLength(1);
+
+    // Retry succeeds → full coverage. The new attempt must be selected.
+    h.executor.behavior = () => ({ kind: "success" });
+    const retried = await h.controller.retryIncomplete(result.ok ? result.experimentId : "");
+    expect(retried.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    experiment = await h.evalRepo.getExperiment(result.ok ? result.experimentId : "");
+    const t2After = experiment!.tasks[1];
+    expect(t2After.attempts).toHaveLength(2);
+    expect(t2After.attempts[1].status).toBe("completed");
+    expect(t2After.attempts[1].coverage!.scoredModelKeys).toHaveLength(2);
+    // Completed full coverage wins selection.
+    expect(t2After.selectedAttemptId).toBe(t2After.attempts[1].id);
+  });
+
+  it("retry executes against the immutable snapshot, never the edited live suite", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t2"
+          ? { kind: "judge-fails" }
+          : { kind: "success" },
+    });
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const result = await h.controller.start("suite-1");
+    expect(result.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // Edit the live suite AFTER the experiment ran: new model roster,
+    // renamed tasks, changed judge. Retry must NOT see any of this.
+    const liveSuite = (await h.evalRepo.getSuite("suite-1"))!;
+    await h.evalRepo.saveSuite(
+      {
+        ...liveSuite,
+        revision: liveSuite.revision + 1,
+        version: 2,
+        modelSlots: [makeSlot("s9", "edited-model")],
+        defaultJudge: { providerId: "gemini", model: "edited-judge" },
+        tasks: liveSuite.tasks.map((t) => ({ ...t, title: `EDITED ${t.title}` })),
+      },
+      liveSuite.revision,
+    );
+
+    // Switch behavior so the retry succeeds.
+    h.executor.behavior = () => ({ kind: "success" });
+
+    const retried = await h.controller.retryIncomplete(result.ok ? result.experimentId : "");
+    expect(retried.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // The retry executor request must carry the SNAPSHOT roster and judge,
+    // not the edited live suite.
+    const retryCalls = h.executor.calls.filter((c) => c.source.kind === "experiment" && c.source.taskId === "t2");
+    const lastCall = retryCalls[retryCalls.length - 1];
+    expect(lastCall).toBeTruthy();
+    // Snapshot roster: s1/m1 + s2/m2 — NOT the edited s9/edited-model.
+    expect(lastCall.slots.map((s) => s.slug)).toEqual(["m1", "m2"]);
+    // Snapshot judge — NOT the edited gemini/edited-judge.
+    expect(lastCall.critic).toEqual({ providerId: "openrouter", model: "judge-model" });
+    // Snapshot task text — NOT the EDITED title/prompt.
+    expect(lastCall.task.prompt).toBe("Prompt for t2");
+    // The retry executor source labels the snapshot version, not v2.
+    expect(lastCall.source.kind).toBe("experiment");
+    if (lastCall.source.kind === "experiment") {
+      expect(lastCall.source.suiteVersion).toBe(1);
+    }
+  });
 });
 
 describe("experiment-controller — execution ownership", () => {
@@ -908,5 +998,616 @@ describe("experiment-controller — reload and recovery", () => {
     const final = await h.evalRepo.getExperiment("exp-committed");
     expect(final!.status).toBe("completed");
     expect(final!.tasks[0].attempts).toHaveLength(1);
+  });
+});
+
+describe("experiment-controller — repairMissingCells ownership and release (Task 11)", () => {
+  it("releases owner and lease after repairMissingCells planner rejection", async () => {
+    const h = makeHarness();
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    // Attempt repair with invalid/unknown task id -> planner rejection.
+    const res = await h.controller.repairMissingCells(expId, { taskId: "unknown-task", modelKeys: ["openrouter:m1"] });
+    expect(res.ok).toBe(false);
+
+    // Execution owner and lease must be released.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("releases owner and lease after repairMissingCells success", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    // Switch executor behavior to success for repair.
+    h.executor.behavior = () => ({ kind: "success" });
+
+    // Repair the missing cell on t1.
+    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // Execution owner and lease must be released after completion.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("pause during a repair defers to the boundary and never leaks ownership", async () => {
+    let controllerRef: Harness["controller"] | null = null;
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+      midTask: (request) => {
+        // Pause as soon as the REPAIR task begins (repairs carry
+        // candidateExecution). Never pause the initial run.
+        if (request.candidateExecution) {
+          void controllerRef?.requestPause();
+        }
+      },
+    });
+    controllerRef = h.controller;
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    h.executor.behavior = () => ({ kind: "success" });
+    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // A single repair drains the queue: pause during the last task defers to
+    // the boundary and the run completes. The record is never left "running"
+    // without an owner.
+    const after = await h.evalRepo.getExperiment(expId);
+    expect(after!.status).toBe("completed");
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("persistence failure during a repair stops before another paid call and releases ownership", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+    const callsBefore = h.executor.calls.length;
+
+    // Fail the repair's commit (after run writes succeed, experiment write fails).
+    let tx = 0;
+    const originalCommit = h.store.runInTransaction.bind(h.store);
+    h.store.runInTransaction = async (fn) => {
+      tx += 1;
+      if (tx === 2) h.store.failAfterWrites = 0;
+      return originalCommit(fn);
+    };
+
+    h.executor.behavior = () => ({ kind: "success" });
+    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // The repair executor call happened but no second paid task ran.
+    expect(h.executor.calls.length).toBe(callsBefore + 1);
+    // Ownership released so the user can act again.
+    expect(h.owner.get()).toBeNull();
+  });
+
+  it("a rejecting runRepo.get during planning releases lease and owner", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    const suite = makeSuite(["t1"]);
+    await seedSuite(h, suite);
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    // Storage degradation: run record loads reject during repair planning.
+    const originalGet = h.runRepo.get.bind(h.runRepo);
+    h.runRepo.get = async () => {
+      throw new Error("storage unavailable");
+    };
+    try {
+      const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toMatch(/storage unavailable/i);
+    } finally {
+      h.runRepo.get = originalGet;
+    }
+
+    // Lease and owner must be released despite the rejection.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+});
+
+// =============================================================================
+// Roster extension — addModelAndRun (plan 001, D4)
+// =============================================================================
+
+const EXT_SLOT: ModelSlot = {
+  id: "slot-new",
+  providerId: "deepseek",
+  provider: "DeepSeek",
+  model: "deepseek-chat",
+  slug: "deepseek-chat",
+  enabled: true,
+};
+const EXT_KEY = "deepseek:deepseek-chat";
+
+describe("experiment-controller — addModelAndRun (roster extension)", () => {
+  it("executes only the added model per task and reuses accepted outputs (compound)", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1", "t2", "t3"]));
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+    const original = await h.evalRepo.getExperiment(expId);
+    const originalFp = original!.protocolFingerprint;
+    expect(h.executor.calls).toHaveLength(3);
+
+    const res = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // One extension request per task, in snapshot order; each executes ONLY
+    // the added model against two seeded reused candidates.
+    expect(h.executor.calls).toHaveLength(6);
+    const extCalls = h.executor.calls.slice(3);
+    expect(taskIds(h.executor)).toEqual(["t1", "t2", "t3", "t1", "t2", "t3"]);
+    for (const call of extCalls) {
+      expect(call.slots).toHaveLength(3); // rotated roster
+      expect(call.candidateExecution).toBeDefined();
+      expect(call.candidateExecution!.executeModelKeys).toEqual([EXT_KEY]);
+      expect(call.candidateExecution!.seededCandidates).toHaveLength(2);
+      if (call.source.kind !== "experiment") throw new Error("expected experiment source");
+      expect(call.source.repair).toEqual({
+        kind: "roster-extension",
+        addedModelKey: EXT_KEY,
+        baseRunId: expect.any(String),
+      });
+    }
+
+    // Snapshot rotated: one appended slot, history entry, rotated fingerprint
+    // on both snapshot and record; suite identity unchanged.
+    const after = await h.evalRepo.getExperiment(expId);
+    expect(after!.snapshot.modelSlots).toHaveLength(3);
+    expect(after!.snapshot.modelSlots[2].id).toBe(EXT_SLOT.id);
+    expect(after!.rosterExtensions).toHaveLength(1);
+    expect(after!.rosterExtensions![0].addedModelKey).toBe(EXT_KEY);
+    expect(after!.rosterExtensions![0].priorFingerprint).toBe(originalFp);
+    expect(after!.protocolFingerprint).not.toBe(originalFp);
+    expect(after!.protocolFingerprint).toBe(after!.snapshot.protocolFingerprint);
+    expect(after!.suiteId).toBe("suite-1");
+    expect(after!.suiteVersion).toBe(1);
+
+    // Every task gained one extension attempt; the completed full-coverage
+    // extension attempt becomes selected.
+    for (const task of after!.tasks) {
+      expect(task.attempts).toHaveLength(2);
+      expect(task.attempts[1].status).toBe("completed");
+      expect(task.selectedAttemptId).toBe(task.attempts[1].id);
+      expect(task.attempts[1].repair).toMatchObject({ kind: "roster-extension", addedModelKey: EXT_KEY });
+    }
+    expect(after!.status).toBe("completed");
+    expect(after!.execution).toBeNull();
+
+    // Extension runs carry the rotated fingerprint + provenance.
+    const extRun = await h.runRepo.get(after!.tasks[0].attempts[1].runId!);
+    if (extRun!.source.kind !== "experiment") throw new Error("expected experiment source");
+    expect(extRun!.source.protocolFingerprint).toBe(after!.protocolFingerprint);
+    expect(extRun!.source.repair!.kind).toBe("roster-extension");
+
+    // Ownership fully released.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("retries a failed added-model run with the same targeted extension plan", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    // Reproduce the reported workflow: start from completed Results, add one
+    // model, then let the fresh Judge stage fail after the paid model call.
+    h.executor.behavior = (request) =>
+      request.source.kind === "experiment" && request.source.repair?.kind === "roster-extension"
+        ? { kind: "judge-fails" }
+        : { kind: "success" };
+    const extension = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(extension.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    const failed = await h.evalRepo.getExperiment(expId);
+    const failedAttempts = failed!.tasks[0].attempts;
+    const failedAttempt = failedAttempts[failedAttempts.length - 1];
+    expect(failedAttempt.status).toBe("failed");
+    expect(failedAttempt.repair).toMatchObject({
+      kind: "roster-extension",
+      addedModelKey: EXT_KEY,
+      baseRunId: expect.any(String),
+    });
+    // The prior completed evidence remains selected until retry succeeds.
+    expect(failed!.tasks[0].selectedAttemptId).toBe(failed!.tasks[0].attempts[0].id);
+
+    // This is the controller action used by Retry on the Results page. It
+    // must preserve the roster-extension plan instead of falling back to a
+    // duplicate add or a full original-roster retry.
+    h.executor.behavior = () => ({ kind: "success" });
+    const retry = await h.controller.retryIncomplete(expId);
+    expect(retry.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    const retryCall = h.executor.calls[h.executor.calls.length - 1];
+    expect(retryCall.candidateExecution?.executeModelKeys).toEqual([EXT_KEY]);
+    if (retryCall.source.kind !== "experiment") throw new Error("expected experiment source");
+    expect(retryCall.source.repair).toEqual(failedAttempt.repair);
+
+    const recovered = await h.evalRepo.getExperiment(expId);
+    const recoveredAttempts = recovered!.tasks[0].attempts;
+    const recoveredAttempt = recoveredAttempts[recoveredAttempts.length - 1];
+    expect(recoveredAttempt.status).toBe("completed");
+    expect(recovered!.tasks[0].selectedAttemptId).toBe(recoveredAttempt.id);
+    expect(recovered!.status).toBe("completed");
+  });
+
+  it("falls back to a full-roster attempt for a task with no reusable evidence", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t2" && !request.source.repair
+          ? { kind: "judge-fails" }
+          : { kind: "success" },
+    });
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    const res = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // t1 compound (candidateExecution + baseRunId), t2 full-roster fallback
+    // (no candidateExecution, no baseRunId) over the rotated 3-slot roster.
+    expect(h.executor.calls).toHaveLength(4);
+    const [t1Ext, t2Ext] = h.executor.calls.slice(2);
+    expect(t1Ext.candidateExecution).toBeDefined();
+    expect(t1Ext.candidateExecution!.executeModelKeys).toEqual([EXT_KEY]);
+    if (t1Ext.source.kind !== "experiment") throw new Error("expected experiment source");
+    expect(t1Ext.source.repair).toMatchObject({ kind: "roster-extension", baseRunId: expect.any(String) });
+
+    expect(t2Ext.candidateExecution).toBeUndefined();
+    expect(t2Ext.slots).toHaveLength(3);
+    if (t2Ext.source.kind !== "experiment") throw new Error("expected experiment source");
+    expect(t2Ext.source.repair).toEqual({ kind: "roster-extension", addedModelKey: EXT_KEY });
+
+    // Both tasks end complete with the extension attempt selected.
+    const after = await h.evalRepo.getExperiment(expId);
+    expect(after!.status).toBe("completed");
+    for (const task of after!.tasks) {
+      expect(task.attempts[1].status).toBe("completed");
+      expect(task.selectedAttemptId).toBe(task.attempts[1].id);
+    }
+    // The fallback attempt carries full-rotated-roster evidence: every model
+    // key scored, including the added one.
+    const t2Run = await h.runRepo.get(after!.tasks[1].attempts[1].runId!);
+    expect(t2Run!.candidates.map((c) => c.modelKey)).toContain(EXT_KEY);
+    expect(h.owner.get()).toBeNull();
+  });
+
+  it("rejects duplicates, non-terminal records, invalid slots, and ownership conflicts before any paid call", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+    const callsBefore = h.executor.calls.length;
+
+    // Duplicate of a roster key.
+    const dup = await h.controller.addModelAndRun(expId, { slot: makeSlot("sx", "m1") });
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.error).toMatch(/already/i);
+
+    // Disabled slot.
+    const disabled = await h.controller.addModelAndRun(expId, { slot: { ...EXT_SLOT, enabled: false } });
+    expect(disabled.ok).toBe(false);
+
+    // Lease held by another tab.
+    h.leaseStore.lease = { ownerId: "other-tab", fence: 9, expiresAt: h.now() + 60_000 };
+    const leased = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(leased.ok).toBe(false);
+    if (!leased.ok) expect(leased.error).toMatch(/another tab/i);
+    h.leaseStore.lease = null;
+
+    // In-tab owner held by another execution.
+    expect(h.owner.tryAcquire({ kind: "compare", id: "cmp-x" })).toBe(true);
+    const owned = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(owned.ok).toBe(false);
+    if (!owned.ok) expect(owned.error).toMatch(/another execution/i);
+    h.owner.release("cmp-x");
+
+    // Stale experiment CAS — no paid call, ownership released.
+    const originalUpdate = h.evalRepo.updateExperiment.bind(h.evalRepo);
+    h.evalRepo.updateExperiment = async () => {
+      throw new StorageError("conflict", "Stale revision: expected 1, got 2");
+    };
+    try {
+      const stale = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+      expect(stale.ok).toBe(false);
+      if (!stale.ok) expect(stale.error).toMatch(/stale/i);
+    } finally {
+      h.evalRepo.updateExperiment = originalUpdate;
+    }
+
+    // No executor request was issued by any rejection.
+    expect(h.executor.calls.length).toBe(callsBefore);
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+  it("rejects a non-terminal experiment", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+    const running: ExperimentRecord = {
+      ...createExperimentRecord({ id: "exp-running", suite: makeSuite(["t1"]), profiles: [], now: h.now() }),
+      status: "running",
+      execution: { ownerId: "some-tab", fence: 1 },
+    };
+    await h.evalRepo.createExperiment(running);
+    const callsBefore = h.executor.calls.length;
+    const res = await h.controller.addModelAndRun("exp-running", { slot: EXT_SLOT });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/terminal/i);
+    expect(h.executor.calls.length).toBe(callsBefore);
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("pause stops at the task boundary and resume continues without re-executing committed tasks", async () => {
+    let controllerRef: Harness["controller"] | null = null;
+    const h = makeHarness({
+      midTask: (request) => {
+        // Pause as soon as the first EXTENSION task begins.
+        if (request.source.kind === "experiment" && request.source.repair?.kind === "roster-extension") {
+          void controllerRef?.requestPause();
+        }
+      },
+    });
+    controllerRef = h.controller;
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    const res = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // t1 extension completed; pause at the boundary leaves t2 queued.
+    const paused = await h.evalRepo.getExperiment(expId);
+    expect(paused!.status).toBe("paused");
+    expect(h.executor.calls).toHaveLength(3); // 2 initial + 1 extension
+    expect(paused!.tasks[1].attempts.some((a) => a.status === "queued")).toBe(true);
+
+    // Resume continues with t2 only — never re-executes t1.
+    const resumed = await h.controller.resume();
+    expect(resumed.ok).toBe(true);
+    await h.controller.whenIdle();
+    expect(h.executor.calls).toHaveLength(4);
+    const final = await h.evalRepo.getExperiment(expId);
+    expect(final!.status).toBe("completed");
+    expect(final!.tasks[0].attempts).toHaveLength(2);
+    expect(final!.tasks[1].attempts).toHaveLength(2);
+    expect(h.owner.get()).toBeNull();
+  });
+
+  it("abort marks the active extension attempt aborted and stops later tasks", async () => {
+    let controllerRef: Harness["controller"] | null = null;
+    const h = makeHarness({
+      midTask: (request) => {
+        if (request.source.kind === "experiment" && request.source.repair?.kind === "roster-extension") {
+          void controllerRef?.abort();
+        }
+      },
+    });
+    controllerRef = h.controller;
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    const res = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+    // t1 extension aborted; t2's queued extension attempt is also finalized
+    // as aborted so it cannot render as running forever or become a zombie.
+    // It NEVER executes, and t2's prior selected evidence stays authoritative.
+    expect(h.executor.calls).toHaveLength(3); // 2 initial + 1 extension
+    const after = await h.evalRepo.getExperiment(expId);
+    expect(after!.status).toBe("aborted");
+    const t1 = after!.tasks[0];
+    expect(t1.attempts[1].status).toBe("aborted");
+    expect(t1.selectedAttemptId).toBe(t1.attempts[0].id);
+    const t2 = after!.tasks[1];
+    expect(t2.attempts).toHaveLength(2);
+    expect(t2.attempts[1].status).toBe("aborted");
+    expect(t2.selectedAttemptId).toBe(t2.attempts[0].id);
+    // Extension history survives abort.
+    expect(after!.rosterExtensions).toHaveLength(1);
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("a persistence failure during extension stops before another paid task", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const startRes = await h.controller.start("suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+    const callsBefore = h.executor.calls.length;
+
+    // Fail the FIRST extension task's commit (tx 2: begin=1, commit=2).
+    let tx = 0;
+    const originalCommit = h.store.runInTransaction.bind(h.store);
+    h.store.runInTransaction = async (fn) => {
+      tx += 1;
+      if (tx === 2) h.store.failAfterWrites = 0;
+      return originalCommit(fn);
+    };
+
+    const res = await h.controller.addModelAndRun(expId, { slot: EXT_SLOT });
+    expect(res.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    // Exactly one extension executor call; the second task never ran.
+    expect(h.executor.calls.length).toBe(callsBefore + 1);
+    expect(h.owner.get()).toBeNull();
+  });
+
+  it("restart recovery adopts a committed terminal extension run and never repays", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const suite = makeSuite(["t1", "t2"]);
+
+    // Base terminal record: both tasks completed with accepted runs.
+    const base: ExperimentRecord = {
+      ...createExperimentRecord({ id: "exp-ext", suite, profiles: [], now: h.now() }),
+      status: "completed",
+      tasks: [
+        {
+          taskId: "t1",
+          selectedAttemptId: "att-t1",
+          attempts: [{
+            id: "att-t1", runId: "run-t1", trial: 0, status: "completed",
+            startedAt: h.now(), finishedAt: h.now(), error: null,
+          }],
+        },
+        {
+          taskId: "t2",
+          selectedAttemptId: "att-t2",
+          attempts: [{
+            id: "att-t2", runId: "run-t2", trial: 0, status: "completed",
+            startedAt: h.now(), finishedAt: h.now(), error: null,
+          }],
+        },
+      ],
+    };
+
+    // Rotate the roster, then craft the mid-extension crashed state: t1's
+    // extension attempt is "running" in the record but its run already
+    // committed terminal; t2's extension attempt is queued.
+    const rotation = rotateExperimentRoster({ experiment: base, slot: EXT_SLOT, extendedAt: h.now() });
+    expect(rotation.ok).toBe(true);
+    if (!rotation.ok) return;
+    const rotated = rotation.record;
+
+    const crashed: ExperimentRecord = {
+      ...rotated,
+      status: "running",
+      execution: { ownerId: "dead-tab", fence: 1 },
+      tasks: [
+        {
+          ...rotated.tasks[0],
+          attempts: [
+            ...rotated.tasks[0].attempts,
+            {
+              id: "att-ext-1", runId: "run-ext-1", trial: 1, status: "running",
+              startedAt: h.now(), finishedAt: null, error: null,
+              repair: { kind: "roster-extension", addedModelKey: EXT_KEY, baseRunId: "run-t1" },
+            },
+          ],
+        },
+        {
+          ...rotated.tasks[1],
+          attempts: [
+            ...rotated.tasks[1].attempts,
+            {
+              id: "att-ext-2", runId: null, trial: 1, status: "queued",
+              startedAt: null, finishedAt: null, error: null,
+              repair: { kind: "roster-extension", addedModelKey: EXT_KEY },
+            },
+          ],
+        },
+      ],
+    };
+    await h.evalRepo.createExperiment(crashed);
+
+    // The committed terminal extension run (crash between run finalizing and
+    // the attempt commit).
+    const committedRun: RunRecordV2 = {
+      schemaVersion: 2,
+      id: "run-ext-1",
+      revision: 3,
+      execution: { ownerId: "dead-tab", fence: 1 },
+      createdAt: h.now(),
+      updatedAt: h.now(),
+      completedAt: h.now(),
+      status: "completed",
+      mode: "rank",
+      source: {
+        kind: "experiment",
+        experimentId: "exp-ext",
+        suiteId: suite.id,
+        suiteVersion: 1,
+        protocolFingerprint: rotated.protocolFingerprint,
+        taskId: "t1",
+        experimentTaskAttemptId: "att-ext-1",
+        trial: 1,
+        repair: { kind: "roster-extension", addedModelKey: EXT_KEY, baseRunId: "run-t1" },
+      },
+      task: { title: "Task t1", prompt: "Prompt for t1", systemPrompt: "", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      candidates: [],
+      judge: { status: "done", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    };
+    h.store.runDetails.set("run-ext-1", committedRun);
+
+    h.leaseStore.lease = { ownerId: "dead-tab", fence: 1, expiresAt: h.now() - 1 };
+    h.leaseStore.fence = 1;
+
+    const recovered = await h.controller.recoverOnStartup();
+    expect(recovered).toBeGreaterThan(0);
+
+    // Adopted: t1's extension attempt finalized from the committed run and
+    // selected; t2's queued attempt untouched; never re-executed.
+    const after = await h.evalRepo.getExperiment("exp-ext");
+    expect(after!.status).toBe("interrupted");
+    expect(after!.tasks[0].attempts[1].status).toBe("completed");
+    expect(after!.tasks[0].selectedAttemptId).toBe("att-ext-1");
+    expect(after!.tasks[1].attempts[1].status).toBe("queued");
+    // Provenance survives recovery.
+    expect(after!.rosterExtensions).toHaveLength(1);
+    expect(after!.protocolFingerprint).toBe(rotated.protocolFingerprint);
+    // No provider request was issued by recovery.
+    expect(h.executor.calls).toHaveLength(0);
   });
 });

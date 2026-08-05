@@ -16,7 +16,7 @@
 //    immutable EvaluationProfile versions
 // =============================================================================
 
-import type { CriticRef } from "../providers/types";
+import type { CriticRef, ReasoningEffort, ReasoningPolicy } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
 import {
   isExecutionFence,
@@ -123,6 +123,8 @@ export interface EvaluationSuite {
   modelSlots: ModelSlot[];
   defaultJudge: CriticRef;
   defaultEvaluation: EvaluationSelection;
+  /** Optional for backward compatibility; absent means provider-default. */
+  reasoningPolicy?: ReasoningPolicy;
   createdAt: number;
   updatedAt: number;
   archivedAt: number | null;
@@ -145,6 +147,52 @@ export interface ExperimentTaskAttempt {
   startedAt: number | null;
   finishedAt: number | null;
   error: PersistedError | null;
+  /** Scored-model coverage for coverage-aware attempt selection (spec §11.5). */
+  coverage?: ExperimentAttemptCoverage;
+  /** Compound repair metadata for auditable targeted repairs (spec §11.4). */
+  repair?: ExperimentTaskExecutionPlan;
+}
+
+export interface ExperimentAttemptCoverage {
+  scoredModelKeys: string[];
+  totalModels: number;
+}
+
+export interface ExperimentRepairPlan {
+  kind: "missing-cells";
+  baseRunId: string;
+  requestedModelKeys: string[];
+}
+
+/** Roster-extension attempt provenance (spec §6.4). Rides the persisted
+ *  `repair` field on attempts and run sources; the `kind` discriminant is
+ *  load-bearing. Never derive user-visible "repair" wording from the field
+ *  name. */
+export interface ExperimentRosterExtensionPlan {
+  kind: "roster-extension";
+  /** Model key `providerId:slug` of the added model. */
+  addedModelKey: string;
+  /** Selected attempt run that supplied the reused outputs for this task,
+   *  when the compound path was taken. Absent on full-roster fallback. */
+  baseRunId?: string;
+}
+
+/** Persisted execution-plan discriminant on queued/terminal attempts. The
+ *  property name `repair` is legacy persisted schema kept for compatibility;
+ *  branch on `kind` for behavior and copy. */
+export type ExperimentTaskExecutionPlan =
+  | ExperimentRepairPlan
+  | ExperimentRosterExtensionPlan;
+
+/** Append-only extension history entry (spec §6.5). */
+export interface ExperimentRosterExtension {
+  addedModelKey: string;
+  /** The exact appended slot (stable id shared with the suite, spec §8). */
+  addedSlot: ModelSlot;
+  /** Snapshot fingerprint before this extension. */
+  priorFingerprint: string;
+  /** Epoch ms. */
+  extendedAt: number;
 }
 
 export interface ExperimentTaskState {
@@ -160,6 +208,8 @@ export interface ExperimentSnapshot {
   modelSlots: ModelSlot[];
   defaultJudge: CriticRef;
   defaultEvaluation: EvaluationSelection;
+  /** Optional for imported pre-policy snapshots. */
+  reasoningPolicy?: ReasoningPolicy;
   profiles: EvaluationProfileSnapshot[];
   protocolFingerprint: string;
   createdAt: number;
@@ -185,6 +235,9 @@ export interface ExperimentRecord {
   tasks: ExperimentTaskState[];
   createdAt: number;
   updatedAt: number;
+  /** Append-only model-addition history (spec §6.5); absent for records
+   *  created before roster extension existed. */
+  rosterExtensions?: ExperimentRosterExtension[];
 }
 
 // --- Experiment task orchestration inputs -------------------------------------
@@ -211,6 +264,10 @@ export interface CommitExperimentTaskTerminalInput {
   expectedExperimentRevision: number;
   /** When present, verified against the current lease in-transaction. */
   fence?: ExecutionFence;
+  /** Scored-model coverage persisted on the terminal attempt (spec §11.5). */
+  coverage?: ExperimentAttemptCoverage;
+  /** Compound repair metadata persisted on the terminal attempt (spec §11.4). */
+  repair?: ExperimentTaskExecutionPlan;
 }
 
 // =============================================================================
@@ -266,6 +323,28 @@ function isBoolean(v: unknown): v is boolean {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+const REASONING_EFFORT_VALUES: readonly ReasoningEffort[] = [
+  "provider-default",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === "string" && REASONING_EFFORT_VALUES.includes(value as ReasoningEffort);
+}
+
+export function isReasoningPolicy(value: unknown): value is ReasoningPolicy {
+  return (
+    isRecord(value) &&
+    isReasoningEffort(value.candidates) &&
+    isReasoningEffort(value.judge)
+  );
 }
 
 function hasProhibitedKeys(v: unknown): boolean {
@@ -417,6 +496,7 @@ export function isEvaluationSuite(v: unknown): v is EvaluationSuite {
   if (!Array.isArray(v.modelSlots) || !v.modelSlots.every(isModelSlot)) return false;
   if (!isCriticRef(v.defaultJudge)) return false;
   if (!isEvaluationSelection(v.defaultEvaluation)) return false;
+  if (v.reasoningPolicy !== undefined && !isReasoningPolicy(v.reasoningPolicy)) return false;
   if (!isNumber(v.createdAt)) return false;
   if (!isNumber(v.updatedAt)) return false;
   if (v.archivedAt !== null && !isNumber(v.archivedAt)) return false;
@@ -426,6 +506,83 @@ export function isEvaluationSuite(v: unknown): v is EvaluationSuite {
 }
 
 // --- Experiment ---------------------------------------------------------------
+
+function isExperimentAttemptCoverage(v: unknown): v is ExperimentAttemptCoverage {
+  if (!isRecord(v)) return false;
+  // Empty scoredModelKeys is legal — a judge-failed run scores nothing.
+  if (!Array.isArray(v.scoredModelKeys)) return false;
+  if (!v.scoredModelKeys.every((k): k is string => isNonEmptyString(k))) return false;
+  if (new Set(v.scoredModelKeys).size !== v.scoredModelKeys.length) return false;
+  if (!isNumber(v.totalModels) || v.totalModels < 0) return false;
+  if (v.scoredModelKeys.some((k) => /^(sk-|AIza|Bearer\s)/i.test(k))) return false;
+  return true;
+}
+
+function isExperimentRepairPlan(v: unknown): v is ExperimentRepairPlan {
+  if (!isRecord(v)) return false;
+  if (v.kind !== "missing-cells") return false;
+  if (!isNonEmptyString(v.baseRunId) || /^(sk-|AIza|Bearer\s)/i.test(v.baseRunId)) return false;
+  if (!Array.isArray(v.requestedModelKeys) || v.requestedModelKeys.length === 0) return false;
+  if (!v.requestedModelKeys.every((k): k is string => isNonEmptyString(k))) return false;
+  if (new Set(v.requestedModelKeys).size !== v.requestedModelKeys.length) return false;
+  if (v.requestedModelKeys.some((k) => /^(sk-|AIza|Bearer\s)/i.test(k))) return false;
+  return true;
+}
+
+function isExperimentRosterExtensionPlan(
+  v: unknown,
+): v is ExperimentRosterExtensionPlan {
+  if (!isRecord(v)) return false;
+  if (v.kind !== "roster-extension") return false;
+  if (!isNonEmptyString(v.addedModelKey)) return false;
+  if (/^(sk-|AIza|Bearer\s)/i.test(v.addedModelKey)) return false;
+  if (v.baseRunId !== undefined) {
+    if (!isNonEmptyString(v.baseRunId)) return false;
+    if (/^(sk-|AIza|Bearer\s)/i.test(v.baseRunId)) return false;
+  }
+  return true;
+}
+
+/** Discriminant union — legacy `missing-cells` plus `roster-extension`.
+ *  Exported for run-source validation in persistence/run-types.ts. */
+export function isExperimentTaskExecutionPlan(
+  v: unknown,
+): v is ExperimentTaskExecutionPlan {
+  return isExperimentRepairPlan(v) || isExperimentRosterExtensionPlan(v);
+}
+
+function isExperimentRosterExtension(v: unknown): v is ExperimentRosterExtension {
+  if (!isRecord(v)) return false;
+  if (!isNonEmptyString(v.addedModelKey)) return false;
+  if (/^(sk-|AIza|Bearer\s)/i.test(v.addedModelKey)) return false;
+  if (!isModelSlot(v.addedSlot)) return false;
+  // Slot identity must match the recorded key exactly.
+  if (`${v.addedSlot.providerId}:${v.addedSlot.slug}` !== v.addedModelKey) return false;
+  if (!isNonEmptyString(v.priorFingerprint)) return false;
+  if (
+    !isNumber(v.extendedAt) ||
+    !Number.isFinite(v.extendedAt) ||
+    v.extendedAt < 0
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** History-wide invariants: unique added keys and unique slot ids. */
+function hasValidRosterExtensionHistory(v: unknown): boolean {
+  if (!Array.isArray(v)) return false;
+  if (!v.every(isExperimentRosterExtension)) return false;
+  const keys = new Set<string>();
+  const slotIds = new Set<string>();
+  for (const entry of v) {
+    if (keys.has(entry.addedModelKey)) return false;
+    keys.add(entry.addedModelKey);
+    if (slotIds.has(entry.addedSlot.id)) return false;
+    slotIds.add(entry.addedSlot.id);
+  }
+  return true;
+}
 
 export function isExperimentTaskAttempt(v: unknown): v is ExperimentTaskAttempt {
   if (!isRecord(v)) return false;
@@ -438,6 +595,8 @@ export function isExperimentTaskAttempt(v: unknown): v is ExperimentTaskAttempt 
   if (v.startedAt !== null && !isNumber(v.startedAt)) return false;
   if (v.finishedAt !== null && !isNumber(v.finishedAt)) return false;
   if (v.error !== null && !isPersistedError(v.error)) return false;
+  if (v.coverage !== undefined && !isExperimentAttemptCoverage(v.coverage)) return false;
+  if (v.repair !== undefined && !isExperimentTaskExecutionPlan(v.repair)) return false;
   return true;
 }
 
@@ -459,6 +618,7 @@ export function isExperimentSnapshot(v: unknown): v is ExperimentSnapshot {
   if (!Array.isArray(v.modelSlots) || !v.modelSlots.every(isModelSlot)) return false;
   if (!isCriticRef(v.defaultJudge)) return false;
   if (!isEvaluationSelection(v.defaultEvaluation)) return false;
+  if (v.reasoningPolicy !== undefined && !isReasoningPolicy(v.reasoningPolicy)) return false;
   if (!Array.isArray(v.profiles) || !v.profiles.every(isEvaluationProfile)) return false;
   if (!isNonEmptyString(v.protocolFingerprint)) return false;
   if (!isNumber(v.createdAt)) return false;
@@ -480,6 +640,7 @@ export function isExperimentRecord(v: unknown): v is ExperimentRecord {
   if (!Array.isArray(v.tasks) || !v.tasks.every(isExperimentTaskState)) return false;
   if (!isNumber(v.createdAt)) return false;
   if (!isNumber(v.updatedAt)) return false;
+  if (v.rosterExtensions !== undefined && !hasValidRosterExtensionHistory(v.rosterExtensions)) return false;
   if (hasProhibitedKeys(v)) return false;
   return true;
 }

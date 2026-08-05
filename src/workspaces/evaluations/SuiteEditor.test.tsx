@@ -3,6 +3,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { ModelProbeProvider } from "../../ui/ModelProbeContext";
 import { SuiteEditor } from "./SuiteEditor";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import { ExecutionOwnerProvider } from "../../lib/execution-owner-context";
@@ -30,11 +31,13 @@ function renderWithRouter(node: React.ReactNode, initialPath = "/evaluations/s1"
     root.render(
       <MemoryRouter initialEntries={[initialPath]}>
         <ExecutionOwnerProvider>
-          <Routes>
-            <Route path="/evaluations/:suiteId" element={node} />
-            <Route path="/evaluations/:suiteId/tasks/:taskId" element={node} />
-            <Route path="/experiments/:experimentId" element={<div data-route="experiment-progress" />} />
-          </Routes>
+          <ModelProbeProvider>
+            <Routes>
+              <Route path="/evaluations/:suiteId" element={node} />
+              <Route path="/evaluations/:suiteId/tasks/:taskId" element={node} />
+              <Route path="/experiments/:experimentId" element={<div data-route="experiment-progress" />} />
+            </Routes>
+          </ModelProbeProvider>
         </ExecutionOwnerProvider>
       </MemoryRouter>,
     );
@@ -154,10 +157,12 @@ function makeValidSuite(id: string): EvaluationSuite {
 function makeStubController(overrides: Partial<ExperimentController> = {}): ExperimentController {
   return {
     start: vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" })),
-    requestPause: vi.fn(),
+    requestPause: vi.fn(async () => {}),
     resume: vi.fn(async () => ({ ok: true as const })),
     abort: vi.fn(async () => {}),
     retryIncomplete: vi.fn(async () => ({ ok: true as const })),
+    repairMissingCells: vi.fn(async () => ({ ok: true as const })),
+    addModelAndRun: vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" })),
     recoverOnStartup: vi.fn(async () => 0),
     subscribe: vi.fn(() => () => {}),
     whenIdle: vi.fn(async () => {}),
@@ -348,6 +353,15 @@ describe("SuiteEditor — run execution", () => {
       await flush();
     });
     await settle();
+    // Preflight confirmation opens; all models untested → Run suite confirm.
+    // The dialog portal renders on document.body.
+    const confirmBtn = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Run suite");
+    expect(confirmBtn).toBeTruthy();
+    await act(async () => {
+      confirmBtn!.click();
+      await flush();
+    });
+    await settle();
     expect(controller.start).toHaveBeenCalledWith("s1");
     expect(h.$("[data-route='experiment-progress']")).toBeTruthy();
     cleanup(h);
@@ -364,6 +378,14 @@ describe("SuiteEditor — run execution", () => {
     const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
     await act(async () => {
       runBtn.click();
+      await flush();
+    });
+    await settle();
+    // Preflight confirmation opens; confirm through it (portal on document.body).
+    const confirmBtn = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Run suite");
+    expect(confirmBtn).toBeTruthy();
+    await act(async () => {
+      confirmBtn!.click();
       await flush();
     });
     await settle();
@@ -479,6 +501,87 @@ describe("SuiteEditor — settings disclosure", () => {
     expect(openBtn).toBeTruthy();
     // Settings content visible
     expect(h.$("#suite-name")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("SuiteEditor — Test selected models (spec §8.1)", () => {
+  it("puts one model-specific test action inside each candidate row", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          { id: "m1", providerId: "9router", provider: "9Router", model: "A", slug: "cmc/model-a", enabled: true },
+          { id: "m2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "org/model-b", enabled: true },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await settle();
+    await act(async () => h.$("button[aria-expanded='false']")!.click());
+    await settle();
+
+    for (const label of ["9router:cmc/model-a", "openrouter:org/model-b"]) {
+      const checkbox = h.$(`input[aria-label="Enable ${label}"]`);
+      const row = checkbox?.closest("li");
+      const action = row?.querySelector<HTMLButtonElement>(`button[aria-label="Test model ${label}"]`);
+      expect(action).toBeTruthy();
+      expect(action?.textContent?.trim()).toBe("Test");
+      expect(h.$$(`button[aria-label="Test model ${label}"]`)).toHaveLength(1);
+    }
+
+    cleanup(h);
+  });
+
+  it("shows the batch test action when enabled candidates exist", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          { id: "m1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+          { id: "m2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "model-b", enabled: true },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const batchBtn = h.$$("button").find((b) => b.textContent?.trim() === "Test selected models");
+    expect(batchBtn).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("does not show the batch action when no candidates are enabled", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          { id: "m1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: false },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const batchBtn = h.$$("button").find((b) => b.textContent?.trim() === "Test selected models");
+    expect(batchBtn).toBeFalsy();
     cleanup(h);
   });
 });

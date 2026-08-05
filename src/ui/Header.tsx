@@ -12,16 +12,30 @@
 // =============================================================================
 
 import { useEffect, useState } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { Command, HelpCircle, Menu } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 import { HexCubeLogo } from "./brand-icons";
 import { WorkspaceNav } from "./WorkspaceNav";
 
-export type ConnectionState = "ready" | "running" | "degraded" | "offline";
+export type ConnectionState = "ready" | "running" | "degraded" | "offline" | "checking";
+
+function DetachedDialogTrigger({
+  handle,
+  children,
+}: {
+  handle?: Dialog.Handle<unknown>;
+  children: ReactElement;
+}) {
+  return handle ? <Dialog.Trigger handle={handle} render={children} /> : children;
+}
 
 function livePill(running: boolean, conn: ConnectionState): { label: string; dot: string; text: string } {
   if (running) {
     return { label: "Running", dot: "bg-accent animate-pulse-ease", text: "text-accent" };
+  }
+  if (conn === "checking") {
+    return { label: "Checking", dot: "bg-text-muted animate-pulse-ease", text: "text-text-secondary" };
   }
   if (conn === "offline") {
     return { label: "No key", dot: "bg-error", text: "text-error" };
@@ -48,73 +62,69 @@ function useRunElapsed(running: boolean): number {
 
 export function Header({
   running,
-  children,
   onOpenCommand,
   onOpenConnections,
   onOpenPalette,
   onOpenHelp,
+  commandDialogHandle,
+  connectionsDialogHandle,
+  cheatsheetDialogHandle,
   connectionState = "ready",
-  showToggle = true,
 }: {
   running: boolean;
-  children: ReactNode;
   onOpenCommand?: () => void;
   onOpenConnections?: () => void;
   onOpenPalette?: () => void;
   onOpenHelp?: () => void;
+  commandDialogHandle?: Dialog.Handle<unknown>;
+  connectionsDialogHandle?: Dialog.Handle<unknown>;
+  cheatsheetDialogHandle?: Dialog.Handle<unknown>;
   connectionState?: ConnectionState;
-  showToggle?: boolean;
 }) {
   const pill = livePill(running, connectionState);
   const elapsed = useRunElapsed(running);
   const pillLabel = running ? `Running · ${elapsed}s` : pill.label;
 
   return (
-    <header className="relative flex h-14 shrink-0 items-center justify-between gap-2 border-b border-edge bg-shell px-2 sm:px-4">
+    <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-edge bg-shell px-2 sm:px-4">
       <div className="flex min-w-0 items-center gap-2.5">
         {onOpenCommand && (
-          <button
-            type="button"
-            onClick={onOpenCommand}
-            aria-label="Open command pane"
-            className="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-panel hover:text-text md:hidden"
-          >
-            <Menu size={18} />
-          </button>
+          <DetachedDialogTrigger handle={commandDialogHandle}>
+            <button
+              type="button"
+              onClick={onOpenCommand}
+              aria-label="Open command pane"
+              className="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-panel hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:hidden"
+            >
+              <Menu size={18} aria-hidden="true" />
+            </button>
+          </DetachedDialogTrigger>
         )}
         <HexCubeLogo size={22} className="shrink-0 text-accent" />
-        {/* App name is redundant chrome on tight viewports — the logo carries
-            identity. Keep it from sm up so the header never clips at 390px. */}
         <span className="hidden text-base font-semibold tracking-tight sm:inline">RSemble AI</span>
       </div>
 
-      {/* Desktop primary navigation — hidden on mobile (<768px) where the
-          fixed bottom MobileWorkspaceNav is used instead. */}
-      <div className="hidden md:block">
+      <div className="hidden min-w-0 justify-self-center md:block">
         <WorkspaceNav />
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex min-w-0 items-center justify-self-end gap-2">
         {onOpenConnections && (
-          <button
-            type="button"
-            onClick={onOpenConnections}
-            aria-label={`Connection status: ${pillLabel}. Manage connections.`}
-            title="Provider connections"
-            className="flex min-h-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright"
-          >
-            <span className={`size-2 rounded-full ${pill.dot}`} aria-hidden="true" />
-            {/* Sacrifice order (DESIGN.md §122-125): at md (768–1023px) the
-                visible label is hidden — the dot + aria-label carry status.
-                The label returns at lg+ after palette/help have their full
-                treatment restored. */}
-            <span className={`hidden lg:inline ${pill.text}`} aria-live="polite">
-              {pillLabel}
-            </span>
-          </button>
+          <DetachedDialogTrigger handle={connectionsDialogHandle}>
+            <button
+              type="button"
+              onClick={onOpenConnections}
+              aria-label={`Connection status: ${pillLabel}. Manage connections.`}
+              title="Provider connections"
+              className="flex min-h-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <span className={`size-2 rounded-full ${pill.dot}`} aria-hidden="true" />
+              <span className={`hidden lg:inline ${pill.text}`} aria-live="polite">
+                {pillLabel}
+              </span>
+            </button>
+          </DetachedDialogTrigger>
         )}
-        {/* Palette — two treatments: icon-only at md (768–1023px), full ⌘K
-            keycaps at lg+. The icon-only button keeps its accessible name. */}
         <button
           type="button"
           aria-disabled={onOpenPalette ? undefined : true}
@@ -125,9 +135,9 @@ export function Header({
             onOpenPalette
               ? "text-text-secondary hover:border-edge-bright"
               : "cursor-not-allowed text-text-secondary opacity-60"
-          }`}
+          } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
         >
-          <Command size={16} />
+          <Command size={16} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -139,33 +149,28 @@ export function Header({
             onOpenPalette
               ? "text-text-secondary hover:border-edge-bright"
               : "cursor-not-allowed text-text-secondary opacity-60"
-          }`}
+          } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
         >
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">⌘</kbd>
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">K</kbd>
         </button>
-        <button
-          type="button"
-          aria-disabled={onOpenHelp ? undefined : true}
-          onClick={onOpenHelp}
-          aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts (?)"
-          className={`hidden h-11 w-11 items-center justify-center rounded-md border border-edge bg-panel md:flex ${
-            onOpenHelp
-              ? "text-text-secondary hover:border-edge-bright"
-              : "cursor-not-allowed text-text-secondary opacity-60"
-          }`}
-        >
-          <HelpCircle size={16} />
-        </button>
-        {showToggle && children}
+        <DetachedDialogTrigger handle={cheatsheetDialogHandle}>
+          <button
+            type="button"
+            aria-disabled={onOpenHelp ? undefined : true}
+            onClick={onOpenHelp}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            className={`hidden h-11 w-11 items-center justify-center rounded-md border border-edge bg-panel md:flex ${
+              onOpenHelp
+                ? "text-text-secondary hover:border-edge-bright"
+                : "cursor-not-allowed text-text-secondary opacity-60"
+            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
+          >
+            <HelpCircle size={16} aria-hidden="true" />
+          </button>
+        </DetachedDialogTrigger>
       </div>
-
-      {running && (
-        <div className="absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden">
-          <div className="h-full w-1/3 animate-[bg-march_1s_linear_infinite] bg-gradient-to-r from-transparent via-accent to-transparent" style={{ animation: "bg-march 1s linear infinite", backgroundImage: "linear-gradient(90deg, transparent, #22d3ee, transparent)", backgroundSize: "200% 100%" }} />
-        </div>
-      )}
     </header>
   );
 }

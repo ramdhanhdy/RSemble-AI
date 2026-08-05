@@ -20,7 +20,7 @@ import { StatusMark } from "./StatusMark";
 import type { ExperimentRecord } from "../lib/evaluations/evaluation-types";
 import { useExecutionOwner } from "../lib/execution-owner-context";
 import { useEvaluationRepository, useStorageState } from "../lib/persistence/repository-context";
-import { useExecutionLease } from "../lib/evaluations/experiment-controller-context";
+import { useExecutionLease } from "../lib/evaluations/experiment-controller-hooks";
 
 // --- View model ---------------------------------------------------------------
 
@@ -155,7 +155,7 @@ export function buildStripViewModel(deps: {
 // --- Presentational component ---------------------------------------------------
 
 const DOT_CLASSES: Record<StripViewModel["status"], string> = {
-  running: "bg-accent motion-safe:animate-pulse",
+  running: "bg-accent",
   paused: "bg-text-muted",
   interrupted: "bg-error",
   "other-tab": "bg-text-muted",
@@ -205,7 +205,7 @@ export function GlobalExecutionStrip({ view }: { view: StripViewModel | null }):
       {view.status === "other-tab" ? (
         <span className="shrink-0 text-xs text-text-muted">Another tab</span>
       ) : (
-        <StatusMark status={view.status} />
+        <StatusMark status={view.status} reducedMotion />
       )}
       <span aria-hidden="true" className="min-w-0 flex-1 truncate font-mono text-xs text-text">
         {view.caption}

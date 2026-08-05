@@ -20,9 +20,12 @@ import {
 import type {
   EvaluationSuite,
   EvaluationTask,
+  ExperimentRepairPlan,
+  ExperimentTaskExecutionPlan,
   ExperimentTaskState,
   ExperimentTaskAttempt,
 } from "./evaluation-types";
+import { rotateExperimentRoster } from "./experiment-roster-extension";
 import type { ModelSlot } from "../../studio-data";
 import type { ExecutionFence } from "../persistence/run-types";
 
@@ -502,6 +505,223 @@ describe("retryIncomplete", () => {
   });
 });
 
+describe("queuePlannedAttempts", () => {
+  function terminalEngine(): ExperimentEngine {
+    const engine = makeEngine(["t1", "t2"]);
+    const att1 = startAndBegin(engine);
+    engine.commitTaskTerminal({
+      taskId: "t1",
+      attemptId: att1,
+      runStatus: "partial",
+      epoch: engine.taskEpoch,
+      error: null,
+      now: 7000,
+    });
+    const action = engine.nextAction();
+    if (action.kind !== "begin-task") throw new Error("expected begin-task");
+    engine.beginTask("t2", "att-t2-1", "run-t2-1", 8000);
+    engine.commitTaskTerminal({
+      taskId: "t2",
+      attemptId: "att-t2-1",
+      runStatus: "failed",
+      epoch: engine.taskEpoch,
+      error: null,
+      now: 9000,
+    });
+    return engine; // completed_with_failures (t1 partial, t2 failed)
+  }
+
+  const REPAIR: ExperimentRepairPlan = {
+    kind: "missing-cells",
+    baseRunId: "run-base",
+    requestedModelKeys: ["openrouter:m1"],
+  };
+
+  it("queues repair attempts with fresh IDs and repair metadata", () => {
+    const engine = terminalEngine();
+    let n = 0;
+    const result = engine.queuePlannedAttempts(
+      [{ taskId: "t1", repair: REPAIR }, { taskId: "t2", repair: REPAIR }],
+      () => `repair-${n++}`,
+      FENCE,
+      10000,
+    );
+    expect(result.ok).toBe(true);
+    expect(engine.record.status).toBe("running");
+    expect(engine.queuedTaskIds).toEqual(["t1", "t2"]);
+    const t1 = engine.record.tasks[0];
+    expect(t1.attempts).toHaveLength(2);
+    expect(t1.attempts[1].status).toBe("queued");
+    expect(t1.attempts[1].repair).toEqual(REPAIR);
+    expect(t1.attempts[1].id).toBe("repair-0");
+    expect(t1.attempts[1].trial).toBe(1);
+  });
+
+  it("rejects an unknown task id without mutating the record", () => {
+    const engine = terminalEngine();
+    const before = engine.record.tasks.map((t) => ({ ...t }));
+    const result = engine.queuePlannedAttempts(
+      [{ taskId: "t-unknown", repair: REPAIR }],
+      () => "repair-x",
+      FENCE,
+      10000,
+    );
+    expect(result.ok).toBe(false);
+    // Status and tasks unchanged — nothing queued, no running leak.
+    expect(engine.record.status).toBe("completed_with_failures");
+    expect(engine.queuedTaskIds).toEqual([]);
+    expect(engine.record.tasks).toEqual(before);
+  });
+
+  it("rejects a duplicate repair for the same task", () => {
+    const engine = terminalEngine();
+    const result = engine.queuePlannedAttempts(
+      [{ taskId: "t1", repair: REPAIR }, { taskId: "t1", repair: REPAIR }],
+      () => "repair-x",
+      FENCE,
+      10000,
+    );
+    expect(result.ok).toBe(false);
+    expect(engine.record.status).toBe("completed_with_failures");
+    expect(engine.queuedTaskIds).toEqual([]);
+  });
+
+  it("rejects an invalid execution plan without mutating the record", () => {
+    const engine = terminalEngine();
+    const before = engine.record.tasks.map((t) => ({ ...t }));
+    const bad = { kind: "roster-extension", addedModelKey: "" } as unknown as ExperimentTaskExecutionPlan;
+    const result = engine.queuePlannedAttempts(
+      [{ taskId: "t1", repair: bad }],
+      () => "repair-x",
+      FENCE,
+      10000,
+    );
+    expect(result.ok).toBe(false);
+    expect(engine.record.status).toBe("completed_with_failures");
+    expect(engine.record.tasks).toEqual(before);
+  });
+
+  it("queues compound and full-roster extension plans in one transition", () => {
+    const engine = terminalEngine();
+    const compound: ExperimentTaskExecutionPlan = {
+      kind: "roster-extension",
+      addedModelKey: "deepseek:deepseek-chat",
+      baseRunId: "run-t1-1",
+    };
+    const fallback: ExperimentTaskExecutionPlan = {
+      kind: "roster-extension",
+      addedModelKey: "deepseek:deepseek-chat",
+    };
+    let n = 0;
+    const result = engine.queuePlannedAttempts(
+      [{ taskId: "t1", repair: compound }, { taskId: "t2", repair: fallback }],
+      () => `ext-${n++}`,
+      FENCE,
+      10000,
+    );
+    expect(result.ok).toBe(true);
+    expect(engine.record.status).toBe("running");
+    expect(engine.queuedTaskIds).toEqual(["t1", "t2"]);
+    const t1 = engine.record.tasks[0];
+    const t2 = engine.record.tasks[1];
+    // One queued attempt per task; prior attempts preserved.
+    expect(t1.attempts).toHaveLength(2);
+    expect(t2.attempts).toHaveLength(2);
+    expect(t1.attempts[1].status).toBe("queued");
+    expect(t2.attempts[1].status).toBe("queued");
+    expect(t1.attempts[1].repair).toEqual(compound);
+    expect(t2.attempts[1].repair).toEqual(fallback);
+    expect(t1.attempts[1].trial).toBe(1);
+    expect(t2.attempts[1].trial).toBe(1);
+  });
+
+  it("pause before the first task leaves attempts queued", () => {
+    const engine = terminalEngine();
+    const plan: ExperimentTaskExecutionPlan = {
+      kind: "roster-extension",
+      addedModelKey: "deepseek:deepseek-chat",
+      baseRunId: "run-t1-1",
+    };
+    engine.queuePlannedAttempts(
+      [{ taskId: "t1", repair: plan }, { taskId: "t2", repair: plan }],
+      () => "ext-0",
+      FENCE,
+      10000,
+    );
+    // Request pause between tasks (none active): the engine applies the
+    // pause at the boundary immediately and retains queued attempts.
+    const pauseResult = engine.requestPause(10100);
+    expect(pauseResult.ok).toBe(true);
+    expect(engine.record.status).toBe("paused");
+    expect(engine.nextAction()).toEqual({ kind: "wait" });
+    expect(engine.record.tasks[0].attempts[1].status).toBe("queued");
+    expect(engine.record.tasks[1].attempts[1].status).toBe("queued");
+  });
+
+  it("rotation plus queue is one state change: fingerprint, history, attempts, and fence together (plan 001 C2)", () => {
+    const engine = terminalEngine();
+    const terminalRecord = engine.record;
+
+    // Rotate the roster in memory, then queue one extension attempt per task.
+    const newSlot: ModelSlot = {
+      id: "slot-new",
+      providerId: "deepseek",
+      provider: "DeepSeek",
+      model: "deepseek-chat",
+      slug: "deepseek-chat",
+      enabled: true,
+    };
+    const rotation = rotateExperimentRoster({
+      experiment: terminalRecord,
+      slot: newSlot,
+      extendedAt: 9500,
+    });
+    expect(rotation.ok).toBe(true);
+    if (!rotation.ok) return;
+
+    // The controller would persist `rotation.record` once with the queued
+    // attempts — simulate that as a single CAS-visible state change by
+    // creating a fresh engine from the rotated record and queueing.
+    const rotated = createExperimentEngine(rotation.record);
+    const plan: ExperimentTaskExecutionPlan = {
+      kind: "roster-extension",
+      addedModelKey: "deepseek:deepseek-chat",
+      baseRunId: "run-t1-1",
+    };
+    const queueResult = rotated.queuePlannedAttempts(
+      rotated.record.tasks.map((t) => ({ taskId: t.taskId, repair: plan })),
+      () => "ext-0",
+      FENCE,
+      10000,
+    );
+    expect(queueResult.ok).toBe(true);
+
+    // The resulting record simultaneously carries the new fingerprint, the
+    // extension history, queued attempts, running status, and the fence.
+    const rec = rotated.record;
+    expect(rec.snapshot.protocolFingerprint).not.toBe(terminalRecord.snapshot.protocolFingerprint);
+    expect(rec.protocolFingerprint).toBe(rec.snapshot.protocolFingerprint);
+    expect(rec.rosterExtensions).toHaveLength(1);
+    expect(rec.rosterExtensions![0].priorFingerprint).toBe(terminalRecord.protocolFingerprint);
+    expect(rec.status).toBe("running");
+    expect(rec.execution).toEqual(FENCE);
+    for (const t of rec.tasks) {
+      expect(t.attempts.some((a) => a.status === "queued")).toBe(true);
+    }
+
+    // Abort clears execution without deleting the extension history or the
+    // queued attempts.
+    const abortResult = rotated.abort(10200);
+    expect(abortResult.ok).toBe(true);
+    expect(rotated.record.status).toBe("aborted");
+    expect(rotated.record.execution).toBeNull();
+    expect(rotated.record.rosterExtensions).toHaveLength(1);
+    for (const t of rotated.record.tasks) {
+      expect(t.attempts.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+});
+
 // --- 11. selectedAttemptId selector ----------------------------------------------
 
 describe("selectAttemptId", () => {
@@ -537,6 +757,54 @@ describe("selectAttemptId", () => {
     expect(
       selectAttemptId(makeTaskState("t1", [makeAttempt("a1", "aborted"), makeAttempt("a2", "interrupted")])),
     ).toBeNull();
+  });
+
+  it("partial with higher scored-model coverage beats a newer partial attempt", () => {
+    const task = makeTaskState("t1", [
+      {
+        ...makeAttempt("a1", "partial"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+      },
+      {
+        ...makeAttempt("a2", "partial"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6"], totalModels: 8 },
+      },
+    ]);
+    // a1 is older but has 7/8 coverage; a2 is newer with 6/8.
+    expect(selectAttemptId(task)).toBe("a1");
+  });
+
+  it("newer partial wins when coverage ties", () => {
+    const task = makeTaskState("t1", [
+      {
+        ...makeAttempt("a1", "partial"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+      },
+      {
+        ...makeAttempt("a2", "partial"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+      },
+    ]);
+    expect(selectAttemptId(task)).toBe("a2");
+  });
+
+  it("attempts without coverage metadata preserve the newest-partial fallback", () => {
+    const task = makeTaskState("t1", [
+      makeAttempt("a1", "partial"),
+      makeAttempt("a2", "partial"),
+    ]);
+    expect(selectAttemptId(task)).toBe("a2");
+  });
+
+  it("failed attempts never become selected even with high coverage", () => {
+    const task = makeTaskState("t1", [
+      {
+        ...makeAttempt("a1", "failed"),
+        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+      },
+      makeAttempt("a2", "partial"),
+    ]);
+    expect(selectAttemptId(task)).toBe("a2");
   });
 
   it("commit recomputes selection under the documented selector", () => {

@@ -26,7 +26,9 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { ChevronDown, Loader2, Save, Play, AlertCircle, Trophy } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
-import { useExperimentController } from "../../lib/evaluations/experiment-controller-context";
+import { useExperimentController } from "../../lib/evaluations/experiment-controller-hooks";
+import { useModelProbe } from "../../ui/ModelProbeContext";
+import { SuitePreflightDialog, type SuitePreflightEntry } from "./SuitePreflightDialog";
 import { useExecutionOwner } from "../../lib/execution-owner-context";
 import type { ExecutionOwner } from "../../lib/execution-owner";
 import { SuiteExperimentHistory } from "./SuiteExperimentHistory";
@@ -38,7 +40,7 @@ import type {
   EvaluationProfileRef,
   ExperimentRecord,
 } from "../../lib/evaluations/evaluation-types";
-import type { ProfileRecord } from "../../lib/evaluations/evaluation-types";
+import type { EvaluationProfile, ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import {
   isSuiteDirty,
@@ -49,6 +51,7 @@ import { StorageError } from "../../lib/persistence/database";
 import { SuiteTaskList } from "./SuiteTaskList";
 import { SuiteTaskEditor } from "./SuiteTaskEditor";
 import { SuiteSettings } from "./SuiteSettings";
+import { ProfileRefChip } from "../../ui/ProfileRefChip";
 
 interface SuiteEditorProps {
   repo: EvaluationRepository | null;
@@ -87,6 +90,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileRecords, setProfileRecords] = useState<ProfileRecord[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
+  const [preflightOpen, setPreflightOpen] = useState(false);
   const requestIdRef = useRef(0);
 
   // --- Load suite + profile records ---
@@ -139,6 +143,33 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
       if (!cancelled) setLatestExperiment(list[0] ?? null);
     }).catch(() => {
       if (!cancelled) setLatestExperiment(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, persisted]);
+
+  // Resolve the persisted default-evaluation pin for the header rubric chip
+  // (identity spec §5.3). Tracks the persisted suite — the version Run uses.
+  const [pinnedProfile, setPinnedProfile] = useState<EvaluationProfile | null>(null);
+  const [pinnedProfileLoaded, setPinnedProfileLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setPinnedProfile(null);
+    setPinnedProfileLoaded(false);
+    if (!repo || !persisted) return;
+    const ev = persisted.defaultEvaluation;
+    if (ev.kind !== "profile") {
+      setPinnedProfileLoaded(true);
+      return;
+    }
+    void repo.getProfile(ev.profile.id, ev.profile.version).then((p) => {
+      if (!cancelled) {
+        setPinnedProfile(p);
+        setPinnedProfileLoaded(true);
+      }
+    }).catch(() => {
+      if (!cancelled) setPinnedProfileLoaded(true);
     });
     return () => {
       cancelled = true;
@@ -277,6 +308,29 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
     }
   }, [controller, persisted, navigate]);
 
+  // --- Suite model preflight (spec §8.5) — one unconditional hook, map lookups. ---
+  const probeContext = useModelProbe();
+  const enabledCandidates = draft?.modelSlots.filter((s) => s.enabled) ?? [];
+  const candidateEntries: SuitePreflightEntry[] = enabledCandidates.map((s) => {
+    const state = probeContext.states[`${s.providerId}:${s.slug}`] ?? { kind: "untested" as const };
+    return {
+      modelKey: `${s.providerId}:${s.slug}`,
+      label: `${s.providerId}:${s.slug}`,
+      state,
+    };
+  });
+  const judgeKey = `${draft?.defaultJudge.providerId ?? "openrouter"}:${draft?.defaultJudge.model ?? ""}`;
+  const judgeEntry: SuitePreflightEntry = {
+    modelKey: judgeKey,
+    label: `Judge · ${judgeKey}`,
+    state: probeContext.states[judgeKey] ?? { kind: "untested" as const },
+  };
+
+  const handleRunAnyway = useCallback(async () => {
+    setPreflightOpen(false);
+    await handleRun();
+  }, [handleRun]);
+
   // --- States ---
   if (!suiteId) {
     return <NoSuiteSelected />;
@@ -333,6 +387,22 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
             <span className="shrink-0 rounded-sm border border-edge px-1.5 py-0.5 font-mono text-xs text-text-secondary tabular-nums">
               v{persisted.version}
             </span>
+            {/* Identity spec §5.3: name the pinned rubric where the suite is
+                configured. Rendered outside the row-link pattern — the header
+                has no nesting constraint. */}
+            {persisted.defaultEvaluation.kind === "profile" && pinnedProfileLoaded ? (
+              pinnedProfile ? (
+                <ProfileRefChip
+                  name={pinnedProfile.name || "Untitled rubric"}
+                  profileId={persisted.defaultEvaluation.profile.id}
+                  version={persisted.defaultEvaluation.profile.version}
+                />
+              ) : (
+                <ProfileRefChip missing />
+              )
+            ) : persisted.defaultEvaluation.kind === "holistic" ? (
+              <ProfileRefChip holistic />
+            ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {latestExperiment ? (
@@ -347,15 +417,16 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
               </Link>
             ) : null}
             <button
+              data-geometry="suite-settings-trigger"
               type="button"
               aria-expanded={settingsOpen}
               aria-controls="suite-settings-disclosure"
               onClick={() => setSettingsOpen((v) => !v)}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex min-h-[44px] min-w-[104px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <ChevronDown
                 size={14}
-                className={settingsOpen ? "rotate-180 transition-transform duration-150" : "transition-transform duration-150"}
+                className={settingsOpen ? "disclosure-chevron shrink-0 rotate-180 transition-transform duration-150 ease-out" : "disclosure-chevron shrink-0 transition-transform duration-150 ease-out"}
                 aria-hidden="true"
               />
               Settings
@@ -365,7 +436,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
               data-action="save-suite"
               onClick={handleSave}
               disabled={!dirty || saving}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Save size={14} aria-hidden="true" />
               {saving ? "Saving…" : "Save"}
@@ -376,13 +447,14 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
               onClick={() => {
                 // Run snaps the exact persisted version inside the controller;
                 // success navigates to the live experiment progress route.
+                // Preflight confirmation summarizes model test state first (§8.5).
                 if (canRun) {
-                  void handleRun();
+                  setPreflightOpen(true);
                 }
               }}
               disabled={!canRun}
               title={runDisabledReason ?? `Run v${persisted.version}`}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Play size={14} aria-hidden="true" />
               {dirty ? "Run" : `Run v${persisted.version}`}
@@ -414,7 +486,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
 
       {/* Settings disclosure (in-page, not a permanent third pane) */}
       {settingsOpen && (
-        <div id="suite-settings-disclosure" className="border-b border-edge p-3">
+        <div id="suite-settings-disclosure" data-geometry="suite-settings-panel" className="border-b border-edge p-3">
           <SuiteSettings
             suite={draft}
             onChange={patchDraft}
@@ -471,6 +543,15 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
           )}
         </section>
       </div>
+
+      {/* Suite model preflight confirmation (spec §8.5) */}
+      <SuitePreflightDialog
+        open={preflightOpen}
+        onOpenChange={setPreflightOpen}
+        candidates={candidateEntries}
+        judge={judgeEntry}
+        onRunAnyway={handleRunAnyway}
+      />
     </div>
   );
 }

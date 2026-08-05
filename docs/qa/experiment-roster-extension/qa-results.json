@@ -1,0 +1,29 @@
+{
+  "generatedAt": "2026-08-04T16:44:02.806Z",
+  "baseUrl": "http://localhost:5176/",
+  "probes": [
+    {
+      "name": "s1-dialog-open",
+      "title": true,
+      "syncChecked": true,
+      "syncNamesSuite": true,
+      "pass": true,
+      "reason": "dialog opens with suite sync checked by default and names the suite"
+    },
+    {
+      "name": "s1-exact-preview",
+      "counts": true,
+      "reused": true,
+      "noFallback": true,
+      "pass": true,
+      "reason": "planner preview shows exact compound counts and reuse total"
+    }
+  ],
+  "screenshots": [
+    "qa-s1-dialog.png"
+  ],
+  "seeded": {
+    "ok": true
+  },
+  "error": "TypeError: window.__qaResetCalls is not a function\n    at <anonymous>:1:8"
+}

@@ -26,8 +26,8 @@ function makeRes(): http.ServerResponse & { written: Buffer[] } {
   const res = new http.ServerResponse(req) as http.ServerResponse & { written: Buffer[] };
   res.written = [];
   res.writeHead = vi.fn(() => res) as never;
-  res.write = vi.fn((chunk: Buffer) => {
-    res.written.push(chunk);
+  res.write = vi.fn((chunk: Buffer | string) => {
+    res.written.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     return true;
   }) as never;
   res.end = vi.fn(() => res) as never;
@@ -210,5 +210,139 @@ describe("handleNineRouterProxy — abort propagation", () => {
     );
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSE clean-EOF normalization regression (spec §9, Task 1.1)
+// ---------------------------------------------------------------------------
+
+function sseDelta(content: string): string {
+  return `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
+}
+
+function bodyToString(res: { written: Buffer[] }): string {
+  return Buffer.concat(res.written).toString("utf8");
+}
+
+describe("handleNineRouterProxy — SSE clean-EOF normalization", () => {
+  it("separates and terminates a final content data line that has no trailing newline", async () => {
+    const unterminated = `data: ${JSON.stringify({ choices: [{ delta: { content: "OK" } }] })}`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(upstreamWithChunks([unterminated])));
+    const res = makeRes();
+    await handleNineRouterProxy(
+      makeReq("POST", JSON.stringify({ stream: true })),
+      res,
+      "/9router/v1/chat/completions",
+      { upstream: "http://127.0.0.1:20128" },
+    );
+    const body = bodyToString(res);
+    expect(body).toContain(`${unterminated}\n\ndata: [DONE]\n\n`);
+  });
+
+  it("normalizes a clean EOF after reasoning-only chunks so the client reports empty output, not protocol failure", async () => {
+    const reasoning = `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "thinking" } }] })}\n\n`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(upstreamWithChunks([reasoning])));
+    const res = makeRes();
+    await handleNineRouterProxy(
+      makeReq("POST", JSON.stringify({ stream: true })),
+      res,
+      "/9router/v1/chat/completions",
+      { upstream: "http://127.0.0.1:20128" },
+    );
+    expect(bodyToString(res).match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("appends [DONE] after a content-bearing stream that ends without the sentinel", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      upstreamWithChunks([sseDelta("OK")]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleNineRouterProxy(
+      makeReq("POST", JSON.stringify({ stream: true })),
+      res,
+      "/9router/v1/chat/completions",
+      { upstream: "http://127.0.0.1:20128" },
+    );
+    const body = bodyToString(res);
+    // After Task 2, exactly one [DONE] sentinel must be present.
+    expect(body.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("does not duplicate [DONE] when the upstream already sent it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      upstreamWithChunks([sseDelta("OK"), "data: [DONE]\n\n"]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleNineRouterProxy(
+      makeReq("POST", JSON.stringify({ stream: true })),
+      res,
+      "/9router/v1/chat/completions",
+      { upstream: "http://127.0.0.1:20128" },
+    );
+    const body = bodyToString(res);
+    expect(body.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("does not append [DONE] to an empty stream with no content", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      upstreamWithChunks([""]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleNineRouterProxy(
+      makeReq("POST", JSON.stringify({ stream: true })),
+      res,
+      "/9router/v1/chat/completions",
+      { upstream: "http://127.0.0.1:20128" },
+    );
+    const body = bodyToString(res);
+    expect(body).not.toContain("[DONE]");
+  });
+
+  it("does not append [DONE] when upstream iteration throws", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(sseDelta("OK")));
+        controller.error(new Error("upstream connection dropped"));
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleNineRouterProxy(
+      makeReq("POST", JSON.stringify({ stream: true })),
+      res,
+      "/9router/v1/chat/completions",
+      { upstream: "http://127.0.0.1:20128" },
+    );
+    const body = bodyToString(res);
+    expect(body).not.toContain("[DONE]");
+  });
+
+  it("handles data: and JSON split across chunks", async () => {
+    const json = JSON.stringify({ choices: [{ delta: { content: "OK" } }] });
+    const event = `data: ${json}\n\n`;
+    // Split at arbitrary byte boundaries
+    const mid = Math.floor(event.length / 2);
+    const fetchMock = vi.fn().mockResolvedValue(
+      upstreamWithChunks([event.slice(0, mid), event.slice(mid)]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleNineRouterProxy(
+      makeReq("POST", JSON.stringify({ stream: true })),
+      res,
+      "/9router/v1/chat/completions",
+      { upstream: "http://127.0.0.1:20128" },
+    );
+    const body = bodyToString(res);
+    expect(body).toContain("OK");
+    expect(body.match(/data: \[DONE\]/g)).toHaveLength(1);
   });
 });

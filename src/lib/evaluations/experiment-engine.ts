@@ -26,10 +26,13 @@
 import type {
   EvaluationSuite,
   EvaluationProfile,
+  ExperimentAttemptCoverage,
   ExperimentRecord,
   ExperimentTaskAttempt,
+  ExperimentTaskExecutionPlan,
   ExperimentTaskState,
 } from "./evaluation-types";
+import { isExperimentTaskExecutionPlan } from "./evaluation-types";
 import type { ExecutionFence, PersistedError, RunStatus } from "../persistence/run-types";
 import { createExperimentSnapshot } from "./protocol-fingerprint";
 
@@ -54,20 +57,46 @@ export function mapRunStatusToAttemptStatus(
   }
 }
 
-// --- selectedAttemptId selector (spec §11.3) ------------------------------------
+// --- selectedAttemptId selector (spec §11.5) ------------------------------------
 //
-// Newest full-coverage accepted (completed) attempt wins; otherwise the newest
-// accepted partial attempt; otherwise none. Prior attempts remain inspectable —
-// this only moves the pointer.
+// Selection policy (spec §11.5):
+//   1. Newest completed full-coverage attempt.
+//   2. Otherwise, partial attempt with the highest scored-model coverage.
+//   3. Newest attempt only as the tie-breaker.
+//   4. Otherwise none.
+//
+// Existing records without stored score coverage use the current
+// newest-partial behavior as a migration fallback until a new attempt supplies
+// coverage metadata. A failed or lower-coverage repair must never displace
+// better accepted evidence.
 
 export function selectAttemptId(task: ExperimentTaskState): string | null {
   let newestCompleted: string | null = null;
+  let bestPartial: { id: string; coverage: number } | null = null;
   let newestPartial: string | null = null;
+
   for (const attempt of task.attempts) {
-    if (attempt.status === "completed") newestCompleted = attempt.id;
-    else if (attempt.status === "partial") newestPartial = attempt.id;
+    if (attempt.status === "completed") {
+      newestCompleted = attempt.id;
+    } else if (attempt.status === "partial") {
+      newestPartial = attempt.id;
+      const coverage = attempt.coverage
+        ? attempt.coverage.scoredModelKeys.length / Math.max(1, attempt.coverage.totalModels)
+        : -1; // No metadata → treat as lowest, preserve newest-partial fallback.
+      if (bestPartial === null || coverage > bestPartial.coverage) {
+        bestPartial = { id: attempt.id, coverage };
+      } else if (coverage === bestPartial.coverage && coverage >= 0) {
+        // Tie — newer attempt wins (spec §11.5 rule 3).
+        bestPartial = { id: attempt.id, coverage };
+      }
+    }
   }
-  return newestCompleted ?? newestPartial;
+
+  if (newestCompleted !== null) return newestCompleted;
+  // No completed attempt: prefer the highest-coverage partial when any attempt
+  // carries coverage metadata; otherwise fall back to the newest partial.
+  if (bestPartial !== null && bestPartial.coverage >= 0) return bestPartial.id;
+  return newestPartial;
 }
 
 // --- Record creation -------------------------------------------------------------
@@ -123,6 +152,11 @@ export interface CommitTerminalInput {
   epoch: number;
   error: PersistedError | null;
   now: number;
+  /** Scored-model coverage stored on the terminal attempt (spec §11.5). */
+  coverage?: ExperimentAttemptCoverage;
+  /** Compound execution-plan metadata stored on the terminal attempt
+   *  (spec §11.4; widened for roster extension). */
+  repair?: ExperimentTaskExecutionPlan;
 }
 
 export interface ExperimentEngine {
@@ -140,9 +174,18 @@ export interface ExperimentEngine {
   commitTaskTerminal(input: CommitTerminalInput): TransitionResult;
   requestPause(now: number): TransitionResult;
   resume(fence: ExecutionFence, now: number): TransitionResult;
-  abort(now: number): TransitionResult;
+  abort(now: number, error?: PersistedError | null): TransitionResult;
   recoverInterrupted(now: number): TransitionResult;
   retryIncomplete(generateId: () => string, fence: ExecutionFence, now: number): TransitionResult;
+  /** Queue one planned attempt per task (missing-cell repair or roster
+   *  extension). Only terminal records; plans are validated by discriminant
+   *  before any mutation. */
+  queuePlannedAttempts(
+    repairs: Array<{ taskId: string; repair: ExperimentTaskExecutionPlan }>,
+    generateId: () => string,
+    fence: ExecutionFence,
+    now: number,
+  ): TransitionResult;
 }
 
 /** A task is complete for retry purposes only when it holds an accepted
@@ -282,7 +325,7 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
     },
 
     commitTaskTerminal(input) {
-      const { taskId, attemptId, runStatus, epoch, error, now } = input;
+      const { taskId, attemptId, runStatus, epoch, error, now, coverage, repair } = input;
       if (epoch !== taskEpoch) {
         return reject(`Stale task epoch: expected ${taskEpoch}, got ${epoch}`);
       }
@@ -302,6 +345,8 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
         status: mapRunStatusToAttemptStatus(runStatus),
         finishedAt: now,
         error,
+        ...(coverage !== undefined ? { coverage } : {}),
+        ...(repair !== undefined ? { repair } : {}),
       };
       const updatedTask: ExperimentTaskState = {
         ...task,
@@ -333,7 +378,7 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       return OK;
     },
 
-    abort(now) {
+    abort(now, error = null) {
       if (
         record.status !== "running" &&
         record.status !== "paused" &&
@@ -348,22 +393,34 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       queue = [];
       pauseRequestedFlag = false;
 
-      let tasks = record.tasks;
-      if (activeTaskId !== null && activeAttemptId !== null) {
-        const task = taskState(activeTaskId);
-        if (task) {
-          const updatedTask: ExperimentTaskState = {
-            ...task,
-            attempts: task.attempts.map((a) =>
-              a.id === activeAttemptId && a.status === "running"
-                ? { ...a, status: "aborted" as const, finishedAt: now }
-                : a,
-            ),
-          };
-          updatedTask.selectedAttemptId = selectAttemptId(updatedTask);
-          tasks = record.tasks.map((t) => (t.taskId === updatedTask.taskId ? updatedTask : t));
-        }
-      }
+      // Finalize EVERY non-terminal attempt, not just the active one. Queued
+      // attempts (roster extensions, retries) that abort leaves as "queued"
+      // render as Running forever and can never be retried — a zombie state
+      // observed in production (plan 001 hotfix H1). Aborted attempts keep
+      // their repair plan so retryIncomplete can re-queue them.
+      const tasks = record.tasks.map((task) => {
+        let changed = false;
+        const attempts = task.attempts.map((a) => {
+          if (a.status === "running") {
+            changed = true;
+            return {
+              ...a,
+              status: "aborted" as const,
+              finishedAt: now,
+              ...(error !== null ? { error } : {}),
+            };
+          }
+          if (a.status === "queued") {
+            changed = true;
+            return { ...a, status: "aborted" as const, finishedAt: now };
+          }
+          return a;
+        });
+        if (!changed) return task;
+        const updatedTask: ExperimentTaskState = { ...task, attempts };
+        updatedTask.selectedAttemptId = selectAttemptId(updatedTask);
+        return updatedTask;
+      });
       activeTaskId = null;
       activeAttemptId = null;
       record = { ...record, tasks, status: "aborted", execution: null, updatedAt: now };
@@ -410,11 +467,33 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
       ) {
         return reject(`Cannot retry while ${record.status}`);
       }
-      const eligible = record.tasks.filter(taskNeedsRetry);
+      // A task is eligible when it has no accepted completed attempt, OR its
+      // newest attempt carries a repair/extension plan that ended
+      // failed/aborted/interrupted — re-running that same plan finishes the
+      // interrupted work (plan 001 hotfix H3). Without the second rule a
+      // failed roster extension is a dead end: the older completed attempt
+      // keeps taskNeedsRetry false while the planner rejects re-adding the
+      // model as a duplicate.
+      const eligible: Array<{ task: ExperimentTaskState; plan?: ExperimentTaskExecutionPlan }> = [];
+      for (const task of record.tasks) {
+        if (taskNeedsRetry(task)) {
+          eligible.push({ task });
+          continue;
+        }
+        const newest = task.attempts[task.attempts.length - 1];
+        if (
+          newest?.repair &&
+          (newest.status === "failed" ||
+            newest.status === "aborted" ||
+            newest.status === "interrupted")
+        ) {
+          eligible.push({ task, plan: newest.repair });
+        }
+      }
       if (eligible.length === 0) return reject("No incomplete tasks to retry");
 
       let tasks = record.tasks;
-      for (const task of eligible) {
+      for (const { task, plan } of eligible) {
         const attempt: ExperimentTaskAttempt = {
           id: generateId(),
           runId: null,
@@ -423,12 +502,62 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
           startedAt: null,
           finishedAt: null,
           error: null,
+          ...(plan !== undefined ? { repair: plan } : {}),
         };
         tasks = tasks.map((t) =>
           t.taskId === task.taskId ? { ...t, attempts: [...t.attempts, attempt] } : t,
         );
       }
-      queue = eligible.map((t) => t.taskId);
+      queue = eligible.map(({ task }) => task.taskId);
+      record = { ...record, tasks, status: "running", execution: fence, updatedAt: now };
+      return OK;
+    },
+
+    queuePlannedAttempts(repairs, generateId, fence, now) {
+      if (
+        record.status !== "completed" &&
+        record.status !== "completed_with_failures" &&
+        record.status !== "aborted" &&
+        record.status !== "interrupted"
+      ) {
+        return reject(`Cannot queue repairs while ${record.status}`);
+      }
+      if (repairs.length === 0) return reject("No repairs to queue");
+
+      // Validate every repair task exists, no task is queued twice, and every
+      // plan passes its discriminant invariants before mutating anything — an
+      // unknown id would leave the record "running" with nothing to execute.
+      const seen = new Set<string>();
+      for (const item of repairs) {
+        if (!taskState(item.taskId)) {
+          return reject(`Task ${item.taskId} not found`);
+        }
+        if (seen.has(item.taskId)) {
+          return reject(`Duplicate repair for task ${item.taskId}`);
+        }
+        seen.add(item.taskId);
+        if (!isExperimentTaskExecutionPlan(item.repair)) {
+          return reject(`Invalid execution plan for task ${item.taskId}`);
+        }
+      }
+
+      let tasks = record.tasks;
+      for (const item of repairs) {
+        const attempt: ExperimentTaskAttempt = {
+          id: generateId(),
+          runId: null,
+          trial: tasks.find((t) => t.taskId === item.taskId)?.attempts.length ?? 0,
+          status: "queued",
+          startedAt: null,
+          finishedAt: null,
+          error: null,
+          repair: item.repair,
+        };
+        tasks = tasks.map((t) =>
+          t.taskId === item.taskId ? { ...t, attempts: [...t.attempts, attempt] } : t,
+        );
+      }
+      queue = repairs.map((r) => r.taskId);
       record = { ...record, tasks, status: "running", execution: fence, updatedAt: now };
       return OK;
     },

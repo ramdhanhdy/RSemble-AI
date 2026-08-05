@@ -1,0 +1,102 @@
+{
+  "generatedAt": "2026-08-03T18:46:26.381Z",
+  "baseUrl": "http://localhost:5176/",
+  "probes": [
+    {
+      "name": "desktop-1440",
+      "overflowX": false,
+      "workloadEyebrow": true,
+      "pinnedChip": true,
+      "chipLink": "#/evaluations/profiles/prof-matrix",
+      "holisticChip": true,
+      "latestRun": true,
+      "sublabelCount": 2,
+      "sublabelsVisible": true,
+      "suiteNames": true,
+      "slotMinWidth": "136px",
+      "innerWidth": 1440,
+      "pass": true,
+      "reason": "no overflow; identity grammar, chip link, latest run, sublabels, and stable archive slot all render"
+    },
+    {
+      "name": "tablet-1024",
+      "overflowX": false,
+      "workloadEyebrow": true,
+      "pinnedChip": true,
+      "chipLink": "#/evaluations/profiles/prof-matrix",
+      "holisticChip": true,
+      "latestRun": true,
+      "sublabelCount": 2,
+      "sublabelsVisible": true,
+      "suiteNames": true,
+      "slotMinWidth": "136px",
+      "innerWidth": 1024,
+      "pass": true,
+      "reason": "identity grammar holds at tablet width without overflow"
+    },
+    {
+      "name": "tablet-portrait-768",
+      "overflowX": false,
+      "workloadEyebrow": true,
+      "pinnedChip": true,
+      "chipLink": "#/evaluations/profiles/prof-matrix",
+      "holisticChip": true,
+      "latestRun": true,
+      "sublabelCount": 2,
+      "sublabelsVisible": true,
+      "suiteNames": true,
+      "slotMinWidth": "136px",
+      "innerWidth": 768,
+      "pass": true,
+      "reason": "identity grammar holds at portrait tablet width without overflow"
+    },
+    {
+      "name": "mobile-390",
+      "overflowX": false,
+      "workloadEyebrow": true,
+      "pinnedChip": true,
+      "chipLink": "#/evaluations/profiles/prof-matrix",
+      "holisticChip": true,
+      "titleVisible": true,
+      "suiteNames": true,
+      "innerWidth": 390,
+      "pass": true,
+      "reason": "icon-only chips and eyebrow keep titles legible at 390px without overflow"
+    },
+    {
+      "name": "profiles-1440",
+      "overflowX": false,
+      "rubricEyebrow": true,
+      "reusableStatus": true,
+      "criteriaPreview": true,
+      "profileRow": true,
+      "pass": true,
+      "reason": "profile rows show rubric identity and honest reusable status"
+    },
+    {
+      "name": "zoom-200-percent",
+      "overflowX": false,
+      "innerWidth": 720,
+      "pinnedChip": true,
+      "workloadEyebrow": true,
+      "pass": true,
+      "reason": "effective 200% CSS viewport keeps identity grammar legible without overflow"
+    },
+    {
+      "name": "reduced-motion",
+      "spinnerAnimation": "none",
+      "overflowX": false,
+      "pass": true,
+      "reason": "reduced motion removes spinner rotation without horizontal overflow"
+    }
+  ],
+  "screenshots": [
+    "qa-desktop-1440.png",
+    "qa-tablet-1024.png",
+    "qa-tablet-portrait-768.png",
+    "qa-mobile-390.png",
+    "qa-profiles-1440.png",
+    "qa-zoom-200.png",
+    "qa-reduced-motion.png"
+  ]
+}

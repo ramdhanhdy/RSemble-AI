@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>RSemble AI — From Task Catalog to Defensible Model Evidence</title>
+<style>
+:root{
+  --canvas:#080909;--surface:#111313;--surface-2:#171919;--surface-3:#1c1f1f;
+  --border:#292d2d;--border-strong:#3a4040;--text:#ededed;--muted:#a4abab;--dim:#747c7c;
+  --cyan:#00e5ff;--cyan-soft:rgba(0,229,255,.10);--green:#00e29a;--green-soft:rgba(0,226,154,.10);
+  --amber:#ffb020;--amber-soft:rgba(255,176,32,.10);--rose:#ff6363;--rose-soft:rgba(255,99,99,.10);
+  --blue:#73a7ff;--violet:#b79aff;--sidebar:260px;--max:1160px;
+  --sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  --fast:100ms;--short:150ms;--ease:cubic-bezier(.23,1,.32,1)
+}
+*{box-sizing:border-box}html{scroll-behavior:auto;scroll-padding-top:24px}body{margin:0;background:var(--canvas);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased}
+a{color:inherit}button,input{font:inherit}button{color:inherit}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:4px}
+.skip{position:fixed;left:12px;top:-60px;z-index:1000;background:var(--cyan);color:#001014;padding:10px 14px;text-decoration:none;font-weight:700}.skip:focus{top:12px}
+.sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);background:#0c0e0e;border-right:1px solid var(--border);padding:24px 18px;display:flex;flex-direction:column;z-index:20}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:26px}.mark{width:28px;height:28px;border:1px solid var(--cyan);display:grid;place-items:center;font:700 11px var(--mono);color:var(--cyan);box-shadow:inset 0 0 0 3px #0c0e0e, inset 0 0 0 4px rgba(0,229,255,.35)}
+.brand strong{font-size:14px;letter-spacing:.02em}.brand span{display:block;color:var(--dim);font:10px var(--mono);letter-spacing:.11em;text-transform:uppercase}
+.nav-label,.eyebrow,.kicker{font:700 10px var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.nav{display:grid;gap:2px;margin-top:8px}.nav a{min-height:44px;display:flex;align-items:center;gap:10px;padding:8px 10px;color:var(--muted);text-decoration:none;border-left:2px solid transparent;font-size:13px;transition:color var(--short),background var(--short),border-color var(--short)}.nav a::before{content:attr(data-n);font:10px var(--mono);color:var(--dim);width:18px}.nav a:hover{color:var(--text);background:var(--surface)}.nav a.active{color:var(--cyan);border-color:var(--cyan);background:var(--cyan-soft)}
+.sidebar-foot{margin-top:auto;padding-top:20px;border-top:1px solid var(--border);font:10px/1.6 var(--mono);color:var(--dim)}.sidebar-foot strong{color:var(--amber);font-weight:600}
+main{margin-left:var(--sidebar)}.section{padding:88px 40px;border-bottom:1px solid var(--border)}.wrap{max-width:var(--max);margin:auto}
+.hero{min-height:96vh;display:flex;align-items:center;position:relative;overflow:hidden}.hero::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.023) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.023) 1px,transparent 1px);background-size:40px 40px;mask-image:linear-gradient(to bottom,black,transparent 85%);pointer-events:none}.hero .wrap{position:relative}
+.status-line{display:flex;align-items:center;gap:10px;color:var(--green);font:11px var(--mono);letter-spacing:.05em;margin-bottom:22px}.pulse{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px rgba(0,226,154,.09)}
+h1{font-size:clamp(40px,6.4vw,82px);line-height:.98;letter-spacing:-.055em;margin:0;max-width:1050px;font-weight:760}.accent{color:var(--cyan)}
+.dek{font-size:clamp(17px,2vw,22px);line-height:1.5;color:var(--muted);max-width:790px;margin:30px 0}.hero-actions{display:flex;flex-wrap:wrap;gap:10px}.btn{min-height:44px;border:1px solid var(--border-strong);background:var(--surface);padding:10px 15px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:650;font-size:13px;cursor:pointer;transition:transform var(--fast) var(--ease),background var(--short),border-color var(--short)}.btn:hover{border-color:#667070;background:var(--surface-2)}.btn:active{transform:scale(.98)}.btn.primary{background:var(--cyan);border-color:var(--cyan);color:#001316}.btn.ghost{background:transparent}
+.hero-meta{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);margin-top:66px;background:rgba(8,9,9,.7)}.hero-meta div{padding:18px;border-right:1px solid var(--border)}.hero-meta div:last-child{border:0}.hero-meta strong{display:block;font:700 18px var(--mono);color:var(--text)}.hero-meta span{font-size:11px;color:var(--dim)}
+h2{font-size:clamp(30px,4vw,50px);line-height:1.08;letter-spacing:-.035em;margin:8px 0 18px}h3{font-size:20px;letter-spacing:-.015em;margin:0 0 10px}h4{font-size:14px;margin:0 0 8px}.lead{font-size:18px;color:var(--muted);max-width:820px;margin:0 0 38px}.mono{font-family:var(--mono)}.muted{color:var(--muted)}.dim{color:var(--dim)}.cyan{color:var(--cyan)}.green{color:var(--green)}.amber{color:var(--amber)}.rose{color:var(--rose)}
+.callout{border-left:3px solid var(--cyan);background:var(--cyan-soft);padding:18px 20px;margin:26px 0}.callout.warning{border-color:var(--amber);background:var(--amber-soft)}.callout.danger{border-color:var(--rose);background:var(--rose-soft)}.callout.success{border-color:var(--green);background:var(--green-soft)}.callout strong{display:block;margin-bottom:4px}.callout p{margin:0;color:var(--muted)}
+.grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card{border:1px solid var(--border);background:var(--surface);padding:20px}.card p{color:var(--muted);margin:8px 0 0}.card .tag{margin-bottom:12px}.tag{display:inline-flex;align-items:center;min-height:24px;padding:3px 8px;border:1px solid var(--border-strong);font:700 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.tag.cyan{border-color:rgba(0,229,255,.35);background:var(--cyan-soft);color:var(--cyan)}.tag.green{border-color:rgba(0,226,154,.35);background:var(--green-soft);color:var(--green)}.tag.amber{border-color:rgba(255,176,32,.35);background:var(--amber-soft);color:var(--amber)}.tag.rose{border-color:rgba(255,99,99,.35);background:var(--rose-soft);color:var(--rose)}
+.audit-table{border:1px solid var(--border);overflow:hidden}.audit-row{display:grid;grid-template-columns:210px 1fr 1fr;border-bottom:1px solid var(--border)}.audit-row:last-child{border:0}.audit-row>div{padding:16px}.audit-row>div+div{border-left:1px solid var(--border)}.audit-row .old{background:rgba(255,99,99,.035)}.audit-row .final{background:rgba(0,226,154,.025)}.audit-row b{display:block;font-size:12px;margin-bottom:5px}.audit-row p{margin:0;color:var(--muted);font-size:13px}.audit-row .label{font:700 11px var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}.dot-label{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}.dot-label i{width:8px;height:8px;border-radius:50%;background:currentColor}.dot-label.established{color:var(--green)}.dot-label.design{color:var(--cyan)}.dot-label.hypothesis{color:var(--amber)}
+.units{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:28px 0}.unit{border:1px solid var(--border);background:var(--surface);padding:16px;position:relative;cursor:pointer;min-height:140px;text-align:left}.unit:hover,.unit[aria-pressed="true"]{border-color:var(--cyan);background:var(--cyan-soft)}.unit:not(:last-child)::after{content:"→";position:absolute;right:-15px;top:54px;color:var(--dim);z-index:2}.unit .n{font:700 10px var(--mono);color:var(--dim)}.unit strong{display:block;margin:10px 0 4px;font-size:14px}.unit span{display:block;color:var(--muted);font-size:12px;line-height:1.45}.unit-detail{border:1px solid var(--border-strong);background:var(--surface-2);padding:20px;min-height:130px}.unit-detail h3{color:var(--cyan)}
+.arch{border:1px solid var(--border);background:var(--surface);padding:22px;overflow:auto}.arch-row{display:flex;align-items:stretch;gap:8px;min-width:900px}.arch-node{flex:1;min-width:120px;border:1px solid var(--border-strong);padding:14px;background:var(--surface-2)}.arch-node strong{font:700 12px var(--mono);display:block}.arch-node span{font-size:11px;color:var(--muted);display:block;margin-top:6px;line-height:1.4}.arrow{align-self:center;color:var(--dim)}.arch-row+.arch-row{margin-top:12px}.arch-note{font-size:11px;color:var(--dim);margin-top:14px}
+.code{background:#090b0b;border:1px solid var(--border);padding:16px;overflow:auto;font:12px/1.65 var(--mono);color:#c8d0d0}.code .k{color:var(--cyan)}.code .s{color:#b9dfad}.code .c{color:#687272}.code .v{color:var(--amber)}
+.truth-table{width:100%;border-collapse:collapse;border:1px solid var(--border);font-size:13px}.truth-table th,.truth-table td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--border)}.truth-table th{font:700 10px var(--mono);color:var(--dim);letter-spacing:.06em;text-transform:uppercase;background:var(--surface)}.truth-table tr:last-child td{border-bottom:0}.truth-table td:first-child{width:22%}.truth-table td:nth-child(2){width:23%}.truth-table td p{margin:0;color:var(--muted)}
+.frameworks{display:grid;gap:8px}.framework{border:1px solid var(--border);background:var(--surface)}.framework summary{list-style:none;cursor:pointer;min-height:58px;padding:13px 16px;display:grid;grid-template-columns:180px 1fr 110px;gap:16px;align-items:center}.framework summary::-webkit-details-marker{display:none}.framework summary::after{content:"+";justify-self:end;color:var(--dim);font:18px var(--mono)}.framework[open] summary::after{content:"−";color:var(--cyan)}.framework summary strong{font-size:13px}.framework summary span{font-size:12px;color:var(--muted)}.framework-body{border-top:1px solid var(--border);padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:20px}.framework-body p{margin:0;color:var(--muted);font-size:13px}.framework-body b{display:block;color:var(--text);margin-bottom:5px}.cite{font:700 10px var(--mono);color:var(--cyan);text-decoration:none;white-space:nowrap}.cite:hover{text-decoration:underline}
+.bloom-wrap{display:grid;grid-template-columns:1fr 300px;gap:14px;margin-top:24px}.bloom{display:grid;grid-template-columns:100px repeat(6,1fr);border:1px solid var(--border)}.bloom div{min-height:52px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:8px;font-size:10px}.bloom div:nth-child(7n){border-right:0}.bloom .head{background:var(--surface-2);font:700 9px var(--mono);color:var(--muted);text-transform:uppercase;display:flex;align-items:center}.bloom button{min-height:52px;border:0;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface);cursor:pointer;text-align:left;padding:7px;color:var(--dim);font-size:10px}.bloom button:hover,.bloom button.active{background:var(--cyan-soft);color:var(--cyan)}.bloom-detail{border:1px solid var(--border);background:var(--surface);padding:18px}.bloom-detail p{font-size:13px;color:var(--muted)}
+.irt{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}.chart-card,.control-card{border:1px solid var(--border);background:var(--surface);padding:18px}.chart-card svg{width:100%;height:auto;display:block}.control{margin:16px 0}.control label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}.control output{font:700 12px var(--mono);color:var(--cyan)}input[type=range]{width:100%;accent-color:var(--cyan)}.formula{font:14px var(--mono);color:var(--cyan);padding:12px;background:var(--cyan-soft);border:1px solid rgba(0,229,255,.25);margin:12px 0}.chart-label{font:10px var(--mono);fill:#8b9494}.curve{fill:none;stroke:var(--cyan);stroke-width:3}.guide{stroke:#3b4141;stroke-width:1;stroke-dasharray:4 4}.theta-line{stroke:var(--amber);stroke-width:2}.theta-dot{fill:var(--amber)}
+.mock-shell{border:1px solid var(--border-strong);background:#0a0b0b;box-shadow:0 20px 60px rgba(0,0,0,.35)}.mock-top{height:50px;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:12px}.mock-logo{font:800 12px var(--mono)}.mock-tabs{display:flex;gap:2px;margin-left:18px}.mock-tabs button,.seg button{border:0;background:transparent;color:var(--muted);min-height:44px;padding:7px 10px;cursor:pointer;font-size:12px}.mock-tabs button.active{color:var(--cyan);background:var(--cyan-soft)}.mock-status{margin-left:auto;font:10px var(--mono);color:var(--green)}.prototype-banner{background:var(--amber-soft);color:var(--amber);border-bottom:1px solid rgba(255,176,32,.22);padding:6px 14px;font:700 10px var(--mono);letter-spacing:.05em;text-align:center}.mock-body{display:grid;grid-template-columns:240px 1fr;min-height:590px}.mock-side{border-right:1px solid var(--border);padding:12px}.mock-side h4{font:700 10px var(--mono);color:var(--dim);text-transform:uppercase}.task-option{width:100%;min-height:44px;border:1px solid transparent;background:transparent;color:var(--muted);padding:10px;text-align:left;cursor:pointer;margin:3px 0;font-size:11px;line-height:1.4}.task-option:hover{background:var(--surface)}.task-option.active{border-color:rgba(0,229,255,.3);background:var(--cyan-soft);color:var(--text)}.task-option strong{display:block;font-size:12px}.task-option span{font:9px var(--mono);color:var(--dim)}.mock-main{padding:18px;min-width:0}.mock-view{display:none}.mock-view.active{display:block}.mock-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:18px}.mock-head h3{font-size:18px}.mock-head .tag{margin-left:auto}.mock-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}.mock-card{border:1px solid var(--border);background:var(--surface);padding:14px;min-width:0}#task-governance{overflow-wrap:anywhere;word-break:break-all}.mock-card.span-4{grid-column:span 4}.mock-card.span-5{grid-column:span 5}.mock-card.span-6{grid-column:span 6}.mock-card.span-7{grid-column:span 7}.mock-card.span-8{grid-column:span 8}.mock-card.span-12{grid-column:span 12}.mock-card h4{font:700 10px var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.06em}.metric{font:700 24px var(--mono);margin-top:8px}.metric small{font-size:10px;color:var(--muted)}.bar-row{display:grid;grid-template-columns:145px 1fr 28px;gap:8px;align-items:center;margin:9px 0;font-size:11px;color:var(--muted)}.bar{height:6px;background:#262a2a;overflow:hidden}.bar i{display:block;height:100%;background:var(--cyan);transform-origin:left;transform:scaleX(var(--p));transition:transform var(--short) var(--ease)}.bar-row output{font:10px var(--mono);color:var(--text)}.facet-chips{display:flex;flex-wrap:wrap;gap:5px}.chip{border:1px solid var(--border);padding:3px 6px;font:9px var(--mono);color:var(--muted)}.chip.req{border-color:rgba(0,229,255,.28);color:var(--cyan)}.chip.proposed{border-style:dashed;color:var(--amber)}
+.ledger{width:100%;border-collapse:collapse;font-size:10px}.ledger th,.ledger td{padding:8px;border-bottom:1px solid var(--border);text-align:left}.ledger th{font:700 9px var(--mono);color:var(--dim);text-transform:uppercase}.ledger .ok{color:var(--green)}.ledger .warn{color:var(--amber)}
+.matrix{display:grid;grid-template-columns:145px repeat(6,minmax(52px,1fr));border-top:1px solid var(--border);border-left:1px solid var(--border);overflow:auto}.matrix div{min-height:42px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:7px;font-size:9px;display:flex;align-items:center}.matrix .mh{font:700 9px var(--mono);color:var(--dim);background:var(--surface-2)}.matrix .cell{justify-content:center;color:var(--dim)}.matrix .cell.pending{background:repeating-linear-gradient(135deg,transparent,transparent 5px,rgba(255,255,255,.025) 5px,rgba(255,255,255,.025) 10px)}.matrix .cell.synthetic{background:var(--green-soft);color:var(--green)}.matrix .cell.added{background:var(--cyan-soft);color:var(--cyan)}
+.seg{display:inline-flex;border:1px solid var(--border);padding:2px}.seg button{min-height:44px}.seg button.active{background:var(--surface-3);color:var(--text)}.mode-note{font:10px var(--mono);color:var(--amber)}
+.evidence-lock{padding:24px;border:1px dashed var(--border-strong);text-align:center;color:var(--muted)}.evidence-lock strong{display:block;color:var(--text);margin-bottom:4px}.simulation-log{font:10px/1.7 var(--mono);color:var(--muted);background:#080909;border:1px solid var(--border);padding:12px;min-height:100px}.simulation-log .ok{color:var(--green)}
+.phases{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.phase{border-top:2px solid var(--border-strong);padding:14px 10px 0}.phase.now{border-color:var(--green)}.phase.next{border-color:var(--cyan)}.phase.later{border-color:var(--amber)}.phase .pn{font:10px var(--mono);color:var(--dim)}.phase strong{display:block;font-size:12px;margin:6px 0}.phase span{font-size:10px;color:var(--muted);line-height:1.4;display:block}
+.source-list{counter-reset:source}.source{display:grid;grid-template-columns:36px 1fr 120px;gap:12px;padding:14px 0;border-bottom:1px solid var(--border)}.source:last-child{border:0}.source .sn{font:700 11px var(--mono);color:var(--cyan)}.source a{font-weight:650;text-decoration:none}.source a:hover{text-decoration:underline}.source p{margin:3px 0 0;color:var(--muted);font-size:12px}.quality{justify-self:end;font:700 9px var(--mono);text-transform:uppercase;color:var(--dim)}
+.footer{padding:48px 40px;color:var(--dim);font-size:12px}.footer .wrap{display:flex;justify-content:space-between;gap:20px}.footer strong{color:var(--text)}
+@media(max-width:980px){:root{--sidebar:0px}.sidebar{position:sticky;top:0;width:100%;height:auto;inset:auto;display:block;padding:8px 12px;overflow:auto;border-right:0;border-bottom:1px solid var(--border)}.brand,.nav-label,.sidebar-foot{display:none}.nav{display:flex;margin:0;width:max-content}.nav a{border-left:0;border-bottom:2px solid transparent;white-space:nowrap}.nav a.active{border-bottom-color:var(--cyan)}main{margin-left:0}.section{padding:70px 24px}.hero{min-height:auto;padding-top:90px}.hero-meta{grid-template-columns:repeat(2,1fr)}.hero-meta div:nth-child(2){border-right:0}.hero-meta div:nth-child(-n+2){border-bottom:1px solid var(--border)}.units{grid-template-columns:repeat(2,1fr)}.unit::after{display:none}.bloom-wrap,.irt{grid-template-columns:1fr}.mock-body{grid-template-columns:190px 1fr}.phases{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){body{font-size:14px}.section{padding:58px 16px}h1{font-size:44px}.grid-2,.grid-3{grid-template-columns:1fr}.hero-meta{grid-template-columns:1fr}.hero-meta div{border-right:0!important;border-bottom:1px solid var(--border)!important}.audit-row{grid-template-columns:1fr}.audit-row>div+div{border-left:0;border-top:1px solid var(--border)}.units{grid-template-columns:1fr}.framework summary{grid-template-columns:120px 1fr}.framework summary .quality{display:none}.framework-body{grid-template-columns:1fr}.bloom-wrap{overflow:auto}.bloom{min-width:650px}.mock-top{height:auto;min-height:50px;flex-wrap:wrap;padding:4px 12px 0}.mock-tabs{display:flex;order:3;width:100%;margin-left:0;overflow-x:auto;border-top:1px solid var(--border);scroll-snap-type:x proximity}.mock-tabs button{flex:0 0 auto;scroll-snap-align:start}.mock-body{display:block}.mock-side{border-right:0;border-bottom:1px solid var(--border);display:flex;gap:6px;overflow-x:auto;scroll-snap-type:x proximity}.mock-side h4{display:none}.task-option{min-width:220px;scroll-snap-align:start}.mock-main{padding:12px}.mock-card[class*="span-"]{grid-column:span 12}.matrix{grid-template-columns:110px repeat(6,70px)}.phases{grid-template-columns:repeat(2,1fr)}.source{grid-template-columns:30px 1fr}.quality{display:none}.footer .wrap{display:block}.truth-table{font-size:11px}.truth-table th,.truth-table td{padding:8px}.bar-row{grid-template-columns:115px 1fr 25px}}
+@media(prefers-reduced-motion:reduce){.btn:active{transform:none}.bar i{transition:none}}
+@media print{.sidebar,.hero-actions,.prototype-banner{display:none}main{margin:0}.section{padding:36px 0;break-inside:avoid}.hero{min-height:auto}.mock-shell{box-shadow:none}body{background:#fff;color:#111}.card,.mock-card,.framework,.arch,.audit-table{background:#fff;border-color:#bbb}.muted,.dim,.card p,.framework-body p{color:#444}}
+</style>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<aside class="sidebar" aria-label="Document navigation">
+  <div class="brand"><div class="mark">RS</div><div><strong>RSemble AI</strong><span>Evidence architecture</span></div></div>
+  <div class="nav-label">Finalized explainer</div>
+  <nav class="nav" id="side-nav">
+    <a href="#thesis" data-n="01">Corrected thesis</a>
+    <a href="#audit" data-n="02">Critical audit</a>
+    <a href="#model" data-n="03">Evidence model</a>
+    <a href="#foundations" data-n="04">Bounded foundations</a>
+    <a href="#statistics" data-n="05">Statistical honesty</a>
+    <a href="#demo" data-n="06">Ideal-state demo</a>
+    <a href="#migration" data-n="07">Implementation path</a>
+    <a href="#sources" data-n="08">Sources</a>
+  </nav>
+  <div class="sidebar-foot"><strong>FINAL DESIGN PROPOSAL</strong><br>Grounded in current RSemble records + PulseFit Advanced Suite.<br>Updated 04 Aug 2026.</div>
+</aside>
+<main id="content">
+<section class="section hero" id="top">
+  <div class="wrap">
+    <div class="status-line"><span class="pulse"></span> FINAL CRITICAL REVISION · RESEARCH + PRODUCT PROTOTYPE</div>
+    <h1>From a task list to <span class="accent">defensible model evidence.</span></h1>
+    <p class="dek">The north star is not a universal skill tree or a prettier leaderboard. It is a traceable chain from a frozen task version to a bounded claim about model behavior, with the protocol, judge, uncertainty, and task distribution still attached.</p>
+    <div class="hero-actions"><a class="btn primary" href="#demo">Open the ideal-state demo ↓</a><a class="btn ghost" href="#audit">See what changed</a></div>
+    <div class="hero-meta" aria-label="Document scope">
+      <div><strong>15</strong><span>real PulseFit tasks grounded</span></div>
+      <div><strong>2</strong><span>tasks modeled end to end</span></div>
+      <div><strong>0</strong><span>results presented as observed</span></div>
+      <div><strong>3</strong><span>claim levels kept distinct</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="thesis">
+<div class="wrap">
+  <div class="eyebrow">01 · Corrected thesis</div>
+  <h2>Store evidence in layers. Never collapse the layers into a score.</h2>
+  <p class="lead">RSemble should make every conclusion answer five different questions: what was asked, what was produced, how it was measured, what population the claim targets, and how uncertain that claim is.</p>
+  <div class="units" role="group" aria-label="Five evidence units">
+    <button class="unit" data-unit="task" aria-pressed="true"><span class="n">01 · REPRODUCE</span><strong>Task version</strong><span>Frozen prompt, inputs, expected contracts, and intended demands.</span></button>
+    <button class="unit" data-unit="artifact" aria-pressed="false"><span class="n">02 · GENERATE</span><strong>Artifact</strong><span>One model output under one frozen generation protocol.</span></button>
+    <button class="unit" data-unit="observation" aria-pressed="false"><span class="n">03 · MEASURE</span><strong>Observation</strong><span>One judge or verifier measuring one artifact.</span></button>
+    <button class="unit" data-unit="cluster" aria-pressed="false"><span class="n">04 · INFER</span><strong>Inference unit</strong><span>The defensible independent cluster, declared by the analysis.</span></button>
+    <button class="unit" data-unit="report" aria-pressed="false"><span class="n">05 · CLAIM</span><strong>Capability report</strong><span>A derived view conditional on tasks, protocol, evidence, and estimator.</span></button>
+  </div>
+  <div class="unit-detail" id="unit-detail" aria-live="polite"></div>
+  <div class="callout success"><strong>The compact rule</strong><p><span class="mono">task demand ≠ observed performance ≠ latent capability.</span> RSemble may connect them, but it must never silently substitute one for another.</p></div>
+</div>
+</section>
+
+<section class="section" id="audit">
+<div class="wrap">
+  <div class="eyebrow">02 · Critical audit</div>
+  <h2>Seven conclusions that needed tightening.</h2>
+  <p class="lead">The earlier explainer had the right direction but occasionally treated an architectural convenience as a statistical truth, and emerging research as settled doctrine. The finalized version makes those boundaries explicit.</p>
+  <div class="audit-table">
+    <div class="audit-row"><div><span class="label">Independence</span></div><div class="old"><b class="rose">Too strong</b><p>“The task is the atom” implied each task was an independent sample.</p></div><div class="final"><b class="green">Final</b><p>A task version is the reproducibility unit. The inference unit may be a task, source case, template family, passage, organization, or another declared cluster. Related tasks can be dependent. <a class="cite" href="#s3">[3]</a><a class="cite" href="#s14">[14]</a></p></div></div>
+    <div class="audit-row"><div><span class="label">Capability</span></div><div class="old"><b class="rose">Too essentialist</b><p>A stable “model capability profile” sounded like a property the model simply owns.</p></div><div class="final"><b class="green">Final</b><p>Generate a versioned report: “under protocol P, on target distribution D, estimator E found this evidence.” It expires when the model, protocol, taxonomy, or target changes.</p></div></div>
+    <div class="audit-row"><div><span class="label">Taxonomy labels</span></div><div class="old"><b class="rose">Unvalidated bridge</b><p>Framework labels were presented as if they directly measure machine faculties.</p></div><div class="final"><b class="green">Final</b><p>Bloom, DOK, occupational vocabularies, and LLM-generated demand labels are annotation aids or hypotheses. Validate coding guidance, agreement, predictive utility, and failure modes before using labels inferentially. <a class="cite" href="#s1">[1]</a><a class="cite" href="#s15">[15]</a></p></div></div>
+    <div class="audit-row"><div><span class="label">Judge evidence</span></div><div class="old"><b class="rose">Underspecified</b><p>Judge outputs looked like observations without a strong validity gate.</p></div><div class="final"><b class="green">Final</b><p>A repeatable judge can still be systematically wrong. Store judge version, rubric version, order, labels, perturbation tests, agreement beyond chance, and verifier cross-checks. <a class="cite" href="#s11">[11]</a><a class="cite" href="#s12">[12]</a><a class="cite" href="#s13">[13]</a></p></div></div>
+    <div class="audit-row"><div><span class="label">Repeated generations</span></div><div class="old"><b class="rose">Easy to overcount</b><p><span class="mono">20 tasks × 3 runs = 60 rows</span> risked sounding like 60 independent task samples.</p></div><div class="final"><b class="green">Final</b><p>Repeated generations estimate within-task stochasticity. They improve measurement for those tasks but do not create new task coverage. Cluster at the task or higher dependence unit.</p></div></div>
+    <div class="audit-row"><div><span class="label">IRT</span></div><div class="old"><b class="rose">Premature precision</b><p>An interactive curve made a future latent scale feel implementation-ready.</p></div><div class="final"><b class="green">Final</b><p>Keep the intuition, defer production IRT. AI benchmarks often have few, clustered models and many items; recent simulation work finds unreliable inferences under regime mismatch. Use diagnostics and larger, diverse model samples first. <a class="cite" href="#s2">[2]</a></p></div></div>
+    <div class="audit-row"><div><span class="label">Research maturity</span></div><div class="old"><b class="rose">Count over quality</b><p>“Thirteen frameworks surveyed” sounded like validation by accumulation.</p></div><div class="final"><b class="green">Final</b><p>Source count is not evidence strength. This version distinguishes standards, official systems, peer-reviewed studies, preprints, and repository design documents, then limits what each can justify.</p></div></div>
+  </div>
+</div>
+</section>
+
+<section class="section" id="model">
+<div class="wrap">
+  <div class="eyebrow">03 · Evidence model</div>
+  <h2>A chain of custody, not a hierarchy of skills.</h2>
+  <p class="lead">The data model has two linked planes. The upper plane defines what was intended and frozen. The lower plane records what actually happened and what may be concluded.</p>
+  <div class="arch" aria-label="Proposed evidence architecture">
+    <div class="arch-row">
+      <div class="arch-node"><strong>Task</strong><span>Stable identity and lifecycle</span></div><div class="arrow">→</div>
+      <div class="arch-node"><strong>TaskVersion</strong><span>Immutable content + verifier contract</span></div><div class="arrow">→</div>
+      <div class="arch-node"><strong>ManifestVersion</strong><span>References + strata + weights</span></div><div class="arrow">+</div>
+      <div class="arch-node"><strong>ProtocolVersion</strong><span>Models, judge, prompts, sampling</span></div><div class="arrow">→</div>
+      <div class="arch-node"><strong>Experiment</strong><span>Frozen design + target claim</span></div>
+    </div>
+    <div class="arch-row">
+      <div class="arch-node"><strong>FacetSchemeVersion</strong><span>Vocabulary + codebook</span></div><div class="arrow">→</div>
+      <div class="arch-node"><strong>TaskAnnotation</strong><span>Annotator, confidence, rationale</span></div><div class="arrow">↘</div>
+      <div class="arch-node"><strong>GenerationArtifact</strong><span>Model output + provenance</span></div><div class="arrow">→</div>
+      <div class="arch-node"><strong>EvaluationObservation</strong><span>Judge or verifier event</span></div><div class="arrow">→</div>
+      <div class="arch-node"><strong>CapabilityReport</strong><span>Derived, scoped, uncertain</span></div>
+    </div>
+    <div class="arch-note">W3C PROV maps naturally: immutable records are entities; generation and evaluation are activities; models, judges, people, and software are agents. <a class="cite" href="#s5">[5]</a></div>
+  </div>
+  <div class="grid-3" style="margin-top:14px">
+    <div class="card"><span class="tag green">Already strong today</span><h3>Frozen execution</h3><p>Current RSemble records already preserve experiment snapshots, suite versions, protocol fingerprints, candidate attempts, blinded label maps, judge attempts, and missing-cell repair provenance.</p></div>
+    <div class="card"><span class="tag cyan">Primary gap</span><h3>Reusable task identity</h3><p>Suite packages still embed task objects. Canonical task versions would let the same exact task appear in multiple manifests without copying or losing cross-suite evidence.</p></div>
+    <div class="card"><span class="tag amber">Derived, not canonical</span><h3>Capability claims</h3><p>Do not store “reasoning = 82” on a model. Store the observations, then materialize a report with its query, inclusion rules, weighting, estimator, and uncertainty.</p></div>
+  </div>
+  <h3 style="margin-top:38px">A minimal versioned observation</h3>
+  <pre class="code" aria-label="Example observation record"><span class="c">// Shape, not a finalized API contract</span>
+{
+  <span class="k">"observationId"</span>: <span class="s">"obs:exp-042:funnel-truth:model-a:judge-1"</span>,
+  <span class="k">"artifactRef"</span>: <span class="s">"artifact:...:sha256"</span>,
+  <span class="k">"taskVersionRef"</span>: <span class="s">"task:pulsefit/funnel-truth@1"</span>,
+  <span class="k">"measurement"</span>: {
+    <span class="k">"kind"</span>: <span class="s">"rubric_judgment"</span>,
+    <span class="k">"judgeProtocolRef"</span>: <span class="s">"judge-protocol:analytics@3"</span>,
+    <span class="k">"criterionScores"</span>: { <span class="s">"quantitative_correctness"</span>: <span class="v">4</span> },
+    <span class="k">"blindLabelMapRef"</span>: <span class="s">"blind-map:..."</span>
+  },
+  <span class="k">"quality"</span>: {
+    <span class="k">"verifierCrossCheck"</span>: <span class="s">"passed"</span>,
+    <span class="k">"judgeValidationSetVersion"</span>: <span class="s">"pulsefit-anchors@2"</span>
+  },
+  <span class="k">"provenance"</span>: { <span class="k">"generatedAt"</span>: <span class="s">"..."</span>, <span class="k">"softwareVersion"</span>: <span class="s">"..."</span> }
+}</pre>
+</div>
+</section>
+
+<section class="section" id="foundations">
+<div class="wrap">
+  <div class="eyebrow">04 · Bounded foundations</div>
+  <h2>Use each framework for one job. Do not let it colonize the model.</h2>
+  <p class="lead">The useful question is not “which framework wins?” It is “what bounded design lesson survives translation into an AI evaluation workbench?”</p>
+  <div class="legend"><span class="dot-label established"><i></i>Established standard or official system</span><span class="dot-label design"><i></i>Research-informed design input</span><span class="dot-label hypothesis"><i></i>Needs local validation</span></div>
+  <div class="frameworks">
+    <details class="framework" open><summary><strong>Bloom × Webb DOK</strong><span>Describe intended cognitive work from two angles</span><span class="quality">Educational frameworks</span></summary><div class="framework-body"><p><b>Use</b>Bloom’s revised table separates knowledge type from cognitive process; DOK concerns complexity of engagement rather than simple difficulty. They can prompt richer task annotation. <a class="cite" href="#s6">[6]</a><a class="cite" href="#s7">[7]</a></p><p><b>Boundary</b>They were built for educational objectives and standards alignment, not as validated latent dimensions of machine intelligence. Labels should remain proposed annotations until a codebook and agreement study support them.</p></div></details>
+    <details class="framework"><summary><strong>ADeLe general scales</strong><span>Separate demand profiles from model ability estimates</span><span class="quality">Peer-reviewed study</span></summary><div class="framework-body"><p><b>Use</b>The demand/ability distinction is central. The study reports predictive value across 15 LLMs and 63 tasks using 18 rubrics. <a class="cite" href="#s1">[1]</a></p><p><b>Boundary</b>This is strong external evidence for a method, not proof that its 18 scales are RSemble’s correct ontology. Replicate predictive validity on RSemble data before adopting scales or claiming out-of-distribution power.</p></div></details>
+    <details class="framework"><summary><strong>NIST AI 800-3</strong><span>Declare benchmark accuracy versus generalized accuracy</span><span class="quality">Official report</span></summary><div class="framework-body"><p><b>Use</b>Explicitly distinguish performance on a fixed benchmark from performance generalized to a task population. Account for item clusters and report variance structure. <a class="cite" href="#s3">[3]</a></p><p><b>Boundary</b>A GLMM is not automatically correct. The target population, selection process, link function, random effects, and dependence assumptions must fit the evaluation design.</p></div></details>
+    <details class="framework"><summary><strong>HELM</strong><span>Keep scenarios, adaptations, and multiple metrics visible</span><span class="quality">Peer-reviewed benchmark</span></summary><div class="framework-body"><p><b>Use</b>Resist one-score evaluation. Preserve scenario context and disaggregated measurements such as accuracy, calibration, robustness, fairness, efficiency, and toxicity where relevant. <a class="cite" href="#s8">[8]</a></p><p><b>Boundary</b>RSemble is a personal model-pair workbench, not HELM. Borrow the multidimensional reporting principle, not its entire benchmark matrix.</p></div></details>
+    <details class="framework"><summary><strong>SkillsBench</strong><span>Separate domain, operation, modality, interface, and difficulty</span><span class="quality">Repository codebook</span></summary><div class="framework-body"><p><b>Use</b>Orthogonal fields are more defensible than contributor free text; written codebooks, confidence, independent annotation, and agreement checks improve governance. <a class="cite" href="#s9">[9]</a></p><p><b>Boundary</b>It is a project taxonomy document, not established psychometrics. Its categories answer SkillsBench’s research question and should not be copied wholesale.</p></div></details>
+    <details class="framework"><summary><strong>ESCO · O*NET · SFIA</strong><span>Govern stable vocabularies and external mappings</span><span class="quality">Official systems</span></summary><div class="framework-body"><p><b>Use</b>Stable identifiers, multilingual labels, relationships, releases, provenance, and deprecation are mature governance lessons. ESCO currently exposes versioned occupation and skill concepts. <a class="cite" href="#s10">[10]</a></p><p><b>Boundary</b>Occupational competence systems describe human work and labor markets. Use them as optional mappings for task context, never as the core latent structure of model capability.</p></div></details>
+    <details class="framework"><summary><strong>BIG-bench · GAIA · SNI</strong><span>Learn benchmark composition and task diversity patterns</span><span class="quality">Benchmark precedents</span></summary><div class="framework-body"><p><b>Use</b>They demonstrate community task collections, agentic complexity, structured task schemas, and the practical value of per-task metadata.</p><p><b>Boundary</b>Benchmark categories are often descriptive and historically contingent. Membership does not establish construct validity or task independence.</p></div></details>
+    <details class="framework"><summary><strong>W3C PROV</strong><span>Represent how evidence was produced</span><span class="quality">W3C recommendation</span></summary><div class="framework-body"><p><b>Use</b>Entities, activities, agents, and derivations give RSemble a principled provenance vocabulary for tasks, artifacts, judge events, reports, and reuse. <a class="cite" href="#s5">[5]</a></p><p><b>Boundary</b>PROV captures lineage; it does not validate a score, judge, taxonomy, or statistical claim.</p></div></details>
+    <details class="framework"><summary><strong>IRT / Rasch</strong><span>Model responses as interactions between models and items</span><span class="quality">Mature method, risky regime</span></summary><div class="framework-body"><p><b>Use</b>The central intuition is valuable: raw averages confound item composition, item difficulty, and model performance. A fitted model can estimate latent structure only under explicit assumptions.</p><p><b>Boundary</b>Do not ship a latent ability number in early phases. Recent AI-specific simulation work shows classical and scalable estimators can fail with small or non-normal model pools. <a class="cite" href="#s2">[2]</a></p></div></details>
+    <details class="framework"><summary><strong>Agent Skills · DigComp</strong><span>Packaging and human-literacy references only</span><span class="quality">Peripheral references</span></summary><div class="framework-body"><p><b>Use</b>Agent Skills suggests portable procedural bundles; DigComp shows a governed multidimensional competence vocabulary.</p><p><b>Boundary</b>Neither directly validates RSemble’s task taxonomy. Keep them in the research map, not the core implementation dependency.</p></div></details>
+  </div>
+
+  <h3 style="margin-top:42px">Bloom’s table remains useful — as a prompt for annotation</h3>
+  <p class="muted">Click a cell. The combinations are examples of intended work, not observed model traits.</p>
+  <div class="bloom-wrap">
+    <div class="bloom" id="bloom-grid" aria-label="Interactive Bloom taxonomy table"></div>
+    <div class="bloom-detail" id="bloom-detail" aria-live="polite"><span class="tag amber">Proposed annotation</span><h3>Select a cell</h3><p>Each educational objective combines a knowledge dimension with a cognitive-process dimension. A real task can occupy multiple cells.</p></div>
+  </div>
+</div>
+</section>
+
+<section class="section" id="statistics">
+<div class="wrap">
+  <div class="eyebrow">05 · Statistical honesty</div>
+  <h2>Every uncertainty band needs a target.</h2>
+  <p class="lead">“Confidence” is incomplete until RSemble states what varies: model generation, judge measurement, the particular task set, or a proposed population of future tasks.</p>
+  <table class="truth-table">
+    <thead><tr><th>Claim level</th><th>What varies</th><th>Defensible output</th><th>What not to say</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Fixed-suite description</strong></td><td>Repeated generations and judge attempts on these exact 15 tasks</td><td>Per-task scores, paired differences, judge disagreement, within-task variability</td><td><p>“General business-analytics capability”</p></td></tr>
+      <tr><td><strong>Designed task-population inference</strong></td><td>Tasks sampled or weighted from an explicitly defined target population</td><td>Cluster-aware estimate, coverage, weighting sensitivity, uncertainty interval</td><td><p>“Works on future tasks” without a sampling frame</p></td></tr>
+      <tr><td><strong>Latent-scale inference</strong></td><td>A fitted measurement model over diverse items and models</td><td>Model diagnostics, fit, identifiability, uncertainty, invariance checks</td><td><p>A stable human-like faculty inferred from a small convenience suite</p></td></tr>
+    </tbody>
+  </table>
+  <div class="callout warning"><strong>The PulseFit suite is a designed case battery, not a random sample.</strong><p>Its 15 tasks provide rich fixed-suite evidence. Generalizing beyond them requires defining the intended universe of D2C subscription analytics work and how this battery represents it.</p></div>
+
+  <div class="irt" style="margin-top:32px">
+    <div class="chart-card">
+      <span class="tag amber">Teaching model · not a production estimator</span>
+      <svg viewBox="0 0 620 300" role="img" aria-labelledby="irt-title irt-desc"><title id="irt-title">Two-parameter logistic item response curve</title><desc id="irt-desc">Probability of success as model position theta changes relative to item location b, with discrimination a.</desc><line class="guide" x1="55" y1="30" x2="55" y2="255"/><line class="guide" x1="55" y1="255" x2="590" y2="255"/><line class="guide" x1="55" y1="142" x2="590" y2="142"/><path class="curve" id="irt-curve" d=""/><line class="theta-line" id="theta-line" x1="0" y1="35" x2="0" y2="255"/><circle class="theta-dot" id="theta-dot" r="6" cx="0" cy="0"/><text class="chart-label" x="20" y="35">1.0</text><text class="chart-label" x="20" y="146">0.5</text><text class="chart-label" x="25" y="258">0.0</text><text class="chart-label" x="275" y="290">model position θ</text><text class="chart-label" id="prob-label" x="400" y="50"></text></svg>
+    </div>
+    <div class="control-card">
+      <h3>IRT intuition, bounded</h3>
+      <div class="formula">P(success) = 1 / (1 + e<sup>−a(θ−b)</sup>)</div>
+      <div class="control"><label for="theta">Model position θ <output id="theta-out">0.4</output></label><input id="theta" type="range" min="-3" max="3" step="0.1" value="0.4"></div>
+      <div class="control"><label for="difficulty">Item location b <output id="difficulty-out">0.8</output></label><input id="difficulty" type="range" min="-3" max="3" step="0.1" value="0.8"></div>
+      <div class="control"><label for="disc">Discrimination a <output id="disc-out">1.2</output></label><input id="disc" type="range" min="0.2" max="3" step="0.1" value="1.2"></div>
+      <p class="muted" style="font-size:12px">The curve illustrates a model assumption, not an empirical RSemble result. The latent axis gets meaning only from items, population, fit, and validation. <a class="cite" href="#s2">[2]</a></p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:38px">Minimum viable judge validation</h3>
+  <div class="grid-3">
+    <div class="card"><span class="tag cyan">Reliability</span><h3>Can it repeat?</h3><p>Test–retest consistency, position reversal, formatting and paraphrase perturbations, blind-label stability, and criterion-level disagreement.</p></div>
+    <div class="card"><span class="tag green">Validity</span><h3>Is it right?</h3><p>Compare against calibrated human or deterministic anchors, report agreement beyond chance, inspect disagreements, and test domain transfer.</p></div>
+    <div class="card"><span class="tag amber">Change control</span><h3>Did it drift?</h3><p>Version rubric text, judge model, decoding, candidate order, and validation-set results. A “criterion-preserving” edit can still shift preferences. <a class="cite" href="#s13">[13]</a></p></div>
+  </div>
+</div>
+</section>
+
+<section class="section" id="demo">
+<div class="wrap">
+  <div class="eyebrow">06 · Ideal-state product demonstration</div>
+  <h2>What RSemble could look like when the model is applied.</h2>
+  <p class="lead">This prototype uses two real tasks from the PulseFit Advanced Suite. Task text, calibration facts, suite size, and configured model roster are real. Any screen marked “illustrative” demonstrates interaction and data shape only; no model was run.</p>
+  <div class="callout success"><strong>Source package · current repository reality</strong><p><span class="mono">docs/evaluations/pulsefit-business-analytics-upgraded.suite.json</span> · <span class="mono">rsemble-suite-package</span> schema 1 · 15 embedded tasks · 1 evaluation profile · 6 enabled <span class="mono">modelSlots</span>. The package contains definitions and calibration keys, not candidate outputs or observations. It was untracked in Git when inspected on 04 Aug 2026.</p></div>
+  <div class="callout warning"><strong>Current protocol is not the proposed hybrid contract</strong><p>Both selected tasks currently inherit <span class="mono">profile-pulsefit-advanced-analytics@1</span> and have no task-level <span class="mono">verification</span> field. The default judge is <span class="mono">openrouter · z-ai/glm-5.2</span>, which also appears in the candidate roster. That overlap is protocol metadata requiring bias validation, not automatic disqualification. Verifier-assisted contracts below are explicitly proposed.</p></div>
+  <div class="mock-shell" id="product-demo">
+    <div class="mock-top"><span class="mock-logo">RSemble AI</span><div class="mock-tabs" role="tablist" aria-label="Prototype views"><button role="tab" aria-selected="true" class="active" data-view="catalog">Catalog</button><button role="tab" aria-selected="false" data-view="evidence">Evidence</button><button role="tab" aria-selected="false" data-view="profiles">Profiles</button><button role="tab" aria-selected="false" data-view="extend">Add model</button></div><span class="mock-status">● LOCAL · AUDITABLE</span></div>
+    <div class="prototype-banner">NORTH-STAR PROTOTYPE · NO LIVE PROVIDER CALLS · SYNTHETIC VALUES ARE EXPLICITLY MARKED</div>
+    <div class="mock-body">
+      <aside class="mock-side" aria-label="Demo task selection">
+        <h4>PulseFit Advanced · 15 tasks</h4>
+        <button class="task-option active" data-task="funnel"><span>SOURCE TASK 01 · PROPOSED v1</span><strong>The acquisition dashboard is using the wrong CAC</strong></button>
+        <button class="task-option" data-task="experiment"><span>SOURCE TASK 03 · PROPOSED v1</span><strong>A winning paywall test with broken assignment data</strong></button>
+        <button class="task-option" disabled><span>+ 13 MORE</span><strong>Other suite tasks remain available in the manifest</strong></button>
+      </aside>
+      <div class="mock-main">
+        <section class="mock-view active" data-panel="catalog">
+          <div class="mock-head"><div><div class="kicker">Task catalog · proposed migration baseline</div><h3 id="task-title">The acquisition dashboard is using the wrong CAC</h3><div class="mono dim" style="font-size:10px" id="task-id">task:pulsefit/funnel-truth@1</div></div><span class="tag amber">PROPOSED HYBRID</span></div>
+          <div class="mock-grid">
+            <div class="mock-card span-8"><h4>Demand annotation · proposed, human review pending</h4><div id="demand-bars"></div><div class="mode-note">Ordinal 0–4 task-demand annotations. These are not model scores.</div></div>
+            <div class="mock-card span-4"><h4>Governance and integrity</h4><p class="mono" id="task-governance" style="font-size:10px;color:var(--muted)"></p></div>
+            <div class="mock-card span-6"><h4>Separately versioned facets</h4><div class="facet-chips" id="facet-chips"></div></div>
+            <div class="mock-card span-6"><h4>Evaluation contract · current vs proposed</h4><div id="verifier-copy" style="font-size:11px;color:var(--muted);margin:0"></div></div>
+            <div class="mock-card span-12"><h4>Manifest membership · proposed after import</h4><table class="ledger"><thead><tr><th>Manifest</th><th>Task ref</th><th>Stratum</th><th>Weight</th><th>Purpose</th></tr></thead><tbody><tr><td>PROPOSED · pulsefit-advanced@1</td><td id="manifest-ref">…/funnel-truth@1</td><td id="manifest-stratum">metric-governance</td><td>1.0</td><td>Fixed-suite comparison; no population claim declared</td></tr></tbody></table></div>
+          </div>
+        </section>
+
+        <section class="mock-view" data-panel="evidence">
+          <div class="mock-head"><div><div class="kicker">Evidence ledger</div><h3>From model artifact to measured observation</h3></div><div class="seg" role="group" aria-label="Evidence demo mode"><button class="active" data-evidence-mode="empty">Truth-safe</button><button data-evidence-mode="synthetic">Illustrative</button></div></div>
+          <div id="evidence-empty" class="evidence-lock"><strong>No experiment has been run for this prototype.</strong>The correct empty state shows the frozen design and refuses to manufacture a leaderboard. Switch to Illustrative to inspect the post-run data shape.</div>
+          <div id="evidence-synthetic" hidden>
+            <div class="callout warning" style="margin-top:0"><strong>Illustrative values only</strong><p>Candidate α and Candidate β are anonymized placeholders. They do not correspond to the six configured PulseFit models.</p></div>
+            <div class="mock-grid">
+              <div class="mock-card span-4"><h4>Candidate α</h4><div class="metric">4.2 <small>/ 5</small></div><p class="dim" style="font-size:10px">1 generation · 2 judge observations</p></div>
+              <div class="mock-card span-4"><h4>Verifier</h4><div class="metric green">PASS</div><p class="dim" style="font-size:10px">4 / 4 declared numeric facts</p></div>
+              <div class="mock-card span-4"><h4>Order sensitivity</h4><div class="metric amber">0.4 <small>pts</small></div><p class="dim" style="font-size:10px">difference across the two shown judge observations</p></div>
+              <div class="mock-card span-12"><h4>Observation ledger · every measurement remains visible</h4><table class="ledger"><thead><tr><th>Observation</th><th>Artifact</th><th>Instrument</th><th>Result</th><th>Quality</th></tr></thead><tbody><tr><td>obs-001</td><td>Candidate α · gen 1</td><td>numeric-check@1</td><td class="ok">4/4 passed</td><td>deterministic contract</td></tr><tr><td>obs-002</td><td>Candidate α · gen 1</td><td>analytics-judge@3</td><td>4.4 / 5</td><td class="ok">validation set passed</td></tr><tr><td>obs-003</td><td>Candidate α · gen 1</td><td>analytics-judge@3 · reversed order</td><td>4.0 / 5</td><td class="warn">0.4 sensitivity</td></tr></tbody></table></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mock-view" data-panel="profiles">
+          <div class="mock-head"><div><div class="kicker">Capability report · derived view</div><h3>Evidence profile, not model essence</h3></div><span class="tag amber">ILLUSTRATIVE</span></div>
+          <div class="callout warning" style="margin-top:0"><strong>This profile is intentionally not named “business reasoning: 82.”</strong><p>It is conditional on PulseFit Advanced @1, equal task weights, six criteria, one generation per task, analytics-judge @3, and the shown evidence date.</p></div>
+          <div class="mock-grid">
+            <div class="mock-card span-7"><h4>Candidate α · criterion view</h4><div class="bar-row"><span>Quantitative correctness</span><div class="bar"><i style="--p:.84"></i></div><output>4.2</output></div><div class="bar-row"><span>Causal reasoning</span><div class="bar"><i style="--p:.68"></i></div><output>3.4</output></div><div class="bar-row"><span>Unit economics</span><div class="bar"><i style="--p:.78"></i></div><output>3.9</output></div><div class="bar-row"><span>Decision quality</span><div class="bar"><i style="--p:.72"></i></div><output>3.6</output></div><div class="bar-row"><span>Domain fluency</span><div class="bar"><i style="--p:.80"></i></div><output>4.0</output></div><div class="bar-row"><span>Executive communication</span><div class="bar"><i style="--p:.88"></i></div><output>4.4</output></div></div>
+            <div class="mock-card span-5"><h4>Claim card</h4><p style="font-size:11px;color:var(--muted)"><strong style="color:var(--text)">Supported:</strong> On this fixed suite, the candidate shows stronger judged evidence on quantitative correctness and communication than causal reasoning.</p><p style="font-size:11px;color:var(--muted)"><strong style="color:var(--amber)">Not supported:</strong> General capability across business analytics; stable rank beyond this protocol; causal interpretation of facet scores.</p></div>
+            <div class="mock-card span-12"><h4>Coverage must sit beside every aggregate</h4><div class="matrix"><div class="mh">TASK / MODEL</div><div class="mh">α</div><div class="mh">β</div><div class="mh">γ</div><div class="mh">δ</div><div class="mh">ε</div><div class="mh">ζ</div><div>Funnel truth</div><div class="cell synthetic">4.2</div><div class="cell synthetic">3.7</div><div class="cell synthetic">4.0</div><div class="cell synthetic">3.8</div><div class="cell synthetic">4.4</div><div class="cell synthetic">3.9</div><div>Experiment integrity</div><div class="cell synthetic">3.3</div><div class="cell synthetic">4.1</div><div class="cell synthetic">3.6</div><div class="cell synthetic">4.2</div><div class="cell synthetic">3.8</div><div class="cell synthetic">3.5</div></div></div>
+          </div>
+        </section>
+
+        <section class="mock-view" data-panel="extend">
+          <div class="mock-head"><div><div class="kicker">Derived experiment · illustrative flow</div><h3>Add a model without rewriting history</h3></div><span class="tag amber">ILLUSTRATIVE</span></div>
+          <div class="mock-grid">
+            <div class="mock-card span-5"><h4>Base experiment · illustrative</h4><p class="mono" style="font-size:10px;color:var(--muted)">experiment: demo/pulsefit-042<br>manifest: proposed/pulsefit-advanced@1<br>protocol: illustrative/rank-analytics@3<br>status: simulated completed<br>coverage: 15 tasks × 6 models</p></div>
+            <div class="mock-card span-7"><h4>Derived experiment request</h4><p style="font-size:11px;color:var(--muted)">Freeze the accepted candidate artifacts for all existing model cells. Generate only the 15 missing cells for the added model, then evaluate under the same judge protocol. Always label the added evidence temporally non-concurrent. Separately report whether protocol fingerprints match; a protocol shift blocks an unqualified like-for-like ranking.</p><button class="btn" id="simulate-add">Simulate derived run</button></div>
+            <div class="mock-card span-12"><h4>Execution log</h4><div class="simulation-log" id="simulation-log">READY  base experiment locked<br>READY  15 missing task × model cells identified<br>WAIT   derived experiment not started</div></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-top:16px">
+    <div class="card"><span class="tag green">Real source material</span><h3>Funnel truth</h3><p>The suite’s calibration confirms prior paid CAC of $95, current paid CAC of $120, and a misleading all-install dashboard figure near $14.75. The ideal task dossier separates numeric facts that may be verified from decisions that require rubric judgment.</p></div>
+    <div class="card"><span class="tag green">Real source material</span><h3>Experiment integrity</h3><p>The observed split gives χ² ≈ 80.66, severe sample-ratio mismatch. Adding 2,600 crash sessions diagnostically changes B conversion to ≈7.39%, but incomplete identity joins prevent treating that as a corrected causal estimate.</p></div>
+  </div>
+</div>
+</section>
+
+<section class="section" id="migration">
+<div class="wrap">
+  <div class="eyebrow">07 · Implementation path</div>
+  <h2>Build the evidence spine before the intelligence layer.</h2>
+  <p class="lead">The best possible state is reached by making each phase independently useful. No phase needs to pretend later statistical sophistication already exists.</p>
+  <div class="phases">
+    <div class="phase now"><span class="pn">FOUNDATION · EXISTS</span><strong>Preserve current audit records</strong><span>Experiment snapshots, protocol fingerprints, candidate and judge attempts, blind maps, repair provenance.</span></div>
+    <div class="phase next"><span class="pn">PHASE 1</span><strong>Canonical task versions</strong><span>Import embedded tasks into stable identities and immutable versions. Manifests reference them.</span></div>
+    <div class="phase next"><span class="pn">PHASE 2</span><strong>Observation index</strong><span>Materialize artifact × judge/verifier events without deleting raw run records.</span></div>
+    <div class="phase next"><span class="pn">PHASE 3</span><strong>Facet governance</strong><span>Versioned scheme, written codebook, proposed → reviewed → adjudicated workflow, confidence and rationale.</span></div>
+    <div class="phase later"><span class="pn">PHASE 4</span><strong>Fixed-suite reports</strong><span>Coverage, task-level comparisons, paired deltas, judge disagreement, generation variability. No unsupported population claim.</span></div>
+    <div class="phase later"><span class="pn">PHASE 5+</span><strong>Validated inference</strong><span>Declare target populations; add weighting, cluster-aware uncertainty, and only later latent models after diagnostics.</span></div>
+  </div>
+  <h3 style="margin-top:40px">Acceptance gates</h3>
+  <div class="grid-2">
+    <div class="card"><h3>Data integrity gate</h3><p>Same task version resolves identically across manifests; hashes and provenance survive export/import; no suite edit mutates completed experiments.</p></div>
+    <div class="card"><h3>Taxonomy gate</h3><p>Annotators can apply the codebook independently; disagreement is measured and adjudicated; scheme upgrades do not silently relabel historical reports.</p></div>
+    <div class="card"><h3>Judge gate</h3><p>Every active judge protocol has a validation-set result, perturbation tests, rubric fingerprint, and explicit failure policy.</p></div>
+    <div class="card"><h3>Claim gate</h3><p>Every aggregate exposes coverage, target, weighting, estimator, uncertainty method, evidence date, and unsupported extrapolations.</p></div>
+  </div>
+  <div class="callout danger"><strong>Do not implement first</strong><p>No universal skill tree. No auto-generated “model personality.” No opaque single capability score. No IRT leaderboard from six configured models. No silent in-place addition to a completed experiment. No judge score without judge-quality metadata.</p></div>
+</div>
+</section>
+
+<section class="section" id="sources">
+<div class="wrap">
+  <div class="eyebrow">08 · Sources and evidence quality</div>
+  <h2>Sources are inputs, not authority by accumulation.</h2>
+  <p class="lead">The final design gives official standards and primary reports more weight for definitions, uses studies for bounded empirical claims, and treats recent preprints as emerging evidence that should influence safeguards rather than settle product truth.</p>
+  <div class="source-list">
+    <div class="source" id="s1"><span class="sn">[1]</span><div><a href="https://www.nature.com/articles/s41586-026-10303-2">General scales unlock AI evaluation with explanatory and predictive power</a><p>Peer-reviewed Nature article. Demand/ability separation and reported predictive results; external replication still required for RSemble.</p></div><span class="quality">Peer reviewed</span></div>
+    <div class="source" id="s2"><span class="sn">[2]</span><div><a href="https://arxiv.org/html/2607.15190">Can We Trust Item Response Theory for AI Evaluation?</a><p>July 2026 preprint. Large simulation study of AI-specific regime mismatch; valuable caution, not final consensus.</p></div><span class="quality">Recent preprint</span></div>
+    <div class="source" id="s3"><span class="sn">[3]</span><div><a href="https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.800-3.pdf">NIST AI 800-3 — Expanding the AI Evaluation Toolbox with Statistical Models</a><p>Official NIST report distinguishing fixed-benchmark and generalized accuracy, with cluster-aware modeling guidance.</p></div><span class="quality">Official report</span></div>
+    <div class="source" id="s4"><span class="sn">[4]</span><div><a href="https://arxiv.org/html/2501.04234">Statistical Uncertainty Quantification for Aggregate Performance Metrics</a><p>Preprint demonstrating bootstrap, Bayesian hierarchical modeling, and weighting sensitivity for task aggregates.</p></div><span class="quality">Research preprint</span></div>
+    <div class="source" id="s5"><span class="sn">[5]</span><div><a href="https://www.w3.org/TR/prov-dm/">W3C PROV-DM</a><p>W3C Recommendation defining entities, activities, agents, and derivations for provenance.</p></div><span class="quality">Web standard</span></div>
+    <div class="source" id="s6"><span class="sn">[6]</span><div><a href="https://www.webbalign.org/dok-primer">WebbAlign Depth of Knowledge Primer</a><p>Primary practitioner reference for DOK as cognitive complexity in alignment, not a synonym for difficulty.</p></div><span class="quality">Primary primer</span></div>
+    <div class="source" id="s7"><span class="sn">[7]</span><div><a href="https://www.wcu.edu/WebFiles/PDFs/BloomsRevisedTaxonomyTable.pdf">The Revised Bloom Taxonomy Table</a><p>Extract from Anderson and Krathwohl’s two-dimensional knowledge × cognitive-process framework.</p></div><span class="quality">Book extract</span></div>
+    <div class="source" id="s8"><span class="sn">[8]</span><div><a href="https://doi.org/10.48550/arxiv.2211.09110">Holistic Evaluation of Language Models (HELM)</a><p>TMLR publication supporting transparent multidimensional evaluation across scenarios and metrics.</p></div><span class="quality">Peer reviewed</span></div>
+    <div class="source" id="s9"><span class="sn">[9]</span><div><a href="https://github.com/benchflow-ai/skillsbench/blob/main/taxonomy.md">SkillsBench Task Taxonomy and Annotation Codebook</a><p>Project design document advocating controlled orthogonal fields and annotation agreement. Useful precedent, not settled theory.</p></div><span class="quality">Repo document</span></div>
+    <div class="source" id="s10"><span class="sn">[10]</span><div><a href="https://esco.ec.europa.eu/en/about-esco/what-esco">What is ESCO?</a><p>Official European Commission classification reference for stable, versioned, multilingual concept governance.</p></div><span class="quality">Official system</span></div>
+    <div class="source" id="s11"><span class="sn">[11]</span><div><a href="https://arxiv.org/html/2603.05399">Judge Reliability Harness</a><p>2026 preprint reporting judge sensitivity to formatting, paraphrase, verbosity, and label changes across tested settings.</p></div><span class="quality">Recent preprint</span></div>
+    <div class="source" id="s12"><span class="sn">[12]</span><div><a href="https://arxiv.org/html/2606.19544">Reliability without Validity</a><p>Large 2026 preprint distinguishing consistency, chance-corrected agreement, benchmark dependence, and bias.</p></div><span class="quality">Recent preprint</span></div>
+    <div class="source" id="s13"><span class="sn">[13]</span><div><a href="https://arxiv.org/html/2602.13576">Rubrics as an Attack Surface</a><p>2026 preprint showing apparently natural rubric edits can directionally shift judge preferences on target domains.</p></div><span class="quality">Recent preprint</span></div>
+    <div class="source" id="s14"><span class="sn">[14]</span><div><a href="https://arxiv.org/html/2510.05709v2">Correcting Prompt Dependence in LLM Benchmarks</a><p>Preprint proposing hierarchical correction for semantically dependent prompts; supports treating dependence as a first-class design issue.</p></div><span class="quality">Research preprint</span></div>
+    <div class="source" id="s15"><span class="sn">[15]</span><div><a href="https://arxiv.org/html/2603.06865">Counting on Consensus</a><p>2026 agreement-method guide emphasizing metric choice, confidence intervals, and disagreement analysis.</p></div><span class="quality">Methods preprint</span></div>
+    <div class="source"><span class="sn">[P]</span><div><strong>Local project evidence</strong><p><span class="mono">pulsefit-business-analytics-upgraded.suite.json</span>, current evaluation types, run-record types, fusion-study types, and RSemble DESIGN.md. These ground what exists today and the two real task demonstrations.</p></div><span class="quality">Repository source</span></div>
+  </div>
+</div>
+</section>
+<footer class="footer"><div class="wrap"><div><strong>RSemble AI · Evidence Architecture</strong><br>Final critical explainer and north-star prototype.</div><div class="mono">Research claims bounded · Product state labeled · No model results fabricated</div></div></footer>
+</main>
+<script>
+(() => {
+  const $ = (s,r=document) => r.querySelector(s);
+  const $$ = (s,r=document) => [...r.querySelectorAll(s)];
+
+  const unitCopy = {
+    task:{title:'Task version · reproducibility unit',body:'The immutable specification needed to ask the same thing again: prompt, inputs, system context, expected output contract, verifier configuration, intended demand annotations, and provenance. It organizes evidence but does not guarantee statistical independence.'},
+    artifact:{title:'Generation artifact · production unit',body:'One accepted model output produced under a frozen model identity, provider, messages, decoding settings, attachments, and attempt lineage. Regenerating creates another artifact or trial; it never rewrites the accepted artifact used by earlier observations.'},
+    observation:{title:'Evaluation observation · measurement unit',body:'A single judge, human, or deterministic verifier measuring one unchanged artifact under one versioned instrument. Multiple observations can measure the same artifact without becoming additional model generations.'},
+    cluster:{title:'Inference unit · analysis decision',body:'The highest defensible independent unit for a specific claim. Sibling tasks from one template, multiple questions from one source case, or repeated generations of one task can be correlated. The report declares clustering rather than assuming every row is independent.'},
+    report:{title:'Capability report · conditional conclusion',body:'A derived artifact with explicit target, task selection, weights, protocol, estimator, evidence date, coverage, uncertainty, and unsupported extrapolations. Updating evidence creates a new report version; it does not mutate history.'}
+  };
+  function selectUnit(key){
+    $$('.unit').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.unit===key)));
+    const x=unitCopy[key]; $('#unit-detail').innerHTML=`<span class="tag cyan">BOUNDARY</span><h3>${x.title}</h3><p class="muted">${x.body}</p>`;
+  }
+  $$('.unit').forEach(b=>b.addEventListener('click',()=>selectUnit(b.dataset.unit))); selectUnit('task');
+
+  const knowledge=['Factual','Conceptual','Procedural','Metacognitive'];
+  const process=['Remember','Understand','Apply','Analyze','Evaluate','Create'];
+  const examples={
+    'Factual|Remember':'Recall the definition of CAC.','Factual|Understand':'Explain why spend ÷ installs is CPI, not CAC.','Factual|Apply':'Use the supplied counts in the CAC formula.','Factual|Analyze':'Separate paid and organic counts before calculating.','Factual|Evaluate':'Check whether a stated dashboard value matches its label.','Factual|Create':'Assemble an audit table from the given facts.',
+    'Conceptual|Remember':'Name sample-ratio mismatch.','Conceptual|Understand':'Explain how denominator selection changes interpretation.','Conceptual|Apply':'Apply intention-to-treat reasoning to the assignment data.','Conceptual|Analyze':'Trace how missing B crashers bias conversion upward.','Conceptual|Evaluate':'Judge whether the test is decision-grade.','Conceptual|Create':'Design a valid rerun protocol.',
+    'Procedural|Remember':'Recall a chi-square calculation procedure.','Procedural|Understand':'Explain each step in the SRM check.','Procedural|Apply':'Calculate χ² from observed and expected counts.','Procedural|Analyze':'Compare naive and diagnostic-bound analyses.','Procedural|Evaluate':'Audit whether stopping rules were followed.','Procedural|Create':'Specify data-quality checks and guardrails.',
+    'Metacognitive|Remember':'Recall common analytic failure modes.','Metacognitive|Understand':'State where the available evidence ends.','Metacognitive|Apply':'Mark assumptions versus observed facts.','Metacognitive|Analyze':'Detect when a plausible headline is driving motivated reasoning.','Metacognitive|Evaluate':'Calibrate confidence in the recommendation.','Metacognitive|Create':'Design a decision rule that prevents repeat bias.'
+  };
+  const grid=$('#bloom-grid');
+  grid.innerHTML='<div class="head">Knowledge ↓</div>'+process.map(p=>`<div class="head">${p}</div>`).join('')+knowledge.map(k=>`<div class="head">${k}</div>`+process.map(p=>`<button data-cell="${k}|${p}">${examples[k+'|'+p]}</button>`).join('')).join('');
+  $$('button[data-cell]',grid).forEach(b=>b.addEventListener('click',()=>{ $$('button',grid).forEach(x=>x.classList.remove('active'));b.classList.add('active');const [k,p]=b.dataset.cell.split('|');$('#bloom-detail').innerHTML=`<span class="tag amber">ANNOTATION EXAMPLE</span><h3>${k} knowledge × ${p}</h3><p>${examples[b.dataset.cell]}</p><p class="dim">A task can require several cells. This label describes intended demand; only observations can describe a model’s performance.</p>`}));
+
+  const theta=$('#theta'), diff=$('#difficulty'), disc=$('#disc');
+  const sx=x=>55+(x+3)/6*535, sy=p=>255-p*225;
+  function updateIRT(){
+    const t=+theta.value,b=+diff.value,a=+disc.value; let d='';
+    for(let i=0;i<=120;i++){const x=-3+i/20,p=1/(1+Math.exp(-a*(x-b)));d+=(i?'L':'M')+sx(x).toFixed(1)+' '+sy(p).toFixed(1)+' '}
+    $('#irt-curve').setAttribute('d',d); const p=1/(1+Math.exp(-a*(t-b))),x=sx(t),y=sy(p);$('#theta-line').setAttribute('x1',x);$('#theta-line').setAttribute('x2',x);$('#theta-dot').setAttribute('cx',x);$('#theta-dot').setAttribute('cy',y);$('#theta-out').value=t.toFixed(1);$('#difficulty-out').value=b.toFixed(1);$('#disc-out').value=a.toFixed(1);$('#prob-label').textContent=`Illustrative P = ${(p*100).toFixed(1)}%`;
+  }
+  [theta,diff,disc].forEach(x=>x.addEventListener('input',updateIRT));updateIRT();
+
+  const tasks={
+    funnel:{title:'The acquisition dashboard is using the wrong CAC',id:'task:pulsefit/funnel-truth@1',source:'#/tasks/0',hash:'49f4829c21af879e199b768255383f4d7e00eb69253fe281dfba063d6d70cef6',ref:'…/funnel-truth@1',stratum:'metric-governance',demands:[['Metric semantics',4],['Arithmetic audit',3],['Causal reasoning',2],['Unit economics',4],['Decision judgment',4],['Executive communication',3]],facets:['domain · business analytics','operation · audit','operation · recommend','artifact · executive memo','Bloom · analyze','Bloom · evaluate','DOK · proposed 3'],verify:'Numeric contracts can verify CPI, CAC, contribution, and ratios if answer extraction is structured. Cut/hold/scale recommendations and whether evidence justifies LTV remain rubric judgments.'},
+    experiment:{title:'A winning paywall test with broken assignment data',id:'task:pulsefit/experiment-integrity@1',source:'#/tasks/2',hash:'bb3e40667ec2342ce7a16a652622e38694957e8d1ac0d80d947478eb484c2864',ref:'…/experiment-integrity@1',stratum:'causal-validity',demands:[['Metric semantics',3],['Arithmetic audit',3],['Causal reasoning',4],['Unit economics',2],['Decision judgment',4],['Executive communication',3]],facets:['domain · experimentation','operation · diagnose','operation · design','artifact · decision memo','Bloom · evaluate','Bloom · create','DOK · proposed 3'],verify:'Numeric contracts can verify 11.4% naive lift, expected arm counts, χ² ≈ 80.66, and the 7.39% diagnostic bound. Bias direction, causal validity, and ship policy remain judged.'}
+  };
+  let currentTask='funnel';
+  function renderTask(key){currentTask=key;const t=tasks[key];$('#task-title').textContent=t.title;$('#task-id').textContent=t.id;$('#manifest-ref').textContent=t.ref;$('#manifest-stratum').textContent=t.stratum;$('#task-governance').innerHTML=`source: suite.json${t.source}<br>baseline: proposed canonical v1<br>sha256: ${t.hash}<br>hash method: sorted compact UTF-8 JSON<br>facets: proposed · review pending`;$('#verifier-copy').innerHTML=`<strong class="green">CURRENT</strong><br>evaluation.kind: inherit<br>profile: pulsefit-advanced-analytics@1<br>verification: absent<br><br><strong class="amber">PROPOSED</strong><br>${t.verify}`;$('#demand-bars').innerHTML=t.demands.map(([n,v])=>`<div class="bar-row"><span>${n}</span><div class="bar"><i style="--p:${v/4}"></i></div><output>${v}</output></div>`).join('');$('#facet-chips').innerHTML=t.facets.map((x,i)=>`<span class="chip ${i<4?'req':'proposed'}">${x}</span>`).join('');$$('.task-option[data-task]').forEach(b=>b.classList.toggle('active',b.dataset.task===key));}
+  $$('.task-option[data-task]').forEach(b=>b.addEventListener('click',()=>renderTask(b.dataset.task)));renderTask('funnel');
+
+  function showView(view){$$('.mock-view').forEach(p=>p.classList.toggle('active',p.dataset.panel===view));$$('.mock-tabs button').forEach(b=>{const on=b.dataset.view===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on))})}
+  $$('.mock-tabs button').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
+  $('.mock-tabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=$$('.mock-tabs button');let i=tabs.indexOf(document.activeElement);if(e.key==='Home')i=0;else if(e.key==='End')i=tabs.length-1;else i=(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[i].focus();tabs[i].click()});
+  $$('[data-evidence-mode]').forEach(b=>b.addEventListener('click',()=>{const synthetic=b.dataset.evidenceMode==='synthetic';$$('[data-evidence-mode]').forEach(x=>x.classList.toggle('active',x===b));$('#evidence-empty').hidden=synthetic;$('#evidence-synthetic').hidden=!synthetic}));
+
+  let sim=false;$('#simulate-add').addEventListener('click',e=>{if(sim)return;sim=true;const button=e.currentTarget;button.disabled=true;const log=$('#simulation-log');const lines=['LOCKED illustrative base experiment demo/pulsefit-042','CREATED illustrative derived experiment demo/pulsefit-042+model-7','REUSED 90 simulated accepted base artifacts by immutable reference','QUEUED 15 simulated generation cells for model 7','BOUND illustrative judge protocol analytics@3','LABELED evidence temporally non-concurrent','READY protocol compatibility pending fingerprint check'];let i=0;const tick=()=>{if(i<lines.length){log.innerHTML+=`<br><span class="${i>0?'ok':''}">${lines[i++]}</span>`;setTimeout(tick,140)}else{button.textContent='Derived run staged'}};tick()});
+
+  const links=$$('#side-nav a'), sections=links.map(a=>$(a.getAttribute('href'))).filter(Boolean);
+  const observer=new IntersectionObserver(entries=>{const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio).at(0);if(!visible)return;links.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+visible.target.id))},{rootMargin:'-20% 0px -65% 0px',threshold:[0,.15,.4]});sections.forEach(s=>observer.observe(s));
+})();
+</script>
+</body>
+</html>

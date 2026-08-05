@@ -13,7 +13,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Plus,
   Copy,
@@ -31,6 +31,7 @@ import type {
 } from "../../lib/evaluations/evaluation-types";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
 import { RecordRow } from "../../ui/RecordRow";
+import { KindEyebrow } from "../../ui/KindEyebrow";
 
 interface ProfileRow {
   record: ProfileRecord;
@@ -261,6 +262,16 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
           <p className="text-sm text-text-muted">
             Create an evaluation profile to define scoring criteria.
           </p>
+          {/* Identity spec §5.4: teach the split from the profile side. */}
+          <p className="text-sm text-text-muted">
+            <Link
+              to="/evaluations"
+              className="text-text-secondary underline decoration-edge-bright underline-offset-2 hover:text-text"
+            >
+              Suites
+            </Link>{" "}
+            pin profiles to score their tasks.
+          </p>
           <button
             type="button"
             data-action="create-profile"
@@ -285,9 +296,18 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
         {rows.map(({ record, profile }) => {
           const archived = record.archivedAt != null;
           const criteriaCount = profile?.criteria.length ?? 0;
+          // Identity spec §5.4: preview what the rubric actually measures —
+          // first criterion name plus a count of the rest.
+          const firstName = profile?.criteria[0]?.name ?? "";
+          const preview =
+            criteriaCount === 0
+              ? ""
+              : criteriaCount === 1
+                ? firstName
+                : `${firstName} +${criteriaCount - 1} more`;
           const summary = `${criteriaCount} ${
             criteriaCount === 1 ? "criterion" : "criteria"
-          }${archived ? " · Archived" : ""}`;
+          }${preview ? ` · ${preview}` : ""}${archived ? " · Archived" : ""}`;
           const label = profile?.name ?? record.id;
           return (
             <li key={record.id} className="min-w-0">
@@ -295,8 +315,9 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
                 variant="list"
                 id={record.id}
                 title={label}
-                status={archived ? "draft" : "completed"}
+                status={archived ? "aborted" : "reusable"}
                 timestamp={record.updatedAt}
+                kind={<KindEyebrow kind="profile" />}
                 summary={summary}
                 provenance={`v${record.latestVersion}`}
                 href={`/evaluations/profiles/${record.id}`}

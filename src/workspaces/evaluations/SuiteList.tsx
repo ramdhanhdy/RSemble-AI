@@ -10,6 +10,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertCircle,
   Copy,
@@ -19,8 +20,15 @@ import {
   Archive,
 } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
-import type { EvaluationSuite } from "../../lib/evaluations/evaluation-types";
-import { RecordRow } from "../../ui/RecordRow";
+import type {
+  EvaluationProfile,
+  EvaluationSuite,
+  ExperimentRecord,
+} from "../../lib/evaluations/evaluation-types";
+import { RecordRow, formatRelativeTime } from "../../ui/RecordRow";
+import { StatusMark } from "../../ui/StatusMark";
+import { KindEyebrow } from "../../ui/KindEyebrow";
+import { ProfileRefChip } from "../../ui/ProfileRefChip";
 import { StorageError } from "../../lib/persistence/database";
 import { DEFAULT_CRITIC_REF } from "../../studio-data";
 import {
@@ -37,6 +45,10 @@ interface SuiteListState {
   suites: EvaluationSuite[];
   loading: boolean;
   error: string | null;
+  /** Pinned profile resolved per "profileId@version" (identity spec §5.3). */
+  profiles: Map<string, EvaluationProfile>;
+  /** Latest experiment per suite id, by updatedAt (identity spec §5.4). */
+  latestExperiment: Map<string, ExperimentRecord>;
 }
 
 /** Generate a stable random ID for new suites and tasks. */
@@ -83,6 +95,8 @@ export function SuiteList({ repo }: SuiteListProps) {
     suites: [],
     loading: true,
     error: null,
+    profiles: new Map(),
+    latestExperiment: new Map(),
   });
   const [includeArchived, setIncludeArchived] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -97,7 +111,7 @@ export function SuiteList({ repo }: SuiteListProps) {
 
   const load = useCallback(async () => {
     if (!repo) {
-      setState({ suites: [], loading: false, error: "Storage not available." });
+      setState({ suites: [], loading: false, error: "Storage not available.", profiles: new Map(), latestExperiment: new Map() });
       return;
     }
     const id = ++requestIdRef.current;
@@ -105,9 +119,41 @@ export function SuiteList({ repo }: SuiteListProps) {
     try {
       // Always load every suite (archived included) so the archived-filter
       // toggle can restore discoverability without an extra round-trip.
-      const suites = await repo.listSuites(true);
+      // Experiments ride along for the latest-run mark on each row.
+      const [suites, experiments] = await Promise.all([
+        repo.listSuites(true),
+        repo.listExperiments(),
+      ]);
+      // Resolve only the profiles actually pinned by suite default
+      // evaluations — one lookup per distinct (id, version) pair.
+      const pairKeys = new Set<string>();
+      for (const s of suites) {
+        if (s.defaultEvaluation.kind === "profile") {
+          const ref = s.defaultEvaluation.profile;
+          pairKeys.add(`${ref.id}@${ref.version}`);
+        }
+      }
+      const resolvedPairs = await Promise.all(
+        [...pairKeys].map(async (key) => {
+          const sep = key.lastIndexOf("@");
+          const pid = key.slice(0, sep);
+          const version = Number(key.slice(sep + 1));
+          const profile = await repo.getProfile(pid, version).catch(() => null);
+          return [key, profile ?? null] as const;
+        }),
+      );
+      const profiles = new Map<string, EvaluationProfile>();
+      for (const [key, profile] of resolvedPairs) {
+        if (profile) profiles.set(key, profile);
+      }
+      const latestExperiment = new Map<string, ExperimentRecord>();
+      // Mock/test repos may return undefined for listExperiments — tolerate it.
+      for (const e of experiments ?? []) {
+        const prev = latestExperiment.get(e.suiteId);
+        if (!prev || e.updatedAt > prev.updatedAt) latestExperiment.set(e.suiteId, e);
+      }
       if (id === requestIdRef.current) {
-        setState({ suites, loading: false, error: null });
+        setState({ suites, loading: false, error: null, profiles, latestExperiment });
       }
     } catch (err: unknown) {
       if (id === requestIdRef.current) {
@@ -115,6 +161,8 @@ export function SuiteList({ repo }: SuiteListProps) {
           suites: [],
           loading: false,
           error: err instanceof Error ? err.message : "Failed to load suites.",
+          profiles: new Map(),
+          latestExperiment: new Map(),
         });
       }
     }
@@ -288,6 +336,17 @@ export function SuiteList({ repo }: SuiteListProps) {
           through the comparison pipeline. Build a suite to compare models across a shared
           workload with a consistent judge and evaluation profile.
         </p>
+        {/* Identity spec §5.4: teach the split from the suite side. */}
+        <p className="max-w-md text-sm text-text-muted">
+          Judging rules live in{" "}
+          <Link
+            to="/evaluations/profiles"
+            className="text-text-secondary underline decoration-edge-bright underline-offset-2 hover:text-text"
+          >
+            Profiles
+          </Link>
+          ; suites pin them.
+        </p>
         {createError && <p className="text-sm text-error">{createError}</p>}
         <div className="flex items-center gap-2">
           <button
@@ -417,20 +476,49 @@ export function SuiteList({ repo }: SuiteListProps) {
       <ul className="flex flex-col gap-1.5" role="list">
         {visible.map((suite) => {
           const isArchived = suite.archivedAt !== null;
+          // Identity spec §5.3: resolve the suite's default-evaluation pin.
+          const evalChip = (() => {
+            const ev = suite.defaultEvaluation;
+            if (ev.kind === "holistic") return <ProfileRefChip holistic />;
+            const profile = state.profiles.get(`${ev.profile.id}@${ev.profile.version}`);
+            if (!profile) return <ProfileRefChip missing />;
+            return (
+              <ProfileRefChip
+                name={profile.name || "Untitled rubric"}
+                profileId={ev.profile.id}
+                version={ev.profile.version}
+              />
+            );
+          })();
+          // Identity spec §5.4: latest experiment outcome, when the suite has run.
+          const latest = state.latestExperiment.get(suite.id);
           return (
             <li key={suite.id}>
               <RecordRow
                 variant="list"
                 id={suite.id}
                 title={suite.name || "Untitled suite"}
-                status={isArchived ? "aborted" : "draft"}
+                status={isArchived ? "aborted" : "ready"}
                 timestamp={suite.updatedAt}
+                kind={<KindEyebrow kind="suite" />}
                 modelCount={suite.modelSlots.filter((s) => s.enabled).length}
                 summary={suite.tasks.length > 0 ? `${suite.tasks.length} task${suite.tasks.length === 1 ? "" : "s"}` : undefined}
+                afterSummary={
+                  latest ? (
+                    <span className="flex items-center gap-1 text-xs text-text-muted">
+                      <span aria-hidden="true">·</span>
+                      <StatusMark status={latest.status} size={11} />
+                      <span>last run {formatRelativeTime(latest.updatedAt)}</span>
+                    </span>
+                  ) : undefined
+                }
                 provenance={`v${suite.version}`}
                 href={`/evaluations/${suite.id}`}
               >
                 <div className="flex items-center gap-0.5">
+                  {/* The pin chip lives in the trailing cluster rather than
+                      inside the row link — nesting <a> in <a> is invalid HTML. */}
+                  {evalChip}
                   <button
                     type="button"
                     aria-label={`Duplicate suite ${suite.name || "Untitled suite"}`}
@@ -444,52 +532,61 @@ export function SuiteList({ repo }: SuiteListProps) {
                   >
                     <Copy size={14} aria-hidden="true" />
                   </button>
-                  {confirmArchiveId === suite.id ? (
-                    <span className="flex items-center gap-0.5">
+                  {/* Stable geometry across the arm-to-confirm swap (identity
+                      spec §5.2 / Task 12): the slot reserves the widest armed
+                      state — "Archive?" (~88px) + gap + cancel (44px) — so
+                      arming never shifts the row's action cluster. */}
+                  <span
+                    data-geometry="suite-archive-slot"
+                    className="flex min-w-0 items-center justify-end sm:min-w-[136px]"
+                  >
+                    {confirmArchiveId === suite.id ? (
+                      <span className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          data-action="confirm-archive"
+                          aria-label={`Confirm archive suite ${suite.name || "Untitled suite"}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleArchive(suite.id);
+                          }}
+                          className="flex min-h-[44px] items-center gap-1 rounded-sm bg-error/[0.12] px-2 text-sm text-error hover:bg-error/[0.2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          <Archive size={14} aria-hidden="true" />
+                          Archive?
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Cancel archive"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setConfirmArchiveId(null);
+                          }}
+                          className="flex h-11 w-11 items-center justify-center rounded-sm text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ) : isArchived ? (
+                      <span className="px-1 font-mono text-xs text-text-muted">Archived</span>
+                    ) : (
                       <button
                         type="button"
-                        data-action="confirm-archive"
-                        aria-label={`Confirm archive suite ${suite.name || "Untitled suite"}`}
+                        aria-label={`Archive suite ${suite.name || "Untitled suite"}`}
+                        title="Archive"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          void handleArchive(suite.id);
+                          setConfirmArchiveId(suite.id);
                         }}
-                        className="flex min-h-[44px] items-center gap-1 rounded-sm bg-error/[0.12] px-2 text-sm text-error hover:bg-error/[0.2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="flex h-11 w-11 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         <Archive size={14} aria-hidden="true" />
-                        Archive?
                       </button>
-                      <button
-                        type="button"
-                        aria-label="Cancel archive"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setConfirmArchiveId(null);
-                        }}
-                        className="flex h-11 w-11 items-center justify-center rounded-sm text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ) : isArchived ? (
-                    <span className="px-1 font-mono text-xs text-text-muted">Archived</span>
-                  ) : (
-                    <button
-                      type="button"
-                      aria-label={`Archive suite ${suite.name || "Untitled suite"}`}
-                      title="Archive"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setConfirmArchiveId(suite.id);
-                      }}
-                      className="flex h-11 w-11 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      <Archive size={14} aria-hidden="true" />
-                    </button>
-                  )}
+                    )}
+                  </span>
                 </div>
               </RecordRow>
             </li>

@@ -363,17 +363,23 @@ export function createExecutionLease(
   }
 
   async function recoverInterruptedRuns(runRepo: RunRepository): Promise<number> {
+    let acquiredForRecovery = false;
     if (!(await verify())) {
       try {
         await acquire();
+        acquiredForRecovery = true;
       } catch {
         // Another tab owns execution; defer recovery to it.
         return 0;
       }
     }
-    const lease = await verify();
-    if (!lease) return 0;
-    return sweepInterrupted(runRepo, lease);
+    try {
+      const lease = await verify();
+      if (!lease) return 0;
+      return await sweepInterrupted(runRepo, lease);
+    } finally {
+      if (acquiredForRecovery) await release();
+    }
   }
 
   return {
@@ -520,15 +526,21 @@ export class InMemoryExecutionLease implements ExecutionLease {
   }
 
   async recoverInterruptedRuns(runRepo: RunRepository): Promise<number> {
+    let acquiredForRecovery = false;
     if (!(await this.verify())) {
       try {
         await this.acquire();
+        acquiredForRecovery = true;
       } catch {
         return 0;
       }
     }
-    const lease = await this.verify();
-    if (!lease) return 0;
-    return sweepInterrupted(runRepo, lease);
+    try {
+      const lease = await this.verify();
+      if (!lease) return 0;
+      return await sweepInterrupted(runRepo, lease);
+    } finally {
+      if (acquiredForRecovery) await this.release();
+    }
   }
 }

@@ -15,6 +15,7 @@
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
+import type { ModelSlot } from "../../studio-data";
 import type { ChatMessage, ProviderId } from "../providers/types";
 import type { JudgeReport, ConsensusBreakdown, CandidateEvaluation } from "../../studio-data";
 import type { RunSource, ExecutionFence, RunRecordV2 } from "./run-types";
@@ -705,6 +706,225 @@ describe("RunRecordBuilder — prohibited keys", () => {
     };
     const violations = checkKeys(parsed, "root");
     expect(violations).toEqual([]);
+  });
+});
+
+describe("RunRecordBuilder — compound repair run seed (Task 9)", () => {
+  /** Build a base run with two accepted candidates via the builder. */
+  function buildBaseRun(): RunRecordV2 {
+    const builder = createRunRecordBuilder(makeDeps());
+    const state = builder.createInitialState();
+    const record = startFanout(state, builder);
+    builder.applyCandidateAttemptStart(state, record, CANDIDATE_S1, {
+      attemptId: "att-base-s1",
+      messages: makeMessages(),
+      startedAt: 900,
+    });
+    builder.applyCandidateAttemptTerminal(state, record, CANDIDATE_S1, "att-base-s1", {
+      status: "completed", output: "output-A", tokensIn: 10, tokensOut: 5, error: null, finishedAt: 950,
+    });
+    builder.applyCandidateAttemptStart(state, record, CANDIDATE_S2, {
+      attemptId: "att-base-s2",
+      messages: makeMessages(),
+      startedAt: 900,
+    });
+    builder.applyCandidateAttemptTerminal(state, record, CANDIDATE_S2, "att-base-s2", {
+      status: "completed", output: "output-B", tokensIn: 12, tokensOut: 6, error: null, finishedAt: 960,
+    });
+    builder.applyFanoutTerminal(state, record, [
+      { id: CANDIDATE_S1, status: "done" } as never,
+      { id: CANDIDATE_S2, status: "done" } as never,
+    ]);
+    builder.applyJudgeStart(state, record, "judge-att", {
+      providerId: "openrouter", model: "judge", instruction: "", messages: [],
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "att-base-s1", [CANDIDATE_S2]: "att-base-s2" },
+      startedAt: 970,
+    });
+    builder.applyJudgeTerminal(state, record, "judge-att", {
+      status: "completed", report: makeJudgeReport({ [CANDIDATE_S1]: 4, [CANDIDATE_S2]: 3 }), consensus: null, error: null, finishedAt: 980,
+    });
+    return record;
+  }
+
+  it("creates a fresh run with reused accepted outputs carrying provenance", () => {
+    const builder = createRunRecordBuilder(makeDeps());
+    const baseRun = buildBaseRun();
+    let id = 0;
+    const generateId = () => `fresh-${++id}`;
+
+    const seed = builder.buildRepairRunSeed({
+      runId: "run-repair",
+      source: {
+        kind: "experiment",
+        experimentId: "exp-1",
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-repair",
+        trial: 1,
+        repair: { kind: "missing-cells", baseRunId: "run-base", requestedModelKeys: ["umans:model-b"] },
+      },
+      task: { title: "Test Task", prompt: "test prompt", systemPrompt: "system prompt", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      slots: TWO_SLOTS.map((s) => ({ ...s, provider: "P" })),
+      fence: FENCE,
+      baseRun,
+      requestedModelKeys: ["umans:model-b"],
+      generateId,
+    });
+
+    expect(seed.id).toBe("run-repair");
+    expect(seed.status).toBe("running");
+    // Fresh source with repair metadata.
+    expect(seed.source).toMatchObject({
+      kind: "experiment",
+      repair: { kind: "missing-cells", baseRunId: "run-base", requestedModelKeys: ["umans:model-b"] },
+    });
+    // Two candidates: s1 reused, s2 requested (unstarted).
+    expect(seed.candidates).toHaveLength(2);
+    const reused = seed.candidates.find((c) => c.modelKey === "openrouter:model-a")!;
+    const fresh = seed.candidates.find((c) => c.modelKey === "umans:model-b")!;
+
+    // Reused candidate: fresh attempt id, copied output, explicit provenance.
+    expect(reused.acceptedAttemptId).toBe("fresh-1");
+    expect(reused.attempts).toHaveLength(1);
+    expect(reused.attempts[0].attemptId).toBe("fresh-1");
+    expect(reused.attempts[0].output).toBe("output-A");
+    expect(reused.attempts[0].reusedFrom).toEqual({
+      sourceRunId: "run-1",
+      sourceCandidateId: CANDIDATE_S1,
+      sourceAttemptId: "att-base-s1",
+    });
+
+    // Requested candidate: no attempts (executor will fill).
+    expect(fresh.attempts).toHaveLength(0);
+    expect(fresh.acceptedAttemptId).toBeNull();
+
+    // Empty Judge/fusion evidence and no winner report.
+    expect(seed.judge.attempts).toHaveLength(0);
+    expect(seed.judge.report).toBeNull();
+    expect(seed.fusion.attempts).toHaveLength(0);
+    expect(seed.winnerKeys).toEqual([]);
+    // Valid persisted shape.
+    expect(isRunRecordV2(seed)).toBe(true);
+  });
+
+  it("does not copy judge scores or winner report into the seed", () => {
+    const builder = createRunRecordBuilder(makeDeps());
+    const baseRun = buildBaseRun();
+    let id = 0;
+    const seed = builder.buildRepairRunSeed({
+      runId: "run-repair-2",
+      source: {
+        kind: "experiment",
+        experimentId: "exp-1",
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-repair-2",
+        trial: 1,
+      },
+      task: { title: "Test Task", prompt: "test prompt", systemPrompt: "system prompt", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      slots: TWO_SLOTS.map((s) => ({ ...s, provider: "P" })),
+      fence: FENCE,
+      baseRun,
+      requestedModelKeys: [],
+      generateId: () => `fresh-${++id}`,
+    });
+    expect(seed.judge.report).toBeNull();
+    expect(seed.judge.attempts).toHaveLength(0);
+    expect(seed.winnerKeys).toEqual([]);
+  });
+
+  it("tolerates a rotated roster whose requested key has no base-run candidate", () => {
+    // Roster-extension shape (plan 001, A2): the rotated roster contains all
+    // old slots plus one NEW slot that never ran in the base run. The seed
+    // must reuse every accepted old output and leave the new slot unstarted.
+    const builder = createRunRecordBuilder(makeDeps());
+    const baseRun = buildBaseRun();
+    const baseBefore = JSON.parse(JSON.stringify(baseRun));
+
+    const newSlot: ModelSlot = { id: "s3", providerId: "gemini", provider: "Gemini", model: "C", slug: "model-c", enabled: true };
+    const rotatedSlots: ModelSlot[] = [
+      ...TWO_SLOTS.map((s) => ({ ...s, provider: "P" })),
+      newSlot,
+    ];
+    let id = 0;
+    const generateId = () => `fresh-${++id}`;
+
+    const seed = builder.buildRepairRunSeed({
+      runId: "run-extension",
+      source: {
+        kind: "experiment",
+        experimentId: "exp-1",
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: "fp-rotated",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-extension",
+        trial: 1,
+        repair: { kind: "roster-extension", addedModelKey: "gemini:model-c", baseRunId: "run-1" },
+      },
+      task: { title: "Test Task", prompt: "test prompt", systemPrompt: "system prompt", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      slots: rotatedSlots,
+      fence: FENCE,
+      baseRun,
+      requestedModelKeys: ["gemini:model-c"],
+      generateId,
+    });
+
+    // Three candidates: two reused, one fresh.
+    expect(seed.candidates).toHaveLength(3);
+    const reusedA = seed.candidates.find((c) => c.modelKey === "openrouter:model-a")!;
+    const reusedB = seed.candidates.find((c) => c.modelKey === "umans:model-b")!;
+    const freshC = seed.candidates.find((c) => c.modelKey === "gemini:model-c")!;
+
+    expect(reusedA.acceptedAttemptId).not.toBeNull();
+    expect(reusedA.attempts[0].reusedFrom).toEqual({
+      sourceRunId: "run-1",
+      sourceCandidateId: CANDIDATE_S1,
+      sourceAttemptId: "att-base-s1",
+    });
+    expect(reusedB.acceptedAttemptId).not.toBeNull();
+    expect(reusedB.attempts[0].reusedFrom).toEqual({
+      sourceRunId: "run-1",
+      sourceCandidateId: CANDIDATE_S2,
+      sourceAttemptId: "att-base-s2",
+    });
+
+    // New slot: no accepted attempt, no attempts.
+    expect(freshC.acceptedAttemptId).toBeNull();
+    expect(freshC.attempts).toHaveLength(0);
+
+    // Fresh candidate IDs never collide with base-run IDs.
+    for (const c of seed.candidates) {
+      for (const a of c.attempts) {
+        expect(a.attemptId).not.toBe("att-base-s1");
+        expect(a.attemptId).not.toBe("att-base-s2");
+      }
+    }
+
+    // Judge/fusion evidence and winners are empty.
+    expect(seed.judge.attempts).toHaveLength(0);
+    expect(seed.judge.report).toBeNull();
+    expect(seed.fusion.attempts).toHaveLength(0);
+    expect(seed.winnerKeys).toEqual([]);
+
+    // The base run is unmodified.
+    expect(baseRun).toEqual(baseBefore);
+
+    // Valid persisted shape with the roster-extension source.
+    expect(isRunRecordV2(seed)).toBe(true);
+    expect(seed.source).toMatchObject({
+      kind: "experiment",
+      protocolFingerprint: "fp-rotated",
+      repair: { kind: "roster-extension", addedModelKey: "gemini:model-c", baseRunId: "run-1" },
+    });
   });
 });
 

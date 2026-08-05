@@ -13,7 +13,7 @@
 //   executeFusionAttempt — Fusion/Re-fuse from frozen accepted evidence
 // =============================================================================
 
-import type { ChatMessage, CriticRef } from "./providers/types";
+import type { ChatMessage, ChatOptions, CostRecord, CriticRef, ProviderId, ReasoningPolicy, UsageBreakdown } from "./providers/types";
 import type {
   BlindCandidate,
   Candidate,
@@ -35,7 +35,8 @@ import {
   sanitizePersistedError,
   type SanitizeErrorContext,
 } from "./persistence/error-redaction";
-import { estimateTokens } from "./cost";
+import { costFromSnapshot, estimateTokens } from "./cost";
+import { getModelPricing } from "./providers/pricing";
 import {
   buildFanoutJobs,
   candidateFullText,
@@ -52,6 +53,7 @@ import {
 } from "./pipeline";
 import type { AdHocEvaluationConfig } from "./evaluations/evaluation-profile-adhoc";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
+import { devTerminalLog, type DevTerminalFields } from "./dev-terminal-log";
 
 // --- Request types -----------------------------------------------------------
 
@@ -73,6 +75,19 @@ export interface RunRequest {
   attachments: Attachment[];
   /** Whether native media is also sent to the judge/fusion critic (§6.2). */
   attachmentsToJudge: boolean;
+  /** Requested candidate and Judge effort, frozen with the run. */
+  reasoningPolicy?: ReasoningPolicy;
+  /** When present, skip generation for reused candidates and execute only
+   *  the listed model keys, feeding reused + fresh outputs into one Judge
+   *  pass (spec §11.3, Task 10). */
+  candidateExecution?: {
+    executeModelKeys: string[];
+    seededCandidates: Candidate[];
+    /** Fresh seed attempt IDs for every reused candidate, keyed by
+     *  candidateId — the Judge attempt record needs immutable attempt
+     *  references for every judged output (spec §11.3, Task 10). */
+    seededAttemptIdsByCandidateId: Record<string, string>;
+  };
 }
 
 export interface FrozenCandidateRetryRequest {
@@ -87,6 +102,7 @@ export interface FrozenCandidateRetryRequest {
   attachments: Attachment[];
   /** Frozen §6.2 flag for the re-judge that follows the retry. */
   attachmentsToJudge: boolean;
+  reasoningPolicy?: ReasoningPolicy;
   retryCandidateId: string;
   retrySlotId: string;
   peerCandidates: Candidate[];
@@ -105,6 +121,7 @@ export interface FrozenJudgeRetryRequest {
   /** Frozen attachment set from the original run (plan 7.6.6). */
   attachments: Attachment[];
   /** Frozen §6.2 flag from the original run. */
+  reasoningPolicy?: ReasoningPolicy;
   attachmentsToJudge: boolean;
   /** Frozen exact attempt references for every candidate being re-judged. */
   candidateAttemptIdsByCandidateId: Record<string, string>;
@@ -121,6 +138,7 @@ export interface FrozenFusionRequest {
   attachments: Attachment[];
   /** Frozen §6.2 flag. */
   attachmentsToJudge: boolean;
+  reasoningPolicy?: ReasoningPolicy;
   judgeAttemptId: string;
   /** Frozen blind-label map from the source Judge attempt — the re-fusion
    *  reuses the exact same labels so the blind synthesis is reproducible. */
@@ -157,6 +175,8 @@ export interface RunExecutorEvents {
       output: string | null;
       tokensIn: number | null;
       tokensOut: number | null;
+      usage?: UsageBreakdown | null;
+      cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
     },
@@ -179,6 +199,8 @@ export interface RunExecutorEvents {
       status: AttemptStatus;
       report: JudgeReport | null;
       consensus: ConsensusBreakdown | null;
+      usage?: UsageBreakdown | null;
+      cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
     },
@@ -199,6 +221,8 @@ export interface RunExecutorEvents {
     input: {
       status: AttemptStatus;
       result: string | null;
+      usage?: UsageBreakdown | null;
+      cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
     },
@@ -230,6 +254,17 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
   const generateId = deps.generateId ?? (() => crypto.randomUUID());
   const now = deps.now ?? (() => Date.now());
 
+  /**
+   * Honest fallback when a provider omits native usage/cost (spec 06 §4):
+   * catalog-estimate only when an exact execution-time price is known,
+   * otherwise an Unknown record — never a fabricated total.
+   */
+  function estimateFallbackCost(providerId: string, model: string, tokensIn: number, tokensOut: number): CostRecord {
+    const snapshot = getModelPricing(providerId as ProviderId, model);
+    const estimated = costFromSnapshot(snapshot ?? undefined, { inputTokens: tokensIn, outputTokens: tokensOut });
+    return estimated ?? { usd: null, source: "unknown" };
+  }
+
   function isAborted(signal: AbortSignal): boolean {
     return signal.aborted;
   }
@@ -241,6 +276,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     return sanitizePersistedError(err, ctx, now, configuredCredentialValues());
   }
 
+  function sourceFields(source: RunSource | undefined): DevTerminalFields {
+    if (!source || source.kind !== "experiment") return {};
+    return {
+      experimentId: source.experimentId,
+      taskId: source.taskId,
+      experimentAttemptId: source.experimentTaskAttemptId,
+    };
+  }
+
   // --- Candidate fanout (shared by executeTask and retryCandidate) -----------
 
   async function runCandidateStream(
@@ -249,35 +293,77 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     temperature: number,
     events: RunExecutorEvents,
     signal: AbortSignal,
-  ): Promise<{ content: string; segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; finishedAt: number } | { error: PersistedError } | null> {
+    diagnostics: { source?: RunSource; attemptId: string; reasoningEffort?: ReasoningPolicy["candidates"] },
+  ): Promise<{ content: string; segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; usage?: UsageBreakdown | null; cost?: CostRecord | null; finishedAt: number } | { error: PersistedError } | null> {
     const provider = getProvider(job.providerId);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
     signal.addEventListener("abort", onAbort);
+    const requestStartedAt = Date.now();
+    const context = {
+      ...sourceFields(diagnostics.source),
+      attemptId: diagnostics.attemptId,
+      modelKey: `${job.providerId}:${job.slug}`,
+      stage: "candidate",
+    };
+    devTerminalLog("provider.request.started", context, "info");
     try {
       let content = "";
-      for await (const delta of provider.chatCompletionStream({
+      let usage: UsageBreakdown | null = null;
+      let cost: CostRecord | null = null;
+      const opts: ChatOptions = {
         model: job.slug,
         messages,
         temperature,
+        reasoningEffort: diagnostics.reasoningEffort,
         signal: ctrl.signal,
-      })) {
-        if (isAborted(signal)) return null;
-        content += delta;
-        events.onCandidateDelta(job.id, delta);
+      };
+      if (provider.chatCompletionStreamDetailed) {
+        for await (const event of provider.chatCompletionStreamDetailed(opts)) {
+          if (isAborted(signal)) return null;
+          if (event.delta) {
+            content += event.delta;
+            events.onCandidateDelta(job.id, event.delta);
+          }
+          if (event.usage) usage = event.usage;
+          if (event.cost) cost = event.cost;
+        }
+      } else {
+        for await (const delta of provider.chatCompletionStream(opts)) {
+          if (isAborted(signal)) return null;
+          content += delta;
+          events.onCandidateDelta(job.id, delta);
+        }
       }
       if (isAborted(signal)) return null;
       const segments = splitSegments(content, job.id);
       const summary = summarize(content);
-      const tokensIn = estimateTokens(messages.map((m) => m.content).join(""));
-      const tokensOut = estimateTokens(content);
-      return { content, segments, summary, tokensIn, tokensOut, finishedAt: now() };
+      const tokensIn = usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join(""));
+      const tokensOut = usage?.outputTokens ?? estimateTokens(content);
+      const resolvedCost =
+        cost ?? estimateFallbackCost(job.providerId, job.slug, tokensIn, tokensOut);
+      devTerminalLog("provider.request.completed", {
+        ...context,
+        status: "completed",
+        durationMs: Date.now() - requestStartedAt,
+        tokensIn,
+        tokensOut,
+      }, "info");
+      return { content, segments, summary, tokensIn, tokensOut, usage, cost: resolvedCost, finishedAt: now() };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return null;
       if (isAborted(signal)) return null;
       // Provider errors fail this candidate (not the whole run); return the
       // bounded sanitized error so the caller records it on the attempt.
-      return { error: sanitizeError(err, { category: "provider", stage: "candidate", model: job.slug }) };
+      const error = sanitizeError(err, { category: "provider", stage: "candidate", model: job.slug });
+      devTerminalLog("provider.request.failed", {
+        ...context,
+        status: "failed",
+        durationMs: Date.now() - requestStartedAt,
+        error: error.message,
+        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+      }, "error");
+      return { error };
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
@@ -287,7 +373,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runJudge(
     done: Candidate[],
-    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction: string; attachments: Attachment[]; attachmentsToJudge: boolean },
+    request: { source?: RunSource; task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction: string; attachments: Attachment[]; attachmentsToJudge: boolean; reasoningPolicy?: ReasoningPolicy },
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
     signal: AbortSignal,
@@ -308,6 +394,13 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     );
     const attemptId = generateId();
     const startedAt = now();
+    const judgeLogStartedAt = Date.now();
+    const judgeContext = {
+      ...sourceFields(request.source),
+      attemptId,
+      modelKey: `${request.critic.providerId}:${request.critic.model}`,
+      stage: "judge",
+    };
 
     const blindLabelToCandidateId: Record<string, string> = {};
     for (const { label, candidateId } of blindSet.labelMap) {
@@ -334,13 +427,26 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
     signal.addEventListener("abort", onAbort);
+    devTerminalLog("judge.request.started", judgeContext, "info");
     try {
-      const content = await provider.chatCompletion({
+      let content: string;
+      let usage: UsageBreakdown | null = null;
+      let cost: CostRecord | null = null;
+      const judgeOpts: ChatOptions = {
         model: request.critic.model,
         messages,
         temperature: 0.1,
+        reasoningEffort: request.reasoningPolicy?.judge,
         signal: ctrl.signal,
-      });
+      };
+      if (provider.chatCompletionDetailed) {
+        const detailed = await provider.chatCompletionDetailed(judgeOpts);
+        content = detailed.content;
+        usage = detailed.usage;
+        cost = detailed.cost;
+      } else {
+        content = await provider.chatCompletion(judgeOpts);
+      }
       if (isAborted(signal)) {
         await events.onJudgeTerminal(attemptId, {
           status: "aborted", report: null, consensus: null, error: null, finishedAt: now(),
@@ -348,9 +454,22 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         return { ok: false };
       }
       const { breakdown, scoresById, report } = parseJudge(content, blindSet, profile, done);
+      const resolvedCost =
+        cost ??
+        estimateFallbackCost(
+          request.critic.providerId,
+          request.critic.model,
+          usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join("")),
+          usage?.outputTokens ?? estimateTokens(content),
+        );
       await events.onJudgeTerminal(attemptId, {
-        status: "completed", report, consensus: breakdown, error: null, finishedAt: now(),
+        status: "completed", report, consensus: breakdown, usage, cost: resolvedCost, error: null, finishedAt: now(),
       });
+      devTerminalLog("judge.request.completed", {
+        ...judgeContext,
+        status: "completed",
+        durationMs: Date.now() - judgeLogStartedAt,
+      }, "info");
       return { ok: true, attemptId, report, consensus: breakdown, scoresById, blindSet };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -360,10 +479,18 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         return { ok: false };
       }
       if (isAborted(signal)) return { ok: false };
+      const error = sanitizeError(err, { category: "provider", stage: "judge", model: request.critic.model });
       await events.onJudgeTerminal(attemptId, {
         status: "failed", report: null, consensus: null,
-        error: sanitizeError(err, { category: "provider", stage: "judge", model: request.critic.model }), finishedAt: now(),
+        error, finishedAt: now(),
       }).catch(() => {});
+      devTerminalLog("judge.request.failed", {
+        ...judgeContext,
+        status: "failed",
+        durationMs: Date.now() - judgeLogStartedAt,
+        error: error.message,
+        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+      }, "error");
       return { ok: false };
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -374,7 +501,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runFusion(
     blindCandidates: BlindCandidate[],
-    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction?: string; attachments: Attachment[]; attachmentsToJudge: boolean },
+    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction?: string; attachments: Attachment[]; attachmentsToJudge: boolean; reasoningPolicy?: ReasoningPolicy },
     sourceJudgeAttemptId: string,
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
@@ -415,20 +542,40 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     const onAbort = () => ctrl.abort();
     signal.addEventListener("abort", onAbort);
     try {
-      const content = await provider.chatCompletion({
+      let content: string;
+      let usage: UsageBreakdown | null = null;
+      let cost: CostRecord | null = null;
+      const fusionOpts: ChatOptions = {
         model: request.critic.model,
         messages,
         temperature: 0.3,
+        reasoningEffort: request.reasoningPolicy?.judge,
         signal: ctrl.signal,
-      });
+      };
+      if (provider.chatCompletionDetailed) {
+        const detailed = await provider.chatCompletionDetailed(fusionOpts);
+        content = detailed.content;
+        usage = detailed.usage;
+        cost = detailed.cost;
+      } else {
+        content = await provider.chatCompletion(fusionOpts);
+      }
       if (isAborted(signal)) {
         await events.onFusionTerminal(attemptId, {
           status: "aborted", result: null, error: null, finishedAt: now(),
         }).catch(() => {});
         return { ok: false, result: null };
       }
+      const resolvedCost =
+        cost ??
+        estimateFallbackCost(
+          request.critic.providerId,
+          request.critic.model,
+          usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join("")),
+          usage?.outputTokens ?? estimateTokens(content),
+        );
       await events.onFusionTerminal(attemptId, {
-        status: "completed", result: content, error: null, finishedAt: now(),
+        status: "completed", result: content, usage, cost: resolvedCost, error: null, finishedAt: now(),
       });
       return { ok: true, result: content };
     } catch (err) {
@@ -461,6 +608,185 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       throw new Error("Duplicate enabled provider:model keys are not allowed");
     }
 
+    // --- Targeted candidate execution (spec §11.3, Task 10) ---
+    // When candidateExecution is present, skip generation for reused (seeded)
+    // candidates and execute only the listed model keys, then feed reused +
+    // fresh outputs into one fresh Judge pass.
+    if (request.candidateExecution) {
+      const { executeModelKeys, seededCandidates } = request.candidateExecution;
+      const executeSet = new Set(executeModelKeys);
+      const jobByKey = new Map(jobs.map((j) => [`${j.providerId}:${j.slug}`, j]));
+
+      // Validate: every execute key belongs to slots.
+      for (const key of executeModelKeys) {
+        if (!jobByKey.has(key)) {
+          throw new Error(`candidateExecution: execute key ${key} not found in slots`);
+        }
+      }
+      // Validate: seeded and execute keys do not overlap.
+      const seededKeys = new Set(seededCandidates.map((c) => `${c.providerId}:${c.slug}`));
+      for (const key of executeModelKeys) {
+        if (seededKeys.has(key)) {
+          throw new Error(`candidateExecution: ${key} appears in both seeded and execute lists`);
+        }
+      }
+      // Validate: no duplicate in execute keys.
+      if (new Set(executeModelKeys).size !== executeModelKeys.length) {
+        throw new Error("candidateExecution: duplicate model keys in executeModelKeys");
+      }
+
+      try {
+        await events.onFanoutStart();
+      } catch {
+        return;
+      }
+      if (isAborted(signal)) return;
+
+      const candidateAttemptIds: Record<string, string> = {};
+      // Seed the attempt map with reused candidates' fresh attempt IDs so
+      // the Judge attempt record carries immutable references for every
+      // judged output (spec §11.3, Task 10).
+      const { seededAttemptIdsByCandidateId } = request.candidateExecution;
+      for (const c of seededCandidates) {
+        if (seededAttemptIdsByCandidateId[c.id]) {
+          candidateAttemptIds[c.id] = seededAttemptIdsByCandidateId[c.id];
+        } else {
+          throw new Error(`candidateExecution: missing seed attempt ID for reused candidate ${c.id}`);
+        }
+      }
+      const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; finishedAt: number; content: string }> = new Map();
+
+      // Execute only the requested model keys.
+      const executeJobs = jobs.filter((j) => executeSet.has(`${j.providerId}:${j.slug}`));
+      await Promise.all(
+        executeJobs.map(async (job): Promise<void> => {
+          const messages = draftMessages({
+            systemPrompt: request.task.systemPrompt,
+            prompt: request.task.prompt,
+            attachments: request.attachments,
+            capabilities: getModelCapabilities(job.providerId, job.slug),
+          });
+          const attemptId = generateId();
+          const startedAt = now();
+
+          try {
+            await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
+          } catch (err) {
+            await events.onCandidateAttemptTerminal(job.id, attemptId, {
+              status: "failed", output: null, tokensIn: null, tokensOut: null,
+              error: sanitizeError(err, { category: "storage", stage: "candidate", model: job.slug }),
+              finishedAt: now(),
+            }).catch(() => {});
+            return;
+          }
+
+          if (isAborted(signal)) return;
+
+          const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
+            source: request.source,
+            attemptId,
+            reasoningEffort: request.reasoningPolicy?.candidates,
+          });
+          if (!result || "error" in result) {
+            if (isAborted(signal) && !result) return;
+            await events.onCandidateAttemptTerminal(job.id, attemptId, {
+              status: "failed", output: null, tokensIn: null, tokensOut: null,
+              error: result && "error" in result
+                ? result.error
+                : sanitizeError(new Error("Candidate aborted"), { category: "aborted", stage: "candidate", model: job.slug }),
+              finishedAt: now(),
+            }).catch(() => {});
+            return;
+          }
+
+          events.onCandidateTerminal(job.id, {
+            segments: result.segments,
+            summary: result.summary,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+            finishedAt: result.finishedAt,
+          });
+
+          candidateAttemptIds[job.id] = attemptId;
+          candidateResults.set(job.id, result);
+
+          await events.onCandidateAttemptTerminal(job.id, attemptId, {
+            status: "completed",
+            output: result.content,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+            usage: result.usage,
+            cost: result.cost,
+            error: null,
+            finishedAt: result.finishedAt,
+          }).catch(() => {});
+        }),
+      );
+
+      if (isAborted(signal)) return;
+
+      // Build the done set: fresh results + seeded reused candidates.
+      const done: Candidate[] = [];
+      // Fresh candidates from provider calls.
+      for (const j of executeJobs) {
+        const r = candidateResults.get(j.id);
+        if (!r) continue;
+        done.push({
+          id: j.id,
+          model: j.displayName,
+          provider: j.provider,
+          providerId: j.providerId,
+          slug: j.slug,
+          accent: j.accent,
+          strategy: j.strategyLabel,
+          summary: r.summary,
+          scores: {},
+          weightedScore: 0,
+          segments: r.segments,
+          status: "done" as const,
+          startedAt: now(),
+          finishedAt: r.finishedAt,
+        });
+      }
+      // Seeded reused candidates — their outputs are already complete.
+      for (const c of seededCandidates) {
+        if (isUsableCandidate(c)) done.push(c);
+      }
+
+      try {
+        await events.onFanoutTerminal(done);
+      } catch {
+        return;
+      }
+
+      if (isAborted(signal)) return;
+      if (done.length < 2) return;
+
+      const judgeResult = await runJudge(
+        done,
+        { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+        candidateAttemptIds,
+        events,
+        signal,
+      );
+
+      if (!judgeResult.ok) return;
+      if (isAborted(signal)) return;
+
+      if (request.mode === "fuse") {
+        await runFusion(
+          judgeResult.blindSet.candidates,
+          { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+          judgeResult.attemptId,
+          candidateAttemptIds,
+          events,
+          signal,
+        );
+      }
+      return;
+    }
+
+    // --- Normal executeTask path (no candidateExecution) ---
     try {
       await events.onFanoutStart();
     } catch {
@@ -499,7 +825,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
         if (isAborted(signal)) return;
 
-        const result = await runCandidateStream(job, messages, request.task.temperature, events, signal);
+        const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
+          source: request.source,
+          attemptId,
+          reasoningEffort: request.reasoningPolicy?.candidates,
+        });
         if (!result || "error" in result) {
           if (isAborted(signal) && !result) return;
           await events.onCandidateAttemptTerminal(job.id, attemptId, {
@@ -528,6 +858,8 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           output: result.content,
           tokensIn: result.tokensIn,
           tokensOut: result.tokensOut,
+          usage: result.usage,
+          cost: result.cost,
           error: null,
           finishedAt: result.finishedAt,
         }).catch(() => {});
@@ -571,7 +903,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       done,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+      { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
       candidateAttemptIds,
       events,
       signal,
@@ -583,7 +915,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -633,7 +965,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     if (isAborted(signal)) return;
 
-    const result = await runCandidateStream(job, messages, request.task.temperature, events, signal);
+    const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
+      source: request.source,
+      attemptId,
+      reasoningEffort: request.reasoningPolicy?.candidates,
+    });
     if (!result || "error" in result) {
       if (!isAborted(signal) || (result && "error" in result)) {
         await events.onCandidateAttemptTerminal(job.id, attemptId, {
@@ -660,6 +996,8 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       output: result.content,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
+      usage: result.usage,
+      cost: result.cost,
       error: null,
       finishedAt: result.finishedAt,
     }).catch(() => {});
@@ -695,7 +1033,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       allDone,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+      { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
       candidateAttemptIds,
       events,
       signal,
@@ -706,7 +1044,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -726,7 +1064,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       done,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
       candidateAttemptIds,
       events,
       signal,
@@ -737,7 +1075,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -768,7 +1106,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     await runFusion(
       blindCandidates,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge },
+      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
       request.judgeAttemptId,
       request.candidateAttemptIdsByCandidateId,
       events,

@@ -898,11 +898,23 @@ describe("createBlindCandidateSet — blind packet", () => {
     expect(set.labelMap.map((m) => m.candidateId).sort()).toEqual(["c1", "c2", "c3", "c4"]);
   });
 
-  it("rejects more candidates than supported labels before any network call", () => {
-    const candidates = Array.from({ length: 9 }, (_, i) =>
+  it("generates unique labels dynamically beyond Z without a roster-size ceiling", () => {
+    const candidates = Array.from({ length: 55 }, (_, i) =>
       contentCandidate(`c${i + 1}`, `answer ${i + 1}`),
     );
-    expect(() => createBlindCandidateSet(candidates, () => 0.5)).toThrow(/at most 8/i);
+    const set = createBlindCandidateSet(candidates, () => 0.999);
+    expect(set.candidates.map((candidate) => candidate.label).slice(24, 29)).toEqual([
+      "Y", "Z", "AA", "AB", "AC",
+    ]);
+    expect(set.candidates[set.candidates.length - 1]?.label).toBe("BC");
+    expect(new Set(set.candidates.map((candidate) => candidate.label)).size).toBe(55);
+
+    const judgeText = judgeJson(
+      set.candidates.map((candidate, index) => evalEntry(candidate.label, 1 + (index % 5))),
+    );
+    const result = parseJudge(judgeText, set, null, candidates);
+    expect(Object.keys(result.scoresById)).toHaveLength(55);
+    expect(result.report.evaluationsById["c27"].blindLabel).toBe("AA");
   });
 
   it("rejects an empty candidate set", () => {

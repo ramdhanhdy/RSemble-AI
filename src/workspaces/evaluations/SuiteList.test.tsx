@@ -94,6 +94,17 @@ describe("SuiteList — empty state", () => {
     cleanup(h);
   });
 
+  it("cross-links profiles so first-run users learn the split", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const link = h.$("a[href='/evaluations/profiles']");
+    expect(link).toBeTruthy();
+    expect(link?.textContent).toContain("Profiles");
+    expect(h.container.textContent).toMatch(/suites pin them/i);
+    cleanup(h);
+  });
+
   it("storage unavailable shows an error, not a create button that lies about saving", async () => {
     const failingRepo = {
       listSuites: vi.fn().mockRejectedValue(new Error("storage down")),
@@ -217,8 +228,9 @@ describe("SuiteList — rows", () => {
       await flush();
     });
     await settle();
-    // Suite removed from default list
-    expect(h.$$("a[href^='/evaluations/']")).toHaveLength(0);
+    // Suite removed from default list — scoped to row links; the empty-state
+    // profiles cross-link (identity spec §5.4) is not a suite row.
+    expect(h.$$("[data-record-row] a[href^='/evaluations/']")).toHaveLength(0);
     // Archived filter restores discoverability
     const showArchived = h.$("input[type='checkbox']") as HTMLInputElement;
     expect(showArchived).toBeTruthy();
@@ -277,8 +289,9 @@ describe("SuiteList — create", () => {
     await settle();
     // Error surfaced, no false success claim
     expect(h.container.textContent).toMatch(/storage|full|free space/i);
-    // No suite appears in the list
-    expect(h.$$("a[href^='/evaluations/']")).toHaveLength(0);
+    // No suite appears in the list — row links only; the empty-state
+    // cross-link is not a suite row.
+    expect(h.$$("[data-record-row] a[href^='/evaluations/']")).toHaveLength(0);
     cleanup(h);
   });
 });
@@ -334,6 +347,106 @@ describe("SuiteList — suite package import", () => {
     await chooseImportFile(h, file);
     expect(h.$('[data-testid="suite-import-errors"]')).not.toBeNull();
     expect(await repo.listSuites(true)).toHaveLength(0);
+    cleanup(h);
+  });
+});
+
+describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
+  it("shows the workload kind eyebrow and ready status, not draft", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1", { name: "My Battery" })]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Workload");
+    expect(text).toContain("Ready");
+    expect(text).not.toContain("Draft");
+    cleanup(h);
+  });
+
+  it("archived suites keep the aborted status", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1", { archivedAt: Date.now() })]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    // Archived rows only visible with the filter; toggle it.
+    const toggle = h.$("input[type='checkbox']");
+    if (toggle) {
+      await act(async () => {
+        toggle.click();
+        await flush();
+      });
+      await settle();
+    }
+    expect(h.container.textContent).toContain("Aborted");
+    cleanup(h);
+  });
+
+  it("shows the pinned rubric chip linking to the profile", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const now = Date.now();
+    // The repository requires the first profile version to be 1 and at least
+    // one positive-weight criterion.
+    const criterion = {
+      id: "c1",
+      name: "Accuracy",
+      description: "",
+      weight: 1,
+      anchors: { one: "1", three: "3", five: "5" },
+    };
+    await repo.createProfile(
+      { id: "p1", revision: 1, latestVersion: 1, createdAt: now, updatedAt: now, archivedAt: null },
+      { id: "p1", version: 1, name: "Clarity rubric", description: "", judgeInstruction: "", criteria: [criterion], createdAt: now, updatedAt: now },
+    );
+    await seedRepo(repo, [
+      makeSuite("s1", { defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } } }),
+    ]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const chip = h.$("a[href='/evaluations/profiles/p1']");
+    expect(chip).toBeTruthy();
+    expect(chip?.textContent).toContain("Clarity rubric v1");
+    cleanup(h);
+  });
+
+  it("shows a holistic judging chip when the suite uses no profile", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1")]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    expect(h.container.textContent).toContain("Holistic judging");
+    cleanup(h);
+  });
+
+  it("shows rubric missing when the pinned profile no longer exists", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [
+      makeSuite("s1", { defaultEvaluation: { kind: "profile", profile: { id: "gone", version: 1 } } }),
+    ]);
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    expect(h.container.textContent).toContain("Rubric missing");
+    cleanup(h);
+  });
+
+  it("shows latest experiment status on the row when experiments exist", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1")]);
+    const now = Date.now();
+    await repo.createExperiment({
+      id: "exp1", revision: 1, suiteId: "s1", suiteVersion: 1, protocolFingerprint: "fp",
+      status: "completed", execution: null,
+      snapshot: {
+        suiteId: "s1", suiteVersion: 1, tasks: [], modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "j" },
+        defaultEvaluation: { kind: "holistic" }, profiles: [], protocolFingerprint: "fp", createdAt: now,
+      },
+      tasks: [], createdAt: now, updatedAt: now,
+    });
+    const h = renderWithRouter(<SuiteList repo={repo} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Completed");
     cleanup(h);
   });
 });

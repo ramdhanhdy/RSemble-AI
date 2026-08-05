@@ -24,8 +24,8 @@ function render(node: React.ReactNode): Harness {
   return {
     container,
     root,
-    $: (s) => container.querySelector<HTMLElement>(s),
-    $$: (s) => [...container.querySelectorAll<HTMLElement>(s)],
+    $: (s) => document.querySelector<HTMLElement>(s),
+    $$: (s) => [...document.querySelectorAll<HTMLElement>(s)],
   };
 }
 
@@ -50,6 +50,7 @@ afterEach(() => {
 interface PaletteProps {
   workspace?: WorkspaceKind;
   activeExperimentId?: string | null;
+  canRun?: boolean;
 }
 
 interface Spies {
@@ -95,7 +96,7 @@ function renderPalette(overrides: PaletteProps = {}): { h: Harness; spies: Spies
       onToggleFocusMode={spies.onToggleFocusMode}
       onExport={spies.onExport}
       running={false}
-      canRun={true}
+      canRun={overrides.canRun ?? true}
       workspace={overrides.workspace}
       onNavigate={spies.onNavigate}
       activeExperimentId={overrides.activeExperimentId}
@@ -141,9 +142,9 @@ describe("CommandPalette workspace awareness (plan 8.2)", () => {
     const { h } = renderPalette();
     await settle();
 
-    const headers = [
-      ...h.container.querySelectorAll<HTMLElement>('[role="listbox"] > div > div:first-child'),
-    ].map((el) => el.textContent?.trim() ?? "");
+    const headers = h.$$('[cmdk-group-heading]').map(
+      (el) => el.textContent?.trim() ?? "",
+    );
     expect(headers[0]).toBe("Navigate");
     // The first three commands (in DOM order) are the navigation commands.
     expect(optionLabels(h).slice(0, 3)).toEqual([
@@ -235,7 +236,7 @@ describe("CommandPalette workspace awareness (plan 8.2)", () => {
 
     expect(findOption(h, "Add evaluation criterion")).toBeTruthy();
     expect(findOption(h, "Add rubric criterion")).toBeNull();
-    expect(h.container.textContent).not.toContain("rubric criterion");
+    expect(document.body.textContent).not.toContain("rubric criterion");
     cleanup(h);
   });
 
@@ -279,6 +280,50 @@ describe("CommandPalette workspace awareness (plan 8.2)", () => {
     expect(labels).toContain("Go to Runs");
     expect(labels).not.toContain("Go to Compare");
     expect(labels).not.toContain("Go to Evaluations");
+    cleanup(h);
+  });
+});
+
+describe("CommandPalette cmdk interaction contract", () => {
+  it("opens without an entrance animation", async () => {
+    const { h } = renderPalette();
+    await settle();
+
+    const dialog = h.$("[cmdk-dialog]");
+    expect(dialog).toBeTruthy();
+    expect(dialog?.className).not.toContain("animate-cmd-pop");
+    expect(dialog?.outerHTML).not.toContain("data-entering");
+    expect(dialog?.outerHTML).not.toContain("data-exiting");
+    cleanup(h);
+  });
+
+  it("filters commands and selects the active command with Enter", async () => {
+    const { h, spies } = renderPalette();
+    await settle();
+
+    typeQuery(h, "runs");
+    const input = h.$('input[aria-label="Search commands"]');
+    act(() => {
+      input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+
+    expect(spies.onClose).toHaveBeenCalledTimes(1);
+    expect(spies.onNavigate).toHaveBeenCalledWith("/runs");
+    cleanup(h);
+  });
+
+  it("does not execute disabled commands", async () => {
+    const { h, spies } = renderPalette({ canRun: false });
+    await settle();
+
+    const run = findOption(h, "Run pipeline");
+    expect(run?.getAttribute("aria-disabled")).toBe("true");
+    act(() => {
+      run!.click();
+    });
+
+    expect(spies.onRun).not.toHaveBeenCalled();
+    expect(spies.onClose).not.toHaveBeenCalled();
     cleanup(h);
   });
 });

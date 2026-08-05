@@ -16,6 +16,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { SuiteTaskEditor } from "./SuiteTaskEditor";
 import { SuiteSettings } from "./SuiteSettings";
+import { ModelProbeProvider } from "../../ui/ModelProbeContext";
 import type { EvaluationSuite, EvaluationTask } from "../../lib/evaluations/evaluation-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -118,13 +119,15 @@ describe("editor form controls use defined dark background tokens", () => {
 
   it("SuiteSettings inputs/textareas/selects carry no undefined bg-* class", () => {
     const h = render(
-      <SuiteSettings
-        suite={makeSuite()}
-        models={[]}
-        onChange={() => undefined}
-        profileRecords={[]}
-        resolveProfileLabel={() => "profile"}
-      />,
+      <ModelProbeProvider>
+        <SuiteSettings
+          suite={makeSuite()}
+          models={[]}
+          onChange={() => undefined}
+          profileRecords={[]}
+          resolveProfileLabel={() => "profile"}
+        />
+      </ModelProbeProvider>,
     );
     expect(controlsWithUndefinedBg(h)).toEqual([]);
     cleanup(h);

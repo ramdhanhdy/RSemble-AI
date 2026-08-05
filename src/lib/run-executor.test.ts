@@ -177,6 +177,34 @@ describe("RunExecutor — executeTask", () => {
     expect(calls).toContain("fusion-start");
   });
 
+  it("persists Unknown cost when the provider exposes no native usage", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock
+      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce("fused answer");
+    const executor = createRunExecutor({ random: () => 0.999 });
+    const { events } = makeEvents();
+    const terminalInputs: Record<string, unknown[]> = { judge: [], fusion: [] };
+    const capture =
+      (key: "judge" | "fusion") =>
+      async (_attemptId: string, input: unknown): Promise<void> => {
+        terminalInputs[key].push(input);
+      };
+    events.onJudgeTerminal = vi.fn(capture("judge")) as never;
+    events.onFusionTerminal = vi.fn(capture("fusion")) as never;
+    await executor.executeTask(makeRequest("fuse"), events, new AbortController().signal);
+
+    const candidateTerminals = vi.mocked(events.onCandidateAttemptTerminal).mock.calls;
+    for (const [, , input] of candidateTerminals) {
+      // No native usage on the mocked stream → honest Unknown fallback cost.
+      expect((input as { cost: unknown }).cost).toEqual({ usd: null, source: "unknown" });
+    }
+    const judgeInputs = terminalInputs.judge;
+    const fusionInputs = terminalInputs.fusion;
+    expect(judgeInputs[judgeInputs.length - 1]).toMatchObject({ cost: { usd: null, source: "unknown" } });
+    expect(fusionInputs[fusionInputs.length - 1]).toMatchObject({ cost: { usd: null, source: "unknown" } });
+  });
+
   it("does not call Fusion when Judge fails", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     chatCompletionMock.mockResolvedValueOnce("malformed");
@@ -670,5 +698,135 @@ describe("RunExecutor — persisted error sanitization", () => {
     expect(error.category).toBe("aborted");
     expect(error.stage).toBe("candidate");
     expect(error.at).toBe(7);
+  });
+});
+
+// --- Targeted candidate execution (Task 10) -----------------------------------
+
+describe("executeTask — candidateExecution (Task 10)", () => {
+  const EIGHT_SLOTS: ModelSlot[] = Array.from({ length: 8 }, (_, i) => ({
+    id: `s${i + 1}`,
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: `Model ${i + 1}`,
+    slug: `model-${i + 1}`,
+    enabled: true,
+  }));
+
+  function seededCandidate(slot: ModelSlot, text: string): Candidate {
+    return {
+      id: `cand-${slot.id}`,
+      model: slot.model,
+      provider: slot.provider,
+      providerId: slot.providerId,
+      slug: slot.slug,
+      accent: "indigo",
+      strategy: "Parallel model",
+      summary: text,
+      scores: {},
+      weightedScore: 0,
+      segments: [{ id: `${slot.id}-seg`, text }],
+      status: "done",
+      startedAt: 1000,
+      finishedAt: 2000,
+    };
+  }
+  function seededAttemptIds(seeded: Candidate[]): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const c of seeded) map[c.id] = `seed-${c.id}`;
+    return map;
+  }
+
+  it("calls the provider exactly once when only one model key is requested", async () => {
+    const executor = createRunExecutor({ now: () => 0, generateId: () => "id" });
+    const { events } = makeEvents();
+    const onCandidateAttemptStart = events.onCandidateAttemptStart as ReturnType<typeof vi.fn>;
+    const request = makeRequest("rank", EIGHT_SLOTS);
+    const seeded = EIGHT_SLOTS.slice(0, 7).map((s) => seededCandidate(s, `reuse-${s.slug}`));
+    const candidateExecution = {
+      executeModelKeys: ["openrouter:model-8"],
+      seededCandidates: seeded,
+      seededAttemptIdsByCandidateId: seededAttemptIds(seeded),
+    } as never;
+
+    chatStreamMock.mockResolvedValue(streamOf("fresh-output"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3], ["C", 2], ["D", 1], ["E", 5], ["F", 4], ["G", 3], ["H", 2]]));
+
+    await executor.executeTask({ ...request, candidateExecution }, events, new AbortController().signal);
+
+    expect(chatStreamMock).toHaveBeenCalledTimes(1);
+    expect(onCandidateAttemptStart).toHaveBeenCalledTimes(1);
+    const calledId = (onCandidateAttemptStart.mock.calls[0] as unknown[])[0];
+    expect(calledId).toBe("cand-s8");
+  });
+
+  it("never sends reused models to providers", async () => {
+    const executor = createRunExecutor({ now: () => 0, generateId: () => "id" });
+    const { events } = makeEvents();
+    const request = makeRequest("rank", EIGHT_SLOTS);
+    const seeded = EIGHT_SLOTS.slice(0, 7).map((s) => seededCandidate(s, `reuse-${s.slug}`));
+    const candidateExecution = {
+      executeModelKeys: ["openrouter:model-8"],
+      seededCandidates: seeded,
+      seededAttemptIdsByCandidateId: seededAttemptIds(seeded),
+    } as never;
+
+    chatStreamMock.mockResolvedValue(streamOf("fresh-output"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4]]));
+
+    await executor.executeTask({ ...request, candidateExecution }, events, new AbortController().signal);
+
+    const calledSlugs = chatStreamMock.mock.calls.map((c) => (c[0] as { model?: string }).model);
+    expect(calledSlugs).toEqual(["model-8"]);
+  });
+
+  it("Judge receives all eight candidate outputs with immutable attempt references", async () => {
+    const executor = createRunExecutor({ now: () => 0, generateId: () => "id" });
+    const { events } = makeEvents();
+    const onJudgeStart = events.onJudgeStart as ReturnType<typeof vi.fn>;
+    const request = makeRequest("rank", EIGHT_SLOTS);
+    const seeded = EIGHT_SLOTS.slice(0, 7).map((s) => seededCandidate(s, `reuse-${s.slug}`));
+    const candidateExecution = {
+      executeModelKeys: ["openrouter:model-8"],
+      seededCandidates: seeded,
+      seededAttemptIdsByCandidateId: seededAttemptIds(seeded),
+    } as never;
+
+    chatStreamMock.mockResolvedValue(streamOf("fresh-output"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3], ["C", 2], ["D", 1], ["E", 5], ["F", 4], ["G", 3], ["H", 2]]));
+
+    await executor.executeTask({ ...request, candidateExecution }, events, new AbortController().signal);
+
+    expect(onJudgeStart).toHaveBeenCalledTimes(1);
+    const judgeArg = (onJudgeStart.mock.calls[0] as unknown[])[0];
+    if (judgeArg && typeof judgeArg === "object" && "blindLabelToCandidateId" in judgeArg) {
+      const judgeObj = judgeArg as { blindLabelToCandidateId: Record<string, string>; candidateAttemptIdsByCandidateId: Record<string, string> };
+      const candidateIds = Object.values(judgeObj.blindLabelToCandidateId);
+      expect(candidateIds).toHaveLength(8);
+      // Every judged candidate has an immutable attempt reference.
+      expect(Object.keys(judgeObj.candidateAttemptIdsByCandidateId)).toHaveLength(8);
+    }
+  });
+
+  it("an unavailable target produces a partial compound run without deleting reused outputs", async () => {
+    const executor = createRunExecutor({ now: () => 0, generateId: () => "id" });
+    const { events } = makeEvents();
+    const request = makeRequest("rank", EIGHT_SLOTS);
+    const seeded = EIGHT_SLOTS.slice(0, 7).map((s) => seededCandidate(s, `reuse-${s.slug}`));
+    const candidateExecution = {
+      executeModelKeys: ["openrouter:model-8"],
+      seededCandidates: seeded,
+      seededAttemptIdsByCandidateId: seededAttemptIds(seeded),
+    } as never;
+
+    chatStreamMock.mockRejectedValue(new Error("provider unavailable"));
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3], ["C", 2], ["D", 1], ["E", 5], ["F", 4], ["G", 3]]));
+
+    await executor.executeTask({ ...request, candidateExecution }, events, new AbortController().signal);
+
+    const onFanoutTerminal = events.onFanoutTerminal as ReturnType<typeof vi.fn>;
+    expect(onFanoutTerminal).toHaveBeenCalledTimes(1);
+    const doneArg = (onFanoutTerminal.mock.calls[0] as unknown[])[0] as Candidate[];
+    expect(doneArg).toHaveLength(7);
   });
 });

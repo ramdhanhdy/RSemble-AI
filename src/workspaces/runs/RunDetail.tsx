@@ -79,6 +79,8 @@ export function RunDetail({
             return <ProvenanceSection key="provenance" section={section} />;
           case "outcome":
             return <OutcomeSection key="outcome" section={section} record={record} />;
+          case "cost-breakdown":
+            return <CostBreakdownSection key="cost-breakdown" section={section} />;
           case "candidates":
             return <CandidatesSection key="candidates" section={section} record={record} focusCandidateId={focusCandidateId} />;
           case "selected-candidate":
@@ -103,20 +105,73 @@ function HeaderSection({
   section,
   record,
 }: {
-  section: { title?: string; status?: string; timestamp?: string; relativeTime?: string; source?: string };
+  section: {
+    title?: string;
+    status?: string;
+    timestamp?: string;
+    relativeTime?: string;
+    startedRelativeTime?: string;
+    timeZone?: string;
+    startedAt?: number;
+    completedAt?: number | null;
+    completedTimestamp?: string;
+    completionLabel?: "Completed" | "Ended";
+    duration?: string;
+    runningDuration?: string;
+    source?: string;
+  };
   record: RunRecordV2;
 }) {
+  const startedAt = section.startedAt ?? record.createdAt;
+  const hasCompletion = section.completedAt !== null && section.completedAt !== undefined;
   return (
     <header data-section="header" className="flex flex-col gap-1">
       <h2 className="text-base font-semibold text-text">{section.title ?? record.task.title}</h2>
-      <div className="flex flex-wrap items-center gap-3 text-text-muted">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-text-muted">
         <StatusMark status={record.status as StatusMarkStatus} />
-        <span className="tabular-nums">{section.timestamp}</span>
-        <span className="text-text-muted">·</span>
-        <span>{section.relativeTime}</span>
-        <span className="text-text-muted">·</span>
+        <span>
+          Started{" "}
+          <time data-time="started" dateTime={new Date(startedAt).toISOString()} className="tabular-nums">
+            {section.timestamp}
+          </time>
+          {section.startedRelativeTime ? ` (${section.startedRelativeTime})` : ""}
+        </span>
+        {hasCompletion && section.completedTimestamp && section.completionLabel ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>
+              {section.completionLabel}{" "}
+              <time
+                data-time="completed"
+                dateTime={new Date(section.completedAt!).toISOString()}
+                className="tabular-nums"
+              >
+                {section.completedTimestamp}
+              </time>{" "}
+              ({section.relativeTime})
+            </span>
+            {section.duration ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>Duration {section.duration}</span>
+              </>
+            ) : null}
+          </>
+        ) : record.status === "running" && section.runningDuration ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>Running for {section.runningDuration}</span>
+          </>
+        ) : null}
+        {section.timeZone ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>{section.timeZone}</span>
+          </>
+        ) : null}
+        <span aria-hidden="true">·</span>
         <span className="uppercase">{section.source}</span>
-        <span className="text-text-muted">·</span>
+        <span aria-hidden="true">·</span>
         <span className="uppercase">{record.mode}</span>
       </div>
     </header>
@@ -238,28 +293,48 @@ function CandidatesSection({
     <section data-section="candidates" className="flex flex-col gap-2">
       <h3 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Candidates</h3>
       <ul className="flex flex-col gap-1" role="list" ref={listRef}>
-        {record.candidates.map((c) => (
-          <li key={c.candidateId}>
-            <button
-              type="button"
-              data-candidate-id={c.candidateId}
-              tabIndex={-1}
-              onClick={() => setSelectedId(c.candidateId)}
-              aria-pressed={c.candidateId === selectedId}
-              className="flex min-h-[44px] w-full items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-left text-sm transition-colors duration-150 hover:border-edge-bright focus:outline-none focus:ring-2 focus:ring-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <CompactModelLabel providerId={c.providerId} slug={c.slug} />
-              {blindMap[c.candidateId] && (
-                <span className="rounded-md border border-edge px-1.5 py-0.5 font-mono text-xs text-text-muted">
-                  Label: {blindMap[c.candidateId]}
+        {record.candidates.map((c) => {
+          const accepted = c.acceptedAttemptId
+            ? c.attempts.find((a) => a.attemptId === c.acceptedAttemptId)
+            : null;
+          const reusedFrom = accepted?.reusedFrom ?? null;
+          return (
+            <li key={c.candidateId}>
+              <button
+                type="button"
+                data-candidate-id={c.candidateId}
+                tabIndex={-1}
+                onClick={() => setSelectedId(c.candidateId)}
+                aria-pressed={c.candidateId === selectedId}
+                className="flex min-h-[44px] w-full items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-left text-sm transition-colors duration-150 hover:border-edge-bright focus:outline-none focus:ring-2 focus:ring-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <CompactModelLabel providerId={c.providerId} slug={c.slug} />
+                {blindMap[c.candidateId] && (
+                  <span className="rounded-md border border-edge px-1.5 py-0.5 font-mono text-xs text-text-muted">
+                    Label: {blindMap[c.candidateId]}
+                  </span>
+                )}
+                <span className="ml-auto text-text-muted tabular-nums">
+                  {c.attempts.length} attempt{c.attempts.length === 1 ? "" : "s"}
                 </span>
-              )}
-              <span className="ml-auto text-text-muted tabular-nums">
-                {c.attempts.length} attempt{c.attempts.length === 1 ? "" : "s"}
-              </span>
-            </button>
-          </li>
-        ))}
+              </button>
+              {reusedFrom ? (
+                <p
+                  data-reused-from=""
+                  className="flex min-h-[44px] min-w-0 items-center gap-2 px-2 text-xs"
+                >
+                  <span className="text-text-muted">Reused from prior attempt</span>
+                  <Link
+                    to={`/runs/${reusedFrom.sourceRunId}`}
+                    className="inline-flex min-h-[44px] items-center text-accent transition-colors duration-150 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    View source run
+                  </Link>
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
       {/* Selected candidate output */}
       {selected && acceptedAttempt && (
@@ -277,6 +352,11 @@ function CandidatesSection({
             {acceptedAttempt.tokensOut != null && <span>Out: {acceptedAttempt.tokensOut}</span>}
             {acceptedAttempt.finishedAt != null && acceptedAttempt.startedAt != null && (
               <span>Latency: {Math.round((acceptedAttempt.finishedAt - acceptedAttempt.startedAt) / 1000)}s</span>
+            )}
+            {acceptedAttempt.cost?.usd != null && Number.isFinite(acceptedAttempt.cost.usd) && (
+              <span data-cost-source={acceptedAttempt.cost.source}>
+                Cost: ${acceptedAttempt.cost.usd.toFixed(6)} ({acceptedAttempt.cost.source})
+              </span>
             )}
           </div>
           {acceptedAttempt.output && (
@@ -414,6 +494,42 @@ function FusionSection({ record }: { record: RunRecordV2 }) {
   );
 }
 
+function CostBreakdownSection({ section }: { section: DetailSection }) {
+  const stages = (section.stages ?? []) as { label: string; usd: number; source: string }[];
+  const totalUsd = section.totalUsd as number | undefined;
+  const unknown = section.unknown === true;
+  return (
+    <section data-section="cost-breakdown" className="flex min-w-0 flex-col gap-1 rounded-md border border-edge bg-panel p-3">
+      <h3 className="text-sm font-semibold text-text">Cost</h3>
+      {stages.length === 0 && !unknown ? (
+        <p className="text-sm text-text-muted">No cost data for this run.</p>
+      ) : null}
+      {stages.length > 0 ? (
+        <ul className="flex min-w-0 flex-col">
+          {stages.map((stage) => (
+            <li
+              key={stage.label}
+              data-cost-source={stage.source}
+              className="flex min-h-[44px] min-w-0 items-center justify-between gap-2 border-b border-edge py-1 text-sm last:border-b-0"
+            >
+              <span className="min-w-0 truncate font-mono text-text-secondary">{stage.label}</span>
+              <span className="shrink-0 tabular-nums text-text">
+                ${stage.usd.toFixed(6)} <span className="text-text-muted">· {stage.source}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {unknown ? <p className="text-xs text-text-muted">Some accepted stages have Unknown cost.</p> : null}
+      {totalUsd !== undefined && totalUsd > 0 ? (
+        <p data-cost-total="" className="text-sm text-text">
+          Incremental total: <span className="tabular-nums">${totalUsd.toFixed(6)}</span>
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function TaskConfigSection({ section }: { section: DetailSection }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -447,6 +563,19 @@ function TaskConfigSection({ section }: { section: DetailSection }) {
             <div>
               <span className="text-text-muted">Models: </span>
               <span className="font-mono text-text">{(section.modelRoster as string[]).join(", ")}</span>
+            </div>
+          ) : null}
+          {section.reasoning ? (
+            <div className="mt-2 border-t border-edge pt-2" data-reasoning-provenance="">
+              <p className="mb-1 text-text-secondary">Reasoning policy</p>
+              {Object.entries(section.reasoning.candidates).map(([modelKey, setting]) => (
+                <p key={modelKey} className="font-mono text-xs text-text">
+                  Candidate {modelKey}: requested {setting.requested} · effective {setting.effective} · {setting.source}
+                </p>
+              ))}
+              <p className="font-mono text-xs text-text">
+                Judge: requested {section.reasoning.judge.requested} · effective {section.reasoning.judge.effective} · {section.reasoning.judge.source}
+              </p>
             </div>
           ) : null}
         </div>

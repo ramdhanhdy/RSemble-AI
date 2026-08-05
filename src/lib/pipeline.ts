@@ -39,7 +39,17 @@ import {
   renderRecipeMessages,
 } from "./evaluations/fusion-recipes";
 
-const LETTERS = "ABCDEFGH".split("");
+/** Generate an unbounded spreadsheet-style blind label: A..Z, AA..AZ, BA... */
+function blindLabelForIndex(index: number): string {
+  let value = index + 1;
+  let label = "";
+  while (value > 0) {
+    value -= 1;
+    label = String.fromCharCode(65 + (value % 26)) + label;
+    value = Math.floor(value / 26);
+  }
+  return label;
+}
 
 export interface FanoutJob {
   id: string;
@@ -274,8 +284,8 @@ export interface BlindCandidateSet {
  * never mutated, and the label map is constructed exactly once per run so
  * labels stay stable regardless of any later score sorting.
  *
- * Throws BEFORE the judge network call when the candidate count is
- * unsupported — a label must never be silently reused.
+ * Spreadsheet-style labels are generated for the full roster, so a label is
+ * never silently reused and there is no fixed candidate-count ceiling.
  */
 export function createBlindCandidateSet(
   candidates: Candidate[],
@@ -284,12 +294,6 @@ export function createBlindCandidateSet(
   if (candidates.length === 0) {
     throw new Error("Cannot judge blindly: no eligible candidates to label.");
   }
-  if (candidates.length > LETTERS.length) {
-    throw new Error(
-      `Cannot judge ${candidates.length} candidates blindly: at most ${LETTERS.length} distinct labels ` +
-        `(A–${LETTERS[LETTERS.length - 1]}) are supported. Disable ${candidates.length - LETTERS.length} model slot(s) and re-run.`,
-    );
-  }
   // Fisher–Yates over indices — original array untouched.
   const order = candidates.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) {
@@ -297,7 +301,7 @@ export function createBlindCandidateSet(
     [order[i], order[j]] = [order[j], order[i]];
   }
   const blind: BlindCandidate[] = order.map((candIdx, labelIdx) => ({
-    label: LETTERS[labelIdx],
+    label: blindLabelForIndex(labelIdx),
     candidateId: candidates[candIdx].id,
     content: candidateFullText(candidates[candIdx]),
   }));
@@ -326,8 +330,8 @@ export interface JudgeResult {
 }
 
 /**
- * Normalize a judge-produced label to a blind letter (A, B, C, …). Tolerates
- * the bare letter and common wrappers ("Candidate B", "B)", "B.", "B:", "(B)").
+ * Normalize a judge-produced label (A, B, …, Z, AA, AB, …). Tolerates the
+ * bare label and common wrappers ("Candidate AA", "AA)", "AA.", "(AA)").
  * There is deliberately NO model-name fallback: a properly blinded judge does
  * not know model identities, so a model name is never a valid score identifier
  * (spec §7). Returns null when nothing matches.
@@ -340,8 +344,8 @@ function normalizeBlindLabel(raw: string, letters: string[]): string | null {
   const upper = cleaned.toUpperCase();
   if (letters.includes(upper)) return upper;
 
-  // 2) Letter embedded in common wrappers: "Candidate B", "B)", "B.", "B:", "(B)".
-  const m = cleaned.match(/\b([A-H])\b/i);
+  // 2) Label embedded in common wrappers such as "Candidate AA" or "(AA)".
+  const m = cleaned.match(/^(?:candidate\s+)?[([]?([A-Z]+)[\])\s.:-]*$/i);
   if (m && letters.includes(m[1].toUpperCase())) return m[1].toUpperCase();
 
   return null;

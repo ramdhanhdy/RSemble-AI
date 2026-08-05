@@ -17,6 +17,8 @@ import {
   X,
   Check,
 } from "lucide-react";
+import { ModelProbeControl } from "../../ui/ModelProbeControl";
+import { useModelProbe } from "../../ui/ModelProbeContext";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
 import type { ModelSlot } from "../../studio-data";
 import type {
@@ -28,6 +30,9 @@ import type { ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import { ProviderTabs, PROVIDER_LABELS } from "../../ui/ProviderTabs";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import { modelKey } from "../../lib/history-cache";
+import { DEFAULT_REASONING_POLICY } from "../../lib/providers/types";
+import { capabilitiesForModel, commonReasoningEfforts } from "../../lib/providers/reasoning";
+import { ReasoningEffortPicker } from "../../ui/ReasoningEffortPicker";
 
 interface SuiteSettingsProps {
   suite: EvaluationSuite;
@@ -47,7 +52,11 @@ export function SuiteSettings({
   profileRecords,
   resolveProfileLabel,
 }: SuiteSettingsProps) {
+  const { testBatch } = useModelProbe();
   const enabledSlots = suite.modelSlots.filter((s) => s.enabled);
+  const reasoningPolicy = suite.reasoningPolicy ?? DEFAULT_REASONING_POLICY;
+  const candidateEfforts = commonReasoningEfforts(suite.modelSlots);
+  const judgeEfforts = capabilitiesForModel(suite.defaultJudge.providerId, suite.defaultJudge.model).supportedEfforts;
   const takenKeys = useMemo(
     () => new Set(enabledSlots.map((s) => modelKey(s.providerId, s.slug))),
     [enabledSlots],
@@ -152,6 +161,12 @@ export function SuiteSettings({
               <span className="min-w-0 flex-1">
                 <CompactModelLabel providerId={slot.providerId} slug={slot.slug} />
               </span>
+              <ModelProbeControl
+                providerId={slot.providerId}
+                model={slot.slug}
+                slotLabel={`${slot.providerId}:${slot.slug}`}
+                disabled={!slot.enabled}
+              />
               <button
                 type="button"
                 aria-label={`Remove model ${slot.providerId}:${slot.slug}`}
@@ -164,6 +179,29 @@ export function SuiteSettings({
           ))}
         </ul>
         <SuiteModelAdder models={models} takenKeys={takenKeys} onAdd={addSlot} />
+        {enabledSlots.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              // Build entries: enabled candidates + Judge (de-duplicated).
+              const entries = enabledSlots.map((s) => ({ providerId: s.providerId, model: s.slug }));
+              const judgeKey = `${suite.defaultJudge.providerId}:${suite.defaultJudge.model}`;
+              const candidateKeys = new Set(entries.map((e) => `${e.providerId}:${e.model}`));
+              if (!candidateKeys.has(judgeKey)) {
+                entries.push({ providerId: suite.defaultJudge.providerId, model: suite.defaultJudge.model });
+              }
+              void testBatch(entries, 3);
+            }}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-card px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            Test selected models
+          </button>
+        )}
+        {enabledSlots.length > 0 && (
+          <p className="text-xs text-text-muted">
+            Live model tests send a small generation request and may incur provider cost.
+          </p>
+        )}
       </div>
 
       {/* Default Judge */}
@@ -176,8 +214,12 @@ export function SuiteSettings({
           models={models}
           onCommit={setDefaultJudge}
         />
+        <ModelProbeControl
+          providerId={suite.defaultJudge.providerId}
+          model={suite.defaultJudge.model}
+          slotLabel={`Judge · ${suite.defaultJudge.providerId}:${suite.defaultJudge.model}`}
+        />
       </div>
-
       {/* Default evaluation */}
       <div className="space-y-2">
         <span className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
@@ -190,6 +232,29 @@ export function SuiteSettings({
           onChange={setDefaultEvaluation}
         />
       </div>
+
+      <section aria-label="Suite reasoning policy" className="space-y-3 rounded-md border border-edge bg-card p-2.5">
+        <div>
+          <h3 className="font-mono text-xs uppercase tracking-wide text-text-secondary">Reasoning policy</h3>
+          <p className="mt-1 text-xs text-text-secondary">
+            Named effort is a controlled request, not proof that model families spend equal compute.
+          </p>
+        </div>
+        <ReasoningEffortPicker
+          label="Candidate effort"
+          value={reasoningPolicy.candidates}
+          options={candidateEfforts}
+          onChange={(candidates) => onChange({ reasoningPolicy: { ...reasoningPolicy, candidates } })}
+          description="Only common strict levels for enabled candidates are offered."
+        />
+        <ReasoningEffortPicker
+          label="Judge effort"
+          value={reasoningPolicy.judge}
+          options={judgeEfforts}
+          onChange={(judge) => onChange({ reasoningPolicy: { ...reasoningPolicy, judge } })}
+          description="Provider default leaves the model's native effort unchanged."
+        />
+      </section>
     </div>
   );
 }

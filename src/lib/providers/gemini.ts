@@ -11,6 +11,7 @@ import {
   type ProviderReadiness,
   ProviderError,
 } from "./types";
+import { resolveReasoningEffort } from "./reasoning";
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -22,6 +23,17 @@ function getApiKey(): string {
   } catch {
     return "";
   }
+}
+
+function buildThinkingConfig(
+  model: string,
+  effort: ChatOptions["reasoningEffort"],
+  strict = false,
+): Record<string, unknown> {
+  const resolution = resolveReasoningEffort("gemini", model, effort, strict);
+  if (!resolution.ok) throw new ProviderError(resolution.reason, "gemini");
+  if (resolution.effective === "provider-default") return {};
+  return { thinkingConfig: { thinkingLevel: resolution.effective } };
 }
 
 /**
@@ -195,7 +207,7 @@ export const geminiProvider: LLMProvider = {
     const { systemInstruction, contents } = mapMessagesToGemini(opts.messages);
     const model = opts.model.startsWith("models/") ? opts.model.slice(7) : opts.model;
     const url = `${BASE_URL}/models/${model}:generateContent?key=${key}`;
-
+    const thinkingConfig = buildThinkingConfig(model, opts.reasoningEffort, opts.reasoningStrict);
     let res: Response;
     try {
       res = await fetch(url, {
@@ -207,6 +219,7 @@ export const geminiProvider: LLMProvider = {
           generationConfig: {
             temperature: opts.temperature,
             maxOutputTokens: opts.maxTokens,
+            ...thinkingConfig,
           },
         }),
         signal: opts.signal,
@@ -251,7 +264,7 @@ export const geminiProvider: LLMProvider = {
     const { systemInstruction, contents } = mapMessagesToGemini(opts.messages);
     const model = opts.model.startsWith("models/") ? opts.model.slice(7) : opts.model;
     const url = `${BASE_URL}/models/${model}:streamGenerateContent?key=${key}&alt=sse`;
-
+    const thinkingConfig = buildThinkingConfig(model, opts.reasoningEffort, opts.reasoningStrict);
     let res: Response;
     try {
       res = await fetch(url, {
@@ -263,6 +276,7 @@ export const geminiProvider: LLMProvider = {
           generationConfig: {
             temperature: opts.temperature,
             maxOutputTokens: opts.maxTokens,
+            ...thinkingConfig,
           },
         }),
         signal: opts.signal,

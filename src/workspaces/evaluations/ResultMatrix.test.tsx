@@ -11,6 +11,7 @@ import type {
   ExperimentAggregation,
   MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
+import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
 import type {
   EvaluationTask,
   ExperimentRecord,
@@ -457,6 +458,98 @@ describe("ResultMatrix — scroll region (plan 7.2 #12)", () => {
   });
 });
 
+// --- 14. Recovery actions (spec §11.1) --------------------------------------------------
+
+describe("ResultMatrix — recovery actions (spec §11.1)", () => {
+  const PLAN_C: CompoundRepairPlan = {
+    taskId: "t2",
+    baseRunId: "run-2",
+    requestedModelKeys: [KEY_C],
+    reusedModelKeys: [KEY_A, KEY_B],
+    candidateCalls: 1,
+    judgeCalls: 1,
+  };
+  const REPAIRABLE = new Map([["t2", new Map([[KEY_C, PLAN_C]])]]);
+
+  function renderWithRecovery(
+    repairablePlans: ReadonlyMap<string, ReadonlyMap<string, CompoundRepairPlan>> = REPAIRABLE,
+    onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined = vi.fn(),
+  ): Harness {
+    return renderWithRouter(
+      <ResultMatrix
+        aggregation={BASE}
+        tasks={TASKS}
+        modelSlots={SLOTS}
+        runRecords={defaultRecords()}
+        repairablePlans={repairablePlans}
+        onRepairRequest={onRepairRequest}
+      />,
+    );
+  }
+
+  it("shows Complete missing result on a repairable no-score cell", () => {
+    const h = renderWithRecovery();
+    const rows = h.$$("tbody tr");
+    const cell = tdCells(rows[1])[2];
+    const action = cell.querySelector("button");
+    expect(action).not.toBeNull();
+    expect(action?.textContent).toContain("Complete missing result");
+    cleanup(h);
+  });
+
+  it("shows Retry incomplete task on a non-repairable missing cell", () => {
+    const h = renderWithRecovery();
+    const rows = h.$$("tbody tr");
+    const cell = tdCells(rows[2])[2]; // no-accepted-attempt, no run
+    const action = cell.querySelector("button");
+    expect(action).not.toBeNull();
+    expect(action?.textContent).toContain("Retry incomplete task");
+    cleanup(h);
+  });
+
+  it("clicking a cell action reports the exact task and model key", () => {
+    const onRepairRequest = vi.fn();
+    const h = renderWithRecovery(REPAIRABLE, onRepairRequest);
+    const rows = h.$$("tbody tr");
+    const action = tdCells(rows[1])[2].querySelector("button") as HTMLButtonElement;
+    act(() => action.click());
+    expect(onRepairRequest).toHaveBeenCalledWith("t2", KEY_C);
+    // fallback cell reports its task too
+    const fallback = tdCells(rows[2])[2].querySelector("button") as HTMLButtonElement;
+    act(() => fallback.click());
+    expect(onRepairRequest).toHaveBeenCalledWith("t3", KEY_C);
+    cleanup(h);
+  });
+
+  it("keeps one action control and one evidence link, never nested", () => {
+    const h = renderWithRecovery();
+    const rows = h.$$("tbody tr");
+    const cell = tdCells(rows[1])[2]; // no-score with run-2 evidence
+    expect(cell.querySelector("button")).not.toBeNull();
+    expect(cell.querySelector("a")?.getAttribute("href")).toBe("/runs/run-2");
+    // No nested interactive elements: button not inside a link, link not inside a button.
+    expect(cell.querySelector("a button")).toBeNull();
+    expect(cell.querySelector("button a")).toBeNull();
+    cleanup(h);
+  });
+
+  it("renders no action buttons when no recovery handler is wired", () => {
+    const h = renderMatrix();
+    expect(h.$$("tbody button")).toHaveLength(0);
+    cleanup(h);
+  });
+
+  it("keeps 44px action targets with keyboard focus-visible rings", () => {
+    const h = renderWithRecovery();
+    const rows = h.$$("tbody tr");
+    const action = tdCells(rows[1])[2].querySelector("button") as HTMLButtonElement;
+    expect(action.className).toContain("min-h-[44px]");
+    expect(action.className).toContain("focus-visible:ring-2");
+    expect(action.className).toContain("focus-visible:ring-accent");
+    cleanup(h);
+  });
+});
+
 // --- 13. Failed task-attempt summary (ExperimentResults) ------------------------------
 
 function makeExperiment(): ExperimentRecord {
@@ -538,6 +631,140 @@ describe("ExperimentResults — summary (plan 7.2 #13)", () => {
     expect(h.container.textContent).toContain("Suite v2");
     const backLink = h.$$("a").find((a) => a.getAttribute("href") === "/evaluations/suite-1");
     expect(backLink).not.toBeUndefined();
+    cleanup(h);
+  });
+});
+
+describe("ResultMatrix — large-suite paging and sticky context (Task 14)", () => {
+  function bigAggregation(taskCount: number): ExperimentAggregation {
+    const taskIds = Array.from({ length: taskCount }, (_, i) => `t${i + 1}`);
+    return {
+      taskIds,
+      modelKeys: BASE.modelKeys,
+      cells: taskIds.map((_id, i) => [
+        scored(4, `run-${i}`),
+        scored(3, `run-${i}`),
+        missing("no-score", `run-${i}`),
+      ]),
+      models: BASE.models,
+      winnerKeys: BASE.winnerKeys,
+    };
+  }
+
+  const BIG_TASKS: EvaluationTask[] = Array.from({ length: 250 }, (_, i) => ({
+    id: `t${i + 1}`,
+    title: `Task ${i + 1}${i === 249 ? ": a very long title that should not change row geometry" : ""}`,
+    prompt: `p${i + 1}`,
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: i,
+  }));
+
+  function bigRecords(): ReadonlyMap<string, RunRecordV2> {
+    const map = new Map<string, RunRecordV2>();
+    for (let i = 0; i < 250; i++) map.set(`run-${i}`, makeRunRecord(`run-${i}`));
+    return map;
+  }
+
+  it("mounts exactly 50 task rows on page one of 250", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    // One row per task in <tbody>.
+    const rows = h.$$("tbody tr");
+    expect(rows).toHaveLength(50);
+    cleanup(h);
+  });
+
+  it("shows pagination with range text 1–50 of 250", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("1–50 of 250");
+    cleanup(h);
+  });
+
+  it("pages to the next 50 rows via the Next button", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    const next = h.$$("button").find((b) => b.getAttribute("aria-label") === "Next page")!;
+    act(() => next.click());
+    expect(h.$$("tbody tr")).toHaveLength(50);
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("51–100 of 250");
+    cleanup(h);
+  });
+
+  it("clamps out-of-range page safely", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+        initialPage={999}
+      />,
+    );
+    const text = h.container.textContent ?? "";
+    // Clamped to the last page: 201–250 of 250.
+    expect(text).toContain("201–250 of 250");
+    expect(h.$$("tbody tr")).toHaveLength(50);
+    cleanup(h);
+  });
+
+  it("keeps the first task column sticky-left with an opaque surface", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    const header = h.$("thead th");
+    const firstRowCell = h.$("tbody tr th");
+    const footer = h.$("tfoot th");
+    for (const el of [header, firstRowCell, footer]) {
+      const cls = el?.getAttribute("class") ?? "";
+      expect(cls).toContain("sticky");
+      expect(cls).toContain("left-0");
+      // Opaque surface so scores never bleed through.
+      expect(cls).toMatch(/bg-(panel|card)/);
+    }
+    cleanup(h);
+  });
+
+  it("keeps column headers sticky top and the scroll region keyboard-focusable", () => {
+    const h = renderWithRouter(
+      <ResultMatrix
+        aggregation={bigAggregation(250)}
+        tasks={BIG_TASKS}
+        modelSlots={SLOTS}
+        runRecords={bigRecords()}
+      />,
+    );
+    const modelHeader = h.$$("thead th")[1];
+    expect((modelHeader?.getAttribute("class") ?? "")).toContain("sticky top-0");
+    const region = h.$("[role='region']");
+    expect(region?.getAttribute("tabindex")).toBe("0");
     cleanup(h);
   });
 });

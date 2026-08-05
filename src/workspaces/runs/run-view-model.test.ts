@@ -5,13 +5,18 @@
 // strings for list rows and detail sections. Pure functions, no I/O.
 // =============================================================================
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2 } from "../../lib/persistence/run-types";
 import {
+  formatDuration,
   formatRunRow,
   formatRunDetail,
   formatRelativeTime,
 } from "./run-view-model";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 // --- Helper: minimal FullRunSummaryV2 --------------------------------------
 
@@ -238,10 +243,11 @@ describe("run-view-model", () => {
       }));
       expect(vm).not.toBeNull();
       expect(vm!.sections).toBeDefined();
-      // Exact section order: header → outcome → candidates → selected → judge → fusion → task/config
+      // Exact section order: header → outcome → cost-breakdown → candidates → selected → judge → fusion → task/config
       expect(vm!.sections.map((s) => s.id)).toEqual([
         "header",
         "outcome",
+        "cost-breakdown",
         "candidates",
         "selected-candidate",
         "judge",
@@ -304,6 +310,52 @@ describe("run-view-model", () => {
     });
   });
 
+
+  describe("run timing", () => {
+    it("uses completedAt for terminal relative age and duration", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1716048120000);
+      const vm = formatRunDetail(makeFullRecord());
+      const header = vm!.sections.find((section) => section.id === "header")!;
+      expect(header.startedAt).toBe(1716048000000);
+      expect(header.completedAt).toBe(1716048060000);
+      expect(header.completionLabel).toBe("Completed");
+      expect(header.duration).toBe("1m 00s");
+      expect(header.relativeTime).toBe("1m ago");
+      expect(header.startedRelativeTime).toBe("2m ago");
+    });
+
+    it("uses Ended for failed terminal records", () => {
+      const vm = formatRunDetail(makeFullRecord({ status: "failed" }));
+      const header = vm!.sections.find((section) => section.id === "header")!;
+      expect(header.completionLabel).toBe("Ended");
+      expect(header.completedTimestamp).toBeTruthy();
+    });
+
+    it("does not fabricate completion for a running record", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1716048045000);
+      const vm = formatRunDetail(makeFullRecord({ status: "running", completedAt: null }));
+      const header = vm!.sections.find((section) => section.id === "header")!;
+      expect(header.completedAt).toBeNull();
+      expect(header.completedTimestamp).toBeUndefined();
+      expect(header.duration).toBeUndefined();
+      expect(header.runningDuration).toBe("45s");
+    });
+
+    it("degrades legacy terminal records with null completion to start-only", () => {
+      const vm = formatRunDetail(makeFullRecord({ status: "interrupted", completedAt: null }));
+      const header = vm!.sections.find((section) => section.id === "header")!;
+      expect(header.completedTimestamp).toBeUndefined();
+      expect(header.completionLabel).toBeUndefined();
+      expect(header.duration).toBeUndefined();
+    });
+
+    it("formats sub-minute durations explicitly", () => {
+      expect(formatDuration(45_000)).toBe("45s");
+      expect(formatDuration(65_000)).toBe("1m 05s");
+    });
+  });
   describe("formatRelativeTime", () => {
     it("returns seconds for < 1 minute", () => {
       expect(formatRelativeTime(Date.now() - 30_000)).toMatch(/\d+s ago/);

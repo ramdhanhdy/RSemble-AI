@@ -352,6 +352,42 @@ describe("ExperimentUnitOfWork (InMemoryExperimentStore)", () => {
     await expect(uow.commitTaskTerminal(conflicting)).rejects.toThrow(/conflict|terminal|already/i);
   });
 
+  // --- roster-extension provenance --------------------------------------------
+
+  it("copies the exact roster-extension plan to the committed attempt", async () => {
+    await uow.beginTask(beginInput());
+    const plan = { kind: "roster-extension", addedModelKey: "gemini:m3", baseRunId: "run-base" } as const;
+    await uow.commitTaskTerminal(terminalInput({ repair: plan }));
+
+    const exp = store.experiments.get("e1")!;
+    expect(exp.tasks[0].attempts[0].repair).toEqual({
+      kind: "roster-extension",
+      addedModelKey: "gemini:m3",
+      baseRunId: "run-base",
+    });
+  });
+
+  it("stays idempotent for an identical roster-extension terminal payload", async () => {
+    await uow.beginTask(beginInput());
+    const plan = { kind: "roster-extension", addedModelKey: "gemini:m3" } as const;
+    const first = await uow.commitTaskTerminal(terminalInput({ repair: plan }));
+    const second = await uow.commitTaskTerminal(terminalInput({ repair: plan }));
+    expect(second).toEqual(first);
+    expect(store.experiments.get("e1")!.revision).toBe(2);
+  });
+
+  it("copies a fallback roster-extension plan (no baseRunId)", async () => {
+    await uow.beginTask(beginInput());
+    await uow.commitTaskTerminal(
+      terminalInput({ repair: { kind: "roster-extension", addedModelKey: "gemini:m3" } }),
+    );
+    const exp = store.experiments.get("e1")!;
+    expect(exp.tasks[0].attempts[0].repair).toEqual({
+      kind: "roster-extension",
+      addedModelKey: "gemini:m3",
+    });
+  });
+
   // --- CAS protection -------------------------------------------------------------------
 
   it("begin rejects a stale experiment revision", async () => {

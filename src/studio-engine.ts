@@ -23,7 +23,7 @@ import {
   type Mode,
   type ModelSlot,
 } from "./studio-data";
-import type { CatalogModel, CriticRef, ProviderId } from "./lib/providers/types";
+import { DEFAULT_REASONING_POLICY, type CatalogModel, type CriticRef, type ProviderId, type ReasoningPolicy } from "./lib/providers/types";
 import { loadStoredCritic, loadStoredSlots } from "./lib/preferences";
 import { EXAMPLE_TASKS, nextExampleIndex } from "./lib/test-cases";
 import type { Attachment } from "./lib/attachments/types";
@@ -51,6 +51,8 @@ export interface RunEvaluationContext {
   attachments: Attachment[];
   /** Frozen §6.2 flag: whether native media reached the judge/fusion critic. */
   attachmentsToJudge: boolean;
+  /** Immutable candidate/Judge effort requested for this run. */
+  reasoningPolicy?: ReasoningPolicy;
 }
 
 export interface StudioState {
@@ -71,6 +73,7 @@ export interface StudioState {
    *  from the task prompt and weighted rubric. Empty string = no instruction
    *  (prompts stay byte-identical to the pre-instruction baseline). */
   judgeInstruction: string;
+  reasoningPolicy: ReasoningPolicy;
 
   // --- task attachments (attachments spec §4) ---
   /** In-memory attachment set for the current task. Bytes/text never persist
@@ -124,6 +127,7 @@ export type Action =
   | { type: "SET_CRITIC"; critic: CriticRef }
   | { type: "SET_CRITIC_MODEL"; value: string }
   | { type: "SET_JUDGE_INSTRUCTION"; value: string }
+  | { type: "SET_REASONING_POLICY"; policy: ReasoningPolicy }
   // --- attachments (spec §4.1, §9) ---
   | { type: "ADD_ATTACHMENTS"; attachments: Attachment[] }
   | { type: "ATTACHMENT_READY"; id: string; data?: string; text?: string; truncated?: boolean; width?: number; height?: number; pageCount?: number; mimeType?: string }
@@ -285,6 +289,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
 
     case "SET_JUDGE_INSTRUCTION":
       return { ...state, judgeInstruction: action.value };
+
+    case "SET_REASONING_POLICY":
+      return { ...state, reasoningPolicy: { ...action.policy } };
 
     case "ADD_ATTACHMENTS": {
       // Defence in depth: the picker already ran admitFiles (spec §3.1), but a
@@ -622,6 +629,7 @@ export const initialState: StudioState = {
   systemPrompt: SYSTEM_PROMPT_DEFAULT,
   critic: loadStoredCritic() ?? DEFAULT_CRITIC_REF,
   judgeInstruction: "",
+  reasoningPolicy: { ...DEFAULT_REASONING_POLICY },
   attachments: [],
   attachmentsToJudge: true,
   candidates: [],

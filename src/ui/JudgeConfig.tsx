@@ -14,15 +14,21 @@
 import { useMemo, useRef, useState } from "react";
 import { Check, ChevronRight, Search, X } from "lucide-react";
 import type { Action } from "../studio-engine";
-import type { CatalogModel, ProviderId } from "../lib/providers/types";
+import type { CatalogModel, ProviderId, ReasoningPolicy } from "../lib/providers/types";
 import type { Attachment } from "../lib/attachments/types";
+import type { ModelSlot } from "../studio-data";
+import { capabilitiesForModel, commonReasoningEfforts } from "../lib/providers/reasoning";
 import { BrandAvatar } from "./brand-icons";
 import { ProviderTabs, PROVIDER_LABELS } from "./ProviderTabs";
+import { ReasoningEffortPicker } from "./ReasoningEffortPicker";
 
 interface JudgeConfigProps {
   critic: { providerId: ProviderId; model: string };
   models: CatalogModel[];
   dispatch: React.Dispatch<Action>;
+  /** Optional Compare policy; omitted by isolated legacy callers. */
+  reasoningPolicy?: ReasoningPolicy;
+  slots?: ModelSlot[];
   /** Optional custom instruction applied to the judge/fusion model. */
   judgeInstruction: string;
   /** Current task attachments — drives the "send to judge" toggle visibility. */
@@ -35,11 +41,16 @@ export function JudgeConfig({
   critic,
   models,
   dispatch,
+  reasoningPolicy,
+  slots = [],
   judgeInstruction,
   attachments,
   attachmentsToJudge,
 }: JudgeConfigProps) {
   const [editing, setEditing] = useState(false);
+  const policy = reasoningPolicy ?? { candidates: "provider-default" as const, judge: "provider-default" as const };
+  const candidateEfforts = commonReasoningEfforts(slots);
+  const judgeEfforts = capabilitiesForModel(critic.providerId, critic.model).supportedEfforts;
   // TODO(phase-2): adjacent gear button → judge settings popover (temperature,
   // system prompt — both already in state) per spec §4.4.
   const hasNativeAttachments = attachments.some((a) => a.kind === "image" || a.kind === "pdf");
@@ -80,6 +91,23 @@ export function JudgeConfig({
           }}
         />
       )}
+
+      <section aria-label="Reasoning policy" data-reasoning-policy="" className="mt-3 grid gap-3 rounded-md border border-edge bg-card p-2.5 sm:grid-cols-2">
+        <ReasoningEffortPicker
+          label="Candidate reasoning effort"
+          value={policy.candidates}
+          options={candidateEfforts}
+          onChange={(candidates) => dispatch({ type: "SET_REASONING_POLICY", policy: { ...policy, candidates } })}
+          description="Only levels supported by every enabled candidate are offered."
+        />
+        <ReasoningEffortPicker
+          label="Judge reasoning effort"
+          value={policy.judge}
+          options={judgeEfforts}
+          onChange={(judge) => dispatch({ type: "SET_REASONING_POLICY", policy: { ...policy, judge } })}
+          description="Provider default is not compute-equivalent across model families."
+        />
+      </section>
 
       {/* Optional custom instruction for the judge/fusion model — separate
           from the task prompt and weighted rubric. Empty = no instruction

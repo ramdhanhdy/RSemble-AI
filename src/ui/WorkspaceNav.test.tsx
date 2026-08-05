@@ -130,10 +130,7 @@ describe("Header responsive sacrifice order (768–1023px tablet)", () => {
         onOpenConnections={() => undefined}
         onOpenPalette={() => undefined}
         onOpenHelp={() => undefined}
-        showToggle={true}
-      >
-        <span data-testid="toggle" />
-      </Header>,
+      />,
       "/compare",
     );
   }
@@ -186,19 +183,10 @@ describe("Header responsive sacrifice order (768–1023px tablet)", () => {
     cleanup(h);
   });
 
-  it("Rank/Fuse toggle is shown only when showToggle is true", () => {
+  it("keeps Finish out of the global header", () => {
     const h = renderHeader();
-    const toggleStub = h.$('[data-testid="toggle"]');
-    expect(toggleStub).toBeTruthy();
+    expect(h.$("header")?.className).toContain("grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
+    expect(h.$('[role="radiogroup"]')).toBeNull();
     cleanup(h);
-
-    const h2 = renderWithRouter(
-      <Header running={false} showToggle={false}>
-        <span data-testid="toggle" />
-      </Header>,
-      "/compare",
-    );
-    expect(h2.$('[data-testid="toggle"]')).toBeFalsy();
-    cleanup(h2);
   });
 });

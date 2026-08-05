@@ -44,7 +44,32 @@ describe("provider probe cancellation", () => {
     const [result] = await pending;
 
     expect(observedSignal?.aborted).toBe(true);
-    expect(result.readiness.ok).toBe(false);
+    // Readiness already succeeded; catalog timeout must not flip the provider offline.
+    expect(result.readiness.ok).toBe(true);
+    expect(result.error).toContain("timed out");
+  });
+
+  it("keeps readiness ok when only the catalog stage times out", async () => {
+    vi.useFakeTimers();
+    providers.push(
+      provider({
+        readiness: vi.fn(async () => ({ ok: true as const })),
+        listModels: vi.fn((signal?: AbortSignal) => {
+          return new Promise<CatalogModel[]>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          });
+        }),
+      }),
+    );
+
+    const pending = probeAllProviders(undefined, 25);
+    await vi.advanceTimersByTimeAsync(25);
+    const [result] = await pending;
+
+    expect(result.readiness).toEqual({ ok: true });
+    expect(result.catalog).toEqual([]);
     expect(result.error).toContain("timed out");
   });
 
@@ -71,6 +96,49 @@ describe("provider probe cancellation", () => {
     expect(result.error).toContain("aborted");
   });
 });
+
+  it("returns a cycle-level cancellation after mixed provider progress", async () => {
+    let observedOpenRouterSignal: AbortSignal | undefined;
+    providers.push(
+      provider({
+        id: "gemini",
+        listModels: vi.fn(async () => []),
+      }),
+      provider({
+        id: "openrouter",
+        listModels: vi.fn((signal?: AbortSignal) => {
+          observedOpenRouterSignal = signal;
+          return new Promise<CatalogModel[]>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          });
+        }),
+      }),
+    );
+    const coordinator = createProviderProbeCoordinator();
+    const cycle = coordinator.run(undefined, 5_000);
+    await vi.waitFor(() => expect(providers[0].listModels).toHaveBeenCalledTimes(1));
+    coordinator.abort();
+    await expect(cycle).resolves.toEqual({ status: "cancelled" });
+    expect(observedOpenRouterSignal?.aborted).toBe(true);
+  });
+
+  it("keeps an idle timeout as a completed diagnosable cycle", async () => {
+    vi.useFakeTimers();
+    providers.push(
+      provider({
+        listModels: vi.fn(() => new Promise<CatalogModel[]>(() => {})),
+      }),
+    );
+    const coordinator = createProviderProbeCoordinator();
+    const cycle = coordinator.run(undefined, 25);
+    await vi.advanceTimersByTimeAsync(25);
+    await expect(cycle).resolves.toMatchObject({ status: "completed" });
+    const result = await cycle;
+    if (result.status !== "completed") throw new Error("expected completed probe cycle");
+    expect(result.results[0]?.error).toContain("timed out");
+  });
 
 describe("provider probe coordinator", () => {
   it("reuses one in-flight polling cycle instead of overlapping requests", async () => {
