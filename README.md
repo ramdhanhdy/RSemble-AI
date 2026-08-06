@@ -88,6 +88,13 @@ Use your ChatGPT subscription entitlements locally without Platform API key bill
    ```
 
 > **Local/personal use only.** Build-time `VITE_` vars and local bridge are embedded for local execution.
+>
+> **Credential policy.** Environment variables are the preferred persistent
+> credential source. Keys entered in Connections are session-only by default;
+> persistent storage happens only through the explicit **Remember on this
+> device** per-key opt-in, and is readable by same-origin JavaScript. See
+> `DECISIONS.md` #11 and `PROVIDERS.md` §9.2.1.
+
 ## How a run works
 
 1. **Describe the task** in the command pane.

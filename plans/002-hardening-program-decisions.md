@@ -28,6 +28,9 @@
 - **Category**: direction
 - **Planned at**: commit `8f22a6e`, 2026-08-06
 - **Source**: external repository assessment received 2026-08-06
+- **Execution status**: DONE — decisions D1–D6 locked in `DECISIONS.md` #11 and
+  reconciled in `PRODUCT.md`, `PROVIDERS.md`, `README.md`, and this index
+  (commit `docs: lock hardening product and security contracts`)
 
 ## Goal
 
