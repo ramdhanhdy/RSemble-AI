@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { OutputPane, LiveCandidateCard, scrollLiveTranscriptToEnd, InsufficientState } from "./OutputPane";
+import { OutputPane, LiveCandidateCard, scrollLiveTranscriptToEnd, InsufficientState, failureGuidance } from "./OutputPane";
 import { initialState, type StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
@@ -324,6 +324,25 @@ describe("InsufficientState — empty done candidate visibility (2 configured ->
 });
 
 // ---------------------------------------------------------------------------
+// OutputPane — timeout failure guidance (Plan 005 F)
+// ---------------------------------------------------------------------------
+
+describe("failureGuidance", () => {
+  it.each([
+    ["connect_timeout", /provider|bridge/i],
+    ["stream_inactivity_timeout", /stream stopped.*progress.*retry/i],
+    ["overall_timeout", /overall time limit.*lower effort|provider defaults/i],
+    ["HTTP 503", /provider returned an HTTP error.*retry/i],
+  ])("maps %s to actionable copy", (kind, expected) => {
+    expect(failureGuidance(`${kind} for provider/model judge after 100ms`)).toMatch(expected);
+  });
+
+  it("does not invent timeout guidance for an ordinary provider error", () => {
+    expect(failureGuidance("rate limit exceeded")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // OutputPane — Judge-only retry action in the error state (run-recovery spec §5.5)
 // ---------------------------------------------------------------------------
 
@@ -350,6 +369,17 @@ describe("OutputPane — Judge-only retry action", () => {
     );
     expect(html).toContain("Retry Judge");
     expect(html).toContain('aria-label="Retry Judge using completed candidates"');
+  });
+
+  it("renders timeout guidance visibly beneath the persisted failure", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane
+        state={makeOutputPaneState({ judgeError: "stream_inactivity_timeout for provider/model judge after 100ms" })}
+        onRetryJudge={() => {}}
+      />,
+    );
+    expect(html).toContain('data-timeout-guidance');
+    expect(html).toMatch(/stream stopped.*progress.*retry/i);
   });
 
   it("helper copy says completed candidates are reused and the Judge model can change", () => {

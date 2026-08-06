@@ -27,6 +27,7 @@ import {
 } from "../persistence/run-record-builder";
 import type { ExecutionLease, LeaseInfo } from "../execution-lease";
 import { LeaseError } from "../execution-lease";
+import { createExecutionHeartbeat, type ExecutionHeartbeat } from "../execution-heartbeat";
 import type { ExecutionOwnerRegistry } from "../execution-owner";
 import type { RunExecutor, RunExecutorEvents } from "../run-executor";
 import type {
@@ -202,9 +203,8 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
   let suite: EvaluationSuite | null = null;
   let persistedExperimentRevision = 0;
   let abortController: AbortController | null = null;
-  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
-  let heartbeatWorker: Worker | undefined;
-  let visibilityHandler: (() => void) | undefined;
+  let activeLease: LeaseInfo | null = null;
+  let heartbeat: ExecutionHeartbeat | null = null;
   let idleResolve: (() => void) | null = null;
   let idlePromise: Promise<void> = new Promise<void>((resolve) => {
     idleResolve = resolve;
@@ -252,56 +252,31 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
   function startHeartbeat(): void {
     stopHeartbeat();
-    const interval = deps.heartbeatMs > 0 ? deps.heartbeatMs : 3000;
-    const tick = () => {
-      void lease.renew().catch(() => {
+    heartbeat = createExecutionHeartbeat({
+      intervalMs: deps.heartbeatMs > 0 ? deps.heartbeatMs : undefined,
+      renew: async () => {
+        if (!activeLease) return lease.renew();
+        const renewed = await lease.renew(activeLease);
+        activeLease = renewed;
+        return renewed;
+      },
+      onError: () => {
         // Lease lost — abort the active execution.
         void abortInternal("Lease lost");
-      });
-    };
-    // Browsers throttle setInterval in hidden tabs to ~1/minute, which
-    // expires the 10s execution lease and makes the app abort its OWN
-    // running experiment (observed live 2026-08: user left the screen
-    // mid-extension, came back to an aborted run). Ticking from a dedicated
-    // Worker keeps renewals at full cadence while the tab is hidden (H5).
-    try {
-      if (
-        typeof Worker !== "undefined" &&
-        typeof Blob !== "undefined" &&
-        typeof URL !== "undefined" &&
-        typeof URL.createObjectURL === "function"
-      ) {
-        const blob = new Blob([`setInterval(() => postMessage(0), ${interval});`], {
-          type: "application/javascript",
-        });
-        heartbeatWorker = new Worker(URL.createObjectURL(blob));
-        heartbeatWorker.onmessage = tick;
-      } else {
-        heartbeatTimer = setInterval(tick, interval);
-      }
-    } catch {
-      heartbeatTimer = setInterval(tick, interval);
-    }
-    // Belt and braces: renew immediately when the tab becomes visible again.
-    if (typeof document !== "undefined") {
-      visibilityHandler = () => {
-        if (document.visibilityState === "visible") tick();
-      };
-      document.addEventListener("visibilitychange", visibilityHandler);
-    }
+      },
+    });
+    heartbeat.start();
   }
 
   function stopHeartbeat(): void {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = undefined;
-    if (heartbeatWorker) {
-      heartbeatWorker.terminate();
-      heartbeatWorker = undefined;
-    }
-    if (visibilityHandler && typeof document !== "undefined") {
-      document.removeEventListener("visibilitychange", visibilityHandler);
-      visibilityHandler = undefined;
-    }
+    heartbeat?.stop();
+    heartbeat = null;
+  }
+
+  async function releaseLeaseToken(): Promise<void> {
+    const token = activeLease;
+    activeLease = null;
+    await lease.release(token ?? undefined);
   }
 
   function releaseExecution(): void {
@@ -309,7 +284,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     if (experimentId) {
       owner.release(experimentId);
     }
-    void lease.release();
+    void releaseLeaseToken();
   }
 
   // --- Experiment persistence sync --------------------------------------------
@@ -730,6 +705,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     let leaseInfo: LeaseInfo;
     try {
       leaseInfo = await lease.acquire({ kind: "experiment", executionId: suiteId });
+      activeLease = leaseInfo;
     } catch (err) {
       if (err instanceof LeaseError) {
         return { ok: false, error: `Another tab is active (${err.message})` };
@@ -764,7 +740,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
     // Acquire in-tab ownership.
     if (!owner.tryAcquire({ kind: "experiment", id })) {
-      await lease.release();
+      await releaseLeaseToken();
       return { ok: false, error: "Another execution is active" };
     }
 
@@ -774,7 +750,11 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     suite = loadedSuite;
 
     // Start the engine.
-    const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
+    const fence: ExecutionFence = {
+      ownerId: leaseInfo.ownerId,
+      fence: leaseInfo.fence,
+      ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
+    };
     const startResult = engine.start(fence, now());
     if (!startResult.ok) {
       releaseExecution();
@@ -819,12 +799,18 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     }
 
     // Verify lease.
-    const leaseInfo = await lease.verify();
+    const leaseInfo = await lease.verify(activeLease ?? undefined);
     if (!leaseInfo) {
       return { ok: false, error: "Lease not held" };
     }
 
-    const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
+    activeLease = leaseInfo;
+
+    const fence: ExecutionFence = {
+      ownerId: leaseInfo.ownerId,
+      fence: leaseInfo.fence,
+      ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
+    };
     const result = engine.resume(fence, now());
     if (!result.ok) {
       return { ok: false, error: result.reason ?? "Failed to resume" };
@@ -849,6 +835,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     let leaseInfo: LeaseInfo;
     try {
       leaseInfo = await lease.acquire({ kind: "experiment", executionId: expId });
+      activeLease = leaseInfo;
     } catch (err) {
       if (err instanceof LeaseError) {
         return { ok: false, error: `Another tab is active (${err.message})` };
@@ -858,7 +845,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
     // Acquire owner.
     if (!owner.tryAcquire({ kind: "experiment", id: expId })) {
-      await lease.release();
+      await releaseLeaseToken();
       return { ok: false, error: "Another execution is active" };
     }
 
@@ -874,7 +861,11 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     persistedExperimentRevision = record.revision;
 
     // Retry incomplete tasks.
-    const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
+    const fence: ExecutionFence = {
+      ownerId: leaseInfo.ownerId,
+      fence: leaseInfo.fence,
+      ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
+    };
     const result = engine.retryIncomplete(generateId, fence, now());
     if (!result.ok) {
       releaseExecution();
@@ -895,7 +886,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
   async function recoverOnStartup(): Promise<number> {
     // Try to acquire the lease. If another tab holds it, we can't recover.
     try {
-      await lease.acquire({ kind: "experiment", executionId: "startup-recovery" });
+      activeLease = await lease.acquire({ kind: "experiment", executionId: "startup-recovery" });
     } catch {
       return 0;
     }
@@ -987,7 +978,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       }
     } finally {
       // Release the lease — recovery doesn't keep it.
-      await lease.release();
+      await releaseLeaseToken();
     }
 
     return recovered;
@@ -1014,6 +1005,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     let leaseInfo: LeaseInfo;
     try {
       leaseInfo = await lease.acquire({ kind: "experiment", executionId: expId });
+      activeLease = leaseInfo;
     } catch (err) {
       if (err instanceof LeaseError) {
         return { ok: false, error: `Another tab is active (${err.message})` };
@@ -1022,7 +1014,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     }
 
     if (!owner.tryAcquire({ kind: "experiment", id: expId })) {
-      await lease.release();
+      await releaseLeaseToken();
       return { ok: false, error: "Another execution is active" };
     }
 
@@ -1081,7 +1073,11 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         baseRunId: plan.baseRunId,
         requestedModelKeys: plan.requestedModelKeys,
       };
-      const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
+      const fence: ExecutionFence = {
+        ownerId: leaseInfo.ownerId,
+        fence: leaseInfo.fence,
+        ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
+      };
       const queueResult = engine.queuePlannedAttempts([{ taskId: request.taskId, repair: repairPlan }], generateId, fence, now());
       if (!queueResult.ok) {
         return { ok: false, error: queueResult.reason ?? "Failed to queue repair" };
@@ -1123,6 +1119,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     let leaseInfo: LeaseInfo;
     try {
       leaseInfo = await lease.acquire({ kind: "experiment", executionId: expId });
+      activeLease = leaseInfo;
     } catch (err) {
       if (err instanceof LeaseError) {
         return { ok: false, error: `Another tab is active (${err.message})` };
@@ -1131,7 +1128,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     }
 
     if (!owner.tryAcquire({ kind: "experiment", id: expId })) {
-      await lease.release();
+      await releaseLeaseToken();
       return { ok: false, error: "Another execution is active" };
     }
 
@@ -1195,7 +1192,11 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       persistedExperimentRevision = record.revision;
 
       // Queue one attempt per task through the neutral transition.
-      const fence: ExecutionFence = { ownerId: leaseInfo.ownerId, fence: leaseInfo.fence };
+      const fence: ExecutionFence = {
+        ownerId: leaseInfo.ownerId,
+        fence: leaseInfo.fence,
+        ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
+      };
       const queued = plan.taskPlans.map((tp) => ({ taskId: tp.taskId, repair: tp.executionPlan }));
       const queueResult = engine.queuePlannedAttempts(queued, generateId, fence, now());
       if (!queueResult.ok) {

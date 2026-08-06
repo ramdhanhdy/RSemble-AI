@@ -133,6 +133,92 @@ describe("chatgptCodexProvider — bridge secret header (Plan 003 C)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Paid request deadlines — response-header boundary and abort semantics
+// ---------------------------------------------------------------------------
+
+describe("chatgptCodexProvider — abort preservation", () => {
+  it("propagates runtime AbortError-like failures from readiness", async () => {
+    const abort = Object.assign(new Error("request aborted"), { name: "AbortError" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abort));
+    await expect(chatgptCodexProvider.readiness()).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("propagates runtime AbortError-like failures from model probes", async () => {
+    const abort = Object.assign(new Error("request aborted"), { name: "AbortError" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abort));
+    await expect(chatgptCodexProvider.listModels!()).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("chatgptCodexProvider — execution deadlines", () => {
+  it("uses ChatOptions.connectMs and preserves the structured timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn().mockImplementation(
+        (_input: unknown, _init: RequestInit) => new Promise<Response>(() => {}),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const pending = chatgptCodexProvider.chatCompletion({
+        model: "gpt-5.6-sol",
+        messages: [{ role: "user", content: "hi" }],
+        connectMs: 25,
+      });
+      const timeoutAssertion = expect(pending).rejects.toMatchObject({
+        name: "ExecutionTimeoutError",
+        kind: "connect_timeout",
+        provider: "chatgpt-codex",
+        model: "gpt-5.6-sol",
+      });
+      await vi.advanceTimersByTimeAsync(25);
+      await timeoutAssertion;
+      expect((fetchMock.mock.calls[0][1] as RequestInit).signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops connect timing when stream response headers arrive", async () => {
+    vi.useFakeTimers();
+    try {
+      const encoder = new TextEncoder();
+      let release: (() => void) | undefined;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          release = () => {
+            controller.enqueue(encoder.encode(
+              'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n',
+            ));
+            controller.close();
+          };
+        },
+      });
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const iterator = chatgptCodexProvider.chatCompletionStream({
+        model: "gpt-5.6-sol",
+        messages: [{ role: "user", content: "hi" }],
+        connectMs: 10,
+        inactivityMs: 1_000,
+      })[Symbol.asyncIterator]();
+      const first = iterator.next();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(release).toBeTypeOf("function");
+
+      release!();
+      await expect(first).resolves.toEqual({ done: false, value: "hi" });
+      await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Provider-error policy — review fix 3
 // ---------------------------------------------------------------------------
 

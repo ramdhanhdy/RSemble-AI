@@ -21,6 +21,13 @@ import { parseOpenAICompatibleUsage, parseProviderReportedCost } from "./usage";
 import { credentialStore } from "../credentials/credential-store";
 import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
+import {
+  PROVIDER_DEADLINES,
+  createHeadersReady,
+  runProviderRequest,
+  wrapProviderStream,
+} from "./provider-deadline";
+import { composeAbortSignals, isExecutionTimeoutError, providerAbortError } from "../execution-deadline";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -36,9 +43,28 @@ function buildReasoningPayload(model: string, effort: ChatOptions["reasoningEffo
   }
 }
 
+async function runOpenRouterRequest<T>(
+  opts: ChatOptions,
+  operation: (signal: AbortSignal, onHeadersReady: () => void) => Promise<T>,
+): Promise<T> {
+  return runProviderRequest(operation, {
+    provider: "openrouter",
+    model: opts.model,
+    stage: "provider",
+    signal: opts.signal,
+    policy: {
+      ...PROVIDER_DEADLINES,
+      connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,
+      inactivityMs: opts.inactivityMs ?? PROVIDER_DEADLINES.inactivityMs,
+      overallMs: opts.overallMs ?? PROVIDER_DEADLINES.overallMs,
+    },
+  });
+}
+
 export const openrouterProvider: LLMProvider = {
   id: "openrouter",
   label: "OpenRouter",
+  executionDeadlines: true,
 
   async testConnection(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness> {
     const candidateKey = apiKey.trim();
@@ -52,7 +78,8 @@ export const openrouterProvider: LLMProvider = {
       const raw = await readBoundedResponseText(res).catch(() => "");
       return { ok: false, reason: providerErrorDetail(raw, "OpenRouter", res.status) };
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      const abort = providerAbortError(err, signal);
+      if (abort !== null) throw abort;
       return { ok: false, reason: "Network error reaching OpenRouter." };
     }
   },
@@ -78,50 +105,44 @@ export const openrouterProvider: LLMProvider = {
     }
 
     const reasoning = buildReasoningPayload(opts.model, opts.reasoningEffort, opts.reasoningStrict);
-    let res: Response;
     try {
-      res = await fetch(`${BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          "X-Title": "RSemble AI",
-        },
-        body: JSON.stringify({
-          model: opts.model,
-          messages: toOpenAIMessages(opts.messages),
-          temperature: opts.temperature,
-          max_tokens: opts.maxTokens,
-          ...reasoning,
-        }),
-        signal: opts.signal,
+      return await runOpenRouterRequest(opts, async (signal, onHeadersReady) => {
+        const res = await fetch(`${BASE_URL}/chat/completions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "X-Title": "RSemble AI",
+          },
+          body: JSON.stringify({
+            model: opts.model,
+            messages: toOpenAIMessages(opts.messages),
+            temperature: opts.temperature,
+            max_tokens: opts.maxTokens,
+            ...reasoning,
+          }),
+          signal,
+        });
+        onHeadersReady();
+        if (!res.ok) {
+          const raw = await readBoundedResponseText(res).catch(() => "");
+          throw new ProviderError(providerErrorDetail(raw, "OpenRouter", res.status), "openrouter", res.status);
+        }
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (typeof content !== "string" || content.trim().length === 0) {
+          throw new ProviderError("OpenRouter returned an empty response.", "openrouter");
+        }
+        return content;
       });
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      if (isExecutionTimeoutError(err)) throw err;
+      const abort = providerAbortError(err, opts.signal);
+      if (abort !== null) throw abort;
+      if (err instanceof ProviderError) throw err;
       throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
     }
-
-    if (!res.ok) {
-      // Shared provider-error policy (review fix 3): recognized structured
-      // messages are bounded and credential-redacted; unknown JSON, plain
-      // text, and HTML bodies become a generic status error. The raw body
-      // never reaches ProviderError.message.
-      const raw = await readBoundedResponseText(res).catch(() => "");
-      throw new ProviderError(
-        providerErrorDetail(raw, "OpenRouter", res.status),
-        "openrouter",
-        res.status
-      );
-    }
-
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (typeof content !== "string" || content.trim().length === 0) {
-      throw new ProviderError("OpenRouter returned an empty response.", "openrouter");
-    }
-    return content;
   },
-
 
   async chatCompletionDetailed(opts: ChatOptions): Promise<ProviderCompletionResult> {
     const key = getApiKey();
@@ -133,147 +154,190 @@ export const openrouterProvider: LLMProvider = {
     }
 
     const reasoning = buildReasoningPayload(opts.model, opts.reasoningEffort, opts.reasoningStrict);
-    let res: Response;
     try {
-      res = await fetch(`${BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          "X-Title": "RSemble AI",
-        },
-        body: JSON.stringify({
-          model: opts.model,
-          messages: toOpenAIMessages(opts.messages),
-          temperature: opts.temperature,
-          max_tokens: opts.maxTokens,
-          ...reasoning,
-        }),
-        signal: opts.signal,
+      return await runOpenRouterRequest(opts, async (signal, onHeadersReady) => {
+        const res = await fetch(`${BASE_URL}/chat/completions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "X-Title": "RSemble AI",
+          },
+          body: JSON.stringify({
+            model: opts.model,
+            messages: toOpenAIMessages(opts.messages),
+            temperature: opts.temperature,
+            max_tokens: opts.maxTokens,
+            ...reasoning,
+          }),
+          signal,
+        });
+        onHeadersReady();
+        if (!res.ok) {
+          const raw = await readBoundedResponseText(res).catch(() => "");
+          throw new ProviderError(providerErrorDetail(raw, "OpenRouter", res.status), "openrouter", res.status);
+        }
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (typeof content !== "string" || content.trim().length === 0) {
+          throw new ProviderError("OpenRouter returned an empty response.", "openrouter");
+        }
+        return {
+          content,
+          usage: parseOpenAICompatibleUsage(data?.usage) as UsageBreakdown | null,
+          cost: parseProviderReportedCost(data?.cost),
+        };
       });
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      if (isExecutionTimeoutError(err)) throw err;
+      const abort = providerAbortError(err, opts.signal);
+      if (abort !== null) throw abort;
+      if (err instanceof ProviderError) throw err;
       throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
     }
-
-    if (!res.ok) {
-      // Shared provider-error policy (review fix 3): recognized structured
-      // messages are bounded and credential-redacted; unknown JSON, plain
-      // text, and HTML bodies become a generic status error. The raw body
-      // never reaches ProviderError.message.
-      const raw = await readBoundedResponseText(res).catch(() => "");
-      throw new ProviderError(
-        providerErrorDetail(raw, "OpenRouter", res.status),
-        "openrouter",
-        res.status
-      );
-    }
-
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (typeof content !== "string" || content.trim().length === 0) {
-      throw new ProviderError("OpenRouter returned an empty response.", "openrouter");
-    }
-    return {
-      content,
-      usage: parseOpenAICompatibleUsage(data?.usage) as UsageBreakdown | null,
-      cost: parseProviderReportedCost(data?.cost),
-    };
   },
-  async *chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
-    const key = getApiKey();
-    if (!key) {
-      throw new ProviderError(
-        "Missing VITE_OPENROUTER_KEY. Add it to a .env file at the project root and restart the dev server.",
-        "openrouter"
-      );
-    }
-
-    let res: Response;
-    const reasoning = buildReasoningPayload(opts.model, opts.reasoningEffort, opts.reasoningStrict);
-    try {
-      res = await fetch(`${BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          "X-Title": "RSemble AI",
-        },
-        body: JSON.stringify({
-          model: opts.model,
-          messages: toOpenAIMessages(opts.messages),
-          temperature: opts.temperature,
-          max_tokens: opts.maxTokens,
-          stream: true,
-          ...reasoning,
-        }),
-        signal: opts.signal,
-      });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
-      throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
-    }
-
-    if (!res.ok || !res.body) {
-      const raw = await readBoundedResponseText(res).catch(() => "");
-      throw new ProviderError(
-        providerErrorDetail(raw, "OpenRouter", res.status),
-        "openrouter",
-        res.status
-      );
-    }
-
-    yield* readSseChatStream(res.body, "openrouter", "OpenRouter", opts.signal);
+  chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
+    const headers = createHeadersReady();
+    const streamAbort = new AbortController();
+    const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+    const source = (async function*(): AsyncGenerator<string, void, unknown> {
+      const key = getApiKey();
+      if (!key) {
+        composed.cleanup();
+        throw new ProviderError(
+          "Missing VITE_OPENROUTER_KEY. Add it to a .env file at the project root and restart the dev server.",
+          "openrouter"
+        );
+      }
+      let reasoning: Record<string, unknown>;
+      try {
+        reasoning = buildReasoningPayload(opts.model, opts.reasoningEffort, opts.reasoningStrict);
+      } catch (error) {
+        composed.cleanup();
+        throw error;
+      }
+      try {
+        const res = await fetch(`${BASE_URL}/chat/completions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "X-Title": "RSemble AI",
+          },
+          body: JSON.stringify({
+            model: opts.model,
+            messages: toOpenAIMessages(opts.messages),
+            temperature: opts.temperature,
+            max_tokens: opts.maxTokens,
+            stream: true,
+            ...reasoning,
+          }),
+          signal: composed.signal,
+        });
+        headers.resolve();
+        if (!res.ok || !res.body) {
+          const raw = await readBoundedResponseText(res).catch(() => "");
+          throw new ProviderError(providerErrorDetail(raw, "OpenRouter", res.status), "openrouter", res.status);
+        }
+        yield* readSseChatStream(res.body, "openrouter", "OpenRouter", composed.signal);
+      } catch (err) {
+        headers.resolve();
+        if (isExecutionTimeoutError(err)) throw err;
+        const abort = providerAbortError(err, composed.signal);
+        if (abort !== null) throw abort;
+        if (err instanceof ProviderError) throw err;
+        throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
+      } finally {
+        composed.cleanup();
+      }
+    })();
+    return wrapProviderStream(source, headers.promise, {
+      provider: "openrouter",
+      model: opts.model,
+      stage: "provider",
+      signal: composed.signal,
+      abortController: streamAbort,
+      policy: {
+        ...PROVIDER_DEADLINES,
+        connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,
+        inactivityMs: opts.inactivityMs ?? PROVIDER_DEADLINES.inactivityMs,
+        overallMs: opts.overallMs ?? PROVIDER_DEADLINES.overallMs,
+      },
+    });
   },
 
-  async *chatCompletionStreamDetailed(opts: ChatOptions): AsyncGenerator<ProviderStreamEvent, void, unknown> {
-    const key = getApiKey();
-    if (!key) {
-      throw new ProviderError(
-        "Missing VITE_OPENROUTER_KEY. Add it to a .env file at the project root and restart the dev server.",
-        "openrouter"
-      );
-    }
-
-    let res: Response;
-    const reasoning = buildReasoningPayload(opts.model, opts.reasoningEffort, opts.reasoningStrict);
-    try {
-      res = await fetch(`${BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          "X-Title": "RSemble AI",
-        },
-        body: JSON.stringify({
-          model: opts.model,
-          messages: toOpenAIMessages(opts.messages),
-          temperature: opts.temperature,
-          max_tokens: opts.maxTokens,
-          stream: true,
-          ...reasoning,
-        }),
-        signal: opts.signal,
-      });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
-      throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
-    }
-
-    if (!res.ok || !res.body) {
-      const raw = await readBoundedResponseText(res).catch(() => "");
-      throw new ProviderError(
-        providerErrorDetail(raw, "OpenRouter", res.status),
-        "openrouter",
-        res.status
-      );
-    }
-
-    const meta: SseMeta = { usage: null, cost: null };
-    for await (const delta of readSseChatStream(res.body, "openrouter", "OpenRouter", opts.signal, meta)) {
-      yield { delta };
-    }
-    yield { usage: meta.usage ?? undefined, cost: meta.cost ?? undefined };
+  chatCompletionStreamDetailed(opts: ChatOptions): AsyncGenerator<ProviderStreamEvent, void, unknown> {
+    const headers = createHeadersReady();
+    const streamAbort = new AbortController();
+    const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+    const source = (async function*(): AsyncGenerator<ProviderStreamEvent, void, unknown> {
+      const key = getApiKey();
+      if (!key) {
+        composed.cleanup();
+        throw new ProviderError(
+          "Missing VITE_OPENROUTER_KEY. Add it to a .env file at the project root and restart the dev server.",
+          "openrouter"
+        );
+      }
+      let reasoning: Record<string, unknown>;
+      try {
+        reasoning = buildReasoningPayload(opts.model, opts.reasoningEffort, opts.reasoningStrict);
+      } catch (error) {
+        composed.cleanup();
+        throw error;
+      }
+      try {
+        const res = await fetch(`${BASE_URL}/chat/completions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "X-Title": "RSemble AI",
+          },
+          body: JSON.stringify({
+            model: opts.model,
+            messages: toOpenAIMessages(opts.messages),
+            temperature: opts.temperature,
+            max_tokens: opts.maxTokens,
+            stream: true,
+            ...reasoning,
+          }),
+          signal: composed.signal,
+        });
+        headers.resolve();
+        if (!res.ok || !res.body) {
+          const raw = await readBoundedResponseText(res).catch(() => "");
+          throw new ProviderError(providerErrorDetail(raw, "OpenRouter", res.status), "openrouter", res.status);
+        }
+        const meta: SseMeta = { usage: null, cost: null };
+        for await (const delta of readSseChatStream(res.body, "openrouter", "OpenRouter", composed.signal, meta)) {
+          yield { delta };
+        }
+        yield { usage: meta.usage ?? undefined, cost: meta.cost ?? undefined };
+      } catch (err) {
+        headers.resolve();
+        if (isExecutionTimeoutError(err)) throw err;
+        const abort = providerAbortError(err, composed.signal);
+        if (abort !== null) throw abort;
+        if (err instanceof ProviderError) throw err;
+        throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
+      } finally {
+        composed.cleanup();
+      }
+    })();
+    return wrapProviderStream(source, headers.promise, {
+      provider: "openrouter",
+      model: opts.model,
+      stage: "provider",
+      signal: composed.signal,
+      abortController: streamAbort,
+      policy: {
+        ...PROVIDER_DEADLINES,
+        connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,
+        inactivityMs: opts.inactivityMs ?? PROVIDER_DEADLINES.inactivityMs,
+        overallMs: opts.overallMs ?? PROVIDER_DEADLINES.overallMs,
+      },
+    });
   },
 
   async listModels(signal?: AbortSignal): Promise<CatalogModel[]> {

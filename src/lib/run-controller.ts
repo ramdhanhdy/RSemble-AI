@@ -15,6 +15,7 @@ import { evaluateComparePreflight, type ComparePreflight } from "./compare-prefl
 import type { RunRecorder } from "./persistence/run-recorder";
 import type { ExecutionFence } from "./persistence/run-types";
 import { HEARTBEAT_INTERVAL, type ExecutionLease, type LeaseInfo } from "./execution-lease";
+import { createExecutionHeartbeat, type ExecutionHeartbeat } from "./execution-heartbeat";
 import { createRunExecutor, type RunExecutorEvents } from "./run-executor";
 import type { StudioState, Action, RunEvaluationContext } from "../studio-engine";
 import type { StreamDeltaBuffer } from "./stream-buffer";
@@ -64,16 +65,40 @@ export function createRunController(deps: RunControllerDeps) {
   const runIdRef: { current: string | null } = { current: null };
   const currentAbortRef: { current: AbortController | null } = { current: null };
   const activeLeaseRef: { current: LeaseInfo | null } = { current: null };
-  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  // Cleanup epoch fences asynchronous finally blocks from an earlier run. A
+  // late cleanup must never clear the heartbeat or release a newer lease.
+  let leaseEpoch = 0;
+  let heartbeat: ExecutionHeartbeat | null = null;
+  const leaseLostRef: { current: boolean } = { current: false };
+  // Abort persistence must finish before lease release, otherwise the
+  // executor's finally block could surrender the fence before markAborted.
+  const abortPersistenceRef: { current: Promise<void> | null } = { current: null };
 
   async function acquireSharedLease(executionId: string, abort?: AbortController): Promise<boolean> {
     if (deps.lease === undefined) return true; // narrow injected unit-test seam
     if (deps.lease === null) return false;
     try {
-      activeLeaseRef.current = await deps.lease.acquire({ kind: "compare", executionId });
-      heartbeatTimer = setInterval(() => {
-        void deps.lease!.renew().catch(() => abort?.abort());
-      }, HEARTBEAT_INTERVAL);
+      const lease = await deps.lease.acquire({ kind: "compare", executionId });
+      const epoch = ++leaseEpoch;
+      leaseLostRef.current = false;
+      activeLeaseRef.current = lease;
+      const heartbeatForLease = createExecutionHeartbeat({
+        intervalMs: HEARTBEAT_INTERVAL,
+        renew: () => deps.lease!.renew(lease),
+        onError: () => {
+          const current = activeLeaseRef.current;
+          if (epoch !== leaseEpoch || current?.ownerId !== lease.ownerId || current.fence !== lease.fence || current.leaseId !== lease.leaseId) return;
+          leaseLostRef.current = true;
+          // Invalidate every late provider/UI callback before aborting the
+          // provider operation. The newer tab's lease is never touched.
+          runEpochRef.current += 1;
+          streamBuffer.cancel();
+          abort?.abort();
+          dispatch({ type: "LEASE_LOST", message: "Compare execution lost its lease to another browser tab." });
+        },
+      });
+      heartbeat = heartbeatForLease;
+      heartbeatForLease.start();
       return true;
     } catch {
       activeLeaseRef.current = null;
@@ -81,14 +106,35 @@ export function createRunController(deps: RunControllerDeps) {
     }
   }
 
-  async function releaseSharedLease(): Promise<void> {
-    if (heartbeatTimer !== null) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
+  async function releaseSharedLease(
+    token: LeaseInfo | null = activeLeaseRef.current,
+    epoch = leaseEpoch,
+  ): Promise<void> {
+    const pendingAbort = abortPersistenceRef.current;
+    if (pendingAbort) {
+      await pendingAbort;
+      if (abortPersistenceRef.current === pendingAbort) abortPersistenceRef.current = null;
     }
-    activeLeaseRef.current = null;
-    if (deps.lease) {
-      try { await deps.lease.release(); } catch { /* expiry remains crash-safe */ }
+    const current = activeLeaseRef.current;
+    const isCurrent = token !== null && epoch === leaseEpoch &&
+      current?.ownerId === token.ownerId && current.fence === token.fence && current.leaseId === token.leaseId;
+    if (isCurrent) {
+      // Invalidate timer callbacks before awaiting IndexedDB, so a new run can
+      // acquire/restart safely while this cleanup is still unwinding.
+      leaseEpoch++;
+      heartbeat?.stop();
+      heartbeat = null;
+      activeLeaseRef.current = null;
+    }
+    if (deps.lease && token) {
+      try { await deps.lease.release(token); } catch { /* expiry remains crash-safe */ }
+    }
+  }
+
+  async function assertCurrentLease(token: LeaseInfo | null | undefined): Promise<void> {
+    if (deps.lease === undefined) return;
+    if (!deps.lease || !token || !(await deps.lease.verify(token))) {
+      throw new Error("Execution lease lost; stale controller rejected");
     }
   }
 
@@ -106,11 +152,33 @@ export function createRunController(deps: RunControllerDeps) {
     isRetry = false,
     slotsOverride?: StudioState["slots"],
     frozenContext?: RunEvaluationContext,
+    leaseToken?: LeaseInfo,
   ): RunExecutorEvents {
     const candidateAttemptIds: Record<string, string> = {};
+    // Capture the exact lease token for this execution. All recorder writes
+    // use this immutable token; a later acquisition by another tab cannot be
+    // mistaken for continued ownership.
+    const capturedLease = leaseToken ?? activeLeaseRef.current;
+    const persistedFence: ExecutionFence | undefined = capturedLease
+      ? { ownerId: capturedLease.ownerId, fence: capturedLease.fence, ...(capturedLease.leaseId ? { leaseId: capturedLease.leaseId } : {}) }
+      : undefined;
+    // Legacy contexts may omit mode; capture the fallback at event creation so
+    // a command-pane edit cannot rewrite persisted protocol state later.
+    const capturedMode = frozenContext?.mode ?? stateRef.current.mode;
+    const executionCurrent = () =>
+      runEpochRef.current === epoch &&
+      !leaseLostRef.current &&
+      (deps.lease === undefined || (
+        capturedLease != null &&
+        activeLeaseRef.current?.ownerId === capturedLease.ownerId &&
+        activeLeaseRef.current?.fence === capturedLease.fence &&
+        activeLeaseRef.current?.leaseId === capturedLease.leaseId
+      ));
 
     return {
       onFanoutStart: async () => {
+        if (!executionCurrent()) throw new Error("Execution lease lost; stale controller rejected");
+        await assertCurrentLease(leaseToken);
         // The executor may yield before this lifecycle callback runs. Never
         // rebuild the run from mutable command-pane state here; the caller
         // captured one immutable protocol snapshot before execution began.
@@ -144,7 +212,7 @@ export function createRunController(deps: RunControllerDeps) {
           type: "FANOUT_START",
           candidates: placeholders,
           context: {
-            mode: context.mode ?? s.mode,
+            mode: context.mode ?? capturedMode,
             task: context.task
               ? { ...context.task }
               : { prompt: context.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
@@ -159,10 +227,11 @@ export function createRunController(deps: RunControllerDeps) {
           },
         });
         if (recorder) {
+          await assertCurrentLease(leaseToken);
           await recorder.begin({
             runId,
             source: { kind: "adhoc" },
-            mode: context.mode ?? s.mode,
+            mode: context.mode ?? capturedMode,
             task: {
               title: context.prompt.slice(0, 80),
               ...(context.task ?? { prompt: context.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature }),
@@ -175,9 +244,7 @@ export function createRunController(deps: RunControllerDeps) {
             slots: context.slots ?? slotsOverride ?? s.slots,
             critic: context.critic ?? s.critic,
             reasoningPolicy: context.reasoningPolicy ? { ...context.reasoningPolicy } : undefined,
-            fence: activeLeaseRef.current
-              ? { ownerId: activeLeaseRef.current.ownerId, fence: activeLeaseRef.current.fence }
-              : deps.executionFence?.() ?? { ownerId: "tab-1", fence: epoch },
+            fence: persistedFence ?? deps.executionFence?.() ?? { ownerId: "tab-1", fence: epoch },
             // Attachment metadata only — never bytes or text (spec §9).
             attachments: context.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })),
           });
@@ -185,14 +252,14 @@ export function createRunController(deps: RunControllerDeps) {
       },
 
       onCandidateDelta: (candidateId, delta) => {
-        if (runEpochRef.current === epoch) {
+        if (executionCurrent()) {
           streamBuffer.push(candidateId, delta);
         }
       },
 
       onCandidateTerminal: (candidateId, result) => {
+        if (!executionCurrent()) return;
         streamBuffer.flush();
-        if (runEpochRef.current !== epoch) return;
         dispatch({
           type: isRetry ? "RETRY_CANDIDATE_RESULT" : "CANDIDATE_RESULT",
           id: candidateId,
@@ -205,25 +272,27 @@ export function createRunController(deps: RunControllerDeps) {
       },
 
       onFanoutTerminal: async (done) => {
-        if (runEpochRef.current === epoch) {
+        if (executionCurrent()) {
           dispatch({ type: "FANOUT_END", count: done.length });
         }
-        if (recorder && runIdRef.current) {
-          await recorder.saveFanout(runIdRef.current, { candidates: done });
+        if (recorder && runIdRef.current && executionCurrent()) {
+          await assertCurrentLease(leaseToken);
+          await recorder.saveFanout(runIdRef.current, { candidates: done }, persistedFence);
         }
       },
 
       onCandidateAttemptStart: async (candidateId, attemptId, input) => {
         candidateAttemptIds[candidateId] = attemptId;
-        if (recorder && runIdRef.current) {
+        if (recorder && runIdRef.current && executionCurrent()) {
+          await assertCurrentLease(leaseToken);
           await recorder.beginCandidateAttempt(runIdRef.current, candidateId, attemptId, {
             attemptId, messages: input.messages, startedAt: input.startedAt,
-          });
+          }, persistedFence);
         }
       },
 
       onCandidateAttemptTerminal: async (candidateId, attemptId, input) => {
-        if (runEpochRef.current === epoch && input.status === "failed") {
+        if (executionCurrent() && input.status === "failed") {
           dispatch({
             type: isRetry ? "RETRY_CANDIDATE_FAILED" : "CANDIDATE_FAILED",
             id: candidateId,
@@ -231,22 +300,24 @@ export function createRunController(deps: RunControllerDeps) {
             finishedAt: input.finishedAt,
           });
         }
-        if (recorder && runIdRef.current) {
-          await recorder.finishCandidateAttempt(runIdRef.current, candidateId, attemptId, input);
+        if (recorder && runIdRef.current && executionCurrent()) {
+          await assertCurrentLease(leaseToken);
+          await recorder.finishCandidateAttempt(runIdRef.current, candidateId, attemptId, input, persistedFence);
         }
       },
 
       onJudgeStart: async (attemptId, input) => {
-        if (runEpochRef.current === epoch) {
+        if (executionCurrent()) {
           dispatch({ type: "JUDGE_START" });
         }
-        if (recorder && runIdRef.current) {
-          await recorder.beginJudgeAttempt(runIdRef.current, attemptId, input);
+        if (recorder && runIdRef.current && executionCurrent()) {
+          await assertCurrentLease(leaseToken);
+          await recorder.beginJudgeAttempt(runIdRef.current, attemptId, input, persistedFence);
         }
       },
 
       onJudgeTerminal: async (attemptId, input) => {
-        if (runEpochRef.current !== epoch) return;
+        if (!executionCurrent()) return;
         if (input.status === "completed" && input.report) {
           dispatch({
             type: "JUDGE_RESULT",
@@ -264,29 +335,32 @@ export function createRunController(deps: RunControllerDeps) {
         } else if (input.status === "failed") {
           dispatch({ type: "JUDGE_FAILED", error: input.error?.message ?? "Judge failed" });
         }
-        if (recorder && runIdRef.current) {
-          await recorder.finishJudgeAttempt(runIdRef.current, attemptId, input);
+        if (recorder && runIdRef.current && executionCurrent()) {
+          await assertCurrentLease(leaseToken);
+          await recorder.finishJudgeAttempt(runIdRef.current, attemptId, input, persistedFence);
         }
       },
 
       onFusionStart: async (attemptId, input) => {
-        if (runEpochRef.current === epoch) {
+        if (executionCurrent()) {
           dispatch({ type: "FUSION_START" });
         }
-        if (recorder && runIdRef.current) {
-          await recorder.beginFusionAttempt(runIdRef.current, attemptId, input);
+        if (recorder && runIdRef.current && executionCurrent()) {
+          await assertCurrentLease(leaseToken);
+          await recorder.beginFusionAttempt(runIdRef.current, attemptId, input, persistedFence);
         }
       },
 
       onFusionTerminal: async (attemptId, input) => {
-        if (runEpochRef.current !== epoch) return;
+        if (!executionCurrent()) return;
         if (input.status === "completed" && input.result) {
           dispatch({ type: "FUSION_RESULT", text: input.result });
         } else if (input.status === "failed") {
           dispatch({ type: "FUSION_FAILED", error: input.error?.message ?? "Fusion failed" });
         }
-        if (recorder && runIdRef.current) {
-          await recorder.finishFusionAttempt(runIdRef.current, attemptId, input);
+        if (recorder && runIdRef.current && executionCurrent()) {
+          await assertCurrentLease(leaseToken);
+          await recorder.finishFusionAttempt(runIdRef.current, attemptId, input, persistedFence);
         }
       },
     };
@@ -356,8 +430,10 @@ export function createRunController(deps: RunControllerDeps) {
         : "Another execution is active in this browser. Wait for it to finish before comparing." });
       return;
     }
+    const leaseToken = activeLeaseRef.current;
+    const leaseScope = leaseEpoch;
     try {
-      const events = makeEvents(epoch, false, slots, frozenContext);
+      const events = makeEvents(epoch, false, slots, frozenContext, leaseToken ?? undefined);
       await executor.executeTask({
         source: { kind: "adhoc" },
         mode: frozenContext.mode!,
@@ -384,7 +460,7 @@ export function createRunController(deps: RunControllerDeps) {
         }
       }
     } finally {
-      await releaseSharedLease();
+      await releaseSharedLease(leaseToken, leaseScope);
     }
   };
 
@@ -396,7 +472,16 @@ export function createRunController(deps: RunControllerDeps) {
     streamBuffer.cancel();
     dispatch({ type: "ABORT_RUN" });
     if (recorder && runIdRef.current) {
-      void recorder.markAborted(runIdRef.current);
+      const token = activeLeaseRef.current;
+      const fence = token
+        ? { ownerId: token.ownerId, fence: token.fence, ...(token.leaseId ? { leaseId: token.leaseId } : {}) }
+        : undefined;
+      abortPersistenceRef.current = assertCurrentLease(token)
+        .then(() => recorder.markAborted(runIdRef.current!, fence))
+        .catch(() => {
+          // A reclaimed lease must not allow a stale abort callback to mutate
+          // the new owner's run; the repository fence is the final guard.
+        });
     }
   };
 
@@ -424,10 +509,17 @@ export function createRunController(deps: RunControllerDeps) {
         : "Another execution is active in this browser. Wait for it to finish before retrying." });
       return;
     }
+    const leaseToken = activeLeaseRef.current;
+    const leaseScope = leaseEpoch;
     try {
+      await assertCurrentLease(leaseToken);
       dispatch({ type: "RETRY_CANDIDATE_START", id: candidate.id });
+      if (recorder && runIdRef.current && leaseToken) {
+        await assertCurrentLease(leaseToken);
+        await recorder.rebindExecution(runIdRef.current, { ownerId: leaseToken.ownerId, fence: leaseToken.fence, ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}) });
+      }
 
-    const events = makeEvents(epoch, true, frozenSlots, ctx ?? undefined);
+    const events = makeEvents(epoch, true, frozenSlots, ctx ?? undefined, leaseToken ?? undefined);
     const peerCandidates = s.candidates.filter((c) => c.id !== candidate.id);
 
     // Load the persisted record to get real accepted attempt IDs
@@ -462,7 +554,7 @@ export function createRunController(deps: RunControllerDeps) {
       candidateAttemptIdsByCandidateId,
     }, events, abort.signal);
     } finally {
-      await releaseSharedLease();
+      await releaseSharedLease(leaseToken, leaseScope);
     }
   };
 
@@ -499,7 +591,14 @@ export function createRunController(deps: RunControllerDeps) {
         : "Another execution is active in this browser. Wait for it to finish before retrying." });
       return;
     }
+    const leaseToken = activeLeaseRef.current;
+    const leaseScope = leaseEpoch;
     try {
+      await assertCurrentLease(leaseToken);
+      if (recorder && runIdRef.current && leaseToken) {
+        await assertCurrentLease(leaseToken);
+        await recorder.rebindExecution(runIdRef.current, { ownerId: leaseToken.ownerId, fence: leaseToken.fence, ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}) });
+      }
 
     // Load the persisted record to get real accepted attempt IDs
     let candidateAttemptIdsByCandidateId: Record<string, string> = {};
@@ -514,7 +613,7 @@ export function createRunController(deps: RunControllerDeps) {
       }
     }
 
-    const events = makeEvents(epoch, false, ctx.slots, ctx);
+    const events = makeEvents(epoch, false, ctx.slots, ctx, leaseToken ?? undefined);
     await executor.retryJudge({
       mode: ctx.mode ?? s.mode,
       task: ctx.task ?? { prompt: ctx.prompt, systemPrompt: s.systemPrompt, temperature: 0.4 },
@@ -528,7 +627,7 @@ export function createRunController(deps: RunControllerDeps) {
       candidateAttemptIdsByCandidateId,
     }, events, abort.signal);
     } finally {
-      await releaseSharedLease();
+      await releaseSharedLease(leaseToken, leaseScope);
     }
   };
 
@@ -561,47 +660,54 @@ export function createRunController(deps: RunControllerDeps) {
           : "Another execution is active in this browser. Wait for it to finish before fusion." });
         return;
       }
+      const leaseToken = activeLeaseRef.current;
+      const leaseScope = leaseEpoch;
       try {
-      // Load the persisted record for real accepted attempt IDs
-      let candidateAttemptIdsByCandidateId: Record<string, string> = {};
-      let judgeAttemptId = "";
-      let blindLabelToCandidateId: Record<string, string> = {};
-      if (recorder && runIdRef.current) {
-        const record = await recorder.getRecord(runIdRef.current);
-        if (record) {
-          for (const c of record.candidates) {
-            if (c.acceptedAttemptId) {
-              candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+        await assertCurrentLease(leaseToken);
+        if (recorder && runIdRef.current && leaseToken) {
+          await assertCurrentLease(leaseToken);
+          await recorder.rebindExecution(runIdRef.current, { ownerId: leaseToken.ownerId, fence: leaseToken.fence, ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}) });
+        }
+        // Load the persisted record for real accepted attempt IDs
+        let candidateAttemptIdsByCandidateId: Record<string, string> = {};
+        let judgeAttemptId = "";
+        let blindLabelToCandidateId: Record<string, string> = {};
+        if (recorder && runIdRef.current) {
+          const record = await recorder.getRecord(runIdRef.current);
+          if (record) {
+            for (const c of record.candidates) {
+              if (c.acceptedAttemptId) {
+                candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+              }
+            }
+            judgeAttemptId = record.judge.acceptedAttemptId ?? "";
+            const acceptedJudge = record.judge.attempts.find(
+              (a) => a.attemptId === record.judge.acceptedAttemptId,
+            );
+            if (acceptedJudge) {
+              blindLabelToCandidateId = acceptedJudge.blindLabelToCandidateId;
             }
           }
-          judgeAttemptId = record.judge.acceptedAttemptId ?? "";
-          const acceptedJudge = record.judge.attempts.find(
-            (a) => a.attemptId === record.judge.acceptedAttemptId,
-          );
-          if (acceptedJudge) {
-            blindLabelToCandidateId = acceptedJudge.blindLabelToCandidateId;
-          }
         }
-      }
 
-      const ctx = stateRef.current.runContext;
-      const events = makeEvents(epoch, false, ctx?.slots, ctx ?? undefined);
-      await executor.executeFusionAttempt({
-        mode: "fuse",
-        task: ctx?.task ?? { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: 0.3 },
-        evaluation: ctx?.evaluation ?? s.evaluation,
-        candidates: eligibility.usable,
-        critic: ctx?.critic ?? s.critic,
-        judgeInstruction: ctx?.judgeInstruction ?? s.judgeInstruction,
-        attachments: ctx?.attachments ?? s.attachments,
-        attachmentsToJudge: ctx?.attachmentsToJudge ?? s.attachmentsToJudge,
-        reasoningPolicy: { ...(ctx?.reasoningPolicy ?? s.reasoningPolicy) },
-        judgeAttemptId,
-        blindLabelToCandidateId,
-        candidateAttemptIdsByCandidateId,
-      }, events, abort.signal);
+        const ctx = stateRef.current.runContext;
+        const events = makeEvents(epoch, false, ctx?.slots, ctx ?? undefined, leaseToken ?? undefined);
+        await executor.executeFusionAttempt({
+          mode: "fuse",
+          task: ctx?.task ?? { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: 0.3 },
+          evaluation: ctx?.evaluation ?? s.evaluation,
+          candidates: eligibility.usable,
+          critic: ctx?.critic ?? s.critic,
+          judgeInstruction: ctx?.judgeInstruction ?? s.judgeInstruction,
+          attachments: ctx?.attachments ?? s.attachments,
+          attachmentsToJudge: ctx?.attachmentsToJudge ?? s.attachmentsToJudge,
+          reasoningPolicy: { ...(ctx?.reasoningPolicy ?? s.reasoningPolicy) },
+          judgeAttemptId,
+          blindLabelToCandidateId,
+          candidateAttemptIdsByCandidateId,
+        }, events, abort.signal);
       } finally {
-        await releaseSharedLease();
+        await releaseSharedLease(leaseToken, leaseScope);
       }
     })();
   };

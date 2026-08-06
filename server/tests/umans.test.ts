@@ -48,13 +48,15 @@ afterEach(() => {
 });
 
 describe("handleUmansProxy — plain proxy behavior", () => {
-  it("forwards upstream status, content-type, and body chunks", async () => {
+  it("forwards upstream status, content-type, and body chunks and cleans its watchdog", async () => {
+    vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(upstreamWithChunks(['data: a\n\n', 'data: b\n\n'])));
     const res = makeRes();
     await handleUmansProxy(makeReq("POST", "{}"), res, "/umans/v1/chat/completions");
     expect(res.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({ "Content-Type": "text/event-stream" }));
     expect(res.written).toHaveLength(2);
     expect(res.end).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("passes an AbortSignal to the upstream fetch and preserves upstream error status", async () => {
@@ -104,10 +106,22 @@ describe("handleUmansProxy — timeout", () => {
     expect(res.writeHead).toHaveBeenCalledWith(504, expect.objectContaining({ "Content-Type": "application/json" }));
     const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
     expect(body.error.type).toBe("upstream_timeout");
+    expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
   });
 
-  it("keeps a post-header inactivity timeout after upstream headers arrive", async () => {
+  it("cleans its watchdog when a redirect is rejected", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(null, { status: 302, headers: { Location: "https://other.example" } }),
+    ));
+    const res = makeRes();
+    await handleUmansProxy(makeReq("GET"), res, "/umans/v1/models", { upstreamTimeoutMs: 5_000 });
+    expect(res.writeHead).toHaveBeenCalledWith(502, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears the watchdog immediately when the client closes", async () => {
     vi.useFakeTimers();
     let upstreamSignal: AbortSignal | undefined;
     let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -126,8 +140,12 @@ describe("handleUmansProxy — timeout", () => {
     const promise = handleUmansProxy(makeReq("POST", "{}"), res, "/umans/v1/chat/completions", {
       upstreamTimeoutMs: 5_000,
     });
-    await vi.advanceTimersByTimeAsync(6_000);
+    // The stream has received headers, so no timer fires while progress is
+    // healthy; a client close must still abort and clear the watchdog now.
+    await vi.advanceTimersByTimeAsync(100);
+    res.emit("close");
     expect(upstreamSignal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
     streamController?.close();
     await promise;
   });

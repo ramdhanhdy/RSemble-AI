@@ -378,6 +378,8 @@ describe("GlobalExecutionStrip", () => {
     await settle();
     const strip = h.$("[data-global-execution-strip]")!;
     expect(strip.textContent).toContain("Execution is active in another tab");
+    expect(strip.textContent).toContain("Open the owning execution or wait for lease expiry.");
+    expect(strip.querySelector("[data-execution-guidance]")).not.toBeNull();
     expect(strip.querySelector("a")).toBeNull();
     // Status text, never color-only
     expect(strip.textContent).toContain("Another tab");

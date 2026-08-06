@@ -17,6 +17,19 @@ export type ExecutionTimeoutKind =
 /** A caller cancellation is intentionally not an ExecutionTimeoutKind. */
 export type ExecutionAbortKind = "user_abort";
 
+/** Baseline defaults for paid provider requests. Catalog probes keep their
+ * own shorter policy; providers may override these per request or model. */
+export interface ProviderDeadlinePolicy {
+  connectMs: number;
+  inactivityMs: number;
+  overallMs?: number;
+}
+
+export const DEFAULT_PROVIDER_DEADLINE_POLICY: Readonly<ProviderDeadlinePolicy> = Object.freeze({
+  connectMs: 30_000,
+  inactivityMs: 45_000,
+});
+
 export interface ExecutionTimeoutMetadata {
   /** Provider identifier, never a request body or credential. */
   provider: string;
@@ -237,6 +250,24 @@ export function timeoutErrorFromSignal(
   return classification && classification.kind !== "user_abort" ? classification.error : null;
 }
 
+/** Runtime-safe AbortError check. Some fetch implementations throw an Error
+ * with `name: "AbortError"` rather than a DOMException. */
+export function isAbortErrorLike(value: unknown): boolean {
+  return typeof value === "object" && value !== null && (value as { name?: unknown }).name === "AbortError";
+}
+
+/** Preserve deadline/user cancellation when an adapter catches fetch/reader
+ * errors. Timeout reasons can be Error objects (not DOMExceptions), and older
+ * browsers may erase `signal.reason`, so the internal classification is used. */
+export function providerAbortError(error: unknown, signal?: AbortSignal): unknown | null {
+  const timeout = timeoutErrorFromSignal(signal);
+  if (timeout) return timeout;
+  if (signal?.aborted && isUserAbort(signal)) {
+    return isAbortErrorLike(error) ? error : new DOMException("Aborted", "AbortError");
+  }
+  return isAbortErrorLike(error) ? error : null;
+}
+
 export interface ComposedAbortSignal {
   readonly signal: AbortSignal;
   /** Remove source listeners. Does not abort the returned signal. */
@@ -400,9 +431,12 @@ export const createDeadline = createExecutionDeadline;
 export interface StreamWatchdogOptions extends DeadlineDependencies, ExecutionTimeoutMetadata {
   /** Time allowed between accepted progress notifications. */
   inactivityMs: number;
-  /** Optional generous total ceiling; progress never resets this timer. */
+  /** Optional total ceiling; progress never resets this timer. */
   overallMs?: number;
   signal?: AbortSignal;
+  /** Resolve when response headers have arrived. Inactivity starts then, not
+   * at dispatch, while the overall ceiling still starts at dispatch. */
+  headersReady?: PromiseLike<void>;
 }
 
 export interface StreamWatchdog {
@@ -438,6 +472,7 @@ export function createStreamWatchdog(options: StreamWatchdogOptions): StreamWatc
   let overallHandle: unknown = null;
   let active = true;
   let timeoutError: ExecutionTimeoutError | null = null;
+  let headersReached = options.headersReady === undefined;
 
   classifications.set(ownController.signal, userClassification());
 
@@ -499,7 +534,19 @@ export function createStreamWatchdog(options: StreamWatchdogOptions): StreamWatc
       Math.max(0, options.overallMs),
     );
   }
-  if (active && !composed.signal.aborted) scheduleInactivity();
+  const onHeadersReady = () => {
+    if (!active || composed.signal.aborted || headersReached) return;
+    headersReached = true;
+    lastProgressAt = now();
+    scheduleInactivity();
+  };
+  if (options.headersReady !== undefined) {
+    // A rejected readiness promise is handled by the source operation; do not
+    // create an unhandled rejection in the watchdog itself.
+    void options.headersReady.then(onHeadersReady, () => undefined);
+  } else if (active && !composed.signal.aborted) {
+    scheduleInactivity();
+  }
 
   const cleanup = () => {
     if (!active) {
@@ -515,7 +562,14 @@ export function createStreamWatchdog(options: StreamWatchdogOptions): StreamWatc
 
   const markProgress = () => {
     if (!active || composed.signal.aborted) return;
-    lastProgressAt = now();
+    // A source without an explicit headers-ready marker can begin timing at its
+    // first accepted event. Marked provider streams start at response headers.
+    if (!headersReached) {
+      headersReached = true;
+      lastProgressAt = now();
+    } else {
+      lastProgressAt = now();
+    }
     scheduleInactivity();
   };
 
@@ -564,14 +618,18 @@ export async function raceWithAbort<T>(operation: Promise<T>, signal: AbortSigna
 
 export interface ExecutionOperationOptions extends DeadlineDependencies, ExecutionTimeoutMetadata {
   connectMs: number;
+  /** Accepted for a shared policy object; non-stream operations do not use it. */
+  inactivityMs?: number;
   overallMs?: number;
   signal?: AbortSignal;
   abortController?: AbortController;
 }
 
-/** Apply the connect and optional overall clocks to a non-stream operation. */
+/** Apply the connect and optional overall clocks to a non-stream operation.
+ * `onHeadersReady` lets fetch adapters stop the connect clock at response
+ * headers while keeping body parsing inside the overall ceiling. */
 export async function runWithExecutionDeadlines<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
+  operation: (signal: AbortSignal, onHeadersReady: () => void) => Promise<T>,
   options: ExecutionOperationOptions,
 ): Promise<T> {
   const connect = createExecutionDeadline({ ...options, kind: "connect_timeout", durationMs: options.connectMs });
@@ -584,8 +642,14 @@ export async function runWithExecutionDeadlines<T>(
     abortWithReason(options.abortController, timeoutErrorFromSignal(composed.signal) ?? new DOMException("Aborted", "AbortError"));
   };
   composed.signal.addEventListener("abort", forwardAbort, { once: true });
+  let headersReady = false;
+  const onHeadersReady = () => {
+    if (headersReady) return;
+    headersReady = true;
+    connect.cleanup();
+  };
   try {
-    return await raceWithAbort(operation(composed.signal), composed.signal);
+    return await raceWithAbort(operation(composed.signal, onHeadersReady), composed.signal);
   } finally {
     composed.signal.removeEventListener("abort", forwardAbort);
     composed.cleanup();
@@ -600,6 +664,26 @@ export interface ExecutionStreamOptions extends DeadlineDependencies, ExecutionT
   overallMs?: number;
   signal?: AbortSignal;
   abortController?: AbortController;
+  /** Provider adapters resolve this as soon as response headers arrive. */
+  headersReady?: PromiseLike<void>;
+}
+
+const STREAM_HEADERS_READY = Symbol("rsemble.streamHeadersReady");
+type HeadersReadyStream = { [STREAM_HEADERS_READY]?: PromiseLike<void> };
+
+/** Attach response-header readiness to a provider stream. This metadata is
+ * intentionally non-enumerable in spirit (a symbol) and does not affect the
+ * yielded protocol. */
+export function markStreamHeadersReady<T>(
+  source: AsyncIterable<T>,
+  headersReady: PromiseLike<void>,
+): AsyncIterable<T> {
+  (source as AsyncIterable<T> & HeadersReadyStream)[STREAM_HEADERS_READY] = headersReady;
+  return source;
+}
+
+function streamHeadersReadyOf<T>(source: AsyncIterable<T>): PromiseLike<void> | undefined {
+  return (source as AsyncIterable<T> & HeadersReadyStream)[STREAM_HEADERS_READY];
 }
 
 /**
@@ -608,46 +692,55 @@ export interface ExecutionStreamOptions extends DeadlineDependencies, ExecutionT
  * resets inactivity, while the overall ceiling never resets. The iterator is
  * returned/cancelled on every terminal path.
  */
-export async function* streamWithExecutionDeadlines<T>(
+export function streamWithExecutionDeadlines<T>(
   source: AsyncIterable<T>,
   options: ExecutionStreamOptions,
 ): AsyncGenerator<T, void, unknown> {
-  const connect = createExecutionDeadline({ ...options, kind: "connect_timeout", durationMs: options.connectMs });
-  const watchdog = createStreamWatchdog({
-    ...options,
-    signal: connect.signal,
-    inactivityMs: options.inactivityMs,
-    overallMs: options.overallMs,
-  });
-  const iterator = source[Symbol.asyncIterator]();
-  const forwardAbort = () => {
-    if (!options.abortController || options.abortController.signal.aborted) return;
-    abortWithReason(options.abortController, timeoutErrorFromSignal(watchdog.signal) ?? new DOMException("Aborted", "AbortError"));
-  };
-  watchdog.signal.addEventListener("abort", forwardAbort, { once: true });
-  let firstEvent = false;
-  try {
-    while (true) {
-      const result = await raceWithAbort(iterator.next(), watchdog.signal);
-      if (result.done) return;
-      if (!firstEvent) {
-        firstEvent = true;
-        connect.cleanup();
-      }
-      watchdog.markProgress();
-      yield result.value;
-    }
-  } finally {
+  const headersReady = options.headersReady ?? streamHeadersReadyOf(source);
+  const output = (async function*(): AsyncGenerator<T, void, unknown> {
+    const connect = createExecutionDeadline({ ...options, kind: "connect_timeout", durationMs: options.connectMs });
+    const watchdog = createStreamWatchdog({
+      ...options,
+      signal: connect.signal,
+      headersReady,
+      inactivityMs: options.inactivityMs,
+      overallMs: options.overallMs,
+    });
+    const iterator = source[Symbol.asyncIterator]();
+    const onHeadersReady = () => connect.cleanup();
+    if (headersReady !== undefined) void headersReady.then(onHeadersReady, () => undefined);
+    const forwardAbort = () => {
+      if (!options.abortController || options.abortController.signal.aborted) return;
+      abortWithReason(options.abortController, timeoutErrorFromSignal(watchdog.signal) ?? new DOMException("Aborted", "AbortError"));
+    };
+    watchdog.signal.addEventListener("abort", forwardAbort, { once: true });
+    let firstEvent = false;
     try {
-      await iterator.return?.();
+      while (true) {
+        const result = await raceWithAbort(iterator.next(), watchdog.signal);
+        if (result.done) return;
+        if (!firstEvent) {
+          firstEvent = true;
+          // Unmarked sources retain the historical first-event fallback. A
+          // marked provider stream has already stopped connect at headers.
+          if (headersReady === undefined) connect.cleanup();
+        }
+        watchdog.markProgress();
+        yield result.value;
+      }
     } finally {
-      watchdog.signal.removeEventListener("abort", forwardAbort);
-      connect.cleanup();
-      watchdog.cleanup();
+      try {
+        await iterator.return?.();
+      } finally {
+        watchdog.signal.removeEventListener("abort", forwardAbort);
+        connect.cleanup();
+        watchdog.cleanup();
+      }
     }
-  }
+  })();
+  if (headersReady !== undefined) markStreamHeadersReady(output, headersReady);
+  return output;
 }
-
 
 export interface FetchDeadlineOptions extends DeadlineDependencies, ExecutionTimeoutMetadata {
   connectMs?: number;
@@ -663,7 +756,10 @@ export function fetchWithExecutionDeadline(
 ): Promise<Response> {
   const connectMs = options.connectMs ?? 30_000;
   return runWithExecutionDeadlines(
-    (signal) => fetch(input, { ...init, signal }),
+    (signal, onHeadersReady) => fetch(input, { ...init, signal }).then((response) => {
+      onHeadersReady();
+      return response;
+    }),
     {
       ...options,
       connectMs,

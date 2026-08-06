@@ -12,6 +12,7 @@
 // =============================================================================
 
 import { createOpenAICompatProvider } from "./openai-compat";
+import { DEFAULT_PROVIDER_DEADLINE_POLICY } from "../execution-deadline";
 import type { LLMProvider } from "./types";
 import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 
@@ -36,4 +37,5 @@ export const nineRouterProvider: LLMProvider = createOpenAICompatProvider({
   readinessProbe: "models",
   bridgeSecret: true,
   bridgeBodyLimitBytes: BRIDGE_MAX_BODY_BYTES,
+  deadlines: DEFAULT_PROVIDER_DEADLINE_POLICY,
 });

@@ -35,6 +35,28 @@ export function scrollLiveTranscriptToEnd(transcript: { scrollTop: number; reado
 /** After this many ms with no text, the waiting caption adopts a warning tone. */
 const FIRST_TOKEN_PATIENCE_MS = 15_000;
 
+/**
+ * Turn a persisted timeout classification into actionable, stage-specific
+ * copy. Error messages remain visible above this guidance; this intentionally
+ * does not infer guidance from raw provider bodies or stack traces.
+ */
+export function failureGuidance(message: string): string | null {
+  const normalized = message.toLowerCase().replace(/-/g, "_");
+  if (normalized.includes("connect_timeout")) {
+    return "The provider or bridge did not respond in time. Check the provider/bridge connection, then retry.";
+  }
+  if (normalized.includes("stream_inactivity_timeout")) {
+    return "The stream stopped making progress. Retry this candidate or stage.";
+  }
+  if (normalized.includes("overall_timeout")) {
+    return "The request exceeded its overall time limit. Consider lower effort or provider defaults, then retry.";
+  }
+  if (/\bhttp\s+\d{3}\b/.test(normalized)) {
+    return "The provider returned an HTTP error. Check provider status, then retry.";
+  }
+  return null;
+}
+
 export function OutputPane({
   state,
   onFuse,
@@ -151,7 +173,7 @@ export function OutputPane({
         state.mode === "fuse" && <FuseResult state={state} onRefuse={onRefuse} />}
 
       {hasRun && !state.running && state.aborted && (
-        <AbortedState candidates={state.candidates} />
+        <AbortedState candidates={state.candidates} conflict={state.executionConflict ?? null} />
       )}
     </div>
   );
@@ -214,6 +236,11 @@ export function InsufficientState({
                     <span className="truncate font-mono text-sm text-text" title={c.provider}>{c.model}</span>
                   </div>
                   <p className="mt-1 text-sm leading-relaxed text-error/80">{reason}</p>
+                  {failureGuidance(reason) !== null && (
+                    <p data-timeout-guidance="" className="mt-1 text-xs leading-relaxed text-text-muted">
+                      {failureGuidance(reason)}
+                    </p>
+                  )}
                 </div>
                 {onRetryCandidate && (
                   <button
@@ -548,11 +575,17 @@ function ErrorState({
 }) {
   const done = candidates.filter((c) => c.status === "done");
   const failed = candidates.filter((c) => c.status === "error");
+  const guidance = failureGuidance(message);
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-y-auto scroll-thin">
       <div className="flex flex-col items-center justify-center rounded-md border border-error/40 bg-error/[0.08] py-8 px-6 text-center">
         <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-error">Error</p>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">{message}</p>
+        {guidance !== null && (
+          <p data-timeout-guidance="" className="mt-2 max-w-md text-sm leading-relaxed text-text-muted">
+            {guidance}
+          </p>
+        )}
         {judgeRetryEligible ? (
           <p className="mt-2 font-mono text-sm text-text-muted">
             Fix the Judge settings or retry the retained candidates below.
@@ -610,14 +643,21 @@ function ErrorState({
   );
 }
 
-function AbortedState({ candidates }: { candidates: import("../studio-data").Candidate[] }) {
+function AbortedState({
+  candidates,
+  conflict,
+}: {
+  candidates: import("../studio-data").Candidate[];
+  conflict?: string | null;
+}) {
   const done = candidates.filter((c) => c.status === "done");
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-md border border-edge bg-card py-10 px-6 text-center">
       <AlertCircle size={24} className="text-text-secondary" />
       <div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary">Aborted</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary">{conflict ? "Execution conflict" : "Aborted"}</p>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">
+          {conflict ? `${conflict} Wait for the newer Compare execution to finish, then retry.` : null}
           Run stopped. {done.length > 0
             ? `${done.length} candidate${done.length === 1 ? "" : "s"} completed before abort — partial results are preserved below.`
             : "No candidates completed before abort."}

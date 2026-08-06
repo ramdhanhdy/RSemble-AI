@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { createOpenAICompatProvider } from "./openai-compat";
+import { DEFAULT_PROVIDER_DEADLINE_POLICY } from "../execution-deadline";
 
 export const deepseekProvider = createOpenAICompatProvider({
   id: "deepseek",
@@ -19,4 +20,5 @@ export const deepseekProvider = createOpenAICompatProvider({
   // DeepSeek's chat API is text-only; leave image transport off until the
   // catalog exposes authoritative per-model vision declarations.
   supportsImages: false,
+  deadlines: DEFAULT_PROVIDER_DEADLINE_POLICY,
 });

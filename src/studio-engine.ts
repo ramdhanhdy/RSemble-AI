@@ -116,6 +116,8 @@ export interface StudioState {
    *  `{done, failed}` describes how the fanout ended. Null when not applicable. */
   insufficient: { done: number; failed: number } | null;
   aborted: boolean;
+  /** Precise cross-tab lease-loss state; null for ordinary user aborts. */
+  executionConflict?: string | null;
   /** Frozen prompt/rubric snapshot for the current run, captured at FANOUT_START.
    *  Enables Judge-only retry against the exact generation context the retained
    *  candidates answered. Null before the first run and after RESET_SESSION. */
@@ -168,6 +170,7 @@ export type Action =
   | { type: "SET_RATING"; value: number }
   | { type: "RESET_SESSION" }
   | { type: "ABORT_RUN" }
+  | { type: "LEASE_LOST"; message: string }
   // --- single-candidate retry ---
   | { type: "RETRY_CANDIDATE_START"; id: string }
   | { type: "RETRY_CANDIDATE_DELTA"; id: string; delta: string }
@@ -402,6 +405,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         fusionError: null,
         insufficient: null,
         aborted: false,
+        executionConflict: null,
         // Snapshot the generation context for Judge-only recovery. Deep-copied
         // here (defense in depth) so neither the caller's payload nor later
         // command-pane edits can mutate what a Judge retry evaluates against.
@@ -582,6 +586,15 @@ export function reducer(state: StudioState, action: Action): StudioState {
         critic: state.critic,
       };
 
+    case "LEASE_LOST":
+      return {
+        ...state,
+        running: false,
+        aborted: true,
+        executionConflict: action.message,
+        audit: logAudit(state.audit, action.message),
+      };
+
     case "ABORT_RUN":
       return {
         ...state,
@@ -674,6 +687,7 @@ export const initialState: StudioState = {
   judgeReport: null,
   insufficient: null,
   aborted: false,
+  executionConflict: null,
   runContext: null,
   qualityRating: 0,
   fusionStatus: "idle",

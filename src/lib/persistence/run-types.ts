@@ -78,6 +78,8 @@ const PROHIBITED_KEYS: ReadonlySet<string> = new Set([
 export interface ExecutionFence {
   ownerId: string;
   fence: number;
+  /** Exact acquisition token for fenced paid Compare writes; absent on legacy records. */
+  leaseId?: string;
 }
 
 export interface PersistedError {
@@ -448,7 +450,8 @@ export function isPersistedError(v: unknown): v is PersistedError {
 }
 
 export function isExecutionFence(v: unknown): v is ExecutionFence {
-  return isRecord(v) && isString(v.ownerId) && isNumber(v.fence);
+  return isRecord(v) && isString(v.ownerId) && isNumber(v.fence) &&
+    (v.leaseId === undefined || isNonEmptyString(v.leaseId));
 }
 
 export function isRunSource(v: unknown): v is RunSource {

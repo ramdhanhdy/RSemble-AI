@@ -217,6 +217,11 @@ export function GlobalExecutionStrip({ view }: { view: StripViewModel | null }):
       <span aria-hidden="true" className="min-w-0 flex-1 truncate font-mono text-xs text-text">
         {view.caption}
       </span>
+      {view.status === "other-tab" && (
+        <span data-execution-guidance="" className="max-w-[14rem] shrink-0 truncate text-[11px] text-text-muted">
+          Open the owning execution or wait for lease expiry.
+        </span>
+      )}
       <span className="sr-only">{view.caption}</span>
       {view.elapsedMs !== null && (
         <span className="shrink-0 font-mono text-xs tabular-nums text-text-muted">

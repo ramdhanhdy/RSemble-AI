@@ -129,7 +129,7 @@ export default function RSemble() {
   const runRepo = useRunRepository();
   const comparePreflightRef = useRef<((current: StudioState) => ReturnType<typeof evaluateComparePreflight>) | null>(null);
   const recorder = useMemo(
-    () => (runRepo ? createRunRecorder(runRepo) : null),
+    () => (runRepo ? createRunRecorder(runRepo, undefined, { enforceLease: true }) : null),
     [runRepo],
   );
   const runController = useMemo(

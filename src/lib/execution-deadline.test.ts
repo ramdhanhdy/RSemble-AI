@@ -10,6 +10,7 @@ import {
   isUserAbort,
   timeoutErrorFromSignal,
   type DeadlineTimers,
+  runWithExecutionDeadlines,
 } from "./execution-deadline";
 
 /** Deterministic clock + timer queue; no wall-clock sleeps or fake timer globals. */
@@ -289,5 +290,91 @@ describe("createStreamWatchdog", () => {
     expect(timers.pending()).toBe(0);
     timers.advance(2000);
     expect(watchdog.signal.aborted).toBe(false);
+  });
+});
+
+
+describe("provider operation boundaries", () => {
+  it("times out a request that never reaches response headers", async () => {
+    const timers = new ManualTimers();
+    let requestSignal: AbortSignal | undefined;
+    const pending = runWithExecutionDeadlines(
+      (signal) => {
+        requestSignal = signal;
+        return new Promise<string>(() => {});
+      },
+      {
+        ...metadata,
+        connectMs: 100,
+        now: timers.now,
+        timers,
+      },
+    );
+
+    timers.advance(99);
+    expect(requestSignal?.aborted).toBe(false);
+    timers.advance(1);
+    await expect(pending).rejects.toMatchObject({ kind: "connect_timeout", configuredDurationMs: 100 });
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("stops the connect clock at response headers while the overall clock remains active", async () => {
+    const timers = new ManualTimers();
+    let markHeaders!: () => void;
+    let finish!: (value: string) => void;
+    const pending = runWithExecutionDeadlines(
+      (_signal, onHeadersReady) => {
+        markHeaders = onHeadersReady;
+        return new Promise<string>((resolve) => { finish = resolve; });
+      },
+      {
+        ...metadata,
+        connectMs: 10,
+        overallMs: 100,
+        now: timers.now,
+        timers,
+      },
+    );
+    markHeaders();
+    timers.advance(50);
+    expect(timers.pending()).toBe(1); // only overall remains
+    finish("headers + body");
+    await expect(pending).resolves.toBe("headers + body");
+  });
+
+  it("starts inactivity at headers and preserves an independent overall ceiling", async () => {
+    const timers = new ManualTimers();
+    let resolveHeaders!: () => void;
+    const headersReady = new Promise<void>((resolve) => { resolveHeaders = resolve; });
+    const watchdog = createStreamWatchdog({
+      ...metadata,
+      inactivityMs: 20,
+      overallMs: 60,
+      headersReady,
+      now: timers.now,
+      timers,
+    });
+
+    timers.advance(30);
+    expect(watchdog.signal.aborted).toBe(false);
+    resolveHeaders();
+    await Promise.resolve();
+    timers.advance(19);
+    expect(watchdog.signal.aborted).toBe(false);
+    timers.advance(1);
+    expect(timeoutErrorFromSignal(watchdog.signal)?.kind).toBe("stream_inactivity_timeout");
+    watchdog.cleanup();
+
+    const overall = createStreamWatchdog({
+      ...metadata,
+      inactivityMs: 100,
+      overallMs: 60,
+      headersReady: new Promise<void>(() => {}),
+      now: timers.now,
+      timers,
+    });
+    timers.advance(60);
+    expect(timeoutErrorFromSignal(overall.signal)?.kind).toBe("overall_timeout");
+    overall.cleanup();
   });
 });

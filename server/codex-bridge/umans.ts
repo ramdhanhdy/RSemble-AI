@@ -100,12 +100,34 @@ export async function handleOpenAICompatibleProxy(
   }
 
   const ctrl = new AbortController();
-  let timeout = setTimeout(() => ctrl.abort(), timeoutMs);
-  const resetTimeout = () => {
+  let responseClosed = false;
+  let timeout: ReturnType<typeof setTimeout> | null = setTimeout(() => ctrl.abort(), timeoutMs);
+  const clearUpstreamTimeout = () => {
+    if (timeout === null) return;
     clearTimeout(timeout);
+    timeout = null;
+  };
+  const resetTimeout = () => {
+    if (responseClosed || ctrl.signal.aborted) {
+      clearUpstreamTimeout();
+      return;
+    }
+    if (timeout !== null) clearTimeout(timeout);
     timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   };
-  res.on("close", () => ctrl.abort());
+  // A browser navigating away must not leave a watchdog alive until the full
+  // timeout. Abort the upstream and clear the timer immediately; cleanup in
+  // finally also removes this listener on every normal/error path.
+  const onResponseClose = () => {
+    responseClosed = true;
+    clearUpstreamTimeout();
+    ctrl.abort();
+  };
+  res.once("close", onResponseClose);
+  const cleanup = () => {
+    clearUpstreamTimeout();
+    res.removeListener("close", onResponseClose);
+  };
 
   // Build upstream headers — omit Authorization entirely when blank so we
   // never send "Authorization: Bearer " to an optional-auth upstream.
@@ -126,12 +148,16 @@ export async function handleOpenAICompatibleProxy(
       signal: ctrl.signal,
       redirect: "manual",
     });
-    // After headers, the same generous clock becomes a stream-inactivity
+    if (responseClosed) {
+      cleanup();
+      return;
+    }
+    // After headers, the same request clock becomes a stream-inactivity
     // watchdog and resets only when upstream bytes arrive. Healthy long SSE
     // responses therefore survive indefinitely while a stalled stream ends.
     resetTimeout();
   } catch (err) {
-    clearTimeout(timeout);
+    cleanup();
     if (err instanceof Error && err.name === "AbortError") {
       if (res.writableEnded) return;
       sendJson(res, 504, {
@@ -149,6 +175,7 @@ export async function handleOpenAICompatibleProxy(
 
   // Reject upstream redirects — never follow with credentials to a different origin.
   if (upstream.status >= 300 && upstream.status < 400) {
+    cleanup();
     sendJson(res, 502, {
       error: {
         message: `Upstream ${deps.providerLabel} returned a redirect — refusing to follow.`,
@@ -168,7 +195,7 @@ export async function handleOpenAICompatibleProxy(
   res.writeHead(upstream.status, { "Content-Type": contentType });
 
   if (!upstream.body) {
-    clearTimeout(timeout);
+    cleanup();
     res.end();
     return;
   }
@@ -191,7 +218,7 @@ export async function handleOpenAICompatibleProxy(
     // Client disconnected or upstream aborted after headers were sent.
     completedNormally = false;
   } finally {
-    clearTimeout(timeout);
+    cleanup();
     if (sseState && completedNormally && !res.writableEnded) {
       if (needsSseSeparator) res.write("\n\n");
       if (shouldAppendDone(sseState, true)) res.write(DONE_SENTINEL);

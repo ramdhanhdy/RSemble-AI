@@ -76,12 +76,14 @@ export class LeaseError extends Error {
 export interface ExecutionLease {
   /** Acquire ownership. Returns the lease info or throws if contested. */
   acquire(options?: { kind?: LeaseKind; executionId?: string }): Promise<LeaseInfo>;
-  /** Renew the lease (heartbeat). Must be called periodically while active. */
-  renew(): Promise<LeaseInfo>;
-  /** Release ownership voluntarily. */
-  release(): Promise<void>;
+  /** Renew the lease (heartbeat). Must be called periodically while active.
+   * When a token is supplied, renewal is fenced to that exact acquisition.
+   * This prevents a delayed heartbeat from reviving/replacing a newer lease. */
+  renew(token?: LeaseInfo): Promise<LeaseInfo>;
+  /** Release ownership voluntarily. A supplied token makes release stale-safe. */
+  release(token?: LeaseInfo): Promise<void>;
   /** Verify the current lease is still valid and owned by us. */
-  verify(): Promise<LeaseInfo | null>;
+  verify(token?: LeaseInfo): Promise<LeaseInfo | null>;
   /** Check if we are the current owner. */
   isOwner(): Promise<boolean>;
   /** Get the current lease info (may be owned by another tab). */
@@ -121,6 +123,23 @@ interface BroadcastLike {
 /** Type guard: a lease is live if it exists and has not expired. */
 function isLive(lease: LeaseInfo | null, now: number): lease is LeaseInfo {
   return lease !== null && lease.expiresAt > now;
+}
+
+/**
+ * Match an acquisition token, not merely an owner identity. ownerId alone is
+ * deliberately insufficient: the same tab can acquire again after expiry and
+ * a delayed callback from the previous controller must not touch the new run.
+ */
+function matchesToken(
+  lease: LeaseInfo | null,
+  token: { ownerId: string; fence?: number; leaseId?: string } | null,
+): lease is LeaseInfo {
+  if (!lease || !token) return false;
+  return (
+    lease.ownerId === token.ownerId &&
+    (token.fence === undefined || lease.fence === token.fence) &&
+    (token.leaseId === undefined || lease.leaseId === token.leaseId)
+  );
 }
 
 /** Generate a random owner ID, falling back when crypto.randomUUID is absent. */
@@ -207,7 +226,15 @@ async function sweepInterrupted(runRepo: RunRepository, lease: LeaseInfo, now: (
       completedAt: timestamp,
     };
     try {
-      await runRepo.update(interrupted, summaryUpdate, record.revision);
+      // The lease may be reclaimed while the sweep is in progress. Pass the
+      // current fence into the repository so the state transition itself is
+      // rejected transactionally if this recovery controller went stale.
+      await runRepo.update(interrupted, summaryUpdate, record.revision, {
+        ownerId: lease.ownerId,
+        fence: lease.fence,
+        ...(lease.leaseId ? { leaseId: lease.leaseId } : {}),
+        checkedAt: timestamp,
+      });
       recovered++;
     } catch {
       // Stale revision or validation error: another tab likely touched it.
@@ -334,47 +361,67 @@ export function createExecutionLease(
     return lease;
   }
 
-  async function renew(): Promise<LeaseInfo> {
+  async function renew(token?: LeaseInfo): Promise<LeaseInfo> {
     db.assertWritable();
+    const expected = token ?? (currentOwner && currentLeaseId
+      ? { ownerId: currentOwner, leaseId: currentLeaseId }
+      : null);
     const lease = await db.transaction("rw", db.storageMeta, async () => {
       const t = now();
       const existing = await readLease(db);
-      if (!existing || existing.ownerId !== currentOwner || (currentLeaseId !== null && existing.leaseId !== currentLeaseId)) {
-        throw new LeaseError("expired", "Cannot renew: lease is not held by this tab", existing);
+      // An expired token is no longer allowed to revive itself. A takeover may
+      // happen immediately after this check, so this check and the write stay
+      // in one IndexedDB transaction.
+      if (!matchesToken(existing, expected) || !isLive(existing, t)) {
+        throw new LeaseError("expired", "Cannot renew: lease token is no longer current", existing);
       }
       const renewed: LeaseInfo = { ...existing, heartbeatAt: t, expiresAt: t + ttl };
       await db.storageMeta.put({ key: LEASE_KEY, value: renewed } satisfies StorageMetaRow);
       return renewed;
     });
+    // Only update local ownership if this was still the instance's current
+    // token. A delayed heartbeat from an old controller must not clobber a new
+    // controller's token or timer state.
+    if (!token || (currentOwner === token.ownerId && currentLeaseId === token.leaseId)) {
+      currentOwner = lease.ownerId;
+      currentLeaseId = lease.leaseId ?? null;
+    }
     broadcast({ type: "renewed", lease });
     emit({ status: "owned", lease });
     return lease;
   }
 
-  async function release(): Promise<void> {
+  async function release(token?: LeaseInfo): Promise<void> {
     db.assertWritable();
+    const expected = token ?? (currentOwner && currentLeaseId
+      ? { ownerId: currentOwner, leaseId: currentLeaseId }
+      : null);
+    let released = false;
     await db.transaction("rw", db.storageMeta, async () => {
       const existing = await readLease(db);
-      if (!existing || existing.ownerId !== currentOwner || (currentLeaseId !== null && existing.leaseId !== currentLeaseId)) {
-        return; // stale owner/token cannot release a newer lease
-      }
+      if (!matchesToken(existing, expected)) return; // stale token cannot release a newer lease
       // Remove the active lease but keep the monotonic fence counter so the
       // next acquisition still issues a strictly-greater fence.
       await db.storageMeta.delete(LEASE_KEY);
+      released = true;
     });
-    currentOwner = null;
-    currentLeaseId = null;
-    broadcast({ type: "released" });
-    emit({ status: "free" });
+    if (released && (!token || currentLeaseId === token.leaseId)) {
+      currentOwner = null;
+      currentLeaseId = null;
+    }
+    if (released) {
+      broadcast({ type: "released" });
+      emit({ status: "free" });
+    }
   }
 
-  async function verify(): Promise<LeaseInfo | null> {
+  async function verify(token?: LeaseInfo): Promise<LeaseInfo | null> {
     const existing = await readLease(db);
     const t = now();
-    if (isLive(existing, t) && existing.ownerId === currentOwner && (currentLeaseId === null || existing.leaseId === currentLeaseId)) {
-      return existing;
-    }
-    return null;
+    if (!isLive(existing, t)) return null;
+    if (token) return matchesToken(existing, token) ? existing : null;
+    if (currentOwner === null || currentLeaseId === null) return null;
+    return matchesToken(existing, { ownerId: currentOwner, leaseId: currentLeaseId }) ? existing : null;
   }
 
   async function isOwner(): Promise<boolean> {
@@ -529,35 +576,47 @@ export class InMemoryExecutionLease implements ExecutionLease {
     return lease;
   }
 
-  async renew(): Promise<LeaseInfo> {
+  async renew(token?: LeaseInfo): Promise<LeaseInfo> {
     const t = this.now();
     const existing = this.store.lease;
-    if (!existing || existing.ownerId !== this.currentOwner || (this.currentLeaseId !== null && existing.leaseId !== this.currentLeaseId)) {
-      throw new LeaseError("expired", "Cannot renew: lease not held", existing);
+    const expected = token ?? (this.currentOwner && this.currentLeaseId
+      ? { ownerId: this.currentOwner, leaseId: this.currentLeaseId }
+      : null);
+    if (!matchesToken(existing, expected) || !isLive(existing, t)) {
+      throw new LeaseError("expired", "Cannot renew: lease token is no longer current", existing);
     }
     const renewed: LeaseInfo = { ...existing, heartbeatAt: t, expiresAt: t + this.ttl };
     this.store.lease = renewed;
+    if (!token || this.currentLeaseId === token.leaseId) {
+      this.currentOwner = renewed.ownerId;
+      this.currentLeaseId = renewed.leaseId ?? null;
+    }
     this.notify();
     return renewed;
   }
 
-  async release(): Promise<void> {
+  async release(token?: LeaseInfo): Promise<void> {
     const existing = this.store.lease;
-    if (!existing || existing.ownerId !== this.currentOwner || (this.currentLeaseId !== null && existing.leaseId !== this.currentLeaseId)) return;
+    const expected = token ?? (this.currentOwner && this.currentLeaseId
+      ? { ownerId: this.currentOwner, leaseId: this.currentLeaseId }
+      : null);
+    if (!matchesToken(existing, expected)) return;
     this.store.lease = null;
     // fence counter persists for monotonic takeover.
-    this.currentOwner = null;
-    this.currentLeaseId = null;
+    if (!token || this.currentLeaseId === token.leaseId) {
+      this.currentOwner = null;
+      this.currentLeaseId = null;
+    }
     this.notify();
   }
 
-  async verify(): Promise<LeaseInfo | null> {
+  async verify(token?: LeaseInfo): Promise<LeaseInfo | null> {
     const existing = this.store.lease;
     const t = this.now();
-    if (isLive(existing, t) && existing.ownerId === this.currentOwner && (this.currentLeaseId === null || existing.leaseId === this.currentLeaseId)) {
-      return existing;
-    }
-    return null;
+    if (!isLive(existing, t)) return null;
+    if (token) return matchesToken(existing, token) ? existing : null;
+    if (this.currentOwner === null || this.currentLeaseId === null) return null;
+    return matchesToken(existing, { ownerId: this.currentOwner, leaseId: this.currentLeaseId }) ? existing : null;
   }
 
   async isOwner(): Promise<boolean> {
