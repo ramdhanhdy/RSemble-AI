@@ -5,10 +5,13 @@
 // clear, unavailable storage, legacy migration, and redaction inputs.
 // =============================================================================
 
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import {
   createCredentialStore,
   legacyStorageKey,
+  readStaticEnvValue,
   rememberedStorageKey,
   type CredentialStoreDeps,
 } from "./credential-store";
@@ -173,5 +176,156 @@ describe("credentialStore — codex has no UI key", () => {
     const store = createCredentialStore(deps);
     expect(store.get("chatgpt-codex")).toBe("");
     expect(store.configuredValues()).not.toContain("http://127.0.0.1:8787");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lossless legacy migration — review fix 2
+// ---------------------------------------------------------------------------
+
+describe("credentialStore — lossless migration under storage failures (review fix 2)", () => {
+  it("retains the legacy key and keeps resolving it when the v2 write throws", () => {
+    let removeCalled = false;
+    const deps: CredentialStoreDeps = {
+      readEnv: () => undefined,
+      readStorage: (key) => (key === legacyStorageKey("openrouter") ? "legacy-key" : null),
+      writeStorage: () => {
+        throw new Error("QuotaExceededError");
+      },
+      removeStorage: () => {
+        removeCalled = true;
+      },
+    };
+    const store = createCredentialStore(deps);
+    expect(store.get("openrouter")).toBe("legacy-key");
+    expect(store.persistence("openrouter")).toBe("remembered");
+    expect(removeCalled).toBe(false); // never removed without a verified v2
+  });
+
+  it("retains the legacy key when the v2 write is a silent no-op", () => {
+    let removeCalled = false;
+    const deps: CredentialStoreDeps = {
+      readEnv: () => undefined,
+      readStorage: (key) => (key === legacyStorageKey("openrouter") ? "legacy-key" : null),
+      writeStorage: () => {
+        // No-op: never actually persists.
+      },
+      removeStorage: () => {
+        removeCalled = true;
+      },
+    };
+    const store = createCredentialStore(deps);
+    expect(store.get("openrouter")).toBe("legacy-key");
+    expect(removeCalled).toBe(false);
+    // A later call retries migration; still no loss.
+    expect(store.get("openrouter")).toBe("legacy-key");
+    expect(removeCalled).toBe(false);
+  });
+
+  it("does not lose the legacy value when the v2 read-back cannot verify", () => {
+    let reads = 0;
+    const deps: CredentialStoreDeps = {
+      readEnv: () => undefined,
+      readStorage: (key) => {
+        if (key === legacyStorageKey("openrouter")) return "legacy-key";
+        reads += 1;
+        if (reads === 1) throw new Error("storage read failed");
+        return null; // v2 write appeared to succeed but cannot be confirmed
+      },
+      writeStorage: () => {},
+      removeStorage: () => {},
+    };
+    const store = createCredentialStore(deps);
+    expect(store.get("openrouter")).toBe("legacy-key");
+  });
+
+  it("retries migration on a later call after a transient write failure", () => {
+    let writeAttempts = 0;
+    const storage: Record<string, string> = {
+      [legacyStorageKey("openrouter")]: "legacy-key",
+    };
+    const deps: CredentialStoreDeps = {
+      readEnv: () => undefined,
+      readStorage: (key) => storage[key] ?? null,
+      writeStorage: (key, value) => {
+        writeAttempts += 1;
+        if (writeAttempts === 1) throw new Error("transient");
+        storage[key] = value;
+      },
+      removeStorage: (key) => {
+        delete storage[key];
+      },
+    };
+    const store = createCredentialStore(deps);
+    // First call: write fails; legacy still resolves.
+    expect(store.get("openrouter")).toBe("legacy-key");
+    expect(storage[legacyStorageKey("openrouter")]).toBe("legacy-key");
+    // Second call: migration retries and completes.
+    expect(store.get("openrouter")).toBe("legacy-key");
+    expect(storage[rememberedStorageKey("openrouter")]).toBe("legacy-key");
+    expect(storage[legacyStorageKey("openrouter")]).toBeUndefined();
+  });
+
+  it("keeps resolving via a verified v2 after a failed legacy removal", () => {
+    const storage: Record<string, string> = {
+      [legacyStorageKey("openrouter")]: "legacy-key",
+    };
+    const deps: CredentialStoreDeps = {
+      readEnv: () => undefined,
+      readStorage: (key) => storage[key] ?? null,
+      writeStorage: (key, value) => {
+        storage[key] = value;
+      },
+      removeStorage: (key) => {
+        if (key === legacyStorageKey("openrouter")) throw new Error("remove denied");
+        delete storage[key];
+      },
+    };
+    const store = createCredentialStore(deps);
+    expect(store.get("openrouter")).toBe("legacy-key");
+    expect(storage[rememberedStorageKey("openrouter")]).toBe("legacy-key");
+    // v2 is verified, so resolution prefers it even though legacy removal failed.
+    expect(storage[legacyStorageKey("openrouter")]).toBe("legacy-key");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Static environment resolution — review fix 1
+// ---------------------------------------------------------------------------
+
+describe("credentialStore — static environment resolution (review fix 1)", () => {
+  /** Strip comments so prose mentioning the pattern cannot false-positive. */
+  function codeOnly(source: string): string {
+    return source
+      .split("\n")
+      .filter((line) => {
+        const t = line.trim();
+        return !t.startsWith("//") && !t.startsWith("*") && t.length > 0;
+      })
+      .join("\n");
+  }
+
+  it("production credential resolution never uses dynamic import.meta.env property access", () => {
+    const source = readFileSync(join(process.cwd(), "src/lib/credentials/credential-store.ts"), "utf8");
+    const code = codeOnly(source);
+    expect(code).not.toMatch(/import\.meta\.env\s*\[/);
+    expect(code).not.toMatch(/import\.meta\.env\s+as\s+Record/);
+  });
+
+  it("credential redaction never uses dynamic import.meta.env property access", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/lib/persistence/error-redaction.ts"),
+      "utf8",
+    );
+    const code = codeOnly(source);
+    expect(code).not.toMatch(/import\.meta\.env\s*\[/);
+    expect(code).not.toMatch(/import\.meta\.env\s+as\s+Record/);
+  });
+
+  it("readStaticEnvValue resolves each provider key via explicit references", () => {
+    vi.stubEnv("VITE_OPENROUTER_KEY", "sk-static-123");
+    expect(readStaticEnvValue("VITE_OPENROUTER_KEY")).toBe("sk-static-123");
+    expect(readStaticEnvValue("VITE_UMANS_API_KEY")).toBeUndefined();
+    expect(readStaticEnvValue("SOME_UNKNOWN_KEY")).toBeUndefined();
   });
 });

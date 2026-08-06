@@ -21,6 +21,7 @@ import { nativeReasoningPayload } from "./reasoning";
 import { credentialStore } from "../credentials/credential-store";
 import { bridgeAuthHeaders } from "./bridge-auth";
 import { buildBridgeRequestBody } from "./bridge-body";
+import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
 import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 
@@ -136,26 +137,12 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
   }
 
   async function parseError(res: Response, providerId: ProviderId): Promise<ProviderError> {
-    // Bound the body read: oversized/hostile upstream bodies must never enter
-    // provider errors, logs, or persisted evidence (Plan 003 workstream D).
+    // Bound the body read, then apply the shared provider-error policy: only
+    // recognized structured messages survive (bounded and credential-redacted);
+    // unknown JSON, plain text, and HTML bodies become a generic status error.
+    // The raw body never reaches ProviderError.message (review fix 3).
     const rawBody = await readBoundedResponseText(res).catch(() => "");
-    let detail = "";
-    if (rawBody) {
-      try {
-        const body = JSON.parse(rawBody) as { error?: { message?: string } };
-        // Known error shape: preserve the message (already bounded).
-        detail = typeof body?.error?.message === "string" ? body.error.message : "";
-      } catch {
-        // Plain-text upstream error (e.g. gateway/proxy pages): preserve the
-        // bounded excerpt verbatim; never serialize arbitrary JSON.
-        detail = rawBody;
-      }
-    }
-    return new ProviderError(
-      detail || `${label} request failed (HTTP ${res.status}).`,
-      providerId,
-      res.status
-    );
+    return new ProviderError(providerErrorDetail(rawBody, label, res.status), providerId, res.status);
   }
 
   /** Shared model-catalog probe — used by testConnection, async readiness, and listModels. */

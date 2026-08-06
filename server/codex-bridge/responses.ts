@@ -5,6 +5,7 @@
 import http from "node:http";
 import { once } from "node:events";
 import { getValidToken } from "./auth.js";
+import { sanitizeProviderErrorMessage } from "../../shared/error-policy.js";
 import { readBoundedResponseText } from "../../shared/http.js";
 
 export interface ChatMessageInput {
@@ -220,21 +221,12 @@ export async function handleCompletions(
     }
 
     if (!upstreamRes.ok) {
-      // Bounded read + known error shapes only; never serialize arbitrary
-      // upstream JSON into responses or logs (Plan 003 workstream D).
-      let errorText = "";
-      let raw = "";
-      try {
-        raw = await readBoundedResponseText(upstreamRes);
-        const json = JSON.parse(raw) as {
-          error?: { message?: string };
-          detail?: string;
-        };
-        errorText = typeof json?.error?.message === "string" ? json.error.message
-          : typeof json?.detail === "string" ? json.detail : "";
-      } catch {
-        errorText = raw;
-      }
+      // Shared provider-error policy (review fix 3): recognized structured
+      // messages are bounded and redacted; unknown JSON, plain text, and HTML
+      // bodies become a generic status error. The raw upstream body never
+      // reaches the response or logs.
+      const raw = await readBoundedResponseText(upstreamRes).catch(() => "");
+      const errorText = sanitizeProviderErrorMessage(raw, "Codex", upstreamRes.status);
 
       sendJson(res, upstreamRes.status, {
         error: {

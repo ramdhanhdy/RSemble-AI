@@ -14,6 +14,7 @@ import { setProviderCapabilities } from "./capabilities";
 import { nativeReasoningPayload } from "./reasoning";
 import { bridgeAuthHeaders } from "./bridge-auth";
 import { buildBridgeRequestBody } from "./bridge-body";
+import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
 
 function getBridgeUrl(): string {
@@ -37,23 +38,13 @@ function buildBody(payload: Record<string, unknown>, hasParts: boolean): string 
   return buildBridgeRequestBody(payload, "chatgpt-codex", hasParts);
 }
 
-/** Bounded error parse: known error.message shape, else generic status text. */
+/** Bounded error parse under the shared provider-error policy (review fix 3):
+ *  recognized structured messages are bounded and credential-redacted; unknown
+ *  JSON, plain text, and HTML bodies become a generic status error. The raw
+ *  body never reaches ProviderError.message. */
 async function parseBridgeError(res: Response, label: string): Promise<ProviderError> {
   const raw = await readBoundedResponseText(res).catch(() => "");
-  let detail = "";
-  if (raw) {
-    try {
-      const body = JSON.parse(raw) as { error?: { message?: string } };
-      detail = typeof body?.error?.message === "string" ? body.error.message : "";
-    } catch {
-      detail = raw;
-    }
-  }
-  return new ProviderError(
-    detail || `${label} request failed (HTTP ${res.status}).`,
-    "chatgpt-codex",
-    res.status
-  );
+  return new ProviderError(providerErrorDetail(raw, label, res.status), "chatgpt-codex", res.status);
 }
 
 export const chatgptCodexProvider: LLMProvider = {

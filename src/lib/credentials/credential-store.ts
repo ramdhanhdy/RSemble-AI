@@ -4,6 +4,16 @@
 // Default singleton plus an injectable factory so tests can exercise
 // environment / session / remembered precedence, migration, and
 // unavailable-storage behavior deterministically without a real browser.
+//
+// Review fix 1: production environment resolution uses explicit static
+// `import.meta.env.VITE_*` references (never dynamic property access), so Vite
+// can statically replace values at build time. The injectable environment
+// reader seam remains for unit tests.
+//
+// Review fix 2: legacy migration is lossless — the legacy key is removed only
+// after a verified v2 write (or when a valid v2 already exists). Failed or
+// incomplete migration retains the legacy key, keeps resolving it as the
+// active remembered credential, and retries on later calls.
 // =============================================================================
 
 import type { ProviderId } from "../providers/types";
@@ -28,6 +38,35 @@ const ENV_KEYS: Record<ProviderId, string> = {
 /** Legacy environment aliases kept for redaction coverage. */
 const LEGACY_ENV_KEYS: readonly string[] = ["VITE_UMANS_API_KEY"];
 
+/**
+ * Static environment lookup shared with credential redaction. Uses an explicit
+ * switch over `import.meta.env.VITE_*` member accesses — never dynamic
+ * `import.meta.env[key]` property access — so Vite statically replaces each
+ * reference at build time and tests can still stub values via `vi.stubEnv`.
+ */
+export function readStaticEnvValue(key: string): string | undefined {
+  switch (key) {
+    case "VITE_OPENROUTER_KEY":
+      return import.meta.env.VITE_OPENROUTER_KEY;
+    case "VITE_GEMINI_KEY":
+      return import.meta.env.VITE_GEMINI_KEY;
+    case "VITE_DEEPSEEK_KEY":
+      return import.meta.env.VITE_DEEPSEEK_KEY;
+    case "VITE_COMMANDCODE_KEY":
+      return import.meta.env.VITE_COMMANDCODE_KEY;
+    case "VITE_CLINEPASS_KEY":
+      return import.meta.env.VITE_CLINEPASS_KEY;
+    case "VITE_UMANS_KEY":
+      return import.meta.env.VITE_UMANS_KEY;
+    case "VITE_9ROUTER_KEY":
+      return import.meta.env.VITE_9ROUTER_KEY;
+    case "VITE_UMANS_API_KEY":
+      return import.meta.env.VITE_UMANS_API_KEY;
+    default:
+      return undefined;
+  }
+}
+
 export const REMEMBERED_KEY_VERSION = REMEMBERED_KEY_SUFFIX;
 
 export interface CredentialStoreDeps {
@@ -38,7 +77,7 @@ export interface CredentialStoreDeps {
 }
 
 const defaultDeps: CredentialStoreDeps = {
-  readEnv: (key) => (import.meta.env as Record<string, unknown>)[key] as string | undefined,
+  readEnv: readStaticEnvValue,
   readStorage: (key) => {
     try {
       return globalThis.localStorage?.getItem(key) ?? null;
@@ -76,21 +115,70 @@ function trim(value: string | null | undefined): string {
 
 export function createCredentialStore(deps: CredentialStoreDeps = defaultDeps): CredentialStore {
   const session = new Map<ProviderId, string>();
-  let migrated = false;
+  /** Providers whose legacy handling is settled (migrated or confirmed absent). */
+  const settled = new Set<ProviderId>();
 
-  /** Idempotent, deliberate legacy migration: copy each legacy key into the
-   *  versioned remembered store once, then remove the legacy key. Never logs
-   *  values. A pre-existing versioned value is never overwritten. */
-  function migrateLegacy(): void {
-    if (migrated) return;
-    migrated = true;
-    for (const id of Object.keys(ENV_KEYS) as ProviderId[]) {
-      const legacy = trim(deps.readStorage(legacyStorageKey(id)));
-      if (legacy.length === 0) continue;
-      const v2 = trim(deps.readStorage(rememberedStorageKey(id)));
-      if (v2.length === 0) deps.writeStorage(rememberedStorageKey(id), legacy);
-      deps.removeStorage(legacyStorageKey(id));
+  /**
+   * Lossless migration for one provider. The legacy key is removed only after
+   * a verified v2 value exists (either written and read back just now, or
+   * already present). Any failure keeps the provider unsettled so a later
+   * call/session retries; resolution keeps falling back to the legacy value.
+   * Values are never logged.
+   */
+  function migrateProvider(providerId: ProviderId): void {
+    if (settled.has(providerId)) return;
+    let legacy = "";
+    try {
+      legacy = trim(deps.readStorage(legacyStorageKey(providerId)));
+    } catch {
+      return; // cannot inspect storage — retry later
     }
+    if (legacy.length === 0) {
+      settled.add(providerId);
+      return;
+    }
+    let v2 = "";
+    try {
+      v2 = trim(deps.readStorage(rememberedStorageKey(providerId)));
+    } catch {
+      return; // cannot inspect storage — retry later
+    }
+    if (v2.length > 0) {
+      // A valid v2 value already exists; the legacy key is obsolete. Removal is
+      // best-effort — resolution already prefers v2.
+      try {
+        deps.removeStorage(legacyStorageKey(providerId));
+      } catch {
+        // Stale legacy key remains; harmless and never resolved over v2.
+      }
+      settled.add(providerId);
+      return;
+    }
+    // Attempt to persist and verify the copy before touching the legacy key.
+    try {
+      deps.writeStorage(rememberedStorageKey(providerId), legacy);
+    } catch {
+      return; // write failed — legacy retained, retry later
+    }
+    let written = "";
+    try {
+      written = trim(deps.readStorage(rememberedStorageKey(providerId)));
+    } catch {
+      return; // cannot verify — legacy retained, retry later
+    }
+    if (written !== legacy) {
+      return; // no-op or wrong write — legacy retained, retry later
+    }
+    try {
+      deps.removeStorage(legacyStorageKey(providerId));
+    } catch {
+      // Removal failed but the v2 copy is verified — resolution uses v2.
+    }
+    settled.add(providerId);
+  }
+
+  function migrateLegacy(): void {
+    for (const id of Object.keys(ENV_KEYS) as ProviderId[]) migrateProvider(id);
   }
 
   function envValue(providerId: ProviderId): string {
@@ -99,7 +187,15 @@ export function createCredentialStore(deps: CredentialStoreDeps = defaultDeps): 
   }
 
   function rememberedValue(providerId: ProviderId): string {
-    return trim(deps.readStorage(rememberedStorageKey(providerId)));
+    // v2 wins; fall back to the legacy key while migration is incomplete so a
+    // failed migration never loses the user's remembered credential.
+    try {
+      const v2 = trim(deps.readStorage(rememberedStorageKey(providerId)));
+      if (v2.length > 0) return v2;
+      return trim(deps.readStorage(legacyStorageKey(providerId)));
+    } catch {
+      return "";
+    }
   }
 
   return {
@@ -126,6 +222,11 @@ export function createCredentialStore(deps: CredentialStoreDeps = defaultDeps): 
       session.delete(providerId);
       try {
         deps.removeStorage(rememberedStorageKey(providerId));
+      } catch {
+        // Storage unavailable — nothing to remove.
+      }
+      try {
+        deps.removeStorage(legacyStorageKey(providerId));
       } catch {
         // Storage unavailable — nothing to remove.
       }

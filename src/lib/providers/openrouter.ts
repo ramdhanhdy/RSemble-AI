@@ -19,6 +19,7 @@ import { parseOpenRouterPricing, setModelPricing } from "./pricing";
 import type { ProviderCompletionResult, ProviderStreamEvent, UsageBreakdown } from "./types";
 import { parseOpenAICompatibleUsage, parseProviderReportedCost } from "./usage";
 import { credentialStore } from "../credentials/credential-store";
+import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
@@ -48,8 +49,8 @@ export const openrouterProvider: LLMProvider = {
         signal,
       });
       if (res.ok) return { ok: true };
-      const body = await res.json().catch(() => null) as { error?: { message?: string } } | null;
-      return { ok: false, reason: body?.error?.message ?? `OpenRouter returned HTTP ${res.status}.` };
+      const raw = await readBoundedResponseText(res).catch(() => "");
+      return { ok: false, reason: providerErrorDetail(raw, "OpenRouter", res.status) };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") throw err;
       return { ok: false, reason: "Network error reaching OpenRouter." };
@@ -101,20 +102,13 @@ export const openrouterProvider: LLMProvider = {
     }
 
     if (!res.ok) {
-      // Bounded read + known error shape only; never serialize arbitrary
-      // upstream JSON into provider errors (Plan 003 workstream D).
+      // Shared provider-error policy (review fix 3): recognized structured
+      // messages are bounded and credential-redacted; unknown JSON, plain
+      // text, and HTML bodies become a generic status error. The raw body
+      // never reaches ProviderError.message.
       const raw = await readBoundedResponseText(res).catch(() => "");
-      let detail = "";
-      if (raw) {
-        try {
-          const body = JSON.parse(raw) as { error?: { message?: string } };
-          detail = typeof body?.error?.message === "string" ? body.error.message : "";
-        } catch {
-          detail = raw;
-        }
-      }
       throw new ProviderError(
-        detail || `OpenRouter request failed (HTTP ${res.status}).`,
+        providerErrorDetail(raw, "OpenRouter", res.status),
         "openrouter",
         res.status
       );
@@ -163,20 +157,13 @@ export const openrouterProvider: LLMProvider = {
     }
 
     if (!res.ok) {
-      // Bounded read + known error shape only; never serialize arbitrary
-      // upstream JSON into provider errors (Plan 003 workstream D).
+      // Shared provider-error policy (review fix 3): recognized structured
+      // messages are bounded and credential-redacted; unknown JSON, plain
+      // text, and HTML bodies become a generic status error. The raw body
+      // never reaches ProviderError.message.
       const raw = await readBoundedResponseText(res).catch(() => "");
-      let detail = "";
-      if (raw) {
-        try {
-          const body = JSON.parse(raw) as { error?: { message?: string } };
-          detail = typeof body?.error?.message === "string" ? body.error.message : "";
-        } catch {
-          detail = raw;
-        }
-      }
       throw new ProviderError(
-        detail || `OpenRouter request failed (HTTP ${res.status}).`,
+        providerErrorDetail(raw, "OpenRouter", res.status),
         "openrouter",
         res.status
       );
@@ -229,17 +216,8 @@ export const openrouterProvider: LLMProvider = {
 
     if (!res.ok || !res.body) {
       const raw = await readBoundedResponseText(res).catch(() => "");
-      let detail = "";
-      if (raw) {
-        try {
-          const body = JSON.parse(raw) as { error?: { message?: string } };
-          detail = typeof body?.error?.message === "string" ? body.error.message : "";
-        } catch {
-          detail = raw;
-        }
-      }
       throw new ProviderError(
-        detail || `OpenRouter request failed (HTTP ${res.status}).`,
+        providerErrorDetail(raw, "OpenRouter", res.status),
         "openrouter",
         res.status
       );
@@ -284,17 +262,8 @@ export const openrouterProvider: LLMProvider = {
 
     if (!res.ok || !res.body) {
       const raw = await readBoundedResponseText(res).catch(() => "");
-      let detail = "";
-      if (raw) {
-        try {
-          const body = JSON.parse(raw) as { error?: { message?: string } };
-          detail = typeof body?.error?.message === "string" ? body.error.message : "";
-        } catch {
-          detail = raw;
-        }
-      }
       throw new ProviderError(
-        detail || `OpenRouter request failed (HTTP ${res.status}).`,
+        providerErrorDetail(raw, "OpenRouter", res.status),
         "openrouter",
         res.status
       );

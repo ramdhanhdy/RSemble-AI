@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chatgptCodexProvider } from "./chatgpt-codex";
+import { ProviderError } from "./types";
 import {
   clearModelCapabilities,
   getModelCapabilities,
@@ -128,5 +129,46 @@ describe("chatgptCodexProvider — bridge secret header (Plan 003 C)", () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;
     expect(headers["X-RSemble-Bridge-Secret"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider-error policy — review fix 3
+// ---------------------------------------------------------------------------
+
+describe("chatgptCodexProvider — raw provider bodies never surface (review fix 3)", () => {
+  it("redacts bearer fragments inside a recognized structured message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "401 Bearer sk-codex-leaked-123 rejected" } }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const err = await chatgptCodexProvider
+      .chatCompletion({ model: "gpt-5.6-sol", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).not.toContain("sk-codex-leaked-123");
+    expect((err as ProviderError).message).not.toMatch(/Bearer\s+[^\s,;]+/i);
+  });
+
+  it("maps an HTML bridge error body to a generic status error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(`<html>Bridge error for task "top secret"</html>`, {
+          status: 502,
+          headers: { "Content-Type": "text/html" },
+        }),
+      ),
+    );
+    const err = await chatgptCodexProvider
+      .chatCompletion({ model: "gpt-5.6-sol", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).toBe("ChatGPT (Codex) request failed (HTTP 502).");
   });
 });

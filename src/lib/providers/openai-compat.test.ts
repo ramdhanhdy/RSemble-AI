@@ -30,7 +30,7 @@ function stubKey() {
 }
 
 describe("createOpenAICompatProvider — error preservation", () => {
-  it("preserves plain-text (non-JSON) upstream error bodies as the ProviderError message", async () => {
+  it("maps plain-text (non-JSON) upstream error bodies to a generic status error (review fix 3)", async () => {
     stubKey();
     vi.stubGlobal(
       "fetch",
@@ -46,7 +46,8 @@ describe("createOpenAICompatProvider — error preservation", () => {
       .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ProviderError);
-    expect((err as ProviderError).message).toBe("502 Bad Gateway: upstream timed out");
+    // Raw plain-text bodies never reach ProviderError.message (review fix 3).
+    expect((err as ProviderError).message).toBe("Umans request failed (HTTP 502).");
     expect((err as ProviderError).status).toBe(502);
     expect((err as ProviderError).providerId).toBe("umans");
   });
@@ -543,5 +544,113 @@ describe("createOpenAICompatProvider — encoded body preflight (Plan 003 E)", (
     const stream = provider.chatCompletionStream({ model: "m", messages });
     await expect(stream.next()).rejects.toMatchObject({ name: "ProviderError" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider-error policy — review fix 3
+// ---------------------------------------------------------------------------
+
+describe("createOpenAICompatProvider — raw provider bodies never surface (review fix 3)", () => {
+  function stubConfiguredKey(): void {
+    // Seed a configured credential through the store (env path) so redaction
+    // has a real value to remove.
+    vi.stubEnv("VITE_UMANS_KEY", "sk-configured-umans-123456");
+    resetCredentialStoreForTests();
+  }
+
+  it("redacts a configured key inside a recognized structured message", async () => {
+    stubConfiguredKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "401 invalid key sk-configured-umans-123456" } }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).not.toContain("sk-configured-umans-123456");
+  });
+
+  it("redacts bearer fragments and authorization header values in structured messages", async () => {
+    stubConfiguredKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { message: "Bearer sk-bearer-secret-999 rejected; Authorization: sk-hdr-888" },
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    const message = (err as ProviderError).message;
+    expect(message).not.toContain("sk-bearer-secret-999");
+    expect(message).not.toContain("sk-hdr-888");
+    expect(message).not.toMatch(/Bearer\s+[^\s,;]+/i);
+    expect(message).not.toMatch(/Authorization\s*[:=]\s*[^\s,;]+/i);
+  });
+
+  it("maps an HTML error body to a generic status error without raw content", async () => {
+    stubConfiguredKey();
+    const html = `<html><body>Proxy Error sk-configured-umans-123456 prompt fragment "hello world"</body></html>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("Umans request failed (HTTP 502).");
+  });
+
+  it("maps arbitrary JSON with prompt fragments to a generic status error", async () => {
+    stubConfiguredKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ trace: { request: "summarize the attached prompt" } }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("Umans request failed (HTTP 500).");
+  });
+
+  it("maps a plain-text prompt echo to a generic status error", async () => {
+    stubConfiguredKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response('echo: "user task: summarize the attached prompt"', {
+          status: 503,
+          headers: { "Content-Type": "text/plain" },
+        }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("Umans request failed (HTTP 503).");
   });
 });

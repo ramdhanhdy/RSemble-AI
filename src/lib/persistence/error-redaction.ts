@@ -10,7 +10,7 @@
 // =============================================================================
 
 import { errorMessage } from "../llm-utils";
-import { credentialStore } from "../credentials/credential-store";
+import { credentialStore, readStaticEnvValue } from "../credentials/credential-store";
 import type { PersistedError } from "./run-types";
 
 export const REDACTED = "[REDACTED]";
@@ -40,8 +40,10 @@ export function capUtf8(text: string, maxBytes: number): string {
   return units === text.length ? text : text.slice(0, units);
 }
 
+// Static, explicit environment references only (review fix 1) — never dynamic
+// `import.meta.env[key]` property access.
 function defaultReadEnv(key: string): string | undefined {
-  return (import.meta.env as Record<string, unknown>)[key] as string | undefined;
+  return readStaticEnvValue(key);
 }
 
 /**

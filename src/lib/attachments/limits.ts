@@ -1,10 +1,25 @@
 // =============================================================================
-// Attachment limits — spec §3.1
+// Attachment limits — review fix 4
+//
+// Raw file-count / per-file / aggregate limits are re-exported from the single
+// shared source (`shared/limits.ts`) used by both the web UI and the localhost
+// bridge. Text-character and image-dimension limits are attachment-extraction
+// concerns and stay local to this module.
 // =============================================================================
 
-export const MAX_FILES = 10;
-export const MAX_FILE_BYTES = 20 * 1024 * 1024;        // 20 MB
-export const MAX_TOTAL_BYTES = 40 * 1024 * 1024;       // 40 MB
+import {
+  MAX_ATTACHMENT_FILES,
+  MAX_ATTACHMENT_FILE_BYTES,
+  MAX_ATTACHMENT_TOTAL_BYTES,
+} from "../../../shared/limits";
+
+export const MAX_FILES = MAX_ATTACHMENT_FILES;
+export const MAX_FILE_BYTES = MAX_ATTACHMENT_FILE_BYTES;
+export const MAX_TOTAL_BYTES = MAX_ATTACHMENT_TOTAL_BYTES;
+
+export { BRIDGE_MAX_BODY_BYTES, projectEncodedBridgeBodyBytes } from "../../../shared/limits";
+
+// Local extraction limits (text/document dimensions, not transport sizes).
 export const MAX_TEXT_CHARS_PER_FILE = 40_000;
 export const MAX_TEXT_CHARS_TOTAL = 120_000;
 export const MAX_IMAGE_DIM = 4096;
