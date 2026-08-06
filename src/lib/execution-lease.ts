@@ -518,6 +518,7 @@ export class InMemoryExecutionLease implements ExecutionLease {
     this.ttl = options.ttl ?? LEASE_TTL;
     this.now = options.now ?? (() => Date.now());
     this.ownerId = options.ownerId ?? newOwnerId();
+    if (this.channel) this.channel.onmessage = () => this.emitCurrent();
   }
 
   private emit(state: LeaseState): void {
@@ -530,11 +531,11 @@ export class InMemoryExecutionLease implements ExecutionLease {
     }
   }
 
-  private notify(): void {
+  private emitCurrent(): void {
     const t = this.now();
     const lease = this.store.lease;
     if (isLive(lease, t)) {
-      if (lease.ownerId === this.currentOwner) {
+      if (lease.ownerId === this.currentOwner && lease.leaseId === this.currentLeaseId) {
         this.emit({ status: "owned", lease });
       } else {
         this.emit({ status: "contested", lease });
@@ -542,6 +543,10 @@ export class InMemoryExecutionLease implements ExecutionLease {
     } else {
       this.emit({ status: "free" });
     }
+  }
+
+  private notify(): void {
+    this.emitCurrent();
     if (this.channel) {
       try {
         this.channel.postMessage({ type: "changed" });

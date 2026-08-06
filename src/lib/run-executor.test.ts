@@ -151,6 +151,21 @@ describe("RunExecutor — executeTask", () => {
     expect(callOrder).toEqual(["A-start", "B-start"]);
   });
 
+  it("does not accept candidates or start Judge after terminal acceptance rejects", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("late candidate"));
+    const executor = createRunExecutor({ random: () => 0.999 });
+    const { events, calls } = makeEvents();
+    events.onCandidateAttemptTerminal = vi.fn(async () => {
+      throw new Error("lease fence rejected");
+    });
+
+    await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
+
+    expect(events.onCandidateTerminal).not.toHaveBeenCalled();
+    expect(calls).not.toContain("judge-start");
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+  });
+
   it("rejects duplicate enabled provider:model keys before any provider call", async () => {
     const dupSlots: ModelSlot[] = [
       { id: "s1", providerId: "openrouter", provider: "OR", model: "A", slug: "same", enabled: true },

@@ -9,6 +9,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RSembleEvaluationDB, type RunDetailRow } from "./database";
+import { LEASE_KEY, type LeaseInfo } from "../execution-lease";
 import {
   createRunRepository,
   InMemoryRunRepository,
@@ -445,6 +446,47 @@ describe("Dexie-backed RunRepository — transaction + state guards", () => {
     expect(detailRow).toBeUndefined();
     // Seed record untouched.
     expect(await repo.get("seed")).not.toBeNull();
+  });
+
+  it("rejects create and update when an exact fence was superseded or expired", async () => {
+    const repo = createRunRepository(db, { now: () => 100 });
+    const oldFence = { ownerId: "tab-a", fence: 1, leaseId: "lease-a", checkedAt: 100 };
+    const currentLease: LeaseInfo = {
+      ownerId: "tab-b", fence: 2, leaseId: "lease-b", acquiredAt: 90,
+      heartbeatAt: 90, expiresAt: 1_000,
+    };
+    await db.storageMeta.put({ key: LEASE_KEY, value: currentLease });
+
+    await expect(
+      repo.create(
+        makeRunRecord("superseded-create", { execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" } }),
+        makeFullSummary("superseded-create", 100),
+        oldFence,
+      ),
+    ).rejects.toThrow(/token mismatch/i);
+    expect(await repo.get("superseded-create")).toBeNull();
+
+    await repo.create(makeRunRecord("superseded-update"), makeFullSummary("superseded-update", 100));
+    await expect(
+      repo.update(
+        makeRunRecord("superseded-update", { status: "completed", completedAt: 100, execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" } }),
+        makeFullSummary("superseded-update", 100, { status: "completed", completedAt: 100 }),
+        0,
+        oldFence,
+      ),
+    ).rejects.toThrow(/token mismatch/i);
+    expect((await repo.get("superseded-update"))!.status).toBe("running");
+
+    const expiredLease: LeaseInfo = { ...currentLease, ownerId: "tab-a", fence: 1, leaseId: "lease-a", expiresAt: 99 };
+    await db.storageMeta.put({ key: LEASE_KEY, value: expiredLease });
+    await expect(
+      repo.create(
+        makeRunRecord("expired-create", { execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" } }),
+        makeFullSummary("expired-create", 100),
+        oldFence,
+      ),
+    ).rejects.toThrow(/expired/i);
+    expect(await repo.get("expired-create")).toBeNull();
   });
 
   // 14. blocked/version-change states stop writes

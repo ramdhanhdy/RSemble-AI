@@ -69,6 +69,7 @@ export function createRunController(deps: RunControllerDeps) {
   // late cleanup must never clear the heartbeat or release a newer lease.
   let leaseEpoch = 0;
   let heartbeat: ExecutionHeartbeat | null = null;
+  let leaseUnsubscribe: (() => void) | null = null;
   const leaseLostRef: { current: boolean } = { current: false };
   // Abort persistence must finish before lease release, otherwise the
   // executor's finally block could surrender the fence before markAborted.
@@ -82,25 +83,73 @@ export function createRunController(deps: RunControllerDeps) {
       const epoch = ++leaseEpoch;
       leaseLostRef.current = false;
       activeLeaseRef.current = lease;
+
+      // Broadcast/poll notifications are advisory for transport, but the
+      // current token in the notification is authoritative for this local
+      // controller. Invalidate immediately on a takeover instead of waiting
+      // for the next heartbeat, which closes the late-terminal UI window.
+      const invalidateIfCurrent = () => {
+        const current = activeLeaseRef.current;
+        if (
+          epoch !== leaseEpoch ||
+          current?.ownerId !== lease.ownerId ||
+          current.fence !== lease.fence ||
+          current.leaseId !== lease.leaseId
+        ) return;
+        if (leaseLostRef.current) return;
+        leaseLostRef.current = true;
+        runEpochRef.current += 1;
+        streamBuffer.cancel();
+        abort?.abort();
+        dispatch({ type: "LEASE_LOST", message: "Compare execution lost its lease to another browser tab." });
+      };
+
+      leaseUnsubscribe?.();
+      leaseUnsubscribe = deps.lease.subscribe((state) => {
+        const current = activeLeaseRef.current;
+        const currentMatchesCaptured = current &&
+          current.ownerId === lease.ownerId &&
+          current.fence === lease.fence &&
+          current.leaseId === lease.leaseId;
+        if (!currentMatchesCaptured) return;
+        const stateMatchesCaptured = state.status === "owned" &&
+          state.lease.ownerId === lease.ownerId &&
+          state.lease.fence === lease.fence &&
+          state.lease.leaseId === lease.leaseId;
+        if (stateMatchesCaptured) {
+          // Keep the expiry metadata current without changing the token.
+          activeLeaseRef.current = state.lease;
+          return;
+        }
+        // A different live token (including a same-owner reacquisition) or a
+        // free/expired state invalidates this controller immediately.
+        invalidateIfCurrent();
+      });
+
       const heartbeatForLease = createExecutionHeartbeat({
         intervalMs: HEARTBEAT_INTERVAL,
-        renew: () => deps.lease!.renew(lease),
-        onError: () => {
-          const current = activeLeaseRef.current;
-          if (epoch !== leaseEpoch || current?.ownerId !== lease.ownerId || current.fence !== lease.fence || current.leaseId !== lease.leaseId) return;
-          leaseLostRef.current = true;
-          // Invalidate every late provider/UI callback before aborting the
-          // provider operation. The newer tab's lease is never touched.
-          runEpochRef.current += 1;
-          streamBuffer.cancel();
-          abort?.abort();
-          dispatch({ type: "LEASE_LOST", message: "Compare execution lost its lease to another browser tab." });
+        renew: async () => {
+          try {
+            const renewed = await deps.lease!.renew(lease);
+            if (activeLeaseRef.current?.ownerId === lease.ownerId &&
+                activeLeaseRef.current.fence === lease.fence &&
+                activeLeaseRef.current.leaseId === lease.leaseId) {
+              activeLeaseRef.current = renewed;
+            }
+            return renewed;
+          } catch (error) {
+            invalidateIfCurrent();
+            throw error;
+          }
         },
+        onError: invalidateIfCurrent,
       });
       heartbeat = heartbeatForLease;
       heartbeatForLease.start();
       return true;
     } catch {
+      leaseUnsubscribe?.();
+      leaseUnsubscribe = null;
       activeLeaseRef.current = null;
       return false;
     }
@@ -124,6 +173,8 @@ export function createRunController(deps: RunControllerDeps) {
       leaseEpoch++;
       heartbeat?.stop();
       heartbeat = null;
+      leaseUnsubscribe?.();
+      leaseUnsubscribe = null;
       activeLeaseRef.current = null;
     }
     if (deps.lease && token) {
@@ -174,11 +225,15 @@ export function createRunController(deps: RunControllerDeps) {
         activeLeaseRef.current?.fence === capturedLease.fence &&
         activeLeaseRef.current?.leaseId === capturedLease.leaseId
       ));
+    const ensureCurrent = async (): Promise<void> => {
+      if (!executionCurrent()) throw new Error("Execution lease lost; stale controller rejected");
+      await assertCurrentLease(capturedLease);
+      if (!executionCurrent()) throw new Error("Execution lease lost; stale controller rejected");
+    };
 
     return {
       onFanoutStart: async () => {
-        if (!executionCurrent()) throw new Error("Execution lease lost; stale controller rejected");
-        await assertCurrentLease(leaseToken);
+        await ensureCurrent();
         // The executor may yield before this lifecycle callback runs. Never
         // rebuild the run from mutable command-pane state here; the caller
         // captured one immutable protocol snapshot before execution began.
@@ -208,24 +263,6 @@ export function createRunController(deps: RunControllerDeps) {
           summary: "", scores: {}, weightedScore: 0, segments: [], status: "pending",
           startedAt: ts,
         }));
-        dispatch({
-          type: "FANOUT_START",
-          candidates: placeholders,
-          context: {
-            mode: context.mode ?? capturedMode,
-            task: context.task
-              ? { ...context.task }
-              : { prompt: context.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
-            evaluation: context.evaluation,
-            slots: context.slots ?? slotsOverride ?? s.slots,
-            critic: context.critic ?? s.critic,
-            judgeInstruction: context.judgeInstruction ?? s.judgeInstruction,
-            attachments: context.attachments,
-            attachmentsToJudge: context.attachmentsToJudge,
-            reasoningPolicy: context.reasoningPolicy ? { ...context.reasoningPolicy } : undefined,
-            prompt: context.prompt,
-          },
-        });
         if (recorder) {
           await assertCurrentLease(leaseToken);
           await recorder.begin({
@@ -249,6 +286,25 @@ export function createRunController(deps: RunControllerDeps) {
             attachments: context.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })),
           });
         }
+        await ensureCurrent();
+        dispatch({
+          type: "FANOUT_START",
+          candidates: placeholders,
+          context: {
+            mode: context.mode ?? capturedMode,
+            task: context.task
+              ? { ...context.task }
+              : { prompt: context.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
+            evaluation: context.evaluation,
+            slots: context.slots ?? slotsOverride ?? s.slots,
+            critic: context.critic ?? s.critic,
+            judgeInstruction: context.judgeInstruction ?? s.judgeInstruction,
+            attachments: context.attachments,
+            attachmentsToJudge: context.attachmentsToJudge,
+            reasoningPolicy: context.reasoningPolicy ? { ...context.reasoningPolicy } : undefined,
+            prompt: context.prompt,
+          },
+        });
       },
 
       onCandidateDelta: (candidateId, delta) => {
@@ -257,8 +313,8 @@ export function createRunController(deps: RunControllerDeps) {
         }
       },
 
-      onCandidateTerminal: (candidateId, result) => {
-        if (!executionCurrent()) return;
+      onCandidateTerminal: async (candidateId, result) => {
+        await ensureCurrent();
         streamBuffer.flush();
         dispatch({
           type: isRetry ? "RETRY_CANDIDATE_RESULT" : "CANDIDATE_RESULT",
@@ -272,27 +328,32 @@ export function createRunController(deps: RunControllerDeps) {
       },
 
       onFanoutTerminal: async (done) => {
-        if (executionCurrent()) {
-          dispatch({ type: "FANOUT_END", count: done.length });
-        }
-        if (recorder && runIdRef.current && executionCurrent()) {
-          await assertCurrentLease(leaseToken);
+        await ensureCurrent();
+        if (recorder && runIdRef.current) {
           await recorder.saveFanout(runIdRef.current, { candidates: done }, persistedFence);
         }
+        await ensureCurrent();
+        dispatch({ type: "FANOUT_END", count: done.length });
       },
 
       onCandidateAttemptStart: async (candidateId, attemptId, input) => {
+        await ensureCurrent();
         candidateAttemptIds[candidateId] = attemptId;
-        if (recorder && runIdRef.current && executionCurrent()) {
-          await assertCurrentLease(leaseToken);
+        if (recorder && runIdRef.current) {
           await recorder.beginCandidateAttempt(runIdRef.current, candidateId, attemptId, {
             attemptId, messages: input.messages, startedAt: input.startedAt,
           }, persistedFence);
         }
+        await ensureCurrent();
       },
 
       onCandidateAttemptTerminal: async (candidateId, attemptId, input) => {
-        if (executionCurrent() && input.status === "failed") {
+        await ensureCurrent();
+        if (recorder && runIdRef.current) {
+          await recorder.finishCandidateAttempt(runIdRef.current, candidateId, attemptId, input, persistedFence);
+        }
+        await ensureCurrent();
+        if (input.status === "failed") {
           dispatch({
             type: isRetry ? "RETRY_CANDIDATE_FAILED" : "CANDIDATE_FAILED",
             id: candidateId,
@@ -300,30 +361,29 @@ export function createRunController(deps: RunControllerDeps) {
             finishedAt: input.finishedAt,
           });
         }
-        if (recorder && runIdRef.current && executionCurrent()) {
-          await assertCurrentLease(leaseToken);
-          await recorder.finishCandidateAttempt(runIdRef.current, candidateId, attemptId, input, persistedFence);
-        }
       },
 
       onJudgeStart: async (attemptId, input) => {
-        if (executionCurrent()) {
-          dispatch({ type: "JUDGE_START" });
-        }
-        if (recorder && runIdRef.current && executionCurrent()) {
-          await assertCurrentLease(leaseToken);
+        await ensureCurrent();
+        if (recorder && runIdRef.current) {
           await recorder.beginJudgeAttempt(runIdRef.current, attemptId, input, persistedFence);
         }
+        await ensureCurrent();
+        dispatch({ type: "JUDGE_START" });
       },
 
       onJudgeTerminal: async (attemptId, input) => {
-        if (!executionCurrent()) return;
+        await ensureCurrent();
+        if (recorder && runIdRef.current) {
+          await recorder.finishJudgeAttempt(runIdRef.current, attemptId, input, persistedFence);
+        }
+        await ensureCurrent();
         if (input.status === "completed" && input.report) {
           dispatch({
             type: "JUDGE_RESULT",
             // A terminal Judge transition is protocol state, so never consult
             // the mutable command-pane mode after execution begins.
-            mode: frozenContext?.mode ?? "rank",
+            mode: frozenContext?.mode ?? capturedMode,
             consensus: input.consensus!,
             scoresById: Object.fromEntries(
               Object.entries(input.report.evaluationsById).map(
@@ -335,32 +395,27 @@ export function createRunController(deps: RunControllerDeps) {
         } else if (input.status === "failed") {
           dispatch({ type: "JUDGE_FAILED", error: input.error?.message ?? "Judge failed" });
         }
-        if (recorder && runIdRef.current && executionCurrent()) {
-          await assertCurrentLease(leaseToken);
-          await recorder.finishJudgeAttempt(runIdRef.current, attemptId, input, persistedFence);
-        }
       },
 
       onFusionStart: async (attemptId, input) => {
-        if (executionCurrent()) {
-          dispatch({ type: "FUSION_START" });
-        }
-        if (recorder && runIdRef.current && executionCurrent()) {
-          await assertCurrentLease(leaseToken);
+        await ensureCurrent();
+        if (recorder && runIdRef.current) {
           await recorder.beginFusionAttempt(runIdRef.current, attemptId, input, persistedFence);
         }
+        await ensureCurrent();
+        dispatch({ type: "FUSION_START" });
       },
 
       onFusionTerminal: async (attemptId, input) => {
-        if (!executionCurrent()) return;
+        await ensureCurrent();
+        if (recorder && runIdRef.current) {
+          await recorder.finishFusionAttempt(runIdRef.current, attemptId, input, persistedFence);
+        }
+        await ensureCurrent();
         if (input.status === "completed" && input.result) {
           dispatch({ type: "FUSION_RESULT", text: input.result });
         } else if (input.status === "failed") {
           dispatch({ type: "FUSION_FAILED", error: input.error?.message ?? "Fusion failed" });
-        }
-        if (recorder && runIdRef.current && executionCurrent()) {
-          await assertCurrentLease(leaseToken);
-          await recorder.finishFusionAttempt(runIdRef.current, attemptId, input, persistedFence);
         }
       },
     };
@@ -471,13 +526,17 @@ export function createRunController(deps: RunControllerDeps) {
     controllers.clear();
     streamBuffer.cancel();
     dispatch({ type: "ABORT_RUN" });
-    if (recorder && runIdRef.current) {
+    // Capture the run identity before the asynchronous lease check. A
+    // continuation can start before this promise settles; reading runIdRef in
+    // the callback could otherwise abort that newer run.
+    const abortedRunId = runIdRef.current;
+    if (recorder && abortedRunId) {
       const token = activeLeaseRef.current;
       const fence = token
         ? { ownerId: token.ownerId, fence: token.fence, ...(token.leaseId ? { leaseId: token.leaseId } : {}) }
         : undefined;
       abortPersistenceRef.current = assertCurrentLease(token)
-        .then(() => recorder.markAborted(runIdRef.current!, fence))
+        .then(() => recorder.markAborted(abortedRunId, fence))
         .catch(() => {
           // A reclaimed lease must not allow a stale abort callback to mutate
           // the new owner's run; the repository fence is the final guard.

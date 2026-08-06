@@ -168,7 +168,7 @@ export interface RunExecutorEvents {
       inputEstimate?: InputUsageEstimate;
       finishedAt: number;
     },
-  ): void;
+  ): void | Promise<void>;
   onFanoutTerminal(done: Candidate[]): Promise<void>;
   onCandidateAttemptStart(
     candidateId: string,
@@ -913,29 +913,35 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
             return;
           }
 
-          events.onCandidateTerminal(job.id, {
-            segments: result.segments,
-            summary: result.summary,
-            tokensIn: result.tokensIn,
-            tokensOut: result.tokensOut,
-            inputEstimate: result.inputEstimate,
-            finishedAt: result.finishedAt,
-          });
+          // Persist and fence the terminal attempt before making it visible to
+          // the UI or adding it to the successful candidate set. A reclaimed
+          // controller must not turn a late provider result into accepted state.
+          try {
+            await events.onCandidateAttemptTerminal(job.id, attemptId, {
+              status: "completed",
+              output: result.content,
+              tokensIn: result.tokensIn,
+              tokensOut: result.tokensOut,
+              usage: result.usage,
+              inputEstimate: result.inputEstimate,
+              cost: result.cost,
+              error: null,
+              finishedAt: result.finishedAt,
+            });
+            await events.onCandidateTerminal(job.id, {
+              segments: result.segments,
+              summary: result.summary,
+              tokensIn: result.tokensIn,
+              tokensOut: result.tokensOut,
+              inputEstimate: result.inputEstimate,
+              finishedAt: result.finishedAt,
+            });
+          } catch {
+            return;
+          }
 
           candidateAttemptIds[job.id] = attemptId;
           candidateResults.set(job.id, result);
-
-          await events.onCandidateAttemptTerminal(job.id, attemptId, {
-            status: "completed",
-            output: result.content,
-            tokensIn: result.tokensIn,
-            tokensOut: result.tokensOut,
-            usage: result.usage,
-            inputEstimate: result.inputEstimate,
-            cost: result.cost,
-            error: null,
-            finishedAt: result.finishedAt,
-          }).catch(() => {});
         }),
       );
 
@@ -1058,29 +1064,34 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           return;
         }
 
-        events.onCandidateTerminal(job.id, {
-          segments: result.segments,
-          summary: result.summary,
-          tokensIn: result.tokensIn,
-          tokensOut: result.tokensOut,
-          inputEstimate: result.inputEstimate,
-          finishedAt: result.finishedAt,
-        });
+        // Persist and fence the terminal attempt before making it visible to
+        // the UI or adding it to the successful candidate set.
+        try {
+          await events.onCandidateAttemptTerminal(job.id, attemptId, {
+            status: "completed",
+            output: result.content,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+            usage: result.usage,
+            inputEstimate: result.inputEstimate,
+            cost: result.cost,
+            error: null,
+            finishedAt: result.finishedAt,
+          });
+          await events.onCandidateTerminal(job.id, {
+            segments: result.segments,
+            summary: result.summary,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+            inputEstimate: result.inputEstimate,
+            finishedAt: result.finishedAt,
+          });
+        } catch {
+          return;
+        }
 
         candidateAttemptIds[job.id] = attemptId;
         candidateResults.set(job.id, result);
-
-        await events.onCandidateAttemptTerminal(job.id, attemptId, {
-          status: "completed",
-          output: result.content,
-          tokensIn: result.tokensIn,
-          tokensOut: result.tokensOut,
-          usage: result.usage,
-          inputEstimate: result.inputEstimate,
-          cost: result.cost,
-          error: null,
-          finishedAt: result.finishedAt,
-        }).catch(() => {});
       }),
     );
 
@@ -1201,26 +1212,31 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       return; // failure → no downstream calls
     }
 
-    events.onCandidateTerminal(job.id, {
-      segments: result.segments,
-      summary: result.summary,
-      tokensIn: result.tokensIn,
-      tokensOut: result.tokensOut,
-      inputEstimate: result.inputEstimate,
-      finishedAt: result.finishedAt,
-    });
-
-    await events.onCandidateAttemptTerminal(job.id, attemptId, {
-      status: "completed",
-      output: result.content,
-      tokensIn: result.tokensIn,
-      tokensOut: result.tokensOut,
-      usage: result.usage,
-      inputEstimate: result.inputEstimate,
-      cost: result.cost,
-      error: null,
-      finishedAt: result.finishedAt,
-    }).catch(() => {});
+    // Persist and fence the terminal attempt before making it visible to the
+    // UI or allowing the retry to proceed to Judge.
+    try {
+      await events.onCandidateAttemptTerminal(job.id, attemptId, {
+        status: "completed",
+        output: result.content,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
+        usage: result.usage,
+        inputEstimate: result.inputEstimate,
+        cost: result.cost,
+        error: null,
+        finishedAt: result.finishedAt,
+      });
+      await events.onCandidateTerminal(job.id, {
+        segments: result.segments,
+        summary: result.summary,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
+        inputEstimate: result.inputEstimate,
+        finishedAt: result.finishedAt,
+      });
+    } catch {
+      return;
+    }
 
     if (isAborted(signal)) return;
 
