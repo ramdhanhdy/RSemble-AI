@@ -91,6 +91,10 @@ export interface PersistedError {
   model?: string;
   /** Epoch ms when the error was sanitized for persistence. */
   at?: number;
+  /** Deadline classification/provenance, when this was a timeout. */
+  timeoutKind?: "connect_timeout" | "stream_inactivity_timeout" | "overall_timeout";
+  configuredDurationMs?: number;
+  elapsedMs?: number;
 }
 
 export type RunSource =
@@ -433,6 +437,9 @@ export function isPersistedError(v: unknown): v is PersistedError {
   if (v.stage !== undefined && !isString(v.stage)) return false;
   if (v.model !== undefined && !isString(v.model)) return false;
   if (v.at !== undefined && !isNumber(v.at)) return false;
+  if (v.timeoutKind !== undefined && !["connect_timeout", "stream_inactivity_timeout", "overall_timeout"].includes(v.timeoutKind as string)) return false;
+  if (v.configuredDurationMs !== undefined && !isNumber(v.configuredDurationMs)) return false;
+  if (v.elapsedMs !== undefined && !isNumber(v.elapsedMs)) return false;
   return true;
 }
 

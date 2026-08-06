@@ -729,7 +729,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Acquire cross-tab lease.
     let leaseInfo: LeaseInfo;
     try {
-      leaseInfo = await lease.acquire();
+      leaseInfo = await lease.acquire({ kind: "experiment", executionId: suiteId });
     } catch (err) {
       if (err instanceof LeaseError) {
         return { ok: false, error: `Another tab is active (${err.message})` };
@@ -848,7 +848,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Acquire lease.
     let leaseInfo: LeaseInfo;
     try {
-      leaseInfo = await lease.acquire();
+      leaseInfo = await lease.acquire({ kind: "experiment", executionId: expId });
     } catch (err) {
       if (err instanceof LeaseError) {
         return { ok: false, error: `Another tab is active (${err.message})` };
@@ -895,7 +895,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
   async function recoverOnStartup(): Promise<number> {
     // Try to acquire the lease. If another tab holds it, we can't recover.
     try {
-      await lease.acquire();
+      await lease.acquire({ kind: "experiment", executionId: "startup-recovery" });
     } catch {
       return 0;
     }
@@ -1013,7 +1013,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Acquire lease.
     let leaseInfo: LeaseInfo;
     try {
-      leaseInfo = await lease.acquire();
+      leaseInfo = await lease.acquire({ kind: "experiment", executionId: expId });
     } catch (err) {
       if (err instanceof LeaseError) {
         return { ok: false, error: `Another tab is active (${err.message})` };
@@ -1122,7 +1122,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Acquire cross-tab lease.
     let leaseInfo: LeaseInfo;
     try {
-      leaseInfo = await lease.acquire();
+      leaseInfo = await lease.acquire({ kind: "experiment", executionId: expId });
     } catch (err) {
       if (err instanceof LeaseError) {
         return { ok: false, error: `Another tab is active (${err.message})` };

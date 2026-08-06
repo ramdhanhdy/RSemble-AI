@@ -54,6 +54,12 @@ import {
 import type { AdHocEvaluationConfig } from "./evaluations/evaluation-profile-adhoc";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
 import { devTerminalLog, type DevTerminalFields } from "./dev-terminal-log";
+import {
+  isExecutionTimeoutError,
+  runWithExecutionDeadlines,
+  streamWithExecutionDeadlines,
+  type DeadlineDependencies,
+} from "./execution-deadline";
 
 // --- Request types -----------------------------------------------------------
 
@@ -238,6 +244,15 @@ export interface RunExecutor {
   executeFusionAttempt(request: FrozenFusionRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void>;
 }
 
+export interface ExecutionDeadlinePolicy {
+  /** Time from dispatch until the first provider response/stream event. */
+  connectMs: number;
+  /** Maximum gap between accepted stream events. */
+  inactivityMs: number;
+  /** Optional generous total ceiling; omitted by default for long reasoning. */
+  overallMs?: number;
+}
+
 export interface RunExecutorDeps {
   /** Random source for the blind-label shuffle. Tests inject deterministic. */
   random?: () => number;
@@ -245,6 +260,10 @@ export interface RunExecutorDeps {
   generateId?: () => string;
   /** Clock for timestamps. Tests inject deterministic. Defaults to Date.now. */
   now?: () => number;
+  /** Provider-neutral deadline overrides; defaults are intentionally generous. */
+  deadlines?: Partial<ExecutionDeadlinePolicy>;
+  /** Fake clock/timer surface for deterministic deadline tests. */
+  deadlineDeps?: DeadlineDependencies;
 }
 
 // --- Factory -----------------------------------------------------------------
@@ -253,6 +272,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
   const random = deps.random ?? Math.random;
   const generateId = deps.generateId ?? (() => crypto.randomUUID());
   const now = deps.now ?? (() => Date.now());
+  const deadlinePolicy: ExecutionDeadlinePolicy = {
+    connectMs: deps.deadlines?.connectMs ?? 30_000,
+    inactivityMs: deps.deadlines?.inactivityMs ?? 45_000,
+    overallMs: deps.deadlines?.overallMs,
+  };
+  // Execution timestamps and deadline clocks are separate seams. Do not feed
+  // the persistence `now` into deadline timers unless tests explicitly inject
+  // `deadlineDeps`; otherwise ordinary lifecycle tests gain extra clock ticks.
+  const deadlineDeps: DeadlineDependencies = { ...deps.deadlineDeps };
 
   /**
    * Honest fallback when a provider omits native usage/cost (spec 06 §4):
@@ -273,7 +301,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
   // byte-capped message plus category/stage/model/at — never raw provider
   // bodies or configured credential values.
   function sanitizeError(err: unknown, ctx: SanitizeErrorContext): PersistedError {
-    return sanitizePersistedError(err, ctx, now, configuredCredentialValues());
+    const timeout = isExecutionTimeoutError(err) ? err : null;
+    return sanitizePersistedError(
+      err,
+      timeout
+        ? { ...ctx, category: "timeout", timeoutKind: timeout.kind, configuredDurationMs: timeout.configuredDurationMs, elapsedMs: timeout.elapsedMs }
+        : ctx,
+      now,
+      configuredCredentialValues(),
+    );
   }
 
   function sourceFields(source: RunSource | undefined): DevTerminalFields {
@@ -318,8 +354,17 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         reasoningEffort: diagnostics.reasoningEffort,
         signal: ctrl.signal,
       };
+      const streamOptions = {
+        ...deadlineDeps,
+        ...deadlinePolicy,
+        provider: job.providerId,
+        model: job.slug,
+        stage: "candidate",
+        signal: ctrl.signal,
+        abortController: ctrl,
+      };
       if (provider.chatCompletionStreamDetailed) {
-        for await (const event of provider.chatCompletionStreamDetailed(opts)) {
+        for await (const event of streamWithExecutionDeadlines(provider.chatCompletionStreamDetailed(opts), streamOptions)) {
           if (isAborted(signal)) return null;
           if (event.delta) {
             content += event.delta;
@@ -329,7 +374,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           if (event.cost) cost = event.cost;
         }
       } else {
-        for await (const delta of provider.chatCompletionStream(opts)) {
+        for await (const delta of streamWithExecutionDeadlines(provider.chatCompletionStream(opts), streamOptions)) {
           if (isAborted(signal)) return null;
           content += delta;
           events.onCandidateDelta(job.id, delta);
@@ -356,6 +401,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       }, "info");
       return { content, segments, summary, tokensIn, tokensOut, usage, cost: resolvedCost, finishedAt: now() };
     } catch (err) {
+      if (isExecutionTimeoutError(err)) {
+        const error = sanitizeError(err, { category: "timeout", stage: "candidate", model: job.slug });
+        devTerminalLog("provider.request.failed", { ...context, status: "failed", durationMs: Date.now() - requestStartedAt, error: error.message, timeoutKind: err.kind }, "error");
+        return { error };
+      }
       if (err instanceof DOMException && err.name === "AbortError") return null;
       if (isAborted(signal)) return null;
       // Provider errors fail this candidate (not the whole run); return the
@@ -445,13 +495,28 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         reasoningEffort: request.reasoningPolicy?.judge,
         signal: ctrl.signal,
       };
+      const operationOptions = {
+        ...deadlineDeps,
+        ...deadlinePolicy,
+        provider: request.critic.providerId,
+        model: request.critic.model,
+        stage: "judge",
+        signal: ctrl.signal,
+        abortController: ctrl,
+      };
       if (provider.chatCompletionDetailed) {
-        const detailed = await provider.chatCompletionDetailed(judgeOpts);
+        const detailed = await runWithExecutionDeadlines(
+          (deadlineSignal) => provider.chatCompletionDetailed!({ ...judgeOpts, signal: deadlineSignal }),
+          operationOptions,
+        );
         content = detailed.content;
         usage = detailed.usage;
         cost = detailed.cost;
       } else {
-        content = await provider.chatCompletion(judgeOpts);
+        content = await runWithExecutionDeadlines(
+          (deadlineSignal) => provider.chatCompletion({ ...judgeOpts, signal: deadlineSignal }),
+          operationOptions,
+        );
       }
       if (isAborted(signal)) {
         await events.onJudgeTerminal(attemptId, {
@@ -479,6 +544,14 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       }, "info");
       return { ok: true, attemptId, report, consensus: breakdown, scoresById, blindSet };
     } catch (err) {
+      if (isExecutionTimeoutError(err)) {
+        await events.onJudgeTerminal(attemptId, {
+          status: "failed", report: null, consensus: null,
+          error: sanitizeError(err, { category: "timeout", stage: "judge", model: request.critic.model }),
+          finishedAt: now(),
+        }).catch(() => {});
+        return { ok: false };
+      }
       if (err instanceof DOMException && err.name === "AbortError") {
         await events.onJudgeTerminal(attemptId, {
           status: "aborted", report: null, consensus: null, error: null, finishedAt: now(),
@@ -560,13 +633,28 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         reasoningEffort: request.reasoningPolicy?.judge,
         signal: ctrl.signal,
       };
+      const operationOptions = {
+        ...deadlineDeps,
+        ...deadlinePolicy,
+        provider: request.critic.providerId,
+        model: request.critic.model,
+        stage: "fusion",
+        signal: ctrl.signal,
+        abortController: ctrl,
+      };
       if (provider.chatCompletionDetailed) {
-        const detailed = await provider.chatCompletionDetailed(fusionOpts);
+        const detailed = await runWithExecutionDeadlines(
+          (deadlineSignal) => provider.chatCompletionDetailed!({ ...fusionOpts, signal: deadlineSignal }),
+          operationOptions,
+        );
         content = detailed.content;
         usage = detailed.usage;
         cost = detailed.cost;
       } else {
-        content = await provider.chatCompletion(fusionOpts);
+        content = await runWithExecutionDeadlines(
+          (deadlineSignal) => provider.chatCompletion({ ...fusionOpts, signal: deadlineSignal }),
+          operationOptions,
+        );
       }
       if (isAborted(signal)) {
         await events.onFusionTerminal(attemptId, {
@@ -588,6 +676,14 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       });
       return { ok: true, result: content };
     } catch (err) {
+      if (isExecutionTimeoutError(err)) {
+        await events.onFusionTerminal(attemptId, {
+          status: "failed", result: null,
+          error: sanitizeError(err, { category: "timeout", stage: "fusion", model: request.critic.model }),
+          finishedAt: now(),
+        }).catch(() => {});
+        return { ok: false, result: null };
+      }
       if (err instanceof DOMException && err.name === "AbortError") {
         await events.onFusionTerminal(attemptId, {
           status: "aborted", result: null, error: null, finishedAt: now(),

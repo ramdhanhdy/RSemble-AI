@@ -13,6 +13,8 @@ import {
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
 import { evaluateComparePreflight, type ComparePreflight } from "./compare-preflight";
 import type { RunRecorder } from "./persistence/run-recorder";
+import type { ExecutionFence } from "./persistence/run-types";
+import { HEARTBEAT_INTERVAL, type ExecutionLease, type LeaseInfo } from "./execution-lease";
 import { createRunExecutor, type RunExecutorEvents } from "./run-executor";
 import type { StudioState, Action, RunEvaluationContext } from "../studio-engine";
 import type { StreamDeltaBuffer } from "./stream-buffer";
@@ -36,6 +38,10 @@ export interface RunControllerDeps {
    * deterministic preflight result. Tests may omit it; the local fallback still
    * enforces task/cardinality/attachment gates without network calls. */
   preflight?: (state: StudioState) => ComparePreflight;
+  /** Actual cross-tab fence for persisted ad-hoc run provenance. */
+  executionFence?: () => ExecutionFence | null;
+  /** undefined = injected unit-test bypass; null = production storage failure (fail closed). */
+  lease?: ExecutionLease | null;
 }
 
 export function createRunController(deps: RunControllerDeps) {
@@ -57,6 +63,34 @@ export function createRunController(deps: RunControllerDeps) {
   );
   const runIdRef: { current: string | null } = { current: null };
   const currentAbortRef: { current: AbortController | null } = { current: null };
+  const activeLeaseRef: { current: LeaseInfo | null } = { current: null };
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function acquireSharedLease(executionId: string, abort?: AbortController): Promise<boolean> {
+    if (deps.lease === undefined) return true; // narrow injected unit-test seam
+    if (deps.lease === null) return false;
+    try {
+      activeLeaseRef.current = await deps.lease.acquire({ kind: "compare", executionId });
+      heartbeatTimer = setInterval(() => {
+        void deps.lease!.renew().catch(() => abort?.abort());
+      }, HEARTBEAT_INTERVAL);
+      return true;
+    } catch {
+      activeLeaseRef.current = null;
+      return false;
+    }
+  }
+
+  async function releaseSharedLease(): Promise<void> {
+    if (heartbeatTimer !== null) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    activeLeaseRef.current = null;
+    if (deps.lease) {
+      try { await deps.lease.release(); } catch { /* expiry remains crash-safe */ }
+    }
+  }
 
   function freshAbort(): AbortController {
     const ctrl = new AbortController();
@@ -141,7 +175,9 @@ export function createRunController(deps: RunControllerDeps) {
             slots: context.slots ?? slotsOverride ?? s.slots,
             critic: context.critic ?? s.critic,
             reasoningPolicy: context.reasoningPolicy ? { ...context.reasoningPolicy } : undefined,
-            fence: { ownerId: "tab-1", fence: epoch },
+            fence: activeLeaseRef.current
+              ? { ownerId: activeLeaseRef.current.ownerId, fence: activeLeaseRef.current.fence }
+              : deps.executionFence?.() ?? { ownerId: "tab-1", fence: epoch },
             // Attachment metadata only — never bytes or text (spec §9).
             attachments: context.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })),
           });
@@ -312,31 +348,41 @@ export function createRunController(deps: RunControllerDeps) {
     abortControllersRef.current.clear();
     const abort = freshAbort();
 
-    const events = makeEvents(epoch, false, slots, frozenContext);
-    await executor.executeTask({
-      source: { kind: "adhoc" },
-      mode: frozenContext.mode!,
-      task: { ...frozenContext.task! },
-      evaluation: frozenContext.evaluation,
-      slots: frozenContext.slots!,
-      critic: frozenContext.critic!,
-      judgeInstruction: frozenContext.judgeInstruction!,
-      attachments: frozenContext.attachments,
-      attachmentsToJudge: frozenContext.attachmentsToJudge,
-      reasoningPolicy: { ...frozenContext.reasoningPolicy! },
-    }, events, abort.signal);
+    if (!(await acquireSharedLease(`compare-${epoch}`, abort))) {
+      dispatch({ type: "FANOUT_BLOCKED", reason: deps.lease === null
+        ? "Shared execution storage is unavailable; Compare is blocked to prevent duplicate paid runs."
+        : "Another execution is active in this browser. Wait for it to finish before comparing." });
+      return;
+    }
+    try {
+      const events = makeEvents(epoch, false, slots, frozenContext);
+      await executor.executeTask({
+        source: { kind: "adhoc" },
+        mode: frozenContext.mode!,
+        task: { ...frozenContext.task! },
+        evaluation: frozenContext.evaluation,
+        slots: frozenContext.slots!,
+        critic: frozenContext.critic!,
+        judgeInstruction: frozenContext.judgeInstruction!,
+        attachments: frozenContext.attachments,
+        attachmentsToJudge: frozenContext.attachmentsToJudge,
+        reasoningPolicy: { ...frozenContext.reasoningPolicy! },
+      }, events, abort.signal);
 
-    // Insufficient candidates check
-    if (runEpochRef.current === epoch) {
-      const s2 = stateRef.current;
-      const done = s2.candidates.filter(isUsableCandidate);
-      if (done.length < 2) {
-        dispatch({
-          type: "INSUFFICIENT_CANDIDATES",
-          done: done.length,
-          failed: s2.candidates.length - done.length,
-        });
+      // Insufficient candidates check
+      if (runEpochRef.current === epoch) {
+        const s2 = stateRef.current;
+        const done = s2.candidates.filter(isUsableCandidate);
+        if (done.length < 2) {
+          dispatch({
+            type: "INSUFFICIENT_CANDIDATES",
+            done: done.length,
+            failed: s2.candidates.length - done.length,
+          });
+        }
       }
+    } finally {
+      await releaseSharedLease();
     }
   };
 
@@ -370,7 +416,14 @@ export function createRunController(deps: RunControllerDeps) {
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
-    dispatch({ type: "RETRY_CANDIDATE_START", id: candidate.id });
+    if (!(await acquireSharedLease(`retry-candidate-${candidate.id}`, abort))) {
+      dispatch({ type: "FANOUT_BLOCKED", reason: deps.lease === null
+        ? "Shared execution storage is unavailable; retry is blocked to prevent duplicate paid runs."
+        : "Another execution is active in this browser. Wait for it to finish before retrying." });
+      return;
+    }
+    try {
+      dispatch({ type: "RETRY_CANDIDATE_START", id: candidate.id });
 
     const events = makeEvents(epoch, true, frozenSlots, ctx ?? undefined);
     const peerCandidates = s.candidates.filter((c) => c.id !== candidate.id);
@@ -406,6 +459,9 @@ export function createRunController(deps: RunControllerDeps) {
       peerCandidates,
       candidateAttemptIdsByCandidateId,
     }, events, abort.signal);
+    } finally {
+      await releaseSharedLease();
+    }
   };
 
   const retryJudge = async (): Promise<void> => {
@@ -435,6 +491,13 @@ export function createRunController(deps: RunControllerDeps) {
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
+    if (!(await acquireSharedLease("retry-judge", abort))) {
+      dispatch({ type: "FANOUT_BLOCKED", reason: deps.lease === null
+        ? "Shared execution storage is unavailable; Judge retry is blocked to prevent duplicate paid runs."
+        : "Another execution is active in this browser. Wait for it to finish before retrying." });
+      return;
+    }
+    try {
 
     // Load the persisted record to get real accepted attempt IDs
     let candidateAttemptIdsByCandidateId: Record<string, string> = {};
@@ -462,6 +525,9 @@ export function createRunController(deps: RunControllerDeps) {
       reasoningPolicy: { ...(ctx.reasoningPolicy ?? s.reasoningPolicy) },
       candidateAttemptIdsByCandidateId,
     }, events, abort.signal);
+    } finally {
+      await releaseSharedLease();
+    }
   };
 
   const triggerFusion = (force = false) => {
@@ -487,6 +553,13 @@ export function createRunController(deps: RunControllerDeps) {
     const abort = freshAbort();
 
     void (async () => {
+      if (!(await acquireSharedLease("fusion", abort))) {
+        dispatch({ type: "FANOUT_BLOCKED", reason: deps.lease === null
+          ? "Shared execution storage is unavailable; Fusion is blocked to prevent duplicate paid runs."
+          : "Another execution is active in this browser. Wait for it to finish before fusion." });
+        return;
+      }
+      try {
       // Load the persisted record for real accepted attempt IDs
       let candidateAttemptIdsByCandidateId: Record<string, string> = {};
       let judgeAttemptId = "";
@@ -525,6 +598,9 @@ export function createRunController(deps: RunControllerDeps) {
         blindLabelToCandidateId,
         candidateAttemptIdsByCandidateId,
       }, events, abort.signal);
+      } finally {
+        await releaseSharedLease();
+      }
     })();
   };
 

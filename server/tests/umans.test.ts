@@ -107,7 +107,7 @@ describe("handleUmansProxy — timeout", () => {
     vi.useRealTimers();
   });
 
-  it("clears the response timeout after upstream headers arrive", async () => {
+  it("keeps a post-header inactivity timeout after upstream headers arrive", async () => {
     vi.useFakeTimers();
     let upstreamSignal: AbortSignal | undefined;
     let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -127,7 +127,7 @@ describe("handleUmansProxy — timeout", () => {
       upstreamTimeoutMs: 5_000,
     });
     await vi.advanceTimersByTimeAsync(6_000);
-    expect(upstreamSignal?.aborted).toBe(false);
+    expect(upstreamSignal?.aborted).toBe(true);
     streamController?.close();
     await promise;
   });

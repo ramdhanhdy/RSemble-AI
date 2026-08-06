@@ -852,3 +852,29 @@ describe("run-executor — dev log containment", () => {
     expect(source).not.toContain("JSON.stringify(err)");
   });
 });
+
+
+describe("RunExecutor — deadline classification", () => {
+  it("maps a response that never yields headers into connect_timeout without a provider call", async () => {
+    vi.useFakeTimers();
+    try {
+      chatStreamMock.mockImplementation((opts: { signal?: AbortSignal }) => (async function* () {
+        await new Promise<void>((resolve) => opts.signal?.addEventListener("abort", () => resolve(), { once: true }));
+      })());
+      const { events } = makeEvents();
+      const terminal = vi.mocked(events.onCandidateAttemptTerminal);
+      const executor = createRunExecutor({
+        deadlines: { connectMs: 50, inactivityMs: 100 },
+      });
+      const run = executor.executeTask(makeRequest(), events, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(50);
+      await run;
+      const failed = terminal.mock.calls.map((call) => call[2]).find((input) => input.status === "failed");
+      expect(failed?.error?.category).toBe("timeout");
+      expect(failed?.error?.message).toContain("connect_timeout");
+      expect(chatCompletionMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

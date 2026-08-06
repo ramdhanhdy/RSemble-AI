@@ -100,7 +100,11 @@ export async function handleOpenAICompatibleProxy(
   }
 
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
+  let timeout = setTimeout(() => ctrl.abort(), timeoutMs);
+  const resetTimeout = () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => ctrl.abort(), timeoutMs);
+  };
   res.on("close", () => ctrl.abort());
 
   // Build upstream headers — omit Authorization entirely when blank so we
@@ -122,8 +126,10 @@ export async function handleOpenAICompatibleProxy(
       signal: ctrl.signal,
       redirect: "manual",
     });
-    // Bound connection/response-header latency, not the full SSE lifetime.
-    clearTimeout(timeout);
+    // After headers, the same generous clock becomes a stream-inactivity
+    // watchdog and resets only when upstream bytes arrive. Healthy long SSE
+    // responses therefore survive indefinitely while a stalled stream ends.
+    resetTimeout();
   } catch (err) {
     clearTimeout(timeout);
     if (err instanceof Error && err.name === "AbortError") {
@@ -169,6 +175,7 @@ export async function handleOpenAICompatibleProxy(
 
   try {
     for await (const chunk of upstream.body) {
+      resetTimeout();
       if (sseState) {
         sseState = inspectOpenAiSseChunk(sseState, chunk as Uint8Array);
       }

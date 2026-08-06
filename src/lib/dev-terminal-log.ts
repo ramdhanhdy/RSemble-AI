@@ -21,6 +21,7 @@ export interface DevTerminalFields {
   judgeCalls?: number;
   reusedOutputs?: number;
   error?: string;
+  timeoutKind?: "connect_timeout" | "stream_inactivity_timeout" | "overall_timeout";
 }
 
 export function devTerminalLog(

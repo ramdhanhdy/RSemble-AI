@@ -18,6 +18,13 @@
 
 ## Status
 
+**DONE — owner validation pending**
+
+Deterministic deadline, timeout classification, shared lease/fence, Compare
+integration, and cross-tab UX verification are complete in the Plan 005
+checkpoint commit. Live long-running provider streams and owner browser
+cross-tab validation remain owner-PC checks.
+
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH

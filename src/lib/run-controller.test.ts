@@ -6,6 +6,7 @@ import type { Candidate } from "../studio-data";
 import type { StreamDeltaBuffer } from "./stream-buffer";
 import { ProviderError, type ProviderId } from "./providers/types";
 import type { EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
+import { InMemoryExecutionLease } from "./execution-lease";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -1624,5 +1625,44 @@ describe("retryCandidate — frozen attachment set from runContext (7.6.6)", () 
     const messages = (chatStreamMock.mock.calls[0][0] as { messages: { content: string | unknown[] }[] })
       .messages;
     expect(JSON.stringify(messages)).toContain("attached notes body");
+  });
+});
+
+
+describe("run-controller — cross-tab paid execution lease", () => {
+  it("rejects a conflicting live lease before any candidate provider call", async () => {
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const now = () => 1000;
+    const tabA = new InMemoryExecutionLease(shared, null, { ownerId: "tab-a", now, ttl: 10_000 });
+    const tabB = new InMemoryExecutionLease(shared, null, { ownerId: "tab-b", now, ttl: 10_000 });
+    await tabA.acquire({ kind: "compare", executionId: "run-a" });
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps, dispatched } = makeDeps(state);
+    deps.lease = tabB;
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    expect(dispatched).toContainEqual(expect.objectContaining({ type: "FANOUT_BLOCKED", reason: expect.stringContaining("Another execution") }));
+    expect(chatStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("acquires, heartbeats, and releases its lease on terminal execution", async () => {
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const now = () => 1000;
+    const lease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-a", now, ttl: 10_000 });
+    const state = stateWithSlots(TWO_SLOTS);
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValue(JSON.stringify({
+      consensus: [], contradictions: [], uniqueInsights: [], comparisons: [],
+      evaluations: [
+        { label: "A", score: 4, position: "a", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
+        { label: "B", score: 3, position: "b", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
+      ],
+    }));
+    const { deps } = makeDeps(state);
+    deps.lease = lease;
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    expect(shared.lease).toBeNull();
+    expect(chatStreamMock).toHaveBeenCalled();
   });
 });

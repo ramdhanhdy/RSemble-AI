@@ -266,6 +266,22 @@ describe("buildStripViewModel", () => {
     expect(view?.href).toBe("");
   });
 
+  it("shows cross-tab lease kind and age without task details", () => {
+    const view = buildStripViewModel({
+      owner: null,
+      experiment: null,
+      pathname: "/runs",
+      compareRunning: false,
+      leaseOwnedElsewhere: true,
+      lease: { leaseId: "lease-b", ownerId: "tab-b", kind: "compare", executionId: "run-b", acquiredAt: 1_000, heartbeatAt: 2_000, fence: 2, expiresAt: 12_000 },
+      now: () => 6_000,
+      storageFailed: false,
+    });
+    expect(view?.caption).toContain("Compare is active in another tab");
+    expect(view?.caption).toContain("0:05 active");
+    expect(view?.caption).not.toContain("run-b");
+  });
+
   it("returns null when there is no owner and no lease contention", () => {
     expect(
       buildStripViewModel({

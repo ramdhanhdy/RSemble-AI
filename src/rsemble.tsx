@@ -49,12 +49,14 @@ import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts"
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import { useExecutionOwner } from "./lib/execution-owner-context";
+import { useExecutionLease } from "./lib/evaluations/experiment-controller-hooks";
 import { useExperimentController } from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { registry: ownerRegistry, owner: activeOwner } = useExecutionOwner();
+  const crossTabLease = useExecutionLease();
   const location = useLocation();
   const navigate = useNavigate();
   const experimentController = useExperimentController();
@@ -140,8 +142,9 @@ export default function RSemble() {
         streamBuffer,
         recorder: recorder ?? undefined,
         preflight: (current) => comparePreflightRef.current?.(current) ?? { ok: false, code: "active-execution", message: "Compare preflight is not ready." },
+        lease: crossTabLease,
       }),
-    [dispatch, streamBuffer, recorder],
+    [dispatch, streamBuffer, recorder, crossTabLease],
   );
   const { runFanout, abortRun, retryCandidate, retryJudge, triggerFusion } = runController;
 
