@@ -11,8 +11,8 @@ work completes.
 | Plan | Title | Priority | Effort | Depends on | Status |
 | --- | --- | --- | --- | --- | --- |
 | [001](./001-experiment-roster-extension.md) | Extend a finished experiment with one model and run only its new evidence | P1 | L | — | DONE — merged in PR #2 (`8f22a6e`) |
-| [002](./002-hardening-program-decisions.md) | Lock the hardening program's product and technical decisions | P0 | S | 001 | TODO |
-| [003](./003-credential-and-bridge-boundary-hardening.md) | Harden credential handling and local bridge boundaries | P0 | L | 002 | TODO |
+| [002](./002-hardening-program-decisions.md) | Lock the hardening program's product and technical decisions | P0 | S | 001 | DONE |
+| [003](./003-credential-and-bridge-boundary-hardening.md) | Harden credential handling and local bridge boundaries | P0 | L | 002 | DONE — owner validation pending |
 | [004](./004-run-integrity-and-truthful-preflight.md) | Restore run integrity and make Compare preflight truthful | P0 | L | 003 | TODO |
 | [005](./005-execution-reliability-and-cross-tab-leases.md) | Add execution deadlines and cross-tab coordination | P1 | L | 004 | TODO |
 | [006](./006-quality-gate-and-documentation-reconciliation.md) | Establish a complete quality gate and reconcile documentation | P1 | L | 005 | TODO |
@@ -45,6 +45,33 @@ Decision lock
 Later phases may be refined against live code, but they may not silently reverse
 an earlier product decision or invariant. A reversal requires updating Plan 002,
 `DECISIONS.md`, and every affected downstream plan first.
+
+## Plan 002 locked decisions (D1–D6)
+
+Plan 002 (`002-hardening-program-decisions.md`) is the program's decision gate.
+It locks:
+
+- **D1 Credential persistence** — environment variables preferred and read-only
+  in the UI; UI keys session-only by default; per-key **Remember on this
+  device** opt-in with same-origin/XSS disclosure; credentials never enter
+  runs, logs, archives, exports, or fixtures; one shared `CredentialStore`.
+- **D2 Compare cardinality** — Compare requires at least two enabled candidate
+  slots before a paid run; single-model baselines exist only inside evaluation
+  experiments that explicitly define them.
+- **D3 Bridge authentication** — `RSEMBLE_BRIDGE_SECRET` is optional but
+  enforced when set via `X-RSemble-Bridge-Secret`; `/health` public;
+  `/auth/status` public metadata; protected routes fail
+  `401 bridge_auth_required` / `bridge_auth_invalid`; loopback/CORS are
+  defense-in-depth only.
+- **D4 Attachment size authority** — 40 MiB raw aggregate UI limit; 64 MiB
+  encoded bridge ceiling; encoded-size preflight for bridge-routed requests.
+- **D5 Timeout semantics** — connect/header, stream inactivity, optional total
+  ceiling, and user abort are distinct clocks; no single short wall-clock.
+- **D6 Program ordering** — 002 → 008 in index order; no feature expansion in
+  hardening pull requests.
+
+Plans 003–008 may be refined against live code but **must not** reverse D1–D6
+without updating this file and `DECISIONS.md` first.
 
 ## Cross-phase invariants
 

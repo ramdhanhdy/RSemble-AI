@@ -97,8 +97,8 @@ describe("bridge — request size limit", () => {
     }
   });
 
-  it("defaults the JSON body limit to 48 MB for attachment payloads (7.4.3)", () => {
-    expect(DEFAULT_MAX_BODY_BYTES).toBe(48 * 1024 * 1024);
+  it("defaults the JSON body limit to 64 MiB for encoded attachment payloads (Plan 002 D4)", () => {
+    expect(DEFAULT_MAX_BODY_BYTES).toBe(64 * 1024 * 1024);
   });
 
   it("destroys the socket on oversize so the client cannot keep streaming", async () => {
@@ -276,12 +276,12 @@ describe("bridge — browser credential-route policy", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { server, url } = await startServer();
     try {
-      const hostile = await rawRequest(url, "/clinepass/api/v1/models", "GET", undefined, {
+      const hostile = await rawRequest(url, "/clinepass/v1/models", "GET", undefined, {
         Origin: "https://attacker.example",
       });
       expect(hostile.status).toBe(403);
 
-      const simplePost = await rawRequest(url, "/clinepass/api/v1/chat/completions", "POST", "{}", {
+      const simplePost = await rawRequest(url, "/clinepass/v1/chat/completions", "POST", "{}", {
         Origin: "http://localhost:5173",
         "Content-Type": "text/plain",
       });
@@ -299,7 +299,7 @@ describe("bridge — browser credential-route policy", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { server, url } = await startServer();
     try {
-      const res = await rawRequest(url, "/clinepass/api/v1/models?limit=5", "GET");
+      const res = await rawRequest(url, "/clinepass/v1/models?limit=5", "GET");
       expect(res.status).toBe(200);
       expect(fetchMock).toHaveBeenCalledWith(
         "https://api.cline.bot/api/v1/models?limit=5",

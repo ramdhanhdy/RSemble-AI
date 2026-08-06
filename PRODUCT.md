@@ -44,7 +44,7 @@ Task → Evaluation → Compare (N models in parallel) → Judge
 ## 3. Scope Fence (§5)
 
 ### IN Scope
-- **Multi-model comparison & parallel fanout**: Run N candidate models on the same task simultaneously.
+- **Multi-model comparison & parallel fanout**: Run N candidate models on the same task simultaneously. Compare requires **at least two enabled candidate slots** before a paid run starts; a single-model baseline is valid only inside evaluation experiments where the policy explicitly defines it (Plan 002 decision D2, `DECISIONS.md` #11).
 - **Pluggable provider adapters**:
   - OpenRouter (`openrouter`)
   - ChatGPT subscription via local Codex bridge (`chatgpt-codex`)
@@ -53,7 +53,7 @@ Task → Evaluation → Compare (N models in parallel) → Judge
   - ClinePass (`clinepass`)
   - Umans (`umans`)
   - 9Router (`9router`) — a local/remote routing gateway with 9Router-managed models and fallback; one requested model ID produces one candidate, regardless of internal fallback
-- **Localhost Node Codex bridge**: Lightweight 127.0.0.1 process that also serves as an allowlisted proxy for compatible providers (e.g. 9Router). The bridge forwards only approved method/path pairs to server-configured upstreams; it is not a general-purpose proxy.
+- **Localhost Node Codex bridge**: Lightweight 127.0.0.1 process that also serves as an allowlisted proxy for compatible providers (e.g. 9Router). The bridge forwards only approved method/path pairs to server-configured upstreams; it is not a general-purpose proxy. When `RSEMBLE_BRIDGE_SECRET` is configured it **must** be presented as `X-RSemble-Bridge-Secret` on every credential-bearing endpoint; `/health` stays unauthenticated (Plan 002 decision D3, `DECISIONS.md` #11).
 - **Evaluation-driven blind judging**: Configurable judge model evaluates anonymized candidates against holistic judgment or a versioned evaluation profile (criteria with 1/3/5 anchors and deterministic weighted scoring) and outputs consensus/contradictions plus a per-candidate score explanation. The judge receives no RSemble-supplied model/provider metadata; the label mapping is resolved only after judging and is auditable in the UI and Markdown export.
 - **Rank & Fuse finishes**: The single mode toggle lives in the Compare workspace toolbar (immediately above the split panes) and switches between Rank and Fuse. It is the sole per-task finish switch, shown only in Compare; the global header is route-invariant and never carries it.
 - **Three workspaces — Compare, Runs, Evaluations**: Navigation destinations, not pipeline modes. Compare is the one-off working surface; Runs and Evaluations are audit surfaces. Profile and suite editors are working surfaces nested inside Evaluations.
@@ -86,4 +86,20 @@ Task → Evaluation → Compare (N models in parallel) → Judge
 RSemble AI is designed for personal local use by a single developer on their own machine.
 Build-time `VITE_*` keys are client-embedded for local execution.
 The local Codex bridge runs on `127.0.0.1` solely to allow the builder to use their ChatGPT subscription via Codex credentials without hosting a proxy for third parties.
-Durable run history and evaluation suites persist in browser-local IndexedDB. No credentials, authorization headers, or environment contents are ever persisted or exported.
+Durable run history and evaluation suites persist in browser-local IndexedDB.
+
+### 4.1 Credential policy (Plan 002, decision D1)
+
+- Environment variables remain the **preferred persistent credential source** and are read-only in the UI.
+- Keys entered in Connections are **session-only by default** (memory until the tab/process exits).
+- Persistent browser storage is an **explicit per-key opt-in** labeled **Remember on this device**, and the UI **must** disclose that same-origin JavaScript can read it.
+- Credentials, authorization headers, bridge secrets, and environment contents **must never** enter run records, experiment records, logs, archives, exports, screenshots, or test fixtures.
+- Every provider adapter resolves credentials through the shared `CredentialStore` contract; adapters **must not** read browser storage directly.
+
+### 4.2 Security model (Plan 002)
+
+- **Single-user localhost deployment**: the app and bridge are built for one user on one machine; the bridge binds to `127.0.0.1` only.
+- **Same-origin script / XSS risk**: remembered credentials are readable by any same-origin script; they are a convenience for this personal local application, not a secure vault. OS-keychain storage is not claimed and is out of scope for the current hardening program.
+- **Untrusted local processes**: any local process can address `127.0.0.1`; loopback binding and CORS are defense-in-depth, not substitutes for the configured bridge secret.
+- **Exports and persisted evidence**: run records, archives, and Markdown exports contain evidence only; credentials and authorization material are rejected at the persistence boundary.
+- **Upstream provider error bodies**: provider failures are reduced to bounded, sanitized errors; raw upstream bodies never enter logs or persisted evidence.

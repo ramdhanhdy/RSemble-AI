@@ -4,7 +4,7 @@ var DEV_LOG_KEYS = new Set([
     "event", "level", "at", "experimentId", "runId", "taskId", "attemptId",
     "experimentAttemptId",
     "modelKey", "stage", "status", "durationMs", "tokensIn", "tokensOut",
-    "candidateCalls", "judgeCalls", "reusedOutputs", "error", "stack",
+    "candidateCalls", "judgeCalls", "reusedOutputs", "error",
 ]);
 function terminalDevLogPlugin() {
     return {

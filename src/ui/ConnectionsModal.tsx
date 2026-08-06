@@ -8,6 +8,8 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Check, Loader2, RefreshCw, X, Zap } from "lucide-react";
 import { listProviders } from "../lib/providers/registry";
 import type { ProviderId, ProviderReadiness } from "../lib/providers/types";
+import type { CredentialPersistence } from "../lib/credentials/types";
+import { credentialStore } from "../lib/credentials/credential-store";
 import { useModelProbe } from "./ModelProbeContext";
 import { DialogSurface } from "./DialogSurface";
 interface ConnectionsModalProps {
@@ -94,12 +96,21 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 
 const TEST_CONNECTION_TIMEOUT_MS = 12_000;
 
-function keyStorageId(providerId: ProviderId): string {
-  return `rsemble.key.${providerId}`;
-}
-
 function readinessMessage(status: ProviderReadiness): string {
   return status.ok ? "Connection verified." : status.reason;
+}
+
+/** Where a provider's currently active credential lives (for status copy). */
+interface StoredCredentialInfo {
+  persistence: CredentialPersistence | null;
+  hasValue: boolean;
+}
+
+function readStoredCredentialInfo(providerId: ProviderId): StoredCredentialInfo {
+  return {
+    persistence: credentialStore.persistence(providerId),
+    hasValue: credentialStore.get(providerId).length > 0,
+  };
 }
 
 export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: ConnectionsModalProps) {
@@ -127,6 +138,27 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [testingProvider, setTestingProvider] = useState<ProviderId | null>(null);
   const [testResults, setTestResults] = useState<Partial<Record<ProviderId, ProviderReadiness>>>({});
+  // Draft key inputs (never prefilled with stored values) and the explicit
+  // "Remember on this device" opt-in (Plan 002 D1).
+  const [remember, setRemember] = useState<Record<ProviderId, boolean>>({
+    openrouter: false,
+    "chatgpt-codex": false,
+    gemini: false,
+    deepseek: false,
+    commandcode: false,
+    clinepass: false,
+    umans: false,
+    "9router": false,
+  });
+  const [stored, setStored] = useState<Record<ProviderId, StoredCredentialInfo>>({} as Record<ProviderId, StoredCredentialInfo>);
+
+  const refreshStored = () => {
+    const next = {} as Record<ProviderId, StoredCredentialInfo>;
+    for (const d of PROVIDER_DESCRIPTORS) {
+      next[d.id] = readStoredCredentialInfo(d.id);
+    }
+    setStored(next);
+  };
 
   const fetchStatuses = async () => {
     const providers = listProviders();
@@ -144,11 +176,9 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
   useEffect(() => {
     if (isOpen) {
       void fetchStatuses();
-      const loaded: Record<string, string> = {};
-      for (const d of PROVIDER_DESCRIPTORS) {
-        loaded[d.id] = localStorage.getItem(keyStorageId(d.id)) ?? "";
-      }
-      setKeys(loaded as Record<ProviderId, string>);
+      // Draft inputs stay empty; stored values are surfaced as status copy,
+      // never rendered as plaintext or prefilled into editable fields.
+      refreshStored();
     }
   }, [isOpen]);
 
@@ -156,11 +186,33 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
   const { invalidateProvider } = useModelProbe();
 
   const handleSave = (providerId: ProviderId, label: string) => {
-    localStorage.setItem(keyStorageId(providerId), keys[providerId].trim());
-    setSavedMessage(`${label} key saved to local storage.`);
+    const value = keys[providerId].trim();
+    if (value.length === 0) return;
+    const persistence: CredentialPersistence = remember[providerId] ? "remembered" : "session";
+    credentialStore.set(providerId, value, persistence);
+    setKeys((prev) => ({ ...prev, [providerId]: "" }));
+    setRemember((prev) => ({ ...prev, [providerId]: false }));
+    setSavedMessage(
+      persistence === "remembered"
+        ? `${label} key remembered on this device (session values are the default).`
+        : `${label} key saved for this session only.`,
+    );
     // Invalidate probe results for this provider so stale Ready/Failed
     // states don't persist after a credential change (plan §4.5).
     invalidateProvider(providerId);
+    refreshStored();
+    void fetchStatuses();
+    onRefresh();
+    setTimeout(() => setSavedMessage(null), 3000);
+  };
+
+  const handleClear = (providerId: ProviderId, label: string) => {
+    credentialStore.clear(providerId);
+    setKeys((prev) => ({ ...prev, [providerId]: "" }));
+    setRemember((prev) => ({ ...prev, [providerId]: false }));
+    setSavedMessage(`${label} saved credential cleared.`);
+    invalidateProvider(providerId);
+    refreshStored();
     void fetchStatuses();
     onRefresh();
     setTimeout(() => setSavedMessage(null), 3000);
@@ -262,15 +314,15 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
                       placeholder={d.placeholder}
                       value={keys[d.id]}
                       onChange={(e) => handleKeyChange(d.id, e.target.value)}
-                      disabled={testingProvider === d.id}
-                      className="min-h-[44px] min-w-0 flex-1 rounded-sm border border-edge bg-panel px-2.5 py-2 font-mono text-xs text-text placeholder-text-muted focus:border-accent focus:outline-none"
+                      disabled={testingProvider === d.id || stored[d.id]?.hasValue === true && stored[d.id]?.persistence === null}
+                      className="min-h-[44px] min-w-0 flex-1 rounded-sm border border-edge bg-panel px-2.5 py-2 font-mono text-xs text-text placeholder-text-muted focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                     />
                     <div className="flex gap-2">
                       <button
                         type="button"
                         aria-label={`Test ${d.label} connection`}
                         onClick={() => void handleTest(d.id, d.label)}
-                        disabled={testingProvider !== null}
+                        disabled={testingProvider !== null || stored[d.id]?.hasValue === true && stored[d.id]?.persistence === null}
                         className="pressable flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded border border-edge-bright bg-card px-3 font-mono text-xs text-text hover:bg-card-hover disabled:cursor-wait disabled:opacity-60 sm:flex-none"
                       >
                         {testingProvider === d.id ? <Loader2 size={12} className="animate-spin-ease" /> : <Zap size={12} />}
@@ -279,13 +331,55 @@ export function ConnectionsModal({ isOpen, onOpenChange, onRefresh, handle }: Co
                       <button
                         type="button"
                         onClick={() => handleSave(d.id, d.label)}
-                        disabled={testingProvider === d.id}
+                        disabled={
+                          testingProvider === d.id ||
+                          keys[d.id].trim().length === 0 ||
+                          (stored[d.id]?.hasValue === true && stored[d.id]?.persistence === null)
+                        }
                         className="pressable min-h-[44px] flex-1 rounded border border-accent/40 bg-accent/10 px-3 font-mono text-xs text-accent hover:bg-accent/20 disabled:cursor-wait disabled:opacity-60 sm:flex-none"
                       >
                         Save
                       </button>
                     </div>
                     </div>
+                    <label className="mt-2 flex items-start gap-2 text-xs text-text-muted">
+                      <input
+                        type="checkbox"
+                        checked={remember[d.id]}
+                        disabled={
+                          keys[d.id].trim().length === 0 ||
+                          (stored[d.id]?.hasValue === true && stored[d.id]?.persistence === null)
+                        }
+                        onChange={(e) => setRemember((prev) => ({ ...prev, [d.id]: e.target.checked }))}
+                        className="mt-0.5 h-4 w-4 accent-accent"
+                      />
+                      <span>
+                        <span className="font-medium text-text-secondary">Remember on this device</span>
+                        {" "}— stored in this browser; any same-origin JavaScript can read it. New keys are
+                        session-only unless you opt in.
+                      </span>
+                    </label>
+                    {stored[d.id]?.hasValue && (
+                      <p className="mt-2 flex items-center justify-between gap-2 font-mono text-xs text-text-muted">
+                        <span data-credential-status={stored[d.id]?.persistence ?? "environment"}>
+                          {stored[d.id]?.persistence === null
+                            ? "Environment key active — set via " + d.keyHint + " (read-only)."
+                            : stored[d.id]?.persistence === "remembered"
+                              ? "Remembered on this device."
+                              : "Saved for this session — cleared when the tab closes."}
+                        </span>
+                        {stored[d.id]?.persistence !== null && (
+                          <button
+                            type="button"
+                            aria-label={`Clear ${d.label} saved credential`}
+                            onClick={() => handleClear(d.id, d.label)}
+                            className="pressable rounded-sm border border-edge px-2 py-1 text-text-secondary hover:border-edge-bright hover:text-text"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </p>
+                    )}
                     {testResults[d.id] && (
                       <p
                         role="status"

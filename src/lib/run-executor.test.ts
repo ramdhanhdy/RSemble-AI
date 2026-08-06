@@ -5,6 +5,8 @@
 // retryJudge, and executeFusionAttempt. The executor emits lifecycle events
 // but owns no React state or persistence.
 // =============================================================================
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Candidate, ModelSlot } from "../studio-data";
 import {
@@ -828,5 +830,25 @@ describe("executeTask — candidateExecution (Task 10)", () => {
     expect(onFanoutTerminal).toHaveBeenCalledTimes(1);
     const doneArg = (onFanoutTerminal.mock.calls[0] as unknown[])[0] as Candidate[];
     expect(doneArg).toHaveLength(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Log containment — Plan 003 workstream D
+// ---------------------------------------------------------------------------
+
+describe("run-executor — dev log containment", () => {
+  it("never forwards raw err.stack to the terminal logger", () => {
+    const source = readFileSync(join(process.cwd(), "src/lib/run-executor.ts"), "utf8");
+    expect(source).not.toContain("stack: err.stack");
+    expect(source).not.toMatch(/devTerminalLog\([\s\S]{0,200}?stack/);
+  });
+
+  it("logs only the sanitized error message for provider failures", () => {
+    const source = readFileSync(join(process.cwd(), "src/lib/run-executor.ts"), "utf8");
+    // The sanitized PersistedError message is the only error payload passed to
+    // devTerminalLog; raw bodies/stacks must not cross that boundary.
+    expect(source).toContain("error: error.message");
+    expect(source).not.toContain("JSON.stringify(err)");
   });
 });

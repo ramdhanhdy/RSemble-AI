@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { geminiProvider } from "./gemini";
+import { ProviderError } from "./types";
+import { resetCredentialStoreForTests } from "../credentials/credential-store";
 
 // Placeholder key only — never a real credential. Asserted not to leak.
 const TEST_KEY = "test-gemini-key-placeholder";
@@ -41,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  resetCredentialStoreForTests();
 });
 
 describe("gemini listModels — generation filtering and recency ordering", () => {
@@ -311,5 +314,64 @@ describe("gemini chatCompletion — content parts mapping (7.4.1)", () => {
       { text: "prompt" },
       { inlineData: { mimeType: "image/webp", data: "UklGR" } },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider-error policy — review fix 3
+// ---------------------------------------------------------------------------
+
+describe("gemini — raw provider bodies never surface (review fix 3)", () => {
+  it("redacts a configured key inside a recognized structured message", async () => {
+    vi.stubEnv("VITE_GEMINI_KEY", "sk-configured-gemini-key-123");
+    resetCredentialStoreForTests();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "invalid key sk-configured-gemini-key-123" } }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const err = await geminiProvider
+      .chatCompletion({ model: "gemini-3.6-flash", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).not.toContain("sk-configured-gemini-key-123");
+  });
+
+  it("maps an HTML error body to a generic status error without raw content", async () => {
+    vi.stubEnv("VITE_GEMINI_KEY", "AIza-key-123");
+    resetCredentialStoreForTests();
+    const html = `<html>Bearer AIza-leaked-999 task "classify this document"</html>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
+      ),
+    );
+    const err = await geminiProvider
+      .chatCompletion({ model: "gemini-3.6-flash", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("Gemini request failed (HTTP 502).");
+  });
+
+  it("maps arbitrary JSON prompt fragments to a generic status error", async () => {
+    vi.stubEnv("VITE_GEMINI_KEY", "AIza-key-123");
+    resetCredentialStoreForTests();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ trace: "the user asked about pricing" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const err = await geminiProvider
+      .chatCompletion({ model: "gemini-3.6-flash", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("Gemini request failed (HTTP 500).");
   });
 });

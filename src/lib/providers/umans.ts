@@ -7,6 +7,7 @@
 
 import { createOpenAICompatProvider } from "./openai-compat";
 import type { LLMProvider, ProviderReadiness } from "./types";
+import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 
 function getBridgeUrl(): string {
   return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
@@ -20,10 +21,11 @@ const base = createOpenAICompatProvider({
   label: "Umans",
   baseUrl: getBridgeUrl(),
   envKey: "VITE_UMANS_KEY",
-  storageKey: "rsemble.key.umans",
   modelsPath: "/umans/v1/models",
   completionsPath: "/umans/v1/chat/completions",
   supportsImages: true,
+  bridgeSecret: true,
+  bridgeBodyLimitBytes: BRIDGE_MAX_BODY_BYTES,
 });
 
 export const umansProvider: LLMProvider = {

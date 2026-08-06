@@ -3,10 +3,11 @@ import { openrouterProvider } from "./openrouter";
 import { ProviderError, type ContentPart } from "./types";
 import { clearModelCapabilities, getModelCapabilities } from "./capabilities";
 import { capabilitiesForModel, clearModelReasoningCapabilities, setModelReasoningCapabilities } from "./reasoning";
+import { resetCredentialStoreForTests } from "../credentials/credential-store";
 
 function stubKey(): void {
   vi.stubGlobal("localStorage", {
-    getItem: (k: string) => (k === "rsemble.key.openrouter" ? "sk-test" : null),
+    getItem: (k: string) => (k === "rsemble.key.openrouter.v2" ? "sk-test" : null),
     setItem: () => {},
     removeItem: () => {},
   });
@@ -22,11 +23,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  resetCredentialStoreForTests();
 });
 
 beforeEach(() => {
   clearModelCapabilities();
   clearModelReasoningCapabilities();
+  // Deterministic: never let the developer's .env leak into test requests.
+  vi.stubEnv("VITE_OPENROUTER_KEY", "");
 });
 
 // ---------------------------------------------------------------------------
@@ -315,5 +319,61 @@ describe("openrouter — payload error surfacing", () => {
     expect(err).toBeInstanceOf(ProviderError);
     expect((err as ProviderError).message).toBe(detail);
     expect((err as ProviderError).status).toBe(415);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider-error policy — review fix 3
+// ---------------------------------------------------------------------------
+
+describe("openrouter — raw provider bodies never surface (review fix 3)", () => {
+  it("redacts a configured key inside a recognized structured message", async () => {
+    stubKey();
+    vi.stubEnv("VITE_OPENROUTER_KEY", "sk-configured-or-key-123456");
+    resetCredentialStoreForTests();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({ error: { message: "401 invalid key sk-configured-or-key-123456" } }, 401),
+      ),
+    );
+    const err = await openrouterProvider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).not.toContain("sk-configured-or-key-123456");
+  });
+
+  it("maps an HTML error body to a generic status error without raw content", async () => {
+    stubKey();
+    vi.stubEnv("VITE_OPENROUTER_KEY", "");
+    resetCredentialStoreForTests();
+    const html = `<html><body>Bearer sk-leaked-777 prompt "top secret task"</body></html>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
+      ),
+    );
+    const err = await openrouterProvider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("OpenRouter request failed (HTTP 502).");
+  });
+
+  it("maps arbitrary JSON prompt fragments to a generic status error", async () => {
+    stubKey();
+    vi.stubEnv("VITE_OPENROUTER_KEY", "");
+    resetCredentialStoreForTests();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({ details: [{ body: "the user asked for a plan" }] }, 500),
+      ),
+    );
+    const err = await openrouterProvider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("OpenRouter request failed (HTTP 500).");
   });
 });

@@ -32,6 +32,8 @@
 - **Blocks**: Plan 004
 - **Category**: security
 - **Planned at**: commit `8f22a6e`, 2026-08-06
+- **Execution status**: DONE — owner validation pending (deterministic security
+  and unit suites pass; live multi-provider checks require the owner's PC)
 
 ## Goal
 

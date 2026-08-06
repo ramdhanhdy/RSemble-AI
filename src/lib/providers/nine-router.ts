@@ -13,6 +13,7 @@
 
 import { createOpenAICompatProvider } from "./openai-compat";
 import type { LLMProvider } from "./types";
+import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 
 function getBridgeUrl(): string {
   return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
@@ -26,7 +27,6 @@ export const nineRouterProvider: LLMProvider = createOpenAICompatProvider({
   label: "9Router",
   baseUrl: getBridgeUrl(),
   envKey: "VITE_9ROUTER_KEY",
-  storageKey: "rsemble.key.9router",
   modelsPath: "/9router/v1/models",
   completionsPath: "/9router/v1/chat/completions",
   // 9Router v1 exposes no authoritative per-model modality metadata. Keep
@@ -34,4 +34,6 @@ export const nineRouterProvider: LLMProvider = createOpenAICompatProvider({
   supportsImages: false,
   apiKeyRequired: false,
   readinessProbe: "models",
+  bridgeSecret: true,
+  bridgeBodyLimitBytes: BRIDGE_MAX_BODY_BYTES,
 });

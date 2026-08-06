@@ -5,12 +5,13 @@ import { ProviderError } from "./types";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
 function stubLocalStorage(key: string): void {
   vi.stubGlobal("localStorage", {
-    getItem: (k: string) => (k === "rsemble.key.deepseek" ? key : null),
+    getItem: (k: string) => (k === "rsemble.key.deepseek.v2" ? key : null),
     setItem: () => undefined,
     removeItem: () => undefined,
   });

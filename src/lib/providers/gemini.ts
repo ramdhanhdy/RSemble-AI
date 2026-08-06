@@ -12,17 +12,14 @@ import {
   ProviderError,
 } from "./types";
 import { resolveReasoningEffort } from "./reasoning";
+import { credentialStore } from "../credentials/credential-store";
+import { providerErrorDetail } from "./error-message";
+import { readBoundedResponseText } from "../../../shared/http";
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
 function getApiKey(): string {
-  const envKey = ((import.meta.env.VITE_GEMINI_KEY as string | undefined) ?? "").trim();
-  if (envKey) return envKey;
-  try {
-    return (localStorage.getItem("rsemble.key.gemini") ?? "").trim();
-  } catch {
-    return "";
-  }
+  return credentialStore.get("gemini");
 }
 
 function buildThinkingConfig(
@@ -176,8 +173,8 @@ export const geminiProvider: LLMProvider = {
     try {
       const res = await fetch(`${BASE_URL}/models?key=${encodeURIComponent(candidateKey)}`, { signal });
       if (res.ok) return { ok: true };
-      const body = await res.json().catch(() => null) as { error?: { message?: string } } | null;
-      return { ok: false, reason: body?.error?.message ?? `Gemini returned HTTP ${res.status}.` };
+      const raw = await readBoundedResponseText(res).catch(() => "");
+      return { ok: false, reason: providerErrorDetail(raw, "Gemini", res.status) };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") throw err;
       return { ok: false, reason: "Network error reaching Gemini." };
@@ -230,15 +227,13 @@ export const geminiProvider: LLMProvider = {
     }
 
     if (!res.ok) {
-      let detail = "";
-      try {
-        const body = await res.json();
-        detail = body?.error?.message ?? JSON.stringify(body);
-      } catch {
-        detail = await res.text().catch(() => "");
-      }
+      // Shared provider-error policy (review fix 3): recognized structured
+      // messages are bounded and credential-redacted; unknown JSON, plain
+      // text, and HTML bodies become a generic status error. The raw body
+      // never reaches ProviderError.message.
+      const raw = await readBoundedResponseText(res).catch(() => "");
       throw new ProviderError(
-        detail || `Gemini request failed (HTTP ${res.status}).`,
+        providerErrorDetail(raw, "Gemini", res.status),
         "gemini",
         res.status
       );
@@ -287,15 +282,9 @@ export const geminiProvider: LLMProvider = {
     }
 
     if (!res.ok || !res.body) {
-      let detail = "";
-      try {
-        const body = await res.json();
-        detail = body?.error?.message ?? JSON.stringify(body);
-      } catch {
-        detail = await res.text().catch(() => "");
-      }
+      const raw = await readBoundedResponseText(res).catch(() => "");
       throw new ProviderError(
-        detail || `Gemini streaming request failed (HTTP ${res.status}).`,
+        providerErrorDetail(raw, "Gemini", res.status),
         "gemini",
         res.status
       );
