@@ -14,6 +14,7 @@ const AUTH_FRAGMENT_PATTERNS: readonly RegExp[] = [
   /bearer\s+[^\s,;]+/gi,
   /basic\s+[^\s,;]+/gi,
   /authorization\s*[:=]\s*[^\s,;]+/gi,
+  /x-rsemble-bridge-secret\s*[:=]\s*[^\s,;]+/gi,
 ];
 
 /** Redact common authorization fragments (Bearer/Basic/Authorization header). */

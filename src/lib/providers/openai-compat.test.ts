@@ -654,3 +654,30 @@ describe("createOpenAICompatProvider — raw provider bodies never surface (revi
     expect((err as ProviderError).message).toBe("Umans request failed (HTTP 503).");
   });
 });
+
+describe("createOpenAICompatProvider — bridge secret never reaches thrown errors (final review fix)", () => {
+  it("redacts a configured bridge secret from a structured message", async () => {
+    stubKey();
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret-123456");
+    vi.stubEnv("VITE_UMANS_KEY", "");
+    resetCredentialStoreForTests();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { message: "401 X-RSemble-Bridge-Secret: test-bridge-secret-123456 invalid" },
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).not.toContain("test-bridge-secret-123456");
+    expect((err as ProviderError).message).not.toMatch(/X-RSemble-Bridge-Secret\s*[:=]\s*[^\s,;]+/i);
+  });
+});

@@ -9,6 +9,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetCredentialStoreForTests } from "../credentials/credential-store";
+import { providerErrorDetail } from "../providers/error-message";
+import { ProviderError } from "../providers/types";
 import {
   capUtf8,
   configuredCredentialValues,
@@ -240,5 +242,72 @@ describe("redactErrorText — adversarial bodies (Plan 003 D)", () => {
     const out = redactErrorText(body, ["multi-line-key-456"]);
     expect(out).not.toContain("multi-line-key-456");
     expect(out).not.toMatch(/Authorization\s*[:=]\s*[^\s,;]+/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bridge-secret redaction — final review fix
+// ---------------------------------------------------------------------------
+
+describe("bridge-secret redaction (final review fix)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret-123456");
+    for (const key of [
+      "VITE_OPENROUTER_KEY",
+      "VITE_GEMINI_KEY",
+      "VITE_DEEPSEEK_KEY",
+      "VITE_COMMANDCODE_KEY",
+      "VITE_CLINEPASS_KEY",
+      "VITE_UMANS_KEY",
+      "VITE_9ROUTER_KEY",
+    ]) {
+      vi.stubEnv(key, "");
+    }
+    resetCredentialStoreForTests();
+  });
+
+  it("collects VITE_RSEMBLE_BRIDGE_SECRET into the sensitive value set", () => {
+    expect(configuredCredentialValues()).toContain("test-bridge-secret-123456");
+  });
+
+  it("redacts the bare exact secret value from arbitrary text", () => {
+    const out = redactErrorText(
+      "401 rejected: test-bridge-secret-123456 is invalid",
+      configuredCredentialValues(),
+    );
+    expect(out).not.toContain("test-bridge-secret-123456");
+  });
+
+  it("redacts the X-RSemble-Bridge-Secret header form from arbitrary text", () => {
+    const out = redactErrorText(
+      "bridge rejected X-RSemble-Bridge-Secret: test-bridge-secret-123456",
+      configuredCredentialValues(),
+    );
+    expect(out).not.toContain("test-bridge-secret-123456");
+  });
+
+  it("keeps the bridge secret out of a recognized structured provider error message", () => {
+    const detail = providerErrorDetail(
+      JSON.stringify({ error: { message: "401 X-RSemble-Bridge-Secret: test-bridge-secret-123456 invalid" } }),
+      "Umans",
+      401,
+    );
+    expect(detail).not.toContain("test-bridge-secret-123456");
+    expect(detail).toContain("401");
+  });
+
+  it("keeps the bridge secret out of a ProviderError passed through persistence sanitization", () => {
+    const err = new ProviderError(
+      "401 X-RSemble-Bridge-Secret: test-bridge-secret-123456 rejected",
+      "umans",
+      401,
+    );
+    const out = sanitizePersistedError(
+      err,
+      { category: "provider", stage: "candidate", model: "m" },
+      () => 1,
+    );
+    expect(out.message).not.toContain("test-bridge-secret-123456");
+    expect(out.message).not.toMatch(/X-RSemble-Bridge-Secret\s*[:=]\s*[^\s,;]+/i);
   });
 });

@@ -62,6 +62,12 @@ export function readStaticEnvValue(key: string): string | undefined {
       return import.meta.env.VITE_9ROUTER_KEY;
     case "VITE_UMANS_API_KEY":
       return import.meta.env.VITE_UMANS_API_KEY;
+    case "VITE_RSEMBLE_BRIDGE_SECRET":
+      // Sensitive configuration for redaction only — deliberately NOT part of
+      // the provider-keyed ENV_KEYS map, so it is never resolved as a provider
+      // credential, never exposed through Connections, and never stored in
+      // session/remembered browser storage.
+      return import.meta.env.VITE_RSEMBLE_BRIDGE_SECRET;
     default:
       return undefined;
   }

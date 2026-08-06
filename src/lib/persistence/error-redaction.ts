@@ -24,6 +24,7 @@ const AUTH_FRAGMENT_PATTERNS: readonly RegExp[] = [
   /bearer\s+[^\s,;]+/gi,
   /basic\s+[^\s,;]+/gi,
   /authorization\s*[:=]\s*[^\s,;]+/gi,
+  /x-rsemble-bridge-secret\s*[:=]\s*[^\s,;]+/gi,
 ];
 
 /** UTF-8 byte cap that never splits a surrogate pair. */
@@ -64,9 +65,12 @@ export function configuredCredentialValues(
     values.push(value);
   };
   for (const value of credentialStore.configuredValues()) collect(value);
-  // Legacy environment aliases that predate the store (kept for redaction
-  // coverage of older .env files).
-  for (const key of ["VITE_UMANS_API_KEY"]) collect(readEnv(key));
+  // Additional sensitive environment values that are NOT provider credentials:
+  // legacy aliases that predate the store, and the browser-side bridge secret
+  // (VITE_RSEMBLE_BRIDGE_SECRET). They never enter the CredentialStore's
+  // provider resolution paths — they are collected here solely so every
+  // redaction path removes them (final review fix).
+  for (const key of ["VITE_UMANS_API_KEY", "VITE_RSEMBLE_BRIDGE_SECRET"]) collect(readEnv(key));
   return values;
 }
 
