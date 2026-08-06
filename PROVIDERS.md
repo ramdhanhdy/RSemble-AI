@@ -1,5 +1,8 @@
 # PROVIDERS.md — Multi-provider support
 
+> Status: Implemented (historical phase checklists reconciled below)
+> Last reconciled: 2026-08-07 at commit `049f144`
+
 > **Technical + product spec for widening RSemble beyond OpenRouter-only.**
 > Authority: [`PRODUCT.md`](./PRODUCT.md) still defines *what the product is*.
 > This file defines *how models are reached*. If anything here conflicts with
@@ -658,7 +661,9 @@ Two distinct limits exist and are enforced at the correct boundary:
 
 ## 10. UI / UX requirements
 
-Follow [`DESIGN.md`](./DESIGN.md) and [`UI.md`](./UI.md). Multi-provider must not
+Follow [`PRODUCT.md`](./PRODUCT.md) and [`DECISIONS.md`](./DECISIONS.md) —
+`UI.md`/`DESIGN.md` are no longer shipped in this repository; historical
+references to them remain for provenance only. Multi-provider must not
 turn the command pane into a platform console.
 
 ### 10.1 Model list
@@ -754,13 +759,15 @@ Guiding rules:
 
 **Goal.** Authority and fence updated before code.
 
-- [ ] **0.1** Land `PROVIDERS.md` (this file).
-- [ ] **0.2** Add `DECISIONS.md` #4 (multi-provider + Codex + Gemini; local bridge IN).
-- [ ] **0.3** Update `PRODUCT.md` §5 IN table: multi-provider adapters + local Codex bridge.
-- [ ] **0.4** Soften PRODUCT.md §5 OUT row for "Python backend…" so it does not
+- [x] **0.1** Land `PROVIDERS.md` (this file).
+- [x] **0.2** Add `DECISIONS.md` #4 (multi-provider + Codex + Gemini; local bridge IN).
+- [x] **0.3** Update `PRODUCT.md` §5 IN table: multi-provider adapters + local Codex bridge.
+- [x] **0.4** Soften PRODUCT.md §5 OUT row for "Python backend…" so it does not
       forbid a localhost Node bridge (keep datasets/benchmarks/public API OUT).
-- [ ] **0.5** Point `TODOS.md` / `CLAUDE.md` hierarchy at `PROVIDERS.md`.
-- [ ] **0.6** README stub section "Providers (planned)" optional until Phase 2+.
+- [x] **0.5** Point `TODOS.md` / `CLAUDE.md` hierarchy at `PROVIDERS.md`. *(TODOS.md is no
+      longer shipped; CLAUDE.md points at the plans hierarchy.)*
+- [x] **0.6** README stub section "Providers (planned)" optional until Phase 2+.
+      *(Superseded by the full README provider table.)*
 
 **Exit.** Docs consistent; no code required.
 
@@ -770,20 +777,20 @@ Guiding rules:
 
 **Goal.** Zero user-visible behavior change; all calls go through the registry.
 
-- [ ] **1.1** Add `src/lib/providers/types.ts` (`ProviderId`, `LLMProvider`, etc.).
-- [ ] **1.2** Add `src/lib/llm-utils.ts` — move `extractJson`, `errorMessage` from
+- [x] **1.1** Add `src/lib/providers/types.ts` (`ProviderId`, `LLMProvider`, etc.).
+- [x] **1.2** Add `src/lib/llm-utils.ts` — move `extractJson`, `errorMessage` from
       openrouter; make errors provider-neutral (`ProviderError`).
-- [ ] **1.3** Implement `src/lib/providers/openrouter.ts` (move current client).
-- [ ] **1.4** Implement `src/lib/providers/registry.ts`.
-- [ ] **1.5** Extend `ModelSlot` with `providerId`; set `"openrouter"` on all seeds
+- [x] **1.3** Implement `src/lib/providers/openrouter.ts` (move current client).
+- [x] **1.4** Implement `src/lib/providers/registry.ts`.
+- [x] **1.5** Extend `ModelSlot` with `providerId`; set `"openrouter"` on all seeds
       and add-model paths.
-- [ ] **1.6** Replace `criticModel: string` with `critic: CriticRef` (or migrate
+- [x] **1.6** Replace `criticModel: string` with `critic: CriticRef` (or migrate
       reducer + JudgeConfig in the same PR).
-- [ ] **1.7** Update `buildFanoutJobs` to pass `providerId`.
-- [ ] **1.8** Update `rsemble.tsx` to resolve providers per job / critic.
-- [ ] **1.9** Update `studio-engine` catalog type to `CatalogModel[]`.
-- [ ] **1.10** Remove or re-export-shim `src/lib/openrouter.ts`.
-- [ ] **1.11** Typecheck clean; manual smoke: fanout stream, judge, fuse, rank toggle.
+- [x] **1.7** Update `buildFanoutJobs` to pass `providerId`.
+- [x] **1.8** Update `rsemble.tsx` to resolve providers per job / critic.
+- [x] **1.9** Update `studio-engine` catalog type to `CatalogModel[]`.
+- [x] **1.10** Remove or re-export-shim `src/lib/openrouter.ts`.
+- [x] **1.11** Typecheck clean; manual smoke: fanout stream, judge, fuse, rank toggle.
 
 **Exit criteria.**
 
@@ -803,31 +810,31 @@ Guiding rules:
 
 #### 2A — Bridge
 
-- [ ] **2.1** Scaffold `server/codex-bridge/` (Node + TypeScript, ESM).
-- [ ] **2.2** `auth.ts`: locate `auth.json`, parse safely, report status without
+- [x] **2.1** Scaffold `server/codex-bridge/` (Node + TypeScript, ESM).
+- [x] **2.2** `auth.ts`: locate `auth.json`, parse safely, report status without
       leaking tokens.
-- [ ] **2.3** Token refresh on expiry / 401; persist updated `auth.json`.
-- [ ] **2.4** Responses client: non-stream completion → plain text.
-- [ ] **2.5** Stream path → SSE compatible with OpenAI chat.completion.chunk
+- [x] **2.3** Token refresh on expiry / 401; persist updated `auth.json`.
+- [x] **2.4** Responses client: non-stream completion → plain text.
+- [x] **2.5** Stream path → SSE compatible with OpenAI chat.completion.chunk
       *or* a documented simpler delta protocol the web adapter understands.
-- [ ] **2.6** `GET /auth/status`, `GET /health`, `GET /v1/models`.
-- [ ] **2.7** `POST /v1/chat/completions` façade (translate messages ↔ Responses).
+- [x] **2.6** `GET /auth/status`, `GET /health`, `GET /v1/models`.
+- [x] **2.7** `POST /v1/chat/completions` façade (translate messages ↔ Responses).
 - [x] **2.8** Bind 127.0.0.1 only; CORS allowlist; optional bridge secret — **superseded by Plan 002 D3** (secret enforced when set).
-- [ ] **2.9** npm scripts: `dev:bridge`, compose into `dev`.
-- [ ] **2.10** README: `codex login`, bridge, troubleshooting (not logged in /
+- [x] **2.9** npm scripts: `dev:bridge`, compose into `dev`.
+- [x] **2.10** README: `codex login`, bridge, troubleshooting (not logged in /
       keyring-only / port in use).
 
 #### 2B — Web adapter + UI minimum
 
-- [ ] **2.11** `providers/chatgpt-codex.ts`.
-- [ ] **2.12** Register in registry.
-- [ ] **2.13** Model add: provider picker includes ChatGPT when bridge ready
+- [x] **2.11** `providers/chatgpt-codex.ts`.
+- [x] **2.12** Register in registry.
+- [x] **2.13** Model add: provider picker includes ChatGPT when bridge ready
       (or always listed with disabled state + reason).
-- [ ] **2.14** Merge Codex models into catalog when status ok.
-- [ ] **2.15** Seed optional example Codex slot **disabled by default** (or none —
+- [x] **2.14** Merge Codex models into catalog when status ok.
+- [x] **2.15** Seed optional example Codex slot **disabled by default** (or none —
       prefer none to avoid failed runs).
-- [ ] **2.16** Readiness wiring for `canRun` and banners.
-- [ ] **2.17** Manual test: mixed run (1 OpenRouter + 1 Codex), judge on either side,
+- [x] **2.16** Readiness wiring for `canRun` and banners.
+- [x] **2.17** Manual test: mixed run (1 OpenRouter + 1 Codex), judge on either side,
       stream visible for both.
 
 **Exit criteria.**
@@ -849,13 +856,13 @@ Guiding rules:
 
 **Goal.** Gemini as a third peer provider.
 
-- [ ] **3.1** `providers/gemini.ts` — message mapping, generateContent.
-- [ ] **3.2** Streaming for fanout (or documented single-yield fallback).
-- [ ] **3.3** `listModels` + curated fallback.
-- [ ] **3.4** `VITE_GEMINI_KEY` + `.env.example`.
-- [ ] **3.5** Registry + ModelList + JudgeConfig + readiness.
-- [ ] **3.6** CORS validation; add Vite proxy only if needed.
-- [ ] **3.7** Manual test: Gemini-only run; mixed OpenRouter + Gemini; mixed all three
+- [x] **3.1** `providers/gemini.ts` — message mapping, generateContent.
+- [x] **3.2** Streaming for fanout (or documented single-yield fallback).
+- [x] **3.3** `listModels` + curated fallback.
+- [x] **3.4** `VITE_GEMINI_KEY` + `.env.example`.
+- [x] **3.5** Registry + ModelList + JudgeConfig + readiness.
+- [x] **3.6** CORS validation; add Vite proxy only if needed.
+- [x] **3.7** Manual test: Gemini-only run; mixed OpenRouter + Gemini; mixed all three
       if Codex available.
 
 **Exit criteria.**
@@ -869,15 +876,16 @@ Guiding rules:
 
 **Goal.** Day-to-day usable multi-provider without editing `.env` for every change.
 
-- [ ] **4.1** Connections UI (minimal, DESIGN.md-compliant).
+- [x] **4.1** Connections UI (minimal, per the current design system; `DESIGN.md`
+      is no longer shipped).
 - [x] **4.2** Optional `localStorage` key store with clear/export-none — **superseded by Plan 002 D1** (session-only default with explicit per-key opt-in).
-- [ ] **4.3** Per-provider test connection actions.
-- [ ] **4.4** Catalog merge UX: filter by provider; badges on rows.
-- [ ] **4.5** Judge combobox searches across ready providers (grouped).
-- [ ] **4.6** Persist last-used critic ref and slot list (if not already) without
+- [x] **4.3** Per-provider test connection actions.
+- [x] **4.4** Catalog merge UX: filter by provider; badges on rows.
+- [x] **4.5** Judge combobox searches across ready providers (grouped).
+- [x] **4.6** Persist last-used critic ref and slot list (if not already) without
       storing secrets in the same blob as prompts if avoidable.
-- [ ] **4.7** Empty/error copy pass.
-- [ ] **4.8** README: full multi-provider quickstart.
+- [x] **4.7** Empty/error copy pass.
+- [x] **4.8** README: full multi-provider quickstart.
 
 **Exit criteria.**
 
@@ -888,13 +896,15 @@ Guiding rules:
 
 ### Phase 5 — Hardening (optional, as needed)
 
-- [ ] **5.1** Abort/cancel in-flight across providers.
-- [ ] **5.2** Bridge: structured logs (no secrets), better refresh race handling.
+- [x] **5.1** Abort/cancel in-flight across providers.
+- [x] **5.2** Bridge: structured logs (no secrets), better refresh race handling.
 - [ ] **5.3** Surface Codex quota headers in UI (subtle, RANK-adjacent) — only if
-      low chrome cost.
-- [ ] **5.4** Unit tests: message mappers (Gemini, Responses façade), readiness matrix.
-- [ ] **5.5** Smoke script or Playwright happy path with mocks.
-- [ ] **5.6** Revisit keyring support for Codex auth on Windows.
+      low chrome cost. *(Deferred — intentionally not shipped; out of scope.)*
+- [x] **5.4** Unit tests: message mappers (Gemini, Responses façade), readiness matrix.
+- [x] **5.5** Smoke script or Playwright happy path with mocks.
+- [ ] **5.6** Revisit keyring support for Codex auth on Windows. *(Deferred — see
+      DECISIONS.md #11: OS-keychain integration is out of scope for the current
+      program.)*
 
 **Exit.** Confidence for daily driver use; still personal/local.
 
@@ -907,8 +917,9 @@ Guiding rules:
 | Typecheck | `npm run build` / `tsc -b` each phase |
 | Manual matrix | See below |
 | Unit | Pure mappers + `extractJson` + readiness pure helpers |
-| Bridge integration | Real `codex login` on dev machine; do not CI with real tokens |
-| Mocks | MSW or fetch mock for OpenRouter/Gemini in unit tests later |
+| Bridge integration | Real `codex login` on dev machine; never in default CI |
+| Mocks | Deterministic fetch stubs/fixtures in unit tests (default CI is credential-free) |
+| Gate | `npm run check` + `npm run test:coverage` locally and in `.github/workflows/ci.yml` |
 
 ### Manual test matrix (minimum)
 
@@ -922,19 +933,19 @@ Guiding rules:
 | M6 | Gemini only | Rank + Fuse |
 | M7 | Mixed 3 providers fanout | ≥2 succeed → judge; streams per candidate |
 | M8 | Judge on Codex, fanout OpenRouter | Works |
-| M9 | Mode toggle Rank↔Fuse | Unchanged semantics (UI.md §6) |
+| M9 | Mode toggle Rank↔Fuse | Unchanged semantics (PRODUCT.md) |
 | M10 | Insufficient candidates | Existing gate |
 
 ---
 
 ## 14. Security checklist
 
-- [ ] Codex bridge listens on **127.0.0.1 only** by default.
-- [ ] No access/refresh tokens in frontend state, logs, or analytics.
-- [ ] `.gitignore` covers `.env`, any local auth copies.
-- [ ] README warns: personal use; don't expose bridge; treat `auth.json` as a password.
+- [x] Codex bridge listens on **127.0.0.1 only** by default.
+- [x] No access/refresh tokens in frontend state, logs, or analytics.
+- [x] `.gitignore` covers `.env`, any local auth copies.
+- [x] README warns: personal use; don't expose bridge; treat `auth.json` as a password.
 - [x] Bridge secret (`RSEMBLE_BRIDGE_SECRET`) is enforced when set (Plan 002 D3).
-- [ ] Do not paste `auth.json` into issues/chats.
+- [x] Do not paste `auth.json` into issues/chats.
 - [x] Keys: environment variables preferred; UI keys session-only unless explicitly remembered (Plan 002 D1).
 
 ---
@@ -960,7 +971,7 @@ The feature is **done for daily use** when:
    each work end-to-end for fanout + judge + fuse.
 2. Mixed-provider runs work with per-candidate streaming (or documented Gemini fallback).
 3. Readiness is accurate per provider; failures are attributable.
-4. Rank/Fuse behavior and UI chrome remain focused (PRODUCT.md / UI.md).
+4. Rank/Fuse behavior and UI chrome remain focused (PRODUCT.md).
 5. README documents setup for all three without reading this full spec.
 6. No Anthropic or other unrequested vendor code paths.
 
@@ -970,13 +981,16 @@ The feature is **done for daily use** when:
 
 Record answers in DECISIONS.md or a short addendum here when decided.
 
-1. **Keyring-only Codex auth on Windows** — require file store in v1, or invest in
-   keyring read immediately?
-2. **Default `npm run dev`** — always start bridge, or web-only with opt-in bridge?
-3. **Settings keys vs env only** — Phase 4 scope vs keep env-only longer?
-4. **Gemini CORS** — direct browser vs shared localhost proxy?
-5. **Critic default** — stay on OpenRouter seed forever, or remember last ready critic?
-6. **Bridge implementation language** — Node/tsx (matches repo) assumed; Bun acceptable?
+1. **Keyring-only Codex auth on Windows** — resolved: file store in v1; OS-keychain
+   integration deferred (DECISIONS.md #11).
+2. **Default `npm run dev`** — resolved: `dev` starts web + bridge; `dev:web-only`
+   and `dev:bridge` exist for opt-in halves.
+3. **Settings keys vs env only** — resolved: Connections panel ships (Phase 4) with
+   the Plan 002 D1 credential policy.
+4. **Gemini CORS** — resolved: direct browser calls.
+5. **Critic default** — resolved: judge is configurable and persisted as a
+   provider+model ref; no hidden remap.
+6. **Bridge implementation language** — resolved: Node/tsx.
 
 **Recommended defaults if unblocking without the user:**
 (1) file store v1, (2) `dev` starts bridge but web degrades gracefully, (3) env

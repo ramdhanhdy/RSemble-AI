@@ -1,5 +1,8 @@
 # PRODUCT.md — RSemble AI Product Specification
 
+> Status: Implemented (three workspaces, hardening contracts D1–D6 live)
+> Last reconciled: 2026-08-07 at commit `049f144`
+
 > **The source of truth for what RSemble AI is and is not.**
 > Authority: PRODUCT.md defines *what the product is*. `PROVIDERS.md` defines *how models are reached*.
 > If implementation or provider details conflict with PRODUCT.md's spine (fanout → Judge → Rank/Fuse), PRODUCT.md wins.

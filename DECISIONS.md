@@ -2,6 +2,11 @@
 
 This document records architectural decisions made for RSemble AI.
 
+> **Reconciliation note (Plan 006, 2026-08-07):** `UI.md`, `DESIGN.md`, and
+> `TODOS.md` referenced inside historical decisions are no longer shipped in
+> this repository. Those references are preserved for provenance; the current
+> product/UI authority is `PRODUCT.md` plus this file.
+
 ---
 
 ## Decision #1: Focused Direction (Split Workspace / Variation B)
