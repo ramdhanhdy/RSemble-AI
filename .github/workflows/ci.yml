@@ -1,15 +1,11 @@
 # =============================================================================
 # RSemble AI quality gate — Plan 006 workstream D.
 #
-# Runs the exact same gate a local checkout runs (format, lint, typechecks,
-# tests, coverage thresholds, production build) on a clean install.
-# Deterministic and credential-free by design: provider adapters are
-# exercised through mocks/fixtures; no live provider, Codex login, bridge
-# secret, or paid quota is required or accepted here.
-#
-# Coverage and build diagnostics: the text coverage table and any build
-# errors are printed to the job logs (artifacts are gitignored outputs and
-# are deliberately not uploaded).
+# Minimal, deterministic, credential-free: a fresh checkout must be able to
+# run `npm ci` and `npm run check` (format + lint + typechecks + tests +
+# production build) plus the coverage gate. Provider adapters are exercised
+# through mocks/fixtures only — no live provider, Codex login, bridge secret,
+# or paid quota is required or accepted here.
 # =============================================================================
 
 name: ci
@@ -27,50 +23,23 @@ permissions:
   contents: read
 
 jobs:
-  quality:
-    name: Format, lint, typecheck
+  gate:
+    name: Fresh-checkout quality gate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Prettier formatting check
-        run: npm run format:check
-      - name: ESLint
-        run: npm run lint
-      - name: Typecheck (web)
-        run: npm run typecheck:web
-      - name: Typecheck (server)
-        run: npm run typecheck:server
 
-  test:
-    name: Tests + coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Vitest with coverage thresholds
+
+      - name: Clean install
+        run: npm ci
+
+      - name: Full quality gate (format + lint + typechecks + tests + build)
+        run: npm run check
+
+      - name: Coverage thresholds
         run: npm run test:coverage
-
-  build:
-    name: Production build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Build (tsc -b + vite build)
-        run: npm run build
