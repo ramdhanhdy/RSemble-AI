@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { listenOrReuseBridge, probeReusableBridge } from "../codex-bridge/startup";
+import { listenOrReuseBridge, probeReusableBridge } from "../codex-bridge/startup.js";
 
 const servers: http.Server[] = [];
 

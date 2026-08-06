@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { createBridgeServer } from "../codex-bridge/index";
+import { createBridgeServer } from "../codex-bridge/index.js";
 
 const SECRET = "test-bridge-secret";
 

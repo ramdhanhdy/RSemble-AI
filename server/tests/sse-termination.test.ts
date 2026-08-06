@@ -5,7 +5,7 @@ import {
   shouldAppendDone,
   initialSseTerminationState,
   DONE_SENTINEL,
-} from "../codex-bridge/sse-termination";
+} from "../codex-bridge/sse-termination.js";
 
 function sseDelta(content: string): string {
   return `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;

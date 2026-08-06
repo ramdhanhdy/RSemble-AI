@@ -4,7 +4,7 @@ import {
   handleCompletions,
   DEFAULT_UPSTREAM_TIMEOUT_MS,
   type CompletionRequestBody,
-} from "../codex-bridge/responses";
+} from "../codex-bridge/responses.js";
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -19,7 +19,7 @@ function makeRes(): http.ServerResponse {
   return res;
 }
 
-function authOk() {
+async function authOk() {
   return { token: "test-token", accountId: "acct-1" };
 }
 

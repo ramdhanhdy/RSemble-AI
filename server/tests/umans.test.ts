@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "node:http";
-import { handleUmansProxy } from "../codex-bridge/umans";
+import { handleUmansProxy } from "../codex-bridge/umans.js";
 
 function makeReq(method = "POST", body?: string): http.IncomingMessage {
   const req = new http.IncomingMessage(null as never);

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import http from "node:http";
-import { handleClinePassProxy } from "../codex-bridge/clinepass";
+import { handleClinePassProxy } from "../codex-bridge/clinepass.js";
 
 function makeReq(body = "{}"): http.IncomingMessage {
   const req = new http.IncomingMessage(null as never);

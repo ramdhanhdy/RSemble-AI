@@ -1,10 +1,14 @@
 {
   "compilerOptions": {
     "target": "ES2024",
-    "lib": ["ES2024"],
+    "lib": [
+      "ES2024"
+    ],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "skipLibCheck": true,
     "strict": true,
     "noUnusedLocals": true,
@@ -14,6 +18,12 @@
     "moduleDetection": "force",
     "noEmit": true
   },
-  "include": ["codex-bridge/**/*.ts", "../shared/**/*.ts"],
-  "exclude": ["**/*.test.ts", "../shared/**/*.test.ts"]
+  "include": [
+    "codex-bridge/**/*.ts",
+    "tests/**/*.ts",
+    "../shared/**/*.ts"
+  ],
+  "exclude": [
+    "../shared/**/*.test.ts"
+  ]
 }

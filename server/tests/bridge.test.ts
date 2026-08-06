@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { createBridgeServer, DEFAULT_MAX_BODY_BYTES } from "../codex-bridge/index";
+import { createBridgeServer, DEFAULT_MAX_BODY_BYTES } from "../codex-bridge/index.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
