@@ -39,8 +39,9 @@ export interface Candidate {
   streamingText?: string;
   startedAt?: number;
   finishedAt?: number;
-  tokensIn?: number;
-  tokensOut?: number;
+  /** Authoritative provider total, or null when native media contribution is unknown. */
+  tokensIn?: number | null;
+  tokensOut?: number | null;
 }
 
 export interface ModelSlot {

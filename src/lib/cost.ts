@@ -1,6 +1,6 @@
 import { getModelPricing } from "./providers/pricing";
 import { contentToText } from "./providers/content";
-import type { ChatMessage, ContentPart, CostRecord, ModelPricingSnapshot, ProviderId } from "./providers/types";
+import type { ChatMessage, ContentPart, CostRecord, InputUsageEstimate, ModelPricingSnapshot, ProviderId, UsageBreakdown } from "./providers/types";
 
 export interface ModelPricing {
   inputPerM: number;
@@ -71,6 +71,74 @@ export function estimateMessageInput(messages: ChatMessage[]): MessageInputEstim
       ? { note: "Text-only partial estimate; native media contribution is unknown." }
       : {}),
   };
+}
+
+
+/** Resolve one authoritative input-usage provenance record. */
+export function inputUsageEstimate(
+  messages: ChatMessage[],
+  usage?: UsageBreakdown | null,
+): InputUsageEstimate {
+  const estimate = estimateMessageInput(messages);
+  const textTokens = estimate.textTokens;
+  if (usage && usage.inputTokens !== null) {
+    return {
+      totalTokens: usage.inputTokens,
+      textTokens,
+      method: "provider-reported",
+      partial: false,
+      note: estimate.hasNativeMedia ? "Provider-reported total includes native media." : undefined,
+    };
+  }
+  if (estimate.hasNativeMedia) {
+    return {
+      totalTokens: null,
+      textTokens,
+      method: usage ? "unknown" : "text-heuristic",
+      partial: true,
+      note: "Text-only estimate; native media usage is unknown.",
+    };
+  }
+  if (usage) {
+    return {
+      totalTokens: null,
+      textTokens,
+      method: "unknown",
+      partial: estimate.hasNativeMedia,
+      note: estimate.hasNativeMedia
+        ? "Text-only estimate; native media usage is unknown."
+        : "Provider did not report input usage.",
+    };
+  }
+  return { totalTokens: textTokens, textTokens, method: "text-heuristic", partial: false, note: "Estimated from textual content." };
+}
+
+/** Render authoritative/fallback input usage without implying unknown media is zero. */
+export function inputUsageLabel(
+  estimate: InputUsageEstimate | undefined,
+  legacyTokensIn?: number | null,
+): string {
+  if (estimate) {
+    const tokens = estimate.totalTokens ?? estimate.textTokens;
+    const formatted = tokens == null ? null : Math.round(tokens).toLocaleString("en-US");
+    if (estimate.method === "provider-reported" && estimate.totalTokens != null) {
+      return `Input: ${formatted} tokens — provider reported`;
+    }
+    if (estimate.method === "text-heuristic" && estimate.partial) {
+      return formatted
+        ? `Text estimate: ~${formatted} tokens — partial; media usage unknown`
+        : "Input usage: Unknown";
+    }
+    if (estimate.method === "text-heuristic") {
+      return formatted ? `Input estimate: ~${formatted} tokens — text heuristic` : "Input usage: Unknown";
+    }
+    if (estimate.method === "provider-specific") {
+      return formatted ? `Input estimate: ~${formatted} tokens — provider-specific` : "Input usage: Unknown";
+    }
+    return "Input usage: Unknown";
+  }
+  if (legacyTokensIn != null) return `Input: ${Math.round(legacyTokensIn).toLocaleString("en-US")} tokens`;
+  return "Input usage: Unknown";
 }
 
 /**

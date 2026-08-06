@@ -22,7 +22,7 @@
 //    token, secret, password, env
 // =============================================================================
 
-import type { ChatMessage, CostRecord, ReasoningEffort, RunReasoningProvenance, UsageBreakdown } from "../providers/types";
+import type { ChatMessage, CostRecord, InputUsageEstimate, ReasoningEffort, RunReasoningProvenance, UsageBreakdown } from "../providers/types";
 import type { ConsensusBreakdown, JudgeReport } from "../../studio-data";
 import type { StageStatus } from "../../studio-engine";
 import { isEvaluationProfile, isExperimentTaskExecutionPlan, type EvaluationProfileSnapshot, type ExperimentTaskExecutionPlan } from "../evaluations/evaluation-types";
@@ -177,6 +177,8 @@ export interface CandidateAttemptRecord {
   tokensOut: number | null;
   /** Provider-reported or estimated token usage; absent on old records. */
   usage?: UsageBreakdown;
+  /** Additive input estimate provenance; absent on old records. */
+  inputEstimate?: InputUsageEstimate;
   /** Reported / estimated / unknown cost provenance; absent on old records. */
   cost?: CostRecord;
   error: PersistedError | null;
@@ -215,6 +217,7 @@ export interface JudgeAttemptRecord {
   report: JudgeReport | null;
   consensus: ConsensusBreakdown | null;
   usage?: UsageBreakdown;
+  inputEstimate?: InputUsageEstimate;
   cost?: CostRecord;
 }
 
@@ -231,6 +234,7 @@ export interface FusionAttemptRecord {
   error: PersistedError | null;
   result: string | null;
   usage?: UsageBreakdown;
+  inputEstimate?: InputUsageEstimate;
   cost?: CostRecord;
 }
 
@@ -496,6 +500,15 @@ export function isUsageBreakdown(v: unknown): boolean {
   );
 }
 
+function isInputUsageEstimate(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  if (!(v.totalTokens === null || isFiniteNonNegativeNumber(v.totalTokens))) return false;
+  if (!(v.textTokens === null || isFiniteNonNegativeNumber(v.textTokens))) return false;
+  if (!["provider-reported", "text-heuristic", "provider-specific", "unknown"].includes(v.method as string)) return false;
+  if (typeof v.partial !== "boolean") return false;
+  return v.note === undefined || isString(v.note);
+}
+
 export function isCostRecord(v: unknown): boolean {
   if (!isRecord(v)) return false;
   if (!(v.usd === null || isFiniteNonNegativeNumber(v.usd))) return false;
@@ -520,6 +533,7 @@ function isCandidateAttemptRecord(v: unknown): v is CandidateAttemptRecord {
     (v.error === null || isPersistedError(v.error)) &&
     (v.reusedFrom === undefined || isReusedFrom(v.reusedFrom)) &&
     (v.usage === undefined || isUsageBreakdown(v.usage)) &&
+    (v.inputEstimate === undefined || isInputUsageEstimate(v.inputEstimate)) &&
     (v.cost === undefined || isCostRecord(v.cost))
   );
 }
@@ -541,6 +555,7 @@ function isJudgeAttemptRecord(v: unknown): v is JudgeAttemptRecord {
     (v.report === null || isJudgeReport(v.report)) &&
     (v.consensus === null || isConsensusBreakdown(v.consensus)) &&
     (v.usage === undefined || isUsageBreakdown(v.usage)) &&
+    (v.inputEstimate === undefined || isInputUsageEstimate(v.inputEstimate)) &&
     (v.cost === undefined || isCostRecord(v.cost))
   );
 }
@@ -558,7 +573,10 @@ function isFusionAttemptRecord(v: unknown): v is FusionAttemptRecord {
     (v.finishedAt === null || isNumber(v.finishedAt)) &&
     isAttemptStatus(v.status) &&
     (v.error === null || isPersistedError(v.error)) &&
-    (v.result === null || isString(v.result))
+    (v.result === null || isString(v.result)) &&
+    (v.usage === undefined || isUsageBreakdown(v.usage)) &&
+    (v.inputEstimate === undefined || isInputUsageEstimate(v.inputEstimate)) &&
+    (v.cost === undefined || isCostRecord(v.cost))
   );
 }
 

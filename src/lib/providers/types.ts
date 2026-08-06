@@ -66,6 +66,15 @@ export interface UsageBreakdown {
   cacheWriteTokens: number | null;
 }
 
+/** Additive provenance for fallback input-usage accounting. */
+export interface InputUsageEstimate {
+  totalTokens: number | null;
+  textTokens: number | null;
+  method: "provider-reported" | "text-heuristic" | "provider-specific" | "unknown";
+  partial: boolean;
+  note?: string;
+}
+
 export type CostSource = "provider-reported" | "catalog-estimate" | "unknown";
 
 export interface ModelPricingSnapshot {

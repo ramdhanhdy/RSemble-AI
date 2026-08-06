@@ -449,6 +449,30 @@ describe("run-controller — guarded paths", () => {
     expect(addRun).not.toHaveBeenCalled();
     expect(dispatched.map((a) => a.type)).not.toContain("FUSION_START");
   });
+
+  it("keeps frozen Fuse active through Fusion when the UI switches to Rank", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    const { deps, stateRef, dispatched } = makeDeps(state);
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    deps.lease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-fuse", now: () => 1000, ttl: 10_000 });
+    let candidateCall = 0;
+    chatStreamMock.mockImplementation(() => (async function* () {
+      candidateCall += 1;
+      stateRef.current = { ...stateRef.current, mode: "rank" };
+      yield `answer-${candidateCall}`;
+    })());
+    chatCompletionMock
+      .mockResolvedValueOnce(judgeResponse([["A", 4.0], ["B", 3.0]]))
+      .mockResolvedValueOnce("fused answer");
+
+    await createRunController(deps).runFanout();
+
+    expect(chatCompletionMock).toHaveBeenCalledTimes(2);
+    expect(dispatched.map((a) => a.type)).toContain("FUSION_START");
+    expect(dispatched.map((a) => a.type)).toContain("FUSION_RESULT");
+    expect(stateRef.current.running).toBe(false);
+    expect(shared.lease).toBeNull();
+  });
 });
 
 describe("run-controller — judge instruction threading", () => {

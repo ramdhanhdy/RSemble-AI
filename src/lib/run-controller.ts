@@ -250,7 +250,9 @@ export function createRunController(deps: RunControllerDeps) {
         if (input.status === "completed" && input.report) {
           dispatch({
             type: "JUDGE_RESULT",
-            mode: stateRef.current.mode,
+            // A terminal Judge transition is protocol state, so never consult
+            // the mutable command-pane mode after execution begins.
+            mode: frozenContext?.mode ?? "rank",
             consensus: input.consensus!,
             scoresById: Object.fromEntries(
               Object.entries(input.report.evaluationsById).map(

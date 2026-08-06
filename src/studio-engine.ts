@@ -153,7 +153,7 @@ export type Action =
   // --- pipeline ---
   | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext }
   | { type: "FANOUT_BLOCKED"; reason: string }
-  | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
+  | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number | null; tokensOut: number | null }
   | { type: "CANDIDATE_DELTA"; id: string; delta: string }
   | { type: "CANDIDATE_FAILED"; id: string; error: string; finishedAt: number }
   | { type: "FANOUT_END"; count: number }
@@ -171,7 +171,7 @@ export type Action =
   // --- single-candidate retry ---
   | { type: "RETRY_CANDIDATE_START"; id: string }
   | { type: "RETRY_CANDIDATE_DELTA"; id: string; delta: string }
-  | { type: "RETRY_CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number; tokensOut: number }
+  | { type: "RETRY_CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number | null; tokensOut: number | null }
   | { type: "RETRY_CANDIDATE_FAILED"; id: string; error: string; finishedAt: number };
 
 let auditSeq = 0;

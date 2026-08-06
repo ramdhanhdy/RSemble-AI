@@ -14,7 +14,7 @@ import type {
   ConsensusBreakdown,
   ModelSlot,
 } from "../../studio-data";
-import type { ChatMessage, CostRecord, ReasoningPolicy, ReasoningSettingProvenance, RunReasoningProvenance, UsageBreakdown } from "../providers/types";
+import type { ChatMessage, CostRecord, InputUsageEstimate, ReasoningPolicy, ReasoningSettingProvenance, RunReasoningProvenance, UsageBreakdown } from "../providers/types";
 import type {
   RunRecordV2,
   FullRunSummaryV2,
@@ -80,6 +80,7 @@ export interface CandidateTerminalInput {
   tokensIn: number | null;
   tokensOut: number | null;
   usage?: UsageBreakdown | null;
+  inputEstimate?: InputUsageEstimate;
   cost?: CostRecord | null;
   error: PersistedError | null;
   finishedAt: number;
@@ -100,6 +101,7 @@ export interface JudgeTerminalInput {
   report: JudgeReport | null;
   consensus: ConsensusBreakdown | null;
   usage?: UsageBreakdown | null;
+  inputEstimate?: InputUsageEstimate;
   cost?: CostRecord | null;
   error: PersistedError | null;
   finishedAt: number;
@@ -118,6 +120,7 @@ export interface FusionTerminalInput {
   status: AttemptStatus;
   result: string | null;
   usage?: UsageBreakdown | null;
+  inputEstimate?: InputUsageEstimate;
   cost?: CostRecord | null;
   error: PersistedError | null;
   finishedAt: number;
@@ -284,6 +287,9 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
                   output: sourceAttempt.output,
                   tokensIn: sourceAttempt.tokensIn,
                   tokensOut: sourceAttempt.tokensOut,
+                  ...(sourceAttempt.usage ? { usage: { ...sourceAttempt.usage } } : {}),
+                  ...(sourceAttempt.inputEstimate ? { inputEstimate: { ...sourceAttempt.inputEstimate } } : {}),
+                  ...(sourceAttempt.cost ? { cost: { ...sourceAttempt.cost } } : {}),
                   error: null,
                   reusedFrom: {
                     sourceRunId: input.baseRun.id,
@@ -383,6 +389,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     attempt.tokensIn = input.tokensIn;
     attempt.tokensOut = input.tokensOut;
     if (input.usage) attempt.usage = { ...input.usage };
+    if (input.inputEstimate) attempt.inputEstimate = { ...input.inputEstimate };
     if (input.cost) attempt.cost = { ...input.cost };
     attempt.error = input.error;
     attempt.finishedAt = input.finishedAt;
@@ -444,6 +451,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     attempt.report = input.report;
     attempt.consensus = input.consensus;
     if (input.usage) attempt.usage = { ...input.usage };
+    if (input.inputEstimate) attempt.inputEstimate = { ...input.inputEstimate };
     if (input.cost) attempt.cost = { ...input.cost };
     attempt.error = input.error;
     attempt.finishedAt = input.finishedAt;
@@ -503,6 +511,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     attempt.status = input.status;
     attempt.result = input.result;
     if (input.usage) attempt.usage = { ...input.usage };
+    if (input.inputEstimate) attempt.inputEstimate = { ...input.inputEstimate };
     if (input.cost) attempt.cost = { ...input.cost };
     attempt.error = input.error;
     attempt.finishedAt = input.finishedAt;

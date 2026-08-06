@@ -6,6 +6,8 @@ import {
   pricingFor,
   estimateMessageInput,
   estimateAttachmentInput,
+  inputUsageEstimate,
+  inputUsageLabel,
 } from "./cost";
 import { clearModelPricing, parseOpenRouterPricing, setModelPricing } from "./providers/pricing";
 
@@ -110,6 +112,48 @@ describe("costFromSnapshot", () => {
   });
 });
 
+
+describe("authoritative input usage provenance", () => {
+  const textMessages = [{ role: "user" as const, content: "hello world" }];
+
+  it("prefers provider-reported text-only totals", () => {
+    const result = inputUsageEstimate(textMessages, {
+      inputTokens: 17, outputTokens: 2, reasoningTokens: null, cacheReadTokens: null, cacheWriteTokens: null,
+    });
+    expect(result).toMatchObject({ totalTokens: 17, textTokens: 3, method: "provider-reported", partial: false });
+  });
+
+  it("labels a text-only fallback as an estimate", () => {
+    const result = inputUsageEstimate(textMessages);
+    expect(result.method).toBe("text-heuristic");
+    expect(result.totalTokens).toBe(result.textTokens);
+    expect(inputUsageLabel(result)).toContain("Input estimate: ~3 tokens");
+  });
+
+  it("keeps native image and text input authoritative total unknown", () => {
+    const result = inputUsageEstimate([{ role: "user", content: [
+      { type: "text", text: "hello world" }, { type: "image", mimeType: "image/png", data: "abc" },
+    ] }]);
+    expect(result).toMatchObject({ totalTokens: null, textTokens: 3, method: "text-heuristic", partial: true });
+    expect(inputUsageLabel(result)).toContain("partial; media usage unknown");
+  });
+
+  it("keeps native PDF/file input unknown when usage is absent", () => {
+    const result = inputUsageEstimate([{ role: "user", content: [
+      { type: "text", text: "document" }, { type: "file", mimeType: "application/pdf", data: "abc", filename: "a.pdf" },
+    ] }]);
+    expect(result.totalTokens).toBeNull();
+    expect(result.partial).toBe(true);
+  });
+
+  it("replaces the partial media estimate when the provider reports usage", () => {
+    const result = inputUsageEstimate([{ role: "user", content: [
+      { type: "text", text: "hello" }, { type: "image", mimeType: "image/png", data: "abc" },
+    ] }], { inputTokens: 99, outputTokens: 4, reasoningTokens: null, cacheReadTokens: null, cacheWriteTokens: null });
+    expect(result).toMatchObject({ totalTokens: 99, method: "provider-reported", partial: false });
+    expect(inputUsageLabel(result)).toBe("Input: 99 tokens — provider reported");
+  });
+});
 
 describe("truthful multipart estimation", () => {
   it("counts text parts without stringifying media objects", () => {

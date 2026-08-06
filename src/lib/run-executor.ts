@@ -13,7 +13,7 @@
 //   executeFusionAttempt — Fusion/Re-fuse from frozen accepted evidence
 // =============================================================================
 
-import type { ChatMessage, ChatOptions, CostRecord, CriticRef, ProviderId, ReasoningPolicy, UsageBreakdown } from "./providers/types";
+import type { ChatMessage, ChatOptions, CostRecord, CriticRef, InputUsageEstimate, ProviderId, ReasoningPolicy, UsageBreakdown } from "./providers/types";
 import type {
   BlindCandidate,
   Candidate,
@@ -35,7 +35,7 @@ import {
   sanitizePersistedError,
   type SanitizeErrorContext,
 } from "./persistence/error-redaction";
-import { costFromSnapshot, estimateMessageInput, estimateTokens } from "./cost";
+import { costFromSnapshot, estimateTokens, inputUsageEstimate } from "./cost";
 import { getModelPricing } from "./providers/pricing";
 import {
   buildFanoutJobs,
@@ -162,8 +162,9 @@ export interface RunExecutorEvents {
     result: {
       segments: CandidateSegment[];
       summary: string;
-      tokensIn: number;
-      tokensOut: number;
+      tokensIn: number | null;
+      tokensOut: number | null;
+      inputEstimate?: InputUsageEstimate;
       finishedAt: number;
     },
   ): void;
@@ -182,6 +183,7 @@ export interface RunExecutorEvents {
       tokensIn: number | null;
       tokensOut: number | null;
       usage?: UsageBreakdown | null;
+      inputEstimate?: InputUsageEstimate;
       cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
@@ -206,6 +208,7 @@ export interface RunExecutorEvents {
       report: JudgeReport | null;
       consensus: ConsensusBreakdown | null;
       usage?: UsageBreakdown | null;
+      inputEstimate?: InputUsageEstimate;
       cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
@@ -228,6 +231,7 @@ export interface RunExecutorEvents {
       status: AttemptStatus;
       result: string | null;
       usage?: UsageBreakdown | null;
+      inputEstimate?: InputUsageEstimate;
       cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
@@ -330,7 +334,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     events: RunExecutorEvents,
     signal: AbortSignal,
     diagnostics: { source?: RunSource; attemptId: string; reasoningEffort?: ReasoningPolicy["candidates"] },
-  ): Promise<{ content: string; segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; usage?: UsageBreakdown | null; cost?: CostRecord | null; finishedAt: number } | { error: PersistedError } | null> {
+  ): Promise<{ content: string; segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; usage?: UsageBreakdown | null; cost?: CostRecord | null; finishedAt: number } | { error: PersistedError } | null> {
     const provider = getProvider(job.providerId);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
@@ -383,15 +387,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       if (isAborted(signal)) return null;
       const segments = splitSegments(content, job.id);
       const summary = summarize(content);
-      const inputEstimate = estimateMessageInput(messages);
-      const tokensIn = usage?.inputTokens ?? inputEstimate.textTokens;
+      const inputEstimate = inputUsageEstimate(messages, usage);
+      const tokensIn = inputEstimate.totalTokens;
       const tokensOut = usage?.outputTokens ?? estimateTokens(content);
-      // Native media has no provider-neutral token/cost formula. Preserve the
-      // text-only display estimate, but keep the cost total Unknown until usage
-      // is reported by the provider.
-      const costInputTokens = usage?.inputTokens ?? (inputEstimate.hasNativeMedia ? null : inputEstimate.inputTokens);
       const resolvedCost =
-        cost ?? estimateFallbackCost(job.providerId, job.slug, costInputTokens, tokensOut);
+        cost ?? estimateFallbackCost(job.providerId, job.slug, tokensIn, tokensOut);
       devTerminalLog("provider.request.completed", {
         ...context,
         status: "completed",
@@ -399,7 +399,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         tokensIn,
         tokensOut,
       }, "info");
-      return { content, segments, summary, tokensIn, tokensOut, usage, cost: resolvedCost, finishedAt: now() };
+      return { content, segments, summary, tokensIn, tokensOut, inputEstimate, usage, cost: resolvedCost, finishedAt: now() };
     } catch (err) {
       if (isExecutionTimeoutError(err)) {
         const error = sanitizeError(err, { category: "timeout", stage: "candidate", model: job.slug });
@@ -525,17 +525,17 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         return { ok: false };
       }
       const { breakdown, scoresById, report } = parseJudge(content, blindSet, profile, done);
-      const inputEstimate = estimateMessageInput(messages);
+      const inputEstimate = inputUsageEstimate(messages, usage);
       const resolvedCost =
         cost ??
         estimateFallbackCost(
           request.critic.providerId,
           request.critic.model,
-          usage?.inputTokens ?? (inputEstimate.hasNativeMedia ? null : inputEstimate.inputTokens),
+          inputEstimate.totalTokens,
           usage?.outputTokens ?? estimateTokens(content),
         );
       await events.onJudgeTerminal(attemptId, {
-        status: "completed", report, consensus: breakdown, usage, cost: resolvedCost, error: null, finishedAt: now(),
+        status: "completed", report, consensus: breakdown, usage, inputEstimate, cost: resolvedCost, error: null, finishedAt: now(),
       });
       devTerminalLog("judge.request.completed", {
         ...judgeContext,
@@ -662,17 +662,17 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         }).catch(() => {});
         return { ok: false, result: null };
       }
-      const inputEstimate = estimateMessageInput(messages);
+      const inputEstimate = inputUsageEstimate(messages, usage);
       const resolvedCost =
         cost ??
         estimateFallbackCost(
           request.critic.providerId,
           request.critic.model,
-          usage?.inputTokens ?? (inputEstimate.hasNativeMedia ? null : inputEstimate.inputTokens),
+          inputEstimate.totalTokens,
           usage?.outputTokens ?? estimateTokens(content),
         );
       await events.onFusionTerminal(attemptId, {
-        status: "completed", result: content, usage, cost: resolvedCost, error: null, finishedAt: now(),
+        status: "completed", result: content, usage, inputEstimate, cost: resolvedCost, error: null, finishedAt: now(),
       });
       return { ok: true, result: content };
     } catch (err) {
@@ -759,7 +759,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           throw new Error(`candidateExecution: missing seed attempt ID for reused candidate ${c.id}`);
         }
       }
-      const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; finishedAt: number; content: string }> = new Map();
+      const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; finishedAt: number; content: string }> = new Map();
 
       // Execute only the requested model keys.
       const executeJobs = jobs.filter((j) => executeSet.has(`${j.providerId}:${j.slug}`));
@@ -809,6 +809,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
             summary: result.summary,
             tokensIn: result.tokensIn,
             tokensOut: result.tokensOut,
+            inputEstimate: result.inputEstimate,
             finishedAt: result.finishedAt,
           });
 
@@ -821,6 +822,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
             tokensIn: result.tokensIn,
             tokensOut: result.tokensOut,
             usage: result.usage,
+            inputEstimate: result.inputEstimate,
             cost: result.cost,
             error: null,
             finishedAt: result.finishedAt,
@@ -901,7 +903,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (isAborted(signal)) return;
 
     const candidateAttemptIds: Record<string, string> = {};
-    const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; finishedAt: number; content: string }> = new Map();
+    const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; finishedAt: number; content: string }> = new Map();
 
     await Promise.all(
       jobs.map(async (job): Promise<void> => {
@@ -952,6 +954,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           summary: result.summary,
           tokensIn: result.tokensIn,
           tokensOut: result.tokensOut,
+          inputEstimate: result.inputEstimate,
           finishedAt: result.finishedAt,
         });
 
@@ -964,6 +967,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           tokensIn: result.tokensIn,
           tokensOut: result.tokensOut,
           usage: result.usage,
+          inputEstimate: result.inputEstimate,
           cost: result.cost,
           error: null,
           finishedAt: result.finishedAt,
@@ -1093,6 +1097,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       summary: result.summary,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
+      inputEstimate: result.inputEstimate,
       finishedAt: result.finishedAt,
     });
 
@@ -1102,6 +1107,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
       usage: result.usage,
+      inputEstimate: result.inputEstimate,
       cost: result.cost,
       error: null,
       finishedAt: result.finishedAt,
