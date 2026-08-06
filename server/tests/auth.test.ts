@@ -211,9 +211,7 @@ describe("getValidToken", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(() =>
-        Promise.resolve(
-          Response.json({ access_token: "fake-new-access-token", expires_in: 3600 }),
-        ),
+        Promise.resolve(Response.json({ access_token: "fake-new-access-token", expires_in: 3600 })),
       ),
     );
 
