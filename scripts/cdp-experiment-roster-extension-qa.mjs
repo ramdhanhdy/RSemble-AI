@@ -32,7 +32,8 @@ import path from "node:path";
 
 const baseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? "http://localhost:5176/";
 const outDir = path.resolve("docs/qa/experiment-roster-extension");
-const chromePath = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const chromePath =
+  process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const debugPort = 9340;
 const results = {
   generatedAt: new Date().toISOString(),
@@ -42,15 +43,19 @@ const results = {
 };
 fs.mkdirSync(outDir, { recursive: true });
 
-const chrome = spawn(chromePath, [
-  "--headless=new",
-  "--disable-gpu",
-  `--remote-debugging-port=${debugPort}`,
-  `--user-data-dir=${path.join(os.tmpdir(), `rsemble-roster-extension-${Date.now()}`)}`,
-  "--no-first-run",
-  "--no-default-browser-check",
-  "about:blank",
-], { stdio: "ignore" });
+const chrome = spawn(
+  chromePath,
+  [
+    "--headless=new",
+    "--disable-gpu",
+    `--remote-debugging-port=${debugPort}`,
+    `--user-data-dir=${path.join(os.tmpdir(), `rsemble-roster-extension-${Date.now()}`)}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -58,11 +63,15 @@ async function getPageWebSocketUrl() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       const pages = await new Promise((resolve, reject) => {
-        http.get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
-          let body = "";
-          response.on("data", (chunk) => { body += chunk; });
-          response.on("end", () => resolve(JSON.parse(body)));
-        }).on("error", reject);
+        http
+          .get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
+            let body = "";
+            response.on("data", (chunk) => {
+              body += chunk;
+            });
+            response.on("end", () => resolve(JSON.parse(body)));
+          })
+          .on("error", reject);
       });
       const page = pages.find((candidate) => candidate.type === "page");
       if (page) return page.webSocketDebuggerUrl;
@@ -83,7 +92,9 @@ socket.onmessage = (event) => {
   pending.delete(message.id);
   resolve(message);
 };
-await new Promise((resolve) => { socket.onopen = resolve; });
+await new Promise((resolve) => {
+  socket.onopen = resolve;
+});
 
 function send(method, params = {}) {
   return new Promise((resolve, reject) => {
@@ -97,11 +108,16 @@ function send(method, params = {}) {
 }
 
 async function evaluate(expression) {
-  const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+  const result = await send("Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+  });
   if (result.exceptionDetails) {
-    const detail = result.exceptionDetails.exception?.description
-      ?? result.exceptionDetails.text
-      ?? "Runtime evaluation failed.";
+    const detail =
+      result.exceptionDetails.exception?.description ??
+      result.exceptionDetails.text ??
+      "Runtime evaluation failed.";
     throw new Error(detail);
   }
   return result.result?.value;
@@ -127,14 +143,18 @@ async function setViewport({ width, height, mobile = false, scale = 1 }) {
     deviceScaleFactor: scale,
     mobile,
   });
-  await send("Emulation.setTouchEmulationEnabled", mobile
-    ? { enabled: true, maxTouchPoints: 5 }
-    : { enabled: false });
+  await send(
+    "Emulation.setTouchEmulationEnabled",
+    mobile ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
+  );
 }
 
 async function navigate(hash = "") {
   await send("Page.navigate", { url: `${baseUrl}${hash ? `#${hash}` : ""}` });
-  await waitFor("Boolean(document.querySelector('main, [role=main], #root > *'))", "application shell");
+  await waitFor(
+    "Boolean(document.querySelector('main, [role=main], #root > *'))",
+    "application shell",
+  );
   await wait(400);
 }
 
@@ -239,17 +259,24 @@ async function waitForExperimentStatus(experimentId, statuses, label, maxAttempt
 
 async function openAddModelDialog(experimentId) {
   await navigate(`/experiments/${experimentId}`);
-  await waitFor("Boolean(document.querySelector('[data-testid=\"add-model-action\"]'))", `add-model action on ${experimentId}`);
+  await waitFor(
+    "Boolean(document.querySelector('[data-testid=\"add-model-action\"]'))",
+    `add-model action on ${experimentId}`,
+  );
   await clickButton("Add model");
   await waitFor("Boolean(document.querySelector('[role=\"dialog\"]'))", "add-model dialog");
 }
 
 async function selectCatalogModel(slug) {
-  await waitFor(`(() => {
+  await waitFor(
+    `(() => {
     const dialog = document.querySelector('[role="dialog"]');
     if (!dialog) return false;
     return [...dialog.querySelectorAll("button")].some((b) => (b.textContent ?? "").includes(${JSON.stringify(slug)}));
-  })()`, `catalog entry ${slug}`, 120);
+  })()`,
+    `catalog entry ${slug}`,
+    120,
+  );
   const clicked = await evaluate(`(() => {
     const dialog = document.querySelector('[role="dialog"]');
     const button = [...dialog.querySelectorAll("button")].find((b) =>
@@ -259,17 +286,23 @@ async function selectCatalogModel(slug) {
     return true;
   })()`);
   if (!clicked) throw new Error(`Could not commit catalog entry: ${slug}`);
-  await waitFor("Boolean(document.querySelector('[role=\"dialog\"] [data-cost-preview]'))", "planner preview");
+  await waitFor(
+    "Boolean(document.querySelector('[role=\"dialog\"] [data-cost-preview]'))",
+    "planner preview",
+  );
 }
 
 async function confirmAddAndRun() {
   await evaluate(`window.__qaResetCalls()`);
   await clickButton("Add and run");
   // The route flips to the progress surface once the controller owns the run.
-  await waitFor(`(() => {
+  await waitFor(
+    `(() => {
     const dialog = document.querySelector('[role="dialog"]');
     return !dialog || !(dialog.textContent ?? "").includes("Add model to results");
-  })()`, "dialog close after confirm");
+  })()`,
+    "dialog close after confirm",
+  );
 }
 
 /** Wait for terminal status and return { row, callsAtTerminal } for diagnostics. */
@@ -740,7 +773,8 @@ try {
   await navigate();
   await waitFor("Boolean(window.indexedDB)", "indexedDB");
   const seeded = await evaluate(SEED_SOURCE);
-  if (seeded?.__seedError) throw new Error(`Seed failed: ${seeded.__seedError}\n${seeded.__seedStack}`);
+  if (seeded?.__seedError)
+    throw new Error(`Seed failed: ${seeded.__seedError}\n${seeded.__seedStack}`);
   results.seeded = seeded;
   // Let root provider probes settle so the catalog + readiness map populate.
   await wait(1200);
@@ -783,8 +817,11 @@ try {
   const s1Suite = await readSuiteRow("suite-roster");
   const s1Row = s1Terminal.row;
   const s1RevisionAtTerminal = s1Row?.revision;
-  const s1NewSlot = s1Row?.experiment?.snapshot?.modelSlots?.find((s) => s.slug === "deepseek/deepseek-chat") ?? null;
-  const s1SuiteSlot = s1Suite?.suite?.modelSlots?.find((s) => s.slug === "deepseek/deepseek-chat") ?? null;
+  const s1NewSlot =
+    s1Row?.experiment?.snapshot?.modelSlots?.find((s) => s.slug === "deepseek/deepseek-chat") ??
+    null;
+  const s1SuiteSlot =
+    s1Suite?.suite?.modelSlots?.find((s) => s.slug === "deepseek/deepseek-chat") ?? null;
   const s1Completion = completionCalls(s1Calls);
   record("s1-only-new-model-calls", {
     completionModels: s1Completion.map((c) => c.model),
@@ -793,23 +830,29 @@ try {
     terminalRevision: s1Row?.revision,
     terminalStatus: s1Row?.status,
     seededRevision: 3,
-    pass: s1Completion.length === 2
-      && s1Completion.every((c) => c.model === "deepseek/deepseek-chat")
-      && judgeCalls(s1Calls).length === 2,
+    pass:
+      s1Completion.length === 2 &&
+      s1Completion.every((c) => c.model === "deepseek/deepseek-chat") &&
+      judgeCalls(s1Calls).length === 2,
     reason: "reusable tasks execute only the new model plus fresh Judge calls",
   });
   record("s1-suite-sync", {
     suiteVersion: s1Suite?.suite?.version,
     suiteRevision: s1Suite?.suite?.revision,
     slotParity: Boolean(s1NewSlot && s1SuiteSlot && s1NewSlot.id === s1SuiteSlot.id),
-    pass: s1Suite?.suite?.version === 2 && Boolean(s1NewSlot && s1SuiteSlot && s1NewSlot.id === s1SuiteSlot.id),
+    pass:
+      s1Suite?.suite?.version === 2 &&
+      Boolean(s1NewSlot && s1SuiteSlot && s1NewSlot.id === s1SuiteSlot.id),
     reason: "suite version increments once and the synced slot id matches the snapshot slot id",
   });
   await navigate("/experiments/exp-roster");
-  await waitFor(`(() => {
+  await waitFor(
+    `(() => {
     const text = document.body.textContent ?? "";
     return text.includes("deepseek/deepseek-chat");
-  })()`, "S1 new model column on results");
+  })()`,
+    "S1 new model column on results",
+  );
   const s1Results = await evaluate(`(() => {
     const text = document.body.textContent ?? "";
     const disclosure = document.querySelector('[data-testid="roster-extensions"]');
@@ -822,7 +865,8 @@ try {
   record("s1-results-surface", {
     ...s1Results,
     pass: s1Results.hasColumn && s1Results.historyShown && s1Results.noRepairLanguageInHistory,
-    reason: "results show the scored new column and an extension history disclosure without repair language",
+    reason:
+      "results show the scored new column and an extension history disclosure without repair language",
   });
   await screenshot("qa-s1-results");
 
@@ -830,24 +874,32 @@ try {
   await evaluate("window.__qaEmptyCatalog = true");
   await openAddModelDialog("exp-roster-raw");
   await typeText("input#model-search", "deepseek/deepseek-chat");
-  await waitFor(`(() => {
+  await waitFor(
+    `(() => {
     const dialog = document.querySelector('[role="dialog"]');
     return [...dialog.querySelectorAll("button")].some((b) =>
       (b.textContent ?? "").includes("deepseek/deepseek-chat") && !b.disabled);
-  })()`, "raw slug commit entry");
+  })()`,
+    "raw slug commit entry",
+  );
   await evaluate(`(() => {
     const dialog = document.querySelector('[role="dialog"]');
     const button = [...dialog.querySelectorAll("button")].find((b) =>
       (b.textContent ?? "").includes("deepseek/deepseek-chat") && !b.disabled);
     button.click();
   })()`);
-  await waitFor("Boolean(document.querySelector('[role=\"dialog\"] [data-cost-preview]'))", "S2 planner preview");
+  await waitFor(
+    "Boolean(document.querySelector('[role=\"dialog\"] [data-cost-preview]'))",
+    "S2 planner preview",
+  );
   // Uncheck suite sync.
   await evaluate(`(() => {
     const checkbox = document.querySelector('[role="dialog"] input[type="checkbox"]');
     checkbox.click();
   })()`);
-  const s2Sync = await evaluate(`Boolean(document.querySelector('[role="dialog"] input[type="checkbox"]')?.checked === false)`);
+  const s2Sync = await evaluate(
+    `Boolean(document.querySelector('[role="dialog"] input[type="checkbox"]')?.checked === false)`,
+  );
   record("s2-sync-unchecked", {
     unchecked: s2Sync,
     pass: s2Sync,
@@ -857,7 +909,9 @@ try {
   await waitForExtensionTerminal("exp-roster-raw", 3, "S2 extension completion");
   const s2Suite = await readSuiteRow("suite-roster-raw");
   const s2Row = await readExperimentRow("exp-roster-raw");
-  const s2NewSlot = s2Row?.experiment?.snapshot?.modelSlots?.find((s) => s.slug === "deepseek/deepseek-chat") ?? null;
+  const s2NewSlot =
+    s2Row?.experiment?.snapshot?.modelSlots?.find((s) => s.slug === "deepseek/deepseek-chat") ??
+    null;
   record("s2-suite-unchanged", {
     suiteVersion: s2Suite?.suite?.version,
     suiteRevision: s2Suite?.suite?.revision,
@@ -894,10 +948,11 @@ try {
   record("s3-per-task-roster", {
     callsByModel: byModel,
     judgeCount: judgeCalls(s3Calls).length,
-    pass: byModel["deepseek/deepseek-chat"] === 2
-      && byModel["org/old-a"] === 1
-      && byModel["org/old-b"] === 1
-      && judgeCalls(s3Calls).length === 2,
+    pass:
+      byModel["deepseek/deepseek-chat"] === 2 &&
+      byModel["org/old-a"] === 1 &&
+      byModel["org/old-b"] === 1 &&
+      judgeCalls(s3Calls).length === 2,
     reason: "reusable task runs only the new model; fallback task runs the full rotated roster",
   });
 
@@ -922,7 +977,8 @@ try {
     ...s4State,
     networkAttempts: s4Calls,
     pass: s4State.alreadyAdded && s4State.confirmDisabled && s4Calls === 0,
-    reason: "history model is excluded from the picker and confirm stays disabled with zero network calls",
+    reason:
+      "history model is excluded from the picker and confirm stays disabled with zero network calls",
   });
 
   // --- Scenario 6: keyboard, viewport, zoom, reduced motion ----------------------
@@ -961,7 +1017,10 @@ try {
   // 390px mobile viewport.
   await setViewport({ width: 390, height: 844, mobile: true });
   await navigate("/experiments/exp-roster-dup");
-  await waitFor("Boolean(document.querySelector('[data-testid=\"add-model-action\"]'))", "add-model action at 390px");
+  await waitFor(
+    "Boolean(document.querySelector('[data-testid=\"add-model-action\"]'))",
+    "add-model action at 390px",
+  );
   const s6Mobile = await evaluate(`(() => {
     const el = document.querySelector('[data-testid="add-model-action"]');
     const rect = el.getBoundingClientRect();
@@ -976,7 +1035,10 @@ try {
   // 200% zoom.
   await setViewport({ width: 1440, height: 1000, scale: 2 });
   await navigate("/experiments/exp-roster-dup");
-  await waitFor("Boolean(document.querySelector('[data-testid=\"add-model-action\"]'))", "add-model action at 200% zoom");
+  await waitFor(
+    "Boolean(document.querySelector('[data-testid=\"add-model-action\"]'))",
+    "add-model action at 200% zoom",
+  );
   record("s6-zoom-200", {
     present: true,
     pass: true,
@@ -984,12 +1046,17 @@ try {
   });
   // Reduced motion.
   await setViewport({ width: 1440, height: 1000 });
-  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  await send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
   await navigate("/experiments/exp-roster-dup");
-  await waitFor(`(() => {
+  await waitFor(
+    `(() => {
     const text = document.body.textContent ?? "";
     return text.includes("Roster extensions");
-  })()`, "reduced-motion results render");
+  })()`,
+    "reduced-motion results render",
+  );
   record("s6-reduced-motion", {
     rendered: true,
     pass: true,
@@ -999,10 +1066,13 @@ try {
 
   // --- Scenario 7: header action vs recovery toolbar ------------------------------
   await navigate("/experiments/exp-roster-rec");
-  await waitFor(`(() => {
+  await waitFor(
+    `(() => {
     return Boolean(document.querySelector('[aria-label="Recovery"]'))
       && Boolean(document.querySelector('[data-testid="add-model-action"]'));
-  })()`, "recovery toolbar + add-model action");
+  })()`,
+    "recovery toolbar + add-model action",
+  );
   const s7Separation = await evaluate(`(() => {
     const recovery = document.querySelector('[aria-label="Recovery"]');
     const action = document.querySelector('[data-testid="add-model-action"]');
@@ -1015,7 +1085,10 @@ try {
   })()`);
   record("s7-visual-separation", {
     ...s7Separation,
-    pass: s7Separation.recoveryHasRepairCopy && s7Separation.actionOutsideRecovery && s7Separation.recoveryHasNoAddModel,
+    pass:
+      s7Separation.recoveryHasRepairCopy &&
+      s7Separation.actionOutsideRecovery &&
+      s7Separation.recoveryHasNoAddModel,
     reason: "recovery toolbar keeps repair-only actions; Add model lives in the header",
   });
   await screenshot("qa-s7-separation");
@@ -1028,7 +1101,8 @@ try {
   await selectCatalogModel("deepseek/deepseek-chat");
   await confirmAddAndRun();
   // Wait for at least one task to reach a terminal attempt on the progress view.
-  await waitFor(`new Promise((resolve) => {
+  await waitFor(
+    `new Promise((resolve) => {
     const open = indexedDB.open("rsemble-evaluation");
     open.onerror = () => resolve(false);
     open.onsuccess = () => {
@@ -1041,18 +1115,26 @@ try {
         resolve(tasks.some((t) => t.attempts.some((a) => a.status === "completed" || a.status === "failed")));
       };
     };
-  })`, "S5 first terminal task");
+  })`,
+    "S5 first terminal task",
+  );
   await clickButton("Abort experiment");
   await waitForExtensionTerminal("exp-roster-abort", 3, "S5 abort terminal");
-  const s5PreReloadCalls = await evaluate("(window.__qaCalls ?? []).filter((c) => !c.isJudge).length");
+  const s5PreReloadCalls = await evaluate(
+    "(window.__qaCalls ?? []).filter((c) => !c.isJudge).length",
+  );
   await send("Page.reload");
-  await waitFor("Boolean(document.querySelector('main, [role=main], #root > *'))", "post-reload shell");
+  await waitFor(
+    "Boolean(document.querySelector('main, [role=main], #root > *'))",
+    "post-reload shell",
+  );
   await navigate("/experiments/exp-roster-abort");
   await wait(2000);
   const s5PostReloadCalls = await evaluate("(window.__qaCalls ?? []).length");
   const s5Row = await readExperimentRow("exp-roster-abort");
   const s5Adopted = (s5Row?.experiment?.tasks ?? []).some((t) =>
-    t.attempts.some((a) => a.status === "completed" && a.runId !== null));
+    t.attempts.some((a) => a.status === "completed" && a.runId !== null),
+  );
   record("s5-abort-recovery", {
     preReloadCompletionCalls: s5PreReloadCalls,
     postReloadCalls: s5PostReloadCalls,
@@ -1082,7 +1164,9 @@ try {
     passed: results.probes.filter((p) => p.pass !== false).length,
   };
   fs.writeFileSync(path.join(outDir, "qa-results.json"), JSON.stringify(results, null, 2));
-  console.log(`roster-extension QA: ${results.summary.passed}/${results.summary.probes} probes passed.`);
+  console.log(
+    `roster-extension QA: ${results.summary.passed}/${results.summary.probes} probes passed.`,
+  );
   console.log(`Evidence: ${outDir}`);
 } catch (error) {
   results.error = error instanceof Error ? error.message : String(error);
@@ -1090,6 +1174,8 @@ try {
   console.error(`roster-extension QA FAILED: ${results.error}`);
   process.exitCode = 1;
 } finally {
-  try { socket.close(); } catch {}
+  try {
+    socket.close();
+  } catch {}
   chrome.kill();
 }

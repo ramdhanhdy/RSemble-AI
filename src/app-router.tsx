@@ -12,7 +12,10 @@
 
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, Link, useParams } from "react-router-dom";
-import { useEvaluationRepository, useFusionStudyRepository } from "./lib/persistence/repository-context";
+import {
+  useEvaluationRepository,
+  useFusionStudyRepository,
+} from "./lib/persistence/repository-context";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 
 // Route-level code splitting: Compare is the default surface and stays in the
@@ -31,7 +34,9 @@ const SuiteEditor = lazy(() =>
   import("./workspaces/evaluations/SuiteEditor").then((m) => ({ default: m.SuiteEditor })),
 );
 const SuiteTaskEditorRoute = lazy(() =>
-  import("./workspaces/evaluations/SuiteTaskEditorRoute").then((m) => ({ default: m.SuiteTaskEditorRoute })),
+  import("./workspaces/evaluations/SuiteTaskEditorRoute").then((m) => ({
+    default: m.SuiteTaskEditorRoute,
+  })),
 );
 const ProfileList = lazy(() =>
   import("./workspaces/evaluations/ProfileList").then((m) => ({ default: m.ProfileList })),
@@ -84,8 +89,14 @@ export function AppRoutes({
         <Route path="profiles" element={withSuspense(<ProfileListRoute />)} />
         <Route path="profiles/:profileId" element={withSuspense(<ProfileDetailRoute />)} />
         <Route path=":suiteId" element={withSuspense(<SuiteEditorRoute models={models} />)} />
-        <Route path=":suiteId/tasks/:taskId" element={withSuspense(<SuiteTaskEditorRouteWrapper models={models} />)} />
-        <Route path=":suiteId/fusion/:studyId" element={withSuspense(<FusionStudyRouteWrapper />)} />
+        <Route
+          path=":suiteId/tasks/:taskId"
+          element={withSuspense(<SuiteTaskEditorRouteWrapper models={models} />)}
+        />
+        <Route
+          path=":suiteId/fusion/:studyId"
+          element={withSuspense(<FusionStudyRouteWrapper />)}
+        />
       </Route>
 
       {/* Experiment progress/results — top-level route (spec §5.1). Terminal
@@ -149,12 +160,8 @@ function CompareSlot({ children }: { children: React.ReactNode }) {
 function NotFound() {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <h1 className="font-mono text-sm uppercase tracking-[0.14em] text-text-muted">
-        Not found
-      </h1>
-      <p className="max-w-sm text-sm text-text-secondary">
-        This route does not exist.
-      </p>
+      <h1 className="font-mono text-sm uppercase tracking-[0.14em] text-text-muted">Not found</h1>
+      <p className="max-w-sm text-sm text-text-secondary">This route does not exist.</p>
       <Link
         to="/compare"
         className="mt-2 flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"

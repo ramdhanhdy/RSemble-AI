@@ -152,12 +152,41 @@ describe("SuiteList — rows", () => {
       makeSuite("s1", {
         version: 3,
         tasks: [
-          { id: "t1", title: "T1", prompt: "p", systemPrompt: "", evaluation: { kind: "inherit" }, judgeInstructionOverride: "", order: 0 },
+          {
+            id: "t1",
+            title: "T1",
+            prompt: "p",
+            systemPrompt: "",
+            evaluation: { kind: "inherit" },
+            judgeInstructionOverride: "",
+            order: 0,
+          },
         ],
         modelSlots: [
-          { id: "slot1", providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "openai/gpt-4o", enabled: true },
-          { id: "slot2", providerId: "openrouter", provider: "OpenRouter", model: "claude", slug: "anthropic/claude", enabled: true },
-          { id: "slot3", providerId: "openrouter", provider: "OpenRouter", model: "off", slug: "off/off", enabled: false },
+          {
+            id: "slot1",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "gpt-4o",
+            slug: "openai/gpt-4o",
+            enabled: true,
+          },
+          {
+            id: "slot2",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "claude",
+            slug: "anthropic/claude",
+            enabled: true,
+          },
+          {
+            id: "slot3",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "off",
+            slug: "off/off",
+            enabled: false,
+          },
         ],
       }),
     ]);
@@ -341,9 +370,13 @@ describe("SuiteList — suite package import", () => {
     const repo = new InMemoryEvaluationRepository();
     const h = renderWithRouter(<SuiteList repo={repo} />);
     await settle();
-    const file = new File([JSON.stringify({ kind: "rsemble-suite-package", schemaVersion: 1 })], "bad.json", {
-      type: "application/json",
-    });
+    const file = new File(
+      [JSON.stringify({ kind: "rsemble-suite-package", schemaVersion: 1 })],
+      "bad.json",
+      {
+        type: "application/json",
+      },
+    );
     await chooseImportFile(h, file);
     expect(h.$('[data-testid="suite-import-errors"]')).not.toBeNull();
     expect(await repo.listSuites(true)).toHaveLength(0);
@@ -396,10 +429,21 @@ describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
     };
     await repo.createProfile(
       { id: "p1", revision: 1, latestVersion: 1, createdAt: now, updatedAt: now, archivedAt: null },
-      { id: "p1", version: 1, name: "Clarity rubric", description: "", judgeInstruction: "", criteria: [criterion], createdAt: now, updatedAt: now },
+      {
+        id: "p1",
+        version: 1,
+        name: "Clarity rubric",
+        description: "",
+        judgeInstruction: "",
+        criteria: [criterion],
+        createdAt: now,
+        updatedAt: now,
+      },
     );
     await seedRepo(repo, [
-      makeSuite("s1", { defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } } }),
+      makeSuite("s1", {
+        defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+      }),
     ]);
     const h = renderWithRouter(<SuiteList repo={repo} />);
     await settle();
@@ -421,7 +465,9 @@ describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
   it("shows rubric missing when the pinned profile no longer exists", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedRepo(repo, [
-      makeSuite("s1", { defaultEvaluation: { kind: "profile", profile: { id: "gone", version: 1 } } }),
+      makeSuite("s1", {
+        defaultEvaluation: { kind: "profile", profile: { id: "gone", version: 1 } },
+      }),
     ]);
     const h = renderWithRouter(<SuiteList repo={repo} />);
     await settle();
@@ -434,14 +480,27 @@ describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
     await seedRepo(repo, [makeSuite("s1")]);
     const now = Date.now();
     await repo.createExperiment({
-      id: "exp1", revision: 1, suiteId: "s1", suiteVersion: 1, protocolFingerprint: "fp",
-      status: "completed", execution: null,
+      id: "exp1",
+      revision: 1,
+      suiteId: "s1",
+      suiteVersion: 1,
+      protocolFingerprint: "fp",
+      status: "completed",
+      execution: null,
       snapshot: {
-        suiteId: "s1", suiteVersion: 1, tasks: [], modelSlots: [],
+        suiteId: "s1",
+        suiteVersion: 1,
+        tasks: [],
+        modelSlots: [],
         defaultJudge: { providerId: "openrouter", model: "j" },
-        defaultEvaluation: { kind: "holistic" }, profiles: [], protocolFingerprint: "fp", createdAt: now,
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: now,
       },
-      tasks: [], createdAt: now, updatedAt: now,
+      tasks: [],
+      createdAt: now,
+      updatedAt: now,
     });
     const h = renderWithRouter(<SuiteList repo={repo} />);
     await settle();
@@ -457,10 +516,7 @@ describe("SuiteList — accessibility", () => {
     await seedRepo(repo, [makeSuite("s1")]);
     const h = renderWithRouter(<SuiteList repo={repo} />);
     await settle();
-    const interactives = [
-      ...h.$$("button"),
-      ...h.$$("a[href^='/evaluations/']"),
-    ];
+    const interactives = [...h.$$("button"), ...h.$$("a[href^='/evaluations/']")];
     for (const el of interactives) {
       const cls = el.getAttribute("class") ?? "";
       // Either min-h-[44px] or h-11 (44px) — RecordRow uses min-h-[44px]

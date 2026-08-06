@@ -176,7 +176,11 @@ function guardError(path: string, index: number, entry: unknown): string {
 function checkIds(list: unknown[], path: string, errors: string[]): void {
   for (let i = 0; i < list.length; i++) {
     const entry = list[i];
-    if (isRecord(entry) && typeof entry.id === "string" && !IMPORT_LIMITS.ID_PATTERN.test(entry.id)) {
+    if (
+      isRecord(entry) &&
+      typeof entry.id === "string" &&
+      !IMPORT_LIMITS.ID_PATTERN.test(entry.id)
+    ) {
       errors.push(`${path}[${i}].id is not a safe archive ID (1–128 chars of A–Z a–z 0–9 . _ : -)`);
     }
   }
@@ -214,8 +218,10 @@ export function parseWorkbenchArchive(
   const profiles = value.profiles;
   const summariesRaw = isRecord(runs) && Array.isArray(runs.summaries) ? runs.summaries : null;
   const detailsRaw = isRecord(runs) && Array.isArray(runs.details) ? runs.details : null;
-  const identitiesRaw = isRecord(profiles) && Array.isArray(profiles.identities) ? profiles.identities : null;
-  const versionsRaw = isRecord(profiles) && Array.isArray(profiles.versions) ? profiles.versions : null;
+  const identitiesRaw =
+    isRecord(profiles) && Array.isArray(profiles.identities) ? profiles.identities : null;
+  const versionsRaw =
+    isRecord(profiles) && Array.isArray(profiles.versions) ? profiles.versions : null;
   const suitesRaw = Array.isArray(value.suites) ? value.suites : null;
   const experimentsRaw = Array.isArray(value.experiments) ? value.experiments : null;
 
@@ -369,8 +375,10 @@ function summaryRowFor(summary: RunSummary): RunSummaryRow {
     status: full ? full.status : null,
     mode: full ? full.mode : null,
     sourceKind: full?.source.kind ?? "adhoc",
-    sourceProtocolFingerprint: full?.source.kind === "experiment" ? full.source.protocolFingerprint : null,
-    sourceExperimentTaskAttemptId: full?.source.kind === "experiment" ? full.source.experimentTaskAttemptId : null,
+    sourceProtocolFingerprint:
+      full?.source.kind === "experiment" ? full.source.protocolFingerprint : null,
+    sourceExperimentTaskAttemptId:
+      full?.source.kind === "experiment" ? full.source.experimentTaskAttemptId : null,
     modelKeys: summary.modelKeys,
   };
 }
@@ -426,8 +434,11 @@ export async function importWorkbenchArchive(
         for (const record of a.runs.details) {
           const incomingSummary = fullSummariesById.get(record.id);
           const existingDetail = await db.runDetails.get(record.id);
-          const existingSummary = incomingSummary ? await db.runSummaries.get(record.id) : undefined;
-          const detailSame = existingDetail !== undefined && canon(existingDetail.record) === canon(record);
+          const existingSummary = incomingSummary
+            ? await db.runSummaries.get(record.id)
+            : undefined;
+          const detailSame =
+            existingDetail !== undefined && canon(existingDetail.record) === canon(record);
           const summarySame =
             existingSummary === undefined
               ? incomingSummary === undefined
@@ -615,7 +626,10 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
     const attempt =
       candidate.attempts.find((a) => a.attemptId === candidate.acceptedAttemptId) ??
       candidate.attempts[candidate.attempts.length - 1];
-    lines.push(`### ${mdSafe(candidate.model)} (${mdSafe(candidate.providerId)}:${mdSafe(candidate.slug)})`, ``);
+    lines.push(
+      `### ${mdSafe(candidate.model)} (${mdSafe(candidate.providerId)}:${mdSafe(candidate.slug)})`,
+      ``,
+    );
     if (attempt) {
       lines.push(`- ${inputUsageLabel(attempt.inputEstimate, attempt.tokensIn)}`, ``);
     }
@@ -633,7 +647,12 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
     ? record.judge.attempts.find((a) => a.attemptId === record.judge.acceptedAttemptId)
     : undefined;
   if (acceptedJudgeAttempt) {
-    lines.push(`## Judge Usage`, ``, `- ${inputUsageLabel(acceptedJudgeAttempt.inputEstimate, acceptedJudgeAttempt.usage?.inputTokens)}`, ``);
+    lines.push(
+      `## Judge Usage`,
+      ``,
+      `- ${inputUsageLabel(acceptedJudgeAttempt.inputEstimate, acceptedJudgeAttempt.usage?.inputTokens)}`,
+      ``,
+    );
   }
   if (report) {
     lines.push(`## Score Explanations`, ``);
@@ -692,7 +711,11 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       lines.push(`**Agreement:**`, ...consensus.consensus.map((t) => `- ${mdSafe(t)}`), ``);
     }
     if (consensus.contradictions.length > 0) {
-      lines.push(`**Contradictions:**`, ...consensus.contradictions.map((t) => `- ${mdSafe(t)}`), ``);
+      lines.push(
+        `**Contradictions:**`,
+        ...consensus.contradictions.map((t) => `- ${mdSafe(t)}`),
+        ``,
+      );
     }
   }
 
@@ -700,7 +723,12 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
     record.fusion.attempts.find((a) => a.attemptId === record.fusion.acceptedAttemptId) ??
     record.fusion.attempts[record.fusion.attempts.length - 1];
   if (fusionAttempt && typeof fusionAttempt.result === "string") {
-    lines.push(`## Fusion Usage`, ``, `- ${inputUsageLabel(fusionAttempt.inputEstimate, fusionAttempt.usage?.inputTokens)}`, ``);
+    lines.push(
+      `## Fusion Usage`,
+      ``,
+      `- ${inputUsageLabel(fusionAttempt.inputEstimate, fusionAttempt.usage?.inputTokens)}`,
+      ``,
+    );
     lines.push(`## Fused Answer`, ``, fusionAttempt.result, ``);
   }
 

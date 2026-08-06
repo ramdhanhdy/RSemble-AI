@@ -131,7 +131,10 @@ describe("SuitePreflightDialog", () => {
   it("shows Run suite as primary when no failures exist", async () => {
     const { candidates, judge } = makeEntries();
     const allReady = {
-      candidates: candidates.map((c) => ({ ...c, state: c.state.kind === "failed" ? ready : c.state })),
+      candidates: candidates.map((c) => ({
+        ...c,
+        state: c.state.kind === "failed" ? ready : c.state,
+      })),
       judge,
     };
     const h = renderWithRouter(

@@ -10,9 +10,7 @@
 
 /** The distinct timeout classes used by paid execution. */
 export type ExecutionTimeoutKind =
-  | "connect_timeout"
-  | "stream_inactivity_timeout"
-  | "overall_timeout";
+  "connect_timeout" | "stream_inactivity_timeout" | "overall_timeout";
 
 /** A caller cancellation is intentionally not an ExecutionTimeoutKind. */
 export type ExecutionAbortKind = "user_abort";
@@ -68,7 +66,9 @@ export class ExecutionTimeoutError extends Error {
     lastProgressAt: number | null = null,
   ) {
     const label = `${metadata.provider}/${metadata.model} ${metadata.stage}`;
-    super(`${kind} for ${label} after ${Math.max(0, elapsedMs)}ms (limit ${configuredDurationMs}ms)`);
+    super(
+      `${kind} for ${label} after ${Math.max(0, elapsedMs)}ms (limit ${configuredDurationMs}ms)`,
+    );
     this.name = "ExecutionTimeoutError";
     this.kind = kind;
     this.timeoutKind = kind;
@@ -106,11 +106,12 @@ export class ExecutionTimeoutError extends Error {
 }
 
 export function isExecutionTimeoutError(value: unknown): value is ExecutionTimeoutError {
-  return value instanceof ExecutionTimeoutError || (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { name?: unknown }).name === "ExecutionTimeoutError" &&
-    isTimeoutKind((value as { kind?: unknown }).kind)
+  return (
+    value instanceof ExecutionTimeoutError ||
+    (typeof value === "object" &&
+      value !== null &&
+      (value as { name?: unknown }).name === "ExecutionTimeoutError" &&
+      isTimeoutKind((value as { kind?: unknown }).kind))
   );
 }
 
@@ -226,7 +227,9 @@ function sourceClassification(signal: AbortSignal): AbortClassification {
  * classification survives environments that expose `signal.aborted` but not
  * `signal.reason`.
  */
-export function classifyAbortSignal(signal: AbortSignal | null | undefined): AbortClassification | null {
+export function classifyAbortSignal(
+  signal: AbortSignal | null | undefined,
+): AbortClassification | null {
   if (!signal?.aborted) return null;
   return sourceClassification(signal);
 }
@@ -253,7 +256,11 @@ export function timeoutErrorFromSignal(
 /** Runtime-safe AbortError check. Some fetch implementations throw an Error
  * with `name: "AbortError"` rather than a DOMException. */
 export function isAbortErrorLike(value: unknown): boolean {
-  return typeof value === "object" && value !== null && (value as { name?: unknown }).name === "AbortError";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { name?: unknown }).name === "AbortError"
+  );
 }
 
 /** Preserve deadline/user cancellation when an adapter catches fetch/reader
@@ -283,14 +290,17 @@ export function composeAbortSignals(
   ...sources: Array<AbortSignal | null | undefined>
 ): ComposedAbortSignal {
   const controller = new AbortController();
-  const activeSources = sources.filter((source): source is AbortSignal => source !== null && source !== undefined);
+  const activeSources = sources.filter(
+    (source): source is AbortSignal => source !== null && source !== undefined,
+  );
   let cleaned = false;
 
   const finish = (source: AbortSignal): void => {
     if (cleaned || controller.signal.aborted) return;
     const classification = sourceClassification(source);
     classifications.set(controller.signal, classification);
-    const reason = classification.kind === "user_abort" ? classification.reason : classification.error;
+    const reason =
+      classification.kind === "user_abort" ? classification.reason : classification.error;
     abortWithReason(controller, reason);
   };
 
@@ -505,7 +515,12 @@ export function createStreamWatchdog(options: StreamWatchdogOptions): StreamWatc
   // be aborted when composition is created.
   if (composed.signal.aborted) onComposedAbort();
 
-  const fire = (kind: ExecutionTimeoutKind, durationMs: number, relevantStart: number, progressAt: number | null) => {
+  const fire = (
+    kind: ExecutionTimeoutKind,
+    durationMs: number,
+    relevantStart: number,
+    progressAt: number | null,
+  ) => {
     if (!active || composed.signal.aborted) return;
     const elapsedMs = Math.max(0, now() - relevantStart);
     timeoutError = new ExecutionTimeoutError(
@@ -528,7 +543,12 @@ export function createStreamWatchdog(options: StreamWatchdogOptions): StreamWatc
     );
   };
 
-  if (active && !composed.signal.aborted && options.overallMs !== undefined && options.overallMs !== null) {
+  if (
+    active &&
+    !composed.signal.aborted &&
+    options.overallMs !== undefined &&
+    options.overallMs !== null
+  ) {
     overallHandle = timers.setTimeout(
       () => fire("overall_timeout", options.overallMs ?? 0, startedAt, lastProgressAt),
       Math.max(0, options.overallMs),
@@ -594,7 +614,6 @@ export function createStreamWatchdog(options: StreamWatchdogOptions): StreamWatc
 /** Short alias for stream-focused call sites. */
 export const createStreamDeadline = createStreamWatchdog;
 
-
 /** Reject a pending provider operation with its structured deadline/user-abort
  * classification. The underlying operation receives the composed signal and
  * callers remain responsible for provider-specific reader cleanup. */
@@ -610,9 +629,15 @@ export async function raceWithAbort<T>(operation: Promise<T>, signal: AbortSigna
       signal.removeEventListener("abort", onAbort);
       fn();
     };
-    const onAbort = () => finish(() => reject(timeoutErrorFromSignal(signal) ?? new DOMException("Aborted", "AbortError")));
+    const onAbort = () =>
+      finish(() =>
+        reject(timeoutErrorFromSignal(signal) ?? new DOMException("Aborted", "AbortError")),
+      );
     signal.addEventListener("abort", onAbort, { once: true });
-    operation.then((value) => finish(() => resolve(value)), (error) => finish(() => reject(error)));
+    operation.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
   });
 }
 
@@ -632,14 +657,27 @@ export async function runWithExecutionDeadlines<T>(
   operation: (signal: AbortSignal, onHeadersReady: () => void) => Promise<T>,
   options: ExecutionOperationOptions,
 ): Promise<T> {
-  const connect = createExecutionDeadline({ ...options, kind: "connect_timeout", durationMs: options.connectMs });
-  const overall = options.overallMs === undefined
-    ? null
-    : createExecutionDeadline({ ...options, kind: "overall_timeout", durationMs: options.overallMs, signal: options.signal });
+  const connect = createExecutionDeadline({
+    ...options,
+    kind: "connect_timeout",
+    durationMs: options.connectMs,
+  });
+  const overall =
+    options.overallMs === undefined
+      ? null
+      : createExecutionDeadline({
+          ...options,
+          kind: "overall_timeout",
+          durationMs: options.overallMs,
+          signal: options.signal,
+        });
   const composed = composeAbortSignals(connect.signal, overall?.signal);
   const forwardAbort = () => {
     if (!options.abortController || options.abortController.signal.aborted) return;
-    abortWithReason(options.abortController, timeoutErrorFromSignal(composed.signal) ?? new DOMException("Aborted", "AbortError"));
+    abortWithReason(
+      options.abortController,
+      timeoutErrorFromSignal(composed.signal) ?? new DOMException("Aborted", "AbortError"),
+    );
   };
   composed.signal.addEventListener("abort", forwardAbort, { once: true });
   let headersReady = false;
@@ -697,8 +735,12 @@ export function streamWithExecutionDeadlines<T>(
   options: ExecutionStreamOptions,
 ): AsyncGenerator<T, void, unknown> {
   const headersReady = options.headersReady ?? streamHeadersReadyOf(source);
-  const output = (async function*(): AsyncGenerator<T, void, unknown> {
-    const connect = createExecutionDeadline({ ...options, kind: "connect_timeout", durationMs: options.connectMs });
+  const output = (async function* (): AsyncGenerator<T, void, unknown> {
+    const connect = createExecutionDeadline({
+      ...options,
+      kind: "connect_timeout",
+      durationMs: options.connectMs,
+    });
     const watchdog = createStreamWatchdog({
       ...options,
       signal: connect.signal,
@@ -711,7 +753,10 @@ export function streamWithExecutionDeadlines<T>(
     if (headersReady !== undefined) void headersReady.then(onHeadersReady, () => undefined);
     const forwardAbort = () => {
       if (!options.abortController || options.abortController.signal.aborted) return;
-      abortWithReason(options.abortController, timeoutErrorFromSignal(watchdog.signal) ?? new DOMException("Aborted", "AbortError"));
+      abortWithReason(
+        options.abortController,
+        timeoutErrorFromSignal(watchdog.signal) ?? new DOMException("Aborted", "AbortError"),
+      );
     };
     watchdog.signal.addEventListener("abort", forwardAbort, { once: true });
     let firstEvent = false;
@@ -756,10 +801,11 @@ export function fetchWithExecutionDeadline(
 ): Promise<Response> {
   const connectMs = options.connectMs ?? 30_000;
   return runWithExecutionDeadlines(
-    (signal, onHeadersReady) => fetch(input, { ...init, signal }).then((response) => {
-      onHeadersReady();
-      return response;
-    }),
+    (signal, onHeadersReady) =>
+      fetch(input, { ...init, signal }).then((response) => {
+        onHeadersReady();
+        return response;
+      }),
     {
       ...options,
       connectMs,

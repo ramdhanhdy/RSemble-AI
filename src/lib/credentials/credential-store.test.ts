@@ -16,7 +16,10 @@ import {
   type CredentialStoreDeps,
 } from "./credential-store";
 
-function memoryDeps(initial: Record<string, string> = {}, env: Record<string, string> = {}): CredentialStoreDeps & {
+function memoryDeps(
+  initial: Record<string, string> = {},
+  env: Record<string, string> = {},
+): CredentialStoreDeps & {
   storage: Record<string, string>;
   env: Record<string, string>;
 } {
@@ -37,7 +40,10 @@ function memoryDeps(initial: Record<string, string> = {}, env: Record<string, st
 
 describe("credentialStore — resolution precedence", () => {
   it("returns the environment value with highest precedence", () => {
-    const deps = memoryDeps({ [rememberedStorageKey("openrouter")]: "remembered-key" }, { VITE_OPENROUTER_KEY: "env-key" });
+    const deps = memoryDeps(
+      { [rememberedStorageKey("openrouter")]: "remembered-key" },
+      { VITE_OPENROUTER_KEY: "env-key" },
+    );
     const store = createCredentialStore(deps);
     expect(store.get("openrouter")).toBe("env-key");
     expect(store.persistence("openrouter")).toBeNull();
@@ -89,7 +95,10 @@ describe("credentialStore — session vs remembered persistence", () => {
   });
 
   it("clear removes session and remembered but never environment", () => {
-    const deps = memoryDeps({ [rememberedStorageKey("openrouter")]: "remembered-key" }, { VITE_OPENROUTER_KEY: "env-key" });
+    const deps = memoryDeps(
+      { [rememberedStorageKey("openrouter")]: "remembered-key" },
+      { VITE_OPENROUTER_KEY: "env-key" },
+    );
     const store = createCredentialStore(deps);
     store.set("openrouter", "session-key", "session");
     store.clear("openrouter");
@@ -164,7 +173,10 @@ describe("credentialStore — configuredValues for redaction", () => {
   });
 
   it("deduplicates repeated values", () => {
-    const deps = memoryDeps({ [rememberedStorageKey("openrouter")]: "same-key" }, { VITE_OPENROUTER_KEY: "same-key" });
+    const deps = memoryDeps(
+      { [rememberedStorageKey("openrouter")]: "same-key" },
+      { VITE_OPENROUTER_KEY: "same-key" },
+    );
     const store = createCredentialStore(deps);
     expect(store.configuredValues().filter((v) => v === "same-key")).toHaveLength(1);
   });
@@ -306,7 +318,10 @@ describe("credentialStore — static environment resolution (review fix 1)", () 
   }
 
   it("production credential resolution never uses dynamic import.meta.env property access", () => {
-    const source = readFileSync(join(process.cwd(), "src/lib/credentials/credential-store.ts"), "utf8");
+    const source = readFileSync(
+      join(process.cwd(), "src/lib/credentials/credential-store.ts"),
+      "utf8",
+    );
     const code = codeOnly(source);
     expect(code).not.toMatch(/import\.meta\.env\s*\[/);
     expect(code).not.toMatch(/import\.meta\.env\s+as\s+Record/);

@@ -50,18 +50,19 @@ export function createRunController(deps: RunControllerDeps) {
   const random = deps.random ?? Math.random;
   const now = deps.now ?? (() => Date.now());
   const executor = createRunExecutor({ random, now });
-  const preflight = deps.preflight ?? ((state: StudioState): ComparePreflight =>
-    evaluateComparePreflight({
-      running: state.running,
-      experimentActive: false,
-      prompt: state.prompt,
-      slots: state.slots,
-      readinessMap: Object.fromEntries(state.slots.map((slot) => [slot.providerId, true])),
-      critic: state.critic,
-      attachments: state.attachments,
-      attachmentEligibility: checkAttachmentEligibility(state.slots, state.attachments),
-    })
-  );
+  const preflight =
+    deps.preflight ??
+    ((state: StudioState): ComparePreflight =>
+      evaluateComparePreflight({
+        running: state.running,
+        experimentActive: false,
+        prompt: state.prompt,
+        slots: state.slots,
+        readinessMap: Object.fromEntries(state.slots.map((slot) => [slot.providerId, true])),
+        critic: state.critic,
+        attachments: state.attachments,
+        attachmentEligibility: checkAttachmentEligibility(state.slots, state.attachments),
+      }));
   const runIdRef: { current: string | null } = { current: null };
   const currentAbortRef: { current: AbortController | null } = { current: null };
   const activeLeaseRef: { current: LeaseInfo | null } = { current: null };
@@ -75,7 +76,10 @@ export function createRunController(deps: RunControllerDeps) {
   // executor's finally block could surrender the fence before markAborted.
   const abortPersistenceRef: { current: Promise<void> | null } = { current: null };
 
-  async function acquireSharedLease(executionId: string, abort?: AbortController): Promise<boolean> {
+  async function acquireSharedLease(
+    executionId: string,
+    abort?: AbortController,
+  ): Promise<boolean> {
     if (deps.lease === undefined) return true; // narrow injected unit-test seam
     if (deps.lease === null) return false;
     try {
@@ -95,24 +99,30 @@ export function createRunController(deps: RunControllerDeps) {
           current?.ownerId !== lease.ownerId ||
           current.fence !== lease.fence ||
           current.leaseId !== lease.leaseId
-        ) return;
+        )
+          return;
         if (leaseLostRef.current) return;
         leaseLostRef.current = true;
         runEpochRef.current += 1;
         streamBuffer.cancel();
         abort?.abort();
-        dispatch({ type: "LEASE_LOST", message: "Compare execution lost its lease to another browser tab." });
+        dispatch({
+          type: "LEASE_LOST",
+          message: "Compare execution lost its lease to another browser tab.",
+        });
       };
 
       leaseUnsubscribe?.();
       leaseUnsubscribe = deps.lease.subscribe((state) => {
         const current = activeLeaseRef.current;
-        const currentMatchesCaptured = current &&
+        const currentMatchesCaptured =
+          current &&
           current.ownerId === lease.ownerId &&
           current.fence === lease.fence &&
           current.leaseId === lease.leaseId;
         if (!currentMatchesCaptured) return;
-        const stateMatchesCaptured = state.status === "owned" &&
+        const stateMatchesCaptured =
+          state.status === "owned" &&
           state.lease.ownerId === lease.ownerId &&
           state.lease.fence === lease.fence &&
           state.lease.leaseId === lease.leaseId;
@@ -131,9 +141,11 @@ export function createRunController(deps: RunControllerDeps) {
         renew: async () => {
           try {
             const renewed = await deps.lease!.renew(lease);
-            if (activeLeaseRef.current?.ownerId === lease.ownerId &&
-                activeLeaseRef.current.fence === lease.fence &&
-                activeLeaseRef.current.leaseId === lease.leaseId) {
+            if (
+              activeLeaseRef.current?.ownerId === lease.ownerId &&
+              activeLeaseRef.current.fence === lease.fence &&
+              activeLeaseRef.current.leaseId === lease.leaseId
+            ) {
               activeLeaseRef.current = renewed;
             }
             return renewed;
@@ -165,8 +177,12 @@ export function createRunController(deps: RunControllerDeps) {
       if (abortPersistenceRef.current === pendingAbort) abortPersistenceRef.current = null;
     }
     const current = activeLeaseRef.current;
-    const isCurrent = token !== null && epoch === leaseEpoch &&
-      current?.ownerId === token.ownerId && current.fence === token.fence && current.leaseId === token.leaseId;
+    const isCurrent =
+      token !== null &&
+      epoch === leaseEpoch &&
+      current?.ownerId === token.ownerId &&
+      current.fence === token.fence &&
+      current.leaseId === token.leaseId;
     if (isCurrent) {
       // Invalidate timer callbacks before awaiting IndexedDB, so a new run can
       // acquire/restart safely while this cleanup is still unwinding.
@@ -178,7 +194,11 @@ export function createRunController(deps: RunControllerDeps) {
       activeLeaseRef.current = null;
     }
     if (deps.lease && token) {
-      try { await deps.lease.release(token); } catch { /* expiry remains crash-safe */ }
+      try {
+        await deps.lease.release(token);
+      } catch {
+        /* expiry remains crash-safe */
+      }
     }
   }
 
@@ -211,7 +231,11 @@ export function createRunController(deps: RunControllerDeps) {
     // mistaken for continued ownership.
     const capturedLease = leaseToken ?? activeLeaseRef.current;
     const persistedFence: ExecutionFence | undefined = capturedLease
-      ? { ownerId: capturedLease.ownerId, fence: capturedLease.fence, ...(capturedLease.leaseId ? { leaseId: capturedLease.leaseId } : {}) }
+      ? {
+          ownerId: capturedLease.ownerId,
+          fence: capturedLease.fence,
+          ...(capturedLease.leaseId ? { leaseId: capturedLease.leaseId } : {}),
+        }
       : undefined;
     // Legacy contexts may omit mode; capture the fallback at event creation so
     // a command-pane edit cannot rewrite persisted protocol state later.
@@ -219,12 +243,11 @@ export function createRunController(deps: RunControllerDeps) {
     const executionCurrent = () =>
       runEpochRef.current === epoch &&
       !leaseLostRef.current &&
-      (deps.lease === undefined || (
-        capturedLease != null &&
-        activeLeaseRef.current?.ownerId === capturedLease.ownerId &&
-        activeLeaseRef.current?.fence === capturedLease.fence &&
-        activeLeaseRef.current?.leaseId === capturedLease.leaseId
-      ));
+      (deps.lease === undefined ||
+        (capturedLease != null &&
+          activeLeaseRef.current?.ownerId === capturedLease.ownerId &&
+          activeLeaseRef.current?.fence === capturedLease.fence &&
+          activeLeaseRef.current?.leaseId === capturedLease.leaseId));
     const ensureCurrent = async (): Promise<void> => {
       if (!executionCurrent()) throw new Error("Execution lease lost; stale controller rejected");
       await assertCurrentLease(capturedLease);
@@ -238,18 +261,20 @@ export function createRunController(deps: RunControllerDeps) {
         // rebuild the run from mutable command-pane state here; the caller
         // captured one immutable protocol snapshot before execution began.
         const s = stateRef.current;
-        const context = frozenContext ?? {
-          mode: s.mode,
-          task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
-          prompt: s.prompt,
-          evaluation: s.evaluation,
-          slots: (slotsOverride ?? s.slots).map((slot) => ({ ...slot })),
-          critic: { ...s.critic },
-          judgeInstruction: s.judgeInstruction,
-          attachments: s.attachments.map((a) => ({ ...a })),
-          attachmentsToJudge: s.attachmentsToJudge,
-          reasoningPolicy: { ...s.reasoningPolicy },
-        } satisfies RunEvaluationContext;
+        const context =
+          frozenContext ??
+          ({
+            mode: s.mode,
+            task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
+            prompt: s.prompt,
+            evaluation: s.evaluation,
+            slots: (slotsOverride ?? s.slots).map((slot) => ({ ...slot })),
+            critic: { ...s.critic },
+            judgeInstruction: s.judgeInstruction,
+            attachments: s.attachments.map((a) => ({ ...a })),
+            attachmentsToJudge: s.attachmentsToJudge,
+            reasoningPolicy: { ...s.reasoningPolicy },
+          } satisfies RunEvaluationContext);
         const runId = `run-${now()}-${random().toString(36).slice(2, 8)}`;
         runIdRef.current = runId;
         // The eligibility gate may have filtered slots for this run
@@ -258,9 +283,18 @@ export function createRunController(deps: RunControllerDeps) {
         const jobs = buildFanoutJobs(slotsOverride ?? s.slots);
         const ts = now();
         const placeholders: Candidate[] = jobs.map((j) => ({
-          id: j.id, model: j.displayName, provider: j.provider, providerId: j.providerId,
-          slug: j.slug, accent: j.accent, strategy: j.strategyLabel,
-          summary: "", scores: {}, weightedScore: 0, segments: [], status: "pending",
+          id: j.id,
+          model: j.displayName,
+          provider: j.provider,
+          providerId: j.providerId,
+          slug: j.slug,
+          accent: j.accent,
+          strategy: j.strategyLabel,
+          summary: "",
+          scores: {},
+          weightedScore: 0,
+          segments: [],
+          status: "pending",
           startedAt: ts,
         }));
         if (recorder) {
@@ -271,11 +305,18 @@ export function createRunController(deps: RunControllerDeps) {
             mode: context.mode ?? capturedMode,
             task: {
               title: context.prompt.slice(0, 80),
-              ...(context.task ?? { prompt: context.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature }),
+              ...(context.task ?? {
+                prompt: context.prompt,
+                systemPrompt: s.systemPrompt,
+                temperature: s.temperature,
+              }),
             },
             // Persist the resolved evaluation profile so run evidence (and
             // summary provenance) reflects the actual frozen scoring protocol.
-            evaluation: { profile: resolveEvaluationProfile(context.evaluation), candidateMessages: [] },
+            evaluation: {
+              profile: resolveEvaluationProfile(context.evaluation),
+              candidateMessages: [],
+            },
             // The eligibility gate may have filtered slots — the record must
             // match the exact roster that actually ran.
             slots: context.slots ?? slotsOverride ?? s.slots,
@@ -283,7 +324,11 @@ export function createRunController(deps: RunControllerDeps) {
             reasoningPolicy: context.reasoningPolicy ? { ...context.reasoningPolicy } : undefined,
             fence: persistedFence ?? deps.executionFence?.() ?? { ownerId: "tab-1", fence: epoch },
             // Attachment metadata only — never bytes or text (spec §9).
-            attachments: context.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })),
+            attachments: context.attachments.map((a) => ({
+              name: a.name,
+              kind: a.kind,
+              bytes: a.bytes,
+            })),
           });
         }
         await ensureCurrent();
@@ -294,7 +339,11 @@ export function createRunController(deps: RunControllerDeps) {
             mode: context.mode ?? capturedMode,
             task: context.task
               ? { ...context.task }
-              : { prompt: context.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
+              : {
+                  prompt: context.prompt,
+                  systemPrompt: s.systemPrompt,
+                  temperature: s.temperature,
+                },
             evaluation: context.evaluation,
             slots: context.slots ?? slotsOverride ?? s.slots,
             critic: context.critic ?? s.critic,
@@ -340,9 +389,17 @@ export function createRunController(deps: RunControllerDeps) {
         await ensureCurrent();
         candidateAttemptIds[candidateId] = attemptId;
         if (recorder && runIdRef.current) {
-          await recorder.beginCandidateAttempt(runIdRef.current, candidateId, attemptId, {
-            attemptId, messages: input.messages, startedAt: input.startedAt,
-          }, persistedFence);
+          await recorder.beginCandidateAttempt(
+            runIdRef.current,
+            candidateId,
+            attemptId,
+            {
+              attemptId,
+              messages: input.messages,
+              startedAt: input.startedAt,
+            },
+            persistedFence,
+          );
         }
         await ensureCurrent();
       },
@@ -350,7 +407,13 @@ export function createRunController(deps: RunControllerDeps) {
       onCandidateAttemptTerminal: async (candidateId, attemptId, input) => {
         await ensureCurrent();
         if (recorder && runIdRef.current) {
-          await recorder.finishCandidateAttempt(runIdRef.current, candidateId, attemptId, input, persistedFence);
+          await recorder.finishCandidateAttempt(
+            runIdRef.current,
+            candidateId,
+            attemptId,
+            input,
+            persistedFence,
+          );
         }
         await ensureCurrent();
         if (input.status === "failed") {
@@ -386,9 +449,10 @@ export function createRunController(deps: RunControllerDeps) {
             mode: frozenContext?.mode ?? capturedMode,
             consensus: input.consensus!,
             scoresById: Object.fromEntries(
-              Object.entries(input.report.evaluationsById).map(
-                ([cid, ev]) => [cid, ev.overallScore],
-              ),
+              Object.entries(input.report.evaluationsById).map(([cid, ev]) => [
+                cid,
+                ev.overallScore,
+              ]),
             ),
             report: input.report,
           });
@@ -454,9 +518,10 @@ export function createRunController(deps: RunControllerDeps) {
     if (jobs.length < 2) {
       dispatch({
         type: "FANOUT_BLOCKED",
-        reason: jobs.length === 0
-          ? "Enable at least two candidate models."
-          : "Add or enable one more candidate to compare.",
+        reason:
+          jobs.length === 0
+            ? "Enable at least two candidate models."
+            : "Add or enable one more candidate to compare.",
       });
       return;
     }
@@ -480,27 +545,35 @@ export function createRunController(deps: RunControllerDeps) {
     const abort = freshAbort();
 
     if (!(await acquireSharedLease(`compare-${epoch}`, abort))) {
-      dispatch({ type: "FANOUT_BLOCKED", reason: deps.lease === null
-        ? "Shared execution storage is unavailable; Compare is blocked to prevent duplicate paid runs."
-        : "Another execution is active in this browser. Wait for it to finish before comparing." });
+      dispatch({
+        type: "FANOUT_BLOCKED",
+        reason:
+          deps.lease === null
+            ? "Shared execution storage is unavailable; Compare is blocked to prevent duplicate paid runs."
+            : "Another execution is active in this browser. Wait for it to finish before comparing.",
+      });
       return;
     }
     const leaseToken = activeLeaseRef.current;
     const leaseScope = leaseEpoch;
     try {
       const events = makeEvents(epoch, false, slots, frozenContext, leaseToken ?? undefined);
-      await executor.executeTask({
-        source: { kind: "adhoc" },
-        mode: frozenContext.mode!,
-        task: { ...frozenContext.task! },
-        evaluation: frozenContext.evaluation,
-        slots: frozenContext.slots!,
-        critic: frozenContext.critic!,
-        judgeInstruction: frozenContext.judgeInstruction!,
-        attachments: frozenContext.attachments,
-        attachmentsToJudge: frozenContext.attachmentsToJudge,
-        reasoningPolicy: { ...frozenContext.reasoningPolicy! },
-      }, events, abort.signal);
+      await executor.executeTask(
+        {
+          source: { kind: "adhoc" },
+          mode: frozenContext.mode!,
+          task: { ...frozenContext.task! },
+          evaluation: frozenContext.evaluation,
+          slots: frozenContext.slots!,
+          critic: frozenContext.critic!,
+          judgeInstruction: frozenContext.judgeInstruction!,
+          attachments: frozenContext.attachments,
+          attachmentsToJudge: frozenContext.attachmentsToJudge,
+          reasoningPolicy: { ...frozenContext.reasoningPolicy! },
+        },
+        events,
+        abort.signal,
+      );
 
       // Insufficient candidates check
       if (runEpochRef.current === epoch) {
@@ -533,7 +606,11 @@ export function createRunController(deps: RunControllerDeps) {
     if (recorder && abortedRunId) {
       const token = activeLeaseRef.current;
       const fence = token
-        ? { ownerId: token.ownerId, fence: token.fence, ...(token.leaseId ? { leaseId: token.leaseId } : {}) }
+        ? {
+            ownerId: token.ownerId,
+            fence: token.fence,
+            ...(token.leaseId ? { leaseId: token.leaseId } : {}),
+          }
         : undefined;
       abortPersistenceRef.current = assertCurrentLease(token)
         .then(() => recorder.markAborted(abortedRunId, fence))
@@ -555,7 +632,9 @@ export function createRunController(deps: RunControllerDeps) {
     const slotId = candidate.id.startsWith("cand-") ? candidate.id.slice("cand-".length) : null;
     const slot =
       (slotId ? frozenSlots.find((sl) => sl.id === slotId) : undefined) ??
-      frozenSlots.find((sl) => sl.slug === candidate.slug && sl.providerId === candidate.providerId) ??
+      frozenSlots.find(
+        (sl) => sl.slug === candidate.slug && sl.providerId === candidate.providerId,
+      ) ??
       frozenSlots.find((sl) => sl.slug === candidate.slug);
     if (!slot) return;
 
@@ -563,9 +642,13 @@ export function createRunController(deps: RunControllerDeps) {
     abortControllersRef.current.clear();
     const abort = freshAbort();
     if (!(await acquireSharedLease(`retry-candidate-${candidate.id}`, abort))) {
-      dispatch({ type: "FANOUT_BLOCKED", reason: deps.lease === null
-        ? "Shared execution storage is unavailable; retry is blocked to prevent duplicate paid runs."
-        : "Another execution is active in this browser. Wait for it to finish before retrying." });
+      dispatch({
+        type: "FANOUT_BLOCKED",
+        reason:
+          deps.lease === null
+            ? "Shared execution storage is unavailable; retry is blocked to prevent duplicate paid runs."
+            : "Another execution is active in this browser. Wait for it to finish before retrying.",
+      });
       return;
     }
     const leaseToken = activeLeaseRef.current;
@@ -575,43 +658,61 @@ export function createRunController(deps: RunControllerDeps) {
       dispatch({ type: "RETRY_CANDIDATE_START", id: candidate.id });
       if (recorder && runIdRef.current && leaseToken) {
         await assertCurrentLease(leaseToken);
-        await recorder.rebindExecution(runIdRef.current, { ownerId: leaseToken.ownerId, fence: leaseToken.fence, ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}) });
+        await recorder.rebindExecution(runIdRef.current, {
+          ownerId: leaseToken.ownerId,
+          fence: leaseToken.fence,
+          ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
+        });
       }
 
-    const events = makeEvents(epoch, true, frozenSlots, ctx ?? undefined, leaseToken ?? undefined);
-    const peerCandidates = s.candidates.filter((c) => c.id !== candidate.id);
+      const events = makeEvents(
+        epoch,
+        true,
+        frozenSlots,
+        ctx ?? undefined,
+        leaseToken ?? undefined,
+      );
+      const peerCandidates = s.candidates.filter((c) => c.id !== candidate.id);
 
-    // Load the persisted record to get real accepted attempt IDs
-    let candidateAttemptIdsByCandidateId: Record<string, string> = {};
-    if (recorder && runIdRef.current) {
-      const record = await recorder.getRecord(runIdRef.current);
-      if (record) {
-        for (const c of record.candidates) {
-          if (c.acceptedAttemptId) {
-            candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+      // Load the persisted record to get real accepted attempt IDs
+      let candidateAttemptIdsByCandidateId: Record<string, string> = {};
+      if (recorder && runIdRef.current) {
+        const record = await recorder.getRecord(runIdRef.current);
+        if (record) {
+          for (const c of record.candidates) {
+            if (c.acceptedAttemptId) {
+              candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+            }
           }
         }
       }
-    }
 
-    await executor.retryCandidate({
-      source: { kind: "adhoc" },
-      mode: ctx?.mode ?? s.mode,
-      task: ctx?.task ?? { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
-      evaluation: ctx?.evaluation ?? s.evaluation,
-      slots: frozenSlots,
-      critic: ctx?.critic ?? s.critic,
-      judgeInstruction: ctx?.judgeInstruction ?? s.judgeInstruction,
-      // Frozen attachment set — the retry must reproduce the original input
-      // even if the user edited the command pane since the run (plan 7.6.6).
-      attachments: ctx?.attachments ?? [],
-      attachmentsToJudge: ctx?.attachmentsToJudge ?? true,
-      reasoningPolicy: { ...(ctx?.reasoningPolicy ?? s.reasoningPolicy) },
-      retryCandidateId: candidate.id,
-      retrySlotId: slot.id,
-      peerCandidates,
-      candidateAttemptIdsByCandidateId,
-    }, events, abort.signal);
+      await executor.retryCandidate(
+        {
+          source: { kind: "adhoc" },
+          mode: ctx?.mode ?? s.mode,
+          task: ctx?.task ?? {
+            prompt: s.prompt,
+            systemPrompt: s.systemPrompt,
+            temperature: s.temperature,
+          },
+          evaluation: ctx?.evaluation ?? s.evaluation,
+          slots: frozenSlots,
+          critic: ctx?.critic ?? s.critic,
+          judgeInstruction: ctx?.judgeInstruction ?? s.judgeInstruction,
+          // Frozen attachment set — the retry must reproduce the original input
+          // even if the user edited the command pane since the run (plan 7.6.6).
+          attachments: ctx?.attachments ?? [],
+          attachmentsToJudge: ctx?.attachmentsToJudge ?? true,
+          reasoningPolicy: { ...(ctx?.reasoningPolicy ?? s.reasoningPolicy) },
+          retryCandidateId: candidate.id,
+          retrySlotId: slot.id,
+          peerCandidates,
+          candidateAttemptIdsByCandidateId,
+        },
+        events,
+        abort.signal,
+      );
     } finally {
       await releaseSharedLease(leaseToken, leaseScope);
     }
@@ -645,9 +746,13 @@ export function createRunController(deps: RunControllerDeps) {
     abortControllersRef.current.clear();
     const abort = freshAbort();
     if (!(await acquireSharedLease("retry-judge", abort))) {
-      dispatch({ type: "FANOUT_BLOCKED", reason: deps.lease === null
-        ? "Shared execution storage is unavailable; Judge retry is blocked to prevent duplicate paid runs."
-        : "Another execution is active in this browser. Wait for it to finish before retrying." });
+      dispatch({
+        type: "FANOUT_BLOCKED",
+        reason:
+          deps.lease === null
+            ? "Shared execution storage is unavailable; Judge retry is blocked to prevent duplicate paid runs."
+            : "Another execution is active in this browser. Wait for it to finish before retrying.",
+      });
       return;
     }
     const leaseToken = activeLeaseRef.current;
@@ -656,35 +761,43 @@ export function createRunController(deps: RunControllerDeps) {
       await assertCurrentLease(leaseToken);
       if (recorder && runIdRef.current && leaseToken) {
         await assertCurrentLease(leaseToken);
-        await recorder.rebindExecution(runIdRef.current, { ownerId: leaseToken.ownerId, fence: leaseToken.fence, ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}) });
+        await recorder.rebindExecution(runIdRef.current, {
+          ownerId: leaseToken.ownerId,
+          fence: leaseToken.fence,
+          ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
+        });
       }
 
-    // Load the persisted record to get real accepted attempt IDs
-    let candidateAttemptIdsByCandidateId: Record<string, string> = {};
-    if (recorder && runIdRef.current) {
-      const record = await recorder.getRecord(runIdRef.current);
-      if (record) {
-        for (const c of record.candidates) {
-          if (c.acceptedAttemptId) {
-            candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+      // Load the persisted record to get real accepted attempt IDs
+      let candidateAttemptIdsByCandidateId: Record<string, string> = {};
+      if (recorder && runIdRef.current) {
+        const record = await recorder.getRecord(runIdRef.current);
+        if (record) {
+          for (const c of record.candidates) {
+            if (c.acceptedAttemptId) {
+              candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+            }
           }
         }
       }
-    }
 
-    const events = makeEvents(epoch, false, ctx.slots, ctx, leaseToken ?? undefined);
-    await executor.retryJudge({
-      mode: ctx.mode ?? s.mode,
-      task: ctx.task ?? { prompt: ctx.prompt, systemPrompt: s.systemPrompt, temperature: 0.4 },
-      evaluation: ctx.evaluation,
-      candidates: done,
-      critic: ctx.critic ?? s.critic,
-      judgeInstruction: ctx.judgeInstruction ?? s.judgeInstruction,
-      attachments: ctx.attachments,
-      attachmentsToJudge: ctx.attachmentsToJudge,
-      reasoningPolicy: { ...(ctx.reasoningPolicy ?? s.reasoningPolicy) },
-      candidateAttemptIdsByCandidateId,
-    }, events, abort.signal);
+      const events = makeEvents(epoch, false, ctx.slots, ctx, leaseToken ?? undefined);
+      await executor.retryJudge(
+        {
+          mode: ctx.mode ?? s.mode,
+          task: ctx.task ?? { prompt: ctx.prompt, systemPrompt: s.systemPrompt, temperature: 0.4 },
+          evaluation: ctx.evaluation,
+          candidates: done,
+          critic: ctx.critic ?? s.critic,
+          judgeInstruction: ctx.judgeInstruction ?? s.judgeInstruction,
+          attachments: ctx.attachments,
+          attachmentsToJudge: ctx.attachmentsToJudge,
+          reasoningPolicy: { ...(ctx.reasoningPolicy ?? s.reasoningPolicy) },
+          candidateAttemptIdsByCandidateId,
+        },
+        events,
+        abort.signal,
+      );
     } finally {
       await releaseSharedLease(leaseToken, leaseScope);
     }
@@ -714,9 +827,13 @@ export function createRunController(deps: RunControllerDeps) {
 
     void (async () => {
       if (!(await acquireSharedLease("fusion", abort))) {
-        dispatch({ type: "FANOUT_BLOCKED", reason: deps.lease === null
-          ? "Shared execution storage is unavailable; Fusion is blocked to prevent duplicate paid runs."
-          : "Another execution is active in this browser. Wait for it to finish before fusion." });
+        dispatch({
+          type: "FANOUT_BLOCKED",
+          reason:
+            deps.lease === null
+              ? "Shared execution storage is unavailable; Fusion is blocked to prevent duplicate paid runs."
+              : "Another execution is active in this browser. Wait for it to finish before fusion.",
+        });
         return;
       }
       const leaseToken = activeLeaseRef.current;
@@ -725,7 +842,11 @@ export function createRunController(deps: RunControllerDeps) {
         await assertCurrentLease(leaseToken);
         if (recorder && runIdRef.current && leaseToken) {
           await assertCurrentLease(leaseToken);
-          await recorder.rebindExecution(runIdRef.current, { ownerId: leaseToken.ownerId, fence: leaseToken.fence, ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}) });
+          await recorder.rebindExecution(runIdRef.current, {
+            ownerId: leaseToken.ownerId,
+            fence: leaseToken.fence,
+            ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
+          });
         }
         // Load the persisted record for real accepted attempt IDs
         let candidateAttemptIdsByCandidateId: Record<string, string> = {};
@@ -750,21 +871,31 @@ export function createRunController(deps: RunControllerDeps) {
         }
 
         const ctx = stateRef.current.runContext;
-        const events = makeEvents(epoch, false, ctx?.slots, ctx ?? undefined, leaseToken ?? undefined);
-        await executor.executeFusionAttempt({
-          mode: "fuse",
-          task: ctx?.task ?? { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: 0.3 },
-          evaluation: ctx?.evaluation ?? s.evaluation,
-          candidates: eligibility.usable,
-          critic: ctx?.critic ?? s.critic,
-          judgeInstruction: ctx?.judgeInstruction ?? s.judgeInstruction,
-          attachments: ctx?.attachments ?? s.attachments,
-          attachmentsToJudge: ctx?.attachmentsToJudge ?? s.attachmentsToJudge,
-          reasoningPolicy: { ...(ctx?.reasoningPolicy ?? s.reasoningPolicy) },
-          judgeAttemptId,
-          blindLabelToCandidateId,
-          candidateAttemptIdsByCandidateId,
-        }, events, abort.signal);
+        const events = makeEvents(
+          epoch,
+          false,
+          ctx?.slots,
+          ctx ?? undefined,
+          leaseToken ?? undefined,
+        );
+        await executor.executeFusionAttempt(
+          {
+            mode: "fuse",
+            task: ctx?.task ?? { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: 0.3 },
+            evaluation: ctx?.evaluation ?? s.evaluation,
+            candidates: eligibility.usable,
+            critic: ctx?.critic ?? s.critic,
+            judgeInstruction: ctx?.judgeInstruction ?? s.judgeInstruction,
+            attachments: ctx?.attachments ?? s.attachments,
+            attachmentsToJudge: ctx?.attachmentsToJudge ?? s.attachmentsToJudge,
+            reasoningPolicy: { ...(ctx?.reasoningPolicy ?? s.reasoningPolicy) },
+            judgeAttemptId,
+            blindLabelToCandidateId,
+            candidateAttemptIdsByCandidateId,
+          },
+          events,
+          abort.signal,
+        );
       } finally {
         await releaseSharedLease(leaseToken, leaseScope);
       }

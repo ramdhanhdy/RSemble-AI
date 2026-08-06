@@ -15,12 +15,24 @@ afterEach(() => clearModelPricing());
 
 describe("pricingFor exact provider-scoped lookup", () => {
   it("returns the exact catalog price for the provider:model pair", () => {
-    setModelPricing(parseOpenRouterPricing("openrouter", "org/model", { prompt: "0.5", completion: "1.5" }, 1)!);
-    expect(pricingFor("openrouter", "org/model")).toEqual({ inputPerM: 500000, outputPerM: 1500000 });
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "org/model", { prompt: "0.5", completion: "1.5" }, 1)!,
+    );
+    expect(pricingFor("openrouter", "org/model")).toEqual({
+      inputPerM: 500000,
+      outputPerM: 1500000,
+    });
   });
 
   it("never falls back to a substring match across providers", () => {
-    setModelPricing(parseOpenRouterPricing("openrouter", "z-ai/glm-5.2", { prompt: "0.5", completion: "1.5" }, 1)!);
+    setModelPricing(
+      parseOpenRouterPricing(
+        "openrouter",
+        "z-ai/glm-5.2",
+        { prompt: "0.5", completion: "1.5" },
+        1,
+      )!,
+    );
     // Same slug under a different provider is NOT priced.
     expect(pricingFor("umans", "z-ai/glm-5.2")).toBeNull();
     // Substring of a known id is NOT priced.
@@ -34,7 +46,9 @@ describe("pricingFor exact provider-scoped lookup", () => {
 
 describe("estimateCost", () => {
   it("computes from exact per-token rates", () => {
-    setModelPricing(parseOpenRouterPricing("openrouter", "m", { prompt: "0.000001", completion: "0.000002" }, 1)!);
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "m", { prompt: "0.000001", completion: "0.000002" }, 1)!,
+    );
     expect(estimateCost(1_000_000, 500_000, "openrouter", "m")).toBe(2);
   });
 
@@ -45,9 +59,15 @@ describe("estimateCost", () => {
 
 describe("estimateRunCost forecast", () => {
   function seedPrices(): void {
-    setModelPricing(parseOpenRouterPricing("openrouter", "a", { prompt: "1", completion: "2" }, 1)!);
-    setModelPricing(parseOpenRouterPricing("openrouter", "b", { prompt: "1", completion: "2" }, 1)!);
-    setModelPricing(parseOpenRouterPricing("openrouter", "judge", { prompt: "1", completion: "2" }, 1)!);
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "a", { prompt: "1", completion: "2" }, 1)!,
+    );
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "b", { prompt: "1", completion: "2" }, 1)!,
+    );
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "judge", { prompt: "1", completion: "2" }, 1)!,
+    );
   }
 
   it("includes one Judge and, in Fuse mode, one Fusion call", () => {
@@ -96,7 +116,12 @@ describe("estimateRunCost forecast", () => {
 
 describe("costFromSnapshot", () => {
   it("builds a catalog-estimate cost from an execution-time pricing snapshot", () => {
-    const snapshot = parseOpenRouterPricing("openrouter", "m", { prompt: "0.000001", completion: "0.000002", request: "0.5" }, 5)!;
+    const snapshot = parseOpenRouterPricing(
+      "openrouter",
+      "m",
+      { prompt: "0.000001", completion: "0.000002", request: "0.5" },
+      5,
+    )!;
     const cost = costFromSnapshot(snapshot, { inputTokens: 1_000_000, outputTokens: 500_000 });
     expect(cost).toEqual({
       usd: 2.5,
@@ -107,20 +132,33 @@ describe("costFromSnapshot", () => {
 
   it("returns null when usage or snapshot is absent", () => {
     expect(costFromSnapshot(undefined, { inputTokens: 1, outputTokens: 1 })).toBeNull();
-    const snapshot = parseOpenRouterPricing("openrouter", "m", { prompt: "1", completion: "2" }, 5)!;
+    const snapshot = parseOpenRouterPricing(
+      "openrouter",
+      "m",
+      { prompt: "1", completion: "2" },
+      5,
+    )!;
     expect(costFromSnapshot(snapshot, null)).toBeNull();
   });
 });
-
 
 describe("authoritative input usage provenance", () => {
   const textMessages = [{ role: "user" as const, content: "hello world" }];
 
   it("prefers provider-reported text-only totals", () => {
     const result = inputUsageEstimate(textMessages, {
-      inputTokens: 17, outputTokens: 2, reasoningTokens: null, cacheReadTokens: null, cacheWriteTokens: null,
+      inputTokens: 17,
+      outputTokens: 2,
+      reasoningTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
     });
-    expect(result).toMatchObject({ totalTokens: 17, textTokens: 3, method: "provider-reported", partial: false });
+    expect(result).toMatchObject({
+      totalTokens: 17,
+      textTokens: 3,
+      method: "provider-reported",
+      partial: false,
+    });
   });
 
   it("labels a text-only fallback as an estimate", () => {
@@ -131,25 +169,57 @@ describe("authoritative input usage provenance", () => {
   });
 
   it("keeps native image and text input authoritative total unknown", () => {
-    const result = inputUsageEstimate([{ role: "user", content: [
-      { type: "text", text: "hello world" }, { type: "image", mimeType: "image/png", data: "abc" },
-    ] }]);
-    expect(result).toMatchObject({ totalTokens: null, textTokens: 3, method: "text-heuristic", partial: true });
+    const result = inputUsageEstimate([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hello world" },
+          { type: "image", mimeType: "image/png", data: "abc" },
+        ],
+      },
+    ]);
+    expect(result).toMatchObject({
+      totalTokens: null,
+      textTokens: 3,
+      method: "text-heuristic",
+      partial: true,
+    });
     expect(inputUsageLabel(result)).toContain("partial; media usage unknown");
   });
 
   it("keeps native PDF/file input unknown when usage is absent", () => {
-    const result = inputUsageEstimate([{ role: "user", content: [
-      { type: "text", text: "document" }, { type: "file", mimeType: "application/pdf", data: "abc", filename: "a.pdf" },
-    ] }]);
+    const result = inputUsageEstimate([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "document" },
+          { type: "file", mimeType: "application/pdf", data: "abc", filename: "a.pdf" },
+        ],
+      },
+    ]);
     expect(result.totalTokens).toBeNull();
     expect(result.partial).toBe(true);
   });
 
   it("replaces the partial media estimate when the provider reports usage", () => {
-    const result = inputUsageEstimate([{ role: "user", content: [
-      { type: "text", text: "hello" }, { type: "image", mimeType: "image/png", data: "abc" },
-    ] }], { inputTokens: 99, outputTokens: 4, reasoningTokens: null, cacheReadTokens: null, cacheWriteTokens: null });
+    const result = inputUsageEstimate(
+      [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "hello" },
+            { type: "image", mimeType: "image/png", data: "abc" },
+          ],
+        },
+      ],
+      {
+        inputTokens: 99,
+        outputTokens: 4,
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+      },
+    );
     expect(result).toMatchObject({ totalTokens: 99, method: "provider-reported", partial: false });
     expect(inputUsageLabel(result)).toBe("Input: 99 tokens — provider reported");
   });
@@ -158,7 +228,13 @@ describe("authoritative input usage provenance", () => {
 describe("truthful multipart estimation", () => {
   it("counts text parts without stringifying media objects", () => {
     const estimate = estimateMessageInput([
-      { role: "user", content: [{ type: "text", text: "hello" }, { type: "image", mimeType: "image/png", data: "abc" }] },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hello" },
+          { type: "image", mimeType: "image/png", data: "abc" },
+        ],
+      },
     ]);
     expect(estimate.textTokens).toBe(2);
     expect(estimate.hasNativeMedia).toBe(true);
@@ -179,4 +255,6 @@ describe("truthful multipart estimation", () => {
   });
 });
 
-function estimateTokensUnsafe(text: string): number { return Math.ceil(text.length / 4); }
+function estimateTokensUnsafe(text: string): number {
+  return Math.ceil(text.length / 4);
+}

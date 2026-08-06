@@ -22,25 +22,29 @@ function inline(text: string, keyBase: string): JSX.Element[] {
   let m: RegExpExecArray | null;
   let i = 0;
   while ((m = regex.exec(text)) !== null) {
-    if (m.index > last) nodes.push(<span key={`${keyBase}-t${i}`}>{text.slice(last, m.index)}</span>);
+    if (m.index > last)
+      nodes.push(<span key={`${keyBase}-t${i}`}>{text.slice(last, m.index)}</span>);
     const tok = m[0];
     if (tok.startsWith("**")) {
       nodes.push(
         <strong key={`${keyBase}-b${i}`} className="font-semibold text-text">
           {tok.slice(2, -2)}
-        </strong>
+        </strong>,
       );
     } else if (tok.startsWith("`")) {
       nodes.push(
-        <code key={`${keyBase}-c${i}`} className="rounded bg-card-hover px-1 py-1 font-mono text-xs text-accent">
+        <code
+          key={`${keyBase}-c${i}`}
+          className="rounded bg-card-hover px-1 py-1 font-mono text-xs text-accent"
+        >
           {tok.slice(1, -1)}
-        </code>
+        </code>,
       );
     } else {
       nodes.push(
         <em key={`${keyBase}-i${i}`} className="italic">
           {tok.slice(1, -1)}
-        </em>
+        </em>,
       );
     }
     last = m.index + tok.length;
@@ -194,9 +198,7 @@ export function Markdown({
 
   return (
     <div className="max-w-none">
-      {blocks.map(({ el, text: t }, idx) =>
-        blockDecorator ? blockDecorator(el, t, idx) : el,
-      )}
+      {blocks.map(({ el, text: t }, idx) => (blockDecorator ? blockDecorator(el, t, idx) : el))}
     </div>
   );
 }

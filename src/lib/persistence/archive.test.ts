@@ -28,12 +28,7 @@ import {
   validateArchiveBytes,
   type WorkbenchArchiveV1,
 } from "./archive";
-import type {
-  FullRunSummaryV2,
-  LegacyRunSummary,
-  RunRecordV2,
-  RunSummary,
-} from "./run-types";
+import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "./run-types";
 import type {
   EvaluationProfile,
   EvaluationSuite,
@@ -177,8 +172,22 @@ function makeSuite(id: string, name = `Suite ${id}`): EvaluationSuite {
       },
     ],
     modelSlots: [
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "m1", slug: "m1", enabled: true },
-      { id: "s2", providerId: "gemini", provider: "Gemini", model: "m2", slug: "m2", enabled: true },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m1",
+        slug: "m1",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "gemini",
+        provider: "Gemini",
+        model: "m2",
+        slug: "m2",
+        enabled: true,
+      },
     ],
     defaultJudge: { providerId: "openrouter", model: "judge" },
     defaultEvaluation: { kind: "holistic" },
@@ -593,23 +602,31 @@ describe("archive accounting provenance", () => {
       acceptedAttemptId: "j-1",
       report: null,
       consensus: null,
-      attempts: [{
-        attemptId: "j-1",
-        providerId: "openrouter",
-        model: "judge",
-        instruction: "",
-        messages: [],
-        blindLabelToCandidateId: {},
-        candidateAttemptIdsByCandidateId: {},
-        startedAt: 1000,
-        finishedAt: 2000,
-        status: "completed",
-        error: null,
-        report: null,
-        consensus: null,
-        usage: { inputTokens: 40, outputTokens: 10, reasoningTokens: null, cacheReadTokens: null, cacheWriteTokens: null },
-        cost: { usd: 0.0002, source: "catalog-estimate" },
-      }],
+      attempts: [
+        {
+          attemptId: "j-1",
+          providerId: "openrouter",
+          model: "judge",
+          instruction: "",
+          messages: [],
+          blindLabelToCandidateId: {},
+          candidateAttemptIdsByCandidateId: {},
+          startedAt: 1000,
+          finishedAt: 2000,
+          status: "completed",
+          error: null,
+          report: null,
+          consensus: null,
+          usage: {
+            inputTokens: 40,
+            outputTokens: 10,
+            reasoningTokens: null,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
+          },
+          cost: { usd: 0.0002, source: "catalog-estimate" },
+        },
+      ],
     };
     rich.reasoning = {
       candidates: {
@@ -632,10 +649,14 @@ describe("archive accounting provenance", () => {
 
     // Old v2 records without the new fields remain valid and readable.
     const legacy = makeRun("run-legacy");
-    const legacyCheck = parseWorkbenchArchive(JSON.parse(JSON.stringify({
-      ...emptyArchive(),
-      runs: { summaries: [makeFullSummary("run-legacy")], details: [legacy] },
-    })));
+    const legacyCheck = parseWorkbenchArchive(
+      JSON.parse(
+        JSON.stringify({
+          ...emptyArchive(),
+          runs: { summaries: [makeFullSummary("run-legacy")], details: [legacy] },
+        }),
+      ),
+    );
     expect(legacyCheck.ok).toBe(true);
   });
 
@@ -648,10 +669,14 @@ describe("archive accounting provenance", () => {
       cacheReadTokens: null,
       cacheWriteTokens: null,
     };
-    const check = parseWorkbenchArchive(JSON.parse(JSON.stringify({
-      ...emptyArchive(),
-      runs: { summaries: [], details: [bad] },
-    })));
+    const check = parseWorkbenchArchive(
+      JSON.parse(
+        JSON.stringify({
+          ...emptyArchive(),
+          runs: { summaries: [], details: [bad] },
+        }),
+      ),
+    );
     expect(check.ok).toBe(false);
   });
 });

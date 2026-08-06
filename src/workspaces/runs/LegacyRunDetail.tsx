@@ -17,7 +17,9 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
       <header data-section="header" className="flex flex-col gap-1">
         <h2 className="text-base font-semibold text-text">{summary.taskExcerpt}</h2>
         <div className="flex items-center gap-3 text-text-muted">
-          <span className="rounded-md border border-edge px-2 py-0.5 text-xs uppercase">Legacy summary</span>
+          <span className="rounded-md border border-edge px-2 py-0.5 text-xs uppercase">
+            Legacy summary
+          </span>
           <span className="tabular-nums">{new Date(summary.createdAt).toLocaleString()}</span>
           <span className="text-text-muted">·</span>
           <span>{formatRelativeTime(summary.createdAt)}</span>
@@ -28,8 +30,8 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
       <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/[0.06] p-3">
         <AlertCircle size={16} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
         <p className="text-sm text-text-secondary">
-          Full evidence was not captured by the older history format.
-          Only summary fields are available for this run.
+          Full evidence was not captured by the older history format. Only summary fields are
+          available for this run.
         </p>
       </div>
 
@@ -39,7 +41,10 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
           <h3 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Winner</h3>
           <div className="flex flex-wrap gap-2">
             {summary.winnerKeys.map((w) => (
-              <span key={w} className="rounded-md border border-edge bg-panel px-2 py-1 font-mono text-sm text-text">
+              <span
+                key={w}
+                className="rounded-md border border-edge bg-panel px-2 py-1 font-mono text-sm text-text"
+              >
                 {w}
               </span>
             ))}
@@ -52,7 +57,9 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
           <h3 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Models</h3>
           <div className="flex flex-wrap gap-2">
             {summary.modelKeys.map((k) => (
-              <span key={k} className="font-mono text-sm text-text-secondary">{k}</span>
+              <span key={k} className="font-mono text-sm text-text-secondary">
+                {k}
+              </span>
             ))}
           </div>
         </section>

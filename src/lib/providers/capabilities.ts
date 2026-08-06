@@ -33,7 +33,7 @@ function cacheKey(providerId: ProviderId, slug: string): string {
 export function setModelCapabilities(
   providerId: ProviderId,
   slug: string,
-  caps: ModelCapabilities
+  caps: ModelCapabilities,
 ): void {
   cache.set(cacheKey(providerId, slug), { image: caps.image, pdf: caps.pdf });
 }
@@ -54,7 +54,11 @@ export function setProviderCapabilities(providerId: ProviderId, caps: ModelCapab
  * `UNKNOWN_CAPABILITIES` ({ image: false, pdf: false }).
  */
 export function getModelCapabilities(providerId: ProviderId, slug: string): ModelCapabilities {
-  return cache.get(cacheKey(providerId, slug)) ?? providerDefaults.get(providerId) ?? UNKNOWN_CAPABILITIES;
+  return (
+    cache.get(cacheKey(providerId, slug)) ??
+    providerDefaults.get(providerId) ??
+    UNKNOWN_CAPABILITIES
+  );
 }
 
 /** Test hook: wipe the cache between cases. */

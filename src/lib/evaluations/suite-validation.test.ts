@@ -3,25 +3,24 @@
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
-import {
-  validateSuiteForExecution,
-  validateSuiteForSave,
-  isSuiteDirty,
-} from "./suite-validation";
+import { validateSuiteForExecution, validateSuiteForSave, isSuiteDirty } from "./suite-validation";
 import {
   computeProtocolFingerprint,
   canonicalJsonString,
   createExperimentSnapshot,
 } from "./protocol-fingerprint";
-import type {
-  EvaluationSuite,
-  EvaluationTask,
-  EvaluationProfile,
-} from "./evaluation-types";
+import type { EvaluationSuite, EvaluationTask, EvaluationProfile } from "./evaluation-types";
 import type { ModelSlot } from "../../studio-data";
 
 function makeSlot(id: string, slug: string, providerId = "openrouter", enabled = true): ModelSlot {
-  return { id, providerId: providerId as ModelSlot["providerId"], provider: "OR", model: `Model ${slug}`, slug, enabled };
+  return {
+    id,
+    providerId: providerId as ModelSlot["providerId"],
+    provider: "OR",
+    model: `Model ${slug}`,
+    slug,
+    enabled,
+  };
 }
 
 function makeTask(id: string, overrides: Partial<EvaluationTask> = {}): EvaluationTask {
@@ -78,18 +77,22 @@ describe("validateSuiteForExecution", () => {
   });
 
   it("blocks an explicit candidate effort unavailable on enabled models", () => {
-    const result = validateSuiteForExecution(makeSuite({
-      reasoningPolicy: { candidates: "xhigh", judge: "provider-default" },
-    }));
+    const result = validateSuiteForExecution(
+      makeSuite({
+        reasoningPolicy: { candidates: "xhigh", judge: "provider-default" },
+      }),
+    );
     expect(result.valid).toBe(false);
     expect(result.errors.some((error) => error.field === "reasoningPolicy.candidates")).toBe(true);
     expect(result.errors.some((error) => error.message.includes("openrouter:m1"))).toBe(true);
   });
 
   it("allows provider-default without claiming compute equivalence", () => {
-    const result = validateSuiteForExecution(makeSuite({
-      reasoningPolicy: { candidates: "provider-default", judge: "provider-default" },
-    }));
+    const result = validateSuiteForExecution(
+      makeSuite({
+        reasoningPolicy: { candidates: "provider-default", judge: "provider-default" },
+      }),
+    );
     expect(result.valid).toBe(true);
   });
 
@@ -100,33 +103,41 @@ describe("validateSuiteForExecution", () => {
   });
 
   it("rejects fewer than 2 enabled models", () => {
-    const result = validateSuiteForExecution(makeSuite({
-      modelSlots: [makeSlot("s1", "m1")],
-    }));
+    const result = validateSuiteForExecution(
+      makeSuite({
+        modelSlots: [makeSlot("s1", "m1")],
+      }),
+    );
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.field === "modelSlots")).toBe(true);
   });
 
   it("rejects duplicate model keys before provider calls", () => {
-    const result = validateSuiteForExecution(makeSuite({
-      modelSlots: [makeSlot("s1", "same-slug"), makeSlot("s2", "same-slug")],
-    }));
+    const result = validateSuiteForExecution(
+      makeSuite({
+        modelSlots: [makeSlot("s1", "same-slug"), makeSlot("s2", "same-slug")],
+      }),
+    );
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.message.includes("Duplicate"))).toBe(true);
   });
 
   it("rejects task with empty title", () => {
-    const result = validateSuiteForExecution(makeSuite({
-      tasks: [makeTask("t1", { title: "" })],
-    }));
+    const result = validateSuiteForExecution(
+      makeSuite({
+        tasks: [makeTask("t1", { title: "" })],
+      }),
+    );
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.field.includes("title"))).toBe(true);
   });
 
   it("rejects task with empty prompt", () => {
-    const result = validateSuiteForExecution(makeSuite({
-      tasks: [makeTask("t1", { prompt: "" })],
-    }));
+    const result = validateSuiteForExecution(
+      makeSuite({
+        tasks: [makeTask("t1", { prompt: "" })],
+      }),
+    );
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.field.includes("prompt"))).toBe(true);
   });
@@ -150,9 +161,11 @@ describe("validateSuiteForSave", () => {
   });
 
   it("rejects duplicate model keys even on save", () => {
-    const result = validateSuiteForSave(makeSuite({
-      modelSlots: [makeSlot("s1", "dup"), makeSlot("s2", "dup")],
-    }));
+    const result = validateSuiteForSave(
+      makeSuite({
+        modelSlots: [makeSlot("s1", "dup"), makeSlot("s2", "dup")],
+      }),
+    );
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.message.includes("Duplicate"))).toBe(true);
   });
@@ -186,7 +199,12 @@ describe("canonicalJsonString", () => {
   });
 
   it("preserves array order", () => {
-    const result = canonicalJsonString({ items: [{ b: 1, a: 2 }, { d: 3, c: 4 }] });
+    const result = canonicalJsonString({
+      items: [
+        { b: 1, a: 2 },
+        { d: 3, c: 4 },
+      ],
+    });
     expect(result).toBe('{"items":[{"a":2,"b":1},{"c":4,"d":3}]}');
   });
 
@@ -220,12 +238,19 @@ describe("computeProtocolFingerprint", () => {
     const profile1 = makeProfile("p1");
     const profile2: EvaluationProfile = {
       ...profile1,
-      criteria: [{
-        id: "c1", name: "Quality", description: "Overall quality",
-        weight: 1, anchors: { one: "bad", three: "ok", five: "great" },
-      }],
+      criteria: [
+        {
+          id: "c1",
+          name: "Quality",
+          description: "Overall quality",
+          weight: 1,
+          anchors: { one: "bad", three: "ok", five: "great" },
+        },
+      ],
     };
-    expect(computeProtocolFingerprint(suite, [profile1])).not.toBe(computeProtocolFingerprint(suite, [profile2]));
+    expect(computeProtocolFingerprint(suite, [profile1])).not.toBe(
+      computeProtocolFingerprint(suite, [profile2]),
+    );
   });
 
   it("does not change when suite ID or timestamps change", () => {

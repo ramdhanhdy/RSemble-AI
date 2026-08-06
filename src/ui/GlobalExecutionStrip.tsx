@@ -97,7 +97,16 @@ export function buildStripViewModel(deps: {
   now?: () => number;
   storageFailed: boolean;
 }): StripViewModel | null {
-  const { owner, experiment, pathname, compareRunning, leaseOwnedElsewhere, lease, now = () => Date.now(), storageFailed } = deps;
+  const {
+    owner,
+    experiment,
+    pathname,
+    compareRunning,
+    leaseOwnedElsewhere,
+    lease,
+    now = () => Date.now(),
+    storageFailed,
+  } = deps;
   const alert = storageFailed ? STORAGE_FAILURE_ALERT : null;
 
   if (owner === null) {
@@ -105,11 +114,14 @@ export function buildStripViewModel(deps: {
     // Execution owned by another tab: this tab has no progress page for it,
     // so the strip is informational only (no View progress link).
     const leaseKind = lease?.kind === "experiment" ? "Experiment" : "Compare";
-    const elapsedMs = lease?.acquiredAt !== undefined ? Math.max(0, now() - lease.acquiredAt) : null;
+    const elapsedMs =
+      lease?.acquiredAt !== undefined ? Math.max(0, now() - lease.acquiredAt) : null;
     const age = elapsedMs === null ? "" : ` · ${formatElapsed(elapsedMs)} active`;
     return {
       kind: "other-tab",
-      caption: lease ? `${leaseKind} is active in another tab${age}` : "Execution is active in another tab",
+      caption: lease
+        ? `${leaseKind} is active in another tab${age}`
+        : "Execution is active in another tab",
       elapsedMs,
       href: "",
       status: "other-tab",
@@ -168,7 +180,11 @@ const DOT_CLASSES: Record<StripViewModel["status"], string> = {
   "other-tab": "bg-text-muted",
 };
 
-export function GlobalExecutionStrip({ view }: { view: StripViewModel | null }): ReactElement | null {
+export function GlobalExecutionStrip({
+  view,
+}: {
+  view: StripViewModel | null;
+}): ReactElement | null {
   const [announcedCaption, setAnnouncedCaption] = useState<string | null>(null);
   const lastCaptionRef = useRef<string | null>(null);
   const [announcedAlert, setAnnouncedAlert] = useState<string | null>(null);
@@ -218,7 +234,10 @@ export function GlobalExecutionStrip({ view }: { view: StripViewModel | null }):
         {view.caption}
       </span>
       {view.status === "other-tab" && (
-        <span data-execution-guidance="" className="max-w-[14rem] shrink-0 truncate text-[11px] text-text-muted">
+        <span
+          data-execution-guidance=""
+          className="max-w-[14rem] shrink-0 truncate text-[11px] text-text-muted"
+        >
           Open the owning execution or wait for lease expiry.
         </span>
       )}

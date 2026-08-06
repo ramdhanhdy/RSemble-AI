@@ -149,7 +149,11 @@ describe("gemini listModels — generation filtering and recency ordering", () =
 });
 
 describe("gemini listModels — fallback paths", () => {
-  const expectedFallbackStart = ["gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite"];
+  const expectedFallbackStart = [
+    "gemini-3.6-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite",
+  ];
 
   it("returns the current fallback when no key is configured", async () => {
     vi.stubEnv("VITE_GEMINI_KEY", "");
@@ -191,10 +195,7 @@ describe("gemini listModels — abort semantics", () => {
   it("propagates an abort raised via the request signal", async () => {
     const ctrl = new AbortController();
     ctrl.abort();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")));
     await expect(geminiProvider.listModels!(ctrl.signal)).rejects.toThrow();
   });
 });
@@ -204,10 +205,10 @@ describe("gemini listModels — abort semantics", () => {
 // ---------------------------------------------------------------------------
 
 function okGeminiChat(): Response {
-  return new Response(
-    JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
-  );
+  return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 describe("gemini chatCompletion — content parts mapping (7.4.1)", () => {
@@ -259,7 +260,12 @@ describe("gemini chatCompletion — content parts mapping (7.4.1)", () => {
           content: [
             { type: "text", text: "prompt" },
             { type: "image", mimeType: "image/png", data: "iVBORw0KGgo" },
-            { type: "file", mimeType: "application/pdf", data: "JVBERi0xLjQ", filename: "report.pdf" },
+            {
+              type: "file",
+              mimeType: "application/pdf",
+              data: "JVBERi0xLjQ",
+              filename: "report.pdf",
+            },
           ],
         },
       ],
@@ -281,14 +287,12 @@ describe("gemini chatCompletion — content parts mapping (7.4.1)", () => {
   });
 
   it("uses the same parts mapping on the streaming endpoint", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response('data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}\n\n', {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        }),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}\n\n', {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const chunks: string[] = [];
@@ -327,12 +331,14 @@ describe("gemini — raw provider bodies never surface (review fix 3)", () => {
     resetCredentialStoreForTests();
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ error: { message: "invalid key sk-configured-gemini-key-123" } }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ error: { message: "invalid key sk-configured-gemini-key-123" } }),
+            { status: 401, headers: { "Content-Type": "application/json" } },
+          ),
         ),
-      ),
     );
     const err = await geminiProvider
       .chatCompletion({ model: "gemini-3.6-flash", messages: [{ role: "user", content: "hi" }] })
@@ -347,9 +353,11 @@ describe("gemini — raw provider bodies never surface (review fix 3)", () => {
     const html = `<html>Bearer AIza-leaked-999 task "classify this document"</html>`;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
+        ),
     );
     const err = await geminiProvider
       .chatCompletion({ model: "gemini-3.6-flash", messages: [{ role: "user", content: "hi" }] })

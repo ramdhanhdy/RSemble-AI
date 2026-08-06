@@ -20,9 +20,7 @@ function offenders(pattern: RegExp): string[] {
     readFileSync(path, "utf8")
       .split("\n")
       .flatMap((line, index) =>
-        pattern.test(line)
-          ? [`${relative(process.cwd(), path)}:${index + 1} ${line.trim()}`]
-          : [],
+        pattern.test(line) ? [`${relative(process.cwd(), path)}:${index + 1} ${line.trim()}`] : [],
       ),
   );
 }

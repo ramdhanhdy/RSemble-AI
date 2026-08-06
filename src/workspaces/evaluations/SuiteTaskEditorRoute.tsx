@@ -43,10 +43,7 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
     setLoading(true);
     setError(null);
     try {
-      const [s, profiles] = await Promise.all([
-        repo.getSuite(suiteId),
-        repo.listProfiles(true),
-      ]);
+      const [s, profiles] = await Promise.all([repo.getSuite(suiteId), repo.listProfiles(true)]);
       if (!s) {
         setSuite(null);
         setError("Suite not found.");
@@ -75,7 +72,7 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
   );
 
   const task = useMemo(
-    () => (suite && taskId ? suite.tasks.find((t) => t.id === taskId) ?? null : null),
+    () => (suite && taskId ? (suite.tasks.find((t) => t.id === taskId) ?? null) : null),
     [suite, taskId],
   );
 

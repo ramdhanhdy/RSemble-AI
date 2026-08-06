@@ -27,7 +27,7 @@ describe("pipeline continuity", () => {
         ]}
       />,
     );
-    expect((html.match(/animate-dash-march/g) ?? [])).toHaveLength(1);
+    expect(html.match(/animate-dash-march/g) ?? []).toHaveLength(1);
     expect(html).toContain("motion-state");
   });
 

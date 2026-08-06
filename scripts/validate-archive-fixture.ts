@@ -8,10 +8,7 @@ import { readFileSync } from "node:fs";
 import { parseWorkbenchArchive, importWorkbenchArchive } from "../src/lib/persistence/archive";
 import { validateSuiteForExecution } from "../src/lib/evaluations/suite-validation";
 import { RSembleEvaluationDB } from "../src/lib/persistence/database";
-import {
-  normalizeSuitePackage,
-  parseSuitePackage,
-} from "../src/lib/evaluations/suite-package";
+import { normalizeSuitePackage, parseSuitePackage } from "../src/lib/evaluations/suite-package";
 import { importSuitePackage } from "../src/lib/persistence/suite-package-import";
 
 // --- 1. Workbench Archive (backup/restore) -------------------------------------------------

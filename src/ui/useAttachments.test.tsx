@@ -72,7 +72,10 @@ function Harness() {
   const ui = useAttachments(state.attachments, dispatch);
   return (
     <div>
-      <button data-testid="add" onClick={() => ui.addFiles([new File(["hello"], "note.txt", { type: "text/plain" })])}>
+      <button
+        data-testid="add"
+        onClick={() => ui.addFiles([new File(["hello"], "note.txt", { type: "text/plain" })])}
+      >
         add
       </button>
       <button

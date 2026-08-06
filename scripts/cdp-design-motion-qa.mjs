@@ -6,7 +6,8 @@ import path from "node:path";
 
 const baseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? "http://localhost:5176/";
 const outDir = path.resolve("docs/qa/design-motion-refinement");
-const chromePath = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const chromePath =
+  process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const debugPort = 9338;
 const results = {
   generatedAt: new Date().toISOString(),
@@ -17,15 +18,19 @@ const results = {
 
 fs.mkdirSync(outDir, { recursive: true });
 
-const chrome = spawn(chromePath, [
-  "--headless=new",
-  "--disable-gpu",
-  `--remote-debugging-port=${debugPort}`,
-  `--user-data-dir=${path.join(os.tmpdir(), `rsemble-design-motion-${Date.now()}`)}`,
-  "--no-first-run",
-  "--no-default-browser-check",
-  "about:blank",
-], { stdio: "ignore" });
+const chrome = spawn(
+  chromePath,
+  [
+    "--headless=new",
+    "--disable-gpu",
+    `--remote-debugging-port=${debugPort}`,
+    `--user-data-dir=${path.join(os.tmpdir(), `rsemble-design-motion-${Date.now()}`)}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -33,11 +38,15 @@ async function getPageWebSocketUrl() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       const pages = await new Promise((resolve, reject) => {
-        http.get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
-          let body = "";
-          response.on("data", (chunk) => { body += chunk; });
-          response.on("end", () => resolve(JSON.parse(body)));
-        }).on("error", reject);
+        http
+          .get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
+            let body = "";
+            response.on("data", (chunk) => {
+              body += chunk;
+            });
+            response.on("end", () => resolve(JSON.parse(body)));
+          })
+          .on("error", reject);
       });
       const page = pages.find((candidate) => candidate.type === "page");
       if (page) return page.webSocketDebuggerUrl;
@@ -59,7 +68,9 @@ socket.onmessage = (event) => {
   pending.delete(message.id);
   resolve(message);
 };
-await new Promise((resolve) => { socket.onopen = resolve; });
+await new Promise((resolve) => {
+  socket.onopen = resolve;
+});
 
 function send(method, params = {}) {
   return new Promise((resolve, reject) => {
@@ -76,8 +87,13 @@ function send(method, params = {}) {
 }
 
 async function evaluate(expression) {
-  const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text ?? "Runtime evaluation failed.");
+  const result = await send("Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+  });
+  if (result.exceptionDetails)
+    throw new Error(result.exceptionDetails.text ?? "Runtime evaluation failed.");
   return result.result?.value;
 }
 
@@ -96,14 +112,18 @@ async function setViewport({ width, height, mobile = false, touch = false }) {
     deviceScaleFactor: mobile ? 2 : 1,
     mobile,
   });
-  await send("Emulation.setTouchEmulationEnabled", touch
-    ? { enabled: true, maxTouchPoints: 5 }
-    : { enabled: false });
+  await send(
+    "Emulation.setTouchEmulationEnabled",
+    touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
+  );
 }
 
 async function navigate() {
   await send("Page.navigate", { url: baseUrl });
-  await waitFor("Boolean(document.querySelector('main, [role=main], #root > *'))", "application shell");
+  await waitFor(
+    "Boolean(document.querySelector('main, [role=main], #root > *'))",
+    "application shell",
+  );
   await wait(250);
 }
 
@@ -136,7 +156,10 @@ async function documentProbe(name) {
   })()`);
   record(name, {
     ...value,
-    pass: value.spinnerTiming === "linear" && !value.overflowX && (value.paletteAnimation === null || value.paletteAnimation === "none"),
+    pass:
+      value.spinnerTiming === "linear" &&
+      !value.overflowX &&
+      (value.paletteAnimation === null || value.paletteAnimation === "none"),
     reason: "expected a linear spinner, no horizontal overflow, and no palette animation",
   });
 }
@@ -169,12 +192,20 @@ async function verifyDialog(name, triggerLabel) {
     const dialog = document.querySelector('[role=dialog]');
     return { focusInDialog: Boolean(dialog?.contains(document.activeElement)), overflowX: document.documentElement.scrollWidth > innerWidth };
   })()`);
-  record(`${name}-open`, { ...open, pass: open.focusInDialog && !open.overflowX, reason: "focus must enter dialog without horizontal overflow" });
+  record(`${name}-open`, {
+    ...open,
+    pass: open.focusInDialog && !open.overflowX,
+    reason: "focus must enter dialog without horizontal overflow",
+  });
   await screenshot(`qa-${name}-dialog`);
   await press("Escape", "Escape", 27);
   await waitFor("!document.querySelector('[role=dialog]')", `${name} close`);
   const restored = await evaluate("document.activeElement === window.__qaTrigger");
-  record(`${name}-focus-restored`, { restored, pass: restored, reason: "focus must return to the trigger" });
+  record(`${name}-focus-restored`, {
+    restored,
+    pass: restored,
+    reason: "focus must return to the trigger",
+  });
 }
 
 async function captureViewport(name, viewport) {
@@ -190,9 +221,15 @@ async function exerciseActivePipeline(name, expectedAnimations) {
     setValue.call(input, 'QA motion probe');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   })()`);
-  await waitFor("!document.querySelector('[data-geometry=\"run-action\"]').disabled", `${name} run action`);
+  await waitFor(
+    "!document.querySelector('[data-geometry=\"run-action\"]').disabled",
+    `${name} run action`,
+  );
   await evaluate("document.querySelector('[data-geometry=\"run-action\"]').click()");
-  await waitFor("Boolean(document.querySelector('.connector-dots.animate-dash-march'))", `${name} active connector`);
+  await waitFor(
+    "Boolean(document.querySelector('.connector-dots.animate-dash-march'))",
+    `${name} active connector`,
+  );
   const active = await evaluate(`(() => {
     const connector = document.querySelector('.connector-dots.animate-dash-march');
     const spinner = document.querySelector('.animate-spin-ease');
@@ -206,12 +243,14 @@ async function exerciseActivePipeline(name, expectedAnimations) {
   })()`);
   record(name, {
     ...active,
-    pass: active.activeConnectors === 1
-      && active.connectorAnimation === expectedAnimations.connector
-      && active.spinnerAnimation === expectedAnimations.spinner
-      && (expectedAnimations.spinner === "none" || active.spinnerTiming === "linear")
-      && !active.overflowX,
-    reason: "an active rail must expose one connector and one stage spinner with the expected motion mode",
+    pass:
+      active.activeConnectors === 1 &&
+      active.connectorAnimation === expectedAnimations.connector &&
+      active.spinnerAnimation === expectedAnimations.spinner &&
+      (expectedAnimations.spinner === "none" || active.spinnerTiming === "linear") &&
+      !active.overflowX,
+    reason:
+      "an active rail must expose one connector and one stage spinner with the expected motion mode",
   });
   await screenshot(`qa-${name}`);
 }
@@ -287,7 +326,10 @@ try {
   await press("Escape", "Escape", 27);
 
   await verifyDialog("connections", "Connection status");
-  await exerciseActivePipeline("desktop-active-pipeline", { connector: "bg-march", spinner: "spin-ease" });
+  await exerciseActivePipeline("desktop-active-pipeline", {
+    connector: "bg-march",
+    spinner: "spin-ease",
+  });
   await captureViewport("tablet-1024x768", { width: 1024, height: 768 });
   await verifyDialog("connections-tablet-1024", "Connection status");
   await captureViewport("tablet-768x1024", { width: 768, height: 1024, touch: true });
@@ -302,7 +344,11 @@ try {
     const dialog = document.querySelector('[role=dialog]');
     return { focusInDialog: Boolean(dialog?.contains(document.activeElement)), overflowX: document.documentElement.scrollWidth > innerWidth };
   })()`);
-  record("mobile-command-drawer", { ...drawer, pass: drawer.focusInDialog && !drawer.overflowX, reason: "mobile drawer must focus and fit" });
+  record("mobile-command-drawer", {
+    ...drawer,
+    pass: drawer.focusInDialog && !drawer.overflowX,
+    reason: "mobile drawer must focus and fit",
+  });
   await screenshot("qa-mobile-drawer");
   const drawerScroll = await evaluate(`(() => {
     const scroller = document.querySelector('[role=dialog] .overflow-y-auto');
@@ -323,7 +369,9 @@ try {
   await press("Escape", "Escape", 27);
 
   await setViewport({ width: 1440, height: 1000 });
-  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  await send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
   await navigate();
   const reduced = await evaluate(`(() => {
     const button = document.querySelector('.pressable');
@@ -347,15 +395,20 @@ try {
   })()`);
   record("desktop-reduced-motion", {
     ...reduced,
-    pass: reduced.transitionDuration.split(",").every((duration) => duration.trim() === "0s")
-      && reduced.spinnerAnimation === "none"
-      && reduced.disclosureTransitionDuration === "0s"
-      && !reduced.overflowX
-      && reduced.visibleStatus,
-    reason: "reduced motion must remove interaction transitions and movement while retaining visible status text",
+    pass:
+      reduced.transitionDuration.split(",").every((duration) => duration.trim() === "0s") &&
+      reduced.spinnerAnimation === "none" &&
+      reduced.disclosureTransitionDuration === "0s" &&
+      !reduced.overflowX &&
+      reduced.visibleStatus,
+    reason:
+      "reduced motion must remove interaction transitions and movement while retaining visible status text",
   });
   await screenshot("qa-desktop-reduced-motion");
-  await exerciseActivePipeline("desktop-reduced-active-pipeline", { connector: "none", spinner: "none" });
+  await exerciseActivePipeline("desktop-reduced-active-pipeline", {
+    connector: "none",
+    spinner: "none",
+  });
 
   await send("Emulation.setEmulatedMedia", { features: [] });
   await setViewport({ width: 720, height: 500 });
@@ -375,7 +428,10 @@ try {
   fs.writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify(results, null, 2)}\n`);
   console.log(`Design-motion QA passed. Evidence: ${outDir}`);
 } catch (error) {
-  fs.writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify({ ...results, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`);
+  fs.writeFileSync(
+    path.join(outDir, "results.json"),
+    `${JSON.stringify({ ...results, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`,
+  );
   console.error(error);
   process.exitCode = 1;
 } finally {

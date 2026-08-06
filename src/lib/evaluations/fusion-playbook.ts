@@ -104,9 +104,7 @@ export function recommendPolicy(
 
   // Best baseline that clears the MPID vs best-fixed.
   const baselines = [rankRow, refineRow].filter((r): r is FusionPlaybookRow => r !== null);
-  const clearing = baselines.filter(
-    (r) => verdictBetween(r.policy, "best_fixed") === "adopt",
-  );
+  const clearing = baselines.filter((r) => verdictBetween(r.policy, "best_fixed") === "adopt");
   if (clearing.length > 0) {
     clearing.sort((a, b) => b.score - a.score || a.costMultiplier - b.costMultiplier);
     const best = clearing[0];

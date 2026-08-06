@@ -1,0 +1,21 @@
+# Generated/vendor artifacts — never hand-edited, so formatting them is noise.
+node_modules/
+dist/
+coverage/
+package-lock.json
+
+# Build outputs generated from vite.config.ts / vitest.config.ts by `tsc -b`.
+vite.config.js
+vite.config.d.ts
+vitest.config.js
+vitest.config.d.ts
+*.tsbuildinfo
+
+# Prose documents: plans/specs/READMEs are edited by hand; Prettier would
+# reflow every paragraph and bury real documentation edits in churn.
+*.md
+
+# Research/spec/QA artifacts under docs/ are hand-written or machine-written
+# (HTML research notes, fixtures, screenshots); not code-formatting scope.
+docs/
+*.png

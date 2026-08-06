@@ -146,9 +146,10 @@ export function FusionStudyView({ fusionRepo, suiteId, studyId }: FusionStudyVie
           </span>
         </div>
         <p className="text-xs text-text-muted">
-          Suite v{study.suiteRef.suiteVersion} · fingerprint {study.suiteRef.protocolFingerprint.slice(0, 19)}… ·
-          pool {study.poolRef.id} v{study.poolRef.version} · Judge 1 {study.judge1.providerId}:{study.judge1.model} ·
-          Judge 2 {study.judge2.providerId}:{study.judge2.model}
+          Suite v{study.suiteRef.suiteVersion} · fingerprint{" "}
+          {study.suiteRef.protocolFingerprint.slice(0, 19)}… · pool {study.poolRef.id} v
+          {study.poolRef.version} · Judge 1 {study.judge1.providerId}:{study.judge1.model} · Judge 2{" "}
+          {study.judge2.providerId}:{study.judge2.model}
         </p>
       </header>
 
@@ -202,13 +203,19 @@ function BaselineSection({ study }: { study: FusionStudy }) {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-text-muted">Survivors:</span>
             {stageA.survivors.map((s) => (
-              <span key={s} className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
+              <span
+                key={s}
+                className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent"
+              >
                 {s}
               </span>
             ))}
           </div>
           {stageA.eliminated.length > 0 && (
-            <ul className="flex flex-col gap-1 text-xs text-text-secondary" data-testid="stage-a-eliminations">
+            <ul
+              className="flex flex-col gap-1 text-xs text-text-secondary"
+              data-testid="stage-a-eliminations"
+            >
               {stageA.eliminated.map((e) => (
                 <li key={e.family}>
                   <span className="font-medium text-text">{e.family}</span> eliminated — {e.reason}
@@ -281,7 +288,8 @@ export function ShortlistSection({ stageB }: { stageB: StageBResult | null }) {
           )}
           {stageB.poolAdequacy.probed && (
             <p className="text-xs text-text-secondary" data-testid="pool-adequacy-note">
-              Pool adequacy probe: {stageB.poolAdequacy.outcome ?? "no challengers run"}. {stageB.poolAdequacy.note}
+              Pool adequacy probe: {stageB.poolAdequacy.outcome ?? "no challengers run"}.{" "}
+              {stageB.poolAdequacy.note}
             </p>
           )}
         </>
@@ -401,17 +409,22 @@ function TrialProvenance({
   }, [fusionRepo, trial.id]);
 
   return (
-    <div className="flex flex-col gap-1 text-xs text-text-secondary" data-testid={`provenance-${trial.id}`}>
+    <div
+      className="flex flex-col gap-1 text-xs text-text-secondary"
+      data-testid={`provenance-${trial.id}`}
+    >
       <div>
-        Suite v{trial.suiteRef.suiteVersion} ({trial.suiteRef.protocolFingerprint.slice(0, 19)}…) · pool{" "}
-        {trial.poolRef.id} v{trial.poolRef.version} · candidates{" "}
+        Suite v{trial.suiteRef.suiteVersion} ({trial.suiteRef.protocolFingerprint.slice(0, 19)}…) ·
+        pool {trial.poolRef.id} v{trial.poolRef.version} · candidates{" "}
         {trial.candidateConfig.slots.map((s) => `${s.providerId}:${s.slug}`).join(" + ")}
       </div>
       <div>
         Judge 1 {trial.judge1.providerId}:{trial.judge1.model} · Judge 2 {trial.judge2.providerId}:
         {trial.judge2.model}
         {trial.recipe ? ` · recipe ${trial.recipe.id} v${trial.recipe.version}` : ""}
-        {trial.synthesizer ? ` · synthesizer ${trial.synthesizer.providerId}:${trial.synthesizer.model}` : ""}
+        {trial.synthesizer
+          ? ` · synthesizer ${trial.synthesizer.providerId}:${trial.synthesizer.model}`
+          : ""}
       </div>
       <div>
         Children: candidates {trial.children.candidateRunId ?? "—"} · dev judge{" "}
@@ -432,7 +445,8 @@ function TrialProvenance({
               .join(" · ")}
       </div>
       <div>
-        Cost: policy {tokens(trial.cost.policy)} tok · experimental {tokens(trial.cost.experimental)} tok
+        Cost: policy {tokens(trial.cost.policy)} tok · experimental{" "}
+        {tokens(trial.cost.experimental)} tok
         {trial.sealedAt !== null ? ` · sealed ${new Date(trial.sealedAt).toLocaleString()}` : ""}
       </div>
     </div>
@@ -494,12 +508,14 @@ function PlaybookSection({ playbook }: { playbook: FusionPlaybook | null }) {
           >
             {playbook.recommendation.kind === "do_not_fuse" ? (
               <>
-                <span className="font-semibold">Verdict: do not fuse.</span> {playbook.recommendation.rationale}
+                <span className="font-semibold">Verdict: do not fuse.</span>{" "}
+                {playbook.recommendation.rationale}
               </>
             ) : (
               <>
                 <span className="font-semibold">
-                  Recommendation: {playbook.recommendation.policy} — {playbook.recommendation.configuration}.
+                  Recommendation: {playbook.recommendation.policy} —{" "}
+                  {playbook.recommendation.configuration}.
                 </span>{" "}
                 {playbook.recommendation.rationale}
               </>

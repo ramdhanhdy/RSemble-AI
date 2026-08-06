@@ -35,8 +35,8 @@ export type StatusMarkStatus =
 interface StatusConfig {
   label: string;
   icon: LucideIcon;
-  color: string;       // text color
-  spin: boolean;       // rotate the icon?
+  color: string; // text color
+  spin: boolean; // rotate the icon?
 }
 /** Hollow circle — the one icon lucide doesn't have as a named export
  *  that matches the spec's "hollow circle" for queued. Wrapped in forwardRef
@@ -62,18 +62,23 @@ const HollowCircle = forwardRef<SVGSVGElement, { size?: string | number; classNa
 );
 
 const STATUS_MAP: Record<StatusMarkStatus, StatusConfig> = {
-  draft:                     { label: "Draft",       icon: FilePenLine,    color: "text-text-muted",   spin: false },
-  queued:                     { label: "Queued",      icon: HollowCircle,   color: "text-text-muted",   spin: false },
-  running:                    { label: "Running",     icon: Loader2,        color: "text-accent",       spin: true  },
-  paused:                     { label: "Paused",      icon: Pause,          color: "text-text-muted",   spin: false },
-  completed:                  { label: "Completed",   icon: Check,          color: "text-success",      spin: false },
-  completed_with_failures:    { label: "Completed with failures", icon: AlertTriangle, color: "text-warning", spin: false },
-  partial:                    { label: "Partial",     icon: CircleDashed,   color: "text-warning",      spin: false },
-  failed:                     { label: "Failed",      icon: XCircle,         color: "text-error",        spin: false },
-  aborted:                    { label: "Aborted",     icon: Square,          color: "text-text-muted",   spin: false },
-  interrupted:                { label: "Interrupted", icon: Unplug,          color: "text-warning",      spin: false },
-  ready:                      { label: "Ready",       icon: CirclePlay,      color: "text-accent",       spin: false },
-  reusable:                   { label: "Reusable",    icon: BadgeCheck,      color: "text-text-muted",   spin: false },
+  draft: { label: "Draft", icon: FilePenLine, color: "text-text-muted", spin: false },
+  queued: { label: "Queued", icon: HollowCircle, color: "text-text-muted", spin: false },
+  running: { label: "Running", icon: Loader2, color: "text-accent", spin: true },
+  paused: { label: "Paused", icon: Pause, color: "text-text-muted", spin: false },
+  completed: { label: "Completed", icon: Check, color: "text-success", spin: false },
+  completed_with_failures: {
+    label: "Completed with failures",
+    icon: AlertTriangle,
+    color: "text-warning",
+    spin: false,
+  },
+  partial: { label: "Partial", icon: CircleDashed, color: "text-warning", spin: false },
+  failed: { label: "Failed", icon: XCircle, color: "text-error", spin: false },
+  aborted: { label: "Aborted", icon: Square, color: "text-text-muted", spin: false },
+  interrupted: { label: "Interrupted", icon: Unplug, color: "text-warning", spin: false },
+  ready: { label: "Ready", icon: CirclePlay, color: "text-accent", spin: false },
+  reusable: { label: "Reusable", icon: BadgeCheck, color: "text-text-muted", spin: false },
 };
 
 export function StatusMark({
@@ -95,14 +100,8 @@ export function StatusMark({
       data-status-mark=""
       className={`motion-state inline-flex items-center gap-1.5 text-sm ${cfg.color}`}
     >
-      <span
-        data-status-icon=""
-        className="flex size-4 shrink-0 items-center justify-center"
-      >
-        <Icon
-          size={size}
-          className={shouldSpin ? "animate-spin-ease" : undefined}
-        />
+      <span data-status-icon="" className="flex size-4 shrink-0 items-center justify-center">
+        <Icon size={size} className={shouldSpin ? "animate-spin-ease" : undefined} />
       </span>
       <span className="tabular-nums">{cfg.label}</span>
     </span>

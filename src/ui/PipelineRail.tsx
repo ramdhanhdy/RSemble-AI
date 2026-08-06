@@ -28,7 +28,9 @@ interface StageDef {
   icon: LucideIcon;
 }
 
-export function computeStages(state: StudioState): [RailStageState, RailStageState, RailStageState, RailStageState] {
+export function computeStages(
+  state: StudioState,
+): [RailStageState, RailStageState, RailStageState, RailStageState] {
   const hasRun = state.candidates.length > 0 || state.running;
   if (!hasRun) {
     return [
@@ -39,14 +41,13 @@ export function computeStages(state: StudioState): [RailStageState, RailStageSta
     ];
   }
 
-  const fanoutDone = state.candidates.length > 0 && state.candidates.every((c) => c.status !== "pending");
+  const fanoutDone =
+    state.candidates.length > 0 && state.candidates.every((c) => c.status !== "pending");
   const fanoutStarted = state.candidates.length > 0;
   const doneCount = state.candidates.filter((c) => c.status === "done").length;
   const totalCount = state.candidates.length;
 
-  const taskStage: RailStageState = fanoutStarted
-    ? { status: "done" }
-    : { status: "active" };
+  const taskStage: RailStageState = fanoutStarted ? { status: "done" } : { status: "active" };
 
   const modelsStage: RailStageState = !fanoutStarted
     ? { status: "pending" }
@@ -62,15 +63,16 @@ export function computeStages(state: StudioState): [RailStageState, RailStageSta
         ? { status: "done" }
         : { status: "active", caption: `Scoring ${doneCount} candidates` };
 
-  const finalStage: RailStageState = !fanoutDone || state.judgeStatus !== "done"
-    ? { status: "pending" }
-    : state.mode === "fuse"
-      ? state.fusionStatus === "error"
-        ? { status: "error" }
-        : state.fusionStatus === "done"
-          ? { status: "done" }
-          : { status: "active" }
-      : { status: "done" };
+  const finalStage: RailStageState =
+    !fanoutDone || state.judgeStatus !== "done"
+      ? { status: "pending" }
+      : state.mode === "fuse"
+        ? state.fusionStatus === "error"
+          ? { status: "error" }
+          : state.fusionStatus === "done"
+            ? { status: "done" }
+            : { status: "active" }
+        : { status: "done" };
 
   return [taskStage, modelsStage, judgeStage, finalStage];
 }
@@ -85,7 +87,11 @@ export function PipelineRail({
   const defs: StageDef[] = [
     { title: "Task", idleCaption: "You describe what you need", icon: FileText },
     { title: "Models", idleCaption: "Multiple models generate responses", icon: Network },
-    { title: "Judge", idleCaption: "Scores each response using your evaluation", icon: ShieldCheck },
+    {
+      title: "Judge",
+      idleCaption: "Scores each response using your evaluation",
+      icon: ShieldCheck,
+    },
     mode === "rank"
       ? { title: "Rank", idleCaption: "Best response recommended", icon: Crown }
       : { title: "Fuse", idleCaption: "Merged into one answer", icon: GitMerge },
@@ -133,71 +139,99 @@ export function PipelineRail({
           );
         })}
       </ol>
-    <div className="hidden flex-wrap items-center justify-center gap-y-3 sm:flex" role="list" aria-label="Pipeline stages">
-      {defs.map((def, i) => {
-        const stage = stages?.[i];
-        const status = stage?.status ?? "pending";
-        const nextUp = !hasStages && i === 0;
-        const active = status === "active";
-        const done = status === "done";
-        const errored = status === "error";
-        const highlighted = nextUp || active || done || errored;
+      <div
+        className="hidden flex-wrap items-center justify-center gap-y-3 sm:flex"
+        role="list"
+        aria-label="Pipeline stages"
+      >
+        {defs.map((def, i) => {
+          const stage = stages?.[i];
+          const status = stage?.status ?? "pending";
+          const nextUp = !hasStages && i === 0;
+          const active = status === "active";
+          const done = status === "done";
+          const errored = status === "error";
+          const highlighted = nextUp || active || done || errored;
 
-        return (
-          <div key={def.title} className="flex items-center" role="listitem">
-            {i > 0 && (
-              <div className="flex items-center gap-1.5 px-2" aria-hidden="true">
-                <span className={`connector-node ${done ? "bg-success" : ""}`} />
+          return (
+            <div key={def.title} className="flex items-center" role="listitem">
+              {i > 0 && (
+                <div className="flex items-center gap-1.5 px-2" aria-hidden="true">
+                  <span className={`connector-node ${done ? "bg-success" : ""}`} />
+                  <span
+                    className={`connector-dots w-10 ${active ? "animate-dash-march" : ""}`}
+                    style={
+                      active
+                        ? {
+                            backgroundImage:
+                              "radial-gradient(circle, #00e5ff 1.25px, transparent 1.25px)",
+                          }
+                        : undefined
+                    }
+                  />
+                  <span className={`connector-node ${active || done ? "bg-accent" : ""}`} />
+                </div>
+              )}
+              <div
+                className={`motion-state flex min-h-[120px] w-[140px] flex-col gap-1.5 rounded-md border bg-card p-3 ${
+                  active
+                    ? "border-accent glow-accent"
+                    : done
+                      ? "border-success/40"
+                      : errored
+                        ? "border-error/50"
+                        : nextUp
+                          ? "border-accent/60"
+                          : "border-edge opacity-60"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span
+                    data-stage-status-icon=""
+                    className="flex size-4 shrink-0 items-center justify-center"
+                  >
+                    {active ? (
+                      <Loader2 size={14} className="animate-spin-ease text-accent" />
+                    ) : done ? (
+                      <Check size={14} className="text-success" />
+                    ) : errored ? (
+                      <AlertCircle size={14} className="text-error" />
+                    ) : (
+                      <span
+                        className={`font-mono text-xs tabular-nums ${highlighted ? "text-accent" : "text-text-muted"}`}
+                      >
+                        {i + 1}
+                      </span>
+                    )}
+                  </span>
+                  <def.icon
+                    size={16}
+                    className={
+                      highlighted
+                        ? done
+                          ? "text-success"
+                          : errored
+                            ? "text-error"
+                            : "text-accent"
+                        : "text-text-muted"
+                    }
+                  />
+                </div>
                 <span
-                  className={`connector-dots w-10 ${active ? "animate-dash-march" : ""}`}
-                  style={active ? { backgroundImage: "radial-gradient(circle, #00e5ff 1.25px, transparent 1.25px)" } : undefined}
-                />
-                <span className={`connector-node ${active || done ? "bg-accent" : ""}`} />
-              </div>
-            )}
-            <div
-              className={`motion-state flex min-h-[120px] w-[140px] flex-col gap-1.5 rounded-md border bg-card p-3 ${
-                active
-                  ? "border-accent glow-accent"
-                  : done
-                    ? "border-success/40"
-                    : errored
-                      ? "border-error/50"
-                      : nextUp
-                        ? "border-accent/60"
-                        : "border-edge opacity-60"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  data-stage-status-icon=""
-                  className="flex size-4 shrink-0 items-center justify-center"
+                  className={`text-sm font-semibold ${highlighted ? "text-text" : "text-text-secondary"}`}
                 >
-                  {active ? (
-                    <Loader2 size={14} className="animate-spin-ease text-accent" />
-                  ) : done ? (
-                    <Check size={14} className="text-success" />
-                  ) : errored ? (
-                    <AlertCircle size={14} className="text-error" />
-                  ) : (
-                    <span className={`font-mono text-xs tabular-nums ${highlighted ? "text-accent" : "text-text-muted"}`}>
-                      {i + 1}
-                    </span>
-                  )}
+                  {def.title}
                 </span>
-                <def.icon size={16} className={highlighted ? (done ? "text-success" : errored ? "text-error" : "text-accent") : "text-text-muted"} />
+                <span
+                  className={`text-xs leading-snug ${highlighted ? "text-text-secondary" : "text-text-muted"}`}
+                >
+                  {stage?.caption ?? def.idleCaption}
+                </span>
               </div>
-              <span className={`text-sm font-semibold ${highlighted ? "text-text" : "text-text-secondary"}`}>
-                {def.title}
-              </span>
-              <span className={`text-xs leading-snug ${highlighted ? "text-text-secondary" : "text-text-muted"}`}>
-                {stage?.caption ?? def.idleCaption}
-              </span>
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
     </>
   );
 }
@@ -217,7 +251,8 @@ export function LeaderboardPreviewCard() {
         </span>
       </div>
       <p className="mt-2 text-xs leading-relaxed text-text-secondary">
-        Every candidate scored against your evaluation, ranked by weighted fit. Close calls are flagged, not hidden.
+        Every candidate scored against your evaluation, ranked by weighted fit. Close calls are
+        flagged, not hidden.
       </p>
       <div className="mt-4 flex items-end justify-center gap-2" aria-hidden="true">
         {bars.map((bar) => (

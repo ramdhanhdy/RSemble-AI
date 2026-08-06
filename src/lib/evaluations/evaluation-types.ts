@@ -66,12 +66,9 @@ export interface EvaluationProfileRef {
 }
 
 export type EvaluationSelection =
-  | { kind: "holistic" }
-  | { kind: "profile"; profile: EvaluationProfileRef };
+  { kind: "holistic" } | { kind: "profile"; profile: EvaluationProfileRef };
 
-export type TaskEvaluationSelection =
-  | { kind: "inherit" }
-  | EvaluationSelection;
+export type TaskEvaluationSelection = { kind: "inherit" } | EvaluationSelection;
 
 // --- Tasks / suites -----------------------------------------------------------
 
@@ -81,12 +78,7 @@ export type TaskEvaluationSelection =
  * a user toggle over rubric scores. Task-level only in v1.
  */
 export type VerificationKind =
-  | "none"
-  | "exact_match"
-  | "numeric"
-  | "schema"
-  | "unit_tests"
-  | "custom_checker";
+  "none" | "exact_match" | "numeric" | "schema" | "unit_tests" | "custom_checker";
 
 export const VERIFICATION_KINDS: readonly VerificationKind[] = [
   "none",
@@ -136,14 +128,7 @@ export interface ExperimentTaskAttempt {
   id: string;
   runId: string | null;
   trial: number;
-  status:
-    | "queued"
-    | "running"
-    | "completed"
-    | "partial"
-    | "failed"
-    | "aborted"
-    | "interrupted";
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "aborted" | "interrupted";
   startedAt: number | null;
   finishedAt: number | null;
   error: PersistedError | null;
@@ -180,9 +165,7 @@ export interface ExperimentRosterExtensionPlan {
 /** Persisted execution-plan discriminant on queued/terminal attempts. The
  *  property name `repair` is legacy persisted schema kept for compatibility;
  *  branch on `kind` for behavior and copy. */
-export type ExperimentTaskExecutionPlan =
-  | ExperimentRepairPlan
-  | ExperimentRosterExtensionPlan;
+export type ExperimentTaskExecutionPlan = ExperimentRepairPlan | ExperimentRosterExtensionPlan;
 
 /** Append-only extension history entry (spec §6.5). */
 export interface ExperimentRosterExtension {
@@ -340,11 +323,7 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
 }
 
 export function isReasoningPolicy(value: unknown): value is ReasoningPolicy {
-  return (
-    isRecord(value) &&
-    isReasoningEffort(value.candidates) &&
-    isReasoningEffort(value.judge)
-  );
+  return isRecord(value) && isReasoningEffort(value.candidates) && isReasoningEffort(value.judge);
 }
 
 function hasProhibitedKeys(v: unknown): boolean {
@@ -529,9 +508,7 @@ function isExperimentRepairPlan(v: unknown): v is ExperimentRepairPlan {
   return true;
 }
 
-function isExperimentRosterExtensionPlan(
-  v: unknown,
-): v is ExperimentRosterExtensionPlan {
+function isExperimentRosterExtensionPlan(v: unknown): v is ExperimentRosterExtensionPlan {
   if (!isRecord(v)) return false;
   if (v.kind !== "roster-extension") return false;
   if (!isNonEmptyString(v.addedModelKey)) return false;
@@ -545,9 +522,7 @@ function isExperimentRosterExtensionPlan(
 
 /** Discriminant union — legacy `missing-cells` plus `roster-extension`.
  *  Exported for run-source validation in persistence/run-types.ts. */
-export function isExperimentTaskExecutionPlan(
-  v: unknown,
-): v is ExperimentTaskExecutionPlan {
+export function isExperimentTaskExecutionPlan(v: unknown): v is ExperimentTaskExecutionPlan {
   return isExperimentRepairPlan(v) || isExperimentRosterExtensionPlan(v);
 }
 
@@ -559,11 +534,7 @@ function isExperimentRosterExtension(v: unknown): v is ExperimentRosterExtension
   // Slot identity must match the recorded key exactly.
   if (`${v.addedSlot.providerId}:${v.addedSlot.slug}` !== v.addedModelKey) return false;
   if (!isNonEmptyString(v.priorFingerprint)) return false;
-  if (
-    !isNumber(v.extendedAt) ||
-    !Number.isFinite(v.extendedAt) ||
-    v.extendedAt < 0
-  ) {
+  if (!isNumber(v.extendedAt) || !Number.isFinite(v.extendedAt) || v.extendedAt < 0) {
     return false;
   }
   return true;
@@ -640,7 +611,8 @@ export function isExperimentRecord(v: unknown): v is ExperimentRecord {
   if (!Array.isArray(v.tasks) || !v.tasks.every(isExperimentTaskState)) return false;
   if (!isNumber(v.createdAt)) return false;
   if (!isNumber(v.updatedAt)) return false;
-  if (v.rosterExtensions !== undefined && !hasValidRosterExtensionHistory(v.rosterExtensions)) return false;
+  if (v.rosterExtensions !== undefined && !hasValidRosterExtensionHistory(v.rosterExtensions))
+    return false;
   if (hasProhibitedKeys(v)) return false;
   return true;
 }

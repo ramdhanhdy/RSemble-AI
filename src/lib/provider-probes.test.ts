@@ -81,7 +81,9 @@ describe("provider probe cancellation", () => {
         readiness: vi.fn((signal?: AbortSignal) => {
           readinessSignal = signal;
           return new Promise<ProviderReadiness>((_resolve, reject) => {
-            signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+            signal?.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            );
           });
         }),
       }),
@@ -97,48 +99,48 @@ describe("provider probe cancellation", () => {
   });
 });
 
-  it("returns a cycle-level cancellation after mixed provider progress", async () => {
-    let observedOpenRouterSignal: AbortSignal | undefined;
-    providers.push(
-      provider({
-        id: "gemini",
-        listModels: vi.fn(async () => []),
-      }),
-      provider({
-        id: "openrouter",
-        listModels: vi.fn((signal?: AbortSignal) => {
-          observedOpenRouterSignal = signal;
-          return new Promise<CatalogModel[]>((_resolve, reject) => {
-            signal?.addEventListener("abort", () => {
-              reject(new DOMException("Aborted", "AbortError"));
-            });
+it("returns a cycle-level cancellation after mixed provider progress", async () => {
+  let observedOpenRouterSignal: AbortSignal | undefined;
+  providers.push(
+    provider({
+      id: "gemini",
+      listModels: vi.fn(async () => []),
+    }),
+    provider({
+      id: "openrouter",
+      listModels: vi.fn((signal?: AbortSignal) => {
+        observedOpenRouterSignal = signal;
+        return new Promise<CatalogModel[]>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
           });
-        }),
+        });
       }),
-    );
-    const coordinator = createProviderProbeCoordinator();
-    const cycle = coordinator.run(undefined, 5_000);
-    await vi.waitFor(() => expect(providers[0].listModels).toHaveBeenCalledTimes(1));
-    coordinator.abort();
-    await expect(cycle).resolves.toEqual({ status: "cancelled" });
-    expect(observedOpenRouterSignal?.aborted).toBe(true);
-  });
+    }),
+  );
+  const coordinator = createProviderProbeCoordinator();
+  const cycle = coordinator.run(undefined, 5_000);
+  await vi.waitFor(() => expect(providers[0].listModels).toHaveBeenCalledTimes(1));
+  coordinator.abort();
+  await expect(cycle).resolves.toEqual({ status: "cancelled" });
+  expect(observedOpenRouterSignal?.aborted).toBe(true);
+});
 
-  it("keeps an idle timeout as a completed diagnosable cycle", async () => {
-    vi.useFakeTimers();
-    providers.push(
-      provider({
-        listModels: vi.fn(() => new Promise<CatalogModel[]>(() => {})),
-      }),
-    );
-    const coordinator = createProviderProbeCoordinator();
-    const cycle = coordinator.run(undefined, 25);
-    await vi.advanceTimersByTimeAsync(25);
-    await expect(cycle).resolves.toMatchObject({ status: "completed" });
-    const result = await cycle;
-    if (result.status !== "completed") throw new Error("expected completed probe cycle");
-    expect(result.results[0]?.error).toContain("timed out");
-  });
+it("keeps an idle timeout as a completed diagnosable cycle", async () => {
+  vi.useFakeTimers();
+  providers.push(
+    provider({
+      listModels: vi.fn(() => new Promise<CatalogModel[]>(() => {})),
+    }),
+  );
+  const coordinator = createProviderProbeCoordinator();
+  const cycle = coordinator.run(undefined, 25);
+  await vi.advanceTimersByTimeAsync(25);
+  await expect(cycle).resolves.toMatchObject({ status: "completed" });
+  const result = await cycle;
+  if (result.status !== "completed") throw new Error("expected completed probe cycle");
+  expect(result.results[0]?.error).toContain("timed out");
+});
 
 describe("provider probe coordinator", () => {
   it("reuses one in-flight polling cycle instead of overlapping requests", async () => {
@@ -147,7 +149,9 @@ describe("provider probe coordinator", () => {
     const listModels = vi.fn(() => {
       callCount += 1;
       if (callCount === 1) {
-        return new Promise<[]>((resolve) => { resolveModels = resolve; });
+        return new Promise<[]>((resolve) => {
+          resolveModels = resolve;
+        });
       }
       return Promise.resolve([] as []);
     });

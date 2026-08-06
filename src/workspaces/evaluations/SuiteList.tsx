@@ -11,14 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  AlertCircle,
-  Copy,
-  Loader2,
-  Upload,
-  Plus,
-  Archive,
-} from "lucide-react";
+import { AlertCircle, Copy, Loader2, Upload, Plus, Archive } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type {
   EvaluationProfile,
@@ -79,8 +72,22 @@ function blankSuite(): EvaluationSuite {
       },
     ],
     modelSlots: [
-      { id: generateId("slot"), providerId: "openrouter", provider: "Z-AI", model: "GLM 5.2", slug: "z-ai/glm-5.2", enabled: true },
-      { id: generateId("slot"), providerId: "openrouter", provider: "DeepSeek", model: "DeepSeek V4 Flash", slug: "deepseek/deepseek-v4-flash", enabled: true },
+      {
+        id: generateId("slot"),
+        providerId: "openrouter",
+        provider: "Z-AI",
+        model: "GLM 5.2",
+        slug: "z-ai/glm-5.2",
+        enabled: true,
+      },
+      {
+        id: generateId("slot"),
+        providerId: "openrouter",
+        provider: "DeepSeek",
+        model: "DeepSeek V4 Flash",
+        slug: "deepseek/deepseek-v4-flash",
+        enabled: true,
+      },
     ],
     defaultJudge: { ...DEFAULT_CRITIC_REF },
     defaultEvaluation: { kind: "holistic" },
@@ -111,7 +118,13 @@ export function SuiteList({ repo }: SuiteListProps) {
 
   const load = useCallback(async () => {
     if (!repo) {
-      setState({ suites: [], loading: false, error: "Storage not available.", profiles: new Map(), latestExperiment: new Map() });
+      setState({
+        suites: [],
+        loading: false,
+        error: "Storage not available.",
+        profiles: new Map(),
+        latestExperiment: new Map(),
+      });
       return;
     }
     const id = ++requestIdRef.current;
@@ -184,7 +197,12 @@ export function SuiteList({ repo }: SuiteListProps) {
       window.location.hash = `#/evaluations/${draft.id}`;
     } catch (err: unknown) {
       // Storage error never claims a suite was saved.
-      const msg = err instanceof StorageError ? friendlyStorageError(err) : err instanceof Error ? err.message : "Could not save the suite.";
+      const msg =
+        err instanceof StorageError
+          ? friendlyStorageError(err)
+          : err instanceof Error
+            ? err.message
+            : "Could not save the suite.";
       setCreateError(msg);
     } finally {
       setCreating(false);
@@ -215,11 +233,11 @@ export function SuiteList({ repo }: SuiteListProps) {
         setImportErrors(check.errors);
         return;
       }
-      const [suites, profiles] = await Promise.all([repo.listSuites(true), repo.listProfiles(true)]);
-      const takenIds = new Set<string>([
-        ...suites.map((s) => s.id),
-        ...profiles.map((p) => p.id),
+      const [suites, profiles] = await Promise.all([
+        repo.listSuites(true),
+        repo.listProfiles(true),
       ]);
+      const takenIds = new Set<string>([...suites.map((s) => s.id), ...profiles.map((p) => p.id)]);
       const normalized = normalizeSuitePackage(check.pkg, {
         takenIds,
         existingProfileIds: new Set(profiles.map((p) => p.id)),
@@ -238,7 +256,12 @@ export function SuiteList({ repo }: SuiteListProps) {
       await load();
       window.location.hash = `#/evaluations/${result.suiteId}`;
     } catch (err: unknown) {
-      const msg = err instanceof StorageError ? friendlyStorageError(err) : err instanceof Error ? err.message : "Could not import the suite package.";
+      const msg =
+        err instanceof StorageError
+          ? friendlyStorageError(err)
+          : err instanceof Error
+            ? err.message
+            : "Could not import the suite package.";
       setImportErrors([msg]);
     } finally {
       setImporting(false);
@@ -264,7 +287,12 @@ export function SuiteList({ repo }: SuiteListProps) {
       await load();
       window.location.hash = `#/evaluations/${copy.id}`;
     } catch (err: unknown) {
-      const msg = err instanceof StorageError ? friendlyStorageError(err) : err instanceof Error ? err.message : "Could not duplicate the suite.";
+      const msg =
+        err instanceof StorageError
+          ? friendlyStorageError(err)
+          : err instanceof Error
+            ? err.message
+            : "Could not duplicate the suite.";
       setActionError(msg);
     }
   }
@@ -277,7 +305,12 @@ export function SuiteList({ repo }: SuiteListProps) {
       setConfirmArchiveId(null);
       await load();
     } catch (err: unknown) {
-      const msg = err instanceof StorageError ? friendlyStorageError(err) : err instanceof Error ? err.message : "Could not archive the suite.";
+      const msg =
+        err instanceof StorageError
+          ? friendlyStorageError(err)
+          : err instanceof Error
+            ? err.message
+            : "Could not archive the suite.";
       setActionError(msg);
     }
   }
@@ -333,8 +366,8 @@ export function SuiteList({ repo }: SuiteListProps) {
         </h2>
         <p className="max-w-md text-sm text-text-secondary">
           An evaluation suite groups several tasks into a versioned set, executed one at a time
-          through the comparison pipeline. Build a suite to compare models across a shared
-          workload with a consistent judge and evaluation profile.
+          through the comparison pipeline. Build a suite to compare models across a shared workload
+          with a consistent judge and evaluation profile.
         </p>
         {/* Identity spec §5.4: teach the split from the suite side. */}
         <p className="max-w-md text-sm text-text-muted">
@@ -371,14 +404,20 @@ export function SuiteList({ repo }: SuiteListProps) {
           </button>
         </div>
         {importErrors.length > 0 && (
-          <ul className="flex max-w-md flex-col gap-0.5 text-left text-sm text-error" data-testid="suite-import-errors">
+          <ul
+            className="flex max-w-md flex-col gap-0.5 text-left text-sm text-error"
+            data-testid="suite-import-errors"
+          >
             {importErrors.slice(0, 5).map((e) => (
               <li key={e}>{e}</li>
             ))}
           </ul>
         )}
         {importNotes.length > 0 && (
-          <ul className="flex max-w-md flex-col gap-0.5 text-left text-sm text-text-secondary" data-testid="suite-import-notes">
+          <ul
+            className="flex max-w-md flex-col gap-0.5 text-left text-sm text-text-secondary"
+            data-testid="suite-import-notes"
+          >
             {importNotes.map((n) => (
               <li key={n}>{n}</li>
             ))}
@@ -452,12 +491,8 @@ export function SuiteList({ repo }: SuiteListProps) {
         </div>
       </div>
 
-      {createError && (
-        <p className="text-sm text-error">{createError}</p>
-      )}
-      {actionError && (
-        <p className="text-sm text-error">{actionError}</p>
-      )}
+      {createError && <p className="text-sm text-error">{createError}</p>}
+      {actionError && <p className="text-sm text-error">{actionError}</p>}
       {importErrors.length > 0 && (
         <ul className="flex flex-col gap-0.5 text-sm text-error" data-testid="suite-import-errors">
           {importErrors.slice(0, 5).map((e) => (
@@ -466,7 +501,10 @@ export function SuiteList({ repo }: SuiteListProps) {
         </ul>
       )}
       {importNotes.length > 0 && (
-        <ul className="flex flex-col gap-0.5 text-sm text-text-secondary" data-testid="suite-import-notes">
+        <ul
+          className="flex flex-col gap-0.5 text-sm text-text-secondary"
+          data-testid="suite-import-notes"
+        >
           {importNotes.map((n) => (
             <li key={n}>{n}</li>
           ))}
@@ -502,7 +540,11 @@ export function SuiteList({ repo }: SuiteListProps) {
                 timestamp={suite.updatedAt}
                 kind={<KindEyebrow kind="suite" />}
                 modelCount={suite.modelSlots.filter((s) => s.enabled).length}
-                summary={suite.tasks.length > 0 ? `${suite.tasks.length} task${suite.tasks.length === 1 ? "" : "s"}` : undefined}
+                summary={
+                  suite.tasks.length > 0
+                    ? `${suite.tasks.length} task${suite.tasks.length === 1 ? "" : "s"}`
+                    : undefined
+                }
                 afterSummary={
                   latest ? (
                     <span className="flex items-center gap-1 text-xs text-text-muted">

@@ -41,7 +41,11 @@ function runAbortableStage<T>(
     };
     const onAbort = () => {
       finish(() =>
-        reject(timedOut ? new ProbeTimeoutError() : new DOMException("Provider probe aborted", "AbortError")),
+        reject(
+          timedOut
+            ? new ProbeTimeoutError()
+            : new DOMException("Provider probe aborted", "AbortError"),
+        ),
       );
     };
 
@@ -155,8 +159,7 @@ export async function probeAllProviders(
 }
 
 export type ProbeCycleResult =
-  | { status: "completed"; results: ProviderProbeResult[] }
-  | { status: "cancelled" };
+  { status: "completed"; results: ProviderProbeResult[] } | { status: "cancelled" };
 
 export interface ProviderProbeCoordinator {
   run(signal?: AbortSignal, timeoutMs?: number): Promise<ProbeCycleResult>;

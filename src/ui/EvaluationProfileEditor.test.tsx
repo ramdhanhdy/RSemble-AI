@@ -4,7 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { EvaluationProfileEditor } from "./EvaluationProfileEditor";
 import type { EvaluationProfile, EvaluationCriterion } from "../lib/evaluations/evaluation-types";
 
-function makeCriterion(id: string, overrides: Partial<EvaluationCriterion> = {}): EvaluationCriterion {
+function makeCriterion(
+  id: string,
+  overrides: Partial<EvaluationCriterion> = {},
+): EvaluationCriterion {
   return {
     id,
     name: `Criterion ${id}`,
@@ -30,7 +33,10 @@ function makeProfile(criteria: EvaluationCriterion[] = []): EvaluationProfile {
 
 describe("EvaluationProfileEditor — structure", () => {
   it("shows total weight summary", () => {
-    const profile = makeProfile([makeCriterion("c1", { weight: 1 }), makeCriterion("c2", { weight: 2 })]);
+    const profile = makeProfile([
+      makeCriterion("c1", { weight: 1 }),
+      makeCriterion("c2", { weight: 2 }),
+    ]);
     const html = renderToStaticMarkup(
       <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
     );

@@ -202,17 +202,24 @@ function makeCandidate(id: string, model: string, provider: string, score: numbe
   };
 }
 
-function makeReport(entries: Array<{
-  id: string;
-  label: string;
-  score: number;
-  position?: string;
-  rationale?: string;
-  strengths?: string[];
-  deductions?: { severity: "minor" | "major"; reason: string }[];
-  missedRequirements?: string[];
-  criterionScores?: { criterionId: string; label: string; score: number; rationale: string }[];
-}>, comparisons: { candidateIds: [string, string]; blindLabels: [string, string]; reason: string }[] = []) {
+function makeReport(
+  entries: Array<{
+    id: string;
+    label: string;
+    score: number;
+    position?: string;
+    rationale?: string;
+    strengths?: string[];
+    deductions?: { severity: "minor" | "major"; reason: string }[];
+    missedRequirements?: string[];
+    criterionScores?: { criterionId: string; label: string; score: number; rationale: string }[];
+  }>,
+  comparisons: {
+    candidateIds: [string, string];
+    blindLabels: [string, string];
+    reason: string;
+  }[] = [],
+) {
   return {
     labelMap: entries.map((e) => ({ label: e.label, candidateId: e.id })),
     evaluationsById: Object.fromEntries(
@@ -247,14 +254,21 @@ describe("buildExportMarkdown — blind judge audit trail", () => {
       judgeReport: makeReport(
         [
           {
-            id: "c1", label: "B", score: 5.0,
+            id: "c1",
+            label: "B",
+            score: 5.0,
             position: "Fix onboarding reliability first",
             rationale: "Strong quantified comparison with credible early decision gates.",
             strengths: ["Quantifies the revenue exposure"],
             deductions: [{ severity: "minor", reason: "The adoption threshold is underspecified" }],
             missedRequirements: [],
             criterionScores: [
-              { criterionId: "commercial-reasoning", label: "Commercial reasoning", score: 4.8, rationale: "Uses supplied commercial evidence." },
+              {
+                criterionId: "commercial-reasoning",
+                label: "Commercial reasoning",
+                score: 4.8,
+                rationale: "Uses supplied commercial evidence.",
+              },
             ],
           },
           { id: "c2", label: "A", score: 3.5 },
@@ -280,7 +294,9 @@ describe("buildExportMarkdown — blind judge audit trail", () => {
     expect(md).toContain("Minor: The adoption threshold is underspecified");
     expect(md).toContain("Commercial reasoning: 4.8/5 — Uses supplied commercial evidence.");
     expect(md).toContain("## Same-Conclusion Comparisons");
-    expect(md).toContain("Candidate B (Kimi K3) vs Candidate A (Qwen 3.7 Flash): Both recommend reliability, but B quantifies the downside.");
+    expect(md).toContain(
+      "Candidate B (Kimi K3) vs Candidate A (Qwen 3.7 Flash): Both recommend reliability, but B quantifies the downside.",
+    );
   });
 
   it("omits empty optional sections (no inert headings)", () => {
@@ -289,7 +305,15 @@ describe("buildExportMarkdown — blind judge audit trail", () => {
       mode: "rank",
       candidates: [makeCandidate("c1", "M1", "P1", 4.0)],
       judgeReport: makeReport([
-        { id: "c1", label: "A", score: 4.0, strengths: ["good"], deductions: [], missedRequirements: [], criterionScores: [] },
+        {
+          id: "c1",
+          label: "A",
+          score: 4.0,
+          strengths: ["good"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [],
+        },
       ]),
     };
     const md = buildExportMarkdown(s)!;
@@ -306,7 +330,9 @@ describe("buildExportMarkdown — blind judge audit trail", () => {
       candidates: [makeCandidate("c1", "M1", "P1", 4.0)],
       judgeReport: makeReport([
         {
-          id: "c1", label: "A", score: 4.0,
+          id: "c1",
+          label: "A",
+          score: 4.0,
           rationale: "First line.\n## Injected heading\nLast line.",
         },
       ]),
@@ -356,8 +382,24 @@ describe("buildExportMarkdown — attachments section (7.7.3)", () => {
         },
       ],
       attachments: [
-        { id: "att-1", name: "shot.png", kind: "image", mimeType: "image/png", bytes: 2 * 1024 * 1024, status: "ready" },
-        { id: "att-2", name: "notes.md", kind: "text", mimeType: "text/markdown", bytes: 1500, status: "ready", text: "x", truncated: true },
+        {
+          id: "att-1",
+          name: "shot.png",
+          kind: "image",
+          mimeType: "image/png",
+          bytes: 2 * 1024 * 1024,
+          status: "ready",
+        },
+        {
+          id: "att-2",
+          name: "notes.md",
+          kind: "text",
+          mimeType: "text/markdown",
+          bytes: 1500,
+          status: "ready",
+          text: "x",
+          truncated: true,
+        },
       ],
     };
     const md = buildExportMarkdown(s)!;

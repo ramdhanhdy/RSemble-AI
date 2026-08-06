@@ -17,10 +17,7 @@
 //    is never spliced across retries.
 // =============================================================================
 
-import type {
-  ExperimentSnapshot,
-  ExperimentTaskState,
-} from "./evaluation-types";
+import type { ExperimentSnapshot, ExperimentTaskState } from "./evaluation-types";
 import type { RunRecordV2 } from "../persistence/run-types";
 import { canonicalScore, computeWinnerKeys } from "./evaluation-profile";
 
@@ -110,12 +107,18 @@ export function aggregateExperiment(input: AggregateExperimentInput): Experiment
 
   const cells: CellState[][] = taskStates.map((task) => {
     const selected = task.selectedAttemptId
-      ? task.attempts.find((a) => a.id === task.selectedAttemptId) ?? null
+      ? (task.attempts.find((a) => a.id === task.selectedAttemptId) ?? null)
       : null;
 
     if (!selected) {
-      const reason: MissingReason = task.attempts.length === 0 ? "no-attempt" : "no-accepted-attempt";
-      return modelKeys.map((): CellState => ({ kind: "missing", reason, runId: null, attemptId: null }));
+      const reason: MissingReason =
+        task.attempts.length === 0 ? "no-attempt" : "no-accepted-attempt";
+      return modelKeys.map((): CellState => ({
+        kind: "missing",
+        reason,
+        runId: null,
+        attemptId: null,
+      }));
     }
 
     const runId = selected.runId;

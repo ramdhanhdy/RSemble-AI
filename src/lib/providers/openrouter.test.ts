@@ -2,7 +2,11 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { openrouterProvider } from "./openrouter";
 import { ProviderError, type ContentPart } from "./types";
 import { clearModelCapabilities, getModelCapabilities } from "./capabilities";
-import { capabilitiesForModel, clearModelReasoningCapabilities, setModelReasoningCapabilities } from "./reasoning";
+import {
+  capabilitiesForModel,
+  clearModelReasoningCapabilities,
+  setModelReasoningCapabilities,
+} from "./reasoning";
 import { resetCredentialStoreForTests } from "../credentials/credential-store";
 
 function stubKey(): void {
@@ -40,9 +44,9 @@ beforeEach(() => {
 describe("openrouter — string content (golden snapshot)", () => {
   it("sends a body byte-identical to the pre-attachments shape", async () => {
     stubKey();
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({ choices: [{ message: { content: "hi" } }] })
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: "hi" } }] }));
     vi.stubGlobal("fetch", fetchMock);
 
     await openrouterProvider.chatCompletion({
@@ -86,9 +90,9 @@ describe("openrouter — content parts", () => {
 
   async function captureBody(parts: ContentPart[]): Promise<Record<string, unknown>> {
     stubKey();
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({ choices: [{ message: { content: "ok" } }] })
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: "ok" } }] }));
     vi.stubGlobal("fetch", fetchMock);
     await openrouterProvider.chatCompletion({
       model: "vision-model",
@@ -137,11 +141,12 @@ describe("openrouter — content parts", () => {
 
   it("maps parts identically on the streaming path", async () => {
     stubKey();
-    const sseBody =
-      'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n';
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(sseBody, { status: 200, headers: { "Content-Type": "text/event-stream" } })
-    );
+    const sseBody = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n';
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(sseBody, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const gen = openrouterProvider.chatCompletionStream({
@@ -215,7 +220,8 @@ describe("openrouter — capability parsing", () => {
       source: "catalog",
       transport: "openrouter",
     });
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: "ok" } }] }))
       .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: "ok" } }] }));
     vi.stubGlobal("fetch", fetchMock);
@@ -242,7 +248,11 @@ describe("openrouter — capability parsing", () => {
         {
           id: "restricted",
           name: "Restricted",
-          reasoning: { mandatory: false, supported_efforts: ["xhigh", "high"], default_effort: "high" },
+          reasoning: {
+            mandatory: false,
+            supported_efforts: ["xhigh", "high"],
+            default_effort: "high",
+          },
         },
       ],
     };
@@ -263,7 +273,11 @@ describe("openrouter — capability parsing", () => {
     // absent means every effort value is allowed.
     const payload = {
       data: [
-        { id: "open-ended", name: "Open Ended", reasoning: { mandatory: false, default_enabled: true } },
+        {
+          id: "open-ended",
+          name: "Open Ended",
+          reasoning: { mandatory: false, default_enabled: true },
+        },
         { id: "null-efforts", name: "Null Efforts", reasoning: { supported_efforts: null } },
       ],
     };
@@ -296,7 +310,7 @@ describe("openrouter — payload error surfacing", () => {
     const detail = "Payload too large: reduce total attachment bytes below 10 MB.";
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(jsonResponse({ error: { message: detail } }, 413))
+      vi.fn().mockResolvedValue(jsonResponse({ error: { message: detail } }, 413)),
     );
     const err = await openrouterProvider
       .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
@@ -311,7 +325,7 @@ describe("openrouter — payload error surfacing", () => {
     const detail = "Unsupported media type: this model does not accept file inputs.";
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(jsonResponse({ error: { message: detail } }, 415))
+      vi.fn().mockResolvedValue(jsonResponse({ error: { message: detail } }, 415)),
     );
     const err = await openrouterProvider
       .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
@@ -333,9 +347,11 @@ describe("openrouter — raw provider bodies never surface (review fix 3)", () =
     resetCredentialStoreForTests();
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse({ error: { message: "401 invalid key sk-configured-or-key-123456" } }, 401),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: { message: "401 invalid key sk-configured-or-key-123456" } }, 401),
+        ),
     );
     const err = await openrouterProvider
       .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
@@ -351,9 +367,11 @@ describe("openrouter — raw provider bodies never surface (review fix 3)", () =
     const html = `<html><body>Bearer sk-leaked-777 prompt "top secret task"</body></html>`;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
+        ),
     );
     const err = await openrouterProvider
       .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
@@ -367,9 +385,9 @@ describe("openrouter — raw provider bodies never surface (review fix 3)", () =
     resetCredentialStoreForTests();
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse({ details: [{ body: "the user asked for a plan" }] }, 500),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse({ details: [{ body: "the user asked for a plan" }] }, 500)),
     );
     const err = await openrouterProvider
       .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })

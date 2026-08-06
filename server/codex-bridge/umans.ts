@@ -33,7 +33,11 @@ export interface OpenAIProxyDeps extends UmansProxyDeps {
   normalizeCleanSseEof?: boolean;
 }
 
-function readBody(req: http.IncomingMessage, res: http.ServerResponse, maxBytes: number): Promise<string | null> {
+function readBody(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  maxBytes: number,
+): Promise<string | null> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let bytes = 0;
@@ -45,7 +49,10 @@ function readBody(req: http.IncomingMessage, res: http.ServerResponse, maxBytes:
       if (bytes > maxBytes) {
         settled = true;
         sendJson(res, 413, {
-          error: { message: `Request body exceeds the ${maxBytes}-byte limit.`, type: "request_too_large" },
+          error: {
+            message: `Request body exceeds the ${maxBytes}-byte limit.`,
+            type: "request_too_large",
+          },
         });
         req.destroy();
         resolve(null);
@@ -94,7 +101,10 @@ export async function handleOpenAICompatibleProxy(
     body = bodyResult;
   } catch (err) {
     sendJson(res, 400, {
-      error: { message: `Request body error: ${err instanceof Error ? err.message : String(err)}`, type: "invalid_request" },
+      error: {
+        message: `Request body error: ${err instanceof Error ? err.message : String(err)}`,
+        type: "invalid_request",
+      },
     });
     return;
   }
@@ -136,7 +146,8 @@ export async function handleOpenAICompatibleProxy(
     Accept: req.headers.accept ?? "application/json",
     "X-Title": "RSemble AI",
   };
-  const auth = typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
+  const auth =
+    typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
   if (auth) upstreamHeaders.Authorization = auth;
 
   let upstream: Response;

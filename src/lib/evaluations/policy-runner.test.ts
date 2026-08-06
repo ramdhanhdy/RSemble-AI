@@ -17,8 +17,18 @@ const BLIND: BlindCandidate[] = [
 ];
 
 const IDENTITIES: CandidateIdentity[] = [
-  { model: "GLM 5.2 Ultra", provider: "Z-AI", slug: "z-ai/glm-5.2-ultra", providerId: "openrouter" },
-  { model: "DeepSeek V4 Flash", provider: "DeepSeek", slug: "deepseek/deepseek-v4-flash", providerId: "openrouter" },
+  {
+    model: "GLM 5.2 Ultra",
+    provider: "Z-AI",
+    slug: "z-ai/glm-5.2-ultra",
+    providerId: "openrouter",
+  },
+  {
+    model: "DeepSeek V4 Flash",
+    provider: "DeepSeek",
+    slug: "deepseek/deepseek-v4-flash",
+    providerId: "openrouter",
+  },
 ];
 
 function report(scoreA: number, scoreB: number): JudgeReport {
@@ -55,7 +65,11 @@ function report(scoreA: number, scoreB: number): JudgeReport {
   };
 }
 
-const CONSENSUS: ConsensusBreakdown = { consensus: ["shared"], contradictions: [], uniqueInsights: [] };
+const CONSENSUS: ConsensusBreakdown = {
+  consensus: ["shared"],
+  contradictions: [],
+  uniqueInsights: [],
+};
 
 function input(overrides: Partial<BlockedPolicyInput> = {}): BlockedPolicyInput {
   return {
@@ -123,7 +137,10 @@ describe("planBlockedPolicies — blocking invariant", () => {
       { label: "A", candidateId: "cand-1", content: "As GLM 5.2 Ultra would say…" },
       { label: "B", candidateId: "cand-2", content: "Answer B text" },
     ];
-    const plan = planBlockedPolicies(input({ blindCandidates: leaking }), FUSION_RECIPE_ANALYSIS_SCORES_V1);
+    const plan = planBlockedPolicies(
+      input({ blindCandidates: leaking }),
+      FUSION_RECIPE_ANALYSIS_SCORES_V1,
+    );
     // The leak is inside candidate answer text — detected so the orchestrator
     // can block or redact before the synthesizer call.
     expect(plan.blindnessViolations.length).toBeGreaterThan(0);

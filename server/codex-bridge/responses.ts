@@ -276,7 +276,10 @@ export async function handleCompletions(
                   delta?: string;
                   text?: string;
                 };
-                if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+                if (
+                  parsed.type === "response.output_text.delta" &&
+                  typeof parsed.delta === "string"
+                ) {
                   const sseChunk = {
                     id: `chatcmpl-${Date.now()}`,
                     object: "chat.completion.chunk",
@@ -343,9 +346,16 @@ export async function handleCompletions(
                 delta?: string;
                 text?: string;
               };
-              if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+              if (
+                parsed.type === "response.output_text.delta" &&
+                typeof parsed.delta === "string"
+              ) {
                 fullText += parsed.delta;
-              } else if (parsed.type === "response.output_text.done" && typeof parsed.text === "string" && fullText.length === 0) {
+              } else if (
+                parsed.type === "response.output_text.done" &&
+                typeof parsed.text === "string" &&
+                fullText.length === 0
+              ) {
                 fullText = parsed.text;
               }
             } catch {

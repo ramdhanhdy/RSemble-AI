@@ -56,7 +56,9 @@ function persistedMessage(message: ChatMessage): ChatMessage {
       return "";
     });
   const text = textParts.join("\n");
-  const hasNativeMedia = message.content.some((part) => part.type === "image" || part.type === "file");
+  const hasNativeMedia = message.content.some(
+    (part) => part.type === "image" || part.type === "file",
+  );
   const marker = hasNativeMedia || hadAttachmentText ? PERSISTED_ATTACHMENT_MARKER : "";
 
   return {
@@ -65,7 +67,6 @@ function persistedMessage(message: ChatMessage): ChatMessage {
       ? `${text}${text.length === 0 ? "" : text.endsWith("\n") ? "\n" : "\n\n"}${marker}`
       : text,
   };
-
 }
 
 function persistedMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -77,12 +78,44 @@ function persistedMessages(messages: ChatMessage[]): ChatMessage[] {
 export interface RunRecorder {
   begin(input: BeginRunInput): Promise<string>;
   saveFanout(runId: string, input: FanoutTerminalInput, fence?: ExecutionFence): Promise<void>;
-  beginCandidateAttempt(runId: string, candidateId: string, attemptId: string, input: CandidateAttemptStartInput, fence?: ExecutionFence): Promise<void>;
-  finishCandidateAttempt(runId: string, candidateId: string, attemptId: string, input: CandidateTerminalInput, fence?: ExecutionFence): Promise<void>;
-  beginJudgeAttempt(runId: string, attemptId: string, input: JudgeAttemptStartInput, fence?: ExecutionFence): Promise<void>;
-  finishJudgeAttempt(runId: string, attemptId: string, input: JudgeTerminalInput, fence?: ExecutionFence): Promise<void>;
-  beginFusionAttempt(runId: string, attemptId: string, input: FusionAttemptStartInput, fence?: ExecutionFence): Promise<void>;
-  finishFusionAttempt(runId: string, attemptId: string, input: FusionTerminalInput, fence?: ExecutionFence): Promise<void>;
+  beginCandidateAttempt(
+    runId: string,
+    candidateId: string,
+    attemptId: string,
+    input: CandidateAttemptStartInput,
+    fence?: ExecutionFence,
+  ): Promise<void>;
+  finishCandidateAttempt(
+    runId: string,
+    candidateId: string,
+    attemptId: string,
+    input: CandidateTerminalInput,
+    fence?: ExecutionFence,
+  ): Promise<void>;
+  beginJudgeAttempt(
+    runId: string,
+    attemptId: string,
+    input: JudgeAttemptStartInput,
+    fence?: ExecutionFence,
+  ): Promise<void>;
+  finishJudgeAttempt(
+    runId: string,
+    attemptId: string,
+    input: JudgeTerminalInput,
+    fence?: ExecutionFence,
+  ): Promise<void>;
+  beginFusionAttempt(
+    runId: string,
+    attemptId: string,
+    input: FusionAttemptStartInput,
+    fence?: ExecutionFence,
+  ): Promise<void>;
+  finishFusionAttempt(
+    runId: string,
+    attemptId: string,
+    input: FusionTerminalInput,
+    fence?: ExecutionFence,
+  ): Promise<void>;
   /** Rebind a continuation (retry/fusion) to its newly acquired fence. */
   rebindExecution(runId: string, fence: ExecutionFence): Promise<void>;
   markAborted(runId: string, fence?: ExecutionFence): Promise<void>;
@@ -155,10 +188,18 @@ export function createRunRecorder(
     return input.runId;
   }
 
-  async function saveFanout(runId: string, input: FanoutTerminalInput, fence?: ExecutionFence): Promise<void> {
-    await loadAndMutate(runId, (record, state) => {
-      builder.applyFanoutTerminal(state, record, input.candidates);
-    }, fence);
+  async function saveFanout(
+    runId: string,
+    input: FanoutTerminalInput,
+    fence?: ExecutionFence,
+  ): Promise<void> {
+    await loadAndMutate(
+      runId,
+      (record, state) => {
+        builder.applyFanoutTerminal(state, record, input.candidates);
+      },
+      fence,
+    );
   }
 
   async function beginCandidateAttempt(
@@ -168,12 +209,16 @@ export function createRunRecorder(
     input: CandidateAttemptStartInput,
     fence?: ExecutionFence,
   ): Promise<void> {
-    await loadAndMutate(runId, (record, state) => {
-      builder.applyCandidateAttemptStart(state, record, candidateId, {
-        ...input,
-        messages: persistedMessages(input.messages),
-      });
-    }, fence);
+    await loadAndMutate(
+      runId,
+      (record, state) => {
+        builder.applyCandidateAttemptStart(state, record, candidateId, {
+          ...input,
+          messages: persistedMessages(input.messages),
+        });
+      },
+      fence,
+    );
   }
 
   async function finishCandidateAttempt(
@@ -183,9 +228,13 @@ export function createRunRecorder(
     input: CandidateTerminalInput,
     fence?: ExecutionFence,
   ): Promise<void> {
-    await loadAndMutate(runId, (record, state) => {
-      builder.applyCandidateAttemptTerminal(state, record, candidateId, attemptId, input);
-    }, fence);
+    await loadAndMutate(
+      runId,
+      (record, state) => {
+        builder.applyCandidateAttemptTerminal(state, record, candidateId, attemptId, input);
+      },
+      fence,
+    );
   }
 
   async function beginJudgeAttempt(
@@ -194,12 +243,16 @@ export function createRunRecorder(
     input: JudgeAttemptStartInput,
     fence?: ExecutionFence,
   ): Promise<void> {
-    await loadAndMutate(runId, (record, state) => {
-      builder.applyJudgeStart(state, record, attemptId, {
-        ...input,
-        messages: persistedMessages(input.messages),
-      });
-    }, fence);
+    await loadAndMutate(
+      runId,
+      (record, state) => {
+        builder.applyJudgeStart(state, record, attemptId, {
+          ...input,
+          messages: persistedMessages(input.messages),
+        });
+      },
+      fence,
+    );
   }
 
   async function finishJudgeAttempt(
@@ -208,9 +261,13 @@ export function createRunRecorder(
     input: JudgeTerminalInput,
     fence?: ExecutionFence,
   ): Promise<void> {
-    await loadAndMutate(runId, (record, state) => {
-      builder.applyJudgeTerminal(state, record, attemptId, input);
-    }, fence);
+    await loadAndMutate(
+      runId,
+      (record, state) => {
+        builder.applyJudgeTerminal(state, record, attemptId, input);
+      },
+      fence,
+    );
   }
 
   async function beginFusionAttempt(
@@ -219,12 +276,16 @@ export function createRunRecorder(
     input: FusionAttemptStartInput,
     fence?: ExecutionFence,
   ): Promise<void> {
-    await loadAndMutate(runId, (record, state) => {
-      builder.applyFusionStart(state, record, attemptId, {
-        ...input,
-        messages: persistedMessages(input.messages),
-      });
-    }, fence);
+    await loadAndMutate(
+      runId,
+      (record, state) => {
+        builder.applyFusionStart(state, record, attemptId, {
+          ...input,
+          messages: persistedMessages(input.messages),
+        });
+      },
+      fence,
+    );
   }
 
   async function finishFusionAttempt(
@@ -233,21 +294,33 @@ export function createRunRecorder(
     input: FusionTerminalInput,
     fence?: ExecutionFence,
   ): Promise<void> {
-    await loadAndMutate(runId, (record, state) => {
-      builder.applyFusionTerminal(state, record, attemptId, input);
-    }, fence);
+    await loadAndMutate(
+      runId,
+      (record, state) => {
+        builder.applyFusionTerminal(state, record, attemptId, input);
+      },
+      fence,
+    );
   }
 
   async function rebindExecution(runId: string, fence: ExecutionFence): Promise<void> {
-    await loadAndMutate(runId, (record) => {
-      if (record.source.kind === "adhoc") record.execution = { ...fence };
-    }, fence);
+    await loadAndMutate(
+      runId,
+      (record) => {
+        if (record.source.kind === "adhoc") record.execution = { ...fence };
+      },
+      fence,
+    );
   }
 
   async function markAborted(runId: string, fence?: ExecutionFence): Promise<void> {
-    await loadAndMutate(runId, (record, state) => {
-      builder.applyAborted(state, record);
-    }, fence);
+    await loadAndMutate(
+      runId,
+      (record, state) => {
+        builder.applyAborted(state, record);
+      },
+      fence,
+    );
   }
 
   async function getRecord(runId: string): Promise<RunRecordV2 | null> {

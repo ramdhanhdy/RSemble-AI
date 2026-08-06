@@ -307,7 +307,9 @@ function LabeledInput({
         className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       />
       {error && (
-        <p id={`${label}-error`} className="mt-1 text-xs text-error">{error}</p>
+        <p id={`${label}-error`} className="mt-1 text-xs text-error">
+          {error}
+        </p>
       )}
     </div>
   );
@@ -342,9 +344,7 @@ function LabeledTextarea({
         aria-invalid={!!error}
         className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       />
-      {error && (
-        <p className="mt-1 text-xs text-error">{error}</p>
-      )}
+      {error && <p className="mt-1 text-xs text-error">{error}</p>}
     </div>
   );
 }

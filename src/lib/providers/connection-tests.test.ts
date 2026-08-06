@@ -12,11 +12,15 @@ describe("provider connection verification", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"data":[]}', { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(openrouterProvider.testConnection!("candidate-key")).resolves.toEqual({ ok: true });
+    await expect(openrouterProvider.testConnection!("candidate-key")).resolves.toEqual({
+      ok: true,
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://openrouter.ai/api/v1/key",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: expect.stringContaining("candidate-key") }),
+        headers: expect.objectContaining({
+          Authorization: expect.stringContaining("candidate-key"),
+        }),
       }),
     );
   });

@@ -54,56 +54,91 @@ function makeFullRecord(overrides: Partial<RunRecordV2> = {}): RunRecordV2 {
     status: "completed",
     mode: "rank",
     source: { kind: "adhoc" },
-    task: { title: "Write a Python sort function", prompt: "Write a function that sorts integers using bubble sort.", systemPrompt: "You are a helpful assistant.", temperature: 0.7 },
+    task: {
+      title: "Write a Python sort function",
+      prompt: "Write a function that sorts integers using bubble sort.",
+      systemPrompt: "You are a helpful assistant.",
+      temperature: 0.7,
+    },
     evaluation: { profile: null, candidateMessages: [] },
-    candidates: [{
-      candidateId: "c1",
-      slotId: "s1",
-      modelKey: "openrouter:gpt-4o",
-      providerId: "openrouter",
-      model: "GPT-4o",
-      slug: "gpt-4o",
-      acceptedAttemptId: "att-1",
-      attempts: [{
-        attemptId: "att-1",
-        messages: [{ role: "user", content: "Sort the list" }],
-        startedAt: 1716048000000,
-        finishedAt: 1716048030000,
-        status: "completed" as const,
-        output: "def bubble_sort(arr):\n    return sorted(arr)",
-        tokensIn: 15,
-        tokensOut: 30,
-        error: null,
-      }],
-    }],
+    candidates: [
+      {
+        candidateId: "c1",
+        slotId: "s1",
+        modelKey: "openrouter:gpt-4o",
+        providerId: "openrouter",
+        model: "GPT-4o",
+        slug: "gpt-4o",
+        acceptedAttemptId: "att-1",
+        attempts: [
+          {
+            attemptId: "att-1",
+            messages: [{ role: "user", content: "Sort the list" }],
+            startedAt: 1716048000000,
+            finishedAt: 1716048030000,
+            status: "completed" as const,
+            output: "def bubble_sort(arr):\n    return sorted(arr)",
+            tokensIn: 15,
+            tokensOut: 30,
+            error: null,
+          },
+        ],
+      },
+    ],
     judge: {
       status: "done" as const,
       acceptedAttemptId: "judge-att-1",
       report: {
         labelMap: [{ label: "A", candidateId: "c1" }],
-        evaluationsById: { c1: { candidateId: "c1", blindLabel: "A", overallScore: 4.5, position: "First", rationale: "Clean implementation", strengths: ["Readability"], deductions: [], missedRequirements: [], criterionScores: [] } },
+        evaluationsById: {
+          c1: {
+            candidateId: "c1",
+            blindLabel: "A",
+            overallScore: 4.5,
+            position: "First",
+            rationale: "Clean implementation",
+            strengths: ["Readability"],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+        },
         comparisons: [],
       },
       consensus: null,
-      attempts: [{
-        attemptId: "judge-att-1",
-        providerId: "openrouter",
-        model: "judge-model",
-        instruction: "Evaluate candidates by correctness and readability.",
-        messages: [{ role: "user", content: "Evaluate" }],
-        blindLabelToCandidateId: { A: "c1" },
-        candidateAttemptIdsByCandidateId: { c1: "att-1" },
-        startedAt: 1716048030000,
-        finishedAt: 1716048050000,
-        status: "completed" as const,
-        error: null,
-        report: {
-          labelMap: [{ label: "A", candidateId: "c1" }],
-          evaluationsById: { c1: { candidateId: "c1", blindLabel: "A", overallScore: 4.5, position: "First", rationale: "Clean implementation", strengths: ["Readability"], deductions: [], missedRequirements: [], criterionScores: [] } },
-          comparisons: [],
+      attempts: [
+        {
+          attemptId: "judge-att-1",
+          providerId: "openrouter",
+          model: "judge-model",
+          instruction: "Evaluate candidates by correctness and readability.",
+          messages: [{ role: "user", content: "Evaluate" }],
+          blindLabelToCandidateId: { A: "c1" },
+          candidateAttemptIdsByCandidateId: { c1: "att-1" },
+          startedAt: 1716048030000,
+          finishedAt: 1716048050000,
+          status: "completed" as const,
+          error: null,
+          report: {
+            labelMap: [{ label: "A", candidateId: "c1" }],
+            evaluationsById: {
+              c1: {
+                candidateId: "c1",
+                blindLabel: "A",
+                overallScore: 4.5,
+                position: "First",
+                rationale: "Clean implementation",
+                strengths: ["Readability"],
+                deductions: [],
+                missedRequirements: [],
+                criterionScores: [],
+              },
+            },
+            comparisons: [],
+          },
+          consensus: null,
         },
-        consensus: null,
-      }],
+      ],
     },
     fusion: { status: "idle" as const, acceptedAttemptId: null, attempts: [] },
     winnerKeys: ["openrouter:gpt-4o"],
@@ -156,33 +191,43 @@ describe("RunDetail", () => {
     cleanup(h1);
 
     // With fusion attempt → fusion section present
-    const h2 = renderWithRouter(<RunDetail record={makeFullRecord({
-      fusion: {
-        status: "done",
-        acceptedAttemptId: "fusion-att-1",
-        attempts: [{
-          attemptId: "fusion-att-1",
-          providerId: "openrouter",
-          model: "judge-model",
-          messages: [{ role: "user", content: "Merge" }],
-          sourceJudgeAttemptId: "judge-att-1",
-          candidateAttemptIdsByCandidateId: { c1: "att-1" },
-          startedAt: 1716048050000,
-          finishedAt: 1716048060000,
-          status: "completed",
-          error: null,
-          result: "Fused answer combining all candidates",
-        }],
-      },
-    })} />);
+    const h2 = renderWithRouter(
+      <RunDetail
+        record={makeFullRecord({
+          fusion: {
+            status: "done",
+            acceptedAttemptId: "fusion-att-1",
+            attempts: [
+              {
+                attemptId: "fusion-att-1",
+                providerId: "openrouter",
+                model: "judge-model",
+                messages: [{ role: "user", content: "Merge" }],
+                sourceJudgeAttemptId: "judge-att-1",
+                candidateAttemptIdsByCandidateId: { c1: "att-1" },
+                startedAt: 1716048050000,
+                finishedAt: 1716048060000,
+                status: "completed",
+                error: null,
+                result: "Fused answer combining all candidates",
+              },
+            ],
+          },
+        })}
+      />,
+    );
     expect(h2.$("[data-section='fusion']")).toBeTruthy();
     cleanup(h2);
   });
 
   it("outcome section shows every tied winner", () => {
-    const h = renderWithRouter(<RunDetail record={makeFullRecord({
-      winnerKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
-    })} />);
+    const h = renderWithRouter(
+      <RunDetail
+        record={makeFullRecord({
+          winnerKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
+        })}
+      />,
+    );
     const outcome = h.$("[data-section='outcome']");
     expect(outcome).toBeTruthy();
     const text = outcome?.textContent ?? "";
@@ -226,7 +271,9 @@ describe("RunDetail", () => {
   it("shows running duration without fabricating completion", () => {
     vi.useFakeTimers();
     vi.setSystemTime(1716048045000);
-    const h = renderWithRouter(<RunDetail record={makeFullRecord({ status: "running", completedAt: null })} />);
+    const h = renderWithRouter(
+      <RunDetail record={makeFullRecord({ status: "running", completedAt: null })} />,
+    );
     const header = h.$("[data-section='header']")!;
     expect(header.textContent).toContain("Running for 45s");
     expect(header.querySelector('time[data-time="completed"]')).toBeNull();
@@ -235,7 +282,9 @@ describe("RunDetail", () => {
   });
 
   it("renders start-only semantics for older records without completedAt", () => {
-    const h = renderWithRouter(<RunDetail record={makeFullRecord({ status: "interrupted", completedAt: null })} />);
+    const h = renderWithRouter(
+      <RunDetail record={makeFullRecord({ status: "interrupted", completedAt: null })} />,
+    );
     const header = h.$("[data-section='header']")!;
     expect(header.querySelector('time[data-time="started"]')).not.toBeNull();
     expect(header.querySelector('time[data-time="completed"]')).toBeNull();
@@ -253,32 +302,36 @@ describe("RunDetail", () => {
 
   it("reused candidates link to the source run evidence (spec §11.4)", () => {
     const record = makeFullRecord({
-      candidates: [{
-        candidateId: "c1",
-        slotId: "s1",
-        modelKey: "openrouter:gpt-4o",
-        providerId: "openrouter",
-        model: "GPT-4o",
-        slug: "gpt-4o",
-        acceptedAttemptId: "att-1",
-        attempts: [{
-          attemptId: "att-1",
-          messages: [{ role: "user", content: "Sort the list" }],
-          startedAt: 1716048000000,
-          finishedAt: 1716048030000,
-          status: "completed" as const,
-          output: "def bubble_sort(arr):\n    return sorted(arr)",
-          tokensIn: 15,
-          tokensOut: 30,
-          error: null,
-          // Compound-repair provenance: copied from an earlier immutable run.
-          reusedFrom: {
-            sourceRunId: "run-base-1",
-            sourceCandidateId: "cand-orig",
-            sourceAttemptId: "att-orig",
-          },
-        }],
-      }],
+      candidates: [
+        {
+          candidateId: "c1",
+          slotId: "s1",
+          modelKey: "openrouter:gpt-4o",
+          providerId: "openrouter",
+          model: "GPT-4o",
+          slug: "gpt-4o",
+          acceptedAttemptId: "att-1",
+          attempts: [
+            {
+              attemptId: "att-1",
+              messages: [{ role: "user", content: "Sort the list" }],
+              startedAt: 1716048000000,
+              finishedAt: 1716048030000,
+              status: "completed" as const,
+              output: "def bubble_sort(arr):\n    return sorted(arr)",
+              tokensIn: 15,
+              tokensOut: 30,
+              error: null,
+              // Compound-repair provenance: copied from an earlier immutable run.
+              reusedFrom: {
+                sourceRunId: "run-base-1",
+                sourceCandidateId: "cand-orig",
+                sourceAttemptId: "att-orig",
+              },
+            },
+          ],
+        },
+      ],
     });
     const h = renderWithRouter(<RunDetail record={record} />);
     const reused = h.$("[data-reused-from]");
@@ -330,18 +383,20 @@ describe("RunDetail", () => {
           model: "GPT-4o",
           slug: "gpt-4o",
           acceptedAttemptId: "att-1",
-          attempts: [{
-            attemptId: "att-1",
-            messages: [{ role: "user", content: "Sort the list" }],
-            startedAt: 1716048000000,
-            finishedAt: 1716048030000,
-            status: "completed" as const,
-            output: "def bubble_sort(arr):\n    return sorted(arr)",
-            tokensIn: 15,
-            tokensOut: 30,
-            error: null,
-            cost: { usd: 0.000123, source: "provider-reported" },
-          }],
+          attempts: [
+            {
+              attemptId: "att-1",
+              messages: [{ role: "user", content: "Sort the list" }],
+              startedAt: 1716048000000,
+              finishedAt: 1716048030000,
+              status: "completed" as const,
+              output: "def bubble_sort(arr):\n    return sorted(arr)",
+              tokensIn: 15,
+              tokensOut: 30,
+              error: null,
+              cost: { usd: 0.000123, source: "provider-reported" },
+            },
+          ],
         },
         {
           candidateId: "c2",
@@ -351,18 +406,24 @@ describe("RunDetail", () => {
           model: "Claude Opus",
           slug: "claude-opus",
           acceptedAttemptId: "att-reused",
-          attempts: [{
-            attemptId: "att-reused",
-            messages: [{ role: "user", content: "x" }],
-            startedAt: 1716048000000,
-            finishedAt: 1716048030000,
-            status: "completed" as const,
-            output: "reused",
-            tokensIn: 10,
-            tokensOut: 20,
-            error: null,
-            reusedFrom: { sourceRunId: "run-base", sourceCandidateId: "cand-x", sourceAttemptId: "att-x" },
-          }],
+          attempts: [
+            {
+              attemptId: "att-reused",
+              messages: [{ role: "user", content: "x" }],
+              startedAt: 1716048000000,
+              finishedAt: 1716048030000,
+              status: "completed" as const,
+              output: "reused",
+              tokensIn: 10,
+              tokensOut: 20,
+              error: null,
+              reusedFrom: {
+                sourceRunId: "run-base",
+                sourceCandidateId: "cand-x",
+                sourceAttemptId: "att-x",
+              },
+            },
+          ],
         },
       ],
       judge: {
@@ -370,26 +431,40 @@ describe("RunDetail", () => {
         acceptedAttemptId: "judge-att-1",
         report: {
           labelMap: [{ label: "A", candidateId: "c1" }],
-          evaluationsById: { c1: { candidateId: "c1", blindLabel: "A", overallScore: 4.5, position: "First", rationale: "Good", strengths: [], deductions: [], missedRequirements: [], criterionScores: [] } },
+          evaluationsById: {
+            c1: {
+              candidateId: "c1",
+              blindLabel: "A",
+              overallScore: 4.5,
+              position: "First",
+              rationale: "Good",
+              strengths: [],
+              deductions: [],
+              missedRequirements: [],
+              criterionScores: [],
+            },
+          },
           comparisons: [],
         },
         consensus: null,
-        attempts: [{
-          attemptId: "judge-att-1",
-          providerId: "openrouter",
-          model: "judge-model",
-          instruction: "Evaluate",
-          messages: [{ role: "user", content: "Evaluate" }],
-          blindLabelToCandidateId: { A: "c1" },
-          candidateAttemptIdsByCandidateId: { c1: "att-1" },
-          startedAt: 1716048030000,
-          finishedAt: 1716048050000,
-          status: "completed",
-          error: null,
-          report: null,
-          consensus: null,
-          cost: { usd: 0.000321, source: "provider-reported" },
-        }],
+        attempts: [
+          {
+            attemptId: "judge-att-1",
+            providerId: "openrouter",
+            model: "judge-model",
+            instruction: "Evaluate",
+            messages: [{ role: "user", content: "Evaluate" }],
+            blindLabelToCandidateId: { A: "c1" },
+            candidateAttemptIdsByCandidateId: { c1: "att-1" },
+            startedAt: 1716048030000,
+            finishedAt: 1716048050000,
+            status: "completed",
+            error: null,
+            report: null,
+            consensus: null,
+            cost: { usd: 0.000321, source: "provider-reported" },
+          },
+        ],
       },
       fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
     });
@@ -417,18 +492,22 @@ describe("RunDetail", () => {
   });
 
   it("experiment-sourced run shows provenance trail with deep links", () => {
-    const h = renderWithRouter(<RunDetail record={makeFullRecord({
-      source: {
-        kind: "experiment",
-        experimentId: "exp-1",
-        suiteId: "suite-1",
-        suiteVersion: 3,
-        protocolFingerprint: "fp-abc",
-        taskId: "task-pricing",
-        experimentTaskAttemptId: "attempt-2-xyz",
-        trial: 1,
-      },
-    })} />);
+    const h = renderWithRouter(
+      <RunDetail
+        record={makeFullRecord({
+          source: {
+            kind: "experiment",
+            experimentId: "exp-1",
+            suiteId: "suite-1",
+            suiteVersion: 3,
+            protocolFingerprint: "fp-abc",
+            taskId: "task-pricing",
+            experimentTaskAttemptId: "attempt-2-xyz",
+            trial: 1,
+          },
+        })}
+      />,
+    );
     const provenance = h.$("[data-section='provenance']");
     expect(provenance).toBeTruthy();
     const text = provenance?.textContent ?? "";
@@ -471,17 +550,19 @@ describe("RunDetail", () => {
       model: "Claude",
       slug: "anthropic/claude",
       acceptedAttemptId: "att-2",
-      attempts: [{
-        attemptId: "att-2",
-        messages: [{ role: "user", content: "Sort the list" }],
-        startedAt: 1716048000000,
-        finishedAt: 1716048030000,
-        status: "completed" as const,
-        output: "def quick_sort(arr): ...",
-        tokensIn: 15,
-        tokensOut: 30,
-        error: null,
-      }],
+      attempts: [
+        {
+          attemptId: "att-2",
+          messages: [{ role: "user", content: "Sort the list" }],
+          startedAt: 1716048000000,
+          finishedAt: 1716048030000,
+          status: "completed" as const,
+          output: "def quick_sort(arr): ...",
+          tokensIn: 15,
+          tokensOut: 30,
+          error: null,
+        },
+      ],
     });
     const h = renderWithRouter(<RunDetail record={record} focusCandidateId="c2" />);
     const btn = h.$("[data-candidate-id='c2']");
@@ -496,7 +577,9 @@ describe("RunDetail", () => {
   });
 
   it("focusJudgeAttemptId matching the accepted attempt labels it Selected attempt", () => {
-    const h = renderWithRouter(<RunDetail record={makeFullRecord()} focusJudgeAttemptId="judge-att-1" />);
+    const h = renderWithRouter(
+      <RunDetail record={makeFullRecord()} focusJudgeAttemptId="judge-att-1" />,
+    );
     const judge = h.$("[data-section='judge']");
     expect(judge).toBeTruthy();
     expect(judge!.textContent).toContain("Selected attempt");

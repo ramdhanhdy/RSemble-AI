@@ -88,8 +88,22 @@ function makeExperiment(id: string, overrides: Partial<ExperimentRecord> = {}): 
       suiteVersion: 2,
       tasks: [],
       modelSlots: [
-        { id: "m1", providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "openai/gpt-4o", enabled: true },
-        { id: "m2", providerId: "openrouter", provider: "OpenRouter", model: "claude", slug: "anthropic/claude", enabled: true },
+        {
+          id: "m1",
+          providerId: "openrouter",
+          provider: "OpenRouter",
+          model: "gpt-4o",
+          slug: "openai/gpt-4o",
+          enabled: true,
+        },
+        {
+          id: "m2",
+          providerId: "openrouter",
+          provider: "OpenRouter",
+          model: "claude",
+          slug: "anthropic/claude",
+          enabled: true,
+        },
       ],
       defaultJudge: { providerId: "openrouter", model: "judge-model" },
       defaultEvaluation: { kind: "holistic" },
@@ -104,14 +118,21 @@ function makeExperiment(id: string, overrides: Partial<ExperimentRecord> = {}): 
   };
 }
 
-async function seedExperiments(repo: InMemoryEvaluationRepository, experiments: ExperimentRecord[]) {
+async function seedExperiments(
+  repo: InMemoryEvaluationRepository,
+  experiments: ExperimentRecord[],
+) {
   for (const exp of experiments) {
     await repo.createExperiment(exp);
   }
 }
 
 function rowLinks(h: Harness): HTMLAnchorElement[] {
-  return [...h.container.querySelectorAll<HTMLAnchorElement>("[data-record-row] a[href^='/experiments/']")];
+  return [
+    ...h.container.querySelectorAll<HTMLAnchorElement>(
+      "[data-record-row] a[href^='/experiments/']",
+    ),
+  ];
 }
 
 // --- Tests --------------------------------------------------------------------
@@ -139,10 +160,7 @@ describe("SuiteExperimentHistory", () => {
     const exp = makeExperiment("exp-1", {
       suiteVersion: 3,
       createdAt: 1716048000000,
-      tasks: [
-        makeTaskState("t1", ["completed"]),
-        makeTaskState("t2", ["failed"]),
-      ],
+      tasks: [makeTaskState("t1", ["completed"]), makeTaskState("t2", ["failed"])],
     });
     await seedExperiments(repo, [exp]);
     const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
@@ -184,7 +202,10 @@ describe("SuiteExperimentHistory", () => {
 
   it("each row links to /experiments/:id", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedExperiments(repo, [makeExperiment("exp-1"), makeExperiment("exp-2", { createdAt: 1716048100000 })]);
+    await seedExperiments(repo, [
+      makeExperiment("exp-1"),
+      makeExperiment("exp-2", { createdAt: 1716048100000 }),
+    ]);
     const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
     await settle();
     expect(h.$("a[href='/experiments/exp-1']")).toBeTruthy();
@@ -218,22 +239,28 @@ describe("SuiteExperimentHistory", () => {
   it("archived suites still list experiments with working links", async () => {
     const repo = new InMemoryEvaluationRepository();
     const now = Date.now();
-    await repo.saveSuite({
-      id: "suite-1",
-      revision: 1,
-      version: 2,
-      name: "Archived suite",
-      description: "",
-      tasks: [],
-      modelSlots: [],
-      defaultJudge: { providerId: "openrouter", model: "" },
-      defaultEvaluation: { kind: "holistic" },
-      createdAt: now,
-      updatedAt: now,
-      archivedAt: null,
-    }, 0);
+    await repo.saveSuite(
+      {
+        id: "suite-1",
+        revision: 1,
+        version: 2,
+        name: "Archived suite",
+        description: "",
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+      },
+      0,
+    );
     await repo.archiveSuite("suite-1");
-    await seedExperiments(repo, [makeExperiment("exp-1"), makeExperiment("exp-2", { createdAt: 1716048100000 })]);
+    await seedExperiments(repo, [
+      makeExperiment("exp-1"),
+      makeExperiment("exp-2", { createdAt: 1716048100000 }),
+    ]);
     const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
     await settle();
     expect(h.$$("[data-record-row]")).toHaveLength(2);
@@ -244,7 +271,9 @@ describe("SuiteExperimentHistory", () => {
 
   it("row ids truncate and no fixed pixel widths threaten a 390px viewport", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedExperiments(repo, [makeExperiment("experiment-with-a-very-long-identifier-0123456789")]);
+    await seedExperiments(repo, [
+      makeExperiment("experiment-with-a-very-long-identifier-0123456789"),
+    ]);
     const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
     await settle();
     const row = h.$("[data-record-row]");

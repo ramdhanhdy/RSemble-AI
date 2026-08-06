@@ -78,46 +78,52 @@ export function useResizableSplit() {
     persist(widthRef.current);
   }, [onPointerMove, persist]);
 
-  const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    widthRef.current = commandWidth;
-    setDragging(true);
-    document.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerup", onPointerUp);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, [onPointerMove, onPointerUp, commandWidth]);
+  const onDividerPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      widthRef.current = commandWidth;
+      setDragging(true);
+      document.addEventListener("pointermove", onPointerMove);
+      document.addEventListener("pointerup", onPointerUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [onPointerMove, onPointerUp, commandWidth],
+  );
 
-  const onDividerKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const step = e.shiftKey ? 64 : 16;
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      setCommandWidth((w) => {
-        const next = Math.max(MIN_WIDTH, w - step);
-        widthRef.current = next;
-        persist(next);
-        return next;
-      });
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      setCommandWidth((w) => {
-        const next = Math.min(MAX_WIDTH, w + step);
-        widthRef.current = next;
-        persist(next);
-        return next;
-      });
-    } else if (e.key === "Home") {
-      e.preventDefault();
-      widthRef.current = MIN_WIDTH;
-      persist(MIN_WIDTH);
-      setCommandWidth(MIN_WIDTH);
-    } else if (e.key === "End") {
-      e.preventDefault();
-      widthRef.current = MAX_WIDTH;
-      persist(MAX_WIDTH);
-      setCommandWidth(MAX_WIDTH);
-    }
-  }, [persist]);
+  const onDividerKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = e.shiftKey ? 64 : 16;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setCommandWidth((w) => {
+          const next = Math.max(MIN_WIDTH, w - step);
+          widthRef.current = next;
+          persist(next);
+          return next;
+        });
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setCommandWidth((w) => {
+          const next = Math.min(MAX_WIDTH, w + step);
+          widthRef.current = next;
+          persist(next);
+          return next;
+        });
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        widthRef.current = MIN_WIDTH;
+        persist(MIN_WIDTH);
+        setCommandWidth(MIN_WIDTH);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        widthRef.current = MAX_WIDTH;
+        persist(MAX_WIDTH);
+        setCommandWidth(MAX_WIDTH);
+      }
+    },
+    [persist],
+  );
 
   const onDoubleClick = useCallback(() => {
     widthRef.current = DEFAULT_WIDTH;

@@ -146,7 +146,11 @@ function makeTaskState(
   return { taskId, selectedAttemptId, attempts };
 }
 
-function makeAttempt(id: string, runId: string | null, status: ExperimentTaskAttempt["status"]): ExperimentTaskAttempt {
+function makeAttempt(
+  id: string,
+  runId: string | null,
+  status: ExperimentTaskAttempt["status"],
+): ExperimentTaskAttempt {
   return {
     id,
     runId,
@@ -161,7 +165,9 @@ function makeAttempt(id: string, runId: string | null, status: ExperimentTaskAtt
 /** 3 models on t1: m1+m2 scored, m3 missing (no-score). */
 function makeRepairableFixture() {
   const run = makeRun("run-base", [MK1, MK2]);
-  const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+  const taskStates = [
+    makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1"),
+  ];
   const experiment = makeExperiment(["t1"], taskStates);
   const aggregation = aggregateExperiment({
     snapshot: experiment.snapshot,
@@ -238,7 +244,9 @@ describe("planMissingCellRepair", () => {
   it("plans several missing cells on the same task as one plan", () => {
     const { experiment } = makeRepairableFixture();
     const run2 = makeRun("run-base", [MK1]);
-    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+    const taskStates = [
+      makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1"),
+    ];
     const aggregation2 = aggregateExperiment({
       snapshot: experiment.snapshot,
       taskStates,
@@ -301,7 +309,9 @@ describe("planMissingCellRepair", () => {
 
   it("rejects evidence-missing cells (run unavailable)", () => {
     const { experiment } = makeRepairableFixture();
-    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-gone", "partial")], "att-t1")];
+    const taskStates = [
+      makeTaskState("t1", [makeAttempt("att-t1", "run-gone", "partial")], "att-t1"),
+    ];
     const aggregation2 = aggregateExperiment({
       snapshot: experiment.snapshot,
       taskStates,
@@ -344,7 +354,9 @@ describe("planMissingCellRepair", () => {
   it("rejects when no accepted candidate outputs are reusable", () => {
     const { experiment } = makeRepairableFixture();
     const run = makeRun("run-base", []);
-    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+    const taskStates = [
+      makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1"),
+    ];
     const aggregation2 = aggregateExperiment({
       snapshot: experiment.snapshot,
       taskStates,
@@ -363,7 +375,9 @@ describe("planMissingCellRepair", () => {
   it("rejects a base run whose id does not match the selected attempt", () => {
     const { experiment } = makeRepairableFixture();
     const wrongRun = { ...makeRun("run-WRONG", [MK1, MK2]) };
-    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+    const taskStates = [
+      makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1"),
+    ];
     const aggregation2 = aggregateExperiment({
       snapshot: experiment.snapshot,
       taskStates,
@@ -389,7 +403,9 @@ describe("planMissingCellRepair", () => {
         experimentId: "exp-OTHER",
       },
     };
-    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+    const taskStates = [
+      makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1"),
+    ];
     const aggregation2 = aggregateExperiment({
       snapshot: experiment.snapshot,
       taskStates,
@@ -415,7 +431,9 @@ describe("planMissingCellRepair", () => {
         protocolFingerprint: "sha256:DIFFERENT",
       },
     };
-    const taskStates = [makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1")];
+    const taskStates = [
+      makeTaskState("t1", [makeAttempt("att-t1", "run-base", "partial")], "att-t1"),
+    ];
     const aggregation2 = aggregateExperiment({
       snapshot: experiment.snapshot,
       taskStates,

@@ -42,9 +42,10 @@ describe("execution heartbeat", () => {
     const rejectRenewals: Array<(error: unknown) => void> = [];
     const errors: unknown[] = [];
     const heartbeat = createExecutionHeartbeat({
-      renew: () => new Promise<void>((_resolve, reject) => {
-        rejectRenewals.push(reject);
-      }),
+      renew: () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectRenewals.push(reject);
+        }),
       scheduler,
       onError: (error) => errors.push(error),
     });
@@ -94,10 +95,16 @@ describe("execution heartbeat", () => {
       get visibilityState(): DocumentVisibilityState {
         return state;
       },
-      addEventListener: (_type: "visibilitychange", listener: EventListenerOrEventListenerObject) => {
+      addEventListener: (
+        _type: "visibilitychange",
+        listener: EventListenerOrEventListenerObject,
+      ) => {
         listeners.add(listener as () => void);
       },
-      removeEventListener: (_type: "visibilitychange", listener: EventListenerOrEventListenerObject) => {
+      removeEventListener: (
+        _type: "visibilitychange",
+        listener: EventListenerOrEventListenerObject,
+      ) => {
         listeners.delete(listener as () => void);
       },
     } as Pick<Document, "visibilityState" | "addEventListener" | "removeEventListener">;

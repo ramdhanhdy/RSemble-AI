@@ -35,7 +35,8 @@ export interface CompoundRepairPlan {
   judgeCalls: 1;
 }
 
-export type RepairPlanResult = { ok: true; plan: CompoundRepairPlan } | { ok: false; reason: string };
+export type RepairPlanResult =
+  { ok: true; plan: CompoundRepairPlan } | { ok: false; reason: string };
 
 /**
  * Plan a targeted missing-cell repair for one task.
@@ -68,7 +69,9 @@ export function planMissingCellRepair(input: {
   }
 
   // The target model must remain in the immutable snapshot roster.
-  const snapshotKeys = new Set(experiment.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`));
+  const snapshotKeys = new Set(
+    experiment.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`),
+  );
   for (const key of requested) {
     if (!snapshotKeys.has(key)) {
       return { ok: false, reason: `Model ${key} is not in the experiment snapshot roster.` };
@@ -105,7 +108,11 @@ export function planMissingCellRepair(input: {
   }
   const baseRun = resolveRunRecord(selectedAttempt.runId);
   if (!baseRun) {
-    return { ok: false, reason: "Selected run record is unavailable — evidence-missing cells require a full task retry." };
+    return {
+      ok: false,
+      reason:
+        "Selected run record is unavailable — evidence-missing cells require a full task retry.",
+    };
   }
   // Verify the base run is from this experiment, task, and protocol lineage —
   // never reuse outputs across experiment/task/protocol boundaries.
@@ -142,7 +149,8 @@ export function planMissingCellRepair(input: {
   if (!sameProtocol && !trustedRosterExtension) {
     return {
       ok: false,
-      reason: "Base run protocol fingerprint does not match the experiment or its roster-extension lineage.",
+      reason:
+        "Base run protocol fingerprint does not match the experiment or its roster-extension lineage.",
     };
   }
   if (
@@ -151,7 +159,8 @@ export function planMissingCellRepair(input: {
   ) {
     return {
       ok: false,
-      reason: "Targeted repair requires a selected partial attempt or a trusted pre-extension completed attempt.",
+      reason:
+        "Targeted repair requires a selected partial attempt or a trusted pre-extension completed attempt.",
     };
   }
 
@@ -163,9 +172,14 @@ export function planMissingCellRepair(input: {
   const requestedCandidateIds = new Set(
     baseRun.candidates.filter((c) => requested.includes(c.modelKey)).map((c) => c.candidateId),
   );
-  const reusableCandidateIds = [...acceptedCandidateIds].filter((id) => !requestedCandidateIds.has(id));
+  const reusableCandidateIds = [...acceptedCandidateIds].filter(
+    (id) => !requestedCandidateIds.has(id),
+  );
   if (reusableCandidateIds.length === 0) {
-    return { ok: false, reason: "No accepted candidate outputs available to reuse for this repair." };
+    return {
+      ok: false,
+      reason: "No accepted candidate outputs available to reuse for this repair.",
+    };
   }
 
   // Reused model keys = accepted candidates NOT in the requested set.

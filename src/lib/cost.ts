@@ -1,6 +1,14 @@
 import { getModelPricing } from "./providers/pricing";
 import { contentToText } from "./providers/content";
-import type { ChatMessage, ContentPart, CostRecord, InputUsageEstimate, ModelPricingSnapshot, ProviderId, UsageBreakdown } from "./providers/types";
+import type {
+  ChatMessage,
+  ContentPart,
+  CostRecord,
+  InputUsageEstimate,
+  ModelPricingSnapshot,
+  ProviderId,
+  UsageBreakdown,
+} from "./providers/types";
 
 export interface ModelPricing {
   inputPerM: number;
@@ -55,10 +63,10 @@ export interface MessageInputEstimate extends UsageEstimate {
  */
 export function estimateMessageInput(messages: ChatMessage[]): MessageInputEstimate {
   const text = messages.map((message) => contentToText(message.content)).join("\n");
-  const hasNativeMedia = messages.some((message) =>
-    Array.isArray(message.content) && message.content.some(
-      (part: ContentPart) => part.type === "image" || part.type === "file",
-    ),
+  const hasNativeMedia = messages.some(
+    (message) =>
+      Array.isArray(message.content) &&
+      message.content.some((part: ContentPart) => part.type === "image" || part.type === "file"),
   );
   const textTokens = estimateTokens(text);
   return {
@@ -72,7 +80,6 @@ export function estimateMessageInput(messages: ChatMessage[]): MessageInputEstim
       : {}),
   };
 }
-
 
 /** Resolve one authoritative input-usage provenance record. */
 export function inputUsageEstimate(
@@ -110,7 +117,13 @@ export function inputUsageEstimate(
         : "Provider did not report input usage.",
     };
   }
-  return { totalTokens: textTokens, textTokens, method: "text-heuristic", partial: false, note: "Estimated from textual content." };
+  return {
+    totalTokens: textTokens,
+    textTokens,
+    method: "text-heuristic",
+    partial: false,
+    note: "Estimated from textual content.",
+  };
 }
 
 /** Render authoritative/fallback input usage without implying unknown media is zero. */
@@ -130,14 +143,19 @@ export function inputUsageLabel(
         : "Input usage: Unknown";
     }
     if (estimate.method === "text-heuristic") {
-      return formatted ? `Input estimate: ~${formatted} tokens — text heuristic` : "Input usage: Unknown";
+      return formatted
+        ? `Input estimate: ~${formatted} tokens — text heuristic`
+        : "Input usage: Unknown";
     }
     if (estimate.method === "provider-specific") {
-      return formatted ? `Input estimate: ~${formatted} tokens — provider-specific` : "Input usage: Unknown";
+      return formatted
+        ? `Input estimate: ~${formatted} tokens — provider-specific`
+        : "Input usage: Unknown";
     }
     return "Input usage: Unknown";
   }
-  if (legacyTokensIn != null) return `Input: ${Math.round(legacyTokensIn).toLocaleString("en-US")} tokens`;
+  if (legacyTokensIn != null)
+    return `Input: ${Math.round(legacyTokensIn).toLocaleString("en-US")} tokens`;
   return "Input usage: Unknown";
 }
 
@@ -169,8 +187,8 @@ export function estimateAttachmentInput(
   attachments: { kind: string; text?: string; data?: string }[],
 ): AttachmentInputEstimate {
   const textTokens = estimateAttachmentTokens(attachments);
-  const hasUnknownMedia = attachments.some((a) =>
-    (a.kind === "image" || a.kind === "pdf") && typeof a.data === "string",
+  const hasUnknownMedia = attachments.some(
+    (a) => (a.kind === "image" || a.kind === "pdf") && typeof a.data === "string",
   );
   return {
     textTokens,
@@ -189,7 +207,7 @@ export function estimateCost(
   tokensIn: number,
   tokensOut: number,
   providerId: ProviderId,
-  modelId: string
+  modelId: string,
 ): number | null {
   const p = pricingFor(providerId, modelId);
   if (!p) return null;
@@ -264,9 +282,7 @@ export function estimateRunCost(
   });
   let totalTokens = perModel.reduce((sum, m) => sum + m.tokens, 0);
   const hasNull = perModel.some((m) => m.costUsd === null);
-  let totalCostUsd = hasNull
-    ? null
-    : perModel.reduce((sum, m) => sum + (m.costUsd ?? 0), 0);
+  let totalCostUsd = hasNull ? null : perModel.reduce((sum, m) => sum + (m.costUsd ?? 0), 0);
 
   // Judge: one call at ~1/3 of a candidate's token weight (conservative).
   const judgeTokens = Math.round(tokensIn * 0.4);

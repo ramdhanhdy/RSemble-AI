@@ -48,7 +48,10 @@ export function JudgeConfig({
   attachmentsToJudge,
 }: JudgeConfigProps) {
   const [editing, setEditing] = useState(false);
-  const policy = reasoningPolicy ?? { candidates: "provider-default" as const, judge: "provider-default" as const };
+  const policy = reasoningPolicy ?? {
+    candidates: "provider-default" as const,
+    judge: "provider-default" as const,
+  };
   const candidateEfforts = commonReasoningEfforts(slots);
   const judgeEfforts = capabilitiesForModel(critic.providerId, critic.model).supportedEfforts;
   // TODO(phase-2): adjacent gear button → judge settings popover (temperature,
@@ -69,7 +72,11 @@ export function JudgeConfig({
           className="mt-2 flex min-h-[44px] w-full items-center gap-2.5 rounded-md border border-edge bg-card px-2.5 py-1.5 text-left hover:border-edge-bright hover:bg-card-hover"
         >
           <BrandAvatar slug={critic.model} size={28} />
-          <span dir="rtl" className="min-w-0 flex-1 truncate font-mono text-sm text-text" title={critic.model}>
+          <span
+            dir="rtl"
+            className="min-w-0 flex-1 truncate font-mono text-sm text-text"
+            title={critic.model}
+          >
             {`‎${critic.model}`}
           </span>
           <span className="shrink-0 rounded-sm border border-edge px-1 text-[11px] uppercase tracking-wide text-text-secondary">
@@ -92,19 +99,27 @@ export function JudgeConfig({
         />
       )}
 
-      <section aria-label="Reasoning policy" data-reasoning-policy="" className="mt-3 grid gap-3 rounded-md border border-edge bg-card p-2.5 sm:grid-cols-2">
+      <section
+        aria-label="Reasoning policy"
+        data-reasoning-policy=""
+        className="mt-3 grid gap-3 rounded-md border border-edge bg-card p-2.5 sm:grid-cols-2"
+      >
         <ReasoningEffortPicker
           label="Candidate reasoning effort"
           value={policy.candidates}
           options={candidateEfforts}
-          onChange={(candidates) => dispatch({ type: "SET_REASONING_POLICY", policy: { ...policy, candidates } })}
+          onChange={(candidates) =>
+            dispatch({ type: "SET_REASONING_POLICY", policy: { ...policy, candidates } })
+          }
           description="Only levels supported by every enabled candidate are offered."
         />
         <ReasoningEffortPicker
           label="Judge reasoning effort"
           value={policy.judge}
           options={judgeEfforts}
-          onChange={(judge) => dispatch({ type: "SET_REASONING_POLICY", policy: { ...policy, judge } })}
+          onChange={(judge) =>
+            dispatch({ type: "SET_REASONING_POLICY", policy: { ...policy, judge } })
+          }
           description="Provider default is not compute-equivalent across model families."
         />
       </section>
@@ -128,7 +143,8 @@ export function JudgeConfig({
         className="mt-1.5 min-h-[44px] w-full resize-y rounded-md border border-edge bg-card px-2.5 py-1.5 text-sm text-text placeholder-text-muted focus:border-edge-bright focus:outline-none focus:ring-1 focus:ring-accent"
       />
       <p className="mt-1 text-[11px] text-text-muted">
-        Optional guidance applied to every judge &amp; fusion pass. Leave blank to keep prompts unchanged.
+        Optional guidance applied to every judge &amp; fusion pass. Leave blank to keep prompts
+        unchanged.
       </p>
 
       {/* Native-media-to-judge toggle (spec §6.2). Only rendered when the task
@@ -138,7 +154,9 @@ export function JudgeConfig({
           <input
             type="checkbox"
             checked={attachmentsToJudge}
-            onChange={(e) => dispatch({ type: "SET_ATTACHMENTS_TO_JUDGE", value: e.target.checked })}
+            onChange={(e) =>
+              dispatch({ type: "SET_ATTACHMENTS_TO_JUDGE", value: e.target.checked })
+            }
             className="mt-0.5 h-4 w-4 shrink-0 accent-[#06b6d4]"
           />
           <span>
@@ -204,9 +222,7 @@ export function JudgeCombobox({
     const q = query.trim().toLowerCase();
     const pool = providerModels.length > 0 ? providerModels : [];
     if (q.length === 0) return pool;
-    return pool.filter(
-      (m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
-    );
+    return pool.filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
   }, [query, providerModels]);
 
   const hasCatalog = providerModels.length > 0;
@@ -214,7 +230,9 @@ export function JudgeCombobox({
   const isCurrentSelection = selectedProvider === initialProvider && trimmed === current;
   const slugValid =
     trimmed.length > 0 &&
-    (selectedProvider === "openrouter" || selectedProvider === "commandcode" || selectedProvider === "clinepass"
+    (selectedProvider === "openrouter" ||
+    selectedProvider === "commandcode" ||
+    selectedProvider === "clinepass"
       ? trimmed.includes("/")
       : true) &&
     !isCurrentSelection;
@@ -283,7 +301,9 @@ export function JudgeCombobox({
         </ul>
       )}
       {hasCatalog && matches.length === 0 && query.trim().length > 0 && (
-        <p className="px-1 py-2 font-mono text-sm text-text-muted">No catalog match — commit the slug below.</p>
+        <p className="px-1 py-2 font-mono text-sm text-text-muted">
+          No catalog match — commit the slug below.
+        </p>
       )}
 
       {/* Manual raw-slug commit */}

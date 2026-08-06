@@ -64,10 +64,12 @@ describe("reasoning effort resolution", () => {
       slot("umans", "umans-glm-5.2"),
     ]);
     expect(efforts).toEqual(["provider-default"]);
-    expect(commonReasoningEfforts([
-      slot("deepseek", "deepseek-v4-flash"),
-      slot("gemini", "gemini-3.6-flash"),
-    ])).toEqual(["provider-default", "low", "high"]);
+    expect(
+      commonReasoningEfforts([
+        slot("deepseek", "deepseek-v4-flash"),
+        slot("gemini", "gemini-3.6-flash"),
+      ]),
+    ).toEqual(["provider-default", "low", "high"]);
   });
 });
 
@@ -124,7 +126,11 @@ describe("reasoning capability persistence across reloads", () => {
   it("drops entries with invalid effort values instead of trusting them", () => {
     stubStorage({
       "rsemble.catalog.reasoning.v1": JSON.stringify({
-        "openrouter:m": { supportedEfforts: ["provider-default", "ultra"], source: "catalog", transport: "openrouter" },
+        "openrouter:m": {
+          supportedEfforts: ["provider-default", "ultra"],
+          source: "catalog",
+          transport: "openrouter",
+        },
       }),
     });
     expect(capabilitiesForModel("openrouter", "m").source).toBe("unknown");

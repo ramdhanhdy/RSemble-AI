@@ -129,9 +129,7 @@ export function computeHeadroom(
   }
 
   // Synthesis headroom — tasks where both models carry criterion scores.
-  const criteriaTasks = tasks.filter(
-    (t) => t.a.criteria.length > 0 && t.b.criteria.length > 0,
-  );
+  const criteriaTasks = tasks.filter((t) => t.a.criteria.length > 0 && t.b.criteria.length > 0);
   let synthesisHeadroom: number | null = null;
   if (criteriaTasks.length > 0) {
     const gaps = criteriaTasks.map((t) => {
@@ -420,9 +418,7 @@ export function probePoolAdequacy(input: PoolAdequacyProbeInput): PoolAdequacyPr
   }
   const oracleNearZero = input.poolOracleHeadroom < thresholds.oracleEpsilon;
   if (oracleNearZero) {
-    reasons.push(
-      `Pool-level oracle headroom ${input.poolOracleHeadroom.toFixed(3)} is near zero.`,
-    );
+    reasons.push(`Pool-level oracle headroom ${input.poolOracleHeadroom.toFixed(3)} is near zero.`);
   }
   const noPairHeadroom = input.maxPairHeadroom < thresholds.pairHeadroomEpsilon;
   if (noPairHeadroom) {

@@ -13,7 +13,10 @@
 
 import { useContext, useEffect, useMemo, type ReactNode } from "react";
 import { RepositoryContext } from "../persistence/repository-context";
-import { DexieExperimentStore, createExperimentUnitOfWork } from "../persistence/experiment-unit-of-work";
+import {
+  DexieExperimentStore,
+  createExperimentUnitOfWork,
+} from "../persistence/experiment-unit-of-work";
 import { createExecutionLease, type ExecutionLease } from "../execution-lease";
 import { createRunExecutor } from "../run-executor";
 import { useExecutionOwner } from "../execution-owner-context";
@@ -27,7 +30,10 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
   const { db, evalRepo, runRepo } = useContext(RepositoryContext);
   const { registry: owner } = useExecutionOwner();
 
-  const composed = useMemo<{ controller: ExperimentController; lease: ExecutionLease } | null>(() => {
+  const composed = useMemo<{
+    controller: ExperimentController;
+    lease: ExecutionLease;
+  } | null>(() => {
     if (!db || !evalRepo || !runRepo) return null;
     const lease = createExecutionLease(db);
     const controller = createExperimentController({

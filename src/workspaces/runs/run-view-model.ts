@@ -6,8 +6,18 @@
 // telemetry (Phase 3 Tasks 3.1, 3.2, 3.3, 3.5, 3.6).
 // =============================================================================
 
-import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunStatus, RunSummary } from "../../lib/persistence/run-types";
-import { DEFAULT_REASONING_POLICY, type CostRecord, type RunReasoningProvenance } from "../../lib/providers/types";
+import type {
+  FullRunSummaryV2,
+  LegacyRunSummary,
+  RunRecordV2,
+  RunStatus,
+  RunSummary,
+} from "../../lib/persistence/run-types";
+import {
+  DEFAULT_REASONING_POLICY,
+  type CostRecord,
+  type RunReasoningProvenance,
+} from "../../lib/providers/types";
 // --- Relative time -----------------------------------------------------------
 
 export function formatRelativeTime(ts: number): string {
@@ -159,7 +169,11 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
   const completedTimestamp = hasCompletion ? new Date(completedAt).toLocaleString() : undefined;
   const completedRelativeTime = hasCompletion ? formatRelativeTime(completedAt) : undefined;
   const completionLabel =
-    hasCompletion && record.status === "completed" ? "Completed" : hasCompletion ? "Ended" : undefined;
+    hasCompletion && record.status === "completed"
+      ? "Completed"
+      : hasCompletion
+        ? "Ended"
+        : undefined;
   sections.push({
     id: "header",
     title: record.task.title,
@@ -172,7 +186,8 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
     completedTimestamp,
     completionLabel,
     duration: hasCompletion ? formatDuration(completedAt - startedAt) : undefined,
-    runningDuration: record.status === "running" ? formatDuration(Date.now() - startedAt) : undefined,
+    runningDuration:
+      record.status === "running" ? formatDuration(Date.now() - startedAt) : undefined,
     timeZone,
     source: record.source.kind === "experiment" ? "experiment" : "ad hoc",
   });
@@ -205,7 +220,11 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
   let anyReported = false;
   let anyEstimated = false;
   let anyUnknown = false;
-  const addStageCost = (label: string, cost: CostRecord | null | undefined, done: boolean): void => {
+  const addStageCost = (
+    label: string,
+    cost: CostRecord | null | undefined,
+    done: boolean,
+  ): void => {
     if (cost?.usd !== null && cost?.usd !== undefined && Number.isFinite(cost.usd)) {
       acceptedCandidateCosts.push({ label, usd: cost.usd, source: cost.source });
       totalUsd += cost.usd;
@@ -233,7 +252,11 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
     ? record.fusion.attempts.find((a) => a.attemptId === record.fusion.acceptedAttemptId)
     : undefined;
   addStageCost("Fusion", fusionAccepted?.cost, record.fusion.status === "done");
-  const dominant = anyReported ? "provider-reported" : anyEstimated ? "catalog-estimate" : "unknown";
+  const dominant = anyReported
+    ? "provider-reported"
+    : anyEstimated
+      ? "catalog-estimate"
+      : "unknown";
   sections.push({
     id: "cost-breakdown",
     stages: acceptedCandidateCosts,
@@ -287,7 +310,8 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
     status: record.judge.status,
     attemptCount: record.judge.attempts.length,
     blindMap: record.judge.acceptedAttemptId
-      ? (record.judge.attempts.find((a) => a.attemptId === record.judge.acceptedAttemptId)?.blindLabelToCandidateId ?? {})
+      ? (record.judge.attempts.find((a) => a.attemptId === record.judge.acceptedAttemptId)
+          ?.blindLabelToCandidateId ?? {})
       : {},
   });
 
@@ -299,7 +323,8 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
       status: record.fusion.status,
       attemptCount: record.fusion.attempts.length,
       result: record.fusion.acceptedAttemptId
-        ? (record.fusion.attempts.find((a) => a.attemptId === record.fusion.acceptedAttemptId)?.result ?? null)
+        ? (record.fusion.attempts.find((a) => a.attemptId === record.fusion.acceptedAttemptId)
+            ?.result ?? null)
         : null,
     });
   }

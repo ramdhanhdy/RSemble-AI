@@ -9,17 +9,26 @@ import {
 } from "../execution-deadline";
 
 /** Shared production policy and adapter seams for paid provider requests. */
-export const PROVIDER_DEADLINES: Readonly<ProviderDeadlinePolicy> = DEFAULT_PROVIDER_DEADLINE_POLICY;
+export const PROVIDER_DEADLINES: Readonly<ProviderDeadlinePolicy> =
+  DEFAULT_PROVIDER_DEADLINE_POLICY;
 
 export function createHeadersReady(): { promise: Promise<void>; resolve: () => void } {
   let resolvePromise!: () => void;
-  const promise = new Promise<void>((resolve) => { resolvePromise = resolve; });
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
   return { promise, resolve: resolvePromise };
 }
 
 export async function runProviderRequest<T>(
   operation: (signal: AbortSignal, onHeadersReady: () => void) => Promise<T>,
-  context: { provider: string; model: string; stage?: string; signal?: AbortSignal; policy?: ProviderDeadlinePolicy },
+  context: {
+    provider: string;
+    model: string;
+    stage?: string;
+    signal?: AbortSignal;
+    policy?: ProviderDeadlinePolicy;
+  },
 ): Promise<T> {
   return runWithExecutionDeadlines(operation, {
     ...(context.policy ?? PROVIDER_DEADLINES),
@@ -33,7 +42,14 @@ export async function runProviderRequest<T>(
 export function wrapProviderStream<T>(
   source: AsyncIterable<T>,
   headersReady: PromiseLike<void>,
-  context: { provider: string; model: string; stage?: string; signal?: AbortSignal; abortController?: AbortController; policy?: ProviderDeadlinePolicy },
+  context: {
+    provider: string;
+    model: string;
+    stage?: string;
+    signal?: AbortSignal;
+    abortController?: AbortController;
+    policy?: ProviderDeadlinePolicy;
+  },
 ): AsyncGenerator<T, void, unknown> {
   const marked = markStreamHeadersReady(source, headersReady);
   return streamWithExecutionDeadlines(marked, {

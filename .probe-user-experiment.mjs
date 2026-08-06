@@ -8,29 +8,38 @@ import os from "node:os";
 import path from "node:path";
 
 const baseUrl = process.argv[2] ?? "http://localhost:5173/";
-const chromePath = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const chromePath =
+  process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const debugPort = 9377;
 
-const chrome = spawn(chromePath, [
-  "--headless=new",
-  "--disable-gpu",
-  `--remote-debugging-port=${debugPort}`,
-  `--user-data-dir=${path.join(os.tmpdir(), `rsemble-probe-${Date.now()}`)}`,
-  "--no-first-run",
-  "--no-default-browser-check",
-  baseUrl,
-], { stdio: "ignore" });
+const chrome = spawn(
+  chromePath,
+  [
+    "--headless=new",
+    "--disable-gpu",
+    `--remote-debugging-port=${debugPort}`,
+    `--user-data-dir=${path.join(os.tmpdir(), `rsemble-probe-${Date.now()}`)}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    baseUrl,
+  ],
+  { stdio: "ignore" },
+);
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function getPageWebSocketUrl() {
   for (let i = 0; i < 40; i += 1) {
     try {
       const pages = await new Promise((resolve, reject) => {
-        http.get(`http://127.0.0.1:${debugPort}/json/list`, (res) => {
-          let body = "";
-          res.on("data", (c) => { body += c; });
-          res.on("end", () => resolve(JSON.parse(body)));
-        }).on("error", reject);
+        http
+          .get(`http://127.0.0.1:${debugPort}/json/list`, (res) => {
+            let body = "";
+            res.on("data", (c) => {
+              body += c;
+            });
+            res.on("end", () => resolve(JSON.parse(body)));
+          })
+          .on("error", reject);
       });
       const page = pages.find((c) => c.type === "page" && c.url.includes("5173"));
       if (page) return page.webSocketDebuggerUrl;
@@ -49,17 +58,26 @@ socket.onmessage = (event) => {
   pending.delete(message.id);
   resolve(message);
 };
-await new Promise((r) => { socket.onopen = r; });
+await new Promise((r) => {
+  socket.onopen = r;
+});
 function send(method, params = {}) {
   return new Promise((resolve, reject) => {
     const id = ++nextId;
-    pending.set(id, (m) => (m.error ? reject(new Error(`${method}: ${m.error.message}`)) : resolve(m.result)));
+    pending.set(id, (m) =>
+      m.error ? reject(new Error(`${method}: ${m.error.message}`)) : resolve(m.result),
+    );
     socket.send(JSON.stringify({ id, method, params }));
   });
 }
 async function evaluate(expression) {
-  const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? "eval failed");
+  const result = await send("Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+  });
+  if (result.exceptionDetails)
+    throw new Error(result.exceptionDetails.exception?.description ?? "eval failed");
   return result.result?.value;
 }
 
@@ -144,6 +162,8 @@ try {
   })`);
   console.log(JSON.stringify(report, null, 1));
 } finally {
-  try { socket.close(); } catch {}
+  try {
+    socket.close();
+  } catch {}
   chrome.kill();
 }

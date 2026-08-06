@@ -3,12 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { RankResult } from "./RankResult";
 import type { StudioState } from "../studio-engine";
 import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
-import type {
-  Candidate,
-  JudgeReport,
-  JudgeComparison,
-  JudgeCriterionScore,
-} from "../studio-data";
+import type { Candidate, JudgeReport, JudgeComparison, JudgeCriterionScore } from "../studio-data";
 
 function makeUsableCandidate(
   id: string,
@@ -122,9 +117,7 @@ describe("RankResult — blind evaluation key", () => {
       { id: "c2", label: "A", score: 3.0 },
       { id: "c1", label: "B", score: 4.5 },
     ]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     // The key must show the mapping in label order, not rank order.
     expect(html).toContain("Candidate A");
     expect(html).toContain("ModelB");
@@ -141,9 +134,7 @@ describe("RankResult — blind evaluation key", () => {
       { id: "c1", label: "A", score: 4.5 },
       { id: "c2", label: "B", score: 3.0 },
     ]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     // Both candidates share the model name "GLM" — the provider must appear to
     // disambiguate them in the blind key.
     expect(html).toContain("OpenRouter");
@@ -161,9 +152,7 @@ describe("RankResult — score explanations", () => {
       { id: "c1", label: "A", score: 4.5, rationale: "Quantifies the revenue exposure." },
       { id: "c2", label: "B", score: 3.0, rationale: "Underspecified adoption threshold." },
     ]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     expect(html).toContain("Quantifies the revenue exposure.");
     expect(html).toContain("Underspecified adoption threshold.");
   });
@@ -183,9 +172,7 @@ describe("RankResult — score explanations", () => {
       },
       { id: "c2", label: "B", score: 3.2 },
     ]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     expect(html).toContain("Strong quantified comparison with credible early decision gates.");
   });
 
@@ -204,9 +191,7 @@ describe("RankResult — score explanations", () => {
         missedRequirements: ["Did not address latency"],
       },
     ]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     expect(html).toContain("Clear structure");
     expect(html).toContain("Good evidence");
     expect(html).toContain("Ignores the budget constraint");
@@ -224,13 +209,16 @@ describe("RankResult — score explanations", () => {
         label: "A",
         score: 4.5,
         criterionScores: [
-          { criterionId: "commercial-reasoning", label: "Commercial reasoning", score: 4.7, rationale: "Uses supplied commercial evidence." },
+          {
+            criterionId: "commercial-reasoning",
+            label: "Commercial reasoning",
+            score: 4.7,
+            rationale: "Uses supplied commercial evidence.",
+          },
         ],
       },
     ]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     expect(html).toContain("Commercial reasoning");
     expect(html).toContain("Uses supplied commercial evidence.");
   });
@@ -248,9 +236,7 @@ describe("RankResult — score explanations", () => {
         criterionScores: [],
       },
     ]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     expect(html).not.toMatch(/Deductions/i);
     expect(html).not.toMatch(/Missed requirements/i);
     expect(html).not.toMatch(/Criterion scores/i);
@@ -275,18 +261,14 @@ describe("RankResult — same-conclusion comparisons", () => {
       ],
       [comparison],
     );
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     expect(html).toContain("Both recommend reliability, but A quantifies the downside.");
   });
 
   it("is omitted entirely when no comparisons exist", () => {
     const candidates = [makeUsableCandidate("c1", "ModelA", 4.0)];
     const report = makeReport([{ id: "c1", label: "A", score: 4.0 }]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     expect(html).not.toMatch(/Same-conclusion comparison/i);
   });
 });
@@ -302,9 +284,7 @@ describe("RankResult — rank sorting does not alter label identity", () => {
       { id: "c2", label: "A", score: 3.0 },
       { id: "c1", label: "B", score: 4.8 },
     ]);
-    const html = renderToStaticMarkup(
-      <RankResult state={makeStudioState(candidates, report)} />,
-    );
+    const html = renderToStaticMarkup(<RankResult state={makeStudioState(candidates, report)} />);
     // ModelA is ranked first (higher score) but its blind label stays "B".
     // The key + explanation must show ModelA beside Candidate B, not A.
     expect(html).toContain("ModelA");

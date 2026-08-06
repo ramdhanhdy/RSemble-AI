@@ -192,7 +192,7 @@ export function CommandPalette({
     onToggleMode,
     onToggleFocusMode,
     onAddModel,
-      onOpenConnections,
+    onOpenConnections,
     onExport,
     workspace,
     onNavigate,

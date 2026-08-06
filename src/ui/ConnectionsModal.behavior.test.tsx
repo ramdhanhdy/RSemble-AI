@@ -156,7 +156,9 @@ describe("ConnectionsModal — credential policy (Plan 002 D1)", () => {
     expect(input.value).toBe("");
     expect(input.disabled).toBe(true);
     expect(rootEl().textContent).toContain("Environment key active");
-    const saveButton = [...openrouterRow(container).querySelectorAll("button")].find((b) => b.textContent === "Save");
+    const saveButton = [...openrouterRow(container).querySelectorAll("button")].find(
+      (b) => b.textContent === "Save",
+    );
     expect(saveButton?.disabled).toBe(true);
   });
 

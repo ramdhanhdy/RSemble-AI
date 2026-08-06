@@ -89,7 +89,12 @@ export function createLiveFusionExecutor(deps?: {
     profile: EvaluationProfileSnapshot | null,
     judge: CriticRef,
     candidates: Candidate[],
-  ): Promise<{ report: JudgeReport; consensus: BlockedRunResult["consensus"]; cost: BlockedRunResult["judgeCost"]; blindSet: ReturnType<typeof createBlindCandidateSet> }> {
+  ): Promise<{
+    report: JudgeReport;
+    consensus: BlockedRunResult["consensus"];
+    cost: BlockedRunResult["judgeCost"];
+    blindSet: ReturnType<typeof createBlindCandidateSet>;
+  }> {
     const blindSet = createBlindCandidateSet(candidates, random);
     const messages = judgeMessages(task.prompt, profile, blindSet.candidates);
     const content = await chatOnce(judge, messages, 0.1);
@@ -147,7 +152,18 @@ export function createLiveFusionExecutor(deps?: {
     async runHoldout(task, profile, judge2, artifacts: HoldoutArtifact[]) {
       // Holdout evaluates policy artifacts blind and randomized (spec §5.3).
       const candidates = artifacts.map((a) =>
-        candidateFromOutput(a.key, { id: a.key, providerId: judge2.providerId, provider: "policy", model: a.key, slug: a.key, enabled: true }, a.text),
+        candidateFromOutput(
+          a.key,
+          {
+            id: a.key,
+            providerId: judge2.providerId,
+            provider: "policy",
+            model: a.key,
+            slug: a.key,
+            enabled: true,
+          },
+          a.text,
+        ),
       );
       const blindSet = createBlindCandidateSet(candidates, random);
       const messages = judgeMessages(task.prompt, profile, blindSet.candidates);

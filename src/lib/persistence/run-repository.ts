@@ -44,7 +44,10 @@ function assertLeaseFence(
     lease.fence !== expected.fence ||
     (expected.leaseId !== undefined && lease.leaseId !== expected.leaseId)
   ) {
-    throw new StorageError("conflict", "Execution lease token mismatch: another execution owner has taken over");
+    throw new StorageError(
+      "conflict",
+      "Execution lease token mismatch: another execution owner has taken over",
+    );
   }
   // Exact paid execution tokens include leaseId and must also be live at
   // commit time. Recovery may supply a deterministic checkedAt clock.
@@ -62,9 +65,18 @@ export interface RunRepository {
    * Create atomically. expectedFence is optional for import/maintenance paths;
    * Compare passes it so the active lease is verified in the same transaction.
    */
-  create(record: RunRecordV2, summary: FullRunSummaryV2, expectedFence?: ExpectedExecutionFence): Promise<void>;
+  create(
+    record: RunRecordV2,
+    summary: FullRunSummaryV2,
+    expectedFence?: ExpectedExecutionFence,
+  ): Promise<void>;
   /** Update atomically with revision CAS and (when supplied) lease fencing. */
-  update(record: RunRecordV2, summary: FullRunSummaryV2, expectedRevision: number, expectedFence?: ExpectedExecutionFence): Promise<number>;
+  update(
+    record: RunRecordV2,
+    summary: FullRunSummaryV2,
+    expectedRevision: number,
+    expectedFence?: ExpectedExecutionFence,
+  ): Promise<number>;
   importLegacySummary(summary: LegacyRunSummary): Promise<"created" | "skipped">;
   get(id: string): Promise<RunRecordV2 | null>;
   list(query: RunListQuery): Promise<RunSummary[]>;
@@ -94,8 +106,10 @@ function summaryToRow(summary: FullRunSummaryV2 | LegacyRunSummary): RunSummaryR
     status: isFull ? (summary as FullRunSummaryV2).status : null,
     mode: isFull ? (summary as FullRunSummaryV2).mode : null,
     sourceKind: full?.source.kind ?? "adhoc",
-    sourceProtocolFingerprint: full?.source.kind === "experiment" ? full.source.protocolFingerprint : null,
-    sourceExperimentTaskAttemptId: full?.source.kind === "experiment" ? full.source.experimentTaskAttemptId : null,
+    sourceProtocolFingerprint:
+      full?.source.kind === "experiment" ? full.source.protocolFingerprint : null,
+    sourceExperimentTaskAttemptId:
+      full?.source.kind === "experiment" ? full.source.experimentTaskAttemptId : null,
     modelKeys: summary.modelKeys,
   };
 }
@@ -105,7 +119,10 @@ export interface RunRepositoryOptions {
   now?: () => number;
 }
 
-export function createRunRepository(db: RSembleEvaluationDB, options: RunRepositoryOptions = {}): RunRepository {
+export function createRunRepository(
+  db: RSembleEvaluationDB,
+  options: RunRepositoryOptions = {},
+): RunRepository {
   const listeners = new Set<() => void>();
   const now = options.now ?? (() => Date.now());
 
@@ -127,17 +144,27 @@ export function createRunRepository(db: RSembleEvaluationDB, options: RunReposit
     if (!isRunRecordV2(record)) throw new StorageError("validation", "Invalid run record");
     if (!isFullRunSummaryV2(summary)) throw new StorageError("validation", "Invalid summary");
     if (record.id !== summary.id) {
-      throw new StorageError("validation", `Record ID "${record.id}" does not match summary ID "${summary.id}"`);
+      throw new StorageError(
+        "validation",
+        `Record ID "${record.id}" does not match summary ID "${summary.id}"`,
+      );
     }
     if (record.revision !== summary.revision) {
-      throw new StorageError("validation", `Record revision ${record.revision} does not match summary revision ${summary.revision}`);
+      throw new StorageError(
+        "validation",
+        `Record revision ${record.revision} does not match summary revision ${summary.revision}`,
+      );
     }
     db.assertWritable();
     try {
       await db.transaction("rw", db.runSummaries, db.runDetails, db.storageMeta, async () => {
         if (expectedFence) {
           const leaseRow = await db.storageMeta.get(LEASE_KEY);
-          assertLeaseFence((leaseRow?.value as LeaseInfo | undefined) ?? null, expectedFence, now());
+          assertLeaseFence(
+            (leaseRow?.value as LeaseInfo | undefined) ?? null,
+            expectedFence,
+            now(),
+          );
         }
         const existing = await db.runSummaries.get(record.id);
         if (existing) throw new StorageError("conflict", `Run ${record.id} already exists`);
@@ -173,7 +200,10 @@ export function createRunRepository(db: RSembleEvaluationDB, options: RunReposit
     if (!isRunRecordV2(record)) throw new StorageError("validation", "Invalid run record");
     if (!isFullRunSummaryV2(summary)) throw new StorageError("validation", "Invalid summary");
     if (record.id !== summary.id) {
-      throw new StorageError("validation", `Record ID "${record.id}" does not match summary ID "${summary.id}"`);
+      throw new StorageError(
+        "validation",
+        `Record ID "${record.id}" does not match summary ID "${summary.id}"`,
+      );
     }
     db.assertWritable();
 
@@ -183,19 +213,23 @@ export function createRunRepository(db: RSembleEvaluationDB, options: RunReposit
       await db.transaction("rw", db.runSummaries, db.runDetails, db.storageMeta, async () => {
         if (expectedFence) {
           const leaseRow = await db.storageMeta.get(LEASE_KEY);
-          assertLeaseFence((leaseRow?.value as LeaseInfo | undefined) ?? null, expectedFence, now());
+          assertLeaseFence(
+            (leaseRow?.value as LeaseInfo | undefined) ?? null,
+            expectedFence,
+            now(),
+          );
         }
         const existingDetail = await db.runDetails.get(record.id);
         if (!existingDetail) throw new StorageError("conflict", `Run ${record.id} not found`);
         if (existingDetail.revision !== expectedRevision) {
-          throw new StorageError("conflict", `Stale revision: expected ${expectedRevision}, got ${existingDetail.revision}`);
+          throw new StorageError(
+            "conflict",
+            `Stale revision: expected ${expectedRevision}, got ${existingDetail.revision}`,
+          );
         }
 
         // Reject illegal terminal-state regressions to "running".
-        if (
-          TERMINAL_STATUSES.has(existingDetail.status) &&
-          record.status === "running"
-        ) {
+        if (TERMINAL_STATUSES.has(existingDetail.status) && record.status === "running") {
           throw new StorageError(
             "validation",
             `Cannot regress terminal status "${existingDetail.status}" to "running" (run ${record.id})`,
@@ -227,7 +261,8 @@ export function createRunRepository(db: RSembleEvaluationDB, options: RunReposit
   }
 
   async function importLegacySummary(summary: LegacyRunSummary): Promise<"created" | "skipped"> {
-    if (!isLegacyRunSummary(summary)) throw new StorageError("validation", "Invalid legacy summary");
+    if (!isLegacyRunSummary(summary))
+      throw new StorageError("validation", "Invalid legacy summary");
     db.assertWritable();
     try {
       let result: "created" | "skipped" = "created";
@@ -375,7 +410,9 @@ export function createRunRepository(db: RSembleEvaluationDB, options: RunReposit
       // Import full runs (detail + summary paired).
       for (const record of archive.runs) {
         if (!isRunRecordV2(record)) {
-          errors.push(`Invalid run record: ${typeof record === "object" && record !== null ? (record as { id?: unknown }).id ?? "unknown" : "unknown"}`);
+          errors.push(
+            `Invalid run record: ${typeof record === "object" && record !== null ? ((record as { id?: unknown }).id ?? "unknown") : "unknown"}`,
+          );
           continue;
         }
         const summary = summariesById.get(record.id);
@@ -459,7 +496,11 @@ export class InMemoryRunRepository implements RunRepository {
 
   private notify() {
     for (const l of this.listeners) {
-      try { l(); } catch { /* ignore */ }
+      try {
+        l();
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -471,21 +512,35 @@ export class InMemoryRunRepository implements RunRepository {
     assertLeaseFence(this.leaseStore.lease, expectedFence, this.now());
   }
 
-  async create(record: RunRecordV2, summary: FullRunSummaryV2, expectedFence?: ExpectedExecutionFence): Promise<void> {
+  async create(
+    record: RunRecordV2,
+    summary: FullRunSummaryV2,
+    expectedFence?: ExpectedExecutionFence,
+  ): Promise<void> {
     if (record.id !== summary.id) {
-      throw new StorageError("validation", `Record ID "${record.id}" does not match summary ID "${summary.id}"`);
+      throw new StorageError(
+        "validation",
+        `Record ID "${record.id}" does not match summary ID "${summary.id}"`,
+      );
     }
     if (record.revision !== summary.revision) {
-      throw new StorageError("validation", `Record revision ${record.revision} does not match summary revision ${summary.revision}`);
+      throw new StorageError(
+        "validation",
+        `Record revision ${record.revision} does not match summary revision ${summary.revision}`,
+      );
     }
     this.verifyFence(expectedFence);
-    if (this.summaries.has(record.id)) throw new StorageError("conflict", `Run ${record.id} already exists`);
+    if (this.summaries.has(record.id))
+      throw new StorageError("conflict", `Run ${record.id} already exists`);
     // Deep-clone on write: Dexie structured-clones at the storage boundary,
     // and this test double must mirror that isolation. Storing the caller's
     // object by reference lets later in-memory mutations (e.g. the record
     // builder's revision bump) leak into "stored" state and masks CAS bugs
     // that fail against the real repository.
-    this.summaries.set(record.id, structuredClone({ ...summary, searchText: normalizeSearchText(summary) }));
+    this.summaries.set(
+      record.id,
+      structuredClone({ ...summary, searchText: normalizeSearchText(summary) }),
+    );
     this.details.set(record.id, structuredClone(record));
     this.notify();
   }
@@ -497,17 +552,31 @@ export class InMemoryRunRepository implements RunRepository {
     expectedFence?: ExpectedExecutionFence,
   ): Promise<number> {
     if (record.id !== summary.id) {
-      throw new StorageError("validation", `Record ID "${record.id}" does not match summary ID "${summary.id}"`);
+      throw new StorageError(
+        "validation",
+        `Record ID "${record.id}" does not match summary ID "${summary.id}"`,
+      );
     }
     this.verifyFence(expectedFence);
     const existing = this.details.get(record.id);
     if (!existing) throw new StorageError("conflict", `Run ${record.id} not found`);
-    if (existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");
+    if (existing.revision !== expectedRevision)
+      throw new StorageError("conflict", "Stale revision");
     if (TERMINAL_STATUSES.has(existing.status) && record.status === "running") {
-      throw new StorageError("validation", `Cannot regress terminal status "${existing.status}" to "running" (run ${record.id})`);
+      throw new StorageError(
+        "validation",
+        `Cannot regress terminal status "${existing.status}" to "running" (run ${record.id})`,
+      );
     }
     const newRevision = expectedRevision + 1;
-    this.summaries.set(record.id, structuredClone({ ...summary, revision: newRevision, searchText: normalizeSearchText(summary) }));
+    this.summaries.set(
+      record.id,
+      structuredClone({
+        ...summary,
+        revision: newRevision,
+        searchText: normalizeSearchText(summary),
+      }),
+    );
     this.details.set(record.id, structuredClone({ ...record, revision: newRevision }));
     this.notify();
     return newRevision;
@@ -540,8 +609,13 @@ export class InMemoryRunRepository implements RunRepository {
         if (query.modelKey && !s.modelKeys.includes(query.modelKey)) return false;
         if (query.source) {
           if (query.source === "legacy" && s.kind !== "legacy") return false;
-          if (query.source === "adhoc" && (s.kind !== "full" || s.source.kind !== "adhoc")) return false;
-          if (query.source === "experiment" && (s.kind !== "full" || s.source.kind !== "experiment")) return false;
+          if (query.source === "adhoc" && (s.kind !== "full" || s.source.kind !== "adhoc"))
+            return false;
+          if (
+            query.source === "experiment" &&
+            (s.kind !== "full" || s.source.kind !== "experiment")
+          )
+            return false;
         }
         if (query.status && (s.kind !== "full" || s.status !== query.status)) return false;
         if (query.mode && (s.kind !== "full" || s.mode !== query.mode)) return false;
@@ -579,17 +653,29 @@ export class InMemoryRunRepository implements RunRepository {
     }
 
     for (const record of archive.runs) {
-      if (!isRunRecordV2(record)) { errors.push("Invalid run record"); continue; }
+      if (!isRunRecordV2(record)) {
+        errors.push("Invalid run record");
+        continue;
+      }
       const summary = summariesById.get(record.id);
-      if (!summary) { errors.push(`No summary for run ${record.id}`); continue; }
-      if (this.summaries.has(record.id)) { skipped++; continue; }
+      if (!summary) {
+        errors.push(`No summary for run ${record.id}`);
+        continue;
+      }
+      if (this.summaries.has(record.id)) {
+        skipped++;
+        continue;
+      }
       this.summaries.set(record.id, { ...summary, searchText: normalizeSearchText(summary) });
       this.details.set(record.id, record);
       imported++;
     }
 
     for (const legacy of legacySummaries) {
-      if (this.summaries.has(legacy.id)) { skipped++; continue; }
+      if (this.summaries.has(legacy.id)) {
+        skipped++;
+        continue;
+      }
       this.summaries.set(legacy.id, legacy);
       imported++;
     }

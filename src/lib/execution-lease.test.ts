@@ -457,7 +457,10 @@ describe("createExecutionLease (Dexie-backed)", () => {
 
 describe("InMemoryExecutionLease", () => {
   it("shares contention over one store so only one tab holds the lease at a time", async () => {
-    const store = { lease: null as null | { ownerId: string; fence: number; expiresAt: number }, fence: 0 };
+    const store = {
+      lease: null as null | { ownerId: string; fence: number; expiresAt: number },
+      fence: 0,
+    };
     const tabA = new InMemoryExecutionLease(store);
     const tabB = new InMemoryExecutionLease(store);
 
@@ -473,7 +476,10 @@ describe("InMemoryExecutionLease", () => {
   });
 
   it("recovers interrupted runs using the shared store", async () => {
-    const store = { lease: null as null | { ownerId: string; fence: number; expiresAt: number }, fence: 0 };
+    const store = {
+      lease: null as null | { ownerId: string; fence: number; expiresAt: number },
+      fence: 0,
+    };
     const lease = new InMemoryExecutionLease(store);
     const repo = new InMemoryRunRepository();
     const acquired = await lease.acquire();
@@ -491,7 +497,10 @@ describe("InMemoryExecutionLease", () => {
   });
 
   it("releases an in-memory lease acquired only for a recovery sweep", async () => {
-    const store = { lease: null as null | { ownerId: string; fence: number; expiresAt: number }, fence: 0 };
+    const store = {
+      lease: null as null | { ownerId: string; fence: number; expiresAt: number },
+      fence: 0,
+    };
     const lease = new InMemoryExecutionLease(store);
     const repo = new InMemoryRunRepository();
 
@@ -508,7 +517,10 @@ describe("InMemoryExecutionLease", () => {
   // Fake timers are safe here: InMemoryExecutionLease has no Dexie dependency.
   it("expires and allows takeover with a monotonic fence under fake timers", async () => {
     vi.useFakeTimers();
-    const store = { lease: null as null | { ownerId: string; fence: number; expiresAt: number }, fence: 0 };
+    const store = {
+      lease: null as null | { ownerId: string; fence: number; expiresAt: number },
+      fence: 0,
+    };
     const tabA = new InMemoryExecutionLease(store);
     const tabB = new InMemoryExecutionLease(store);
 
@@ -522,7 +534,10 @@ describe("InMemoryExecutionLease", () => {
   });
 
   it("does not own a lease held by another tab (isOwner false, getCurrent returns it)", async () => {
-    const store = { lease: null as null | { ownerId: string; fence: number; expiresAt: number }, fence: 0 };
+    const store = {
+      lease: null as null | { ownerId: string; fence: number; expiresAt: number },
+      fence: 0,
+    };
     const tabA = new InMemoryExecutionLease(store);
     const tabB = new InMemoryExecutionLease(store);
 
@@ -533,16 +548,26 @@ describe("InMemoryExecutionLease", () => {
   });
 });
 
-
 describe("ExecutionLease metadata and fencing (Plan 005)", () => {
   it("records kind, execution identity, acquisition/heartbeat timestamps and initial subscription state", async () => {
     let now = 1000;
     const store = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
-    const lease = new InMemoryExecutionLease(store, null, { now: () => now, ownerId: "tab-a", ttl: 100 });
+    const lease = new InMemoryExecutionLease(store, null, {
+      now: () => now,
+      ownerId: "tab-a",
+      ttl: 100,
+    });
     const states: string[] = [];
     const unsubscribe = lease.subscribe((state) => states.push(state.status));
     const acquired = await lease.acquire({ kind: "compare", executionId: "run-a" });
-    expect(acquired).toMatchObject({ ownerId: "tab-a", kind: "compare", executionId: "run-a", acquiredAt: 1000, heartbeatAt: 1000, fence: 1 });
+    expect(acquired).toMatchObject({
+      ownerId: "tab-a",
+      kind: "compare",
+      executionId: "run-a",
+      acquiredAt: 1000,
+      heartbeatAt: 1000,
+      fence: 1,
+    });
     expect(acquired.leaseId).toBeTruthy();
     expect(states[0]).toBe("free");
     expect(states).toContain("owned");
@@ -553,8 +578,16 @@ describe("ExecutionLease metadata and fencing (Plan 005)", () => {
   it("stale release and heartbeat cannot affect a newer reclaimed lease", async () => {
     let now = 0;
     const store = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
-    const a = new InMemoryExecutionLease(store, null, { now: () => now, ownerId: "tab-a", ttl: 10 });
-    const b = new InMemoryExecutionLease(store, null, { now: () => now, ownerId: "tab-b", ttl: 10 });
+    const a = new InMemoryExecutionLease(store, null, {
+      now: () => now,
+      ownerId: "tab-a",
+      ttl: 10,
+    });
+    const b = new InMemoryExecutionLease(store, null, {
+      now: () => now,
+      ownerId: "tab-b",
+      ttl: 10,
+    });
     const old = await a.acquire({ kind: "compare", executionId: "old" });
     now = 11;
     const fresh = await b.acquire({ kind: "compare", executionId: "new" });

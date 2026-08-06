@@ -29,13 +29,7 @@ function formatSlug(slug: string): { display: string; truncated: boolean } {
   return { display: `${head}…${tail}`, truncated: true };
 }
 
-export function CompactModelLabel({
-  providerId,
-  slug,
-}: {
-  providerId: string;
-  slug: string;
-}) {
+export function CompactModelLabel({ providerId, slug }: { providerId: string; slug: string }) {
   const [expanded, setExpanded] = useState(false);
   const providerLabel = PROVIDER_LABELS[providerId as ProviderId] ?? providerId;
   const { display } = formatSlug(slug);
@@ -44,11 +38,13 @@ export function CompactModelLabel({
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
       <span className="font-mono text-text-muted">{providerLabel}</span>
-      <span className="text-text-muted" aria-hidden="true">·</span>
-      <span className="font-mono text-text tabular-nums">
-        {expanded ? slug : display}
+      <span className="text-text-muted" aria-hidden="true">
+        ·
       </span>
-      <span data-full-id={fullId} className="sr-only">{fullId}</span>
+      <span className="font-mono text-text tabular-nums">{expanded ? slug : display}</span>
+      <span data-full-id={fullId} className="sr-only">
+        {fullId}
+      </span>
       <button
         type="button"
         data-full-id-disclosure=""
@@ -57,7 +53,15 @@ export function CompactModelLabel({
         onClick={() => setExpanded((e) => !e)}
         className="flex min-h-[44px] items-center gap-0.5 rounded-sm px-1 text-text-muted transition-colors duration-150 hover:text-text focus-visible:text-accent"
       >
-        <ChevronDown size={12} className={expanded ? "rotate-180 transition-transform duration-150" : "transition-transform duration-150"} aria-hidden="true" />
+        <ChevronDown
+          size={12}
+          className={
+            expanded
+              ? "rotate-180 transition-transform duration-150"
+              : "transition-transform duration-150"
+          }
+          aria-hidden="true"
+        />
       </button>
     </span>
   );

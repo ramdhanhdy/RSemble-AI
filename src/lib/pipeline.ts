@@ -32,12 +32,12 @@ import {
   type JudgeReport,
   type ModelSlot,
 } from "../studio-data";
-import type { EvaluationCriterion, EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
+import type {
+  EvaluationCriterion,
+  EvaluationProfileSnapshot,
+} from "./evaluations/evaluation-types";
 import { evaluationCriteriaText } from "./evaluations/evaluation-profile";
-import {
-  FUSION_RECIPE_BLIND_RAW_V1,
-  renderRecipeMessages,
-} from "./evaluations/fusion-recipes";
+import { FUSION_RECIPE_BLIND_RAW_V1, renderRecipeMessages } from "./evaluations/fusion-recipes";
 
 /** Generate an unbounded spreadsheet-style blind label: A..Z, AA..AZ, BA... */
 function blindLabelForIndex(index: number): string {
@@ -132,14 +132,14 @@ export function draftMessages(opts: {
   const caps = opts.capabilities ?? { image: false, pdf: false };
   if (attachments.some((a) => a.kind === "image" && !caps.image)) {
     throw new Error(
-      "draftMessages: an image attachment cannot reach a slot without image capability — the eligibility gate must prevent this."
+      "draftMessages: an image attachment cannot reach a slot without image capability — the eligibility gate must prevent this.",
     );
   }
 
   const textBlocks = renderAttachmentBlocks(
     // One channel per attachment for candidates: a pdf delivered natively
     // does not also carry its extracted text (spec §6.1, §5.1 degradation).
-    attachments.filter((a) => !(a.kind === "pdf" && caps.pdf && typeof a.data === "string"))
+    attachments.filter((a) => !(a.kind === "pdf" && caps.pdf && typeof a.data === "string")),
   );
   const native = selectNativeParts(attachments, caps);
   const user: ContentPart[] = [{ type: "text", text: opts.prompt }];
@@ -148,7 +148,7 @@ export function draftMessages(opts: {
     user.push(
       part.type === "image"
         ? { type: "image", mimeType: part.mimeType, data: part.data }
-        : { type: "file", mimeType: part.mimeType, data: part.data, filename: part.filename }
+        : { type: "file", mimeType: part.mimeType, data: part.data, filename: part.filename },
     );
   }
 
@@ -175,7 +175,11 @@ export function splitSegments(content: string, candidateId: string): CandidateSe
 }
 
 export function summarize(content: string): string {
-  const firstSentence = content.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0] ?? "";
+  const firstSentence =
+    content
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(/(?<=[.!?])\s/)[0] ?? "";
   return firstSentence.length > 160 ? `${firstSentence.slice(0, 157)}…` : firstSentence;
 }
 
@@ -198,8 +202,7 @@ export function isUsableCandidate(candidate: Candidate): boolean {
 }
 
 export type FusionEligibility =
-  | { ok: true; usable: Candidate[] }
-  | { ok: false; done: number; failed: number; reason: string };
+  { ok: true; usable: Candidate[] } | { ok: false; done: number; failed: number; reason: string };
 
 /**
  * Shared eligibility guard for every fusion entry point (button, shortcut,
@@ -230,9 +233,7 @@ export function checkFusionEligibility(candidates: Candidate[]): FusionEligibili
 // ---- Attachment eligibility (spec §5.1, plan 7.6.5) -------------------------
 
 export type AttachmentEligibility =
-  | { ok: true }
-  | { blocked: string }
-  | { autoDisable: string[]; reason: string };
+  { ok: true } | { blocked: string } | { autoDisable: string[]; reason: string };
 
 /**
  * Gate a fanout against the task's attachments (spec §5.1). Only IMAGE
@@ -244,7 +245,7 @@ export type AttachmentEligibility =
  */
 export function checkAttachmentEligibility(
   slots: ModelSlot[],
-  attachments: Attachment[]
+  attachments: Attachment[],
 ): AttachmentEligibility {
   if (!attachments.some((a) => a.kind === "image")) return { ok: true };
 
@@ -421,9 +422,7 @@ export function judgeMessages(
   // withheld, keeping the generated block isolated for persistence redaction.
   const textBlocks = atts.length > 0 ? renderAttachmentBlocks(atts) : "";
   const native =
-    includeNativeMedia && criticCapabilities
-      ? selectNativeParts(atts, criticCapabilities)
-      : [];
+    includeNativeMedia && criticCapabilities ? selectNativeParts(atts, criticCapabilities) : [];
   const userParts = [
     `User task:\n${prompt}`,
     textBlocks.length > 0 ? textBlocks : null,
@@ -439,7 +438,7 @@ export function judgeMessages(
           ...native.map((p) =>
             p.type === "image"
               ? { type: "image" as const, mimeType: p.mimeType, data: p.data }
-              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename }
+              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename },
           ),
         ];
   return [
@@ -526,12 +525,14 @@ function requireStringArray(value: unknown, field: string): string[] {
   if (!Array.isArray(value)) {
     throw new Error(`Judge output invalid: '${field}' must be an array.`);
   }
-  return value.map((v, i) => {
-    if (typeof v !== "string") {
-      throw new Error(`Judge output invalid: '${field}[${i}]' must be a string.`);
-    }
-    return v;
-  }).filter((v) => v.trim().length > 0);
+  return value
+    .map((v, i) => {
+      if (typeof v !== "string") {
+        throw new Error(`Judge output invalid: '${field}[${i}]' must be a string.`);
+      }
+      return v;
+    })
+    .filter((v) => v.trim().length > 0);
 }
 
 /** One optional array-of-strings field: absent → [], present → validated. */
@@ -543,7 +544,9 @@ function optionalStringArray(value: unknown, field: string): string[] {
 /** A score must be a finite number within the documented 1.0–5.0 range. Never clamped. */
 function requireScore(value: unknown, where: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`Judge output invalid: ${where} is missing a finite numeric score (got ${JSON.stringify(value)}).`);
+    throw new Error(
+      `Judge output invalid: ${where} is missing a finite numeric score (got ${JSON.stringify(value)}).`,
+    );
   }
   if (value < 1.0 || value > 5.0) {
     throw new Error(
@@ -624,7 +627,10 @@ function parseCriterionScores(
       throw new Error(`Judge output invalid: ${where}.criterionScores[${i}] must be an object.`);
     }
     const entry = cs as { criterionId?: unknown; score?: unknown; rationale?: unknown };
-    const criterionId = requireNonEmptyString(entry.criterionId, `${where}.criterionScores[${i}].criterionId`);
+    const criterionId = requireNonEmptyString(
+      entry.criterionId,
+      `${where}.criterionScores[${i}].criterionId`,
+    );
     return {
       criterionId,
       score: requireScore(entry.score, `${where}.criterionScores[${i}]`),
@@ -658,7 +664,12 @@ function parseCriterionScores(
       );
     }
     seen.add(cs.criterionId);
-    resolved.push({ criterionId: criterion.id, label: criterion.name, score: cs.score, rationale: cs.rationale });
+    resolved.push({
+      criterionId: criterion.id,
+      label: criterion.name,
+      score: cs.score,
+      rationale: cs.rationale,
+    });
   }
   for (const criterion of profileCriteria) {
     if (!seen.has(criterion.id)) {
@@ -732,7 +743,10 @@ function parseEvaluations(
       rationale: requireNonEmptyString(entry.rationale, `${where}.rationale`),
       strengths,
       deductions: parseDeductions(entry.deductions, where),
-      missedRequirements: optionalStringArray(entry.missedRequirements, `${where}.missedRequirements`),
+      missedRequirements: optionalStringArray(
+        entry.missedRequirements,
+        `${where}.missedRequirements`,
+      ),
       criterionScores: parseCriterionScores(entry.criterionScores, where, profileCriteria),
     });
   }
@@ -761,7 +775,9 @@ function parseComparisons(
     }
     const entry = cmp as { labels?: unknown; reason?: unknown };
     if (!Array.isArray(entry.labels) || entry.labels.length !== 2) {
-      throw new Error(`Judge output invalid: ${where}.labels must be an array of exactly two blind labels.`);
+      throw new Error(
+        `Judge output invalid: ${where}.labels must be an array of exactly two blind labels.`,
+      );
     }
     const pair = entry.labels.map((l, j) => {
       const raw = requireNonEmptyString(l, `${where}.labels[${j}]`);
@@ -774,7 +790,9 @@ function parseComparisons(
       return letter;
     }) as [string, string];
     if (pair[0] === pair[1]) {
-      throw new Error(`Judge output invalid: ${where} must compare two distinct candidates (got ${pair[0]} twice).`);
+      throw new Error(
+        `Judge output invalid: ${where} must compare two distinct candidates (got ${pair[0]} twice).`,
+      );
     }
     return {
       candidateIds: [labelToId[pair[0]], labelToId[pair[1]]],

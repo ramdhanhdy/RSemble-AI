@@ -8,11 +8,29 @@ const window = new Window({ url: "http://localhost/" });
 const target = globalThis as Record<string, unknown>;
 const source = window as unknown as Record<string, unknown>;
 const keys = [
-  "window", "document", "navigator", "HTMLElement", "HTMLInputElement",
-  "HTMLTextAreaElement", "HTMLSelectElement", "HTMLButtonElement", "Element",
-  "Node", "Event", "CustomEvent", "MutationObserver", "getComputedStyle",
-  "requestAnimationFrame", "cancelAnimationFrame", "DocumentFragment",
-  "SVGElement", "DOMParser", "XMLSerializer", "CSS", "FileReader", "Blob",
+  "window",
+  "document",
+  "navigator",
+  "HTMLElement",
+  "HTMLInputElement",
+  "HTMLTextAreaElement",
+  "HTMLSelectElement",
+  "HTMLButtonElement",
+  "Element",
+  "Node",
+  "Event",
+  "CustomEvent",
+  "MutationObserver",
+  "getComputedStyle",
+  "requestAnimationFrame",
+  "cancelAnimationFrame",
+  "DocumentFragment",
+  "SVGElement",
+  "DOMParser",
+  "XMLSerializer",
+  "CSS",
+  "FileReader",
+  "Blob",
 ];
 for (const key of keys) {
   if (source[key] === undefined) continue;

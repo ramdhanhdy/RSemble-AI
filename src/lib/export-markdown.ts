@@ -41,17 +41,28 @@ export function buildExportMarkdown(s: StudioState): string | null {
   lines.push(`- Candidates: requested \`${frozenPolicy.candidates}\``);
   for (const slot of frozenSlots.filter((slot) => slot.enabled)) {
     const effective = resolveReasoningEffort(slot.providerId, slot.slug, frozenPolicy.candidates);
-    lines.push(`  - ${mdSafe(slot.model)}: effective \`${effective.ok ? effective.effective : "provider-default"}\` (${effective.ok ? effective.capabilities.source : "unknown"})`);
+    lines.push(
+      `  - ${mdSafe(slot.model)}: effective \`${effective.ok ? effective.effective : "provider-default"}\` (${effective.ok ? effective.capabilities.source : "unknown"})`,
+    );
   }
-  const judgeEffective = resolveReasoningEffort(frozenCritic.providerId, frozenCritic.model, frozenPolicy.judge);
-  lines.push(`- Judge: requested \`${frozenPolicy.judge}\`, effective \`${judgeEffective.ok ? judgeEffective.effective : "provider-default"}\` (${judgeEffective.ok ? judgeEffective.capabilities.source : "unknown"})`, ``);
+  const judgeEffective = resolveReasoningEffort(
+    frozenCritic.providerId,
+    frozenCritic.model,
+    frozenPolicy.judge,
+  );
+  lines.push(
+    `- Judge: requested \`${frozenPolicy.judge}\`, effective \`${judgeEffective.ok ? judgeEffective.effective : "provider-default"}\` (${judgeEffective.ok ? judgeEffective.capabilities.source : "unknown"})`,
+    ``,
+  );
 
   // Attachment metadata (spec §9, plan 7.7.3) — names/kinds/sizes only, the
   // record never contains the bytes or extracted text.
   if (exportAttachments.length > 0) {
     lines.push(`## Attachments`, ``);
     for (const a of exportAttachments) {
-      lines.push(`- ${a.name} — ${a.kind}, ${formatBytes(a.bytes)}${a.truncated ? " (truncated)" : ""}`);
+      lines.push(
+        `- ${a.name} — ${a.kind}, ${formatBytes(a.bytes)}${a.truncated ? " (truncated)" : ""}`,
+      );
     }
     lines.push(``);
   }
@@ -79,7 +90,9 @@ export function buildExportMarkdown(s: StudioState): string | null {
     for (const m of report.labelMap) {
       const model = modelFor(m.candidateId);
       const provider = providerFor(m.candidateId);
-      lines.push(`- Candidate ${m.label}: ${mdSafe(model)}${provider ? ` (${mdSafe(provider)})` : ""}`);
+      lines.push(
+        `- Candidate ${m.label}: ${mdSafe(model)}${provider ? ` (${mdSafe(provider)})` : ""}`,
+      );
     }
     lines.push(``);
 
@@ -91,7 +104,10 @@ export function buildExportMarkdown(s: StudioState): string | null {
     for (const c of ranked) {
       const ev = report.evaluationsById[c.id];
       if (!ev) continue;
-      lines.push(`### ${mdSafe(c.model)} (Candidate ${ev.blindLabel}) — ${ev.overallScore.toFixed(1)}/5`, ``);
+      lines.push(
+        `### ${mdSafe(c.model)} (Candidate ${ev.blindLabel}) — ${ev.overallScore.toFixed(1)}/5`,
+        ``,
+      );
       lines.push(`Position: ${mdSafe(ev.position)}`, ``);
       lines.push(`Why this score: ${mdSafe(ev.rationale)}`, ``);
       if (ev.strengths.length > 0) {
@@ -100,17 +116,25 @@ export function buildExportMarkdown(s: StudioState): string | null {
       if (ev.deductions.length > 0) {
         lines.push(
           `Deductions:`,
-          ...ev.deductions.map((d) => `- ${d.severity === "major" ? "Major" : "Minor"}: ${mdSafe(d.reason)}`),
+          ...ev.deductions.map(
+            (d) => `- ${d.severity === "major" ? "Major" : "Minor"}: ${mdSafe(d.reason)}`,
+          ),
           ``,
         );
       }
       if (ev.missedRequirements.length > 0) {
-        lines.push(`Missed requirements:`, ...ev.missedRequirements.map((t) => `- ${mdSafe(t)}`), ``);
+        lines.push(
+          `Missed requirements:`,
+          ...ev.missedRequirements.map((t) => `- ${mdSafe(t)}`),
+          ``,
+        );
       }
       if (ev.criterionScores.length > 0) {
         lines.push(
           `Criterion scores:`,
-          ...ev.criterionScores.map((cs) => `- ${mdSafe(cs.label)}: ${cs.score.toFixed(1)}/5 — ${mdSafe(cs.rationale)}`),
+          ...ev.criterionScores.map(
+            (cs) => `- ${mdSafe(cs.label)}: ${cs.score.toFixed(1)}/5 — ${mdSafe(cs.rationale)}`,
+          ),
           ``,
         );
       }
@@ -121,7 +145,9 @@ export function buildExportMarkdown(s: StudioState): string | null {
       for (const cmp of report.comparisons) {
         const a = modelFor(cmp.candidateIds[0]);
         const b = modelFor(cmp.candidateIds[1]);
-        lines.push(`- Candidate ${cmp.blindLabels[0]} (${mdSafe(a)}) vs Candidate ${cmp.blindLabels[1]} (${mdSafe(b)}): ${mdSafe(cmp.reason)}`);
+        lines.push(
+          `- Candidate ${cmp.blindLabels[0]} (${mdSafe(a)}) vs Candidate ${cmp.blindLabels[1]} (${mdSafe(b)}): ${mdSafe(cmp.reason)}`,
+        );
       }
       lines.push(``);
     }

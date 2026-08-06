@@ -40,7 +40,9 @@ export function DataArchiveActions(): ReactElement | null {
   const [failure, setFailure] = useState<string | null>(null);
 
   const storageBlocked =
-    storageState === "blocked" || storageState === "versionchange" || storageState === "unavailable";
+    storageState === "blocked" ||
+    storageState === "versionchange" ||
+    storageState === "unavailable";
   const controlsDisabled = busy || db === null || storageBlocked;
 
   const resetFeedback = () => {
@@ -163,9 +165,7 @@ export function DataArchiveActions(): ReactElement | null {
           {errors.slice(0, MAX_LISTED_ERRORS).map((message, i) => (
             <p key={i}>{message}</p>
           ))}
-          {errors.length > MAX_LISTED_ERRORS && (
-            <p>and {errors.length - MAX_LISTED_ERRORS} more</p>
-          )}
+          {errors.length > MAX_LISTED_ERRORS && <p>and {errors.length - MAX_LISTED_ERRORS} more</p>}
         </div>
       )}
 

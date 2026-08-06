@@ -116,9 +116,7 @@ export function RecordRow(props: RecordRowProps) {
         <td className="px-3 py-2 text-sm text-text-muted tabular-nums">
           {formatRelativeTime(rest.timestamp)}
         </td>
-        <td className="px-3 py-2 text-sm">
-          {children}
-        </td>
+        <td className="px-3 py-2 text-sm">{children}</td>
       </>
     );
   }
@@ -130,9 +128,7 @@ export function RecordRow(props: RecordRowProps) {
   const className =
     "flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-sm transition-colors duration-150 hover:border-edge-bright";
 
-  const inner = (
-    <Inner {...rest} />
-  );
+  const inner = <Inner {...rest} />;
 
   return (
     <div data-record-row="" className="flex items-center gap-2 text-sm">

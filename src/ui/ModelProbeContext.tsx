@@ -10,14 +10,7 @@
 // Probe state is ephemeral session state — never persisted or exported.
 // =============================================================================
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { getProvider } from "../lib/providers/registry";
 import { probeModelRoute, type ModelProbeState } from "../lib/providers/model-probe";
 import type { ProviderId } from "../lib/providers/types";
@@ -94,7 +87,9 @@ export function ModelProbeProvider({ children }: { children: ReactNode }) {
         // Recurse to keep the pool full. Do not stop after first failure.
         await runNext();
       };
-      const workers = Array.from({ length: Math.min(concurrency, entries.length) }, () => runNext());
+      const workers = Array.from({ length: Math.min(concurrency, entries.length) }, () =>
+        runNext(),
+      );
       await Promise.all(workers);
     },
     [],

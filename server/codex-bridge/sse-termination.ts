@@ -64,11 +64,14 @@ export function inspectOpenAiSseChunk(
     // Try to parse as an OpenAI chat completion chunk.
     try {
       const chunk = JSON.parse(payload) as {
-        choices?: { delta?: { content?: string; reasoning_content?: string; reasoning?: string } }[];
+        choices?: {
+          delta?: { content?: string; reasoning_content?: string; reasoning?: string };
+        }[];
       };
       const delta = chunk.choices?.[0]?.delta;
-      const hasOutput = [delta?.content, delta?.reasoning_content, delta?.reasoning]
-        .some((value) => typeof value === "string" && value.length > 0);
+      const hasOutput = [delta?.content, delta?.reasoning_content, delta?.reasoning].some(
+        (value) => typeof value === "string" && value.length > 0,
+      );
       if (hasOutput) {
         sawUsableContent = true;
       }
@@ -96,10 +99,7 @@ export function finalizeOpenAiSseState(state: SseTerminationState): SseTerminati
  *   throwing and the client did not disconnect.
  * @returns True if exactly one sentinel should be appended.
  */
-export function shouldAppendDone(
-  state: SseTerminationState,
-  completedNormally: boolean,
-): boolean {
+export function shouldAppendDone(state: SseTerminationState, completedNormally: boolean): boolean {
   // Rule 1 & 5: never duplicate.
   if (state.sawDone) return false;
   // Rule 4: abnormal termination — do not synthesize.

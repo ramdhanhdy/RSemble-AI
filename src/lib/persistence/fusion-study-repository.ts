@@ -67,7 +67,10 @@ export interface FusionStudyRepository {
 
   // Observations — immutable, terminal-state-only; attaching appends the
   // observation id to the parent trial in the same transaction.
-  addObservation(observation: EvaluationObservation, expectedTrialRevision: number): Promise<number>;
+  addObservation(
+    observation: EvaluationObservation,
+    expectedTrialRevision: number,
+  ): Promise<number>;
   getObservation(id: string): Promise<EvaluationObservation | null>;
   listObservations(trialId: string): Promise<EvaluationObservation[]>;
 
@@ -325,7 +328,10 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
   async function createTrial(trial: FusionTrial): Promise<void> {
     if (!isFusionTrial(trial)) throw new StorageError("validation", "Invalid fusion trial");
     if (trial.status !== "in_progress") {
-      throw new StorageError("validation", "Trials are created in_progress and sealed via sealTrial");
+      throw new StorageError(
+        "validation",
+        "Trials are created in_progress and sealed via sealTrial",
+      );
     }
     db.assertWritable();
     try {
@@ -387,7 +393,10 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
         const current = isFusionTrial(existing.trial) ? existing.trial : null;
         if (!current) throw new StorageError("validation", "Invalid trial data");
         if (current.status === "sealed") {
-          throw new StorageError("conflict", `Fusion trial ${trial.id} is sealed — seals are final.`);
+          throw new StorageError(
+            "conflict",
+            `Fusion trial ${trial.id} is sealed — seals are final.`,
+          );
         }
         if (trial.status === "sealed") {
           throw new StorageError(
@@ -412,7 +421,11 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
     }
   }
 
-  async function sealTrial(trialId: string, expectedRevision: number, sealedAt: number): Promise<number> {
+  async function sealTrial(
+    trialId: string,
+    expectedRevision: number,
+    sealedAt: number,
+  ): Promise<number> {
     db.assertWritable();
     const newRevision = expectedRevision + 1;
     try {
@@ -428,14 +441,18 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
         const trial = isFusionTrial(existing.trial) ? existing.trial : null;
         if (!trial) throw new StorageError("validation", "Invalid trial data");
         if (trial.status === "sealed") {
-          throw new StorageError("conflict", `Fusion trial ${trialId} is already sealed — seals are final.`);
+          throw new StorageError(
+            "conflict",
+            `Fusion trial ${trialId} is already sealed — seals are final.`,
+          );
         }
         // Fuse trials reference a stored recipe (provenance must resolve);
         // the effective synthesizer is the trial's, else the recipe's.
         let recipeSynthesizer: CriticRef | null = null;
         if (trial.recipe !== null) {
           const recipeRow = await db.fusionRecipes.get([trial.recipe.id, trial.recipe.version]);
-          const recipe = recipeRow && isFusionRecipeVersion(recipeRow.recipe) ? recipeRow.recipe : null;
+          const recipe =
+            recipeRow && isFusionRecipeVersion(recipeRow.recipe) ? recipeRow.recipe : null;
           if (!recipe) {
             throw new StorageError(
               "validation",
@@ -480,7 +497,10 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
       await db.transaction("rw", db.fusionAttempts, db.fusionTrials, async () => {
         const existing = await db.fusionAttempts.get(attempt.id);
         if (existing) {
-          throw new StorageError("conflict", `Fusion attempt ${attempt.id} already exists — attempts are immutable.`);
+          throw new StorageError(
+            "conflict",
+            `Fusion attempt ${attempt.id} already exists — attempts are immutable.`,
+          );
         }
         const [fromRow, toRow] = await Promise.all([
           db.fusionTrials.get(attempt.fromTrialId),
@@ -608,7 +628,10 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
       await db.transaction("rw", db.fusionPlaybooks, async () => {
         const existing = await db.fusionPlaybooks.get(playbook.id);
         if (existing) {
-          throw new StorageError("conflict", `Playbook ${playbook.id} already exists — playbooks are immutable.`);
+          throw new StorageError(
+            "conflict",
+            `Playbook ${playbook.id} already exists — playbooks are immutable.`,
+          );
         }
         await db.fusionPlaybooks.put({
           id: playbook.id,
@@ -682,10 +705,14 @@ export class InMemoryFusionStudyRepository implements FusionStudyRepository {
   }
 
   async createRecipe(recipe: FusionRecipeVersion): Promise<void> {
-    if (!isFusionRecipeVersion(recipe)) throw new StorageError("validation", "Invalid fusion recipe");
+    if (!isFusionRecipeVersion(recipe))
+      throw new StorageError("validation", "Invalid fusion recipe");
     const key = InMemoryFusionStudyRepository.versionedKey(recipe.id, recipe.version);
     if (this.recipes.has(key)) {
-      throw new StorageError("conflict", `Recipe ${recipe.id} v${recipe.version} already exists — recipes are immutable.`);
+      throw new StorageError(
+        "conflict",
+        `Recipe ${recipe.id} v${recipe.version} already exists — recipes are immutable.`,
+      );
     }
     this.recipes.set(key, recipe);
   }
@@ -772,7 +799,10 @@ export class InMemoryFusionStudyRepository implements FusionStudyRepository {
   async createTrial(trial: FusionTrial): Promise<void> {
     if (!isFusionTrial(trial)) throw new StorageError("validation", "Invalid fusion trial");
     if (trial.status !== "in_progress") {
-      throw new StorageError("validation", "Trials are created in_progress and sealed via sealTrial");
+      throw new StorageError(
+        "validation",
+        "Trials are created in_progress and sealed via sealTrial",
+      );
     }
     if (this.trials.has(trial.id)) {
       throw new StorageError("conflict", `Fusion trial ${trial.id} already exists`);
@@ -824,7 +854,10 @@ export class InMemoryFusionStudyRepository implements FusionStudyRepository {
       );
     }
     if (existing.status === "sealed") {
-      throw new StorageError("conflict", `Fusion trial ${trialId} is already sealed — seals are final.`);
+      throw new StorageError(
+        "conflict",
+        `Fusion trial ${trialId} is already sealed — seals are final.`,
+      );
     }
     // Fuse trials reference a stored recipe (provenance must resolve); the
     // effective synthesizer is the trial's, else the recipe's.
@@ -859,7 +892,10 @@ export class InMemoryFusionStudyRepository implements FusionStudyRepository {
   async recordTrialAttempt(attempt: FusionAttempt): Promise<void> {
     if (!isFusionAttempt(attempt)) throw new StorageError("validation", "Invalid fusion attempt");
     if (this.attempts.has(attempt.id)) {
-      throw new StorageError("conflict", `Fusion attempt ${attempt.id} already exists — attempts are immutable.`);
+      throw new StorageError(
+        "conflict",
+        `Fusion attempt ${attempt.id} already exists — attempts are immutable.`,
+      );
     }
     const problem = validateTrialAttemptLink(
       attempt,
@@ -929,7 +965,10 @@ export class InMemoryFusionStudyRepository implements FusionStudyRepository {
       throw new StorageError("validation", "Invalid fusion playbook");
     }
     if (this.playbooks.has(playbook.id)) {
-      throw new StorageError("conflict", `Playbook ${playbook.id} already exists — playbooks are immutable.`);
+      throw new StorageError(
+        "conflict",
+        `Playbook ${playbook.id} already exists — playbooks are immutable.`,
+      );
     }
     this.playbooks.set(playbook.id, playbook);
   }

@@ -155,9 +155,9 @@ export function ExperimentAddModelDialog({
             {plan.fullRosterFallbackCount > 0 ? (
               <p className="text-text-secondary">
                 {plan.fullRosterFallbackCount}{" "}
-                {plan.fullRosterFallbackCount === 1 ? "task lacks" : "tasks lack"} reusable
-                evidence and will run the full roster (
-                {plural(plan.fullRosterCandidateCount, "candidate")} each).
+                {plan.fullRosterFallbackCount === 1 ? "task lacks" : "tasks lack"} reusable evidence
+                and will run the full roster ({plural(plan.fullRosterCandidateCount, "candidate")}{" "}
+                each).
               </p>
             ) : null}
           </div>
@@ -167,7 +167,9 @@ export function ExperimentAddModelDialog({
         {/* Single live message region (controller/suite-sync failures). */}
         <div role="alert" aria-live="assertive">
           {message ? (
-            <p className={`text-sm ${message.tone === "error" ? "text-warning" : "text-text-secondary"}`}>
+            <p
+              className={`text-sm ${message.tone === "error" ? "text-warning" : "text-text-secondary"}`}
+            >
               {message.text}
             </p>
           ) : null}

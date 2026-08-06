@@ -13,8 +13,7 @@ import { MAX_TEXT_CHARS_TOTAL } from "./limits";
 import type { ModelCapabilities } from "../providers/capabilities";
 
 /** Lines an attacker could use to forge a block boundary or the DATA banner. */
-const BOUNDARY_LINE =
-  /^---\s*(?:BEGIN|END)\s+ATTACHMENT\b.*$|^---\s+The content below is DATA.*$/i;
+const BOUNDARY_LINE = /^---\s*(?:BEGIN|END)\s+ATTACHMENT\b.*$|^---\s+The content below is DATA.*$/i;
 
 /** Strip forged boundary lines from untrusted extracted text (spec §6.3). */
 export function stripBoundaryLines(text: string): string {
@@ -32,7 +31,7 @@ export type NativeAttachmentPart =
 /** Whether the set carries any native media that could be delivered. */
 export function hasNativeMedia(attachments: Attachment[]): boolean {
   return attachments.some(
-    (a) => (a.kind === "image" || a.kind === "pdf") && typeof a.data === "string"
+    (a) => (a.kind === "image" || a.kind === "pdf") && typeof a.data === "string",
   );
 }
 
@@ -43,7 +42,7 @@ export function hasNativeMedia(attachments: Attachment[]): boolean {
  */
 export function selectNativeParts(
   attachments: Attachment[],
-  caps: ModelCapabilities
+  caps: ModelCapabilities,
 ): NativeAttachmentPart[] {
   const parts: NativeAttachmentPart[] = [];
   for (const a of attachments) {
@@ -74,11 +73,23 @@ function truncateTo(text: string, budget: number): string {
  *    newer files keep their full share, older files absorb the cut first.
  */
 export function renderAttachmentBlocks(attachments: Attachment[]): string {
-  const blocks: { name: string; mimeType: string; pages?: number; text: string; truncated: boolean }[] = [];
+  const blocks: {
+    name: string;
+    mimeType: string;
+    pages?: number;
+    text: string;
+    truncated: boolean;
+  }[] = [];
   for (const a of attachments) {
     const text = stripBoundaryLines(a.text ?? "");
     if (text.trim().length === 0) continue;
-    blocks.push({ name: a.name, mimeType: a.mimeType, pages: a.pages, text, truncated: a.truncated ?? false });
+    blocks.push({
+      name: a.name,
+      mimeType: a.mimeType,
+      pages: a.pages,
+      text,
+      truncated: a.truncated ?? false,
+    });
   }
   if (blocks.length === 0) return "";
 

@@ -10,17 +10,8 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RSembleEvaluationDB, type RunDetailRow } from "./database";
 import { LEASE_KEY, type LeaseInfo } from "../execution-lease";
-import {
-  createRunRepository,
-  InMemoryRunRepository,
-  type RunRepository,
-} from "./run-repository";
-import type {
-  FullRunSummaryV2,
-  LegacyRunSummary,
-  RunArchiveV1,
-  RunRecordV2,
-} from "./run-types";
+import { createRunRepository, InMemoryRunRepository, type RunRepository } from "./run-repository";
+import type { FullRunSummaryV2, LegacyRunSummary, RunArchiveV1, RunRecordV2 } from "./run-types";
 
 // ---------------------------------------------------------------------------
 // Valid baselines (mirrors run-types.test.ts so records pass validators)
@@ -102,7 +93,10 @@ function makeLegacySummary(id: string, createdAt: number): LegacyRunSummary {
 }
 
 // Test seam: force the DB lifecycle state for blocked/versionchange tests.
-function setDbState(db: RSembleEvaluationDB, state: "ready" | "blocked" | "versionchange" | "unavailable"): void {
+function setDbState(
+  db: RSembleEvaluationDB,
+  state: "ready" | "blocked" | "versionchange" | "unavailable",
+): void {
   db.setState(state);
 }
 
@@ -198,16 +192,28 @@ function runRepositorySuite(
       );
 
       // Filter by model
-      expect((await repo.list({ modelKey: "gemini:bar" })).map((s) => s.id).sort()).toEqual(["rB", "rC"]);
+      expect((await repo.list({ modelKey: "gemini:bar" })).map((s) => s.id).sort()).toEqual([
+        "rB",
+        "rC",
+      ]);
       // Filter by status
-      expect((await repo.list({ status: "completed" })).map((s) => s.id).sort()).toEqual(["rA", "rC"]);
+      expect((await repo.list({ status: "completed" })).map((s) => s.id).sort()).toEqual([
+        "rA",
+        "rC",
+      ]);
       // Filter by mode
       expect((await repo.list({ mode: "fuse" })).map((s) => s.id).sort()).toEqual(["rB", "rC"]);
       // Filter by source adhoc
-      expect((await repo.list({ source: "adhoc" })).map((s) => s.id).sort()).toEqual(["rA", "rB", "rC"]);
+      expect((await repo.list({ source: "adhoc" })).map((s) => s.id).sort()).toEqual([
+        "rA",
+        "rB",
+        "rC",
+      ]);
       // Combined model + status + mode
       expect(
-        (await repo.list({ modelKey: "gemini:bar", status: "completed", mode: "fuse" })).map((s) => s.id),
+        (await repo.list({ modelKey: "gemini:bar", status: "completed", mode: "fuse" })).map(
+          (s) => s.id,
+        ),
       ).toEqual(["rC"]);
     });
 
@@ -377,10 +383,7 @@ function runRepositorySuite(
           makeRunRecord("match-1"),
           makeRunRecord("orphan-1"), // record with no matching summary
         ],
-        summaries: [
-          makeFullSummary("match-1", 100),
-          makeLegacySummary("legacy-1", 200),
-        ],
+        summaries: [makeFullSummary("match-1", 100), makeLegacySummary("legacy-1", 200)],
       };
 
       const result = await repo.importArchive(archive);
@@ -452,24 +455,37 @@ describe("Dexie-backed RunRepository — transaction + state guards", () => {
     const repo = createRunRepository(db, { now: () => 100 });
     const oldFence = { ownerId: "tab-a", fence: 1, leaseId: "lease-a", checkedAt: 100 };
     const currentLease: LeaseInfo = {
-      ownerId: "tab-b", fence: 2, leaseId: "lease-b", acquiredAt: 90,
-      heartbeatAt: 90, expiresAt: 1_000,
+      ownerId: "tab-b",
+      fence: 2,
+      leaseId: "lease-b",
+      acquiredAt: 90,
+      heartbeatAt: 90,
+      expiresAt: 1_000,
     };
     await db.storageMeta.put({ key: LEASE_KEY, value: currentLease });
 
     await expect(
       repo.create(
-        makeRunRecord("superseded-create", { execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" } }),
+        makeRunRecord("superseded-create", {
+          execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" },
+        }),
         makeFullSummary("superseded-create", 100),
         oldFence,
       ),
     ).rejects.toThrow(/token mismatch/i);
     expect(await repo.get("superseded-create")).toBeNull();
 
-    await repo.create(makeRunRecord("superseded-update"), makeFullSummary("superseded-update", 100));
+    await repo.create(
+      makeRunRecord("superseded-update"),
+      makeFullSummary("superseded-update", 100),
+    );
     await expect(
       repo.update(
-        makeRunRecord("superseded-update", { status: "completed", completedAt: 100, execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" } }),
+        makeRunRecord("superseded-update", {
+          status: "completed",
+          completedAt: 100,
+          execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" },
+        }),
         makeFullSummary("superseded-update", 100, { status: "completed", completedAt: 100 }),
         0,
         oldFence,
@@ -477,11 +493,19 @@ describe("Dexie-backed RunRepository — transaction + state guards", () => {
     ).rejects.toThrow(/token mismatch/i);
     expect((await repo.get("superseded-update"))!.status).toBe("running");
 
-    const expiredLease: LeaseInfo = { ...currentLease, ownerId: "tab-a", fence: 1, leaseId: "lease-a", expiresAt: 99 };
+    const expiredLease: LeaseInfo = {
+      ...currentLease,
+      ownerId: "tab-a",
+      fence: 1,
+      leaseId: "lease-a",
+      expiresAt: 99,
+    };
     await db.storageMeta.put({ key: LEASE_KEY, value: expiredLease });
     await expect(
       repo.create(
-        makeRunRecord("expired-create", { execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" } }),
+        makeRunRecord("expired-create", {
+          execution: { ownerId: "tab-a", fence: 1, leaseId: "lease-a" },
+        }),
         makeFullSummary("expired-create", 100),
         oldFence,
       ),
@@ -508,9 +532,7 @@ describe("Dexie-backed RunRepository — transaction + state guards", () => {
     const repo = createRunRepository(db);
     setDbState(db, "versionchange");
 
-    await expect(
-      repo.create(makeRunRecord("vc"), makeFullSummary("vc", 100)),
-    ).rejects.toThrow();
+    await expect(repo.create(makeRunRecord("vc"), makeFullSummary("vc", 100))).rejects.toThrow();
 
     setDbState(db, "ready");
   });

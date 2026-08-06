@@ -94,7 +94,9 @@ export function RunFilters({
             >
               <option value="">All models</option>
               {modelKeys.map((k) => (
-                <option key={k} value={k}>{k}</option>
+                <option key={k} value={k}>
+                  {k}
+                </option>
               ))}
             </select>
           </label>
@@ -136,7 +138,9 @@ export function RunFilters({
             <select
               data-filter="source"
               value={value.source}
-              onChange={(e) => update({ source: e.target.value as "adhoc" | "experiment" | "legacy" | "" })}
+              onChange={(e) =>
+                update({ source: e.target.value as "adhoc" | "experiment" | "legacy" | "" })
+              }
               className="min-h-[44px] rounded-md border border-edge bg-canvas px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
             >
               <option value="">All sources</option>

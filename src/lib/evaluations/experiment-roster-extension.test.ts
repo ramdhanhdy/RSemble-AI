@@ -25,7 +25,14 @@ import {
 // --- Fixtures ------------------------------------------------------------------
 
 const OLD_SLOTS: ModelSlot[] = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "m1", slug: "org/m1", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "m1",
+    slug: "org/m1",
+    enabled: true,
+  },
   { id: "s2", providerId: "gemini", provider: "Gemini", model: "m2", slug: "m2", enabled: true },
 ];
 
@@ -118,7 +125,11 @@ function makeSelectedRun(input: {
   };
 }
 
-function makeAttempt(id: string, runId: string | null, status: ExperimentTaskAttempt["status"]): ExperimentTaskAttempt {
+function makeAttempt(
+  id: string,
+  runId: string | null,
+  status: ExperimentTaskAttempt["status"],
+): ExperimentTaskAttempt {
   return {
     id,
     runId,
@@ -130,13 +141,15 @@ function makeAttempt(id: string, runId: string | null, status: ExperimentTaskAtt
   };
 }
 
-function makeExperiment(input: {
-  taskIds?: string[];
-  status?: ExperimentRecord["status"];
-  withRuns?: boolean;
-  selectedStatus?: ExperimentTaskAttempt["status"];
-  rosterExtensions?: ExperimentRosterExtension[];
-} = {}): ExperimentRecord {
+function makeExperiment(
+  input: {
+    taskIds?: string[];
+    status?: ExperimentRecord["status"];
+    withRuns?: boolean;
+    selectedStatus?: ExperimentTaskAttempt["status"];
+    rosterExtensions?: ExperimentRosterExtension[];
+  } = {},
+): ExperimentRecord {
   const status = input.status ?? "completed";
   const taskIds = input.taskIds ?? ["t1", "t2", "t3"];
   const tasks = taskIds.map((id, i) => makeTask(id, i));
@@ -209,7 +222,11 @@ const FULL = "full-roster";
 describe("planRosterExtension", () => {
   it("rejects a non-terminal experiment", () => {
     const exp = makeExperiment({ status: "running" });
-    const result = planRosterExtension({ experiment: exp, slot: NEW_SLOT, resolveRunRecord: () => null });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: NEW_SLOT,
+      resolveRunRecord: () => null,
+    });
     expect(result.ok).toBe(false);
   });
 
@@ -225,8 +242,17 @@ describe("planRosterExtension", () => {
 
   it("rejects a duplicate key in the current roster", () => {
     const exp = makeExperiment();
-    const dup = { ...NEW_SLOT, providerId: OLD_SLOTS[0].providerId, slug: OLD_SLOTS[0].slug, model: OLD_SLOTS[0].model };
-    const result = planRosterExtension({ experiment: exp, slot: dup, resolveRunRecord: () => null });
+    const dup = {
+      ...NEW_SLOT,
+      providerId: OLD_SLOTS[0].providerId,
+      slug: OLD_SLOTS[0].slug,
+      model: OLD_SLOTS[0].model,
+    };
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: dup,
+      resolveRunRecord: () => null,
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toMatch(/already/i);
   });
@@ -239,7 +265,11 @@ describe("planRosterExtension", () => {
       extendedAt: 1500,
     };
     const exp = makeExperiment({ rosterExtensions: [historyEntry] });
-    const result = planRosterExtension({ experiment: exp, slot: NEW_SLOT, resolveRunRecord: () => null });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: NEW_SLOT,
+      resolveRunRecord: () => null,
+    });
     expect(result.ok).toBe(false);
   });
 
@@ -248,14 +278,22 @@ describe("planRosterExtension", () => {
     // OLD_SLOTS has gemini:m2; same slug under deepseek must be allowed.
     const sameSlug = { ...NEW_SLOT, slug: "m2", model: "m2" };
     const runs = resolverForExperiment(exp);
-    const result = planRosterExtension({ experiment: exp, slot: sameSlug, resolveRunRecord: makeResolver(runs) });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: sameSlug,
+      resolveRunRecord: makeResolver(runs),
+    });
     expect(result.ok).toBe(true);
   });
 
   it("plans all tasks compound when every selected run has accepted outputs", () => {
     const exp = makeExperiment();
     const runs = resolverForExperiment(exp);
-    const result = planRosterExtension({ experiment: exp, slot: NEW_SLOT, resolveRunRecord: makeResolver(runs) });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: NEW_SLOT,
+      resolveRunRecord: makeResolver(runs),
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.plan.taskCount).toBe(3);
@@ -278,7 +316,11 @@ describe("planRosterExtension", () => {
     const exp = makeExperiment();
     exp.tasks[1] = { taskId: "t2", selectedAttemptId: null, attempts: [] };
     const runs = resolverForExperiment(exp);
-    const result = planRosterExtension({ experiment: exp, slot: NEW_SLOT, resolveRunRecord: makeResolver(runs) });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: NEW_SLOT,
+      resolveRunRecord: makeResolver(runs),
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const fallback = result.plan.taskPlans.find((p) => p.taskId === "t2")!;
@@ -292,7 +334,11 @@ describe("planRosterExtension", () => {
   it("uses full-roster fallback when the run record is unavailable", () => {
     const exp = makeExperiment();
     const empty = new Map<string, RunRecordV2>();
-    const result = planRosterExtension({ experiment: exp, slot: NEW_SLOT, resolveRunRecord: makeResolver(empty) });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: NEW_SLOT,
+      resolveRunRecord: makeResolver(empty),
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.plan.fullRosterFallbackCount).toBe(3);
@@ -319,7 +365,11 @@ describe("planRosterExtension", () => {
         { ...makeCandidate("gemini:m2", "cand-2"), acceptedAttemptId: null },
       ],
     });
-    const result = planRosterExtension({ experiment: exp, slot: NEW_SLOT, resolveRunRecord: makeResolver(runs) });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: NEW_SLOT,
+      resolveRunRecord: makeResolver(runs),
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const t1 = result.plan.taskPlans.find((p) => p.taskId === "t1")!;
@@ -341,7 +391,11 @@ describe("planRosterExtension", () => {
       fingerprint: exp.protocolFingerprint,
     });
     runs.set("run-t1", bad);
-    const result = planRosterExtension({ experiment: exp, slot: NEW_SLOT, resolveRunRecord: makeResolver(runs) });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: NEW_SLOT,
+      resolveRunRecord: makeResolver(runs),
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.plan.taskPlans.find((p) => p.taskId === "t1")!.mode).toBe(FULL);
@@ -351,7 +405,11 @@ describe("planRosterExtension", () => {
     const exp = makeExperiment();
     exp.tasks[2] = { taskId: "t3", selectedAttemptId: null, attempts: [] };
     const runs = resolverForExperiment(exp);
-    const result = planRosterExtension({ experiment: exp, slot: NEW_SLOT, resolveRunRecord: makeResolver(runs) });
+    const result = planRosterExtension({
+      experiment: exp,
+      slot: NEW_SLOT,
+      resolveRunRecord: makeResolver(runs),
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const plan = result.plan;
@@ -363,7 +421,8 @@ describe("planRosterExtension", () => {
     expect(plan.fullRosterCandidateCount).toBe(3);
     // Cost identity from the plan document.
     expect(plan.candidateCalls).toBe(
-      (plan.taskCount - plan.fullRosterFallbackCount) +
+      plan.taskCount -
+        plan.fullRosterFallbackCount +
         plan.fullRosterFallbackCount * plan.fullRosterCandidateCount,
     );
     expect(plan.judgeCalls).toBe(plan.taskCount);
@@ -457,7 +516,12 @@ describe("rotateExperimentRoster", () => {
     expect(a.ok).toBe(true);
     if (!a.ok) return;
     // Rotating a different model yields a different fingerprint.
-    const other: ModelSlot = { ...NEW_SLOT, id: "slot-other", slug: "deepseek-reasoner", model: "deepseek-reasoner" };
+    const other: ModelSlot = {
+      ...NEW_SLOT,
+      id: "slot-other",
+      slug: "deepseek-reasoner",
+      model: "deepseek-reasoner",
+    };
     const b = rotateExperimentRoster({ experiment: exp, slot: other, extendedAt: 2000 });
     expect(b.ok).toBe(true);
     if (!b.ok) return;
@@ -475,14 +539,22 @@ describe("rotateExperimentRoster", () => {
 
   it("rejects a disabled slot", () => {
     const exp = makeExperiment();
-    const result = rotateExperimentRoster({ experiment: exp, slot: { ...NEW_SLOT, enabled: false }, extendedAt: 2000 });
+    const result = rotateExperimentRoster({
+      experiment: exp,
+      slot: { ...NEW_SLOT, enabled: false },
+      extendedAt: 2000,
+    });
     expect(result.ok).toBe(false);
   });
 
   it("rejects an invalid extendedAt", () => {
     const exp = makeExperiment();
-    expect(rotateExperimentRoster({ experiment: exp, slot: NEW_SLOT, extendedAt: Number.NaN }).ok).toBe(false);
-    expect(rotateExperimentRoster({ experiment: exp, slot: NEW_SLOT, extendedAt: -1 }).ok).toBe(false);
+    expect(
+      rotateExperimentRoster({ experiment: exp, slot: NEW_SLOT, extendedAt: Number.NaN }).ok,
+    ).toBe(false);
+    expect(rotateExperimentRoster({ experiment: exp, slot: NEW_SLOT, extendedAt: -1 }).ok).toBe(
+      false,
+    );
   });
 
   it("does not mutate the experiment, slot, or run fixtures", () => {

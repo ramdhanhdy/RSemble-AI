@@ -66,7 +66,9 @@ export function getAuthStatus(): AuthStatus {
   }
 
   const hasApiKey = Boolean(data.OPENAI_API_KEY && data.OPENAI_API_KEY.trim().length > 0);
-  const hasAccessToken = Boolean(data.tokens?.access_token && data.tokens.access_token.trim().length > 0);
+  const hasAccessToken = Boolean(
+    data.tokens?.access_token && data.tokens.access_token.trim().length > 0,
+  );
 
   if (!hasApiKey && !hasAccessToken) {
     return {
@@ -78,7 +80,9 @@ export function getAuthStatus(): AuthStatus {
   return {
     ok: true,
     authMode: hasAccessToken ? "chatgpt-codex" : "api-key",
-    accountLabel: data.tokens?.account_id ? `Account ${data.tokens.account_id.slice(0, 8)}...` : "ChatGPT Subscription",
+    accountLabel: data.tokens?.account_id
+      ? `Account ${data.tokens.account_id.slice(0, 8)}...`
+      : "ChatGPT Subscription",
     plan: "ChatGPT Plan",
     lastRefresh: data.last_refresh || undefined,
   };

@@ -41,9 +41,7 @@ export function FailedCandidates({ candidates }: { candidates: Candidate[] }) {
                 <span className="text-text">{c.model}</span>
               </div>
               {c.errorMessage && (
-                <p className="mt-1 pl-4 text-sm leading-relaxed text-error/70">
-                  {c.errorMessage}
-                </p>
+                <p className="mt-1 pl-4 text-sm leading-relaxed text-error/70">{c.errorMessage}</p>
               )}
             </li>
           ))}

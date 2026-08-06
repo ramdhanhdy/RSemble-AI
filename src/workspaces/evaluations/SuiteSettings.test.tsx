@@ -7,8 +7,22 @@ import type { EvaluationSuite } from "../../lib/evaluations/evaluation-types";
 import type { ModelSlot } from "../../studio-data";
 
 const slots: ModelSlot[] = [
-  { id: "s1", providerId: "gemini", provider: "Gemini", model: "Gemini Flash", slug: "gemini-3.6-flash", enabled: true },
-  { id: "s2", providerId: "gemini", provider: "Gemini", model: "Gemini Pro", slug: "gemini-3.1-pro-preview", enabled: true },
+  {
+    id: "s1",
+    providerId: "gemini",
+    provider: "Gemini",
+    model: "Gemini Flash",
+    slug: "gemini-3.6-flash",
+    enabled: true,
+  },
+  {
+    id: "s2",
+    providerId: "gemini",
+    provider: "Gemini",
+    model: "Gemini Pro",
+    slug: "gemini-3.1-pro-preview",
+    enabled: true,
+  },
 ];
 
 const suite: EvaluationSuite = {

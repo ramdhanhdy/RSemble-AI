@@ -48,9 +48,7 @@ export function SuiteTaskEditor({
           placeholder="e.g. Pricing diagnosis"
           className="mt-1 min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
-        {!task.title.trim() && (
-          <p className="mt-1 text-xs text-error">Task title is required.</p>
-        )}
+        {!task.title.trim() && <p className="mt-1 text-xs text-error">Task title is required.</p>}
       </div>
 
       {/* Candidate-visible prompt */}
@@ -70,9 +68,7 @@ export function SuiteTaskEditor({
           placeholder="The task every candidate model receives. This is the only instruction candidates see."
           className="mt-1 min-h-[44px] w-full resize-y rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
-        {!task.prompt.trim() && (
-          <p className="mt-1 text-xs text-error">Task prompt is required.</p>
-        )}
+        {!task.prompt.trim() && <p className="mt-1 text-xs text-error">Task prompt is required.</p>}
       </div>
 
       {/* Candidate-visible system prompt */}
@@ -113,7 +109,8 @@ export function SuiteTaskEditor({
           htmlFor="task-judge-override"
           className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
         >
-          Judge instruction override <span className="normal-case tracking-normal">· evaluator-only</span>
+          Judge instruction override{" "}
+          <span className="normal-case tracking-normal">· evaluator-only</span>
         </label>
         <textarea
           id="task-judge-override"
@@ -150,9 +147,11 @@ function TaskEvaluationPicker({
   onChange: (sel: TaskEvaluationSelection) => void;
 }) {
   const mode =
-    selection.kind === "inherit" ? "inherit"
-    : selection.kind === "holistic" ? "holistic"
-    : "profile";
+    selection.kind === "inherit"
+      ? "inherit"
+      : selection.kind === "holistic"
+        ? "holistic"
+        : "profile";
 
   const pinnedRef = selection.kind === "profile" ? selection.profile : null;
 
@@ -190,7 +189,7 @@ function TaskEvaluationPicker({
             const first = profileRecords[0];
             const ref = first
               ? { id: first.id, version: first.latestVersion }
-              : pinnedRef ?? { id: "", version: 0 };
+              : (pinnedRef ?? { id: "", version: 0 });
             onChange({ kind: "profile", profile: ref });
           }}
           className={`min-h-[44px] rounded-sm px-2 py-1.5 text-left font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
@@ -203,9 +202,7 @@ function TaskEvaluationPicker({
         </button>
       </div>
 
-      {mode === "inherit" && (
-        <p className="text-xs text-text-muted">{inheritDescription}</p>
-      )}
+      {mode === "inherit" && <p className="text-xs text-text-muted">{inheritDescription}</p>}
 
       {mode === "holistic" && (
         <p className="text-xs text-text-muted">

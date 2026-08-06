@@ -9,12 +9,16 @@
 // RunRecordV2. Each apply* method mutates the record in place and returns it.
 // The recorder (Task 2.4) will wrap these mutations in repository CAS writes.
 // =============================================================================
+import type { JudgeReport, ConsensusBreakdown, ModelSlot } from "../../studio-data";
 import type {
-  JudgeReport,
-  ConsensusBreakdown,
-  ModelSlot,
-} from "../../studio-data";
-import type { ChatMessage, CostRecord, InputUsageEstimate, ReasoningPolicy, ReasoningSettingProvenance, RunReasoningProvenance, UsageBreakdown } from "../providers/types";
+  ChatMessage,
+  CostRecord,
+  InputUsageEstimate,
+  ReasoningPolicy,
+  ReasoningSettingProvenance,
+  RunReasoningProvenance,
+  UsageBreakdown,
+} from "../providers/types";
 import type {
   RunRecordV2,
   FullRunSummaryV2,
@@ -143,21 +147,38 @@ function buildReasoningProvenance(
   slots: ModelSlot[],
   judge: { providerId: string; model: string },
 ): RunReasoningProvenance {
-  const setting = (providerId: string, model: string, requested: ReasoningPolicy["candidates"]): ReasoningSettingProvenance => {
-    const resolution = resolveReasoningEffort(providerId as ModelSlot["providerId"], model, requested);
+  const setting = (
+    providerId: string,
+    model: string,
+    requested: ReasoningPolicy["candidates"],
+  ): ReasoningSettingProvenance => {
+    const resolution = resolveReasoningEffort(
+      providerId as ModelSlot["providerId"],
+      model,
+      requested,
+    );
     return resolution.ok
       ? { requested, effective: resolution.effective, source: resolution.capabilities.source }
       : { requested, effective: "provider-default", source: "unknown" };
   };
   const candidates: Record<string, ReasoningSettingProvenance> = {};
   for (const slot of slots) {
-    if (slot.enabled) candidates[modelKeyOfSlot(slot)] = setting(slot.providerId, slot.slug, policy.candidates);
+    if (slot.enabled)
+      candidates[modelKeyOfSlot(slot)] = setting(slot.providerId, slot.slug, policy.candidates);
   }
-  const judgeResolution = resolveReasoningEffort(judge.providerId as ModelSlot["providerId"], judge.model, policy.judge);
+  const judgeResolution = resolveReasoningEffort(
+    judge.providerId as ModelSlot["providerId"],
+    judge.model,
+    policy.judge,
+  );
   return {
     candidates,
     judge: judgeResolution.ok
-      ? { requested: policy.judge, effective: judgeResolution.effective, source: judgeResolution.capabilities.source }
+      ? {
+          requested: policy.judge,
+          effective: judgeResolution.effective,
+          source: judgeResolution.capabilities.source,
+        }
       : { requested: policy.judge, effective: "provider-default", source: "unknown" },
   };
 }
@@ -214,9 +235,18 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       // Recorded only when attachments exist, so attachment-free records keep
       // their pre-attachments shape byte-for-byte.
       ...(input.attachments && input.attachments.length > 0
-        ? { attachments: input.attachments.map((a) => ({ name: a.name, kind: a.kind, bytes: a.bytes })) }
+        ? {
+            attachments: input.attachments.map((a) => ({
+              name: a.name,
+              kind: a.kind,
+              bytes: a.bytes,
+            })),
+          }
         : {}),
-      evaluation: { profile: input.evaluation.profile, candidateMessages: input.evaluation.candidateMessages },
+      evaluation: {
+        profile: input.evaluation.profile,
+        candidateMessages: input.evaluation.candidateMessages,
+      },
       ...(input.reasoningPolicy && input.critic
         ? { reasoning: buildReasoningProvenance(input.reasoningPolicy, input.slots, input.critic) }
         : {}),
@@ -288,7 +318,9 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
                   tokensIn: sourceAttempt.tokensIn,
                   tokensOut: sourceAttempt.tokensOut,
                   ...(sourceAttempt.usage ? { usage: { ...sourceAttempt.usage } } : {}),
-                  ...(sourceAttempt.inputEstimate ? { inputEstimate: { ...sourceAttempt.inputEstimate } } : {}),
+                  ...(sourceAttempt.inputEstimate
+                    ? { inputEstimate: { ...sourceAttempt.inputEstimate } }
+                    : {}),
                   ...(sourceAttempt.cost ? { cost: { ...sourceAttempt.cost } } : {}),
                   error: null,
                   reusedFrom: {
@@ -327,14 +359,23 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       mode: "rank",
       source: input.source,
       task: { ...input.task },
-      evaluation: { profile: input.evaluation.profile, candidateMessages: input.evaluation.candidateMessages },
+      evaluation: {
+        profile: input.evaluation.profile,
+        candidateMessages: input.evaluation.candidateMessages,
+      },
       ...(input.reasoningPolicy && input.critic
         ? { reasoning: buildReasoningProvenance(input.reasoningPolicy, input.slots, input.critic) }
         : input.baseRun.reasoning
           ? { reasoning: input.baseRun.reasoning }
           : {}),
       candidates,
-      judge: { status: "idle", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+      judge: {
+        status: "idle",
+        acceptedAttemptId: null,
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
       fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
       winnerKeys: [],
     };
@@ -344,7 +385,10 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     return record.candidates.find((c) => c.candidateId === candidateId);
   }
 
-  function findCandidateAttempt(candidate: PersistedCandidate, attemptId: string): CandidateAttemptRecord | undefined {
+  function findCandidateAttempt(
+    candidate: PersistedCandidate,
+    attemptId: string,
+  ): CandidateAttemptRecord | undefined {
     return candidate.attempts.find((a) => a.attemptId === attemptId);
   }
 
@@ -595,7 +639,12 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     return record.candidates.filter((c) => {
       if (!c.acceptedAttemptId) return false;
       const att = c.attempts.find((a) => a.attemptId === c.acceptedAttemptId);
-      return att !== undefined && att.output !== null && att.output !== undefined && att.output.trim().length > 0;
+      return (
+        att !== undefined &&
+        att.output !== null &&
+        att.output !== undefined &&
+        att.output.trim().length > 0
+      );
     }).length;
   }
 
@@ -603,7 +652,12 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     return record.candidates.every((c) => {
       if (!c.acceptedAttemptId) return false;
       const att = c.attempts.find((a) => a.attemptId === c.acceptedAttemptId);
-      return att !== undefined && att.output !== null && att.output !== undefined && att.output.trim().length > 0;
+      return (
+        att !== undefined &&
+        att.output !== null &&
+        att.output !== undefined &&
+        att.output.trim().length > 0
+      );
     });
   }
 
@@ -622,9 +676,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     // regression outright, so once this record has reached a terminal status
     // through accepted evidence, in-flight stages keep the terminal value.
     const acceptedTerminal =
-      record.status === "completed" ||
-      record.status === "partial" ||
-      record.status === "failed";
+      record.status === "completed" || record.status === "partial" || record.status === "failed";
 
     // Check if any candidate attempts are still running (fanout not settled)
     const fanoutActive = record.candidates.some((c) =>
@@ -690,9 +742,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     }
     if (scores.length === 0) return [];
     const maxScore = Math.max(...scores.map((s) => s.score));
-    return scores
-      .filter((s) => Math.abs(s.score - maxScore) < 1e-9)
-      .map((s) => s.modelKey);
+    return scores.filter((s) => Math.abs(s.score - maxScore) < 1e-9).map((s) => s.modelKey);
   }
 
   // --- Summary derivation -----------------------------------------------------

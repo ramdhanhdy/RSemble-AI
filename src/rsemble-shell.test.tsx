@@ -43,12 +43,17 @@ function cleanup(h: Harness) {
 /** Render RSemble inside a MemoryRouter at the given initial route(s). */
 function renderAtRoute(initialEntries: string[]): Harness {
   // Stub fetch so provider-probe useEffects don't hang in happy-dom.
-  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve({ data: [] }),
-    text: () => Promise.resolve(""),
-  })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: [] }),
+        text: () => Promise.resolve(""),
+      }),
+    ),
+  );
   // Stub matchMedia for useMediaQuery used in rsemble.tsx.
   if (!window.matchMedia) {
     vi.stubGlobal("matchMedia", (q: string) => ({
@@ -187,10 +192,7 @@ describe("RSemble workspace shell", () => {
     const textarea = h.$("textarea") as HTMLTextAreaElement;
     expect(textarea).toBeTruthy();
     act(() => {
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
       setter?.call(textarea, "Test prompt for persistence");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -240,7 +242,7 @@ describe("RSemble workspace shell", () => {
     );
     const nav = h.$('nav[aria-label="Primary"]');
     expect(nav).toBeTruthy();
-    const links = [...nav?.querySelectorAll<HTMLAnchorElement>("a") ?? []];
+    const links = [...(nav?.querySelectorAll<HTMLAnchorElement>("a") ?? [])];
     expect(links.length).toBeGreaterThanOrEqual(3);
     for (const link of links) {
       expect(link.getAttribute("aria-disabled")).not.toBe("true");

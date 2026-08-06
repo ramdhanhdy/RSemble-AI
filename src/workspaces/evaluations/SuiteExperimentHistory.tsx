@@ -67,11 +67,15 @@ export function SuiteExperimentHistory({ repo, suiteId }: SuiteExperimentHistory
     <section aria-label="Experiments" className="flex min-w-0 flex-col gap-2">
       <h2 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Experiments</h2>
       {experiments === null ? (
-        <p role="status" className="text-sm text-text-muted">Loading experiments…</p>
+        <p role="status" className="text-sm text-text-muted">
+          Loading experiments…
+        </p>
       ) : error ? (
         <p className="text-sm text-text-secondary">{error}</p>
       ) : experiments.length === 0 ? (
-        <p className="text-sm text-text-muted">No experiments yet — run this suite to create one.</p>
+        <p className="text-sm text-text-muted">
+          No experiments yet — run this suite to create one.
+        </p>
       ) : (
         <>
           <ul className="flex min-w-0 flex-col gap-2" role="list">

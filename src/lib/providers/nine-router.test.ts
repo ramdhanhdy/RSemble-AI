@@ -29,9 +29,9 @@ describe("nineRouterProvider — bridge paths", () => {
   it("requests models through the bridge path /9router/v1/models, not port 20128", async () => {
     stubLocalStorage("");
     vi.stubEnv("VITE_9ROUTER_KEY", "");
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ id: "m1" }] }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ data: [{ id: "m1" }] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await nineRouterProvider.listModels!();
     const url = fetchMock.mock.calls[0][0] as string;
@@ -45,10 +45,15 @@ describe("nineRouterProvider — bridge paths", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }] }), { status: 200 }),
+        new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }] }), {
+          status: 200,
+        }),
       ),
     );
-    await nineRouterProvider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    await nineRouterProvider.chatCompletion({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+    });
     const url = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(url).toContain("/9router/v1/chat/completions");
     expect(url).not.toContain("20128");
@@ -62,13 +67,15 @@ describe("nineRouterProvider — bridge paths", () => {
     const err = await nineRouterProvider
       .chatCompletion({
         model: "moonshotai/kimi-k3",
-        messages: [{
-          role: "user",
-          content: [
-            { type: "text", text: "describe this" },
-            { type: "image", mimeType: "image/png", data: "AAA" },
-          ],
-        }],
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "describe this" },
+              { type: "image", mimeType: "image/png", data: "AAA" },
+            ],
+          },
+        ],
       })
       .catch((e: unknown) => e);
 
@@ -78,14 +85,13 @@ describe("nineRouterProvider — bridge paths", () => {
   });
 });
 
-
 describe("nineRouterProvider — optional key", () => {
   it("works with a blank key (no Authorization header)", async () => {
     stubLocalStorage("");
     vi.stubEnv("VITE_9ROUTER_KEY", "");
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const result = await nineRouterProvider.testConnection!("");
     expect(result).toEqual({ ok: true });
@@ -100,10 +106,15 @@ describe("nineRouterProvider — optional key", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+        new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+        }),
       ),
     );
-    await nineRouterProvider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    await nineRouterProvider.chatCompletion({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+    });
     const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer from-env");
@@ -115,10 +126,15 @@ describe("nineRouterProvider — optional key", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+        new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+        }),
       ),
     );
-    await nineRouterProvider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    await nineRouterProvider.chatCompletion({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+    });
     const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer from-storage");
@@ -156,14 +172,21 @@ describe("nineRouterProvider — catalog", () => {
     stubLocalStorage("key");
     vi.stubEnv("VITE_9ROUTER_KEY", "key");
     const catalog = [
-      { id: "ag/gemini-3.1-pro-low", name: "Gemini 3.1 Pro Low", owned_by: "9router", kind: "chat" },
+      {
+        id: "ag/gemini-3.1-pro-low",
+        name: "Gemini 3.1 Pro Low",
+        owned_by: "9router",
+        kind: "chat",
+      },
       { id: "combo:fast+cheap", name: "Fast+Cheap Combo", owned_by: "9router", kind: "chat" },
     ];
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ object: "list", data: catalog }), { status: 200 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ object: "list", data: catalog }), { status: 200 }),
+        ),
     );
 
     const models = await nineRouterProvider.listModels!();
@@ -190,7 +213,8 @@ describe("nineRouterProvider — catalog", () => {
       data: "AAA",
     };
     expect(checkAttachmentEligibility(slots, [image])).toEqual({
-      blocked: "Attach-incompatible: only 0 of 2 selected models can read images. Swap a model or remove the image.",
+      blocked:
+        "Attach-incompatible: only 0 of 2 selected models can read images. Swap a model or remove the image.",
     });
   });
 
@@ -224,11 +248,7 @@ describe("nineRouterProvider — catalog", () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            data: [
-              { id: "zebra" },
-              { id: "Apple" },
-              { id: "banana" },
-            ],
+            data: [{ id: "zebra" }, { id: "Apple" }, { id: "banana" }],
           }),
           { status: 200 },
         ),
@@ -245,9 +265,11 @@ describe("nineRouterProvider — error mapping", () => {
     vi.stubEnv("VITE_9ROUTER_KEY", "bad-key");
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: { message: "invalid api key" } }), { status: 401 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: { message: "invalid api key" } }), { status: 401 }),
+        ),
     );
     const err = await nineRouterProvider
       .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
@@ -264,7 +286,9 @@ describe("nineRouterProvider — error mapping", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: { message: "all routes unavailable" } }), { status: 503 }),
+        new Response(JSON.stringify({ error: { message: "all routes unavailable" } }), {
+          status: 503,
+        }),
       ),
     );
     const err = await nineRouterProvider
@@ -281,7 +305,9 @@ describe("nineRouterProvider — abort propagation", () => {
     stubLocalStorage("key");
     vi.stubEnv("VITE_9ROUTER_KEY", "key");
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const ctrl = new AbortController();

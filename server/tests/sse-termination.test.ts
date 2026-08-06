@@ -97,7 +97,9 @@ describe("inspectOpenAiSseChunk — reasoning-only protocol activity", () => {
     let state = initialSseTerminationState();
     state = inspectOpenAiSseChunk(
       state,
-      encode(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "thinking" } }] })}\n\n`),
+      encode(
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "thinking" } }] })}\n\n`,
+      ),
     );
     expect(shouldAppendDone(state, true)).toBe(true);
   });

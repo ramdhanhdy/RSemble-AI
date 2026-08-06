@@ -11,15 +11,8 @@ import { InMemoryFusionStudyRepository } from "../persistence/fusion-study-repos
 import type { ModelSlot } from "../../studio-data";
 import type { CriticRef } from "../providers/types";
 import type { EvaluationSuite, EvaluationTask } from "./evaluation-types";
-import type {
-  FusionPlaybook,
-  FusionStudy,
-  PoolManifestVersion,
-} from "./fusion-study-types";
-import {
-  FUSION_RECIPE_ANALYSIS_FED_V1,
-  FUSION_RECIPE_ANALYSIS_SCORES_V1,
-} from "./fusion-recipes";
+import type { FusionPlaybook, FusionStudy, PoolManifestVersion } from "./fusion-study-types";
+import { FUSION_RECIPE_ANALYSIS_FED_V1, FUSION_RECIPE_ANALYSIS_SCORES_V1 } from "./fusion-recipes";
 import { createFusionStudyController, type FusionPolicyExecutor } from "./fusion-study-controller";
 import { runConfirmationStudy } from "./fusion-confirmation";
 import type { StageDriverDeps } from "./fusion-study-stages";
@@ -28,7 +21,14 @@ const judge1: CriticRef = { providerId: "openrouter", model: "acme/judge-1" };
 const judge2: CriticRef = { providerId: "gemini", model: "acme/judge-2" };
 
 function slot(n: number, slug: string): ModelSlot {
-  return { id: `s${n}`, providerId: "openrouter", provider: "Test", model: slug, slug, enabled: true };
+  return {
+    id: `s${n}`,
+    providerId: "openrouter",
+    provider: "Test",
+    model: slug,
+    slug,
+    enabled: true,
+  };
 }
 
 const POOL_SLOTS = [
@@ -166,7 +166,10 @@ function sourcePlaybook(): FusionPlaybook {
 /** Mock executor; holdout scores assigned per artifact key. */
 function mockExecutor(holdoutScores: Record<string, number>): FusionPolicyExecutor {
   const report = (outputs: Array<{ candidateId: string }>) => ({
-    labelMap: outputs.map((o, i) => ({ label: String.fromCharCode(65 + i), candidateId: o.candidateId })),
+    labelMap: outputs.map((o, i) => ({
+      label: String.fromCharCode(65 + i),
+      candidateId: o.candidateId,
+    })),
     evaluationsById: Object.fromEntries(
       outputs.map((o, i) => [
         o.candidateId,
@@ -221,7 +224,9 @@ function mockExecutor(holdoutScores: Record<string, number>): FusionPolicyExecut
         })),
         report: report(outputs),
         consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
-        candidateAttemptIdsByCandidateId: Object.fromEntries(outputs.map((o) => [o.candidateId, `catt-${o.slot.id}`])),
+        candidateAttemptIdsByCandidateId: Object.fromEntries(
+          outputs.map((o) => [o.candidateId, `catt-${o.slot.id}`]),
+        ),
         judgeAttemptId: `jatt-${task.id}`,
         candidateRunId: `run-cand-${task.id}`,
         devJudgeRunId: `run-judge-${task.id}`,
@@ -230,7 +235,10 @@ function mockExecutor(holdoutScores: Record<string, number>): FusionPolicyExecut
       };
     },
     async runSynthesis(_s, messages) {
-      return { text: `synth:${messages[1].content.length}`, cost: { tokensIn: 300, tokensOut: 150 } };
+      return {
+        text: `synth:${messages[1].content.length}`,
+        cost: { tokensIn: 300, tokensOut: 150 },
+      };
     },
     async runHoldout(_t, _p, _j, artifacts) {
       return {
@@ -342,7 +350,12 @@ describe("confirmation lifecycle (spec test 11)", () => {
     const { repo, deps } = await setup(WINNING);
 
     // An exploration study cannot self-confirm.
-    await repo.createStudy(makeStudy({ id: "study-self", suiteRef: { suiteId: "suite-1", suiteVersion: 5, protocolFingerprint: "sha256:v5-fresh" } }));
+    await repo.createStudy(
+      makeStudy({
+        id: "study-self",
+        suiteRef: { suiteId: "suite-1", suiteVersion: 5, protocolFingerprint: "sha256:v5-fresh" },
+      }),
+    );
     await expect(
       runConfirmationStudy(deps, {
         sourceStudyId: "study-source",

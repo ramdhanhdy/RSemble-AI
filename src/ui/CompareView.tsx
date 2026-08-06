@@ -130,8 +130,7 @@ export function CompareView({
         }}
       >
         {visible.map((c) => {
-          const latencyMs =
-            c.startedAt && c.finishedAt ? c.finishedAt - c.startedAt : null;
+          const latencyMs = c.startedAt && c.finishedAt ? c.finishedAt - c.startedAt : null;
           const text = c.segments.map((s) => s.text).join("\n\n");
           return (
             <div
@@ -147,9 +146,7 @@ export function CompareView({
                   >
                     {c.model}
                   </span>
-                  <span
-                    className={`font-mono text-sm ${tierColor(c.weightedScore)}`}
-                  >
+                  <span className={`font-mono text-sm ${tierColor(c.weightedScore)}`}>
                     {c.weightedScore.toFixed(1)}
                   </span>
                   <button
@@ -162,9 +159,7 @@ export function CompareView({
                   </button>
                 </div>
                 <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-text-muted">
-                  {latencyMs != null && (
-                    <span>{(latencyMs / 1000).toFixed(1)}s</span>
-                  )}
+                  {latencyMs != null && <span>{(latencyMs / 1000).toFixed(1)}s</span>}
                   {c.tokensOut != null && (
                     <>
                       <span aria-hidden>·</span>

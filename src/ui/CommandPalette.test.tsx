@@ -106,26 +106,23 @@ function renderPalette(overrides: PaletteProps = {}): { h: Harness; spies: Spies
 
 /** Labels of every rendered command option, in DOM order. */
 function optionLabels(h: Harness): string[] {
-  return h.$$('[role="option"]').map(
-    (el) => el.querySelector(".truncate")?.textContent?.trim() ?? "",
-  );
+  return h
+    .$$('[role="option"]')
+    .map((el) => el.querySelector(".truncate")?.textContent?.trim() ?? "");
 }
 
 function findOption(h: Harness, label: string): HTMLElement | null {
   return (
-    h.$$('[role="option"]').find(
-      (el) => el.querySelector(".truncate")?.textContent?.trim() === label,
-    ) ?? null
+    h
+      .$$('[role="option"]')
+      .find((el) => el.querySelector(".truncate")?.textContent?.trim() === label) ?? null
   );
 }
 
 function typeQuery(h: Harness, value: string) {
   const input = h.$('input[aria-label="Search commands"]') as HTMLInputElement | null;
   expect(input).toBeTruthy();
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )?.set;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   act(() => {
     setter?.call(input, value);
     input!.dispatchEvent(new Event("input", { bubbles: true }));
@@ -139,9 +136,7 @@ describe("CommandPalette workspace awareness (plan 8.2)", () => {
     const { h } = renderPalette();
     await settle();
 
-    const headers = h.$$('[cmdk-group-heading]').map(
-      (el) => el.textContent?.trim() ?? "",
-    );
+    const headers = h.$$("[cmdk-group-heading]").map((el) => el.textContent?.trim() ?? "");
     expect(headers[0]).toBe("Navigate");
     // The first three commands (in DOM order) are the navigation commands.
     expect(optionLabels(h).slice(0, 3)).toEqual([

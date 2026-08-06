@@ -74,9 +74,7 @@ describe("CompactModelLabel", () => {
   });
 
   it("renders unknown provider gracefully", () => {
-    const h = render(
-      <CompactModelLabel providerId="custom" slug="my-model" />,
-    );
+    const h = render(<CompactModelLabel providerId="custom" slug="my-model" />);
     const text = h.container.textContent ?? "";
     expect(text).toContain("my-model");
     // Unknown provider falls back to the raw providerId

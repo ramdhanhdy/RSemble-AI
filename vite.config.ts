@@ -8,16 +8,33 @@ import react from "@vitejs/plugin-react";
  * terminal diagnostic. Keep this list in sync with DevTerminalFields.
  */
 export const DEV_LOG_KEYS = new Set([
-  "event", "level", "at", "experimentId", "runId", "taskId", "attemptId",
+  "event",
+  "level",
+  "at",
+  "experimentId",
+  "runId",
+  "taskId",
+  "attemptId",
   "experimentAttemptId",
-  "modelKey", "stage", "status", "durationMs", "tokensIn", "tokensOut",
-  "candidateCalls", "judgeCalls", "reusedOutputs", "error", "timeoutKind",
+  "modelKey",
+  "stage",
+  "status",
+  "durationMs",
+  "tokensIn",
+  "tokensOut",
+  "candidateCalls",
+  "judgeCalls",
+  "reusedOutputs",
+  "error",
+  "timeoutKind",
 ]);
 const DEV_LOG_MAX_BODY_BYTES = 16 * 1024;
 const DEV_LOG_MAX_STRING_LENGTH = 512;
 const DEV_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const DEV_LOG_TIMEOUT_KINDS = new Set([
-  "connect_timeout", "stream_inactivity_timeout", "overall_timeout",
+  "connect_timeout",
+  "stream_inactivity_timeout",
+  "overall_timeout",
 ]);
 const SAFE_EVENT = /^[A-Za-z0-9_.-]{1,80}$/;
 
@@ -40,14 +57,14 @@ export function sanitizeDevLogPayload(raw: unknown): Record<string, SafeDevLogVa
 
   if (typeof safe.event !== "string" || !SAFE_EVENT.test(safe.event)) safe.event = "unknown";
   if (typeof safe.level !== "string" || !DEV_LOG_LEVELS.has(safe.level)) safe.level = "debug";
-  if (safe.timeoutKind !== undefined &&
-      (typeof safe.timeoutKind !== "string" || !DEV_LOG_TIMEOUT_KINDS.has(safe.timeoutKind))) {
+  if (
+    safe.timeoutKind !== undefined &&
+    (typeof safe.timeoutKind !== "string" || !DEV_LOG_TIMEOUT_KINDS.has(safe.timeoutKind))
+  ) {
     delete safe.timeoutKind;
   }
   return safe;
 }
-
-
 
 function terminalDevLogPlugin(): Plugin {
   return {

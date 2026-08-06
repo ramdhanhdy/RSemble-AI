@@ -38,9 +38,7 @@ import { createExperimentSnapshot } from "./protocol-fingerprint";
 
 // --- Run-status → attempt-status mapping (deterministic) ----------------------
 
-export function mapRunStatusToAttemptStatus(
-  status: RunStatus,
-): ExperimentTaskAttempt["status"] {
+export function mapRunStatusToAttemptStatus(status: RunStatus): ExperimentTaskAttempt["status"] {
   switch (status) {
     case "completed":
       return "completed";
@@ -379,11 +377,7 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
     },
 
     abort(now, error = null) {
-      if (
-        record.status !== "running" &&
-        record.status !== "paused" &&
-        record.status !== "draft"
-      ) {
+      if (record.status !== "running" && record.status !== "paused" && record.status !== "draft") {
         return reject(`Cannot abort while ${record.status}`);
       }
       // Bump both epochs: stale candidate, Judge, or persistence completions

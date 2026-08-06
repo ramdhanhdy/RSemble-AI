@@ -143,10 +143,16 @@ describe("ExperimentAddModelDialog", () => {
   });
 
   it("disables confirm until a slot is selected and planning succeeds", async () => {
-    const { h } = renderDialog({ selectedSlot: SELECTED_SLOT, plan: null, planError: "Model already in this experiment's roster." });
+    const { h } = renderDialog({
+      selectedSlot: SELECTED_SLOT,
+      plan: null,
+      planError: "Model already in this experiment's roster.",
+    });
     await settle();
 
-    const confirm = h.$$("button").find((b) => b.textContent === "Add and run") as HTMLButtonElement;
+    const confirm = h
+      .$$("button")
+      .find((b) => b.textContent === "Add and run") as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     // Planner rejection is visible.
     expect(document.body.textContent).toContain("already in this experiment");
@@ -173,7 +179,9 @@ describe("ExperimentAddModelDialog", () => {
     await settle();
 
     const preview = h.$("[data-cost-preview]");
-    expect(preview?.textContent).toContain("1 task lacks reusable evidence and will run the full roster (3 candidates each).");
+    expect(preview?.textContent).toContain(
+      "1 task lacks reusable evidence and will run the full roster (3 candidates each).",
+    );
     cleanup(h);
   });
 
@@ -194,7 +202,9 @@ describe("ExperimentAddModelDialog", () => {
 
     expect(h.$("input#model-search")).toBeNull();
     expect(document.body.textContent).toContain("deepseek-chat");
-    const change = h.$$("button").find((b) => b.textContent === "Change model") as HTMLButtonElement;
+    const change = h
+      .$$("button")
+      .find((b) => b.textContent === "Change model") as HTMLButtonElement;
     expect(change).toBeTruthy();
     await act(async () => {
       change.click();

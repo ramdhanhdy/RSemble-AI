@@ -19,10 +19,7 @@ import type {
   ExperimentAggregation,
   MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
-import {
-  formatAggregateMean,
-  formatTaskScore,
-} from "../../lib/evaluations/experiment-aggregation";
+import { formatAggregateMean, formatTaskScore } from "../../lib/evaluations/experiment-aggregation";
 import { StatusMark } from "../../ui/StatusMark";
 import { cellEvidenceLink, MISSING_CELL_DISPLAY } from "./ResultMatrix";
 import type { RepairableCellPlans } from "./ResultMatrix";
@@ -128,7 +125,11 @@ function TaskRow({
       />
     );
   }
-  const href = cellEvidenceLink(cell, modelKey, cell.runId ? runRecords.get(cell.runId) : undefined);
+  const href = cellEvidenceLink(
+    cell,
+    modelKey,
+    cell.runId ? runRecords.get(cell.runId) : undefined,
+  );
   const value = (
     <span className="tabular-nums text-sm text-text">{formatTaskScore(cell.score)}</span>
   );
@@ -236,7 +237,12 @@ export function MobileExperimentResults({
         })}
       </ul>
       {pageCount > 1 ? (
-        <Pagination page={page} pageCount={pageCount} totalItems={totalTasks} onPageChange={setPage} />
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          totalItems={totalTasks}
+          onPageChange={setPage}
+        />
       ) : null}
     </div>
   );

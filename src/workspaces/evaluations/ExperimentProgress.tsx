@@ -18,7 +18,6 @@ import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import { deriveActiveOperationScope } from "../../lib/evaluations/experiment-task-ledger";
 
-
 export interface ExperimentProgressProps {
   experiment: ExperimentRecord;
   controller: ExperimentController | null;
@@ -104,8 +103,7 @@ export function ExperimentProgress({
                 Targeted completion in progress
                 {scopeModelLabel ? (
                   <>
-                    :{" "}
-                    <span className="font-mono text-text">{scopeModelLabel}</span>
+                    : <span className="font-mono text-text">{scopeModelLabel}</span>
                   </>
                 ) : null}
                 . Other accepted evidence is reused; one fresh Judge pass per task.
@@ -114,8 +112,8 @@ export function ExperimentProgress({
               <>
                 {activeScope.label}: running{" "}
                 <span className="font-mono text-text">{scopeModelLabel}</span>
-                {activeScope.modelKeys.length === 1 ? " only" : ""}. Other accepted
-                evidence is reused; one fresh Judge pass per task.
+                {activeScope.modelKeys.length === 1 ? " only" : ""}. Other accepted evidence is
+                reused; one fresh Judge pass per task.
               </>
             )}
           </p>

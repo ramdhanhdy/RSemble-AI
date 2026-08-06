@@ -6,7 +6,11 @@ import { listenOrReuseBridge, probeReusableBridge } from "../codex-bridge/startu
 const servers: http.Server[] = [];
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  await Promise.all(
+    servers
+      .splice(0)
+      .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
+  );
 });
 
 async function healthServer(payload: unknown): Promise<number> {

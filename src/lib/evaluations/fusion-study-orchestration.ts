@@ -9,10 +9,7 @@
 
 import type { CriticRef } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
-import type {
-  EvaluationProfileSnapshot,
-  EvaluationSuite,
-} from "./evaluation-types";
+import type { EvaluationProfileSnapshot, EvaluationSuite } from "./evaluation-types";
 import type {
   FusionPlaybook,
   FusionRecipeVersion,
@@ -117,7 +114,10 @@ export async function pickStratifiedPairs(
 
   const high = rows[0];
   const positives = rows.filter((r) => r.headroom > 0.05);
-  const median = positives.length > 1 ? positives[Math.floor(positives.length / 2)] : rows[Math.min(1, rows.length - 1)];
+  const median =
+    positives.length > 1
+      ? positives[Math.floor(positives.length / 2)]
+      : rows[Math.min(1, rows.length - 1)];
   const control = rows[rows.length - 1];
 
   const picked: StratifiedPair[] = [{ slots: high.slots, stratum: "high" }];
@@ -140,7 +140,8 @@ export async function runFusionStudy(
   const study = await deps.repo.getStudy(input.studyId);
   if (!study) throw new Error(`Fusion study ${input.studyId} not found`);
   const pool = await deps.repo.getPoolManifest(study.poolRef.id, study.poolRef.version);
-  if (!pool) throw new Error(`Pool manifest ${study.poolRef.id} v${study.poolRef.version} not found`);
+  if (!pool)
+    throw new Error(`Pool manifest ${study.poolRef.id} v${study.poolRef.version} not found`);
   const recipes: FusionRecipeVersion[] = [];
   for (const ref of study.recipeRefs) {
     const recipe = await deps.repo.getRecipe(ref.id, ref.version);

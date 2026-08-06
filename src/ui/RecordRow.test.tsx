@@ -63,9 +63,7 @@ const SAMPLE_ROW = {
 
 describe("RecordRow", () => {
   it("list-density variant exposes status, title, timestamp, summary, model count, and source", () => {
-    const h = render(
-      <RecordRow variant="list" {...SAMPLE_ROW} />,
-    );
+    const h = render(<RecordRow variant="list" {...SAMPLE_ROW} />);
     const text = h.container.textContent ?? "";
     expect(text).toContain("Write a Python function");
     expect(text).toContain("3"); // model count
@@ -93,9 +91,7 @@ describe("RecordRow", () => {
   });
 
   it("list variant renders as a link when href is provided", () => {
-    const h = renderWithRouter(
-      <RecordRow variant="list" {...SAMPLE_ROW} href="/runs/run-123" />,
-    );
+    const h = renderWithRouter(<RecordRow variant="list" {...SAMPLE_ROW} href="/runs/run-123" />);
     const link = h.$("a[href='/runs/run-123']");
     expect(link).toBeTruthy();
     cleanup(h);
@@ -139,9 +135,7 @@ describe("RecordRow", () => {
   });
 
   it("interactive targets meet 44px minimum", () => {
-    const h = renderWithRouter(
-      <RecordRow variant="list" {...SAMPLE_ROW} href="/runs/run-123" />,
-    );
+    const h = renderWithRouter(<RecordRow variant="list" {...SAMPLE_ROW} href="/runs/run-123" />);
     const link = h.$("a[href='/runs/run-123']");
     expect(link).toBeTruthy();
     const cls = link?.getAttribute("class") ?? "";
@@ -161,9 +155,7 @@ describe("RecordRow", () => {
   // --- Row-width contract regression (Task 1.3) ---
 
   it("list variant painted surface has a full-width contract (w-full or flex-1) and min-w-0", () => {
-    const h = render(
-      <RecordRow variant="list" {...SAMPLE_ROW} title="Short" />,
-    );
+    const h = render(<RecordRow variant="list" {...SAMPLE_ROW} title="Short" />);
     // The painted child surface must carry the width contract, not only the wrapper.
     const surface = h.$("[data-record-row-surface]");
     expect(surface).toBeTruthy();
@@ -191,8 +183,7 @@ describe("RecordRow", () => {
     // Both surfaces must carry the same width contract classes.
     const shortCls = shortSurface?.getAttribute("class") ?? "";
     const longCls = longSurface?.getAttribute("class") ?? "";
-    const extractWidth = (cls: string) =>
-      cls.includes("w-full") || cls.includes("flex-1");
+    const extractWidth = (cls: string) => cls.includes("w-full") || cls.includes("flex-1");
     expect(extractWidth(shortCls)).toBe(true);
     expect(extractWidth(longCls)).toBe(true);
     expect(shortCls.includes("min-w-0")).toBe(true);

@@ -143,7 +143,10 @@ function isValidPackageTask(v: unknown, where: string, errors: string[]): v is S
   }
   if (!isNonEmptyString(v.title)) errors.push(`${where}.title must be a non-empty string.`);
   if (!isNonEmptyString(v.prompt)) errors.push(`${where}.prompt must be a non-empty string.`);
-  if (v.id !== undefined && (typeof v.id !== "string" || !SUITE_PACKAGE_LIMITS.ID_PATTERN.test(v.id))) {
+  if (
+    v.id !== undefined &&
+    (typeof v.id !== "string" || !SUITE_PACKAGE_LIMITS.ID_PATTERN.test(v.id))
+  ) {
     errors.push(`${where}.id must match ${SUITE_PACKAGE_LIMITS.ID_PATTERN}.`);
   }
   if (v.systemPrompt !== undefined && typeof v.systemPrompt !== "string") {
@@ -158,7 +161,11 @@ function isValidPackageTask(v: unknown, where: string, errors: string[]): v is S
   return errors.length === 0;
 }
 
-function isValidPackageSlot(v: unknown, where: string, errors: string[]): v is SuitePackageModelSlot {
+function isValidPackageSlot(
+  v: unknown,
+  where: string,
+  errors: string[],
+): v is SuitePackageModelSlot {
   if (!isRecord(v)) {
     errors.push(`${where} must be an object.`);
     return false;
@@ -173,7 +180,11 @@ function isValidPackageSlot(v: unknown, where: string, errors: string[]): v is S
   return errors.length === 0;
 }
 
-function isValidPackageProfile(v: unknown, where: string, errors: string[]): v is SuitePackageProfile {
+function isValidPackageProfile(
+  v: unknown,
+  where: string,
+  errors: string[],
+): v is SuitePackageProfile {
   if (!isRecord(v)) {
     errors.push(`${where} must be an object.`);
     return false;
@@ -208,15 +219,20 @@ export function parseSuitePackage(
 
   const tasksRaw = Array.isArray(value.tasks) ? value.tasks : null;
   const slotsRaw = Array.isArray(value.modelSlots) ? value.modelSlots : null;
-  const profilesRaw = value.profiles === undefined || Array.isArray(value.profiles) ? (value.profiles ?? []) : null;
+  const profilesRaw =
+    value.profiles === undefined || Array.isArray(value.profiles) ? (value.profiles ?? []) : null;
   if (tasksRaw === null) errors.push("tasks must be an array.");
   if (slotsRaw === null) errors.push("modelSlots must be an array.");
   if (profilesRaw === null) errors.push("profiles must be an array when present.");
   if (tasksRaw && tasksRaw.length > SUITE_PACKAGE_LIMITS.TASKS) {
-    errors.push(`tasks has ${tasksRaw.length} entries — the limit is ${SUITE_PACKAGE_LIMITS.TASKS}.`);
+    errors.push(
+      `tasks has ${tasksRaw.length} entries — the limit is ${SUITE_PACKAGE_LIMITS.TASKS}.`,
+    );
   }
   if (profilesRaw && profilesRaw.length > SUITE_PACKAGE_LIMITS.PROFILES) {
-    errors.push(`profiles has ${profilesRaw.length} entries — the limit is ${SUITE_PACKAGE_LIMITS.PROFILES}.`);
+    errors.push(
+      `profiles has ${profilesRaw.length} entries — the limit is ${SUITE_PACKAGE_LIMITS.PROFILES}.`,
+    );
   }
   if (errors.length > 0) return { ok: false, errors };
 
@@ -280,7 +296,8 @@ export function normalizeSuitePackage(
   const taken = new Set(opts.takenIds);
 
   const mintId = (preferred: string | undefined, label: string): string => {
-    let candidate = preferred && SUITE_PACKAGE_LIMITS.ID_PATTERN.test(preferred) ? preferred : generateId();
+    let candidate =
+      preferred && SUITE_PACKAGE_LIMITS.ID_PATTERN.test(preferred) ? preferred : generateId();
     if (taken.has(candidate)) {
       const base = candidate;
       candidate = `${base}-${generateId().slice(0, 8)}`;
@@ -313,7 +330,9 @@ export function normalizeSuitePackage(
       updatedAt: timestamp,
     };
     if (!isEvaluationProfile(profile)) {
-      errors.push(`Profile "${pkgProfile.name}" fails the record guard — check criteria anchors and weights.`);
+      errors.push(
+        `Profile "${pkgProfile.name}" fails the record guard — check criteria anchors and weights.`,
+      );
       continue;
     }
     profiles.push({
@@ -361,7 +380,10 @@ export function normalizeSuitePackage(
     title: t.title,
     prompt: t.prompt,
     systemPrompt: t.systemPrompt ?? "",
-    evaluation: remapSelection(t.evaluation, `tasks[${i}].evaluation`) as EvaluationTask["evaluation"],
+    evaluation: remapSelection(
+      t.evaluation,
+      `tasks[${i}].evaluation`,
+    ) as EvaluationTask["evaluation"],
     judgeInstructionOverride: t.judgeInstructionOverride ?? "",
     order: i,
     ...(t.verification ? { verification: t.verification } : {}),

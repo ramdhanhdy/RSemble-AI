@@ -22,27 +22,28 @@
 //    token, secret, password, env
 // =============================================================================
 
-import type { ChatMessage, CostRecord, InputUsageEstimate, ReasoningEffort, RunReasoningProvenance, UsageBreakdown } from "../providers/types";
+import type {
+  ChatMessage,
+  CostRecord,
+  InputUsageEstimate,
+  ReasoningEffort,
+  RunReasoningProvenance,
+  UsageBreakdown,
+} from "../providers/types";
 import type { ConsensusBreakdown, JudgeReport } from "../../studio-data";
 import type { StageStatus } from "../../studio-engine";
-import { isEvaluationProfile, isExperimentTaskExecutionPlan, type EvaluationProfileSnapshot, type ExperimentTaskExecutionPlan } from "../evaluations/evaluation-types";
+import {
+  isEvaluationProfile,
+  isExperimentTaskExecutionPlan,
+  type EvaluationProfileSnapshot,
+  type ExperimentTaskExecutionPlan,
+} from "../evaluations/evaluation-types";
 
 // --- Status enums -------------------------------------------------------------
 
-export type RunStatus =
-  | "running"
-  | "completed"
-  | "partial"
-  | "failed"
-  | "aborted"
-  | "interrupted";
+export type RunStatus = "running" | "completed" | "partial" | "failed" | "aborted" | "interrupted";
 
-export type AttemptStatus =
-  | "running"
-  | "completed"
-  | "failed"
-  | "aborted"
-  | "interrupted";
+export type AttemptStatus = "running" | "completed" | "failed" | "aborted" | "interrupted";
 
 const RUN_STATUSES: readonly RunStatus[] = [
   "running",
@@ -391,8 +392,7 @@ function hasProhibitedKeys(v: unknown): boolean {
 function isChatMessage(v: unknown): v is ChatMessage {
   if (!isRecord(v)) return false;
   return (
-    (v.role === "system" || v.role === "user" || v.role === "assistant") &&
-    isString(v.content)
+    (v.role === "system" || v.role === "user" || v.role === "assistant") && isString(v.content)
   );
 }
 
@@ -443,15 +443,25 @@ export function isPersistedError(v: unknown): v is PersistedError {
   if (v.stage !== undefined && !isString(v.stage)) return false;
   if (v.model !== undefined && !isString(v.model)) return false;
   if (v.at !== undefined && !isNumber(v.at)) return false;
-  if (v.timeoutKind !== undefined && !["connect_timeout", "stream_inactivity_timeout", "overall_timeout"].includes(v.timeoutKind as string)) return false;
+  if (
+    v.timeoutKind !== undefined &&
+    !["connect_timeout", "stream_inactivity_timeout", "overall_timeout"].includes(
+      v.timeoutKind as string,
+    )
+  )
+    return false;
   if (v.configuredDurationMs !== undefined && !isNumber(v.configuredDurationMs)) return false;
   if (v.elapsedMs !== undefined && !isNumber(v.elapsedMs)) return false;
   return true;
 }
 
 export function isExecutionFence(v: unknown): v is ExecutionFence {
-  return isRecord(v) && isString(v.ownerId) && isNumber(v.fence) &&
-    (v.leaseId === undefined || isNonEmptyString(v.leaseId));
+  return (
+    isRecord(v) &&
+    isString(v.ownerId) &&
+    isNumber(v.fence) &&
+    (v.leaseId === undefined || isNonEmptyString(v.leaseId))
+  );
 }
 
 export function isRunSource(v: unknown): v is RunSource {
@@ -479,8 +489,10 @@ function isReusedFrom(v: unknown): boolean {
   if (!isRecord(v)) return false;
   const { sourceRunId, sourceCandidateId, sourceAttemptId } = v;
   if (!isNonEmptyString(sourceRunId) || /^(sk-|AIza|Bearer\s)/i.test(sourceRunId)) return false;
-  if (!isNonEmptyString(sourceCandidateId) || /^(sk-|AIza|Bearer\s)/i.test(sourceCandidateId)) return false;
-  if (!isNonEmptyString(sourceAttemptId) || /^(sk-|AIza|Bearer\s)/i.test(sourceAttemptId)) return false;
+  if (!isNonEmptyString(sourceCandidateId) || /^(sk-|AIza|Bearer\s)/i.test(sourceCandidateId))
+    return false;
+  if (!isNonEmptyString(sourceAttemptId) || /^(sk-|AIza|Bearer\s)/i.test(sourceAttemptId))
+    return false;
   return true;
 }
 
@@ -507,7 +519,12 @@ function isInputUsageEstimate(v: unknown): boolean {
   if (!isRecord(v)) return false;
   if (!(v.totalTokens === null || isFiniteNonNegativeNumber(v.totalTokens))) return false;
   if (!(v.textTokens === null || isFiniteNonNegativeNumber(v.textTokens))) return false;
-  if (!["provider-reported", "text-heuristic", "provider-specific", "unknown"].includes(v.method as string)) return false;
+  if (
+    !["provider-reported", "text-heuristic", "provider-specific", "unknown"].includes(
+      v.method as string,
+    )
+  )
+    return false;
   if (typeof v.partial !== "boolean") return false;
   return v.note === undefined || isString(v.note);
 }
@@ -516,9 +533,7 @@ export function isCostRecord(v: unknown): boolean {
   if (!isRecord(v)) return false;
   if (!(v.usd === null || isFiniteNonNegativeNumber(v.usd))) return false;
   return (
-    v.source === "provider-reported" ||
-    v.source === "catalog-estimate" ||
-    v.source === "unknown"
+    v.source === "provider-reported" || v.source === "catalog-estimate" || v.source === "unknown"
   );
 }
 

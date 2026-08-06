@@ -14,7 +14,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
-import { useEvaluationRepository, useRunRepository } from "../../lib/persistence/repository-context";
+import {
+  useEvaluationRepository,
+  useRunRepository,
+} from "../../lib/persistence/repository-context";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
 import type { ExecutionOwner } from "../../lib/execution-owner";
@@ -111,7 +114,10 @@ export function ExperimentRoute({
 
   if (loading) {
     return (
-      <div className="flex min-h-[120px] flex-1 items-center justify-center p-8 text-sm text-text-muted" role="status">
+      <div
+        className="flex min-h-[120px] flex-1 items-center justify-center p-8 text-sm text-text-muted"
+        role="status"
+      >
         Loading experiment…
       </div>
     );

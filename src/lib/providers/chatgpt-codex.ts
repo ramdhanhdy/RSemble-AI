@@ -22,20 +22,26 @@ import {
   runProviderRequest,
   wrapProviderStream,
 } from "./provider-deadline";
-import { composeAbortSignals, isExecutionTimeoutError, providerAbortError } from "../execution-deadline";
+import {
+  composeAbortSignals,
+  isExecutionTimeoutError,
+  providerAbortError,
+} from "../execution-deadline";
 
 function getBridgeUrl(): string {
-  return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
-    /\/$/,
-    ""
-  );
+  return (
+    (import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787"
+  ).replace(/\/$/, "");
 }
 
 function validateReasoning(opts: ChatOptions): void {
   try {
     nativeReasoningPayload("chatgpt-codex", opts.model, opts.reasoningEffort, opts.reasoningStrict);
   } catch (error) {
-    throw new ProviderError(error instanceof Error ? error.message : String(error), "chatgpt-codex");
+    throw new ProviderError(
+      error instanceof Error ? error.message : String(error),
+      "chatgpt-codex",
+    );
   }
 }
 
@@ -51,7 +57,11 @@ function buildBody(payload: Record<string, unknown>, hasParts: boolean): string 
  *  body never reaches ProviderError.message. */
 async function parseBridgeError(res: Response, label: string): Promise<ProviderError> {
   const raw = await readBoundedResponseText(res).catch(() => "");
-  return new ProviderError(providerErrorDetail(raw, label, res.status), "chatgpt-codex", res.status);
+  return new ProviderError(
+    providerErrorDetail(raw, label, res.status),
+    "chatgpt-codex",
+    res.status,
+  );
 }
 
 function deadlinePolicy(opts: ChatOptions): typeof PROVIDER_DEADLINES {
@@ -122,7 +132,8 @@ export const chatgptCodexProvider: LLMProvider = {
       if (abort !== null) throw abort;
       return {
         ok: false,
-        reason: "Codex bridge unreachable on 127.0.0.1:8787. Start the bridge (npm run dev:bridge).",
+        reason:
+          "Codex bridge unreachable on 127.0.0.1:8787. Start the bridge (npm run dev:bridge).",
       };
     }
   },
@@ -175,7 +186,7 @@ export const chatgptCodexProvider: LLMProvider = {
     const streamAbort = new AbortController();
     const composed = composeAbortSignals(opts.signal, streamAbort.signal);
     const streamOpts = { ...opts, signal: composed.signal };
-    const source = (async function*(): AsyncGenerator<string, void, unknown> {
+    const source = (async function* (): AsyncGenerator<string, void, unknown> {
       try {
         validateReasoning(opts);
         const body = buildBody(
@@ -229,7 +240,7 @@ export const chatgptCodexProvider: LLMProvider = {
         throw new ProviderError(
           `Could not load Codex model catalog (HTTP ${res.status}).`,
           "chatgpt-codex",
-          res.status
+          res.status,
         );
       }
       const data = await res.json();

@@ -293,7 +293,6 @@ describe("createStreamWatchdog", () => {
   });
 });
 
-
 describe("provider operation boundaries", () => {
   it("times out a request that never reaches response headers", async () => {
     const timers = new ManualTimers();
@@ -314,7 +313,10 @@ describe("provider operation boundaries", () => {
     timers.advance(99);
     expect(requestSignal?.aborted).toBe(false);
     timers.advance(1);
-    await expect(pending).rejects.toMatchObject({ kind: "connect_timeout", configuredDurationMs: 100 });
+    await expect(pending).rejects.toMatchObject({
+      kind: "connect_timeout",
+      configuredDurationMs: 100,
+    });
     expect(requestSignal?.aborted).toBe(true);
   });
 
@@ -325,7 +327,9 @@ describe("provider operation boundaries", () => {
     const pending = runWithExecutionDeadlines(
       (_signal, onHeadersReady) => {
         markHeaders = onHeadersReady;
-        return new Promise<string>((resolve) => { finish = resolve; });
+        return new Promise<string>((resolve) => {
+          finish = resolve;
+        });
       },
       {
         ...metadata,
@@ -345,7 +349,9 @@ describe("provider operation boundaries", () => {
   it("starts inactivity at headers and preserves an independent overall ceiling", async () => {
     const timers = new ManualTimers();
     let resolveHeaders!: () => void;
-    const headersReady = new Promise<void>((resolve) => { resolveHeaders = resolve; });
+    const headersReady = new Promise<void>((resolve) => {
+      resolveHeaders = resolve;
+    });
     const watchdog = createStreamWatchdog({
       ...metadata,
       inactivityMs: 20,

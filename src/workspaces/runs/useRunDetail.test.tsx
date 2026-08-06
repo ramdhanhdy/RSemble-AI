@@ -20,9 +20,7 @@ async function flush(): Promise<void> {
   });
 }
 
-function renderHook<Result>(
-  useHook: () => Result,
-): Harness & { result: { current: Result } } {
+function renderHook<Result>(useHook: () => Result): Harness & { result: { current: Result } } {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -57,52 +55,91 @@ function makeRecord(id: string): RunRecordV2 {
     status: "completed",
     mode: "rank",
     source: { kind: "adhoc" },
-    task: { title: "Test task", prompt: "Do a thing", systemPrompt: "You are helpful", temperature: 0.7 },
+    task: {
+      title: "Test task",
+      prompt: "Do a thing",
+      systemPrompt: "You are helpful",
+      temperature: 0.7,
+    },
     evaluation: { profile: null, candidateMessages: [] },
-    candidates: [{
-      candidateId: "c1",
-      slotId: "s1",
-      modelKey: "openrouter:gpt-4o",
-      providerId: "openrouter",
-      model: "GPT-4o",
-      slug: "gpt-4o",
-      acceptedAttemptId: "att-1",
-      attempts: [{
-        attemptId: "att-1",
-        messages: [{ role: "user", content: "Do a thing" }],
-        startedAt: Date.now() - 60000,
-        finishedAt: Date.now() - 55000,
-        status: "completed",
-        output: "result text",
-        tokensIn: 20,
-        tokensOut: 30,
-        error: null,
-      }],
-    }],
+    candidates: [
+      {
+        candidateId: "c1",
+        slotId: "s1",
+        modelKey: "openrouter:gpt-4o",
+        providerId: "openrouter",
+        model: "GPT-4o",
+        slug: "gpt-4o",
+        acceptedAttemptId: "att-1",
+        attempts: [
+          {
+            attemptId: "att-1",
+            messages: [{ role: "user", content: "Do a thing" }],
+            startedAt: Date.now() - 60000,
+            finishedAt: Date.now() - 55000,
+            status: "completed",
+            output: "result text",
+            tokensIn: 20,
+            tokensOut: 30,
+            error: null,
+          },
+        ],
+      },
+    ],
     judge: {
       status: "done",
       acceptedAttemptId: "judge-att-1",
       report: {
         labelMap: [{ label: "A", candidateId: "c1" }],
-        evaluationsById: { c1: { candidateId: "c1", blindLabel: "A", overallScore: 4.0, position: "First", rationale: "Good", strengths: [], deductions: [], missedRequirements: [], criterionScores: [] } },
+        evaluationsById: {
+          c1: {
+            candidateId: "c1",
+            blindLabel: "A",
+            overallScore: 4.0,
+            position: "First",
+            rationale: "Good",
+            strengths: [],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+        },
         comparisons: [],
       },
       consensus: null,
-      attempts: [{
-        attemptId: "judge-att-1",
-        providerId: "openrouter",
-        model: "judge-model",
-        instruction: "Evaluate",
-        messages: [],
-        blindLabelToCandidateId: { A: "c1" },
-        candidateAttemptIdsByCandidateId: { c1: "att-1" },
-        startedAt: Date.now() - 55000,
-        finishedAt: Date.now() - 50000,
-        status: "completed",
-        error: null,
-        report: { labelMap: [{ label: "A", candidateId: "c1" }], evaluationsById: { c1: { candidateId: "c1", blindLabel: "A", overallScore: 4.0, position: "First", rationale: "Good", strengths: [], deductions: [], missedRequirements: [], criterionScores: [] } }, comparisons: [] },
-        consensus: null,
-      }],
+      attempts: [
+        {
+          attemptId: "judge-att-1",
+          providerId: "openrouter",
+          model: "judge-model",
+          instruction: "Evaluate",
+          messages: [],
+          blindLabelToCandidateId: { A: "c1" },
+          candidateAttemptIdsByCandidateId: { c1: "att-1" },
+          startedAt: Date.now() - 55000,
+          finishedAt: Date.now() - 50000,
+          status: "completed",
+          error: null,
+          report: {
+            labelMap: [{ label: "A", candidateId: "c1" }],
+            evaluationsById: {
+              c1: {
+                candidateId: "c1",
+                blindLabel: "A",
+                overallScore: 4.0,
+                position: "First",
+                rationale: "Good",
+                strengths: [],
+                deductions: [],
+                missedRequirements: [],
+                criterionScores: [],
+              },
+            },
+            comparisons: [],
+          },
+          consensus: null,
+        },
+      ],
     },
     fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
     winnerKeys: ["openrouter:gpt-4o"],
@@ -125,27 +162,29 @@ describe("useRunDetail", () => {
       schemaVersion: 1,
       exportedAt: Date.now(),
       runs: [record],
-      summaries: [{
-        kind: "full",
-        schemaVersion: 2,
-        id: "run-1",
-        revision: 1,
-        createdAt: record.createdAt,
-        completedAt: record.completedAt,
-        status: "completed",
-        mode: "rank",
-        source: { kind: "adhoc" },
-        taskTitle: "Test task",
-        taskExcerpt: "Test",
-        modelKeys: ["openrouter:gpt-4o"],
-        winnerKeys: ["openrouter:gpt-4o"],
-        scoresByModelKey: { "openrouter:gpt-4o": 4.0 },
-        judgeModelKey: "openrouter:judge",
-        evaluationProfileId: null,
-        evaluationProfileVersion: null,
-        detailAvailable: true,
-        searchText: "test task",
-      }],
+      summaries: [
+        {
+          kind: "full",
+          schemaVersion: 2,
+          id: "run-1",
+          revision: 1,
+          createdAt: record.createdAt,
+          completedAt: record.completedAt,
+          status: "completed",
+          mode: "rank",
+          source: { kind: "adhoc" },
+          taskTitle: "Test task",
+          taskExcerpt: "Test",
+          modelKeys: ["openrouter:gpt-4o"],
+          winnerKeys: ["openrouter:gpt-4o"],
+          scoresByModelKey: { "openrouter:gpt-4o": 4.0 },
+          judgeModelKey: "openrouter:judge",
+          evaluationProfileId: null,
+          evaluationProfileVersion: null,
+          detailAvailable: true,
+          searchText: "test task",
+        },
+      ],
     });
 
     const hook = renderHook(() => useRunDetail(repo, "run-1"));
@@ -186,7 +225,10 @@ describe("useRunDetail", () => {
     const repo = new InMemoryRunRepository();
     let fetchCount = 0;
     const originalGet = repo.get.bind(repo);
-    repo.get = vi.fn((id: string) => { fetchCount++; return originalGet(id); });
+    repo.get = vi.fn((id: string) => {
+      fetchCount++;
+      return originalGet(id);
+    });
 
     const hook = renderHook(() => useRunDetail(repo, "run-1"));
     await hook.flush();
@@ -206,8 +248,48 @@ describe("useRunDetail", () => {
       exportedAt: Date.now(),
       runs: [r1, r2],
       summaries: [
-        { kind: "full", schemaVersion: 2, id: "run-1", revision: 1, createdAt: 100, completedAt: 1, status: "completed", mode: "rank", source: { kind: "adhoc" }, taskTitle: "Task 1", taskExcerpt: "T1", modelKeys: [], winnerKeys: [], scoresByModelKey: {}, judgeModelKey: null, evaluationProfileId: null, evaluationProfileVersion: null, detailAvailable: true, searchText: "task 1" },
-        { kind: "full", schemaVersion: 2, id: "run-2", revision: 1, createdAt: 200, completedAt: 1, status: "completed", mode: "rank", source: { kind: "adhoc" }, taskTitle: "Task 2", taskExcerpt: "T2", modelKeys: [], winnerKeys: [], scoresByModelKey: {}, judgeModelKey: null, evaluationProfileId: null, evaluationProfileVersion: null, detailAvailable: true, searchText: "task 2" },
+        {
+          kind: "full",
+          schemaVersion: 2,
+          id: "run-1",
+          revision: 1,
+          createdAt: 100,
+          completedAt: 1,
+          status: "completed",
+          mode: "rank",
+          source: { kind: "adhoc" },
+          taskTitle: "Task 1",
+          taskExcerpt: "T1",
+          modelKeys: [],
+          winnerKeys: [],
+          scoresByModelKey: {},
+          judgeModelKey: null,
+          evaluationProfileId: null,
+          evaluationProfileVersion: null,
+          detailAvailable: true,
+          searchText: "task 1",
+        },
+        {
+          kind: "full",
+          schemaVersion: 2,
+          id: "run-2",
+          revision: 1,
+          createdAt: 200,
+          completedAt: 1,
+          status: "completed",
+          mode: "rank",
+          source: { kind: "adhoc" },
+          taskTitle: "Task 2",
+          taskExcerpt: "T2",
+          modelKeys: [],
+          winnerKeys: [],
+          scoresByModelKey: {},
+          judgeModelKey: null,
+          evaluationProfileId: null,
+          evaluationProfileVersion: null,
+          detailAvailable: true,
+          searchText: "task 2",
+        },
       ],
     });
 

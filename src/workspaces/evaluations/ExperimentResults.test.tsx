@@ -65,8 +65,22 @@ afterEach(() => {
 // --- Fixtures ---
 
 const SLOTS: ModelSlot[] = [
-  { id: "s1", providerId: "umans", provider: "Umans", model: "Model", slug: "model", enabled: true },
-  { id: "s2", providerId: "9router", provider: "9Router", model: "Route", slug: "route", enabled: true },
+  {
+    id: "s1",
+    providerId: "umans",
+    provider: "Umans",
+    model: "Model",
+    slug: "model",
+    enabled: true,
+  },
+  {
+    id: "s2",
+    providerId: "9router",
+    provider: "9Router",
+    model: "Route",
+    slug: "route",
+    enabled: true,
+  },
 ];
 const MK_COMPLETE = "umans:model";
 const MK_PROVISIONAL = "9router:route";
@@ -154,7 +168,15 @@ function makeTaskState(
     taskId,
     selectedAttemptId: `att-${taskId}`,
     attempts: [
-      { id: `att-${taskId}`, runId, trial: 0, status, startedAt: 100, finishedAt: 200, error: null },
+      {
+        id: `att-${taskId}`,
+        runId,
+        trial: 0,
+        status,
+        startedAt: 100,
+        finishedAt: 200,
+        error: null,
+      },
     ],
   };
 }
@@ -303,7 +325,10 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
     } as unknown as ExperimentController;
   }
 
-  function makeFailedExperiment(): { experiment: ExperimentRecord; runs: Record<string, RunRecordV2> } {
+  function makeFailedExperiment(): {
+    experiment: ExperimentRecord;
+    runs: Record<string, RunRecordV2>;
+  } {
     const taskIds = ["t1", "t2", "t3"];
     const taskStates: ExperimentTaskState[] = [];
     const runs: Record<string, RunRecordV2> = {};
@@ -348,7 +373,11 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
     const { experiment, runs } = makeFailedExperiment();
     const controller = makeController({ ok: true });
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     const btn = h.$$("button").find((b) => b.textContent?.includes("Retry all incomplete tasks"));
@@ -360,7 +389,11 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
     const { experiment, runs } = makeFailedExperiment();
     const controller = makeController({ ok: true });
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     const btn = h.$$("button").find((b) => b.textContent?.includes("Retry all incomplete tasks"))!;
@@ -377,7 +410,11 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
     const { experiment, runs } = makeFailedExperiment();
     const controller = makeController({ ok: false, error: "Another tab holds the lease" });
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     const btn = h.$$("button").find((b) => b.textContent?.includes("Retry all incomplete tasks"))!;
@@ -396,7 +433,11 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
     const { experiment, runs } = makeWinnerProvisionalExperiment();
     const controller = makeController({ ok: true });
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     const btn = h.$$("button").find((b) => b.textContent?.includes("Retry all incomplete tasks"));
@@ -487,7 +528,15 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
           taskId: "t3",
           selectedAttemptId: null,
           attempts: [
-            { id: "att-t3-f", runId: "run-t3", trial: 0, status: "failed", startedAt: 100, finishedAt: 200, error: null },
+            {
+              id: "att-t3-f",
+              runId: "run-t3",
+              trial: 0,
+              status: "failed",
+              startedAt: 100,
+              finishedAt: 200,
+              error: null,
+            },
           ],
         },
       ],
@@ -504,12 +553,18 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     const { experiment, runs } = makeRepairableExperiment();
     const controller = makeController();
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     await settle();
 
-    const cellAction = h.$$("button").find((b) => b.textContent?.includes("Complete missing result"));
+    const cellAction = h
+      .$$("button")
+      .find((b) => b.textContent?.includes("Complete missing result"));
     expect(cellAction).toBeTruthy();
     await act(async () => {
       cellAction!.click();
@@ -605,9 +660,9 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     expect(h.$('[aria-label="Recovery"]')?.textContent).toContain(
       "2 missing results — 2 repairable, 0 need a full task retry.",
     );
-    const actions = h.$$("button").filter((button) =>
-      button.textContent?.includes("Complete missing result"),
-    );
+    const actions = h
+      .$$("button")
+      .filter((button) => button.textContent?.includes("Complete missing result"));
     expect(actions).toHaveLength(2);
     await act(async () => {
       actions[0].click();
@@ -636,12 +691,18 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     const { experiment, runs } = makeRepairableExperiment();
     const controller = makeController();
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     await settle();
 
-    const cellActions = h.$$("button").filter((b) => b.textContent?.includes("Retry incomplete task"));
+    const cellActions = h
+      .$$("button")
+      .filter((b) => b.textContent?.includes("Retry incomplete task"));
     expect(cellActions.length).toBeGreaterThan(0);
     await act(async () => {
       cellActions[0].click();
@@ -667,15 +728,23 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     const { experiment, runs } = makeRepairableExperiment();
     const controller = makeController();
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     await settle();
 
     const toolbar = h.$('[aria-label="Recovery"]');
     expect(toolbar).not.toBeNull();
-    expect(toolbar?.textContent).toContain("3 missing results — 1 repairable, 2 need a full task retry.");
-    const repairAll = h.$$("button").find((b) => b.textContent?.includes("Repair all missing results"));
+    expect(toolbar?.textContent).toContain(
+      "3 missing results — 1 repairable, 2 need a full task retry.",
+    );
+    const repairAll = h
+      .$$("button")
+      .find((b) => b.textContent?.includes("Repair all missing results"));
     expect(repairAll).toBeTruthy();
     await act(async () => {
       repairAll!.click();
@@ -703,7 +772,14 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     const MK_EXTRA = "openrouter:claude";
     const SLOTS3: ModelSlot[] = [
       ...SLOTS,
-      { id: "s3", providerId: "openrouter", provider: "OpenRouter", model: "Claude", slug: "claude", enabled: true },
+      {
+        id: "s3",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "Claude",
+        slug: "claude",
+        enabled: true,
+      },
     ];
     const snapshot: ExperimentSnapshot = {
       ...makeSnapshot(["t1", "t2"]),
@@ -732,12 +808,18 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     };
     const controller = makeController();
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     await settle();
 
-    const repairAll = h.$$("button").find((b) => b.textContent?.includes("Repair all missing results"));
+    const repairAll = h
+      .$$("button")
+      .find((b) => b.textContent?.includes("Repair all missing results"));
     expect(repairAll).toBeTruthy();
     await act(async () => {
       repairAll!.click();
@@ -773,23 +855,38 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     // Another owner: the experiment is currently running.
     const running: ExperimentRecord = { ...experiment, status: "running" };
     const h = renderWithRouter(
-      <ExperimentResults experiment={running} resolveRunRecord={async (id) => runs[id] ?? null} controller={makeController()} />,
+      <ExperimentResults
+        experiment={running}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={makeController()}
+      />,
     );
     await settle();
     await settle();
-    expect(h.$$("button").find((b) => b.textContent?.includes("Complete missing result"))).toBeUndefined();
-    expect(h.$$("button").find((b) => b.textContent?.includes("Retry incomplete task"))).toBeUndefined();
+    expect(
+      h.$$("button").find((b) => b.textContent?.includes("Complete missing result")),
+    ).toBeUndefined();
+    expect(
+      h.$$("button").find((b) => b.textContent?.includes("Retry incomplete task")),
+    ).toBeUndefined();
     expect(h.$('[aria-label="Recovery"]')).toBeNull();
     cleanup(h);
 
     // No controller at all: same absence.
     const h2 = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+      />,
     );
     await settle();
     await settle();
-    expect(h2.$$("button").find((b) => b.textContent?.includes("Complete missing result"))).toBeUndefined();
-    expect(h2.$$("button").find((b) => b.textContent?.includes("Retry incomplete task"))).toBeUndefined();
+    expect(
+      h2.$$("button").find((b) => b.textContent?.includes("Complete missing result")),
+    ).toBeUndefined();
+    expect(
+      h2.$$("button").find((b) => b.textContent?.includes("Retry incomplete task")),
+    ).toBeUndefined();
     expect(h2.$('[aria-label="Recovery"]')).toBeNull();
     cleanup(h2);
   });
@@ -799,12 +896,18 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     const { experiment, runs } = makeRepairableExperiment();
     const controller = makeController();
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     await settle();
 
-    const cellAction = h.$$("button").find((b) => b.textContent?.includes("Complete missing result"))!;
+    const cellAction = h
+      .$$("button")
+      .find((b) => b.textContent?.includes("Complete missing result"))!;
     await act(async () => {
       cellAction.click();
       await flush();
@@ -830,19 +933,27 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     const { experiment, runs } = makeRepairableExperiment();
     const controller = makeController();
     const h = renderWithRouter(
-      <ExperimentResults experiment={experiment} resolveRunRecord={async (id) => runs[id] ?? null} controller={controller} />,
+      <ExperimentResults
+        experiment={experiment}
+        resolveRunRecord={async (id) => runs[id] ?? null}
+        controller={controller}
+      />,
     );
     await settle();
     await settle();
 
-    const cellAction = h.$$("button").find((b) => b.textContent?.includes("Complete missing result"))!;
+    const cellAction = h
+      .$$("button")
+      .find((b) => b.textContent?.includes("Complete missing result"))!;
     cellAction.focus();
     await act(async () => {
       cellAction.click();
       await flush();
     });
     await settle();
-    const cancel = [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Cancel");
+    const cancel = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent === "Cancel",
+    );
     expect(cancel).not.toBeUndefined();
     await act(async () => {
       cancel!.click();
@@ -878,13 +989,24 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
           taskId,
           selectedAttemptId: "att-old",
           attempts: [
-            { id: "att-old", runId: "run-old", trial: 0, status: "failed", startedAt: 100, finishedAt: 200, error: null },
+            {
+              id: "att-old",
+              runId: "run-old",
+              trial: 0,
+              status: "failed",
+              startedAt: 100,
+              finishedAt: 200,
+              error: null,
+            },
           ],
         },
       ],
     };
     const h1 = renderWithRouter(
-      <ExperimentResults experiment={before} resolveRunRecord={async (id) => (id === "run-old" ? runOld : null)} />,
+      <ExperimentResults
+        experiment={before}
+        resolveRunRecord={async (id) => (id === "run-old" ? runOld : null)}
+      />,
     );
     await settle();
     await settle();
@@ -903,8 +1025,24 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
           taskId,
           selectedAttemptId: "att-new",
           attempts: [
-            { id: "att-old", runId: "run-old", trial: 0, status: "failed", startedAt: 100, finishedAt: 200, error: null },
-            { id: "att-new", runId: "run-new", trial: 1, status: "completed", startedAt: 300, finishedAt: 400, error: null },
+            {
+              id: "att-old",
+              runId: "run-old",
+              trial: 0,
+              status: "failed",
+              startedAt: 100,
+              finishedAt: 200,
+              error: null,
+            },
+            {
+              id: "att-new",
+              runId: "run-new",
+              trial: 1,
+              status: "completed",
+              startedAt: 300,
+              finishedAt: 400,
+              error: null,
+            },
           ],
         },
       ],
@@ -912,14 +1050,16 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
     const h2 = renderWithRouter(
       <ExperimentResults
         experiment={after}
-        resolveRunRecord={async (id) => (id === "run-old" ? runOld : id === "run-new" ? runNew : null)}
+        resolveRunRecord={async (id) =>
+          id === "run-old" ? runOld : id === "run-new" ? runNew : null
+        }
       />,
     );
     await settle();
     await settle();
     expect(h2.$('[data-testid="coverage-issues"]')).toBeNull();
     expect(h2.$('[data-testid="attempt-history"]')).toBeNull();
-    expect(h2.$$('a').some((a) => a.getAttribute("href") === "/runs/run-old")).toBe(false);
+    expect(h2.$$("a").some((a) => a.getAttribute("href") === "/runs/run-old")).toBe(false);
     expect(h2.container.textContent).not.toMatch(/Attempt [0-9]+/);
     cleanup(h2);
   });
@@ -939,7 +1079,10 @@ describe("ExperimentResults — matrix page in URL (Task 14)", () => {
     }));
   }
 
-  function makeBigExperiment(taskCount: number): { experiment: ExperimentRecord; runs: Record<string, RunRecordV2> } {
+  function makeBigExperiment(taskCount: number): {
+    experiment: ExperimentRecord;
+    runs: Record<string, RunRecordV2>;
+  } {
     const taskIds = Array.from({ length: taskCount }, (_, i) => `t${i + 1}`);
     const taskStates: ExperimentTaskState[] = [];
     const runs: Record<string, RunRecordV2> = {};
@@ -1104,7 +1247,13 @@ describe("ExperimentResults — add model (roster extension)", () => {
       task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
       evaluation: { profile: null, candidateMessages: [] },
       candidates,
-      judge: { status: "done", acceptedAttemptId: "j1", report: null, consensus: null, attempts: [] },
+      judge: {
+        status: "done",
+        acceptedAttemptId: "j1",
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
       fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
       winnerKeys: [],
     };
@@ -1119,10 +1268,7 @@ describe("ExperimentResults — add model (roster extension)", () => {
     const runs: Record<string, RunRecordV2> = {};
     const taskStates: ExperimentTaskState[] = taskIds.map((taskId) => {
       const runId = `run-${taskId}`;
-      runs[runId] = makeCompoundRun(runId, taskId, `att-${taskId}`, [
-        MK_COMPLETE,
-        MK_PROVISIONAL,
-      ]);
+      runs[runId] = makeCompoundRun(runId, taskId, `att-${taskId}`, [MK_COMPLETE, MK_PROVISIONAL]);
       return makeTaskState(taskId, runId);
     });
     const experiment: ExperimentRecord = {
@@ -1141,7 +1287,9 @@ describe("ExperimentResults — add model (roster extension)", () => {
     return { experiment, runs };
   }
 
-  function makeControllerWithAddModel(result: { ok: true; experimentId: string } | { ok: false; error: string }) {
+  function makeControllerWithAddModel(
+    result: { ok: true; experimentId: string } | { ok: false; error: string },
+  ) {
     return {
       retryIncomplete: vi.fn(async () => ({ ok: true })),
       repairMissingCells: vi.fn(async () => ({ ok: true })),
@@ -1158,8 +1306,7 @@ describe("ExperimentResults — add model (roster extension)", () => {
 
   function findAddModelButton(h: Harness): HTMLButtonElement | undefined {
     return h.$$("button").find((b) => b.textContent?.trim() === "Add model") as
-      | HTMLButtonElement
-      | undefined;
+      HTMLButtonElement | undefined;
   }
 
   it("places Add model in the header action row, never in the recovery toolbar", async () => {
@@ -1467,7 +1614,10 @@ describe("ExperimentResults — add model (roster extension)", () => {
       await flush();
     });
     await settle();
-    typeInto(document.body.querySelector<HTMLInputElement>("input#model-search")!, "deepseek/deepseek-chat");
+    typeInto(
+      document.body.querySelector<HTMLInputElement>("input#model-search")!,
+      "deepseek/deepseek-chat",
+    );
     await settle();
     const slugButton = [...document.body.querySelectorAll("button")].find((b) =>
       b.textContent?.includes("deepseek/deepseek-chat"),
@@ -1497,7 +1647,9 @@ describe("ExperimentResults — add model (roster extension)", () => {
     });
     // Dialog closed; handoff copy is on the results surface.
     const handoff = h.$('[data-testid="add-model-handoff"]');
-    expect(handoff?.textContent).toContain("Add-model run started — navigate to the progress view to watch it.");
+    expect(handoff?.textContent).toContain(
+      "Add-model run started — navigate to the progress view to watch it.",
+    );
     cleanup(h);
   });
 
@@ -1553,7 +1705,10 @@ describe("ExperimentResults — add model (roster extension)", () => {
       await flush();
     });
     await settle();
-    typeInto(document.body.querySelector<HTMLInputElement>("input#model-search")!, "deepseek/deepseek-chat");
+    typeInto(
+      document.body.querySelector<HTMLInputElement>("input#model-search")!,
+      "deepseek/deepseek-chat",
+    );
     await settle();
     const slugButton = [...document.body.querySelectorAll("button")].find((b) =>
       b.textContent?.includes("deepseek/deepseek-chat"),
@@ -1583,7 +1738,10 @@ describe("ExperimentResults — add model (roster extension)", () => {
   it("skips the suite write when sync is unchecked and keeps the dialog open on controller failure", async () => {
     stubDesktop();
     const { experiment, runs } = makeExtendableExperiment();
-    const controller = makeControllerWithAddModel({ ok: false, error: "Another tab owns the lease." });
+    const controller = makeControllerWithAddModel({
+      ok: false,
+      error: "Another tab owns the lease.",
+    });
     const saveSuite = vi.fn();
     const evalRepo = {
       getSuite: vi.fn(async () => null),
@@ -1623,7 +1781,10 @@ describe("ExperimentResults — add model (roster extension)", () => {
       checkbox!.click();
       await flush();
     });
-    typeInto(document.body.querySelector<HTMLInputElement>("input#model-search")!, "deepseek/deepseek-chat");
+    typeInto(
+      document.body.querySelector<HTMLInputElement>("input#model-search")!,
+      "deepseek/deepseek-chat",
+    );
     await settle();
     const slugButton = [...document.body.querySelectorAll("button")].find((b) =>
       b.textContent?.includes("deepseek/deepseek-chat"),

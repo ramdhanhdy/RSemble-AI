@@ -63,7 +63,9 @@ function controlsWithUndefinedBg(h: Harness): string[] {
     const bgClasses = [...el.classList].filter((c) => c.startsWith("bg-") && !c.includes("/"));
     for (const cls of bgClasses) {
       if (!DEFINED_BG_TOKENS.has(cls)) {
-        offenders.push(`${el.tagName.toLowerCase()}[name=${el.getAttribute("name") ?? el.id ?? "?"}] .${cls}`);
+        offenders.push(
+          `${el.tagName.toLowerCase()}[name=${el.getAttribute("name") ?? el.id ?? "?"}] .${cls}`,
+        );
       }
     }
   }

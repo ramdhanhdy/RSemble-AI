@@ -57,9 +57,7 @@ export function CandidateAnswer({
 
   return (
     <div
-      className={`rounded-lg border bg-card ${
-        rank === 1 ? "border-success/30" : "border-edge"
-      }`}
+      className={`rounded-lg border bg-card ${rank === 1 ? "border-success/30" : "border-edge"}`}
     >
       <div className="flex items-center">
         <button
@@ -81,7 +79,9 @@ export function CandidateAnswer({
               {rank}
             </span>
           )}
-          <span className={`size-2 shrink-0 rounded-full ${ACCENT_DOT[candidate.accent] ?? "bg-text-muted"}`} />
+          <span
+            className={`size-2 shrink-0 rounded-full ${ACCENT_DOT[candidate.accent] ?? "bg-text-muted"}`}
+          />
           <span className="flex-1 truncate font-mono text-sm text-text" title={candidate.provider}>
             {candidate.model}
           </span>

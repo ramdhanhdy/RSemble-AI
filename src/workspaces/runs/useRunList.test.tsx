@@ -19,9 +19,7 @@ async function flush(): Promise<void> {
   });
 }
 
-function renderHook<Result>(
-  useHook: () => Result,
-): Harness & { result: { current: Result } } {
+function renderHook<Result>(useHook: () => Result): Harness & { result: { current: Result } } {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -85,7 +83,13 @@ function makeMinimalRecord(id: string, createdAt: number) {
     task: { title: "test task", prompt: "do it", systemPrompt: "helpful", temperature: 0.7 },
     evaluation: { profile: null, candidateMessages: [] },
     candidates: [],
-    judge: { status: "idle" as const, acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+    judge: {
+      status: "idle" as const,
+      acceptedAttemptId: null,
+      report: null,
+      consensus: null,
+      attempts: [],
+    },
     fusion: { status: "idle" as const, acceptedAttemptId: null, attempts: [] },
     winnerKeys: [],
   };
@@ -101,7 +105,10 @@ async function seedRepo(repo: InMemoryRunRepository, entries: Array<[string, num
 describe("useRunList", () => {
   it("returns loading state initially, then summaries", async () => {
     const repo = new InMemoryRunRepository();
-    await seedRepo(repo, [["run-1", 1000], ["run-2", 2000]]);
+    await seedRepo(repo, [
+      ["run-1", 1000],
+      ["run-2", 2000],
+    ]);
 
     const hook = renderHook(() => useRunList(repo, {}));
     expect(hook.result.current.loading).toBe(true);
@@ -120,7 +127,10 @@ describe("useRunList", () => {
 
   it("filters by text", async () => {
     const repo = new InMemoryRunRepository();
-    await seedRepo(repo, [["run-1", 1000, "write python sort"], ["run-2", 2000, "fix bug fix"]]);
+    await seedRepo(repo, [
+      ["run-1", 1000, "write python sort"],
+      ["run-2", 2000, "fix bug fix"],
+    ]);
 
     const hook = renderHook(() => useRunList(repo, { text: "sort" }));
     await hook.flush();
@@ -183,9 +193,10 @@ describe("useRunList", () => {
 
   it("respects limit and offset", async () => {
     const repo = new InMemoryRunRepository();
-    const entries: Array<[string, number, string?]> = Array.from({ length: 60 }, (_, i) =>
-      [`run-${i}`, i * 1000],
-    );
+    const entries: Array<[string, number, string?]> = Array.from({ length: 60 }, (_, i) => [
+      `run-${i}`,
+      i * 1000,
+    ]);
     await seedRepo(repo, entries);
 
     const hook = renderHook(() => useRunList(repo, { limit: 10, offset: 0 }));
@@ -198,7 +209,10 @@ describe("useRunList", () => {
 
   it("stale fetch result cannot overwrite a newer query", async () => {
     const repo = new InMemoryRunRepository();
-    await seedRepo(repo, [["run-1", 1000], ["run-2", 2000]]);
+    await seedRepo(repo, [
+      ["run-1", 1000],
+      ["run-2", 2000],
+    ]);
 
     // The stale-response guard: when query changes rapidly, the final state
     // reflects the latest query, not a stale response.

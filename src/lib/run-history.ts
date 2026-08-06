@@ -61,7 +61,10 @@ function inferProviderFromSlug(slug: string): string | null {
 function migrateEntry(entry: RunHistoryEntry): RunHistoryEntry {
   let needsMigration = false;
   for (const key of Object.keys(entry.stats)) {
-    if (!key.includes(":")) { needsMigration = true; break; }
+    if (!key.includes(":")) {
+      needsMigration = true;
+      break;
+    }
   }
   if (entry.winner && !entry.winner.includes(":")) needsMigration = true;
 
@@ -108,8 +111,7 @@ function writeRaw(runs: RunHistoryEntry[]): void {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(runs));
-  } catch {
-  }
+  } catch {}
 }
 
 export function addRun(entry: RunHistoryEntry): void {
@@ -144,8 +146,10 @@ export function getRunsForModel(key: string): RunHistoryEntry[] {
       }
       // Bare slug (legacy caller): match any provider with this slug
       const slug = key;
-      return Object.keys(r.stats).some((k) => k.endsWith(`:${slug}`) || k === slug) ||
-        r.models.some((m) => m === slug || m.endsWith(`:${slug}`));
+      return (
+        Object.keys(r.stats).some((k) => k.endsWith(`:${slug}`) || k === slug) ||
+        r.models.some((m) => m === slug || m.endsWith(`:${slug}`))
+      );
     })
     .sort((a, b) => b.timestamp - a.timestamp);
 }
@@ -154,8 +158,7 @@ export function clearHistory(): void {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.removeItem(STORAGE_KEY);
-  } catch {
-  }
+  } catch {}
 }
 
 export function getRunCount(): number {
@@ -164,7 +167,10 @@ export function getRunCount(): number {
 
 export function getScoreHistory(key: string, limit = 10): number[] {
   const runs = getRunsForModel(key);
-  return runs.slice(0, limit).map((r) => r.stats[key]?.score ?? 0).filter((s) => s > 0);
+  return runs
+    .slice(0, limit)
+    .map((r) => r.stats[key]?.score ?? 0)
+    .filter((s) => s > 0);
 }
 
 export function getModelTelemetry(key: string): ModelTelemetry | null {
@@ -184,7 +190,10 @@ export function getModelTelemetry(key: string): ModelTelemetry | null {
     if (s) {
       scoreSum += s.score;
       latencySum += s.latencyMs;
-      if (s.costUsd !== null) { costSum += s.costUsd; costCount += 1; }
+      if (s.costUsd !== null) {
+        costSum += s.costUsd;
+        costCount += 1;
+      }
       scoredCount += 1;
     }
   }

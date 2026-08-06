@@ -8,7 +8,11 @@
 
 import type { EvaluationSuite } from "./evaluation-types";
 import { DEFAULT_REASONING_POLICY } from "../providers/types";
-import { capabilitiesForModel, commonReasoningEfforts, resolveReasoningEffort } from "../providers/reasoning";
+import {
+  capabilitiesForModel,
+  commonReasoningEfforts,
+  resolveReasoningEffort,
+} from "../providers/reasoning";
 import { modelKey } from "../history-cache";
 
 export interface SuiteValidationResult {
@@ -39,23 +43,35 @@ export function validateSuiteForExecution(suite: EvaluationSuite): SuiteValidati
   }
   for (const task of suite.tasks) {
     if (!task.title.trim()) {
-      errors.push({ field: `task.${task.id}.title`, message: `Task ${task.id}: title is required.` });
+      errors.push({
+        field: `task.${task.id}.title`,
+        message: `Task ${task.id}: title is required.`,
+      });
     }
     if (!task.prompt.trim()) {
-      errors.push({ field: `task.${task.id}.prompt`, message: `Task ${task.id}: prompt is required.` });
+      errors.push({
+        field: `task.${task.id}.prompt`,
+        message: `Task ${task.id}: prompt is required.`,
+      });
     }
   }
 
   // Model roster: ≥2 enabled, unique opaque keys
   const enabledSlots = suite.modelSlots.filter((s) => s.enabled);
   if (enabledSlots.length < 2) {
-    errors.push({ field: "modelSlots", message: "At least two enabled candidate models are required to run." });
+    errors.push({
+      field: "modelSlots",
+      message: "At least two enabled candidate models are required to run.",
+    });
   }
   const keys = enabledSlots.map((s) => modelKey(s.providerId, s.slug));
   const seen = new Set<string>();
   for (const key of keys) {
     if (seen.has(key)) {
-      errors.push({ field: "modelSlots", message: `Duplicate model key "${key}" — enabled models must have unique providerId:modelSlug.` });
+      errors.push({
+        field: "modelSlots",
+        message: `Duplicate model key "${key}" — enabled models must have unique providerId:modelSlug.`,
+      });
       break;
     }
     seen.add(key);
@@ -68,8 +84,11 @@ export function validateSuiteForExecution(suite: EvaluationSuite): SuiteValidati
 
   const reasoningPolicy = suite.reasoningPolicy ?? DEFAULT_REASONING_POLICY;
   if (reasoningPolicy.candidates !== "provider-default") {
-    const incompatible = enabledSlots.filter((slot) =>
-      !capabilitiesForModel(slot.providerId, slot.slug).supportedEfforts.includes(reasoningPolicy.candidates),
+    const incompatible = enabledSlots.filter(
+      (slot) =>
+        !capabilitiesForModel(slot.providerId, slot.slug).supportedEfforts.includes(
+          reasoningPolicy.candidates,
+        ),
     );
     if (incompatible.length > 0) {
       errors.push({
@@ -127,14 +146,13 @@ export function validateSuiteForSave(suite: EvaluationSuite): SuiteValidationRes
 /**
  * Check if a suite has unsaved changes by comparing semantic content.
  */
-export function isSuiteDirty(
-  persisted: EvaluationSuite,
-  draft: EvaluationSuite,
-): boolean {
+export function isSuiteDirty(persisted: EvaluationSuite, draft: EvaluationSuite): boolean {
   return JSON.stringify(stripMutable(persisted)) !== JSON.stringify(stripMutable(draft));
 }
 
-function stripMutable(suite: EvaluationSuite): Omit<EvaluationSuite, "revision" | "createdAt" | "updatedAt" | "archivedAt"> {
+function stripMutable(
+  suite: EvaluationSuite,
+): Omit<EvaluationSuite, "revision" | "createdAt" | "updatedAt" | "archivedAt"> {
   const { revision, createdAt, updatedAt, archivedAt, ...rest } = suite;
   return rest;
 }

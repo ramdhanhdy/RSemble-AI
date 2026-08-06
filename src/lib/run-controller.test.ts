@@ -47,7 +47,13 @@ function makeDeps(state: StudioState, now: () => number = () => Date.now()) {
   const dispatch: React.Dispatch<Action> = (a) => {
     dispatched.push(a);
     // Minimal reducer emulation for the flags the controller checks.
-    if (a.type === "FANOUT_START") stateRef.current = { ...stateRef.current, running: true, candidates: a.candidates, runContext: a.context };
+    if (a.type === "FANOUT_START")
+      stateRef.current = {
+        ...stateRef.current,
+        running: true,
+        candidates: a.candidates,
+        runContext: a.context,
+      };
     if (a.type === "CANDIDATE_RESULT") {
       stateRef.current = {
         ...stateRef.current,
@@ -65,16 +71,49 @@ function makeDeps(state: StudioState, now: () => number = () => Date.now()) {
       };
     }
     if (a.type === "FANOUT_END") stateRef.current = { ...stateRef.current };
-    if (a.type === "INSUFFICIENT_CANDIDATES") stateRef.current = { ...stateRef.current, running: false, insufficient: { done: a.done, failed: a.failed } };
+    if (a.type === "INSUFFICIENT_CANDIDATES")
+      stateRef.current = {
+        ...stateRef.current,
+        running: false,
+        insufficient: { done: a.done, failed: a.failed },
+      };
     // Mirrors the real reducer's standalone active-stage transition (spec §5.4):
     // running + cleared stale terminal artifacts, runContext retained.
-    if (a.type === "JUDGE_START") stateRef.current = { ...stateRef.current, running: true, judgeStatus: "running", judgeError: null, judgeReport: null, consensus: null, insufficient: null, fusionStatus: "idle", fusionError: null, fusedText: null };
-    if (a.type === "JUDGE_RESULT") stateRef.current = { ...stateRef.current, running: a.mode === "fuse" ? stateRef.current.running : false, judgeStatus: "done", judgeReport: a.report };
-    if (a.type === "JUDGE_FAILED") stateRef.current = { ...stateRef.current, running: false, judgeStatus: "error" };
-    if (a.type === "FUSION_START") stateRef.current = { ...stateRef.current, running: true, fusionStatus: "running" };
-    if (a.type === "FUSION_RESULT") stateRef.current = { ...stateRef.current, running: false, fusionStatus: "done", fusedText: a.text };
-    if (a.type === "FUSION_FAILED") stateRef.current = { ...stateRef.current, running: false, fusionStatus: "error" };
-    if (a.type === "ABORT_RUN") stateRef.current = { ...stateRef.current, running: false, aborted: true };
+    if (a.type === "JUDGE_START")
+      stateRef.current = {
+        ...stateRef.current,
+        running: true,
+        judgeStatus: "running",
+        judgeError: null,
+        judgeReport: null,
+        consensus: null,
+        insufficient: null,
+        fusionStatus: "idle",
+        fusionError: null,
+        fusedText: null,
+      };
+    if (a.type === "JUDGE_RESULT")
+      stateRef.current = {
+        ...stateRef.current,
+        running: a.mode === "fuse" ? stateRef.current.running : false,
+        judgeStatus: "done",
+        judgeReport: a.report,
+      };
+    if (a.type === "JUDGE_FAILED")
+      stateRef.current = { ...stateRef.current, running: false, judgeStatus: "error" };
+    if (a.type === "FUSION_START")
+      stateRef.current = { ...stateRef.current, running: true, fusionStatus: "running" };
+    if (a.type === "FUSION_RESULT")
+      stateRef.current = {
+        ...stateRef.current,
+        running: false,
+        fusionStatus: "done",
+        fusedText: a.text,
+      };
+    if (a.type === "FUSION_FAILED")
+      stateRef.current = { ...stateRef.current, running: false, fusionStatus: "error" };
+    if (a.type === "ABORT_RUN")
+      stateRef.current = { ...stateRef.current, running: false, aborted: true };
   };
   const deps: RunControllerDeps = {
     stateRef,
@@ -128,14 +167,35 @@ function stateWithSlots(slots: StudioState["slots"], mode: "rank" | "fuse" = "ra
 }
 
 const TWO_SLOTS: StudioState["slots"] = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "A",
+    slug: "model-a",
+    enabled: true,
+  },
   { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
 ];
 
 const THREE_SLOTS: StudioState["slots"] = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "A",
+    slug: "model-a",
+    enabled: true,
+  },
   { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
-  { id: "s3", providerId: "gemini", provider: "Gemini", model: "C", slug: "model-c", enabled: true },
+  {
+    id: "s3",
+    providerId: "gemini",
+    provider: "Gemini",
+    model: "C",
+    slug: "model-c",
+    enabled: true,
+  },
 ];
 
 async function* streamOf(text: string): AsyncGenerator<string, void, unknown> {
@@ -189,24 +249,51 @@ afterEach(() => {
 describe("run-controller — guarded paths", () => {
   it("runFanout with no enabled slots is blocked before any provider call", async () => {
     const state = stateWithSlots([
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "a", enabled: false },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "A",
+        slug: "a",
+        enabled: false,
+      },
     ]);
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
-    expect(dispatched).toContainEqual({ type: "FANOUT_BLOCKED", reason: "Enable at least two candidate models." });
+    expect(dispatched).toContainEqual({
+      type: "FANOUT_BLOCKED",
+      reason: "Enable at least two candidate models.",
+    });
     expect(chatStreamMock).not.toHaveBeenCalled();
   });
 
   it("runFanout with exactly one enabled slot is blocked before any provider call", async () => {
     const state = stateWithSlots([
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "a", enabled: true },
-      { id: "s2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "b", enabled: false },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "A",
+        slug: "a",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "B",
+        slug: "b",
+        enabled: false,
+      },
     ]);
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
-    expect(dispatched).toContainEqual({ type: "FANOUT_BLOCKED", reason: "Add or enable one more candidate to compare." });
+    expect(dispatched).toContainEqual({
+      type: "FANOUT_BLOCKED",
+      reason: "Add or enable one more candidate to compare.",
+    });
     expect(chatStreamMock).not.toHaveBeenCalled();
   });
 
@@ -247,18 +334,17 @@ describe("run-controller — guarded paths", () => {
     const { deps, dispatched, abortControllersRef } = makeDeps(state);
 
     let resolveStream: (() => void) | undefined;
-    chatStreamMock.mockImplementation(
-      (opts: { signal?: AbortSignal }) =>
-        (async function* () {
-          await new Promise<void>((resolve) => {
-            resolveStream = resolve;
-            opts.signal?.addEventListener("abort", () => resolve());
-          });
-          if (opts.signal?.aborted) {
-            throw new DOMException("The operation was aborted.", "AbortError");
-          }
-          yield "late answer";
-        })(),
+    chatStreamMock.mockImplementation((opts: { signal?: AbortSignal }) =>
+      (async function* () {
+        await new Promise<void>((resolve) => {
+          resolveStream = resolve;
+          opts.signal?.addEventListener("abort", () => resolve());
+        });
+        if (opts.signal?.aborted) {
+          throw new DOMException("The operation was aborted.", "AbortError");
+        }
+        yield "late answer";
+      })(),
     );
 
     const controller = createRunController(deps);
@@ -327,25 +413,68 @@ describe("run-controller — guarded paths", () => {
     // failed candidate was produced. The candidate snapshot still carries the
     // OLD slug/providerId. Retry must resolve the slot by identity (cand-s2 →
     // s2) and stream the slot's current slug — not the candidate's stale slug.
-    const state = stateWithSlots([
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
-      // switched: was model-b/umans, now model-b2/gemini
-      { id: "s2", providerId: "gemini", provider: "Gemini", model: "B2", slug: "model-b2", enabled: true },
-    ], "rank");
+    const state = stateWithSlots(
+      [
+        {
+          id: "s1",
+          providerId: "openrouter",
+          provider: "OpenRouter",
+          model: "A",
+          slug: "model-a",
+          enabled: true,
+        },
+        // switched: was model-b/umans, now model-b2/gemini
+        {
+          id: "s2",
+          providerId: "gemini",
+          provider: "Gemini",
+          model: "B2",
+          slug: "model-b2",
+          enabled: true,
+        },
+      ],
+      "rank",
+    );
     state.candidates = [
       {
-        id: "cand-s1", model: "A", provider: "OpenRouter", providerId: "openrouter", slug: "model-a",
-        accent: "indigo", strategy: "Parallel model", summary: "good", scores: {}, weightedScore: 0,
-        segments: [{ id: "a", text: "existing answer" }], status: "done", startedAt: 100, finishedAt: 200,
+        id: "cand-s1",
+        model: "A",
+        provider: "OpenRouter",
+        providerId: "openrouter",
+        slug: "model-a",
+        accent: "indigo",
+        strategy: "Parallel model",
+        summary: "good",
+        scores: {},
+        weightedScore: 0,
+        segments: [{ id: "a", text: "existing answer" }],
+        status: "done",
+        startedAt: 100,
+        finishedAt: 200,
       },
       {
-        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
-        accent: "emerald", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
-        segments: [], status: "error", errorMessage: "failed",
+        id: "cand-s2",
+        model: "B",
+        provider: "Umans",
+        providerId: "umans",
+        slug: "model-b",
+        accent: "emerald",
+        strategy: "Parallel model",
+        summary: "",
+        scores: {},
+        weightedScore: 0,
+        segments: [],
+        status: "error",
+        errorMessage: "failed",
       },
     ];
     chatStreamMock.mockImplementation(() => streamOf("switched-model answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
 
@@ -362,15 +491,35 @@ describe("run-controller — guarded paths", () => {
   });
 
   it("retryCandidate is a no-op when its slot no longer exists", async () => {
-    const state = stateWithSlots([
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
-      // s2 was removed after the run.
-    ], "rank");
+    const state = stateWithSlots(
+      [
+        {
+          id: "s1",
+          providerId: "openrouter",
+          provider: "OpenRouter",
+          model: "A",
+          slug: "model-a",
+          enabled: true,
+        },
+        // s2 was removed after the run.
+      ],
+      "rank",
+    );
     state.candidates = [
       {
-        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
-        accent: "emerald", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
-        segments: [], status: "error", errorMessage: "failed",
+        id: "cand-s2",
+        model: "B",
+        provider: "Umans",
+        providerId: "umans",
+        slug: "model-b",
+        accent: "emerald",
+        strategy: "Parallel model",
+        summary: "",
+        scores: {},
+        weightedScore: 0,
+        segments: [],
+        status: "error",
+        errorMessage: "failed",
       },
     ];
     const { deps, dispatched } = makeDeps(state);
@@ -383,7 +532,12 @@ describe("run-controller — guarded paths", () => {
   it("happy path: fanout → judge → (rank) terminal JUDGE_RESULT with provider-scoped history keys", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
@@ -406,18 +560,44 @@ describe("run-controller — guarded paths", () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     state.candidates = [
       {
-        id: "cand-s1", model: "A", provider: "OpenRouter", providerId: "openrouter", slug: "model-a",
-        accent: "indigo", strategy: "Parallel model", summary: "good", scores: {}, weightedScore: 0,
-        segments: [{ id: "a", text: "existing answer" }], status: "done", startedAt: 100, finishedAt: 200,
+        id: "cand-s1",
+        model: "A",
+        provider: "OpenRouter",
+        providerId: "openrouter",
+        slug: "model-a",
+        accent: "indigo",
+        strategy: "Parallel model",
+        summary: "good",
+        scores: {},
+        weightedScore: 0,
+        segments: [{ id: "a", text: "existing answer" }],
+        status: "done",
+        startedAt: 100,
+        finishedAt: 200,
       },
       {
-        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
-        accent: "emerald", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
-        segments: [], status: "error", errorMessage: "failed",
+        id: "cand-s2",
+        model: "B",
+        provider: "Umans",
+        providerId: "umans",
+        slug: "model-b",
+        accent: "emerald",
+        strategy: "Parallel model",
+        summary: "",
+        scores: {},
+        weightedScore: 0,
+        segments: [],
+        status: "error",
+        errorMessage: "failed",
       },
     ];
     chatStreamMock.mockImplementation(() => streamOf("retried answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
 
@@ -446,11 +626,19 @@ describe("run-controller — guarded paths", () => {
     await createRunController(deps).runFanout();
 
     const { addRun } = await import("./run-history");
-    expect((addRun as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(addRun as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
     const results = dispatched.filter((action) => action.type === "CANDIDATE_RESULT");
     expect(results).toEqual([
-      expect.objectContaining({ finishedAt: 1_250, tokensIn: expect.any(Number), tokensOut: expect.any(Number) }),
-      expect.objectContaining({ finishedAt: 1_500, tokensIn: expect.any(Number), tokensOut: expect.any(Number) }),
+      expect.objectContaining({
+        finishedAt: 1_250,
+        tokensIn: expect.any(Number),
+        tokensOut: expect.any(Number),
+      }),
+      expect.objectContaining({
+        finishedAt: 1_500,
+        tokensIn: expect.any(Number),
+        tokensOut: expect.any(Number),
+      }),
     ]);
     for (const result of results) {
       if (result.type === "CANDIDATE_RESULT") {
@@ -463,11 +651,18 @@ describe("run-controller — guarded paths", () => {
   it("uses the immutable seed mode when mode mutates during a run", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     const { deps, stateRef, dispatched } = makeDeps(state);
-    chatStreamMock.mockImplementation(() => (async function* () {
-      stateRef.current = { ...stateRef.current, mode: "fuse" };
-      yield "answer";
-    })());
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatStreamMock.mockImplementation(() =>
+      (async function* () {
+        stateRef.current = { ...stateRef.current, mode: "fuse" };
+        yield "answer";
+      })(),
+    );
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
 
     await createRunController(deps).runFanout();
 
@@ -481,15 +676,26 @@ describe("run-controller — guarded paths", () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
     const { deps, stateRef, dispatched } = makeDeps(state);
     const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
-    deps.lease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-fuse", now: () => 1000, ttl: 10_000 });
+    deps.lease = new InMemoryExecutionLease(shared, null, {
+      ownerId: "tab-fuse",
+      now: () => 1000,
+      ttl: 10_000,
+    });
     let candidateCall = 0;
-    chatStreamMock.mockImplementation(() => (async function* () {
-      candidateCall += 1;
-      stateRef.current = { ...stateRef.current, mode: "rank" };
-      yield `answer-${candidateCall}`;
-    })());
+    chatStreamMock.mockImplementation(() =>
+      (async function* () {
+        candidateCall += 1;
+        stateRef.current = { ...stateRef.current, mode: "rank" };
+        yield `answer-${candidateCall}`;
+      })(),
+    );
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4.0], ["B", 3.0]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4.0],
+          ["B", 3.0],
+        ]),
+      )
       .mockResolvedValueOnce("fused answer");
 
     await createRunController(deps).runFanout();
@@ -507,9 +713,7 @@ describe("run-controller — judge instruction threading", () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     state.judgeInstruction = "Penalize any answer that hedges.";
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
-    chatCompletionMock.mockResolvedValue(
-      judgeResponse([]),
-    );
+    chatCompletionMock.mockResolvedValue(judgeResponse([]));
     const { deps } = makeDeps(state);
     await createRunController(deps).runFanout();
 
@@ -526,7 +730,10 @@ describe("run-controller — judge instruction threading", () => {
     // judge call then fusion call
     chatCompletionMock
       .mockResolvedValueOnce(
-        judgeResponse([["A", 4.0], ["B", 3.0]]),
+        judgeResponse([
+          ["A", 4.0],
+          ["B", 3.0],
+        ]),
       )
       .mockResolvedValueOnce("fused answer");
     const { deps, dispatched } = makeDeps(state);
@@ -546,7 +753,10 @@ describe("run-controller — judge instruction threading", () => {
     // judgeInstruction defaults to "" via initialState
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
     chatCompletionMock.mockResolvedValue(
-      judgeResponse([["A", 4.0], ["B", 3.0]]),
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
     );
     const { deps } = makeDeps(state);
     await createRunController(deps).runFanout();
@@ -568,11 +778,18 @@ describe("run-controller — partial candidate failures", () => {
     const state = stateWithSlots(THREE_SLOTS, "fuse");
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("provider B exploded"); })
+      .mockImplementationOnce(() => {
+        throw new Error("provider B exploded");
+      })
       .mockImplementationOnce(() => streamOf("answer C"));
     // Two usable candidates → blind labels A and B (identity permutation).
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4.0], ["B", 3.5]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4.0],
+          ["B", 3.5],
+        ]),
+      )
       .mockResolvedValueOnce("fused A+C");
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
@@ -602,7 +819,9 @@ describe("run-controller — partial candidate failures", () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("provider B exploded"); });
+      .mockImplementationOnce(() => {
+        throw new Error("provider B exploded");
+      });
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
@@ -620,7 +839,9 @@ describe("run-controller — partial candidate failures", () => {
 
   it("does NOT fuse when all candidates failed (all-fail) and terminates deterministically", async () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
-    chatStreamMock.mockImplementation(() => { throw new Error("all providers down"); });
+    chatStreamMock.mockImplementation(() => {
+      throw new Error("all providers down");
+    });
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
@@ -638,7 +859,9 @@ describe("run-controller — partial candidate failures", () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("provider B exploded"); });
+      .mockImplementationOnce(() => {
+        throw new Error("provider B exploded");
+      });
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
@@ -688,14 +911,33 @@ describe("run-controller — partial candidate failures", () => {
     state.running = false;
     state.candidates = [
       {
-        id: "cand-s1", model: "A", provider: "OpenRouter", providerId: "openrouter", slug: "model-a",
-        accent: "indigo", strategy: "Parallel model", summary: "good", scores: {}, weightedScore: 0,
-        segments: [{ id: "a", text: "real answer" }], status: "done",
+        id: "cand-s1",
+        model: "A",
+        provider: "OpenRouter",
+        providerId: "openrouter",
+        slug: "model-a",
+        accent: "indigo",
+        strategy: "Parallel model",
+        summary: "good",
+        scores: {},
+        weightedScore: 0,
+        segments: [{ id: "a", text: "real answer" }],
+        status: "done",
       },
       {
-        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
-        accent: "emerald", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
-        segments: [], status: "error", errorMessage: "failed",
+        id: "cand-s2",
+        model: "B",
+        provider: "Umans",
+        providerId: "umans",
+        slug: "model-b",
+        accent: "emerald",
+        strategy: "Parallel model",
+        summary: "",
+        scores: {},
+        weightedScore: 0,
+        segments: [],
+        status: "error",
+        errorMessage: "failed",
       },
     ];
     const { deps, dispatched } = makeDeps(state);
@@ -720,19 +962,47 @@ describe("run-controller — partial candidate failures", () => {
     state.judgeReport = { labelMap: [], evaluationsById: {}, comparisons: [] };
     state.candidates = [
       {
-        id: "cand-s1", model: "A", provider: "OpenRouter", providerId: "openrouter", slug: "model-a",
-        accent: "indigo", strategy: "Parallel model", summary: "good", scores: {}, weightedScore: 0,
-        segments: [{ id: "a", text: "answer A" }], status: "done",
+        id: "cand-s1",
+        model: "A",
+        provider: "OpenRouter",
+        providerId: "openrouter",
+        slug: "model-a",
+        accent: "indigo",
+        strategy: "Parallel model",
+        summary: "good",
+        scores: {},
+        weightedScore: 0,
+        segments: [{ id: "a", text: "answer A" }],
+        status: "done",
       },
       {
-        id: "cand-s2", model: "B", provider: "Umans", providerId: "umans", slug: "model-b",
-        accent: "emerald", strategy: "Parallel model", summary: "ok", scores: {}, weightedScore: 0,
-        segments: [{ id: "b", text: "answer B" }], status: "done",
+        id: "cand-s2",
+        model: "B",
+        provider: "Umans",
+        providerId: "umans",
+        slug: "model-b",
+        accent: "emerald",
+        strategy: "Parallel model",
+        summary: "ok",
+        scores: {},
+        weightedScore: 0,
+        segments: [{ id: "b", text: "answer B" }],
+        status: "done",
       },
       {
-        id: "cand-s3", model: "C", provider: "Gemini", providerId: "gemini", slug: "model-c",
-        accent: "violet", strategy: "Parallel model", summary: "", scores: {}, weightedScore: 0,
-        segments: [], status: "error", errorMessage: "gemini provider crashed",
+        id: "cand-s3",
+        model: "C",
+        provider: "Gemini",
+        providerId: "gemini",
+        slug: "model-c",
+        accent: "violet",
+        strategy: "Parallel model",
+        summary: "",
+        scores: {},
+        weightedScore: 0,
+        segments: [],
+        status: "error",
+        errorMessage: "gemini provider crashed",
       },
     ];
     chatCompletionMock.mockResolvedValueOnce("fused A+B");
@@ -786,7 +1056,10 @@ describe("run-controller — partial candidate failures", () => {
     expect(chatCompletionMock).not.toHaveBeenCalled();
     // No fusion-related dispatches while running.
     const fusionDispatches = dispatched.filter(
-      (a) => a.type === "FUSION_START" || a.type === "INSUFFICIENT_CANDIDATES" || a.type === "FUSION_RESULT",
+      (a) =>
+        a.type === "FUSION_START" ||
+        a.type === "INSUFFICIENT_CANDIDATES" ||
+        a.type === "FUSION_RESULT",
     );
     expect(fusionDispatches).toHaveLength(0);
   });
@@ -801,9 +1074,7 @@ describe("run-controller — judge contract failures", () => {
   it("dispatches JUDGE_FAILED in rank mode when judge returns an empty evaluations array", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
-    chatCompletionMock.mockResolvedValue(
-      judgeResponse([]),
-    );
+    chatCompletionMock.mockResolvedValue(judgeResponse([]));
     const { deps, dispatched, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
@@ -819,9 +1090,7 @@ describe("run-controller — judge contract failures", () => {
   it("dispatches JUDGE_FAILED in rank mode when judge returns evaluations with missing candidates", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
-    chatCompletionMock.mockResolvedValue(
-      judgeResponse([["A", 4.0]]),
-    );
+    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0]]));
     const { deps, dispatched, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
@@ -836,7 +1105,11 @@ describe("run-controller — judge contract failures", () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
     chatCompletionMock.mockResolvedValueOnce(
-      judgeResponse([["A", 4.0], ["A", 2.0], ["B", 3.0]]),
+      judgeResponse([
+        ["A", 4.0],
+        ["A", 2.0],
+        ["B", 3.0],
+      ]),
     );
     const { deps, dispatched, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
@@ -858,7 +1131,13 @@ describe("run-controller — judge contract failures", () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
     chatCompletionMock.mockResolvedValueOnce(
-      JSON.stringify({ consensus: [], contradictions: [], uniqueInsights: [], evaluations: { A: 4.0, B: 3.0 }, comparisons: [] }),
+      JSON.stringify({
+        consensus: [],
+        contradictions: [],
+        uniqueInsights: [],
+        evaluations: { A: 4.0, B: 3.0 },
+        comparisons: [],
+      }),
     );
     const { deps, dispatched, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
@@ -876,7 +1155,11 @@ describe("run-controller — judge contract failures", () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
     chatCompletionMock.mockResolvedValue(
-      judgeResponse([["A", 4.0], ["B", 3.0], ["Z", 2.0]]),
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+        ["Z", 2.0],
+      ]),
     );
     const { deps, dispatched, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
@@ -892,7 +1175,11 @@ describe("run-controller — judge contract failures", () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
     chatCompletionMock.mockResolvedValueOnce(
-      judgeResponse([["A", 4.0], ["B", 3.0], ["Z", 2.0]]),
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+        ["Z", 2.0],
+      ]),
     );
     const { deps, dispatched, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
@@ -912,7 +1199,10 @@ describe("run-controller — judge contract failures", () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
     chatCompletionMock.mockResolvedValueOnce(
-      judgeResponse([["A", 10], ["B", 3.0]]),
+      judgeResponse([
+        ["A", 10],
+        ["B", 3.0],
+      ]),
     );
     const { deps, dispatched, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
@@ -937,7 +1227,9 @@ describe("run-controller — partial-failure UI visibility", () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("rate limit exceeded"); });
+      .mockImplementationOnce(() => {
+        throw new Error("rate limit exceeded");
+      });
     const { deps, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
@@ -960,11 +1252,18 @@ describe("run-controller — partial-failure UI visibility", () => {
     const state = stateWithSlots(THREE_SLOTS, "fuse");
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("provider B exploded"); })
+      .mockImplementationOnce(() => {
+        throw new Error("provider B exploded");
+      })
       .mockImplementationOnce(() => streamOf("answer C"));
     // Two usable candidates → blind labels A and B (identity permutation).
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4.0], ["B", 3.5]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4.0],
+          ["B", 3.5],
+        ]),
+      )
       .mockResolvedValueOnce("fused A+C");
     const { deps, stateRef } = makeDeps(state);
     const controller = createRunController(deps);
@@ -996,7 +1295,12 @@ describe("run-controller — partial-failure UI visibility", () => {
     expect(stateRef.current.insufficient).toEqual({ done: 1, failed: 1 });
     // The empty candidate is still in state with status "done" but empty content.
     const empty = stateRef.current.candidates.find(
-      (c) => c.status === "done" && c.segments.map((s) => s.text).join("").trim().length === 0,
+      (c) =>
+        c.status === "done" &&
+        c.segments
+          .map((s) => s.text)
+          .join("")
+          .trim().length === 0,
     );
     expect(empty).toBeDefined();
     expect(empty!.model).toBe("A");
@@ -1009,8 +1313,22 @@ describe("run-controller — partial-failure UI visibility", () => {
 
 describe("run-controller — 9Router integration", () => {
   const MIXED_SLOTS: StudioState["slots"] = [
-    { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
-    { id: "s2", providerId: "9router", provider: "9Router", model: "B", slug: "ag/gemini-3.1-pro-low", enabled: true },
+    {
+      id: "s1",
+      providerId: "openrouter",
+      provider: "OpenRouter",
+      model: "A",
+      slug: "model-a",
+      enabled: true,
+    },
+    {
+      id: "s2",
+      providerId: "9router",
+      provider: "9Router",
+      model: "B",
+      slug: "ag/gemini-3.1-pro-low",
+      enabled: true,
+    },
   ];
 
   it("completes a mixed openrouter + 9router fanout", async () => {
@@ -1045,7 +1363,12 @@ describe("run-controller — 9Router integration", () => {
 
   it("9router can be the critic in Rank mode", async () => {
     chatStreamMock.mockImplementation(() => streamOf("candidate answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const state = stateWithSlots(MIXED_SLOTS, "rank");
     state.critic = { providerId: "9router", model: "ag/gemini-3.1-pro-low" };
     const { deps, dispatched } = makeDeps(state);
@@ -1067,7 +1390,12 @@ describe("run-controller — judge report threading", () => {
   it("dispatches JUDGE_RESULT carrying a report whose evaluations are keyed by candidate IDs", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps, dispatched } = makeDeps(state);
     await createRunController(deps).runFanout();
 
@@ -1089,18 +1417,17 @@ describe("run-controller — judge report threading", () => {
     const { deps, dispatched } = makeDeps(state);
 
     let resolveStream: (() => void) | undefined;
-    chatStreamMock.mockImplementation(
-      (opts: { signal?: AbortSignal }) =>
-        (async function* () {
-          await new Promise<void>((resolve) => {
-            resolveStream = resolve;
-            opts.signal?.addEventListener("abort", () => resolve());
-          });
-          if (opts.signal?.aborted) {
-            throw new DOMException("aborted", "AbortError");
-          }
-          yield "late answer";
-        })(),
+    chatStreamMock.mockImplementation((opts: { signal?: AbortSignal }) =>
+      (async function* () {
+        await new Promise<void>((resolve) => {
+          resolveStream = resolve;
+          opts.signal?.addEventListener("abort", () => resolve());
+        });
+        if (opts.signal?.aborted) {
+          throw new DOMException("aborted", "AbortError");
+        }
+        yield "late answer";
+      })(),
     );
     const controller = createRunController(deps);
     const runPromise = controller.runFanout();
@@ -1116,7 +1443,12 @@ describe("run-controller — judge report threading", () => {
   it("keeps run-history score and winner recording unchanged (provider-scoped keys)", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("some answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps } = makeDeps(state);
     await createRunController(deps).runFanout();
 
@@ -1155,22 +1487,42 @@ function doneCandidate(id: string, providerId: ProviderId, slug: string, text: s
  *  tests can prove the retry uses the frozen context + current critic. */
 function editedProfile(): EvaluationProfileSnapshot {
   return {
-    id: "edited", version: 1, name: "Edited", description: "edited",
+    id: "edited",
+    version: 1,
+    name: "Edited",
+    description: "edited",
     judgeInstruction: "",
     criteria: [
-      { id: "rx", name: "EDITED_RUBRIC_MARKER", description: "edited", weight: 0.9, anchors: { one: "Poor", three: "OK", five: "Great" } },
+      {
+        id: "rx",
+        name: "EDITED_RUBRIC_MARKER",
+        description: "edited",
+        weight: 0.9,
+        anchors: { one: "Poor", three: "OK", five: "Great" },
+      },
     ],
-    createdAt: 1000, updatedAt: 1000,
+    createdAt: 1000,
+    updatedAt: 1000,
   };
 }
 function retainedProfile(): EvaluationProfileSnapshot {
   return {
-    id: "retained", version: 1, name: "Retained", description: "retained",
+    id: "retained",
+    version: 1,
+    name: "Retained",
+    description: "retained",
     judgeInstruction: "",
     criteria: [
-      { id: "r1", name: "RETAINED_RUBRIC_MARKER", description: "retained", weight: 0.5, anchors: { one: "Poor", three: "OK", five: "Great" } },
+      {
+        id: "r1",
+        name: "RETAINED_RUBRIC_MARKER",
+        description: "retained",
+        weight: 0.5,
+        anchors: { one: "Poor", three: "OK", five: "Great" },
+      },
     ],
-    createdAt: 1000, updatedAt: 1000,
+    createdAt: 1000,
+    updatedAt: 1000,
   };
 }
 function judgeRetryState(mode: "rank" | "fuse" = "rank"): StudioState {
@@ -1222,16 +1574,28 @@ function retryJudgeResponse(scores: Array<readonly [string, number]>): string {
 describe("run-controller — retryJudge (Judge-only recovery)", () => {
   it("uses the captured Fuse mode when a legacy context omitted mode", async () => {
     const state = judgeRetryState("fuse");
-    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      retryJudgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps, dispatched } = makeDeps(state);
     await createRunController(deps).retryJudge();
 
-    expect(dispatched).toContainEqual(expect.objectContaining({ type: "JUDGE_RESULT", mode: "fuse" }));
+    expect(dispatched).toContainEqual(
+      expect.objectContaining({ type: "JUDGE_RESULT", mode: "fuse" }),
+    );
   });
 
   it("makes exactly one Judge completion call and zero candidate stream calls", async () => {
     const state = judgeRetryState();
-    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      retryJudgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps } = makeDeps(state);
     await createRunController(deps).retryJudge();
 
@@ -1241,7 +1605,12 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
 
   it("judges against the retained run context and current instruction, not edited command values", async () => {
     const state = judgeRetryState();
-    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      retryJudgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps } = makeDeps(state);
     await createRunController(deps).retryJudge();
 
@@ -1255,7 +1624,12 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
 
   it("uses the current critic provider/model for the new Judge attempt", async () => {
     const state = judgeRetryState();
-    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      retryJudgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps } = makeDeps(state);
     await createRunController(deps).retryJudge();
 
@@ -1266,13 +1640,24 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
   it("leaves candidate text and metadata byte-for-byte unchanged", async () => {
     const state = judgeRetryState();
     const before = structuredClone(state.candidates);
-    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      retryJudgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps, dispatched, stateRef } = makeDeps(state);
     await createRunController(deps).retryJudge();
 
     const mutatingTypes = new Set([
-      "FANOUT_START", "CANDIDATE_RESULT", "CANDIDATE_FAILED", "CANDIDATE_DELTA",
-      "RETRY_CANDIDATE_START", "RETRY_CANDIDATE_RESULT", "RETRY_CANDIDATE_FAILED", "RETRY_CANDIDATE_DELTA",
+      "FANOUT_START",
+      "CANDIDATE_RESULT",
+      "CANDIDATE_FAILED",
+      "CANDIDATE_DELTA",
+      "RETRY_CANDIDATE_START",
+      "RETRY_CANDIDATE_RESULT",
+      "RETRY_CANDIDATE_FAILED",
+      "RETRY_CANDIDATE_DELTA",
     ]);
     expect(dispatched.some((a) => mutatingTypes.has(a.type))).toBe(false);
     expect(stateRef.current.candidates).toEqual(before);
@@ -1280,7 +1665,12 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
 
   it("dispatches JUDGE_START then JUDGE_RESULT on a valid Rank retry", async () => {
     const state = judgeRetryState("rank");
-    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      retryJudgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps, dispatched } = makeDeps(state);
     await createRunController(deps).retryJudge();
 
@@ -1289,7 +1679,12 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
 
   it("writes exactly one run-history entry on success — not zero, not two", async () => {
     const state = judgeRetryState("rank");
-    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValue(
+      retryJudgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     const { deps } = makeDeps(state);
     await createRunController(deps).retryJudge();
 
@@ -1309,9 +1704,19 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
     expect(stateRef.current.candidates).toEqual(before);
 
     // A second attempt with a valid response succeeds against the same candidates.
-    chatCompletionMock.mockResolvedValueOnce(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      retryJudgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     await controller.retryJudge();
-    expect(dispatched.map((a) => a.type)).toEqual(["JUDGE_START", "JUDGE_FAILED", "JUDGE_START", "JUDGE_RESULT"]);
+    expect(dispatched.map((a) => a.type)).toEqual([
+      "JUDGE_START",
+      "JUDGE_FAILED",
+      "JUDGE_START",
+      "JUDGE_RESULT",
+    ]);
     expect(chatCompletionMock).toHaveBeenCalledTimes(2);
     expect(stateRef.current.candidates).toEqual(before);
   });
@@ -1319,12 +1724,22 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
   it("fuse mode continues to Fusion with the new scores after a valid retry", async () => {
     const state = judgeRetryState("fuse");
     chatCompletionMock
-      .mockResolvedValueOnce(retryJudgeResponse([["A", 4.5], ["B", 3.0]]))
+      .mockResolvedValueOnce(
+        retryJudgeResponse([
+          ["A", 4.5],
+          ["B", 3.0],
+        ]),
+      )
       .mockResolvedValueOnce("fused answer");
     const { deps, dispatched } = makeDeps(state);
     await createRunController(deps).retryJudge();
 
-    expect(dispatched.map((a) => a.type)).toEqual(["JUDGE_START", "JUDGE_RESULT", "FUSION_START", "FUSION_RESULT"]);
+    expect(dispatched.map((a) => a.type)).toEqual([
+      "JUDGE_START",
+      "JUDGE_RESULT",
+      "FUSION_START",
+      "FUSION_RESULT",
+    ]);
     expect(chatCompletionMock).toHaveBeenCalledTimes(2);
     const fusionText = JSON.stringify(chatCompletionMock.mock.calls[1][0].messages);
     expect(fusionText).toContain("answer from model A");
@@ -1341,7 +1756,12 @@ describe("run-controller — retryJudge (Judge-only recovery)", () => {
     const state = judgeRetryState();
     state.candidates = [
       doneCandidate("cand-1", "openrouter", "model-a", "answer from model A"),
-      { ...doneCandidate("cand-2", "umans", "model-b", ""), status: "error", errorMessage: "boom", segments: [] },
+      {
+        ...doneCandidate("cand-2", "umans", "model-b", ""),
+        status: "error",
+        errorMessage: "boom",
+        segments: [],
+      },
     ];
     const { deps, dispatched } = makeDeps(state);
     await createRunController(deps).retryJudge();
@@ -1430,7 +1850,12 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
   it("Rank success writes exactly one addRun call", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const { deps } = makeDeps(state);
     await createRunController(deps).runFanout();
     const { addRun } = await import("./run-history");
@@ -1441,9 +1866,14 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
   it("Fuse success writes exactly one addRun call", async () => {
     const state = stateWithSlots(TWO_SLOTS, "fuse");
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValueOnce(
-      judgeResponse([["A", 4], ["B", 3]]),
-    ).mockResolvedValueOnce("fused answer");
+    chatCompletionMock
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
+      .mockResolvedValueOnce("fused answer");
     const { deps } = makeDeps(state);
     await createRunController(deps).runFanout();
     const { addRun } = await import("./run-history");
@@ -1455,7 +1885,12 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
       .mockResolvedValueOnce("fused answer");
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
@@ -1481,9 +1916,12 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
   it("Judge retry makes zero candidate stream calls", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock
-      .mockResolvedValueOnce("malformed judge output")
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValueOnce("malformed judge output").mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const { deps } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
@@ -1495,7 +1933,9 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
   it("abort suppresses late results (stale epoch check)", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     let resolveB: () => void = () => {};
-    const deferredB = new Promise<void>((r) => { resolveB = r; });
+    const deferredB = new Promise<void>((r) => {
+      resolveB = r;
+    });
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
       .mockImplementationOnce(async () => {
@@ -1516,9 +1956,16 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
     const state = stateWithSlots(THREE_SLOTS, "rank");
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("B failed"); })
+      .mockImplementationOnce(() => {
+        throw new Error("B failed");
+      })
       .mockImplementationOnce(() => streamOf("answer C"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const { deps, dispatched } = makeDeps(state);
     await createRunController(deps).runFanout();
     const types = dispatched.map((a) => a.type);
@@ -1538,7 +1985,12 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
         callOrder.push("B-start");
         return streamOf("answer B");
       });
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const { deps } = makeDeps(state);
     await createRunController(deps).runFanout();
     expect(callOrder).toEqual(["A-start", "B-start"]);
@@ -1547,7 +1999,12 @@ describe("run-controller — characterization (pre-extraction invariants)", () =
   it("event order for Rank: FANOUT_START → CANDIDATE_RESULT × N → FANOUT_END → JUDGE_START → JUDGE_RESULT", async () => {
     const state = stateWithSlots(TWO_SLOTS, "rank");
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const { deps, dispatched } = makeDeps(state);
     await createRunController(deps).runFanout();
     const types = dispatched.map((a) => a.type);
@@ -1613,7 +2070,12 @@ describe("runFanout — attachment eligibility gate (7.6.6)", () => {
     chatStreamMock.mockImplementation(async function* () {
       yield "answer";
     });
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const state = { ...stateWithSlots(THREE_SLOTS), attachments: [IMAGE_ATT] };
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
@@ -1622,8 +2084,7 @@ describe("runFanout — attachment eligibility gate (7.6.6)", () => {
 
     expect(dispatched.some((a) => a.type === "TOGGLE_SLOT" && a.id === "s3")).toBe(true);
     const start = dispatched.find((a) => a.type === "FANOUT_START") as
-      | { candidates: { id: string }[] }
-      | undefined;
+      { candidates: { id: string }[] } | undefined;
     expect(start?.candidates.map((c) => c.id)).toEqual(["cand-s1", "cand-s2"]);
     expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(false);
   });
@@ -1635,7 +2096,12 @@ describe("runFanout — attachment eligibility gate (7.6.6)", () => {
     chatStreamMock.mockImplementation(async function* () {
       yield "answer";
     });
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const state = { ...stateWithSlots(THREE_SLOTS), attachments: [IMAGE_ATT] };
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
@@ -1654,7 +2120,12 @@ describe("retryCandidate — frozen attachment set from runContext (7.6.6)", () 
     chatStreamMock.mockImplementation(async function* () {
       yield "retried answer";
     });
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const failed = {
       ...doneCandidate("cand-s1", "openrouter", "model-a", "old answer"),
       status: "error" as const,
@@ -1663,10 +2134,7 @@ describe("retryCandidate — frozen attachment set from runContext (7.6.6)", () 
     };
     const state: StudioState = {
       ...stateWithSlots(TWO_SLOTS),
-      candidates: [
-        failed,
-        doneCandidate("cand-s2", "umans", "model-b", "answer from model B"),
-      ],
+      candidates: [failed, doneCandidate("cand-s2", "umans", "model-b", "answer from model B")],
       runContext: {
         prompt: "original task",
         evaluation: { kind: "holistic" },
@@ -1682,12 +2150,12 @@ describe("retryCandidate — frozen attachment set from runContext (7.6.6)", () 
 
     expect(dispatched.some((a) => a.type === "RETRY_CANDIDATE_START")).toBe(true);
     // The retry streamed the FROZEN attachment, not the now-empty live set.
-    const messages = (chatStreamMock.mock.calls[0][0] as { messages: { content: string | unknown[] }[] })
-      .messages;
+    const messages = (
+      chatStreamMock.mock.calls[0][0] as { messages: { content: string | unknown[] }[] }
+    ).messages;
     expect(JSON.stringify(messages)).toContain("attached notes body");
   });
 });
-
 
 function makeRecorderSpies() {
   return {
@@ -1731,7 +2199,12 @@ describe("run-controller — cross-tab paid execution lease", () => {
     deps.lease = tabB;
     const controller = createRunController(deps);
     await controller.runFanout();
-    expect(dispatched).toContainEqual(expect.objectContaining({ type: "FANOUT_BLOCKED", reason: expect.stringContaining("Another execution") }));
+    expect(dispatched).toContainEqual(
+      expect.objectContaining({
+        type: "FANOUT_BLOCKED",
+        reason: expect.stringContaining("Another execution"),
+      }),
+    );
     expect(chatStreamMock).not.toHaveBeenCalled();
   });
 
@@ -1741,13 +2214,36 @@ describe("run-controller — cross-tab paid execution lease", () => {
     const lease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-a", now, ttl: 10_000 });
     const state = stateWithSlots(TWO_SLOTS);
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValue(JSON.stringify({
-      consensus: [], contradictions: [], uniqueInsights: [], comparisons: [],
-      evaluations: [
-        { label: "A", score: 4, position: "a", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
-        { label: "B", score: 3, position: "b", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
-      ],
-    }));
+    chatCompletionMock.mockResolvedValue(
+      JSON.stringify({
+        consensus: [],
+        contradictions: [],
+        uniqueInsights: [],
+        comparisons: [],
+        evaluations: [
+          {
+            label: "A",
+            score: 4,
+            position: "a",
+            rationale: "r",
+            strengths: ["s"],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+          {
+            label: "B",
+            score: 3,
+            position: "b",
+            rationale: "r",
+            strengths: ["s"],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+        ],
+      }),
+    );
     const { deps } = makeDeps(state);
     deps.lease = lease;
     const controller = createRunController(deps);
@@ -1761,8 +2257,16 @@ describe("run-controller — cross-tab paid execution lease", () => {
     const now = () => clock;
     const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
     const [channelA, channelB] = linkedLeaseChannels();
-    const tabA = new InMemoryExecutionLease(shared, channelA as never, { ownerId: "tab-a", now, ttl: 10_000 });
-    const tabB = new InMemoryExecutionLease(shared, channelB as never, { ownerId: "tab-b", now, ttl: 10_000 });
+    const tabA = new InMemoryExecutionLease(shared, channelA as never, {
+      ownerId: "tab-a",
+      now,
+      ttl: 10_000,
+    });
+    const tabB = new InMemoryExecutionLease(shared, channelB as never, {
+      ownerId: "tab-b",
+      now,
+      ttl: 10_000,
+    });
     const recorder = makeRecorderSpies();
     const state = stateWithSlots(TWO_SLOTS);
     const { deps, dispatched } = makeDeps(state, now);
@@ -1770,10 +2274,12 @@ describe("run-controller — cross-tab paid execution lease", () => {
     deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
 
     const resolvers: Array<() => void> = [];
-    chatStreamMock.mockImplementation(() => (async function* () {
-      await new Promise<void>((resolve) => resolvers.push(resolve));
-      yield "late answer from reclaimed tab A";
-    })());
+    chatStreamMock.mockImplementation(() =>
+      (async function* () {
+        await new Promise<void>((resolve) => resolvers.push(resolve));
+        yield "late answer from reclaimed tab A";
+      })(),
+    );
     const runPromise = createRunController(deps).runFanout();
     await vi.waitFor(() => expect(chatStreamMock).toHaveBeenCalledTimes(2));
 
@@ -1807,14 +2313,24 @@ describe("run-controller — cross-tab paid execution lease", () => {
     deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     let resolveJudge!: (value: string) => void;
-    chatCompletionMock.mockImplementation(() => new Promise<string>((resolve) => { resolveJudge = resolve; }));
+    chatCompletionMock.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveJudge = resolve;
+        }),
+    );
 
     const runPromise = createRunController(deps).runFanout();
     await vi.waitFor(() => expect(chatCompletionMock).toHaveBeenCalledTimes(1));
     const stale = shared.lease!;
     clock += 10_001;
     const ownerB = await tabB.acquire({ kind: "compare", executionId: "run-b" });
-    resolveJudge(judgeResponse([["A", 4], ["B", 3]]));
+    resolveJudge(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     await runPromise;
 
     expect(dispatched.map((action) => action.type)).not.toContain("JUDGE_RESULT");
@@ -1838,8 +2354,18 @@ describe("run-controller — cross-tab paid execution lease", () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     let resolveFusion!: (value: string) => void;
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
-      .mockImplementationOnce(() => new Promise<string>((resolve) => { resolveFusion = resolve; }));
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveFusion = resolve;
+          }),
+      );
 
     const runPromise = createRunController(deps).runFanout();
     await vi.waitFor(() => expect(chatCompletionMock).toHaveBeenCalledTimes(2));

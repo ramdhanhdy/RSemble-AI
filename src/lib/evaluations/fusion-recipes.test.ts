@@ -22,8 +22,18 @@ import {
 } from "./fusion-recipes";
 
 const IDENTITIES: CandidateIdentity[] = [
-  { model: "GLM 5.2 Ultra", provider: "Z-AI", slug: "z-ai/glm-5.2-ultra", providerId: "openrouter" },
-  { model: "DeepSeek V4 Flash", provider: "DeepSeek", slug: "deepseek/deepseek-v4-flash", providerId: "openrouter" },
+  {
+    model: "GLM 5.2 Ultra",
+    provider: "Z-AI",
+    slug: "z-ai/glm-5.2-ultra",
+    providerId: "openrouter",
+  },
+  {
+    model: "DeepSeek V4 Flash",
+    provider: "DeepSeek",
+    slug: "deepseek/deepseek-v4-flash",
+    providerId: "openrouter",
+  },
 ];
 
 const BLIND: BlindCandidate[] = [
@@ -145,7 +155,8 @@ describe("family ablation semantics", () => {
   it("BlindRaw excludes judge analysis; AnalysisFed includes it qualitatively; AnalysisScores adds numbers", () => {
     const raw = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, inputFor("raw"))[1].content;
     const fed = renderRecipeMessages(FUSION_RECIPE_ANALYSIS_FED_V1, inputFor("fed"))[1].content;
-    const scores = renderRecipeMessages(FUSION_RECIPE_ANALYSIS_SCORES_V1, inputFor("scores"))[1].content;
+    const scores = renderRecipeMessages(FUSION_RECIPE_ANALYSIS_SCORES_V1, inputFor("scores"))[1]
+      .content;
 
     expect(raw).not.toContain("Development-judge analysis");
     expect(fed).toContain("Development-judge analysis");
@@ -307,7 +318,10 @@ const refineBase = {
 describe("renderRecipeMessages — attachment policy (7.6.4)", () => {
   it("is byte-identical to the pre-attachments output when absent", () => {
     const baseline = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, baseInput);
-    const withEmpty = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, { ...baseInput, attachments: [] });
+    const withEmpty = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
+      ...baseInput,
+      attachments: [],
+    });
     const withUndefined = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
       prompt: "merge these",
       profile: PROFILE,
@@ -326,7 +340,9 @@ describe("renderRecipeMessages — attachment policy (7.6.4)", () => {
     });
     const user = contentToText(msgs[1].content);
     expect(user.indexOf("BEGIN ATTACHMENT 1")).toBeGreaterThan(user.indexOf("User task:"));
-    expect(user.indexOf("Evaluation criteria:")).toBeGreaterThan(user.indexOf("BEGIN ATTACHMENT 1"));
+    expect(user.indexOf("Evaluation criteria:")).toBeGreaterThan(
+      user.indexOf("BEGIN ATTACHMENT 1"),
+    );
     expect(msgs[0].content).toContain("The user has attached 1 file(s).");
   });
 

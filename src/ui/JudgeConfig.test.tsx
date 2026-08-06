@@ -91,7 +91,9 @@ function render(node: React.ReactNode): Harness {
     $: (s) => container.querySelector<HTMLElement>(s),
     $$: (s) => [...container.querySelectorAll<HTMLElement>(s)],
     byText: (t) =>
-      [...container.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === t),
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (b) => b.textContent?.trim() === t,
+      ),
   };
 }
 
@@ -123,7 +125,9 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
         critic={{ providerId: "gemini", model: "gemini-3.1-pro-preview" }}
         models={GEMINI_MODELS}
         dispatch={(a) => dispatched.push(a)}
-        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
+        judgeInstruction=""
+        attachments={[]}
+        attachmentsToJudge={true}
       />,
     );
     try {
@@ -175,7 +179,9 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
         critic={{ providerId: "openrouter", model: "z-ai/glm-5.2" }}
         models={NO_MODELS}
         dispatch={(a) => dispatched.push(a)}
-        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
+        judgeInstruction=""
+        attachments={[]}
+        attachmentsToJudge={true}
       />,
     );
     try {
@@ -205,7 +211,9 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
         critic={{ providerId: "openrouter", model: "z-ai/glm-5.2" }}
         models={NO_MODELS}
         dispatch={noop}
-        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
+        judgeInstruction=""
+        attachments={[]}
+        attachmentsToJudge={true}
       />,
     );
     try {
@@ -232,7 +240,9 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
         critic={{ providerId: "gemini", model: "old-model" }}
         models={GEMINI_MODELS}
         dispatch={(a) => dispatched.push(a)}
-        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
+        judgeInstruction=""
+        attachments={[]}
+        attachmentsToJudge={true}
       />,
     );
     try {
@@ -240,9 +250,9 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
       act(() => changeBtn.click());
 
       // Click the catalog model row (button containing the model id).
-      const catalogBtn = h.$$("button").find((b) =>
-        b.textContent?.includes("gemini-3.6-flash"),
-      ) as HTMLButtonElement;
+      const catalogBtn = h
+        .$$("button")
+        .find((b) => b.textContent?.includes("gemini-3.6-flash")) as HTMLButtonElement;
       expect(catalogBtn).toBeTruthy();
       act(() => catalogBtn.click());
 
@@ -274,7 +284,9 @@ describe("JudgeConfig — Judge combobox provider switch and clear-X", () => {
       act(() => h.byText("Gemini")!.click());
       const input = h.$("input#judge-search") as HTMLInputElement;
       typeInto(input, "shared-model-id");
-      const commitButton = h.$('button[aria-label="Set judge to shared-model-id"]') as HTMLButtonElement;
+      const commitButton = h.$(
+        'button[aria-label="Set judge to shared-model-id"]',
+      ) as HTMLButtonElement;
       expect(commitButton).not.toBeNull();
       act(() => commitButton.click());
       expect(committed).toEqual({ slug: "shared-model-id", providerId: "gemini" });
@@ -322,7 +334,13 @@ describe("JudgeCombobox — complete catalog (no slice cutoff)", () => {
   it("keeps the bounded-height overflow list class", () => {
     const models = geminiCatalogForJudge(12);
     const h = render(
-      <JudgeCombobox models={models} current="old" initialProvider="gemini" onCancel={() => {}} onCommit={() => {}} />,
+      <JudgeCombobox
+        models={models}
+        current="old"
+        initialProvider="gemini"
+        onCancel={() => {}}
+        onCommit={() => {}}
+      />,
     );
     try {
       const list = h.$("ul")!;
@@ -336,7 +354,13 @@ describe("JudgeCombobox — complete catalog (no slice cutoff)", () => {
   it("a search can return every matching item, including ones near the bottom", () => {
     const models = geminiCatalogForJudge(12);
     const h = render(
-      <JudgeCombobox models={models} current="old" initialProvider="gemini" onCancel={() => {}} onCommit={() => {}} />,
+      <JudgeCombobox
+        models={models}
+        current="old"
+        initialProvider="gemini"
+        onCancel={() => {}}
+        onCommit={() => {}}
+      />,
     );
     try {
       const input = h.$("input#judge-search") as HTMLInputElement;
@@ -357,16 +381,20 @@ describe("JudgeCombobox — complete catalog (no slice cutoff)", () => {
         critic={{ providerId: "gemini", model: "old-model" }}
         models={models}
         dispatch={(a) => dispatched.push(a)}
-        judgeInstruction="" attachments={[]} attachmentsToJudge={true}
+        judgeInstruction=""
+        attachments={[]}
+        attachmentsToJudge={true}
       />,
     );
     try {
       act(() => h.$('button[aria-label^="Change judge model"]')!.click());
       const input = h.$("input#judge-search") as HTMLInputElement;
       typeInto(input, "gemini-custom-fake");
-      const setJudgeBtn = h.$$("button").find((b) =>
-        b.getAttribute("aria-label")?.startsWith("Set judge to "),
-      ) as HTMLButtonElement;
+      const setJudgeBtn = h
+        .$$("button")
+        .find((b) =>
+          b.getAttribute("aria-label")?.startsWith("Set judge to "),
+        ) as HTMLButtonElement;
       expect(setJudgeBtn).toBeTruthy();
       act(() => setJudgeBtn.click());
       const setCritic = dispatched.filter((a) => a.type === "SET_CRITIC");
@@ -405,7 +433,12 @@ describe("JudgeConfig — attachments-to-judge toggle (7.5.6)", () => {
 
   it("renders when an image is attached, checked to match state", () => {
     const html = renderToStaticMarkup(
-      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[IMAGE_ATTACHMENT]} attachmentsToJudge={true} />,
+      <JudgeConfig
+        {...baseProps}
+        judgeInstruction=""
+        attachments={[IMAGE_ATTACHMENT]}
+        attachmentsToJudge={true}
+      />,
     );
     expect(html).toContain("Send attachments to judge");
     const match = html.match(/<input[^>]*type="checkbox"[^>]*>/);
@@ -415,7 +448,12 @@ describe("JudgeConfig — attachments-to-judge toggle (7.5.6)", () => {
 
   it("explains the auto-off reason when unchecked", () => {
     const html = renderToStaticMarkup(
-      <JudgeConfig {...baseProps} judgeInstruction="" attachments={[IMAGE_ATTACHMENT]} attachmentsToJudge={false} />,
+      <JudgeConfig
+        {...baseProps}
+        judgeInstruction=""
+        attachments={[IMAGE_ATTACHMENT]}
+        attachmentsToJudge={false}
+      />,
     );
     expect(html).toContain("4 images or 4 MB");
   });

@@ -14,7 +14,14 @@ import {
 import type { ModelSlot } from "../../studio-data";
 
 const SLOTS: ModelSlot[] = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "m1", slug: "org/m1", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "m1",
+    slug: "org/m1",
+    enabled: true,
+  },
   { id: "s2", providerId: "gemini", provider: "Gemini", model: "m2", slug: "m2", enabled: true },
 ];
 
@@ -68,7 +75,14 @@ describe("computeSnapshotProtocolFingerprint", () => {
       ...snapshot,
       modelSlots: [
         ...snapshot.modelSlots,
-        { id: "s3", providerId: "deepseek", provider: "DeepSeek", model: "m3", slug: "m3", enabled: true },
+        {
+          id: "s3",
+          providerId: "deepseek",
+          provider: "DeepSeek",
+          model: "m3",
+          slug: "m3",
+          enabled: true,
+        },
       ],
     };
     expect(computeSnapshotProtocolFingerprint(rotated)).not.toBe(
@@ -117,7 +131,11 @@ describe("computeSnapshotProtocolFingerprint", () => {
     const baseFp = computeSnapshotProtocolFingerprint(base);
     const cosmetic: ExperimentSnapshot = {
       ...base,
-      modelSlots: base.modelSlots.map((s) => ({ ...s, id: `cosmetic-${s.id}`, provider: `Display ${s.provider}` })),
+      modelSlots: base.modelSlots.map((s) => ({
+        ...s,
+        id: `cosmetic-${s.id}`,
+        provider: `Display ${s.provider}`,
+      })),
     };
     expect(computeSnapshotProtocolFingerprint(cosmetic)).toBe(baseFp);
   });

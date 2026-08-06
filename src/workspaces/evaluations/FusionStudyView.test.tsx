@@ -61,7 +61,11 @@ function makeStudy(): FusionStudy {
     id: "study-1",
     revision: 2,
     kind: "exploration",
-    suiteRef: { suiteId: "suite-1", suiteVersion: 4, protocolFingerprint: "sha256:0123456789abcdef" },
+    suiteRef: {
+      suiteId: "suite-1",
+      suiteVersion: 4,
+      protocolFingerprint: "sha256:0123456789abcdef",
+    },
     poolRef: { id: "pool-1", version: 2 },
     judge1: { providerId: "openrouter", model: "acme/judge-1" },
     judge2: { providerId: "gemini", model: "acme/judge-2" },
@@ -83,7 +87,9 @@ function makeStudy(): FusionStudy {
           },
         ],
         survivors: ["AnalysisScores", "AnalysisFed"],
-        eliminated: [{ family: "BlindRaw", reason: "Dominated by AnalysisFed on all 2 stratified pairs." }],
+        eliminated: [
+          { family: "BlindRaw", reason: "Dominated by AnalysisFed on all 2 stratified pairs." },
+        ],
         completedAt: 1000,
       },
       stageB: {
@@ -115,7 +121,12 @@ function makeStudy(): FusionStudy {
             reason: "AnalysisScores outscored AnalysisFed on all 1 sequentially evaluated pairs.",
           },
         ],
-        poolAdequacy: { probed: true, outcome: "confirmed", challengerKeys: ["openrouter:m-x"], note: "Challenger failed on the same instances." },
+        poolAdequacy: {
+          probed: true,
+          outcome: "confirmed",
+          challengerKeys: ["openrouter:m-x"],
+          note: "Challenger failed on the same instances.",
+        },
         policyResults: [],
         comparisons: [],
         completedAt: 1000,
@@ -135,17 +146,58 @@ function makePlaybook(): FusionPlaybook {
   return {
     id: "playbook-1",
     studyId: "study-1",
-    suiteRef: { suiteId: "suite-1", suiteVersion: 4, protocolFingerprint: "sha256:0123456789abcdef" },
+    suiteRef: {
+      suiteId: "suite-1",
+      suiteVersion: 4,
+      protocolFingerprint: "sha256:0123456789abcdef",
+    },
     rows: [
-      { policy: "best_fixed", configuration: "openrouter:m-a", score: 4.18, lift: 0, costMultiplier: 1, confidence: "high" },
-      { policy: "rank", configuration: "m-b + m-c", score: 4.37, lift: 0.19, costMultiplier: 2.4, confidence: "high" },
-      { policy: "fuse", configuration: "m-b + m-c → AnalysisScores", score: 4.52, lift: 0.34, costMultiplier: 3.2, confidence: "medium" },
-      { policy: "refine", configuration: "rank winner → reviser", score: 4.45, lift: 0.27, costMultiplier: 2.1, confidence: "high" },
+      {
+        policy: "best_fixed",
+        configuration: "openrouter:m-a",
+        score: 4.18,
+        lift: 0,
+        costMultiplier: 1,
+        confidence: "high",
+      },
+      {
+        policy: "rank",
+        configuration: "m-b + m-c",
+        score: 4.37,
+        lift: 0.19,
+        costMultiplier: 2.4,
+        confidence: "high",
+      },
+      {
+        policy: "fuse",
+        configuration: "m-b + m-c → AnalysisScores",
+        score: 4.52,
+        lift: 0.34,
+        costMultiplier: 3.2,
+        confidence: "medium",
+      },
+      {
+        policy: "refine",
+        configuration: "rank winner → reviser",
+        score: 4.45,
+        lift: 0.27,
+        costMultiplier: 2.1,
+        confidence: "high",
+      },
     ],
-    recommendation: { kind: "do_not_fuse", rationale: "No policy clears the predeclared MPID over the best fixed model." },
-    poolAdequacy: { probed: true, outcome: "confirmed", challengerKeys: ["openrouter:m-x"], note: "" },
+    recommendation: {
+      kind: "do_not_fuse",
+      rationale: "No policy clears the predeclared MPID over the best fixed model.",
+    },
+    poolAdequacy: {
+      probed: true,
+      outcome: "confirmed",
+      challengerKeys: ["openrouter:m-x"],
+      note: "",
+    },
     claimLevel: "exploratory",
-    conclusion: "For this suite: do not use fusion — run the best single model. Pool adequacy: confirmed. Status: exploratory.",
+    conclusion:
+      "For this suite: do not use fusion — run the best single model. Pool adequacy: confirmed. Status: exploratory.",
     createdAt: 1000,
   };
 }
@@ -155,7 +207,11 @@ function makeTrial(id: string): FusionTrial {
     id,
     revision: 3,
     studyId: "study-1",
-    suiteRef: { suiteId: "suite-1", suiteVersion: 4, protocolFingerprint: "sha256:0123456789abcdef" },
+    suiteRef: {
+      suiteId: "suite-1",
+      suiteVersion: 4,
+      protocolFingerprint: "sha256:0123456789abcdef",
+    },
     poolRef: { id: "pool-1", version: 2 },
     candidateConfig: { slots: [slot("s2", "m-b"), slot("s3", "m-c")] },
     judge1: { providerId: "openrouter", model: "acme/judge-1" },
@@ -168,7 +224,11 @@ function makeTrial(id: string): FusionTrial {
     children: {
       candidateRunId: "run-cand-t1",
       devJudgeRunId: "run-judge-t1",
-      synthesisArtifact: { runId: "fusion-synth-t1", fusionAttemptId: "fa-t1", contentHash: "sha256:0123456789abcdef00" },
+      synthesisArtifact: {
+        runId: "fusion-synth-t1",
+        fusionAttemptId: "fa-t1",
+        contentHash: "sha256:0123456789abcdef00",
+      },
     },
     observationIds: [`obs-${id}`],
     cost: {
@@ -189,7 +249,13 @@ async function seed() {
   await repo.createRecipe(FUSION_RECIPE_ANALYSIS_SCORES_V1);
   const trial = makeTrial("trial-1");
   // Walk the real lifecycle: create in_progress → observe → seal.
-  await repo.createTrial({ ...trial, revision: 0, status: "in_progress", sealedAt: null, observationIds: [] });
+  await repo.createTrial({
+    ...trial,
+    revision: 0,
+    status: "in_progress",
+    sealedAt: null,
+    observationIds: [],
+  });
   await repo.addObservation(
     {
       id: "obs-trial-1",
@@ -232,7 +298,9 @@ describe("FusionStudyView", () => {
 
     const verdict = h.$('[data-testid="playbook-verdict"]');
     expect(verdict?.textContent).toContain("do not fuse");
-    expect(h.$('[data-testid="playbook-conclusion"]')?.textContent).toContain("Pool adequacy: confirmed");
+    expect(h.$('[data-testid="playbook-conclusion"]')?.textContent).toContain(
+      "Pool adequacy: confirmed",
+    );
     h.unmount();
   });
 

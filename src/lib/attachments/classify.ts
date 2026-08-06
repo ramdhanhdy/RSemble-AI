@@ -5,9 +5,7 @@
 import type { AttachmentKind } from "./types";
 
 /** Classification result: either an accepted kind or a rejection reason. */
-export type ClassifyResult =
-  | { kind: AttachmentKind; mimeType: string }
-  | { rejected: string };
+export type ClassifyResult = { kind: AttachmentKind; mimeType: string } | { rejected: string };
 
 /** Map of extension → kind for the extension-fallback path. */
 const EXTENSION_MAP: Record<string, AttachmentKind> = {
@@ -146,12 +144,14 @@ function mimeForExtension(ext: string, kind: AttachmentKind): string {
  * Strips control chars, ANSI escapes, collapses whitespace, caps at 120 chars.
  */
 export function sanitizeName(name: string): string {
-  return name
-    // eslint-disable-next-line no-control-regex
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")      // ANSI escape sequences (before control-char strip)
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\x00-\x1f\x7f]/g, " ")           // control chars → space
-    .replace(/\s+/g, " ")                        // collapse whitespace
-    .trim()
-    .slice(0, 120);
+  return (
+    name
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "") // ANSI escape sequences (before control-char strip)
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x1f\x7f]/g, " ") // control chars → space
+      .replace(/\s+/g, " ") // collapse whitespace
+      .trim()
+      .slice(0, 120)
+  );
 }

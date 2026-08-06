@@ -42,7 +42,11 @@ function makeSlot(id: string, slug: string, providerId = "openrouter", enabled =
   };
 }
 
-function makeTask(id: string, order: number, overrides: Partial<EvaluationTask> = {}): EvaluationTask {
+function makeTask(
+  id: string,
+  order: number,
+  overrides: Partial<EvaluationTask> = {},
+): EvaluationTask {
   return {
     id,
     title: `Task ${id}`,
@@ -94,7 +98,11 @@ function startAndBegin(engine: ExperimentEngine, now = 6000): string {
   return attemptId;
 }
 
-function makeAttempt(id: string, status: ExperimentTaskAttempt["status"], runId = `run-${id}`): ExperimentTaskAttempt {
+function makeAttempt(
+  id: string,
+  status: ExperimentTaskAttempt["status"],
+  runId = `run-${id}`,
+): ExperimentTaskAttempt {
   return {
     id,
     runId,
@@ -541,7 +549,10 @@ describe("queuePlannedAttempts", () => {
     const engine = terminalEngine();
     let n = 0;
     const result = engine.queuePlannedAttempts(
-      [{ taskId: "t1", repair: REPAIR }, { taskId: "t2", repair: REPAIR }],
+      [
+        { taskId: "t1", repair: REPAIR },
+        { taskId: "t2", repair: REPAIR },
+      ],
       () => `repair-${n++}`,
       FENCE,
       10000,
@@ -576,7 +587,10 @@ describe("queuePlannedAttempts", () => {
   it("rejects a duplicate repair for the same task", () => {
     const engine = terminalEngine();
     const result = engine.queuePlannedAttempts(
-      [{ taskId: "t1", repair: REPAIR }, { taskId: "t1", repair: REPAIR }],
+      [
+        { taskId: "t1", repair: REPAIR },
+        { taskId: "t1", repair: REPAIR },
+      ],
       () => "repair-x",
       FENCE,
       10000,
@@ -589,7 +603,10 @@ describe("queuePlannedAttempts", () => {
   it("rejects an invalid execution plan without mutating the record", () => {
     const engine = terminalEngine();
     const before = engine.record.tasks.map((t) => ({ ...t }));
-    const bad = { kind: "roster-extension", addedModelKey: "" } as unknown as ExperimentTaskExecutionPlan;
+    const bad = {
+      kind: "roster-extension",
+      addedModelKey: "",
+    } as unknown as ExperimentTaskExecutionPlan;
     const result = engine.queuePlannedAttempts(
       [{ taskId: "t1", repair: bad }],
       () => "repair-x",
@@ -614,7 +631,10 @@ describe("queuePlannedAttempts", () => {
     };
     let n = 0;
     const result = engine.queuePlannedAttempts(
-      [{ taskId: "t1", repair: compound }, { taskId: "t2", repair: fallback }],
+      [
+        { taskId: "t1", repair: compound },
+        { taskId: "t2", repair: fallback },
+      ],
       () => `ext-${n++}`,
       FENCE,
       10000,
@@ -643,7 +663,10 @@ describe("queuePlannedAttempts", () => {
       baseRunId: "run-t1-1",
     };
     engine.queuePlannedAttempts(
-      [{ taskId: "t1", repair: plan }, { taskId: "t2", repair: plan }],
+      [
+        { taskId: "t1", repair: plan },
+        { taskId: "t2", repair: plan },
+      ],
       () => "ext-0",
       FENCE,
       10000,
@@ -755,7 +778,9 @@ describe("selectAttemptId", () => {
     expect(selectAttemptId(makeTaskState("t1", [makeAttempt("a1", "failed")]))).toBeNull();
     expect(selectAttemptId(makeTaskState("t1", []))).toBeNull();
     expect(
-      selectAttemptId(makeTaskState("t1", [makeAttempt("a1", "aborted"), makeAttempt("a2", "interrupted")])),
+      selectAttemptId(
+        makeTaskState("t1", [makeAttempt("a1", "aborted"), makeAttempt("a2", "interrupted")]),
+      ),
     ).toBeNull();
   });
 
@@ -763,11 +788,32 @@ describe("selectAttemptId", () => {
     const task = makeTaskState("t1", [
       {
         ...makeAttempt("a1", "partial"),
-        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+        coverage: {
+          scoredModelKeys: [
+            "openrouter:m1",
+            "openrouter:m2",
+            "openrouter:m3",
+            "openrouter:m4",
+            "openrouter:m5",
+            "openrouter:m6",
+            "openrouter:m7",
+          ],
+          totalModels: 8,
+        },
       },
       {
         ...makeAttempt("a2", "partial"),
-        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6"], totalModels: 8 },
+        coverage: {
+          scoredModelKeys: [
+            "openrouter:m1",
+            "openrouter:m2",
+            "openrouter:m3",
+            "openrouter:m4",
+            "openrouter:m5",
+            "openrouter:m6",
+          ],
+          totalModels: 8,
+        },
       },
     ]);
     // a1 is older but has 7/8 coverage; a2 is newer with 6/8.
@@ -778,21 +824,40 @@ describe("selectAttemptId", () => {
     const task = makeTaskState("t1", [
       {
         ...makeAttempt("a1", "partial"),
-        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+        coverage: {
+          scoredModelKeys: [
+            "openrouter:m1",
+            "openrouter:m2",
+            "openrouter:m3",
+            "openrouter:m4",
+            "openrouter:m5",
+            "openrouter:m6",
+            "openrouter:m7",
+          ],
+          totalModels: 8,
+        },
       },
       {
         ...makeAttempt("a2", "partial"),
-        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+        coverage: {
+          scoredModelKeys: [
+            "openrouter:m1",
+            "openrouter:m2",
+            "openrouter:m3",
+            "openrouter:m4",
+            "openrouter:m5",
+            "openrouter:m6",
+            "openrouter:m7",
+          ],
+          totalModels: 8,
+        },
       },
     ]);
     expect(selectAttemptId(task)).toBe("a2");
   });
 
   it("attempts without coverage metadata preserve the newest-partial fallback", () => {
-    const task = makeTaskState("t1", [
-      makeAttempt("a1", "partial"),
-      makeAttempt("a2", "partial"),
-    ]);
+    const task = makeTaskState("t1", [makeAttempt("a1", "partial"), makeAttempt("a2", "partial")]);
     expect(selectAttemptId(task)).toBe("a2");
   });
 
@@ -800,7 +865,18 @@ describe("selectAttemptId", () => {
     const task = makeTaskState("t1", [
       {
         ...makeAttempt("a1", "failed"),
-        coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2", "openrouter:m3", "openrouter:m4", "openrouter:m5", "openrouter:m6", "openrouter:m7"], totalModels: 8 },
+        coverage: {
+          scoredModelKeys: [
+            "openrouter:m1",
+            "openrouter:m2",
+            "openrouter:m3",
+            "openrouter:m4",
+            "openrouter:m5",
+            "openrouter:m6",
+            "openrouter:m7",
+          ],
+          totalModels: 8,
+        },
       },
       makeAttempt("a2", "partial"),
     ]);

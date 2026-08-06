@@ -26,10 +26,7 @@ import type {
   ExperimentAggregation,
   MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
-import {
-  formatAggregateMean,
-  formatTaskScore,
-} from "../../lib/evaluations/experiment-aggregation";
+import { formatAggregateMean, formatTaskScore } from "../../lib/evaluations/experiment-aggregation";
 import { StatusMark } from "../../ui/StatusMark";
 import type { StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
@@ -37,10 +34,7 @@ import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair
 
 /** Planner plans by taskId → modelKey (spec §11.2). Shared with the mobile
  *  adaptation and the recovery toolbar. */
-export type RepairableCellPlans = ReadonlyMap<
-  string,
-  ReadonlyMap<string, CompoundRepairPlan>
->;
+export type RepairableCellPlans = ReadonlyMap<string, ReadonlyMap<string, CompoundRepairPlan>>;
 
 export interface ResultMatrixProps {
   aggregation: ExperimentAggregation;
@@ -63,7 +57,10 @@ export interface ResultMatrixProps {
 
 /** Truthful closest status token per missing reason; text stays primary.
  *  Shared by the desktop matrix and the mobile task rows. */
-export const MISSING_CELL_DISPLAY: Record<MissingReason, { text: string; status: StatusMarkStatus }> = {
+export const MISSING_CELL_DISPLAY: Record<
+  MissingReason,
+  { text: string; status: StatusMarkStatus }
+> = {
   "no-attempt": { text: "Not run", status: "draft" },
   "no-accepted-attempt": { text: "No accepted attempt", status: "failed" },
   "evidence-missing": { text: "Evidence unavailable", status: "interrupted" },
@@ -81,7 +78,8 @@ export function cellEvidenceLink(
   record: RunRecordV2 | undefined,
 ): string | null {
   if (cell.kind === "scored") {
-    const candidateId = record?.candidates.find((c) => c.modelKey === modelKey)?.candidateId ?? null;
+    const candidateId =
+      record?.candidates.find((c) => c.modelKey === modelKey)?.candidateId ?? null;
     const acceptedAttemptId = record?.judge.acceptedAttemptId ?? null;
     if (candidateId && acceptedAttemptId) {
       return `/runs/${cell.runId}?candidate=${candidateId}&attempt=${acceptedAttemptId}`;
@@ -175,13 +173,21 @@ function CellContent({
   onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
 }): ReactElement {
   if (cell.kind === "scored") {
-    const href = cellEvidenceLink(cell, modelKey, cell.runId ? runRecords.get(cell.runId) : undefined);
+    const href = cellEvidenceLink(
+      cell,
+      modelKey,
+      cell.runId ? runRecords.get(cell.runId) : undefined,
+    );
     const score = formatTaskScore(cell.score);
     const content = (
       <>
         {score}
         {rowBest ? (
-          <span aria-label="best in row" title="Best score for this task" className="text-xs text-text-muted">
+          <span
+            aria-label="best in row"
+            title="Best score for this task"
+            className="text-xs text-text-muted"
+          >
             ▲
           </span>
         ) : null}
@@ -243,8 +249,7 @@ export function ResultMatrix({
 
   // Sticky first column: the task header, every row header, and footer labels
   // stay left-0 with an opaque panel surface (spec §12.5).
-  const stickyLeftCls =
-    "sticky left-0 z-10 bg-panel";
+  const stickyLeftCls = "sticky left-0 z-10 bg-panel";
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -305,7 +310,10 @@ export function ResultMatrix({
               }
               return (
                 <tr key={taskId} className="border-b border-edge last:border-b-0">
-                  <th scope="row" className={`max-w-[320px] px-3 py-1 align-middle font-normal ${stickyLeftCls}`}>
+                  <th
+                    scope="row"
+                    className={`max-w-[320px] px-3 py-1 align-middle font-normal ${stickyLeftCls}`}
+                  >
                     {rowRunId ? (
                       <Link
                         to={`/runs/${rowRunId}`}
@@ -390,7 +398,9 @@ export function ResultMatrix({
                     <span className="tabular-nums text-sm text-text-secondary">
                       {model.scoredTasks}/{model.totalTasks} tasks
                       {!model.complete ? (
-                        <span className="ml-1 text-xs font-medium text-text-muted">Provisional</span>
+                        <span className="ml-1 text-xs font-medium text-text-muted">
+                          Provisional
+                        </span>
                       ) : null}
                     </span>
                   </td>
@@ -401,7 +411,12 @@ export function ResultMatrix({
         </table>
       </div>
       {pageCount > 1 ? (
-        <Pagination page={currentPage} pageCount={pageCount} totalItems={totalTasks} onPageChange={handlePageChange} />
+        <Pagination
+          page={currentPage}
+          pageCount={pageCount}
+          totalItems={totalTasks}
+          onPageChange={handlePageChange}
+        />
       ) : null}
     </div>
   );

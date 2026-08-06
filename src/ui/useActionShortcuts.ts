@@ -81,7 +81,7 @@ export function useActionShortcuts({
         const t = e.target as HTMLElement | null;
         const tag = t?.tagName;
         const typing = tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable;
-        const hasSelection = !typing && ((window.getSelection()?.toString() ?? "").length > 0);
+        const hasSelection = !typing && (window.getSelection()?.toString() ?? "").length > 0;
         if (typing || hasSelection) return;
         const text =
           s.mode === "fuse" && s.fusedText

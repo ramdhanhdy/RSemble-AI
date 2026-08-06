@@ -50,10 +50,7 @@ export function ShortcutCheatsheet({ open, onOpenChange, handle }: ShortcutCheat
         <table className="w-full">
           <tbody>
             {SHORTCUTS.map((shortcut) => (
-              <tr
-                key={shortcut.action}
-                className="border-b border-edge/50 last:border-b-0"
-              >
+              <tr key={shortcut.action} className="border-b border-edge/50 last:border-b-0">
                 <td className="min-h-[44px] py-2.5 pl-3 pr-2">
                   <span className="flex items-center gap-1">
                     {shortcut.keys.map((key) => (

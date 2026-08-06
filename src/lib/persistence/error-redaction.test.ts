@@ -171,8 +171,8 @@ describe("configuredCredentialValues — store-backed", () => {
   });
 
   it("keeps legacy environment aliases in scope via the injected reader", () => {
-    const values = configuredCredentialValues(
-      (key) => (key === "VITE_UMANS_API_KEY" ? "legacy-env-key-123" : undefined),
+    const values = configuredCredentialValues((key) =>
+      key === "VITE_UMANS_API_KEY" ? "legacy-env-key-123" : undefined,
     );
     expect(values).toEqual(["legacy-env-key-123"]);
   });
@@ -288,7 +288,9 @@ describe("bridge-secret redaction (final review fix)", () => {
 
   it("keeps the bridge secret out of a recognized structured provider error message", () => {
     const detail = providerErrorDetail(
-      JSON.stringify({ error: { message: "401 X-RSemble-Bridge-Secret: test-bridge-secret-123456 invalid" } }),
+      JSON.stringify({
+        error: { message: "401 X-RSemble-Bridge-Secret: test-bridge-secret-123456 invalid" },
+      }),
       "Umans",
       401,
     );

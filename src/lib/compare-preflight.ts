@@ -20,8 +20,7 @@ export type CompareBlockCode =
   | "transport-size";
 
 export type ComparePreflight =
-  | { ok: true }
-  | { ok: false; code: CompareBlockCode; message: string; details?: unknown };
+  { ok: true } | { ok: false; code: CompareBlockCode; message: string; details?: unknown };
 
 export interface ComparePreflightInput {
   running: boolean;
@@ -52,10 +51,20 @@ export function evaluateComparePreflight(input: ComparePreflightInput): CompareP
 
   const enabled = input.slots.filter((slot) => slot.enabled);
   if (enabled.length === 0) {
-    return { ok: false, code: "candidate-count", message: "Enable at least two candidate models.", details: { count: 0 } };
+    return {
+      ok: false,
+      code: "candidate-count",
+      message: "Enable at least two candidate models.",
+      details: { count: 0 },
+    };
   }
   if (enabled.length === 1) {
-    return { ok: false, code: "candidate-count", message: "Add or enable one more candidate to compare.", details: { count: 1 } };
+    return {
+      ok: false,
+      code: "candidate-count",
+      message: "Add or enable one more candidate to compare.",
+      details: { count: 1 },
+    };
   }
 
   const unavailableCandidate = enabled.find((slot) => input.readinessMap[slot.providerId] !== true);
@@ -79,7 +88,9 @@ export function evaluateComparePreflight(input: ComparePreflightInput): CompareP
     };
   }
 
-  const reading = input.attachments.find((a) => a.status === "reading" || a.status === "extracting");
+  const reading = input.attachments.find(
+    (a) => a.status === "reading" || a.status === "extracting",
+  );
   if (reading) {
     return {
       ok: false,
@@ -98,7 +109,11 @@ export function evaluateComparePreflight(input: ComparePreflightInput): CompareP
     };
   }
   if (input.attachmentEligibility && "blocked" in input.attachmentEligibility) {
-    return { ok: false, code: "attachment-capability", message: input.attachmentEligibility.blocked };
+    return {
+      ok: false,
+      code: "attachment-capability",
+      message: input.attachmentEligibility.blocked,
+    };
   }
   if (input.transport?.blocked) {
     return { ok: false, code: "transport-size", message: input.transport.message };

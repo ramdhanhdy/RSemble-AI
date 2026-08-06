@@ -43,14 +43,22 @@ export interface EvaluationRepository {
   getProfileRecord(id: string): Promise<ProfileRecord | null>;
   getProfile(id: string, version: number): Promise<EvaluationProfile | null>;
   createProfile(record: ProfileRecord, profile: EvaluationProfile): Promise<void>;
-  appendProfileVersion(record: ProfileRecord, profile: EvaluationProfile, expectedRevision: number): Promise<number>;
+  appendProfileVersion(
+    record: ProfileRecord,
+    profile: EvaluationProfile,
+    expectedRevision: number,
+  ): Promise<number>;
   setProfileArchived(id: string, archived: boolean, expectedRevision: number): Promise<number>;
   createExperiment(experiment: ExperimentRecord): Promise<void>;
   updateExperiment(experiment: ExperimentRecord, expectedRevision: number): Promise<number>;
   getExperiment(id: string): Promise<ExperimentRecord | null>;
   listExperiments(suiteId?: string): Promise<ExperimentRecord[]>;
-  beginExperimentTask(input: BeginExperimentTaskInput): Promise<{ runRevision: number; experimentRevision: number }>;
-  commitExperimentTaskTerminal(input: CommitExperimentTaskTerminalInput): Promise<{ runRevision: number; experimentRevision: number }>;
+  beginExperimentTask(
+    input: BeginExperimentTaskInput,
+  ): Promise<{ runRevision: number; experimentRevision: number }>;
+  commitExperimentTaskTerminal(
+    input: CommitExperimentTaskTerminalInput,
+  ): Promise<{ runRevision: number; experimentRevision: number }>;
   /** Import a normalized suite package — always creates new entities. */
   importSuitePackage(imported: ImportedSuitePackage): Promise<SuitePackageImportResult>;
 }
@@ -93,7 +101,10 @@ export function createEvaluationRepository(
       await db.transaction("rw", db.suites, async () => {
         const existing = await db.suites.get(suite.id);
         if (existing && existing.revision !== expectedRevision) {
-          throw new StorageError("conflict", `Stale revision: expected ${expectedRevision}, got ${existing.revision}`);
+          throw new StorageError(
+            "conflict",
+            `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
+          );
         }
         await db.suites.put({
           id: suite.id,
@@ -167,7 +178,8 @@ export function createEvaluationRepository(
   async function createProfile(record: ProfileRecord, profile: EvaluationProfile): Promise<void> {
     if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
     if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-    if (record.id !== profile.id) throw new StorageError("validation", "Record/profile ID mismatch");
+    if (record.id !== profile.id)
+      throw new StorageError("validation", "Record/profile ID mismatch");
     if (profile.version !== 1) throw new StorageError("validation", "First version must be 1");
     db.assertWritable();
     try {
@@ -202,7 +214,8 @@ export function createEvaluationRepository(
   ): Promise<number> {
     if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
     if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-    if (record.id !== profile.id) throw new StorageError("validation", "Record/profile ID mismatch");
+    if (record.id !== profile.id)
+      throw new StorageError("validation", "Record/profile ID mismatch");
     db.assertWritable();
     const newRevision = expectedRevision + 1;
     try {
@@ -210,7 +223,10 @@ export function createEvaluationRepository(
         const existing = await db.profiles.get(record.id);
         if (!existing) throw new StorageError("conflict", `Profile ${record.id} not found`);
         if (existing.revision !== expectedRevision) {
-          throw new StorageError("conflict", `Stale revision: expected ${expectedRevision}, got ${existing.revision}`);
+          throw new StorageError(
+            "conflict",
+            `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
+          );
         }
         const newVersion = existing.latestVersion + 1;
         const updatedProfile: EvaluationProfile = { ...profile, version: newVersion };
@@ -254,7 +270,10 @@ export function createEvaluationRepository(
         const existing = await db.profiles.get(id);
         if (!existing) throw new StorageError("conflict", `Profile ${id} not found`);
         if (existing.revision !== expectedRevision) {
-          throw new StorageError("conflict", `Stale revision: expected ${expectedRevision}, got ${existing.revision}`);
+          throw new StorageError(
+            "conflict",
+            `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
+          );
         }
         const record = isProfileRecord(existing.record) ? existing.record : null;
         if (!record) throw new StorageError("validation", "Invalid profile record");
@@ -286,7 +305,8 @@ export function createEvaluationRepository(
     try {
       await db.transaction("rw", db.experiments, async () => {
         const existing = await db.experiments.get(experiment.id);
-        if (existing) throw new StorageError("conflict", `Experiment ${experiment.id} already exists`);
+        if (existing)
+          throw new StorageError("conflict", `Experiment ${experiment.id} already exists`);
         await db.experiments.put({
           id: experiment.id,
           experiment,
@@ -316,7 +336,10 @@ export function createEvaluationRepository(
         const existing = await db.experiments.get(experiment.id);
         if (!existing) throw new StorageError("conflict", `Experiment ${experiment.id} not found`);
         if (existing.revision !== expectedRevision) {
-          throw new StorageError("conflict", `Stale revision: expected ${expectedRevision}, got ${existing.revision}`);
+          throw new StorageError(
+            "conflict",
+            `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
+          );
         }
         const updated: ExperimentRecord = { ...experiment, revision: newRevision };
         await db.experiments.put({
@@ -377,15 +400,29 @@ export function createEvaluationRepository(
     return experimentUow.commitTaskTerminal(input);
   }
 
-  async function importSuitePackage(imported: ImportedSuitePackage): Promise<SuitePackageImportResult> {
+  async function importSuitePackage(
+    imported: ImportedSuitePackage,
+  ): Promise<SuitePackageImportResult> {
     return persistSuitePackage(db, imported);
   }
 
   return {
-    listSuites, getSuite, saveSuite, archiveSuite,
-    listProfiles, getProfileRecord, getProfile, createProfile, appendProfileVersion, setProfileArchived,
-    createExperiment, updateExperiment, getExperiment, listExperiments,
-    beginExperimentTask, commitExperimentTaskTerminal,
+    listSuites,
+    getSuite,
+    saveSuite,
+    archiveSuite,
+    listProfiles,
+    getProfileRecord,
+    getProfile,
+    createProfile,
+    appendProfileVersion,
+    setProfileArchived,
+    createExperiment,
+    updateExperiment,
+    getExperiment,
+    listExperiments,
+    beginExperimentTask,
+    commitExperimentTaskTerminal,
     importSuitePackage,
   };
 }
@@ -420,7 +457,8 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     // records the real store rejects lets invalid drafts ship.
     if (!isEvaluationSuite(suite)) throw new StorageError("validation", "Invalid suite");
     const existing = this.suites.get(suite.id);
-    if (existing && existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");
+    if (existing && existing.revision !== expectedRevision)
+      throw new StorageError("conflict", "Stale revision");
     const newRevision = expectedRevision + 1;
     this.suites.set(suite.id, { ...suite, revision: newRevision });
     return newRevision;
@@ -445,7 +483,8 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     // Same contract as the Dexie store (validation + id/version checks).
     if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
     if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-    if (record.id !== profile.id) throw new StorageError("validation", "Record/profile ID mismatch");
+    if (record.id !== profile.id)
+      throw new StorageError("validation", "Record/profile ID mismatch");
     if (profile.version !== 1) throw new StorageError("validation", "First version must be 1");
     if (this.profileRecords.has(record.id)) throw new StorageError("conflict", "Profile exists");
     this.profileRecords.set(record.id, record);
@@ -453,35 +492,58 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     versions.set(profile.version, profile);
     this.profileVersions.set(record.id, versions);
   }
-  async appendProfileVersion(record: ProfileRecord, profile: EvaluationProfile, expectedRevision: number): Promise<number> {
+  async appendProfileVersion(
+    record: ProfileRecord,
+    profile: EvaluationProfile,
+    expectedRevision: number,
+  ): Promise<number> {
     if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
     if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-    if (record.id !== profile.id) throw new StorageError("validation", "Record/profile ID mismatch");
+    if (record.id !== profile.id)
+      throw new StorageError("validation", "Record/profile ID mismatch");
     const existing = this.profileRecords.get(record.id);
     if (!existing) throw new StorageError("conflict", "Profile not found");
-    if (existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");
+    if (existing.revision !== expectedRevision)
+      throw new StorageError("conflict", "Stale revision");
     const newVersion = existing.latestVersion + 1;
     const newRevision = expectedRevision + 1;
-    this.profileRecords.set(record.id, { ...record, revision: newRevision, latestVersion: newVersion, updatedAt: Date.now() });
+    this.profileRecords.set(record.id, {
+      ...record,
+      revision: newRevision,
+      latestVersion: newVersion,
+      updatedAt: Date.now(),
+    });
     this.profileVersions.get(record.id)?.set(newVersion, { ...profile, version: newVersion });
     return newRevision;
   }
-  async setProfileArchived(id: string, archived: boolean, expectedRevision: number): Promise<number> {
+  async setProfileArchived(
+    id: string,
+    archived: boolean,
+    expectedRevision: number,
+  ): Promise<number> {
     const existing = this.profileRecords.get(id);
     if (!existing) throw new StorageError("conflict", "Profile not found");
-    if (existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");
+    if (existing.revision !== expectedRevision)
+      throw new StorageError("conflict", "Stale revision");
     const newRevision = expectedRevision + 1;
-    this.profileRecords.set(id, { ...existing, revision: newRevision, archivedAt: archived ? Date.now() : null, updatedAt: Date.now() });
+    this.profileRecords.set(id, {
+      ...existing,
+      revision: newRevision,
+      archivedAt: archived ? Date.now() : null,
+      updatedAt: Date.now(),
+    });
     return newRevision;
   }
   async createExperiment(experiment: ExperimentRecord): Promise<void> {
-    if (this.experiments.has(experiment.id)) throw new StorageError("conflict", "Experiment exists");
+    if (this.experiments.has(experiment.id))
+      throw new StorageError("conflict", "Experiment exists");
     this.experiments.set(experiment.id, experiment);
   }
   async updateExperiment(experiment: ExperimentRecord, expectedRevision: number): Promise<number> {
     const existing = this.experiments.get(experiment.id);
     if (!existing) throw new StorageError("conflict", "Experiment not found");
-    if (existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");
+    if (existing.revision !== expectedRevision)
+      throw new StorageError("conflict", "Stale revision");
     const newRevision = expectedRevision + 1;
     this.experiments.set(experiment.id, { ...experiment, revision: newRevision });
     return newRevision;
@@ -494,10 +556,14 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
       .filter((e) => !suiteId || e.suiteId === suiteId)
       .sort((a, b) => b.createdAt - a.createdAt);
   }
-  async beginExperimentTask(input: BeginExperimentTaskInput): Promise<{ runRevision: number; experimentRevision: number }> {
+  async beginExperimentTask(
+    input: BeginExperimentTaskInput,
+  ): Promise<{ runRevision: number; experimentRevision: number }> {
     return this.experimentUow.beginTask(input);
   }
-  async commitExperimentTaskTerminal(input: CommitExperimentTaskTerminalInput): Promise<{ runRevision: number; experimentRevision: number }> {
+  async commitExperimentTaskTerminal(
+    input: CommitExperimentTaskTerminalInput,
+  ): Promise<{ runRevision: number; experimentRevision: number }> {
     return this.experimentUow.commitTaskTerminal(input);
   }
   async importSuitePackage(imported: ImportedSuitePackage): Promise<SuitePackageImportResult> {

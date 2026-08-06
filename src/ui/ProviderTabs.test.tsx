@@ -3,11 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { listProviders } from "../lib/providers/registry";
 import type { CatalogModel } from "../lib/providers/types";
-import {
-  MODEL_PICKER_PROVIDERS,
-  PROVIDER_LABELS,
-  ProviderTabs,
-} from "./ProviderTabs";
+import { MODEL_PICKER_PROVIDERS, PROVIDER_LABELS, ProviderTabs } from "./ProviderTabs";
 import { AddModelCombobox } from "./ModelList";
 import { JudgeCombobox } from "./JudgeConfig";
 
@@ -84,16 +80,11 @@ describe("ProviderTabs — shared by both selectors", () => {
 
   it("the candidate AddModelCombobox renders the shared provider tabs", () => {
     const html = renderToStaticMarkup(
-      <AddModelCombobox
-        models={models}
-        takenKeys={new Set()}
-        onCancel={noop}
-        onAdd={noop}
-      />,
+      <AddModelCombobox models={models} takenKeys={new Set()} onCancel={noop} onAdd={noop} />,
     );
     // Shared component signature: a labelled group of aria-pressed buttons.
     expect(html).toContain('role="group"');
-    expect(html).toContain('aria-pressed');
+    expect(html).toContain("aria-pressed");
     for (const p of MODEL_PICKER_PROVIDERS) {
       expect(html).toContain(p.label);
     }
@@ -101,10 +92,16 @@ describe("ProviderTabs — shared by both selectors", () => {
 
   it("the JudgeCombobox renders the shared provider tabs", () => {
     const html = renderToStaticMarkup(
-      <JudgeCombobox models={models} current="some-model" initialProvider="openrouter" onCancel={noop} onCommit={noop} />,
+      <JudgeCombobox
+        models={models}
+        current="some-model"
+        initialProvider="openrouter"
+        onCancel={noop}
+        onCommit={noop}
+      />,
     );
     expect(html).toContain('role="group"');
-    expect(html).toContain('aria-pressed');
+    expect(html).toContain("aria-pressed");
     for (const p of MODEL_PICKER_PROVIDERS) {
       expect(html).toContain(p.label);
     }
@@ -112,12 +109,7 @@ describe("ProviderTabs — shared by both selectors", () => {
 
   it("the candidate combobox no longer uses a private non-wrapping provider row", () => {
     const html = renderToStaticMarkup(
-      <AddModelCombobox
-        models={models}
-        takenKeys={new Set()}
-        onCancel={noop}
-        onAdd={noop}
-      />,
+      <AddModelCombobox models={models} takenKeys={new Set()} onCancel={noop} onAdd={noop} />,
     );
     // The old non-wrapping tab row signature must be gone, replaced by the
     // shared wrapping grid group.

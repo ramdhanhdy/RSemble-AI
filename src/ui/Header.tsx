@@ -30,12 +30,19 @@ function DetachedDialogTrigger({
   return handle ? <Dialog.Trigger handle={handle} render={children} /> : children;
 }
 
-function livePill(running: boolean, conn: ConnectionState): { label: string; dot: string; text: string } {
+function livePill(
+  running: boolean,
+  conn: ConnectionState,
+): { label: string; dot: string; text: string } {
   if (running) {
     return { label: "Running", dot: "bg-accent animate-pulse-ease", text: "text-accent" };
   }
   if (conn === "checking") {
-    return { label: "Checking", dot: "bg-text-muted animate-pulse-ease", text: "text-text-secondary" };
+    return {
+      label: "Checking",
+      dot: "bg-text-muted animate-pulse-ease",
+      text: "text-text-secondary",
+    };
   }
   if (conn === "offline") {
     return { label: "No key", dot: "bg-error", text: "text-error" };

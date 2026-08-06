@@ -16,7 +16,11 @@ import type {
   ExperimentSnapshot,
 } from "./evaluation-types";
 import type { ModelSlot } from "../../studio-data";
-import { DEFAULT_REASONING_POLICY, type ProviderId, type ReasoningPolicy } from "../providers/types";
+import {
+  DEFAULT_REASONING_POLICY,
+  type ProviderId,
+  type ReasoningPolicy,
+} from "../providers/types";
 
 /**
  * Recursively sort object keys to produce canonical JSON.
@@ -45,7 +49,10 @@ function sortKeys(value: unknown): unknown {
  */
 interface SemanticFingerprintPieces {
   tasks: Array<
-    Pick<EvaluationTask, "title" | "prompt" | "systemPrompt" | "evaluation" | "judgeInstructionOverride" | "order">
+    Pick<
+      EvaluationTask,
+      "title" | "prompt" | "systemPrompt" | "evaluation" | "judgeInstructionOverride" | "order"
+    >
   >;
   modelSlots: Array<Pick<ModelSlot, "providerId" | "slug" | "model" | "enabled">>;
   defaultJudge: { providerId: ProviderId; model: string };
@@ -125,9 +132,7 @@ export function computeProtocolFingerprint(
  * content. Shares the single input builder with the suite-based computation so
  * the two can never diverge (roster spec §B3). Returns `sha256:<hex>`.
  */
-export function computeSnapshotProtocolFingerprint(
-  snapshot: ExperimentSnapshot,
-): string {
+export function computeSnapshotProtocolFingerprint(snapshot: ExperimentSnapshot): string {
   const input = semanticFingerprintInput({
     tasks: snapshot.tasks,
     modelSlots: snapshot.modelSlots,
@@ -198,8 +203,7 @@ function sha256Hex(text: string): string {
  */
 function sha256Sync(data: Uint8Array): string {
   const H = new Uint32Array([
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
   ]);
   const K = new Uint32Array([
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -228,7 +232,11 @@ function sha256Sync(data: Uint8Array): string {
 
   for (let offset = 0; offset < paddedLen; offset += 64) {
     for (let i = 0; i < 16; i++) {
-      W[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3];
+      W[i] =
+        (padded[offset + i * 4] << 24) |
+        (padded[offset + i * 4 + 1] << 16) |
+        (padded[offset + i * 4 + 2] << 8) |
+        padded[offset + i * 4 + 3];
     }
     for (let i = 16; i < 64; i++) {
       const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
@@ -236,8 +244,14 @@ function sha256Sync(data: Uint8Array): string {
       W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
     }
 
-    let a = H[0], b = H[1], c = H[2], d = H[3];
-    let e = H[4], f = H[5], g = H[6], hh = H[7];
+    let a = H[0],
+      b = H[1],
+      c = H[2],
+      d = H[3];
+    let e = H[4],
+      f = H[5],
+      g = H[6],
+      hh = H[7];
 
     for (let i = 0; i < 64; i++) {
       const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
@@ -246,8 +260,14 @@ function sha256Sync(data: Uint8Array): string {
       const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const t2 = (S0 + maj) >>> 0;
-      hh = g; g = f; f = e; e = (d + t1) >>> 0;
-      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) >>> 0;
     }
 
     H[0] = (H[0] + a) >>> 0;

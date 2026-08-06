@@ -26,7 +26,7 @@ export function assertBridgeBodyWithinLimit(
   const limitMib = (limitBytes / (1024 * 1024)).toFixed(1);
   throw new ProviderError(
     `Encoded request body (~${mib} MiB) exceeds the ${limitMib} MiB local bridge limit. Reduce attachment sizes or use a provider that accepts them.`,
-    providerId
+    providerId,
   );
 }
 

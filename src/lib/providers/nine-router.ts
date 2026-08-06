@@ -17,10 +17,9 @@ import type { LLMProvider } from "./types";
 import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 
 function getBridgeUrl(): string {
-  return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
-    /\/$/,
-    "",
-  );
+  return (
+    (import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787"
+  ).replace(/\/$/, "");
 }
 
 export const nineRouterProvider: LLMProvider = createOpenAICompatProvider({

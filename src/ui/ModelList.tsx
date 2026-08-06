@@ -48,15 +48,16 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
   // Keys taken by OTHER slots — when editing slot X we exclude X's own key so
   // the user can re-commit the same model without a false "already added".
   const takenKeysFor = (excludeSlotId: string | null) =>
-    new Set(
-      slots.filter((s) => s.id !== excludeSlotId).map((s) => modelKey(s.providerId, s.slug)),
-    );
+    new Set(slots.filter((s) => s.id !== excludeSlotId).map((s) => modelKey(s.providerId, s.slug)));
 
   return (
     <div>
       <div className="flex items-center justify-between">
         <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
-          Models <span className="text-xs normal-case tracking-normal text-accent">· {enabledCount} selected</span>
+          Models{" "}
+          <span className="text-xs normal-case tracking-normal text-accent">
+            · {enabledCount} selected
+          </span>
         </span>
         {!adding && (
           <button
@@ -70,7 +71,9 @@ export function ModelList({ slots, models, dispatch }: ModelListProps) {
         )}
       </div>
 
-      <ul className={`mt-2 space-y-2 ${slots.length > 0 && enabledCount === 0 ? "opacity-60" : ""}`}>
+      <ul
+        className={`mt-2 space-y-2 ${slots.length > 0 && enabledCount === 0 ? "opacity-60" : ""}`}
+      >
         {slots.map((slot) => (
           <SlotRow
             key={slot.id}
@@ -154,7 +157,9 @@ function SlotRow({
         >
           <span
             className={`flex h-5 w-5 items-center justify-center rounded-sm border transition-[background-color,border-color] ease-out duration-100 ${
-              slot.enabled ? "border-accent bg-accent text-on-accent" : "border-edge-bright text-transparent"
+              slot.enabled
+                ? "border-accent bg-accent text-on-accent"
+                : "border-edge-bright text-transparent"
             }`}
           >
             <Check
@@ -176,7 +181,11 @@ function SlotRow({
             <span className="shrink-0 rounded-sm border border-edge px-1 text-[11px] uppercase tracking-wide text-text-secondary">
               {providerBadge}
             </span>
-            <span dir="rtl" className="min-w-0 truncate font-mono text-xs text-text-muted" title={slot.slug}>
+            <span
+              dir="rtl"
+              className="min-w-0 truncate font-mono text-xs text-text-muted"
+              title={slot.slug}
+            >
               {`‎${slot.slug}`}
             </span>
           </span>
@@ -263,7 +272,6 @@ function SlotRow({
 // AddModelCombobox — live-catalog autocomplete + manual raw-slug entry
 // -----------------------------------------------------------------------------
 
-
 export function AddModelCombobox({
   models,
   takenKeys,
@@ -295,9 +303,7 @@ export function AddModelCombobox({
     const q = query.trim().toLowerCase();
     const pool = providerModels.length > 0 ? providerModels : [];
     if (q.length === 0) return pool;
-    return pool.filter(
-      (m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
-    );
+    return pool.filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
   }, [query, providerModels]);
 
   const hasCatalog = providerModels.length > 0;
@@ -305,7 +311,9 @@ export function AddModelCombobox({
   const candidateKey = modelKey(selectedProvider, trimmed);
   const manualSlugValid =
     trimmed.length > 0 &&
-    (selectedProvider === "openrouter" || selectedProvider === "commandcode" || selectedProvider === "clinepass"
+    (selectedProvider === "openrouter" ||
+    selectedProvider === "commandcode" ||
+    selectedProvider === "clinepass"
       ? trimmed.includes("/")
       : true) &&
     !takenKeys.has(candidateKey);
@@ -372,7 +380,11 @@ export function AddModelCombobox({
               onCancel();
             }
           }}
-          placeholder={hasCatalog ? "Search catalog or type a slug (provider/model)…" : "Type a slug (provider/model)…"}
+          placeholder={
+            hasCatalog
+              ? "Search catalog or type a slug (provider/model)…"
+              : "Type a slug (provider/model)…"
+          }
           aria-label="Search the model catalog or enter a slug"
           className="min-h-[44px] flex-1 bg-transparent font-mono text-sm text-text placeholder-text-muted focus:outline-none"
         />
@@ -411,7 +423,9 @@ export function AddModelCombobox({
         </ul>
       )}
       {hasCatalog && matches.length === 0 && query.trim().length > 0 && (
-        <p className="px-1 py-2 font-mono text-sm text-text-muted">No catalog match — add as raw slug below.</p>
+        <p className="px-1 py-2 font-mono text-sm text-text-muted">
+          No catalog match — add as raw slug below.
+        </p>
       )}
 
       {/* Manual raw-slug entry — works even with no catalog (no key) */}

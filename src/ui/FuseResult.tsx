@@ -139,7 +139,11 @@ export function FuseResult({ state, onRefuse }: FuseResultProps) {
               aria-label="Re-run fusion"
               className="flex min-h-[44px] items-center gap-1.5 rounded-sm px-2 font-mono text-sm text-text-secondary transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {refusing ? <Loader2 size={14} className="animate-spin-ease text-accent" /> : <RefreshCw size={14} />}
+              {refusing ? (
+                <Loader2 size={14} className="animate-spin-ease text-accent" />
+              ) : (
+                <RefreshCw size={14} />
+              )}
               re-fuse
             </button>
           </div>
@@ -161,7 +165,6 @@ export function FuseResult({ state, onRefuse }: FuseResultProps) {
   );
 }
 
-
 const ACCENT_HEX: Record<string, string> = {
   indigo: "#818cf8",
   emerald: "#34d399",
@@ -175,7 +178,12 @@ const ACCENT_HEX: Record<string, string> = {
 const NEUTRAL_TICK = "#3a3a3a";
 
 function tokenize(text: string): Set<string> {
-  return new Set(text.toLowerCase().split(/\W+/).filter((w) => w.length > 2));
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((w) => w.length > 2),
+  );
 }
 
 interface ProvenanceIndex {
@@ -208,11 +216,7 @@ function matchProvenance(blockText: string, index: ProvenanceIndex[]): Candidate
 function ProvenanceTick({ color, candidate }: { color: string; candidate: Candidate | null }) {
   return (
     <div className="group/tick relative flex shrink-0">
-      <div
-        className="w-1 rounded-full"
-        style={{ backgroundColor: color }}
-        aria-hidden="true"
-      />
+      <div className="w-1 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
       {candidate && (
         <div className="pointer-events-none absolute left-2 top-0 z-30 hidden group-hover/tick:flex">
           <div className="flex items-center gap-1.5 rounded-md border border-edge-bright bg-raised px-2 py-1.5 shadow-popover">
@@ -224,7 +228,6 @@ function ProvenanceTick({ color, candidate }: { color: string; candidate: Candid
     </div>
   );
 }
-
 
 function SourceAnswers({ candidates }: { candidates: Candidate[] }) {
   const done = candidates

@@ -6,7 +6,11 @@
 // =============================================================================
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2 } from "../../lib/persistence/run-types";
+import type {
+  FullRunSummaryV2,
+  LegacyRunSummary,
+  RunRecordV2,
+} from "../../lib/persistence/run-types";
 import {
   formatDuration,
   formatRunRow,
@@ -35,7 +39,11 @@ function makeFullSummary(overrides: Partial<FullRunSummaryV2> = {}): FullRunSumm
     taskExcerpt: "Write a Python function that sorts a list of integers",
     modelKeys: ["openrouter:gpt-4o", "umans:claude-opus", "gemini:gemini-2.5-pro"],
     winnerKeys: ["openrouter:gpt-4o"],
-    scoresByModelKey: { "openrouter:gpt-4o": 4.5, "umans:claude-opus": 3.8, "gemini:gemini-2.5-pro": 3.2 },
+    scoresByModelKey: {
+      "openrouter:gpt-4o": 4.5,
+      "umans:claude-opus": 3.8,
+      "gemini:gemini-2.5-pro": 3.2,
+    },
     judgeModelKey: "openrouter:judge-model",
     evaluationProfileId: null,
     evaluationProfileVersion: null,
@@ -73,7 +81,12 @@ function makeFullRecord(overrides: Partial<RunRecordV2> = {}): RunRecordV2 {
     status: "completed",
     mode: "rank",
     source: { kind: "adhoc" },
-    task: { title: "Write a Python sort function", prompt: "Write a Python function that sorts a list of integers using bubble sort.", systemPrompt: "You are a helpful assistant.", temperature: 0.7 },
+    task: {
+      title: "Write a Python sort function",
+      prompt: "Write a Python function that sorts a list of integers using bubble sort.",
+      systemPrompt: "You are a helpful assistant.",
+      temperature: 0.7,
+    },
     evaluation: { profile: null, candidateMessages: [] },
     candidates: [
       {
@@ -84,17 +97,19 @@ function makeFullRecord(overrides: Partial<RunRecordV2> = {}): RunRecordV2 {
         model: "GPT-4o",
         slug: "gpt-4o",
         acceptedAttemptId: "att-1",
-        attempts: [{
-          attemptId: "att-1",
-          messages: [{ role: "user", content: "Write a sort" }],
-          startedAt: 1716048000000,
-          finishedAt: 1716048030000,
-          status: "completed",
-          output: "def bubble_sort(arr):\n  pass",
-          tokensIn: 15,
-          tokensOut: 30,
-          error: null,
-        }],
+        attempts: [
+          {
+            attemptId: "att-1",
+            messages: [{ role: "user", content: "Write a sort" }],
+            startedAt: 1716048000000,
+            finishedAt: 1716048030000,
+            status: "completed",
+            output: "def bubble_sort(arr):\n  pass",
+            tokensIn: 15,
+            tokensOut: 30,
+            error: null,
+          },
+        ],
       },
     ],
     judge: {
@@ -102,29 +117,55 @@ function makeFullRecord(overrides: Partial<RunRecordV2> = {}): RunRecordV2 {
       acceptedAttemptId: "judge-att-1",
       report: {
         labelMap: [{ label: "A", candidateId: "c1" }],
-        evaluationsById: { c1: { candidateId: "c1", blindLabel: "A", overallScore: 4.5, position: "First", rationale: "Good", strengths: ["Fast"], deductions: [], missedRequirements: [], criterionScores: [] } },
+        evaluationsById: {
+          c1: {
+            candidateId: "c1",
+            blindLabel: "A",
+            overallScore: 4.5,
+            position: "First",
+            rationale: "Good",
+            strengths: ["Fast"],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+        },
         comparisons: [],
       },
       consensus: null,
-      attempts: [{
-        attemptId: "judge-att-1",
-        providerId: "openrouter",
-        model: "judge-model",
-        instruction: "Evaluate",
-        messages: [{ role: "user", content: "Evaluate the candidates" }],
-        blindLabelToCandidateId: { A: "c1" },
-        candidateAttemptIdsByCandidateId: { c1: "att-1" },
-        startedAt: 1716048030000,
-        finishedAt: 1716048050000,
-        status: "completed",
-        error: null,
-        report: {
-          labelMap: [{ label: "A", candidateId: "c1" }],
-          evaluationsById: { c1: { candidateId: "c1", blindLabel: "A", overallScore: 4.5, position: "First", rationale: "Good", strengths: ["Fast"], deductions: [], missedRequirements: [], criterionScores: [] } },
-          comparisons: [],
+      attempts: [
+        {
+          attemptId: "judge-att-1",
+          providerId: "openrouter",
+          model: "judge-model",
+          instruction: "Evaluate",
+          messages: [{ role: "user", content: "Evaluate the candidates" }],
+          blindLabelToCandidateId: { A: "c1" },
+          candidateAttemptIdsByCandidateId: { c1: "att-1" },
+          startedAt: 1716048030000,
+          finishedAt: 1716048050000,
+          status: "completed",
+          error: null,
+          report: {
+            labelMap: [{ label: "A", candidateId: "c1" }],
+            evaluationsById: {
+              c1: {
+                candidateId: "c1",
+                blindLabel: "A",
+                overallScore: 4.5,
+                position: "First",
+                rationale: "Good",
+                strengths: ["Fast"],
+                deductions: [],
+                missedRequirements: [],
+                criterionScores: [],
+              },
+            },
+            comparisons: [],
+          },
+          consensus: null,
         },
-        consensus: null,
-      }],
+      ],
     },
     fusion: {
       status: "idle",
@@ -153,43 +194,51 @@ describe("run-view-model", () => {
     });
 
     it("formats every persisted tied winner", () => {
-      const vm = formatRunRow(makeFullSummary({
-        winnerKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
-        scoresByModelKey: { "openrouter:gpt-4o": 4.5, "umans:claude-opus": 4.5 },
-      }));
+      const vm = formatRunRow(
+        makeFullSummary({
+          winnerKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
+          scoresByModelKey: { "openrouter:gpt-4o": 4.5, "umans:claude-opus": 4.5 },
+        }),
+      );
       expect(vm.winnerKeys).toEqual(["openrouter:gpt-4o", "umans:claude-opus"]);
     });
 
     it("does not infer a winner from scores when accepted Judge is missing", () => {
-      const vm = formatRunRow(makeFullSummary({
-        winnerKeys: [],
-        status: "failed",
-      }));
+      const vm = formatRunRow(
+        makeFullSummary({
+          winnerKeys: [],
+          status: "failed",
+        }),
+      );
       expect(vm.winnerKeys).toEqual([]);
     });
 
     it("formats a failed run", () => {
-      const vm = formatRunRow(makeFullSummary({
-        status: "failed",
-        winnerKeys: [],
-      }));
+      const vm = formatRunRow(
+        makeFullSummary({
+          status: "failed",
+          winnerKeys: [],
+        }),
+      );
       expect(vm.status).toBe("failed");
       expect(vm.winnerKeys).toEqual([]);
     });
 
     it("formats an experiment source labeled with experiment metadata", () => {
-      const vm = formatRunRow(makeFullSummary({
-        source: {
-          kind: "experiment",
-          experimentId: "exp-1",
-          suiteId: "suite-1",
-          suiteVersion: 3,
-          protocolFingerprint: "fp-abc",
-          taskId: "task-1",
-          experimentTaskAttemptId: "attempt-1",
-          trial: 1,
-        },
-      }));
+      const vm = formatRunRow(
+        makeFullSummary({
+          source: {
+            kind: "experiment",
+            experimentId: "exp-1",
+            suiteId: "suite-1",
+            suiteVersion: 3,
+            protocolFingerprint: "fp-abc",
+            taskId: "task-1",
+            experimentTaskAttemptId: "attempt-1",
+            trial: 1,
+          },
+        }),
+      );
       expect(vm.sourceLabel).toBe("experiment");
     });
 
@@ -204,17 +253,21 @@ describe("run-view-model", () => {
     });
 
     it("formats scores display with top score", () => {
-      const vm = formatRunRow(makeFullSummary({
-        winnerKeys: ["openrouter:gpt-4o"],
-        scoresByModelKey: { "openrouter:gpt-4o": 4.5 },
-      }));
+      const vm = formatRunRow(
+        makeFullSummary({
+          winnerKeys: ["openrouter:gpt-4o"],
+          scoresByModelKey: { "openrouter:gpt-4o": 4.5 },
+        }),
+      );
       expect(vm.topScore).toBe(4.5);
     });
 
     it("returns null topScore when no winner", () => {
-      const vm = formatRunRow(makeFullSummary({
-        winnerKeys: [],
-      }));
+      const vm = formatRunRow(
+        makeFullSummary({
+          winnerKeys: [],
+        }),
+      );
       expect(vm.topScore).toBeNull();
     });
   });
@@ -222,25 +275,29 @@ describe("run-view-model", () => {
   describe("formatRunDetail", () => {
     it("formats full record with sections in exact semantic order", () => {
       // Provide a fusion attempt so the canonical 7-section order is exercised.
-      const vm = formatRunDetail(makeFullRecord({
-        fusion: {
-          status: "done",
-          acceptedAttemptId: "fusion-att-1",
-          attempts: [{
-            attemptId: "fusion-att-1",
-            providerId: "openrouter",
-            model: "judge-model",
-            messages: [{ role: "user", content: "Merge" }],
-            sourceJudgeAttemptId: "judge-att-1",
-            candidateAttemptIdsByCandidateId: { c1: "att-1" },
-            startedAt: 1716048050000,
-            finishedAt: 1716048060000,
-            status: "completed",
-            error: null,
-            result: "fused answer",
-          }],
-        },
-      }));
+      const vm = formatRunDetail(
+        makeFullRecord({
+          fusion: {
+            status: "done",
+            acceptedAttemptId: "fusion-att-1",
+            attempts: [
+              {
+                attemptId: "fusion-att-1",
+                providerId: "openrouter",
+                model: "judge-model",
+                messages: [{ role: "user", content: "Merge" }],
+                sourceJudgeAttemptId: "judge-att-1",
+                candidateAttemptIdsByCandidateId: { c1: "att-1" },
+                startedAt: 1716048050000,
+                finishedAt: 1716048060000,
+                status: "completed",
+                error: null,
+                result: "fused answer",
+              },
+            ],
+          },
+        }),
+      );
       expect(vm).not.toBeNull();
       expect(vm!.sections).toBeDefined();
       // Exact section order: header → outcome → cost-breakdown → candidates → selected → judge → fusion → task/config
@@ -265,12 +322,17 @@ describe("run-view-model", () => {
     });
 
     it("outcome section lists every tied winner", () => {
-      const vm = formatRunDetail(makeFullRecord({
-        winnerKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
-      }));
+      const vm = formatRunDetail(
+        makeFullRecord({
+          winnerKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
+        }),
+      );
       const outcome = vm!.sections.find((s) => s.id === "outcome");
       expect(outcome).toBeDefined();
-      expect((outcome as Record<string, unknown>).winners).toEqual(["openrouter:gpt-4o", "umans:claude-opus"]);
+      expect((outcome as Record<string, unknown>).winners).toEqual([
+        "openrouter:gpt-4o",
+        "umans:claude-opus",
+      ]);
     });
 
     it("fusion section only appears when Fusion attempts exist", () => {
@@ -281,25 +343,29 @@ describe("run-view-model", () => {
     });
 
     it("fusion section renders when fusion attempts exist", () => {
-      const vm = formatRunDetail(makeFullRecord({
-        fusion: {
-          status: "done",
-          acceptedAttemptId: "fusion-att-1",
-          attempts: [{
-            attemptId: "fusion-att-1",
-            providerId: "openrouter",
-            model: "judge-model",
-            messages: [{ role: "user", content: "Merge" }],
-            sourceJudgeAttemptId: "judge-att-1",
-            candidateAttemptIdsByCandidateId: { c1: "att-1" },
-            startedAt: 1716048050000,
-            finishedAt: 1716048060000,
-            status: "completed",
-            error: null,
-            result: "fused answer",
-          }],
-        },
-      }));
+      const vm = formatRunDetail(
+        makeFullRecord({
+          fusion: {
+            status: "done",
+            acceptedAttemptId: "fusion-att-1",
+            attempts: [
+              {
+                attemptId: "fusion-att-1",
+                providerId: "openrouter",
+                model: "judge-model",
+                messages: [{ role: "user", content: "Merge" }],
+                sourceJudgeAttemptId: "judge-att-1",
+                candidateAttemptIdsByCandidateId: { c1: "att-1" },
+                startedAt: 1716048050000,
+                finishedAt: 1716048060000,
+                status: "completed",
+                error: null,
+                result: "fused answer",
+              },
+            ],
+          },
+        }),
+      );
       const fusion = vm!.sections.find((s) => s.id === "fusion");
       expect(fusion).toBeDefined();
     });
@@ -309,7 +375,6 @@ describe("run-view-model", () => {
       expect(vm).toBeNull();
     });
   });
-
 
   describe("run timing", () => {
     it("uses completedAt for terminal relative age and duration", () => {

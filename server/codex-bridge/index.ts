@@ -58,7 +58,10 @@ const DEFAULT_ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173
 function configuredAllowedOrigins(): readonly string[] {
   const configured = process.env.RSEMBLE_BRIDGE_ALLOWED_ORIGINS;
   return configured
-    ? configured.split(",").map((origin) => origin.trim()).filter(Boolean)
+    ? configured
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean)
     : DEFAULT_ALLOWED_ORIGINS;
 }
 
@@ -83,7 +86,9 @@ function setCorsHeaders(
 }
 
 function isApplicationJson(req: http.IncomingMessage): boolean {
-  return (req.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase() === "application/json";
+  return (
+    (req.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase() === "application/json"
+  );
 }
 
 function sendJson(res: http.ServerResponse, status: number, payload: unknown): void {
@@ -148,7 +153,12 @@ function readJsonBody(
 interface BridgeRoute {
   publicPath: string;
   method: "GET" | "POST";
-  handler: (req: http.IncomingMessage, res: http.ServerResponse, pathWithQuery: string, options: BridgeServerOptions) => void;
+  handler: (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    pathWithQuery: string,
+    options: BridgeServerOptions,
+  ) => void;
   auth: "public" | "bridge-secret";
   contentType?: "application/json";
 }
@@ -156,9 +166,7 @@ interface BridgeRoute {
 function sendAuthRequired(res: http.ServerResponse, invalid: boolean): void {
   sendJson(res, 401, {
     error: {
-      message: invalid
-        ? "Invalid bridge secret."
-        : "Missing X-RSemble-Bridge-Secret header.",
+      message: invalid ? "Invalid bridge secret." : "Missing X-RSemble-Bridge-Secret header.",
       type: invalid ? "bridge_auth_invalid" : "bridge_auth_required",
     },
   });
@@ -170,7 +178,11 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
   const secret = configuredBridgeSecret();
 
   const routes: BridgeRoute[] = [
-    { publicPath: "/health", method: "GET", auth: "public", handler: (_req, res) => {
+    {
+      publicPath: "/health",
+      method: "GET",
+      auth: "public",
+      handler: (_req, res) => {
         sendJson(res, 200, {
           status: "ok",
           service: BRIDGE_SERVICE,
@@ -179,14 +191,30 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
           // input_image data URLs, but has no PDF (file) path in v1.
           capabilities: { image: true, pdf: false },
         });
-      } },
-    { publicPath: "/auth/status", method: "GET", auth: "public", handler: (_req, res) => {
+      },
+    },
+    {
+      publicPath: "/auth/status",
+      method: "GET",
+      auth: "public",
+      handler: (_req, res) => {
         sendJson(res, 200, getAuthStatus());
-      } },
-    { publicPath: "/v1/models", method: "GET", auth: "bridge-secret", handler: (_req, res) => {
+      },
+    },
+    {
+      publicPath: "/v1/models",
+      method: "GET",
+      auth: "bridge-secret",
+      handler: (_req, res) => {
         sendJson(res, 200, { data: CODEX_MODELS });
-      } },
-    { publicPath: "/v1/chat/completions", method: "POST", auth: "bridge-secret", contentType: "application/json", handler: (req, res) => {
+      },
+    },
+    {
+      publicPath: "/v1/chat/completions",
+      method: "POST",
+      auth: "bridge-secret",
+      contentType: "application/json",
+      handler: (req, res) => {
         void (async () => {
           let bodyText: string | null;
           try {
@@ -213,25 +241,59 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
             });
           }
         })();
-      } },
-    { publicPath: "/9router/v1/models", method: "GET", auth: "bridge-secret", handler: (req, res, pathWithQuery) => {
+      },
+    },
+    {
+      publicPath: "/9router/v1/models",
+      method: "GET",
+      auth: "bridge-secret",
+      handler: (req, res, pathWithQuery) => {
         void handleNineRouterProxy(req, res, pathWithQuery, { maxBodyBytes });
-      } },
-    { publicPath: "/9router/v1/chat/completions", method: "POST", auth: "bridge-secret", contentType: "application/json", handler: (req, res, pathWithQuery) => {
+      },
+    },
+    {
+      publicPath: "/9router/v1/chat/completions",
+      method: "POST",
+      auth: "bridge-secret",
+      contentType: "application/json",
+      handler: (req, res, pathWithQuery) => {
         void handleNineRouterProxy(req, res, pathWithQuery, { maxBodyBytes });
-      } },
-    { publicPath: "/umans/v1/models", method: "GET", auth: "bridge-secret", handler: (req, res, pathWithQuery) => {
+      },
+    },
+    {
+      publicPath: "/umans/v1/models",
+      method: "GET",
+      auth: "bridge-secret",
+      handler: (req, res, pathWithQuery) => {
         void handleUmansProxy(req, res, pathWithQuery, { maxBodyBytes });
-      } },
-    { publicPath: "/umans/v1/chat/completions", method: "POST", auth: "bridge-secret", contentType: "application/json", handler: (req, res, pathWithQuery) => {
+      },
+    },
+    {
+      publicPath: "/umans/v1/chat/completions",
+      method: "POST",
+      auth: "bridge-secret",
+      contentType: "application/json",
+      handler: (req, res, pathWithQuery) => {
         void handleUmansProxy(req, res, pathWithQuery, { maxBodyBytes });
-      } },
-    { publicPath: "/clinepass/v1/models", method: "GET", auth: "bridge-secret", handler: (req, res, pathWithQuery) => {
+      },
+    },
+    {
+      publicPath: "/clinepass/v1/models",
+      method: "GET",
+      auth: "bridge-secret",
+      handler: (req, res, pathWithQuery) => {
         void handleClinePassProxy(req, res, pathWithQuery, { maxBodyBytes });
-      } },
-    { publicPath: "/clinepass/v1/chat/completions", method: "POST", auth: "bridge-secret", contentType: "application/json", handler: (req, res, pathWithQuery) => {
+      },
+    },
+    {
+      publicPath: "/clinepass/v1/chat/completions",
+      method: "POST",
+      auth: "bridge-secret",
+      contentType: "application/json",
+      handler: (req, res, pathWithQuery) => {
         void handleClinePassProxy(req, res, pathWithQuery, { maxBodyBytes });
-      } },
+      },
+    },
   ];
 
   const routeFor = (pathname: string): BridgeRoute | undefined =>
@@ -239,7 +301,9 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
 
   return http.createServer((req, res) => {
     if (!setCorsHeaders(req, res, allowedOrigins)) {
-      sendJson(res, 403, { error: { message: "Browser origin is not allowed.", type: "origin_not_allowed" } });
+      sendJson(res, 403, {
+        error: { message: "Browser origin is not allowed.", type: "origin_not_allowed" },
+      });
       return;
     }
 
@@ -262,12 +326,19 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
     // Known path with wrong method: exact Allow header (Plan 003 B).
     if (req.method !== route.method) {
       res.setHeader("Allow", `${route.method}, OPTIONS`);
-      sendJson(res, 405, { error: { message: `Method not allowed: ${req.method}`, type: "method_not_allowed" } });
+      sendJson(res, 405, {
+        error: { message: `Method not allowed: ${req.method}`, type: "method_not_allowed" },
+      });
       return;
     }
 
     if (route.contentType && !isApplicationJson(req)) {
-      sendJson(res, 415, { error: { message: "Content-Type must be application/json.", type: "unsupported_media_type" } });
+      sendJson(res, 415, {
+        error: {
+          message: "Content-Type must be application/json.",
+          type: "unsupported_media_type",
+        },
+      });
       return;
     }
 
@@ -295,8 +366,10 @@ const invokedDirectly = (() => {
   const entry = process.argv[1];
   if (!entry) return false;
   const normalized = entry.replace(/\\/g, "/");
-  return normalized.endsWith("server/codex-bridge/index.ts") ||
-    normalized.endsWith("server/codex-bridge/index.js");
+  return (
+    normalized.endsWith("server/codex-bridge/index.ts") ||
+    normalized.endsWith("server/codex-bridge/index.js")
+  );
 })();
 
 if (invokedDirectly) {

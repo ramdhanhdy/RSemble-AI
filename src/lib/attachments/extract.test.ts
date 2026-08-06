@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  truncateText,
-  readAsBase64,
-} from "./extract";
+import { truncateText, readAsBase64 } from "./extract";
 import { MAX_TEXT_CHARS_PER_FILE } from "./limits";
 
 describe("truncateText", () => {

@@ -17,7 +17,10 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { RSembleEvaluationDB } from "../persistence/database";
 import { createRunRepository, type RunRepository } from "../persistence/run-repository";
-import { createEvaluationRepository, type EvaluationRepository } from "../persistence/evaluation-repository";
+import {
+  createEvaluationRepository,
+  type EvaluationRepository,
+} from "../persistence/evaluation-repository";
 import { RepositoryContext, type RepositoryContextValue } from "../persistence/repository-context";
 import { ExecutionOwnerProvider } from "../execution-owner-context";
 import { ExperimentControllerProvider } from "./experiment-controller-context";
@@ -58,7 +61,11 @@ async function settle(ms = 30): Promise<void> {
  * — fast when the effect is fast, patient under load, and the ceiling still
  * catches a genuinely broken sweep. Throws the last error if time runs out.
  */
-async function waitUntil(cond: () => Promise<boolean>, timeoutMs = 3000, stepMs = 25): Promise<void> {
+async function waitUntil(
+  cond: () => Promise<boolean>,
+  timeoutMs = 3000,
+  stepMs = 25,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastErr: unknown;
   while (Date.now() < deadline) {
@@ -146,7 +153,9 @@ function staleRunningRun(id: string): { record: RunRecordV2; summary: FullRunSum
 
 describe("ExperimentControllerProvider startup recovery", () => {
   it("marks a stale ad-hoc running run interrupted on mount (spec §20)", async () => {
-    const db = new RSembleEvaluationDB("test-startup-recovery-" + Math.random().toString(36).slice(2));
+    const db = new RSembleEvaluationDB(
+      "test-startup-recovery-" + Math.random().toString(36).slice(2),
+    );
     await db.open();
     const runRepo: RunRepository = createRunRepository(db);
     const evalRepo: EvaluationRepository = createEvaluationRepository(db, runRepo);

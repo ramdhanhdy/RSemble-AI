@@ -181,7 +181,9 @@ describe("ModelProbeContext — batch testing and invalidation", () => {
     function ProbeHarness() {
       const { invalidateProvider } = useModelProbe();
       invalidate = () => invalidateProvider("9router");
-      return <ModelProbeControl providerId="9router" model="cmc/model" slotLabel="9Router · cmc/model" />;
+      return (
+        <ModelProbeControl providerId="9router" model="cmc/model" slotLabel="9Router · cmc/model" />
+      );
     }
     const h = render(<ProbeHarness />);
     const btn = h.$("button")!;

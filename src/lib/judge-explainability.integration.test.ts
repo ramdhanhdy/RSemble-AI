@@ -39,7 +39,9 @@ function makeDeps(state: StudioState) {
   const waiters: Array<{ type: Action["type"]; resolve: () => void }> = [];
   const stateRef = { current: state } as React.MutableRefObject<StudioState>;
   const runEpochRef = { current: 0 } as React.MutableRefObject<number>;
-  const abortControllersRef = { current: new Set<AbortController>() } as React.MutableRefObject<Set<AbortController>>;
+  const abortControllersRef = { current: new Set<AbortController>() } as React.MutableRefObject<
+    Set<AbortController>
+  >;
   const dispatch: React.Dispatch<Action> = (a) => {
     dispatched.push(a);
     stateRef.current = reducer(stateRef.current, a);
@@ -65,8 +67,22 @@ function makeDeps(state: StudioState) {
 }
 
 const SLOTS: StudioState["slots"] = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "Alpha", slug: "vendor/alpha-1", enabled: true },
-  { id: "s2", providerId: "umans", provider: "Umans", model: "Beta", slug: "vendor/beta-2", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "Alpha",
+    slug: "vendor/alpha-1",
+    enabled: true,
+  },
+  {
+    id: "s2",
+    providerId: "umans",
+    provider: "Umans",
+    model: "Beta",
+    slug: "vendor/beta-2",
+    enabled: true,
+  },
 ];
 
 async function* streamOf(text: string): AsyncGenerator<string, void, unknown> {
@@ -93,7 +109,9 @@ describe("judge explainability — integration", () => {
     };
     chatStreamMock
       .mockImplementationOnce(() => streamOf("Expand into the EU — demand is strong."))
-      .mockImplementationOnce(() => streamOf("Expand into the EU — regulatory risk is manageable."));
+      .mockImplementationOnce(() =>
+        streamOf("Expand into the EU — regulatory risk is manageable."),
+      );
     chatCompletionMock.mockResolvedValue(
       JSON.stringify({
         consensus: ["Both recommend expansion"],
@@ -124,7 +142,8 @@ describe("judge explainability — integration", () => {
         comparisons: [
           {
             labels: ["A", "B"],
-            reason: "Both recommend expansion, but A quantifies the downside and defines earlier falsification gates.",
+            reason:
+              "Both recommend expansion, but A quantifies the downside and defines earlier falsification gates.",
           },
         ],
       }),
@@ -167,8 +186,26 @@ describe("judge explainability — integration", () => {
         contradictions: [],
         uniqueInsights: [],
         evaluations: [
-          { label: "A", score: 4.0, position: "p", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
-          { label: "B", score: 3.0, position: "p", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
+          {
+            label: "A",
+            score: 4.0,
+            position: "p",
+            rationale: "r",
+            strengths: ["s"],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+          {
+            label: "B",
+            score: 3.0,
+            position: "p",
+            rationale: "r",
+            strengths: ["s"],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
         ],
         comparisons: [],
       }),
@@ -202,8 +239,26 @@ describe("judge explainability — integration", () => {
           contradictions: [],
           uniqueInsights: [],
           evaluations: [
-            { label: "A", score: 4.0, position: "p", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
-            { label: "B", score: 3.0, position: "p", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
+            {
+              label: "A",
+              score: 4.0,
+              position: "p",
+              rationale: "r",
+              strengths: ["s"],
+              deductions: [],
+              missedRequirements: [],
+              criterionScores: [],
+            },
+            {
+              label: "B",
+              score: 3.0,
+              position: "p",
+              rationale: "r",
+              strengths: ["s"],
+              deductions: [],
+              missedRequirements: [],
+              criterionScores: [],
+            },
           ],
           comparisons: [],
         }),

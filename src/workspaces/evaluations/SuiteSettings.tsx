@@ -9,14 +9,7 @@
 // =============================================================================
 
 import { useMemo, useRef, useState } from "react";
-import {
-  ChevronDown,
-  Plus,
-  Search,
-  Trash2,
-  X,
-  Check,
-} from "lucide-react";
+import { ChevronDown, Plus, Search, Trash2, X, Check } from "lucide-react";
 import { ModelProbeControl } from "../../ui/ModelProbeControl";
 import { useModelProbe } from "../../ui/ModelProbeContext";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
@@ -56,7 +49,10 @@ export function SuiteSettings({
   const enabledSlots = suite.modelSlots.filter((s) => s.enabled);
   const reasoningPolicy = suite.reasoningPolicy ?? DEFAULT_REASONING_POLICY;
   const candidateEfforts = commonReasoningEfforts(suite.modelSlots);
-  const judgeEfforts = capabilitiesForModel(suite.defaultJudge.providerId, suite.defaultJudge.model).supportedEfforts;
+  const judgeEfforts = capabilitiesForModel(
+    suite.defaultJudge.providerId,
+    suite.defaultJudge.model,
+  ).supportedEfforts;
   const takenKeys = useMemo(
     () => new Set(enabledSlots.map((s) => modelKey(s.providerId, s.slug))),
     [enabledSlots],
@@ -67,7 +63,8 @@ export function SuiteSettings({
     const seen = new Set<string>();
     for (const s of enabledSlots) {
       const k = modelKey(s.providerId, s.slug);
-      if (seen.has(k)) return `Duplicate model key "${k}" — enabled models must have unique providerId:modelSlug.`;
+      if (seen.has(k))
+        return `Duplicate model key "${k}" — enabled models must have unique providerId:modelSlug.`;
       seen.add(k);
     }
     return null;
@@ -113,9 +110,7 @@ export function SuiteSettings({
           aria-invalid={!suite.name.trim()}
           className="min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
-        {!suite.name.trim() && (
-          <p className="text-xs text-error">Suite name is required.</p>
-        )}
+        {!suite.name.trim() && <p className="text-xs text-error">Suite name is required.</p>}
 
         <label
           htmlFor="suite-description"
@@ -138,10 +133,14 @@ export function SuiteSettings({
           Candidate models
         </span>
         {dupKeyError && (
-          <p role="alert" className="text-xs text-error">{dupKeyError}</p>
+          <p role="alert" className="text-xs text-error">
+            {dupKeyError}
+          </p>
         )}
         {suite.modelSlots.length === 0 && (
-          <p className="text-xs text-text-muted">No models yet. Add at least two enabled candidates to run.</p>
+          <p className="text-xs text-text-muted">
+            No models yet. Add at least two enabled candidates to run.
+          </p>
         )}
         <ul className="space-y-1" role="list">
           {suite.modelSlots.map((slot) => (
@@ -184,11 +183,17 @@ export function SuiteSettings({
             type="button"
             onClick={() => {
               // Build entries: enabled candidates + Judge (de-duplicated).
-              const entries = enabledSlots.map((s) => ({ providerId: s.providerId, model: s.slug }));
+              const entries = enabledSlots.map((s) => ({
+                providerId: s.providerId,
+                model: s.slug,
+              }));
               const judgeKey = `${suite.defaultJudge.providerId}:${suite.defaultJudge.model}`;
               const candidateKeys = new Set(entries.map((e) => `${e.providerId}:${e.model}`));
               if (!candidateKeys.has(judgeKey)) {
-                entries.push({ providerId: suite.defaultJudge.providerId, model: suite.defaultJudge.model });
+                entries.push({
+                  providerId: suite.defaultJudge.providerId,
+                  model: suite.defaultJudge.model,
+                });
               }
               void testBatch(entries, 3);
             }}
@@ -209,11 +214,7 @@ export function SuiteSettings({
         <span className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
           Default Judge
         </span>
-        <JudgeSelector
-          current={suite.defaultJudge}
-          models={models}
-          onCommit={setDefaultJudge}
-        />
+        <JudgeSelector current={suite.defaultJudge} models={models} onCommit={setDefaultJudge} />
         <ModelProbeControl
           providerId={suite.defaultJudge.providerId}
           model={suite.defaultJudge.model}
@@ -233,9 +234,14 @@ export function SuiteSettings({
         />
       </div>
 
-      <section aria-label="Suite reasoning policy" className="space-y-3 rounded-md border border-edge bg-card p-2.5">
+      <section
+        aria-label="Suite reasoning policy"
+        className="space-y-3 rounded-md border border-edge bg-card p-2.5"
+      >
         <div>
-          <h3 className="font-mono text-xs uppercase tracking-wide text-text-secondary">Reasoning policy</h3>
+          <h3 className="font-mono text-xs uppercase tracking-wide text-text-secondary">
+            Reasoning policy
+          </h3>
           <p className="mt-1 text-xs text-text-secondary">
             Named effort is a controlled request, not proof that model families spend equal compute.
           </p>
@@ -244,7 +250,9 @@ export function SuiteSettings({
           label="Candidate effort"
           value={reasoningPolicy.candidates}
           options={candidateEfforts}
-          onChange={(candidates) => onChange({ reasoningPolicy: { ...reasoningPolicy, candidates } })}
+          onChange={(candidates) =>
+            onChange({ reasoningPolicy: { ...reasoningPolicy, candidates } })
+          }
           description="Only common strict levels for enabled candidates are offered."
         />
         <ReasoningEffortPicker
@@ -326,9 +334,7 @@ function AddModelCombobox({
     const q = query.trim().toLowerCase();
     const pool = providerModels.length > 0 ? providerModels : [];
     if (q.length === 0) return pool;
-    return pool.filter(
-      (m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
-    );
+    return pool.filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
   }, [query, providerModels]);
 
   const hasCatalog = providerModels.length > 0;
@@ -336,7 +342,9 @@ function AddModelCombobox({
   const candidateKey = modelKey(selectedProvider, trimmed);
   const manualSlugValid =
     trimmed.length > 0 &&
-    (selectedProvider === "openrouter" || selectedProvider === "commandcode" || selectedProvider === "clinepass"
+    (selectedProvider === "openrouter" ||
+    selectedProvider === "commandcode" ||
+    selectedProvider === "clinepass"
       ? trimmed.includes("/")
       : true) &&
     !takenKeys.has(candidateKey);
@@ -396,7 +404,11 @@ function AddModelCombobox({
               onCancel();
             }
           }}
-          placeholder={hasCatalog ? "Search catalog or type a slug (provider/model)…" : "Type a slug (provider/model)…"}
+          placeholder={
+            hasCatalog
+              ? "Search catalog or type a slug (provider/model)…"
+              : "Type a slug (provider/model)…"
+          }
           aria-label="Search the model catalog or enter a slug"
           className="min-h-[44px] flex-1 bg-transparent font-mono text-sm text-text placeholder-text-muted focus:outline-none"
         />
@@ -434,7 +446,9 @@ function AddModelCombobox({
         </ul>
       )}
       {hasCatalog && matches.length === 0 && query.trim().length > 0 && (
-        <p className="px-1 py-2 font-mono text-sm text-text-muted">No catalog match — add as raw slug below.</p>
+        <p className="px-1 py-2 font-mono text-sm text-text-muted">
+          No catalog match — add as raw slug below.
+        </p>
       )}
 
       {manualSlugValid ? (
@@ -487,9 +501,7 @@ function JudgeSelector({
     const q = query.trim().toLowerCase();
     const pool = providerModels.length > 0 ? providerModels : [];
     if (q.length === 0) return pool;
-    return pool.filter(
-      (m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
-    );
+    return pool.filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
   }, [query, providerModels]);
 
   const hasCatalog = providerModels.length > 0;
@@ -497,7 +509,9 @@ function JudgeSelector({
   const isCurrent = selectedProvider === current.providerId && trimmed === current.model;
   const slugValid =
     trimmed.length > 0 &&
-    (selectedProvider === "openrouter" || selectedProvider === "commandcode" || selectedProvider === "clinepass"
+    (selectedProvider === "openrouter" ||
+    selectedProvider === "commandcode" ||
+    selectedProvider === "clinepass"
       ? trimmed.includes("/")
       : true) &&
     !isCurrent;
@@ -516,7 +530,11 @@ function JudgeSelector({
         aria-label={`Change default judge, current: ${current.model || "none"}`}
         className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-sm border border-edge bg-card px-2.5 py-1.5 text-left hover:border-edge-bright hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
-        <span dir="rtl" className="min-w-0 flex-1 truncate font-mono text-sm text-text" title={current.model}>
+        <span
+          dir="rtl"
+          className="min-w-0 flex-1 truncate font-mono text-sm text-text"
+          title={current.model}
+        >
           {`‎${label}`}
         </span>
         <ChevronDown size={14} className="shrink-0 text-text-muted" aria-hidden="true" />
@@ -677,7 +695,10 @@ function DefaultEvaluationPicker({
             // Pin the first available profile if none pinned yet.
             const first = profileRecords[0];
             if (first) {
-              onChange({ kind: "profile", profile: { id: first.id, version: first.latestVersion } });
+              onChange({
+                kind: "profile",
+                profile: { id: first.id, version: first.latestVersion },
+              });
             } else {
               onChange({ kind: "profile", profile: { id: "", version: 0 } });
             }
@@ -710,11 +731,11 @@ function DefaultEvaluationPicker({
                 aria-label="Pinned profile version"
                 className="min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
-                  {profileRecords.map((r) => (
-                    <option key={`${r.id}:${r.latestVersion}`} value={`${r.id}:${r.latestVersion}`}>
-                      {resolveProfileLabel({ id: r.id, version: r.latestVersion })}
-                    </option>
-                  ))}
+                {profileRecords.map((r) => (
+                  <option key={`${r.id}:${r.latestVersion}`} value={`${r.id}:${r.latestVersion}`}>
+                    {resolveProfileLabel({ id: r.id, version: r.latestVersion })}
+                  </option>
+                ))}
               </select>
             </label>
           )}

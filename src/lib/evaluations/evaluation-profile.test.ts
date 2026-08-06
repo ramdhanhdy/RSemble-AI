@@ -15,7 +15,10 @@ import {
 } from "./evaluation-profile";
 import type { EvaluationProfile, EvaluationCriterion } from "./evaluation-types";
 
-function makeCriterion(id: string, overrides: Partial<EvaluationCriterion> = {}): EvaluationCriterion {
+function makeCriterion(
+  id: string,
+  overrides: Partial<EvaluationCriterion> = {},
+): EvaluationCriterion {
   return {
     id,
     name: `Criterion ${id}`,
@@ -82,19 +85,25 @@ describe("judgeEvaluationBlock", () => {
 
 describe("canonicalScore", () => {
   it("computes deterministic weighted mean of the complete criterion vector", () => {
-    const profile = makeProfile({ criteria: [makeCriterion("c1", { weight: 1 }), makeCriterion("c2", { weight: 2 })] });
+    const profile = makeProfile({
+      criteria: [makeCriterion("c1", { weight: 1 }), makeCriterion("c2", { weight: 2 })],
+    });
     const scores = { c1: 4, c2: 5 };
     // (4*1 + 5*2) / (1+2) = 14/3 ≈ 4.6667
     expect(canonicalScore(scores, profile)).toBeCloseTo(14 / 3, 10);
   });
 
   it("returns null when all weights are zero", () => {
-    const profile = makeProfile({ criteria: [makeCriterion("c1", { weight: 0 }), makeCriterion("c2", { weight: 0 })] });
+    const profile = makeProfile({
+      criteria: [makeCriterion("c1", { weight: 0 }), makeCriterion("c2", { weight: 0 })],
+    });
     expect(canonicalScore({ c1: 4, c2: 5 }, profile)).toBeNull();
   });
 
   it("ignores criteria with zero weight in computation", () => {
-    const profile = makeProfile({ criteria: [makeCriterion("c1", { weight: 1 }), makeCriterion("c2", { weight: 0 })] });
+    const profile = makeProfile({
+      criteria: [makeCriterion("c1", { weight: 1 }), makeCriterion("c2", { weight: 0 })],
+    });
     const scores = { c1: 3, c2: 5 };
     expect(canonicalScore(scores, profile)).toBe(3);
   });
@@ -111,7 +120,7 @@ describe("computeWinnerKeys", () => {
   });
 
   it("returns single winner when no tie", () => {
-    const scores = { "a": 4.5, "b": 3.0 };
+    const scores = { a: 4.5, b: 3.0 };
     expect(computeWinnerKeys(scores)).toEqual(["a"]);
   });
 });
@@ -132,7 +141,9 @@ describe("validateProfile", () => {
   });
 
   it("rejects missing anchor text", () => {
-    const profile = makeProfile({ criteria: [makeCriterion("c1", { anchors: { one: "", three: "ok", five: "great" } })] });
+    const profile = makeProfile({
+      criteria: [makeCriterion("c1", { anchors: { one: "", three: "ok", five: "great" } })],
+    });
     const errors = validateProfile(profile);
     expect(errors.some((e) => e.includes("anchors"))).toBe(true);
   });
@@ -174,11 +185,15 @@ describe("normalizedWeights", () => {
 
 describe("totalWeight", () => {
   it("sums non-negative weights", () => {
-    expect(totalWeight([makeCriterion("c1", { weight: 1 }), makeCriterion("c2", { weight: 2 })])).toBe(3);
+    expect(
+      totalWeight([makeCriterion("c1", { weight: 1 }), makeCriterion("c2", { weight: 2 })]),
+    ).toBe(3);
   });
 
   it("ignores negative weights", () => {
-    expect(totalWeight([makeCriterion("c1", { weight: -1 }), makeCriterion("c2", { weight: 2 })])).toBe(2);
+    expect(
+      totalWeight([makeCriterion("c1", { weight: -1 }), makeCriterion("c2", { weight: 2 })]),
+    ).toBe(2);
   });
 });
 

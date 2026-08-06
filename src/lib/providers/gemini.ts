@@ -21,7 +21,11 @@ import {
   runProviderRequest,
   wrapProviderStream,
 } from "./provider-deadline";
-import { composeAbortSignals, isExecutionTimeoutError, providerAbortError } from "../execution-deadline";
+import {
+  composeAbortSignals,
+  isExecutionTimeoutError,
+  providerAbortError,
+} from "../execution-deadline";
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -48,7 +52,7 @@ function buildThinkingConfig(
  * `gemini-*` models (spec §5).
  */
 function mapContentToGeminiParts(
-  content: string | ContentPart[]
+  content: string | ContentPart[],
 ): { text?: string; inlineData?: { mimeType: string; data: string } }[] {
   if (typeof content === "string") return [{ text: content }];
   return content.map((part) => {
@@ -197,7 +201,9 @@ export const geminiProvider: LLMProvider = {
     const candidateKey = apiKey.trim();
     if (!candidateKey) return { ok: false, reason: "Enter a Gemini API key first." };
     try {
-      const res = await fetch(`${BASE_URL}/models?key=${encodeURIComponent(candidateKey)}`, { signal });
+      const res = await fetch(`${BASE_URL}/models?key=${encodeURIComponent(candidateKey)}`, {
+        signal,
+      });
       if (res.ok) return { ok: true };
       const raw = await readBoundedResponseText(res).catch(() => "");
       return { ok: false, reason: providerErrorDetail(raw, "Gemini", res.status) };
@@ -224,7 +230,7 @@ export const geminiProvider: LLMProvider = {
     if (!key) {
       throw new ProviderError(
         "Missing VITE_GEMINI_KEY. Add it to a .env file at the project root.",
-        "gemini"
+        "gemini",
       );
     }
 
@@ -251,7 +257,11 @@ export const geminiProvider: LLMProvider = {
         onHeadersReady();
         if (!res.ok) {
           const raw = await readBoundedResponseText(res).catch(() => "");
-          throw new ProviderError(providerErrorDetail(raw, "Gemini", res.status), "gemini", res.status);
+          throw new ProviderError(
+            providerErrorDetail(raw, "Gemini", res.status),
+            "gemini",
+            res.status,
+          );
         }
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -273,13 +283,13 @@ export const geminiProvider: LLMProvider = {
     const headers = createHeadersReady();
     const streamAbort = new AbortController();
     const composed = composeAbortSignals(opts.signal, streamAbort.signal);
-    const source = (async function*(): AsyncGenerator<string, void, unknown> {
+    const source = (async function* (): AsyncGenerator<string, void, unknown> {
       const key = getApiKey();
       if (!key) {
         composed.cleanup();
         throw new ProviderError(
           "Missing VITE_GEMINI_KEY. Add it to a .env file at the project root.",
-          "gemini"
+          "gemini",
         );
       }
 
@@ -315,7 +325,11 @@ export const geminiProvider: LLMProvider = {
         headers.resolve();
         if (!res.ok || !res.body) {
           const raw = await readBoundedResponseText(res).catch(() => "");
-          throw new ProviderError(providerErrorDetail(raw, "Gemini", res.status), "gemini", res.status);
+          throw new ProviderError(
+            providerErrorDetail(raw, "Gemini", res.status),
+            "gemini",
+            res.status,
+          );
         }
 
         const reader = res.body.getReader();
@@ -363,7 +377,10 @@ export const geminiProvider: LLMProvider = {
           }
           if (!yieldedAny) {
             if (composed.signal.aborted) {
-              throw providerAbortError(undefined, composed.signal) ?? new DOMException("Aborted", "AbortError");
+              throw (
+                providerAbortError(undefined, composed.signal) ??
+                new DOMException("Aborted", "AbortError")
+              );
             }
             throw new ProviderError("Gemini returned an empty stream.", "gemini");
           }
@@ -403,7 +420,11 @@ export const geminiProvider: LLMProvider = {
     try {
       const res = await fetch(`${BASE_URL}/models?key=${key}`, { signal });
       if (!res.ok) {
-        throw new ProviderError(`Could not load Gemini models (HTTP ${res.status}).`, "gemini", res.status);
+        throw new ProviderError(
+          `Could not load Gemini models (HTTP ${res.status}).`,
+          "gemini",
+          res.status,
+        );
       }
       const data = await res.json();
       const arr: unknown[] = Array.isArray(data?.models) ? data.models : [];

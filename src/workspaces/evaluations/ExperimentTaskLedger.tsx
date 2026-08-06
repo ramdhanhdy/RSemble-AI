@@ -28,7 +28,6 @@ import {
   type TaskLedgerRow,
 } from "../../lib/evaluations/experiment-task-ledger";
 
-
 export interface ExperimentTaskLedgerProps {
   experiment: ExperimentRecord;
   controller: ExperimentController | null;
@@ -63,7 +62,6 @@ function attemptTime(attempt: ExperimentTaskAttempt | null, now: number): string
   const ts = attempt.finishedAt ?? attempt.startedAt;
   return ts === null ? "—" : formatRelativeTime(ts);
 }
-
 
 export function ExperimentTaskLedger({
   experiment,
@@ -118,7 +116,10 @@ export function ExperimentTaskLedger({
             {currentAttempt?.status === "running" && currentAttempt.startedAt !== null && (
               <>
                 {" "}
-                · <span className="tabular-nums">{formatElapsed(now - currentAttempt.startedAt)}</span>{" "}
+                ·{" "}
+                <span className="tabular-nums">
+                  {formatElapsed(now - currentAttempt.startedAt)}
+                </span>{" "}
                 elapsed
               </>
             )}
@@ -222,7 +223,9 @@ export function ExperimentTaskLedger({
                       ? `${attempt.coverage.scoredModelKeys.length}/${attempt.coverage.totalModels}`
                       : "—"}
                   </span>
-                  <span className="tabular-nums text-text-secondary">{attemptTime(attempt, now)}</span>
+                  <span className="tabular-nums text-text-secondary">
+                    {attemptTime(attempt, now)}
+                  </span>
                   <div className="min-w-0">
                     {attempt?.runId ? (
                       <Link
@@ -236,7 +239,10 @@ export function ExperimentTaskLedger({
                         <summary className="flex min-h-[44px] max-w-full cursor-pointer items-center truncate rounded-sm px-2 text-sm text-error transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
                           Error details
                         </summary>
-                        <p className="max-w-[18rem] truncate px-2 pb-1 text-xs text-error" title={errorMessage}>
+                        <p
+                          className="max-w-[18rem] truncate px-2 pb-1 text-xs text-error"
+                          title={errorMessage}
+                        >
                           {errorMessage}
                         </p>
                       </details>

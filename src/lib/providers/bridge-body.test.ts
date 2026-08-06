@@ -8,7 +8,13 @@ import { ProviderError } from "./types";
 
 describe("assertBridgeBodyWithinLimit", () => {
   it("passes a body at or under the limit", () => {
-    expect(() => assertBridgeBodyWithinLimit('{"a":"x".repeat(100)}'.replace('"x".repeat(100)', "x".repeat(100)), "umans", 4096)).not.toThrow();
+    expect(() =>
+      assertBridgeBodyWithinLimit(
+        '{"a":"x".repeat(100)}'.replace('"x".repeat(100)', "x".repeat(100)),
+        "umans",
+        4096,
+      ),
+    ).not.toThrow();
   });
 
   it("throws a ProviderError naming the encoded size and limit when over", () => {
