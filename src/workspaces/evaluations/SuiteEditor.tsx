@@ -320,7 +320,7 @@ export function SuiteEditor({
     setRunError(null);
     const result = await controller.start(persisted.id);
     if (result.ok) {
-      navigate(`/experiments/${result.experimentId}`);
+      void navigate(`/experiments/${result.experimentId}`);
     } else {
       setRunError(result.error);
     }
@@ -536,7 +536,7 @@ export function SuiteEditor({
               setSelectedTaskId(id);
               // On mobile, navigate to the task route for deep-linking.
               if (suiteId && !window.matchMedia("(min-width: 1024px)").matches) {
-                navigate(`/evaluations/${suiteId}/tasks/${id}`);
+                void navigate(`/evaluations/${suiteId}/tasks/${id}`);
               }
             }}
             onAdd={addTask}
@@ -604,7 +604,7 @@ function friendlyStorageError(err: StorageError): string {
     case "blocked":
     case "versionchange":
       return "Storage is blocked by another tab. Close it and retry.";
-    default:
-      return err.message || "Storage is unavailable.";
+    case "unavailable":
+      return "Storage is unavailable — retry; your existing data was not modified.";
   }
 }

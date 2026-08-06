@@ -682,3 +682,39 @@ describe("LegacyRunDetail", () => {
     cleanup(h);
   });
 });
+
+describe("RunDetail accessibility (Plan 006 workstream B)", () => {
+  it("candidate row buttons contain no nested interactive elements", () => {
+    // A CompactModelLabel with its disclosure button used to sit inside the
+    // row <button>, producing invalid DOM nesting. The row must stay a single
+    // interactive element.
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    const rows = h.$$("[data-candidate-id]");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.tagName).toBe("BUTTON");
+      expect(row.querySelector("button, a, input, select, textarea, [role=button]")).toBeNull();
+    }
+    cleanup(h);
+  });
+
+  it("candidate rows expose the full opaque model identity in accessible text", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    const row = h.$("[data-candidate-id]");
+    expect(row).toBeTruthy();
+    // Full providerId:modelSlug identity survives inside the row even though
+    // the interactive disclosure is suppressed there.
+    expect(row!.querySelector("[data-full-id]")).toBeTruthy();
+    expect(row!.textContent).toContain("openrouter");
+    cleanup(h);
+  });
+
+  it("candidate rows are keyboard-operable buttons with pressed state", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    const row = h.$("[data-candidate-id]");
+    expect(row).toBeTruthy();
+    expect(row!.getAttribute("type")).toBe("button");
+    expect(row!.getAttribute("aria-pressed")).toBeTruthy();
+    cleanup(h);
+  });
+});

@@ -65,7 +65,10 @@ const ACTION_BTN =
   "flex h-11 w-11 items-center justify-center text-text-secondary transition-colors hover:bg-card-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30";
 
 export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
-  const repository = repo ?? useEvaluationRepository();
+  // Hook order must be stable: read the context unconditionally, then
+  // prefer the injected repository when one is provided.
+  const contextRepository = useEvaluationRepository();
+  const repository = repo ?? contextRepository;
   const navigate = useNavigate();
   const [rows, setRows] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +126,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
     try {
       await repository.createProfile(record, profile);
       await load();
-      navigate(`/evaluations/profiles/${id}`);
+      void navigate(`/evaluations/profiles/${id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create profile.");
     }
@@ -152,7 +155,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
       };
       await repository.createProfile(newRecord, newProfile);
       await load();
-      navigate(`/evaluations/profiles/${newId}`);
+      void navigate(`/evaluations/profiles/${newId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to duplicate profile.");
     } finally {

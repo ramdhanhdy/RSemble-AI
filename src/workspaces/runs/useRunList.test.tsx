@@ -184,7 +184,11 @@ describe("useRunList", () => {
     await hook.flush();
     expect(hook.result.current.summaries).toHaveLength(0);
 
-    await seedRepo(repo, [["run-1", 1000]]);
+    // The repository write fires the subscription synchronously; keep that
+    // state update inside act() so the guard treats it as expected.
+    await act(async () => {
+      await seedRepo(repo, [["run-1", 1000]]);
+    });
     await hook.flush();
     expect(hook.result.current.summaries).toHaveLength(1);
 

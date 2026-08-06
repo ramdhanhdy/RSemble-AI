@@ -12,7 +12,9 @@ function readStoredRatio(): number | null {
       const ratio = parseFloat(stored);
       if (!isNaN(ratio) && ratio > 0 && ratio < 1) return ratio;
     }
-  } catch {}
+  } catch {
+    // Preference read is best-effort; fall back to the default split.
+  }
   return null;
 }
 
@@ -57,7 +59,9 @@ export function useResizableSplit() {
       const containerW = rect?.width ?? window.innerWidth;
       const ratio = containerW > 0 ? w / containerW : 0;
       localStorage.setItem(STORAGE_KEY, String(ratio));
-    } catch {}
+    } catch {
+      // Preference write is best-effort; layout still works in-memory.
+    }
   }, []);
 
   const onPointerMove = useCallback((e: PointerEvent) => {

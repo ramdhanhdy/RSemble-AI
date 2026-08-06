@@ -257,10 +257,14 @@ function CriterionAccordion({
             onBlur={() => validateField("anchorFive", criterion.anchors.five)}
           />
           <div>
-            <label className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+            <label
+              htmlFor={`criterion-weight-${criterion.id}`}
+              className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+            >
               Weight
             </label>
             <input
+              id={`criterion-weight-${criterion.id}`}
               type="number"
               min={0}
               step={0.1}

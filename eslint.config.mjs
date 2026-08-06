@@ -110,6 +110,9 @@ export default tseslint.config(
       // with aria-valuenow) and the scrollable result-matrix region need
       // keyboard focus by design; tabindex on those roles is intentional.
       "jsx-a11y/no-noninteractive-tabindex": ["error", { roles: ["separator", "region"] }],
+      // Labels style their visible text through nested spans; the association
+      // and accessible-text checks must walk that depth to see it.
+      "jsx-a11y/label-has-associated-control": ["error", { assert: "either", depth: 4 }],
     },
   },
   {

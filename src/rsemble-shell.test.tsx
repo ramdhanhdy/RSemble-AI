@@ -41,7 +41,14 @@ function cleanup(h: Harness) {
 }
 
 /** Render RSemble inside a MemoryRouter at the given initial route(s). */
-function renderAtRoute(initialEntries: string[]): Harness {
+/** Flush so lazily-imported route chunks resolve and render inside act(). */
+async function settleLazy(): Promise<void> {
+  await act(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+async function renderAtRoute(initialEntries: string[]): Promise<Harness> {
   // Stub fetch so provider-probe useEffects don't hang in happy-dom.
   vi.stubGlobal(
     "fetch",
@@ -66,13 +73,18 @@ function renderAtRoute(initialEntries: string[]): Harness {
       dispatchEvent: () => false,
     }));
   }
-  return render(
+  const harness = render(
     <MemoryRouter initialEntries={initialEntries}>
       <ExecutionOwnerProvider>
         <RSemble />
       </ExecutionOwnerProvider>
     </MemoryRouter>,
   );
+  // Resolve any suspended route chunk before the test observes the tree;
+  // otherwise the import can settle after the act boundary (or during
+  // teardown, racing the vitest worker RPC).
+  await settleLazy();
+  return harness;
 }
 
 afterEach(() => {
@@ -82,35 +94,33 @@ afterEach(() => {
 
 describe("RSemble workspace shell", () => {
   it("renders distinct workspace headings for /compare, /runs, and /evaluations", async () => {
-    const compare = renderAtRoute(["/compare"]);
+    const compare = await renderAtRoute(["/compare"]);
     // Compare renders the command/output panes — its heading is the section
     // aria-label "Command" + "Output". There is no "not implemented" placeholder.
     expect(compare.$('[aria-label="Command"]')).toBeTruthy();
     expect(compare.container.textContent).not.toContain("not yet implemented");
     cleanup(compare);
 
-    const runs = renderAtRoute(["/runs"]);
-    await settleLazy();
+    const runs = await renderAtRoute(["/runs"]);
     // Runs workspace is an honest placeholder saying the feature is not yet
     // implemented, with no fake controls.
     expect(runs.container.textContent).toContain("Runs");
     cleanup(runs);
 
-    const evaluations = renderAtRoute(["/evaluations"]);
-    await settleLazy();
+    const evaluations = await renderAtRoute(["/evaluations"]);
     expect(evaluations.container.textContent).toContain("Evaluations");
     cleanup(evaluations);
   });
 
-  it("redirects root to /compare", () => {
-    const h = renderAtRoute(["/"]);
+  it("redirects root to /compare", async () => {
+    const h = await renderAtRoute(["/"]);
     // After redirect, the Compare command pane should be present.
     expect(h.$('[aria-label="Command"]')).toBeTruthy();
     cleanup(h);
   });
 
-  it("renders a Return to Compare link for unknown routes", () => {
-    const h = renderAtRoute(["/nonexistent"]);
+  it("renders a Return to Compare link for unknown routes", async () => {
+    const h = await renderAtRoute(["/nonexistent"]);
     // The NotFound view renders a link with exact text "Return to Compare".
     // Scope to route content (not the header WorkspaceNav link) by matching
     // the exact link text.
@@ -123,15 +133,15 @@ describe("RSemble workspace shell", () => {
     cleanup(h);
   });
 
-  it("desktop primary nav has aria-label='Primary'", () => {
-    const h = renderAtRoute(["/compare"]);
+  it("desktop primary nav has aria-label='Primary'", async () => {
+    const h = await renderAtRoute(["/compare"]);
     const nav = h.$('nav[aria-label="Primary"]');
     expect(nav).toBeTruthy();
     cleanup(h);
   });
 
-  it("exactly one desktop nav link has aria-current='page'", () => {
-    const h = renderAtRoute(["/compare"]);
+  it("exactly one desktop nav link has aria-current='page'", async () => {
+    const h = await renderAtRoute(["/compare"]);
     const nav = h.$('nav[aria-label="Primary"]');
     expect(nav).toBeTruthy();
     const currentLinks = h.$$('nav[aria-label="Primary"] [aria-current="page"]');
@@ -139,38 +149,29 @@ describe("RSemble workspace shell", () => {
     cleanup(h);
   });
 
-  /** Flush so lazily-imported route chunks resolve and render. */
-  async function settleLazy() {
-    await act(async () => {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    });
-  }
-
   it("shows Rank/Fuse toggle on Compare and not on Runs/Evaluations", async () => {
-    const compare = renderAtRoute(["/compare"]);
+    const compare = await renderAtRoute(["/compare"]);
     // The ModeToggle is a radiogroup with role="radiogroup".
     const compareToggle = compare.$('[role="radiogroup"]');
     expect(compareToggle).toBeTruthy();
     cleanup(compare);
 
-    const runs = renderAtRoute(["/runs"]);
-    await settleLazy();
+    const runs = await renderAtRoute(["/runs"]);
     const runsToggle = runs.$('[role="radiogroup"]');
     expect(runsToggle).toBeFalsy();
     cleanup(runs);
 
-    const evaluations = renderAtRoute(["/evaluations"]);
-    await settleLazy();
+    const evaluations = await renderAtRoute(["/evaluations"]);
     const evalToggle = evaluations.$('[role="radiogroup"]');
     expect(evalToggle).toBeFalsy();
     cleanup(evaluations);
   });
 
-  it("mobile navigation exposes three visible labels and 44px targets", () => {
+  it("mobile navigation exposes three visible labels and 44px targets", async () => {
     // happy-dom doesn't apply CSS, so we check the rendered structure: the
     // mobile nav exists, has three links with visible text, and each has a
     // min-height style or class indicating 44px. We verify the three labels.
-    const h = renderAtRoute(["/compare"]);
+    const h = await renderAtRoute(["/compare"]);
     // Look for the mobile nav — it should be a nav with an aria-label
     // containing "Workspace" and visible only on small screens.
     const mobileNavs = h.$$('nav[aria-label*="Workspace" i], nav[data-mobile="true"]');
@@ -184,11 +185,11 @@ describe("RSemble workspace shell", () => {
     cleanup(h);
   });
 
-  it("does not reset the Compare reducer state when navigating between workspaces", () => {
+  it("does not reset the Compare reducer state when navigating between workspaces", async () => {
     // Render at /compare, type a prompt, navigate to /runs via the real nav
     // link, then navigate back to /compare via the real nav link. The prompt
     // should persist because the reducer is mounted above the router.
-    const h = renderAtRoute(["/compare"]);
+    const h = await renderAtRoute(["/compare"]);
     const textarea = h.$("textarea") as HTMLTextAreaElement;
     expect(textarea).toBeTruthy();
     act(() => {
@@ -207,6 +208,7 @@ describe("RSemble workspace shell", () => {
     act(() => {
       runsLink!.click();
     });
+    await settleLazy();
 
     // On /runs the command pane (with textarea) is gone — the Runs workspace shows.
     expect(h.$('[aria-label="Command"]')).toBeFalsy();
@@ -221,6 +223,7 @@ describe("RSemble workspace shell", () => {
     act(() => {
       compareLink!.click();
     });
+    await settleLazy();
 
     // The command pane is back and the textarea retained its value because
     // the reducer lives above the router.
@@ -255,10 +258,10 @@ describe("RSemble workspace shell", () => {
     cleanup(h);
   });
 
-  it("no longer forbids primary navigation (superseded assertion)", () => {
+  it("no longer forbids primary navigation (superseded assertion)", async () => {
     // The old assertion checked that aria-label="Primary" was ABSENT. That
     // behavior is superseded — primary navigation is now approved scope.
-    const h = renderAtRoute(["/compare"]);
+    const h = await renderAtRoute(["/compare"]);
     expect(h.$('nav[aria-label="Primary"]')).toBeTruthy();
     cleanup(h);
   });

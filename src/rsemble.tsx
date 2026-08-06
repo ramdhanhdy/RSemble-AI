@@ -670,6 +670,7 @@ function Divider({
   onDoubleClick: () => void;
 }) {
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- role="separator" with aria-valuenow is a focusable ARIA widget; pointer/keyboard resizing is its purpose
     <div
       role="separator"
       aria-label="Resize command and output panes"

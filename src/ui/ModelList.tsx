@@ -369,6 +369,7 @@ export function AddModelCombobox({
           id="model-search"
           ref={inputRef}
           role="searchbox"
+          /* eslint-disable-next-line jsx-a11y/no-autofocus -- focus follows the user's explicit open action for this search combobox */
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}

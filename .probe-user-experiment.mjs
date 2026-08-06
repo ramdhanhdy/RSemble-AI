@@ -2,7 +2,6 @@
 // roster-extension attempts failed instantly. Touches nothing — no writes,
 // no clicks, no navigation (evaluates against the current page only).
 import { spawn } from "node:child_process";
-import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";

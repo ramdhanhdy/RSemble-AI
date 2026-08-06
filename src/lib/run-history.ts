@@ -111,7 +111,10 @@ function writeRaw(runs: RunHistoryEntry[]): void {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(runs));
-  } catch {}
+  } catch {
+    // Best-effort cache: quota or serialization failures keep history
+    // in-memory only.
+  }
 }
 
 export function addRun(entry: RunHistoryEntry): void {
@@ -158,7 +161,9 @@ export function clearHistory(): void {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.removeItem(STORAGE_KEY);
-  } catch {}
+  } catch {
+    // Best-effort clear; see writeRaw.
+  }
 }
 
 export function getRunCount(): number {

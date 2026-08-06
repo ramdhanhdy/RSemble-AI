@@ -247,16 +247,6 @@ function readSuiteRow(suiteId) {
   })`);
 }
 
-async function waitForExperimentStatus(experimentId, statuses, label, maxAttempts = 240) {
-  const list = JSON.stringify(statuses);
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const row = await readExperimentRow(experimentId);
-    if (row && list.includes(row.status)) return row;
-    await wait(250);
-  }
-  throw new Error(`Timed out waiting for ${label} (${statuses.join("|")}).`);
-}
-
 async function openAddModelDialog(experimentId) {
   await navigate(`/experiments/${experimentId}`);
   await waitFor(
@@ -303,20 +293,6 @@ async function confirmAddAndRun() {
   })()`,
     "dialog close after confirm",
   );
-}
-
-/** Wait for terminal status and return { row, callsAtTerminal } for diagnostics. */
-async function waitForTerminalWithCalls(experimentId, statuses, label) {
-  const list = JSON.stringify(statuses);
-  for (let attempt = 0; attempt < 240; attempt += 1) {
-    const row = await readExperimentRow(experimentId);
-    if (row && list.includes(row.status)) {
-      const calls = await evaluate("window.__qaCalls ?? []");
-      return { row, calls };
-    }
-    await wait(250);
-  }
-  throw new Error(`Timed out waiting for ${label} (${statuses.join("|")}).`);
 }
 
 /**
@@ -816,7 +792,6 @@ try {
   const s1Calls = s1Terminal.calls;
   const s1Suite = await readSuiteRow("suite-roster");
   const s1Row = s1Terminal.row;
-  const s1RevisionAtTerminal = s1Row?.revision;
   const s1NewSlot =
     s1Row?.experiment?.snapshot?.modelSlots?.find((s) => s.slug === "deepseek/deepseek-chat") ??
     null;

@@ -7,16 +7,17 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["src/**/*.test.{ts,tsx}", "server/tests/**/*.test.ts", "shared/**/*.test.ts"],
+    // Shared test environment setup (Plan 006 quality gate):
+    //  - marks the environment as a React act() environment;
+    //  - fails tests that emit unexpected console.warn/console.error so new
+    //    React/DOM warnings cannot land silently (narrow allowlist inside).
+    setupFiles: ["./test/setup-tests.ts"],
     coverage: {
       provider: "v8",
       reportsDirectory: "coverage",
       // text for humans, json/json-summary for machines and CI artifacts.
       reporter: ["text", "text-summary", "json", "json-summary", "lcov"],
-      include: [
-        "src/**/*.{ts,tsx}",
-        "server/codex-bridge/**/*.ts",
-        "shared/**/*.ts",
-      ],
+      include: ["src/**/*.{ts,tsx}", "server/codex-bridge/**/*.ts", "shared/**/*.ts"],
       exclude: [
         // Test code and fixtures are evidence, not coverage targets.
         "**/*.test.{ts,tsx}",

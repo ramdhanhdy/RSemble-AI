@@ -1,7 +1,7 @@
 import fs from "node:fs";
 const src = fs.readFileSync("scripts/cdp-experiment-roster-extension-qa.mjs", "utf8");
 function extract(name) {
-  const m = src.match(new RegExp("const " + name + " = `([\s\S]+?)`;"));
+  const m = src.match(new RegExp("const " + name + " = `([\\s\\S]+?)`;"));
   if (!m) throw new Error("missing " + name);
   return m[1];
 }

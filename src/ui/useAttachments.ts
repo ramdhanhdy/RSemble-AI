@@ -147,13 +147,16 @@ export function useAttachments(
     setThumbnails(Object.fromEntries(thumbnailsRef.current));
   }, [attachments]);
 
-  // Unmount: revoke everything (spec §10.8 leak audit). The cleanup reads the
-  // ref at unmount time — capturing the values at mount would revoke nothing.
+  // Unmount: revoke everything (spec §10.8 leak audit). The Maps are created
+  // once in useRef and mutated in place, so capturing the stable Map instances
+  // at effect setup still observes every URL added during the hook's lifetime.
   useEffect(() => {
+    const thumbnails = thumbnailsRef.current;
+    const files = filesRef.current;
     return () => {
-      for (const url of thumbnailsRef.current.values()) URL.revokeObjectURL(url);
-      thumbnailsRef.current.clear();
-      filesRef.current.clear();
+      for (const url of thumbnails.values()) URL.revokeObjectURL(url);
+      thumbnails.clear();
+      files.clear();
     };
   }, []);
 

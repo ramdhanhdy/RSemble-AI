@@ -225,14 +225,13 @@ describe("chatgptCodexProvider — execution deadlines", () => {
         );
       vi.stubGlobal("fetch", fetchMock);
 
-      const iterator = chatgptCodexProvider
-        .chatCompletionStream({
-          model: "gpt-5.6-sol",
-          messages: [{ role: "user", content: "hi" }],
-          connectMs: 10,
-          inactivityMs: 1_000,
-        })
-        [Symbol.asyncIterator]();
+      const stream = chatgptCodexProvider.chatCompletionStream({
+        model: "gpt-5.6-sol",
+        messages: [{ role: "user", content: "hi" }],
+        connectMs: 10,
+        inactivityMs: 1_000,
+      });
+      const iterator = stream[Symbol.asyncIterator]();
       const first = iterator.next();
       await vi.advanceTimersByTimeAsync(20);
       expect(fetchMock).toHaveBeenCalledTimes(1);

@@ -99,12 +99,7 @@ export async function probeModelRoute(opts: ProbeModelRouteOptions): Promise<Mod
       );
     });
 
-    let result: boolean;
-    try {
-      result = await Promise.race([consume(), timeoutPromise]);
-    } catch (err) {
-      throw err;
-    }
+    const result = await Promise.race([consume(), timeoutPromise]);
 
     if (!result) {
       return {

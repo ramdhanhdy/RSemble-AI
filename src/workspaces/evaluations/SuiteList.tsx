@@ -657,7 +657,7 @@ function friendlyStorageError(err: StorageError): string {
     case "blocked":
     case "versionchange":
       return "Storage is blocked by another tab. Close it and retry.";
-    default:
-      return err.message || "Storage is unavailable.";
+    case "unavailable":
+      return "Storage is unavailable — retry; your existing data was not modified.";
   }
 }

@@ -4,8 +4,7 @@
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType,
-  PageBreak, PageOrientation, NumberFormat, Header, Footer,
-  PageNumber, LevelFormat, convertInchesToTwip, TabStopType, TabStopPosition,
+  Header, Footer, PageNumber, convertInchesToTwip,
 } = require("docx");
 const fs = require("fs");
 const path = require("path");

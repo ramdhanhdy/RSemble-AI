@@ -150,8 +150,12 @@ export function JudgeConfig({
       {/* Native-media-to-judge toggle (spec §6.2). Only rendered when the task
           actually carries image/pdf attachments — invisible when idle. */}
       {hasNativeAttachments && (
-        <label className="mt-3 flex items-start gap-2 rounded-md border border-edge bg-card px-2.5 py-2">
+        <label
+          htmlFor="attachments-to-judge"
+          className="mt-3 flex items-start gap-2 rounded-md border border-edge bg-card px-2.5 py-2"
+        >
           <input
+            id="attachments-to-judge"
             type="checkbox"
             checked={attachmentsToJudge}
             onChange={(e) =>
@@ -252,6 +256,7 @@ export function JudgeCombobox({
           id="judge-search"
           ref={inputRef}
           role="searchbox"
+          /* eslint-disable-next-line jsx-a11y/no-autofocus -- focus follows the user's explicit open action for this search combobox */
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}

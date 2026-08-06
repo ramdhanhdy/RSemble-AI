@@ -166,7 +166,7 @@ function makeFakeExecutor(opts: {
         });
         continue;
       }
-      events.onCandidateTerminal(candidateId, {
+      await events.onCandidateTerminal(candidateId, {
         segments: [],
         summary: "s",
         tokensIn: 1,
@@ -496,7 +496,8 @@ describe("experiment-controller — pause / resume / abort", () => {
     let controllerRef: Harness["controller"] | null = null;
     const h = makeHarness({
       midTask: () => {
-        controllerRef!.requestPause();
+        // Pause is a signal; the harness keeps driving the queue.
+        void controllerRef!.requestPause();
       },
     });
     controllerRef = h.controller;
@@ -521,7 +522,8 @@ describe("experiment-controller — pause / resume / abort", () => {
     let controllerRef: Harness["controller"] | null = null;
     const h = makeHarness({
       midTask: () => {
-        controllerRef!.requestPause();
+        // Pause is a signal; the harness keeps driving the queue.
+        void controllerRef!.requestPause();
       },
     });
     controllerRef = h.controller;
@@ -731,7 +733,8 @@ describe("experiment-controller — execution ownership", () => {
     let controllerRef: Harness["controller"] | null = null;
     const h = makeHarness({
       midTask: () => {
-        controllerRef!.requestPause();
+        // Pause is a signal; the harness keeps driving the queue.
+        void controllerRef!.requestPause();
       },
     });
     controllerRef = h.controller;

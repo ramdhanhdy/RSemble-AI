@@ -723,7 +723,7 @@ try {
     return {
       winnerTitle: callout?.textContent ?? "",
       provisionalRows: provisionalHeading?.nextElementSibling?.textContent ?? "",
-      provisionalHasNumericRank: /#\s*\d+/.test(provisionalHeading?.nextElementSibling?.textContent ?? ""),
+      provisionalHasNumericRank: /#\\s*\\d+/.test(provisionalHeading?.nextElementSibling?.textContent ?? ""),
       hasProvisionalLeader: text.includes("Provisional score leader"),
       notEligible: text.includes("not winner-eligible"),
       hasProvisionalResults: text.includes("Provisional results"),

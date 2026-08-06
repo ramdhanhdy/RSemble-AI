@@ -47,7 +47,10 @@ export function ProfileDetail({
   repo?: EvaluationRepository | null;
   profileId: string;
 }) {
-  const repository = repo ?? useEvaluationRepository();
+  // Hook order must be stable: read the context unconditionally, then
+  // prefer the injected repository when one is provided.
+  const contextRepository = useEvaluationRepository();
+  const repository = repo ?? contextRepository;
   const navigate = useNavigate();
   const [record, setRecord] = useState<ProfileRecord | null>(null);
   const [selectedVersion, setSelectedVersion] = useState(0);
@@ -176,7 +179,7 @@ export function ProfileDetail({
         updatedAt: now,
       };
       await repository.createProfile(newRecord, newProfile);
-      navigate(`/evaluations/profiles/${newId}`);
+      void navigate(`/evaluations/profiles/${newId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to duplicate profile.");
     } finally {

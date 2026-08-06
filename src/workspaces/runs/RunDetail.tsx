@@ -325,7 +325,9 @@ function CandidatesSection({
                 aria-pressed={c.candidateId === selectedId}
                 className="flex min-h-[44px] w-full items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-left text-sm transition-colors duration-150 hover:border-edge-bright focus:outline-none focus:ring-2 focus:ring-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
-                <CompactModelLabel providerId={c.providerId} slug={c.slug} />
+                {/* Non-interactive: this label sits inside the row <button>; a nested
+                disclosure button would be invalid DOM nesting. */}
+                <CompactModelLabel providerId={c.providerId} slug={c.slug} interactive={false} />
                 {blindMap[c.candidateId] && (
                   <span className="rounded-md border border-edge px-1.5 py-0.5 font-mono text-xs text-text-muted">
                     Label: {blindMap[c.candidateId]}

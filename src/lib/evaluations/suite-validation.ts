@@ -153,6 +153,12 @@ export function isSuiteDirty(persisted: EvaluationSuite, draft: EvaluationSuite)
 function stripMutable(
   suite: EvaluationSuite,
 ): Omit<EvaluationSuite, "revision" | "createdAt" | "updatedAt" | "archivedAt"> {
-  const { revision, createdAt, updatedAt, archivedAt, ...rest } = suite;
+  const {
+    revision: _revision,
+    createdAt: _createdAt,
+    updatedAt: _updatedAt,
+    archivedAt: _archivedAt,
+    ...rest
+  } = suite;
   return rest;
 }

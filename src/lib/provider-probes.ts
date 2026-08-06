@@ -30,7 +30,14 @@ function runAbortableStage<T>(
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     let timedOut = false;
-    let timer: ReturnType<typeof setTimeout>;
+
+    // The timer is created first so `finish` can close over a const binding;
+    // its callback only flips local flags and aborts, which synchronously
+    // dispatches to onAbort registered below (never called before definition).
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ctrl.abort();
+    }, timeoutMs);
 
     const finish = (fn: () => void) => {
       if (settled) return;
@@ -49,10 +56,6 @@ function runAbortableStage<T>(
       );
     };
 
-    timer = setTimeout(() => {
-      timedOut = true;
-      ctrl.abort();
-    }, timeoutMs);
     ctrl.signal.addEventListener("abort", onAbort, { once: true });
     if (ctrl.signal.aborted) {
       onAbort();

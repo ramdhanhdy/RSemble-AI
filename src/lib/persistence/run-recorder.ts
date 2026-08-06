@@ -27,7 +27,7 @@ import {
 
 // --- Input types (mirror builder inputs) ------------------------------------
 
-export interface BeginRunInput extends FanoutStartInput {}
+export type BeginRunInput = FanoutStartInput;
 
 export interface FanoutTerminalInput {
   candidates: unknown[];

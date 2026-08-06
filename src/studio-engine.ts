@@ -567,7 +567,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         fusedText: null,
       };
 
-    case "JUDGE_RESULT":
+    case "JUDGE_RESULT": {
       // Terminal for RANK mode (the run ends after judging). In FUSE mode the
       // pipeline continues to fusion, so `running` stays true. The resolved
       // blind report is stored so every score traces to a structured explanation;
@@ -588,7 +588,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         }),
         audit: logAudit(state.audit, "AI judge evaluation complete."),
       };
-
+    }
     case "JUDGE_FAILED":
       // Terminal in ALL modes. Even in Fuse mode, a judge failure stops the run —
       // the pipeline does not proceed to fusion with unscored candidates, and the

@@ -96,7 +96,7 @@ function Inner({
 }
 
 export function RecordRow(props: RecordRowProps) {
-  const { variant, id, href, children, ...rest } = props;
+  const { variant, id: _id, href, children, ...rest } = props;
 
   if (variant === "table-cell") {
     return (
