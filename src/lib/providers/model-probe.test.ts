@@ -9,8 +9,7 @@
 // =============================================================================
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { probeModelRoute } from "./model-probe";
-import type { LLMProvider, ProviderId } from "./types";
-import { ProviderError } from "./types";
+import { type LLMProvider, type ProviderId, ProviderError } from "./types";
 
 afterEach(() => {
   vi.unstubAllGlobals();

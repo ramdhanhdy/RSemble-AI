@@ -139,7 +139,7 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
     const onAddFiles = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <TaskInput
@@ -212,7 +212,7 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
   it("shows the drop overlay on dragenter and hides it on dragleave", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <TaskInput
@@ -244,7 +244,7 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
     const onAddFiles = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <TaskInput
@@ -272,7 +272,7 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
     const onAddFiles = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <TaskInput
@@ -300,7 +300,7 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
     const onAddFiles = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <TaskInput

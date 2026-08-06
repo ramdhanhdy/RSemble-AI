@@ -16,8 +16,7 @@
 //   - user-initiated only; no automatic retry; no Judge or fusion stage
 // =============================================================================
 
-import type { LLMProvider, ProviderId } from "./types";
-import { ProviderError } from "./types";
+import { type LLMProvider, type ProviderId, ProviderError } from "./types";
 
 export type ModelProbeFailureCategory =
   | "unauthorized"

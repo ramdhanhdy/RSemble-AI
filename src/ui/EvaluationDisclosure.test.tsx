@@ -2,8 +2,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EvaluationDisclosure } from "./EvaluationDisclosure";
-import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
-import type { AdHocEvaluationConfig } from "../lib/evaluations/evaluation-profile-adhoc";
+import {
+  HOLISTIC_EVALUATION,
+  type AdHocEvaluationConfig,
+} from "../lib/evaluations/evaluation-profile-adhoc";
 import type { EvaluationProfile } from "../lib/evaluations/evaluation-types";
 import type { Action } from "../studio-engine";
 

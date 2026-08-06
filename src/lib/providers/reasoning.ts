@@ -1,11 +1,11 @@
-import type {
-  ModelReasoningCapabilities,
-  ProviderId,
-  ReasoningEffort,
-  ReasoningResolution,
-  ReasoningTransport,
+import {
+  type ModelReasoningCapabilities,
+  type ProviderId,
+  type ReasoningEffort,
+  type ReasoningResolution,
+  type ReasoningTransport,
+  REASONING_EFFORTS,
 } from "./types";
-import { REASONING_EFFORTS } from "./types";
 import type { ModelSlot } from "../../studio-data";
 
 const UNKNOWN_REASONING: ModelReasoningCapabilities = Object.freeze({

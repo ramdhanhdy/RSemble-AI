@@ -20,8 +20,7 @@
 // repository delegates its begin/commit operations here.
 // =============================================================================
 
-import type { RSembleEvaluationDB } from "./database";
-import { StorageError } from "./database";
+import { type RSembleEvaluationDB, StorageError } from "./database";
 import { LEASE_KEY, type LeaseInfo } from "../execution-lease";
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
 import { mapRunStatusToAttemptStatus, selectAttemptId } from "../evaluations/experiment-engine";

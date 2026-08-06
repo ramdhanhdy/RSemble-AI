@@ -13,18 +13,16 @@ import { Link } from "react-router-dom";
 import { AlertCircle, FlaskConical, Play } from "lucide-react";
 import type { FusionStudyRepository } from "../../lib/persistence/fusion-study-repository";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
-import type {
-  EvaluationSuite,
-  EvaluationProfileSnapshot,
+import {
+  type EvaluationSuite,
+  type EvaluationProfileSnapshot,
+  type EvaluationProfile,
+  type EvaluationProfileRef,
 } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel, CriticRef } from "../../lib/providers/types";
 import type { FusionStudy, PoolManifestVersion } from "../../lib/evaluations/fusion-study-types";
 import { BUILTIN_FUSION_RECIPES } from "../../lib/evaluations/fusion-recipes";
 import { computeProtocolFingerprint } from "../../lib/evaluations/protocol-fingerprint";
-import type {
-  EvaluationProfile,
-  EvaluationProfileRef,
-} from "../../lib/evaluations/evaluation-types";
 import {
   validateJudgePair,
   validatePoolManifest,

@@ -675,7 +675,7 @@ export function createRunController(deps: RunControllerDeps) {
       const peerCandidates = s.candidates.filter((c) => c.id !== candidate.id);
 
       // Load the persisted record to get real accepted attempt IDs
-      let candidateAttemptIdsByCandidateId: Record<string, string> = {};
+      const candidateAttemptIdsByCandidateId: Record<string, string> = {};
       if (recorder && runIdRef.current) {
         const record = await recorder.getRecord(runIdRef.current);
         if (record) {
@@ -769,7 +769,7 @@ export function createRunController(deps: RunControllerDeps) {
       }
 
       // Load the persisted record to get real accepted attempt IDs
-      let candidateAttemptIdsByCandidateId: Record<string, string> = {};
+      const candidateAttemptIdsByCandidateId: Record<string, string> = {};
       if (recorder && runIdRef.current) {
         const record = await recorder.getRecord(runIdRef.current);
         if (record) {
@@ -849,7 +849,7 @@ export function createRunController(deps: RunControllerDeps) {
           });
         }
         // Load the persisted record for real accepted attempt IDs
-        let candidateAttemptIdsByCandidateId: Record<string, string> = {};
+        const candidateAttemptIdsByCandidateId: Record<string, string> = {};
         let judgeAttemptId = "";
         let blindLabelToCandidateId: Record<string, string> = {};
         if (recorder && runIdRef.current) {

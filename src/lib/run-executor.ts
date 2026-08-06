@@ -56,8 +56,10 @@ import {
   type BlindCandidateSet,
   type FanoutJob,
 } from "./pipeline";
-import type { AdHocEvaluationConfig } from "./evaluations/evaluation-profile-adhoc";
-import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
+import {
+  type AdHocEvaluationConfig,
+  resolveEvaluationProfile,
+} from "./evaluations/evaluation-profile-adhoc";
 import { devTerminalLog, type DevTerminalFields } from "./dev-terminal-log";
 import {
   DEFAULT_PROVIDER_DEADLINE_POLICY,

@@ -4,8 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ModelProbeControl } from "./ModelProbeControl";
 import { ModelProbeProvider, useModelProbe } from "./ModelProbeContext";
-import type { LLMProvider } from "../lib/providers/types";
-import { ProviderError } from "../lib/providers/types";
+import { type LLMProvider, ProviderError } from "../lib/providers/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 

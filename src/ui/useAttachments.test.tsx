@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, useReducer } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { useReducer } from "react";
 import { useAttachments, createAttachmentDrafts } from "./useAttachments";
 import { initialState, reducer } from "../studio-engine";
 import { MAX_FILES } from "../lib/attachments/limits";

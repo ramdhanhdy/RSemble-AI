@@ -13,8 +13,10 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Action } from "../studio-engine";
-import type { AdHocEvaluationConfig } from "../lib/evaluations/evaluation-profile-adhoc";
-import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
+import {
+  type AdHocEvaluationConfig,
+  HOLISTIC_EVALUATION,
+} from "../lib/evaluations/evaluation-profile-adhoc";
 import { EvaluationProfileEditor } from "./EvaluationProfileEditor";
 import type { EvaluationProfile } from "../lib/evaluations/evaluation-types";
 

@@ -13,22 +13,21 @@
 // keyboard-focusable with a persistent outline and never scrolls the page.
 // =============================================================================
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { Crown } from "lucide-react";
-import type { ReactElement } from "react";
 import { Pagination, PAGE_SIZE } from "../../ui/Pagination";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
-import type {
-  CellState,
-  ExperimentAggregation,
-  MissingReason,
+import {
+  type CellState,
+  type ExperimentAggregation,
+  type MissingReason,
+  formatAggregateMean,
+  formatTaskScore,
 } from "../../lib/evaluations/experiment-aggregation";
-import { formatAggregateMean, formatTaskScore } from "../../lib/evaluations/experiment-aggregation";
-import { StatusMark } from "../../ui/StatusMark";
-import type { StatusMarkStatus } from "../../ui/StatusMark";
+import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
 

@@ -15,11 +15,14 @@
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
-import type { ModelSlot } from "../../studio-data";
+import {
+  type ModelSlot,
+  type JudgeReport,
+  type ConsensusBreakdown,
+  type CandidateEvaluation,
+} from "../../studio-data";
 import type { ChatMessage, ProviderId } from "../providers/types";
-import type { JudgeReport, ConsensusBreakdown, CandidateEvaluation } from "../../studio-data";
-import type { RunSource, ExecutionFence, RunRecordV2 } from "./run-types";
-import { isRunRecordV2 } from "./run-types";
+import { type RunSource, type ExecutionFence, type RunRecordV2, isRunRecordV2 } from "./run-types";
 import {
   createRunRecordBuilder,
   type RunRecordBuilderState,

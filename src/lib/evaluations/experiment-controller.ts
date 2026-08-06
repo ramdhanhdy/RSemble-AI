@@ -18,26 +18,26 @@
 import type { EvaluationRepository } from "../persistence/evaluation-repository";
 import type { ExperimentUnitOfWork } from "../persistence/experiment-unit-of-work";
 import type { RunRepository } from "../persistence/run-repository";
-import type { RunRecorder } from "../persistence/run-recorder";
-import { createRunRecorder } from "../persistence/run-recorder";
+import { type RunRecorder, createRunRecorder } from "../persistence/run-recorder";
 import {
   createRunRecordBuilder,
   type RunRecordBuilderState,
   type BuilderDeps,
 } from "../persistence/run-record-builder";
-import type { ExecutionLease, LeaseInfo } from "../execution-lease";
-import { LeaseError } from "../execution-lease";
+import { type ExecutionLease, type LeaseInfo, LeaseError } from "../execution-lease";
 import { createExecutionHeartbeat, type ExecutionHeartbeat } from "../execution-heartbeat";
 import type { ExecutionOwnerRegistry } from "../execution-owner";
 import type { RunExecutor, RunExecutorEvents } from "../run-executor";
-import type {
-  EvaluationSuite,
-  EvaluationTask,
-  EvaluationProfileSnapshot,
-  EvaluationSelection,
-  ExperimentRecord,
-  ExperimentTaskState,
-  ExperimentTaskAttempt,
+import {
+  type EvaluationSuite,
+  type EvaluationTask,
+  type EvaluationProfileSnapshot,
+  type EvaluationSelection,
+  type ExperimentRecord,
+  type ExperimentTaskState,
+  type ExperimentTaskAttempt,
+  type ExperimentRepairPlan,
+  type ExperimentTaskExecutionPlan,
 } from "./evaluation-types";
 import {
   createExperimentEngine,
@@ -49,7 +49,6 @@ import {
 import { planMissingCellRepair } from "./experiment-repair";
 import { planRosterExtension, rotateExperimentRoster } from "./experiment-roster-extension";
 import { aggregateExperiment } from "./experiment-aggregation";
-import type { ExperimentRepairPlan, ExperimentTaskExecutionPlan } from "./evaluation-types";
 import type {
   RunRecordV2,
   FullRunSummaryV2,
@@ -57,10 +56,8 @@ import type {
   RunSource,
   ExecutionFence,
 } from "../persistence/run-types";
-import type { AdHocEvaluationConfig } from "./evaluation-profile-adhoc";
-import { HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
-import type { Candidate } from "../../studio-data";
-import type { ModelSlot } from "../../studio-data";
+import { type AdHocEvaluationConfig, HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
+import { type Candidate, type ModelSlot } from "../../studio-data";
 import type { ProviderId } from "../providers/types";
 import { devTerminalLog } from "../dev-terminal-log";
 

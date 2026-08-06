@@ -12,7 +12,12 @@ import type { ChatMessage, CriticRef } from "../providers/types";
 import { getProvider } from "../providers/registry";
 import { contentToText } from "../providers/content";
 import { estimateTokens } from "../cost";
-import type { Candidate, CandidateSegment, JudgeReport } from "../../studio-data";
+import {
+  type Candidate,
+  type CandidateSegment,
+  type JudgeReport,
+  type ModelSlot,
+} from "../../studio-data";
 import {
   createBlindCandidateSet,
   draftMessages,
@@ -21,7 +26,6 @@ import {
   splitSegments,
 } from "../pipeline";
 import type { EvaluationProfileSnapshot, EvaluationTask } from "./evaluation-types";
-import type { ModelSlot } from "../../studio-data";
 import type {
   BlockedRunResult,
   FusionPolicyExecutor,

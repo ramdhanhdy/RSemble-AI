@@ -12,18 +12,21 @@ import { useMemo, useRef, useState } from "react";
 import { ChevronDown, Plus, Search, Trash2, X, Check } from "lucide-react";
 import { ModelProbeControl } from "../../ui/ModelProbeControl";
 import { useModelProbe } from "../../ui/ModelProbeContext";
-import type { CatalogModel, ProviderId } from "../../lib/providers/types";
+import {
+  type CatalogModel,
+  type ProviderId,
+  DEFAULT_REASONING_POLICY,
+} from "../../lib/providers/types";
 import type { ModelSlot } from "../../studio-data";
-import type {
-  EvaluationSuite,
-  EvaluationSelection,
-  EvaluationProfileRef,
+import {
+  type EvaluationSuite,
+  type EvaluationSelection,
+  type EvaluationProfileRef,
+  type ProfileRecord,
 } from "../../lib/evaluations/evaluation-types";
-import type { ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import { ProviderTabs, PROVIDER_LABELS } from "../../ui/ProviderTabs";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import { modelKey } from "../../lib/history-cache";
-import { DEFAULT_REASONING_POLICY } from "../../lib/providers/types";
 import { capabilitiesForModel, commonReasoningEfforts } from "../../lib/providers/reasoning";
 import { ReasoningEffortPicker } from "../../ui/ReasoningEffortPicker";
 

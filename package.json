@@ -46,6 +46,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^10.0.4",
     "eslint": "9.39.5",
+    "eslint-plugin-import-x": "4.17.1",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react-hooks": "7.1.1",
     "fake-indexeddb": "^6.2.5",

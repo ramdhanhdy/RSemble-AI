@@ -7,11 +7,16 @@
 // Listing never loads detail records; filters are applied before pagination.
 // =============================================================================
 
-import type { RSembleEvaluationDB, RunSummaryRow, RunDetailRow } from "./database";
-import { StorageError, classifyStorageError } from "./database";
-import { LEASE_KEY, type LeaseInfo } from "../execution-lease";
-import type { ExecutionFence } from "./run-types";
 import {
+  type RSembleEvaluationDB,
+  type RunSummaryRow,
+  type RunDetailRow,
+  StorageError,
+  classifyStorageError,
+} from "./database";
+import { LEASE_KEY, type LeaseInfo } from "../execution-lease";
+import {
+  type ExecutionFence,
   isFullRunSummaryV2,
   isLegacyRunSummary,
   isRunRecordV2,
@@ -298,7 +303,7 @@ export function createRunRepository(
     const offset = query.offset ?? 0;
 
     try {
-      let collection = db.runSummaries.orderBy("createdAt").reverse();
+      const collection = db.runSummaries.orderBy("createdAt").reverse();
 
       // Apply filters BEFORE pagination.
       const filtered: RunSummary[] = [];

@@ -34,13 +34,14 @@ import type { ExecutionOwner } from "../../lib/execution-owner";
 import { SuiteExperimentHistory } from "./SuiteExperimentHistory";
 import { FusionStudyPanel } from "./FusionStudyPanel";
 import { useFusionStudyRepository } from "../../lib/persistence/repository-context";
-import type {
-  EvaluationSuite,
-  EvaluationTask,
-  EvaluationProfileRef,
-  ExperimentRecord,
+import {
+  type EvaluationSuite,
+  type EvaluationTask,
+  type EvaluationProfileRef,
+  type ExperimentRecord,
+  type EvaluationProfile,
+  type ProfileRecord,
 } from "../../lib/evaluations/evaluation-types";
-import type { EvaluationProfile, ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import {
   isSuiteDirty,

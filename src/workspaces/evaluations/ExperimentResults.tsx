@@ -9,10 +9,9 @@
 // below that the model-selectable mobile adaptation.
 // =============================================================================
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Crown } from "lucide-react";
-import type { ReactElement } from "react";
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import { useEvaluationRepository } from "../../lib/persistence/repository-context";

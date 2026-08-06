@@ -13,8 +13,7 @@
 // §6.3). Seals are final: no mutation path touches a sealed trial.
 // =============================================================================
 
-import type { RSembleEvaluationDB } from "./database";
-import { StorageError, classifyStorageError } from "./database";
+import { type RSembleEvaluationDB, StorageError, classifyStorageError } from "./database";
 import {
   isEvaluationObservation,
   isFusionAttempt,

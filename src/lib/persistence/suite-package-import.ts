@@ -7,8 +7,7 @@
 // entities; identity conflicts were already suffixed during normalization.
 // =============================================================================
 
-import type { RSembleEvaluationDB } from "./database";
-import { classifyStorageError, StorageError } from "./database";
+import { type RSembleEvaluationDB, classifyStorageError, StorageError } from "./database";
 import type { ImportedSuitePackage } from "../evaluations/suite-package";
 
 export interface SuitePackageImportResult {

@@ -23,8 +23,7 @@ import type {
   ExperimentTaskState,
 } from "./evaluation-types";
 import type { RunRecordV2 } from "../persistence/run-types";
-import type { CandidateEvaluation } from "../../studio-data";
-import type { ModelSlot } from "../../studio-data";
+import { type CandidateEvaluation, type ModelSlot } from "../../studio-data";
 
 // --- Fixtures -------------------------------------------------------------------
 

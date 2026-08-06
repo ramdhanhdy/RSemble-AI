@@ -2,13 +2,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { RunButton } from "./RunButton";
+import { RunButton, type RunButton as RunButtonType } from "./RunButton";
 import {
   clearModelPricing,
   parseOpenRouterPricing,
   setModelPricing,
 } from "../lib/providers/pricing";
-import type { RunButton as RunButtonType } from "./RunButton";
 
 type RunButtonProps = Parameters<typeof RunButtonType>[0];
 

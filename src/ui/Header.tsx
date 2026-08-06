@@ -11,10 +11,9 @@
 // execution status, and Compare-only Rank/Fuse.
 // =============================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Command, HelpCircle, Menu } from "lucide-react";
-import type { ReactElement } from "react";
 import { HexCubeLogo } from "./brand-icons";
 import { WorkspaceNav } from "./WorkspaceNav";
 

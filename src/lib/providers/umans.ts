@@ -6,10 +6,9 @@
 // =============================================================================
 
 import { createOpenAICompatProvider } from "./openai-compat";
-import { DEFAULT_PROVIDER_DEADLINE_POLICY } from "../execution-deadline";
+import { DEFAULT_PROVIDER_DEADLINE_POLICY, providerAbortError } from "../execution-deadline";
 import type { LLMProvider, ProviderReadiness } from "./types";
 import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
-import { providerAbortError } from "../execution-deadline";
 
 function getBridgeUrl(): string {
   return (

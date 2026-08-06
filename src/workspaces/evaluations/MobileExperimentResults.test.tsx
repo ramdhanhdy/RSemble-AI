@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, afterEach, vi } from "vitest";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import type { ReactNode } from "react";
 import { MobileExperimentResults } from "./MobileExperimentResults";
 import type {
   CellState,

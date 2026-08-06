@@ -32,8 +32,7 @@ import type { ExperimentRecord, EvaluationSuite, EvaluationTask } from "./evalua
 import type { FullRunSummaryV2, RunRecordV2, RunSummary } from "../persistence/run-types";
 import type { RunExecutor, RunExecutorEvents, RunRequest } from "../run-executor";
 import { candidateIdForSlot } from "../pipeline";
-import type { JudgeReport } from "../../studio-data";
-import type { ModelSlot } from "../../studio-data";
+import { type JudgeReport, type ModelSlot } from "../../studio-data";
 import { StorageError } from "../persistence/database";
 import { rotateExperimentRoster } from "./experiment-roster-extension";
 import { createExperimentRecord } from "./experiment-engine";

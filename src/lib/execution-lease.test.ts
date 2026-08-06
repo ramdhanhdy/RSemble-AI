@@ -16,8 +16,11 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RSembleEvaluationDB } from "./persistence/database";
-import { createRunRepository, InMemoryRunRepository } from "./persistence/run-repository";
-import type { RunRepository } from "./persistence/run-repository";
+import {
+  createRunRepository,
+  InMemoryRunRepository,
+  type RunRepository,
+} from "./persistence/run-repository";
 import type { FullRunSummaryV2, RunRecordV2 } from "./persistence/run-types";
 import {
   createExecutionLease,
@@ -550,7 +553,7 @@ describe("InMemoryExecutionLease", () => {
 
 describe("ExecutionLease metadata and fencing (Plan 005)", () => {
   it("records kind, execution identity, acquisition/heartbeat timestamps and initial subscription state", async () => {
-    let now = 1000;
+    const now = 1000;
     const store = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
     const lease = new InMemoryExecutionLease(store, null, {
       now: () => now,

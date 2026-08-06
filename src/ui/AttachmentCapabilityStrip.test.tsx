@@ -122,7 +122,7 @@ describe("AttachmentCapabilityStrip (7.5.5)", () => {
     const dispatched: Action[] = [];
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <AttachmentCapabilityStrip

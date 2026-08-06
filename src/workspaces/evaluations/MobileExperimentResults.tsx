@@ -7,22 +7,21 @@
 // Layout never overflows horizontally: min-w-0 + truncation, no fixed widths.
 // =============================================================================
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
-import type { ReactElement } from "react";
 import { Pagination, PAGE_SIZE } from "../../ui/Pagination";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
-import type {
-  CellState,
-  ExperimentAggregation,
-  MissingReason,
+import {
+  type CellState,
+  type ExperimentAggregation,
+  type MissingReason,
+  formatAggregateMean,
+  formatTaskScore,
 } from "../../lib/evaluations/experiment-aggregation";
-import { formatAggregateMean, formatTaskScore } from "../../lib/evaluations/experiment-aggregation";
 import { StatusMark } from "../../ui/StatusMark";
-import { cellEvidenceLink, MISSING_CELL_DISPLAY } from "./ResultMatrix";
-import type { RepairableCellPlans } from "./ResultMatrix";
+import { cellEvidenceLink, MISSING_CELL_DISPLAY, type RepairableCellPlans } from "./ResultMatrix";
 
 export interface MobileExperimentResultsProps {
   aggregation: ExperimentAggregation;

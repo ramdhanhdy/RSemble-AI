@@ -23,16 +23,16 @@
 //  - the snapshot reference is stable for the life of the record.
 // =============================================================================
 
-import type {
-  EvaluationSuite,
-  EvaluationProfile,
-  ExperimentAttemptCoverage,
-  ExperimentRecord,
-  ExperimentTaskAttempt,
-  ExperimentTaskExecutionPlan,
-  ExperimentTaskState,
+import {
+  type EvaluationSuite,
+  type EvaluationProfile,
+  type ExperimentAttemptCoverage,
+  type ExperimentRecord,
+  type ExperimentTaskAttempt,
+  type ExperimentTaskExecutionPlan,
+  type ExperimentTaskState,
+  isExperimentTaskExecutionPlan,
 } from "./evaluation-types";
-import { isExperimentTaskExecutionPlan } from "./evaluation-types";
 import type { ExecutionFence, PersistedError, RunStatus } from "../persistence/run-types";
 import { createExperimentSnapshot } from "./protocol-fingerprint";
 

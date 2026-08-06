@@ -140,7 +140,7 @@ export async function refreshTokens(): Promise<boolean> {
 
 /** Get the valid bearer token (access_token or API key) for upstream requests. */
 export async function getValidToken(): Promise<{ token: string; accountId?: string }> {
-  let { data, error } = readAuthFile();
+  const { data, error } = readAuthFile();
   if (!data) {
     throw new Error(error || "Not authenticated");
   }

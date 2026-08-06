@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { reducer, initialState, type StudioState } from "./studio-engine";
-import type { Candidate } from "./studio-data";
+import {
+  type Candidate,
+  type JudgeReport,
+  type JudgeComparison,
+  type JudgeCriterionScore,
+} from "./studio-data";
 import type { ProviderId, ReasoningPolicy } from "./lib/providers/types";
 import type { EvaluationProfileSnapshot } from "./lib/evaluations/evaluation-types";
 import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-profile-adhoc";
@@ -298,8 +303,6 @@ describe("reducer — RESET_SESSION preserves model selection", () => {
 // reports are cleared on new run / retry / reset / judge failure; Rank/Fuse
 // toggle preserves the report; criterion scores populate Candidate.scores.
 // ---------------------------------------------------------------------------
-
-import type { JudgeReport, JudgeComparison, JudgeCriterionScore } from "./studio-data";
 
 function makeReport(
   entries: Array<{

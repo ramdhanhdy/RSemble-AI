@@ -9,14 +9,16 @@
 // =============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { useMemo, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { ConnectionsModal } from "./ConnectionsModal";
 import { ModelProbeProvider } from "./ModelProbeContext";
-import { credentialStore, resetCredentialStoreForTests } from "../lib/credentials/credential-store";
-import { rememberedStorageKey } from "../lib/credentials/credential-store";
+import {
+  credentialStore,
+  resetCredentialStoreForTests,
+  rememberedStorageKey,
+} from "../lib/credentials/credential-store";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 

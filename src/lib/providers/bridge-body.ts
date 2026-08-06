@@ -8,8 +8,7 @@
 // confusing transport failure.
 // =============================================================================
 
-import type { ProviderId } from "./types";
-import { ProviderError } from "./types";
+import { type ProviderId, ProviderError } from "./types";
 import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 
 /**

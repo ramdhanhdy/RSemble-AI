@@ -131,7 +131,7 @@ describe("AttachmentChips — a11y and status rendering (7.5.3)", () => {
     const onRemove = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <AttachmentChips attachments={[READY]} thumbnails={{}} notice={null} onRemove={onRemove} />,

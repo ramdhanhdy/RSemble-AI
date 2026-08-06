@@ -9,13 +9,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { ModelSlot } from "../../studio-data";
-import type {
-  EvaluationCriterion,
-  EvaluationProfile,
-  EvaluationSuite,
-  EvaluationTask,
-} from "../evaluations/evaluation-types";
 import {
+  type EvaluationCriterion,
+  type EvaluationProfile,
+  type EvaluationSuite,
+  type EvaluationTask,
   isEvaluationProfile,
   isEvaluationProfileRef,
   isEvaluationSelection,
@@ -25,16 +23,14 @@ import {
   isProfileRecord,
   isTaskEvaluationSelection,
 } from "../evaluations/evaluation-types";
-import type {
-  CandidateAttemptRecord,
-  FullRunSummaryV2,
-  LegacyRunSummary,
-  PersistedCandidate,
-  RunArchiveV1,
-  RunRecordV2,
-  FusionAttemptRecord,
-} from "./run-types";
 import {
+  type CandidateAttemptRecord,
+  type FullRunSummaryV2,
+  type LegacyRunSummary,
+  type PersistedCandidate,
+  type RunArchiveV1,
+  type RunRecordV2,
+  type FusionAttemptRecord,
   isAttemptStatus,
   isFullRunSummaryV2,
   isLegacyRunSummary,

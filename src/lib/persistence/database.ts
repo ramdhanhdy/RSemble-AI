@@ -8,8 +8,7 @@
 // blocked by another tab or upgraded out from under it.
 // =============================================================================
 
-import Dexie from "dexie";
-import type { Table } from "dexie";
+import Dexie, { type Table } from "dexie";
 
 // Indexed row shapes — a search/summary row is the stored summary plus the
 // indexes Dexie needs to filter and paginate without loading detail records.

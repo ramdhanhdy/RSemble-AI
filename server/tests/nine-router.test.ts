@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import http from "node:http";
-import { handleNineRouterProxy, configuredNineRouterUpstream } from "../codex-bridge/nine-router.js";
+import {
+  handleNineRouterProxy,
+  configuredNineRouterUpstream,
+} from "../codex-bridge/nine-router.js";
 
 function makeReq(
   method = "POST",

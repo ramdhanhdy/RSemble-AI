@@ -14,6 +14,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 import jsxA11y from "eslint-plugin-jsx-a11y";
+import importX from "eslint-plugin-import-x";
 
 export default tseslint.config(
   {
@@ -35,6 +36,7 @@ export default tseslint.config(
     files: ["**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,
+      "import-x": importX,
     },
     languageOptions: {
       parserOptions: {
@@ -83,7 +85,10 @@ export default tseslint.config(
       // --- Core correctness -----------------------------------------------------
       "no-unreachable": "error",
       "no-unreachable-loop": "error",
-      "no-duplicate-imports": "error",
+      // Core no-duplicate-imports cannot merge TypeScript `import type`
+      // specifiers; import-x/no-duplicates is TS-aware and auto-fixable.
+      "no-duplicate-imports": "off",
+      "import-x/no-duplicates": ["error", { "prefer-inline": true }],
       // Existing justified disables reference this rule; keep it meaningful.
       "no-control-regex": "error",
     },
@@ -104,10 +109,7 @@ export default tseslint.config(
       // Focusable ARIA widgets: the resizable split separator (role=separator
       // with aria-valuenow) and the scrollable result-matrix region need
       // keyboard focus by design; tabindex on those roles is intentional.
-      "jsx-a11y/no-noninteractive-tabindex": [
-        "error",
-        { roles: ["separator", "region"] },
-      ],
+      "jsx-a11y/no-noninteractive-tabindex": ["error", { roles: ["separator", "region"] }],
     },
   },
   {
