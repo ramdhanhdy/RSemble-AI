@@ -26,6 +26,11 @@ import { HOLISTIC_EVALUATION } from "./evaluations/evaluation-profile-adhoc";
 const chatStreamMock = vi.fn();
 const chatCompletionMock = vi.fn();
 const getProviderMock = vi.fn();
+const devLogMock = vi.fn();
+
+vi.mock("./dev-terminal-log", () => ({
+  devTerminalLog: (...args: unknown[]) => devLogMock(...args),
+}));
 
 vi.mock("./providers/registry", () => ({
   getProvider: (...args: unknown[]) => getProviderMock(...args),
@@ -35,6 +40,7 @@ beforeEach(() => {
   chatStreamMock.mockReset();
   chatCompletionMock.mockReset();
   getProviderMock.mockReset();
+  devLogMock.mockReset();
   getProviderMock.mockImplementation(() => ({
     id: "openrouter",
     label: "OpenRouter",
@@ -143,6 +149,21 @@ describe("RunExecutor — executeTask", () => {
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
     expect(callOrder).toEqual(["A-start", "B-start"]);
+  });
+
+  it("does not accept candidates or start Judge after terminal acceptance rejects", async () => {
+    chatStreamMock.mockImplementation(() => streamOf("late candidate"));
+    const executor = createRunExecutor({ random: () => 0.999 });
+    const { events, calls } = makeEvents();
+    events.onCandidateAttemptTerminal = vi.fn(async () => {
+      throw new Error("lease fence rejected");
+    });
+
+    await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
+
+    expect(events.onCandidateTerminal).not.toHaveBeenCalled();
+    expect(calls).not.toContain("judge-start");
+    expect(chatCompletionMock).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate enabled provider:model keys before any provider call", async () => {
@@ -850,5 +871,82 @@ describe("run-executor — dev log containment", () => {
     // devTerminalLog; raw bodies/stacks must not cross that boundary.
     expect(source).toContain("error: error.message");
     expect(source).not.toContain("JSON.stringify(err)");
+  });
+});
+
+
+describe("RunExecutor — deadline classification", () => {
+  it("maps a response that never yields headers into connect_timeout without a provider call", async () => {
+    vi.useFakeTimers();
+    try {
+      chatStreamMock.mockImplementation((opts: { signal?: AbortSignal }) => (async function* () {
+        await new Promise<void>((resolve) => opts.signal?.addEventListener("abort", () => resolve(), { once: true }));
+      })());
+      const { events } = makeEvents();
+      const terminal = vi.mocked(events.onCandidateAttemptTerminal);
+      const executor = createRunExecutor({
+        deadlines: { connectMs: 50, inactivityMs: 100 },
+      });
+      const run = executor.executeTask(makeRequest(), events, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(50);
+      await run;
+      const failed = terminal.mock.calls.map((call) => call[2]).find((input) => input.status === "failed");
+      expect(failed?.error?.category).toBe("timeout");
+      expect(failed?.error?.message).toContain("connect_timeout");
+      expect(chatCompletionMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("emits bounded timeout observability for a stalled Judge", async () => {
+    vi.useFakeTimers();
+    try {
+      chatStreamMock.mockImplementation(() => streamOf("candidate answer"));
+      chatCompletionMock.mockImplementation((opts: { signal?: AbortSignal }) =>
+        new Promise<string>((_resolve, reject) => {
+          opts.signal?.addEventListener("abort", () => reject(opts.signal?.reason), { once: true });
+        }),
+      );
+      const { events } = makeEvents();
+      const executor = createRunExecutor({ deadlines: { connectMs: 25, inactivityMs: 100 } });
+      const run = executor.executeTask(makeRequest(), events, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(25);
+      await run;
+      const timeoutLog = devLogMock.mock.calls.find(
+        (call: unknown[]) => call[0] === "judge.request.failed" && (call[1] as { timeoutKind?: string }).timeoutKind,
+      );
+      expect(timeoutLog?.[1]).toMatchObject({ stage: "judge", status: "failed", timeoutKind: "connect_timeout" });
+      expect(typeof (timeoutLog?.[1] as { durationMs?: unknown }).durationMs).toBe("number");
+      expect((timeoutLog?.[1] as { error?: string }).error).not.toMatch(/candidate answer/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("emits timeout observability for a stalled Fusion", async () => {
+    vi.useFakeTimers();
+    try {
+      chatStreamMock.mockImplementation(() => streamOf("candidate answer"));
+      chatCompletionMock
+        .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+        .mockImplementationOnce((opts: { signal?: AbortSignal }) =>
+          new Promise<string>((_resolve, reject) => {
+            opts.signal?.addEventListener("abort", () => reject(opts.signal?.reason), { once: true });
+          }),
+        );
+      const { events } = makeEvents();
+      const executor = createRunExecutor({ deadlines: { connectMs: 25, inactivityMs: 100 } });
+      const run = executor.executeTask(makeRequest("fuse"), events, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(25);
+      await run;
+      const timeoutLog = devLogMock.mock.calls.find(
+        (call: unknown[]) => call[0] === "fusion.request.failed" && (call[1] as { timeoutKind?: string }).timeoutKind,
+      );
+      expect(timeoutLog?.[1]).toMatchObject({ stage: "fusion", status: "failed", timeoutKind: "connect_timeout" });
+      expect(typeof (timeoutLog?.[1] as { durationMs?: unknown }).durationMs).toBe("number");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

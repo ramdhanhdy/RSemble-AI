@@ -74,6 +74,13 @@ describe("AttachmentChips — a11y and status rendering (7.5.3)", () => {
     expect(html).toContain("Reading…");
   });
 
+  it("exposes a reachable Retry action for a failed attachment when provided", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentChips attachments={[FAILED]} thumbnails={{}} notice={null} onRemove={() => {}} onRetry={() => {}} />,
+    );
+    expect(html).toContain('aria-label="Retry notes.docx"');
+  });
+
   it("renders the error message on failed attachments", () => {
     const html = renderToStaticMarkup(
       <AttachmentChips attachments={[FAILED]} thumbnails={{}} notice={null} onRemove={() => {}} />,

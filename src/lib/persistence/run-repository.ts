@@ -9,6 +9,8 @@
 
 import type { RSembleEvaluationDB, RunSummaryRow, RunDetailRow } from "./database";
 import { StorageError, classifyStorageError } from "./database";
+import { LEASE_KEY, type LeaseInfo } from "../execution-lease";
+import type { ExecutionFence } from "./run-types";
 import {
   isFullRunSummaryV2,
   isLegacyRunSummary,
@@ -26,9 +28,43 @@ import {
 // --- Terminal states that may never regress to "running" ----------------------
 const TERMINAL_STATUSES = new Set(["completed", "partial", "failed", "aborted", "interrupted"]);
 
+/**
+ * Check a lease fence while the caller's run write transaction is open. This
+ * is intentionally owner+monotonic-fence based: a takeover always increments
+ * the fence, so an old controller cannot commit even if it shares an ownerId.
+ */
+function assertLeaseFence(
+  lease: LeaseInfo | null,
+  expected: ExpectedExecutionFence,
+  now: number,
+): void {
+  if (!lease) throw new StorageError("conflict", "Execution lease not held");
+  if (
+    lease.ownerId !== expected.ownerId ||
+    lease.fence !== expected.fence ||
+    (expected.leaseId !== undefined && lease.leaseId !== expected.leaseId)
+  ) {
+    throw new StorageError("conflict", "Execution lease token mismatch: another execution owner has taken over");
+  }
+  // Exact paid execution tokens include leaseId and must also be live at
+  // commit time. Recovery may supply a deterministic checkedAt clock.
+  if (expected.leaseId !== undefined && lease.expiresAt <= (expected.checkedAt ?? now)) {
+    throw new StorageError("conflict", "Execution lease expired");
+  }
+}
+
+/** Internal clock sample supplied by recovery/controller callers that inject a
+ * deterministic clock. It is never persisted as part of the run fence. */
+export type ExpectedExecutionFence = ExecutionFence & { checkedAt?: number };
+
 export interface RunRepository {
-  create(record: RunRecordV2, summary: FullRunSummaryV2): Promise<void>;
-  update(record: RunRecordV2, summary: FullRunSummaryV2, expectedRevision: number): Promise<number>;
+  /**
+   * Create atomically. expectedFence is optional for import/maintenance paths;
+   * Compare passes it so the active lease is verified in the same transaction.
+   */
+  create(record: RunRecordV2, summary: FullRunSummaryV2, expectedFence?: ExpectedExecutionFence): Promise<void>;
+  /** Update atomically with revision CAS and (when supplied) lease fencing. */
+  update(record: RunRecordV2, summary: FullRunSummaryV2, expectedRevision: number, expectedFence?: ExpectedExecutionFence): Promise<number>;
   importLegacySummary(summary: LegacyRunSummary): Promise<"created" | "skipped">;
   get(id: string): Promise<RunRecordV2 | null>;
   list(query: RunListQuery): Promise<RunSummary[]>;
@@ -64,8 +100,14 @@ function summaryToRow(summary: FullRunSummaryV2 | LegacyRunSummary): RunSummaryR
   };
 }
 
-export function createRunRepository(db: RSembleEvaluationDB): RunRepository {
+export interface RunRepositoryOptions {
+  /** Injected clock for deterministic lease-expiry tests. */
+  now?: () => number;
+}
+
+export function createRunRepository(db: RSembleEvaluationDB, options: RunRepositoryOptions = {}): RunRepository {
   const listeners = new Set<() => void>();
+  const now = options.now ?? (() => Date.now());
 
   function notify() {
     for (const l of listeners) {
@@ -77,7 +119,11 @@ export function createRunRepository(db: RSembleEvaluationDB): RunRepository {
     }
   }
 
-  async function create(record: RunRecordV2, summary: FullRunSummaryV2): Promise<void> {
+  async function create(
+    record: RunRecordV2,
+    summary: FullRunSummaryV2,
+    expectedFence?: ExpectedExecutionFence,
+  ): Promise<void> {
     if (!isRunRecordV2(record)) throw new StorageError("validation", "Invalid run record");
     if (!isFullRunSummaryV2(summary)) throw new StorageError("validation", "Invalid summary");
     if (record.id !== summary.id) {
@@ -88,7 +134,11 @@ export function createRunRepository(db: RSembleEvaluationDB): RunRepository {
     }
     db.assertWritable();
     try {
-      await db.transaction("rw", db.runSummaries, db.runDetails, async () => {
+      await db.transaction("rw", db.runSummaries, db.runDetails, db.storageMeta, async () => {
+        if (expectedFence) {
+          const leaseRow = await db.storageMeta.get(LEASE_KEY);
+          assertLeaseFence((leaseRow?.value as LeaseInfo | undefined) ?? null, expectedFence, now());
+        }
         const existing = await db.runSummaries.get(record.id);
         if (existing) throw new StorageError("conflict", `Run ${record.id} already exists`);
 
@@ -118,6 +168,7 @@ export function createRunRepository(db: RSembleEvaluationDB): RunRepository {
     record: RunRecordV2,
     summary: FullRunSummaryV2,
     expectedRevision: number,
+    expectedFence?: ExpectedExecutionFence,
   ): Promise<number> {
     if (!isRunRecordV2(record)) throw new StorageError("validation", "Invalid run record");
     if (!isFullRunSummaryV2(summary)) throw new StorageError("validation", "Invalid summary");
@@ -129,7 +180,11 @@ export function createRunRepository(db: RSembleEvaluationDB): RunRepository {
     const newRevision = expectedRevision + 1;
     const updatedRecord: RunRecordV2 = { ...record, revision: newRevision };
     try {
-      await db.transaction("rw", db.runSummaries, db.runDetails, async () => {
+      await db.transaction("rw", db.runSummaries, db.runDetails, db.storageMeta, async () => {
+        if (expectedFence) {
+          const leaseRow = await db.storageMeta.get(LEASE_KEY);
+          assertLeaseFence((leaseRow?.value as LeaseInfo | undefined) ?? null, expectedFence, now());
+        }
         const existingDetail = await db.runDetails.get(record.id);
         if (!existingDetail) throw new StorageError("conflict", `Run ${record.id} not found`);
         if (existingDetail.revision !== expectedRevision) {
@@ -383,16 +438,23 @@ export class InMemoryRunRepository implements RunRepository {
   private summaries: Map<string, RunSummary>;
   private details: Map<string, RunRecordV2>;
   private listeners = new Set<() => void>();
+  private readonly leaseStore: { lease: LeaseInfo | null; fence: number } | null;
+  private readonly now: () => number;
 
   /** Optional shared maps let a test harness back an InMemoryRunRepository
    *  and an InMemoryExperimentStore with the same tables — mirroring the
-   *  single-Dexie-DB production wiring. */
+   *  single-Dexie-DB production wiring. leaseStore enables the same fenced
+   *  write contract as IndexedDB without requiring a browser database. */
   constructor(shared?: {
     summaries?: Map<string, RunSummary>;
     details?: Map<string, RunRecordV2>;
+    leaseStore?: { lease: LeaseInfo | null; fence: number };
+    now?: () => number;
   }) {
     this.summaries = shared?.summaries ?? new Map();
     this.details = shared?.details ?? new Map();
+    this.leaseStore = shared?.leaseStore ?? null;
+    this.now = shared?.now ?? (() => Date.now());
   }
 
   private notify() {
@@ -401,13 +463,22 @@ export class InMemoryRunRepository implements RunRepository {
     }
   }
 
-  async create(record: RunRecordV2, summary: FullRunSummaryV2): Promise<void> {
+  private verifyFence(expectedFence?: ExpectedExecutionFence): void {
+    // Plain in-memory repositories are also used for unit tests that exercise
+    // persistence without a lease. When a shared lease store is injected, the
+    // check is strict and mirrors the Dexie transaction contract.
+    if (!expectedFence || !this.leaseStore) return;
+    assertLeaseFence(this.leaseStore.lease, expectedFence, this.now());
+  }
+
+  async create(record: RunRecordV2, summary: FullRunSummaryV2, expectedFence?: ExpectedExecutionFence): Promise<void> {
     if (record.id !== summary.id) {
       throw new StorageError("validation", `Record ID "${record.id}" does not match summary ID "${summary.id}"`);
     }
     if (record.revision !== summary.revision) {
       throw new StorageError("validation", `Record revision ${record.revision} does not match summary revision ${summary.revision}`);
     }
+    this.verifyFence(expectedFence);
     if (this.summaries.has(record.id)) throw new StorageError("conflict", `Run ${record.id} already exists`);
     // Deep-clone on write: Dexie structured-clones at the storage boundary,
     // and this test double must mirror that isolation. Storing the caller's
@@ -419,10 +490,16 @@ export class InMemoryRunRepository implements RunRepository {
     this.notify();
   }
 
-  async update(record: RunRecordV2, summary: FullRunSummaryV2, expectedRevision: number): Promise<number> {
+  async update(
+    record: RunRecordV2,
+    summary: FullRunSummaryV2,
+    expectedRevision: number,
+    expectedFence?: ExpectedExecutionFence,
+  ): Promise<number> {
     if (record.id !== summary.id) {
       throw new StorageError("validation", `Record ID "${record.id}" does not match summary ID "${summary.id}"`);
     }
+    this.verifyFence(expectedFence);
     const existing = this.details.get(record.id);
     if (!existing) throw new StorageError("conflict", `Run ${record.id} not found`);
     if (existing.revision !== expectedRevision) throw new StorageError("conflict", "Stale revision");

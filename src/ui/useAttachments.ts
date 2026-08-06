@@ -121,6 +121,7 @@ export interface UseAttachmentsResult {
   remove: (id: string) => void;
   clear: () => void;
   setToJudge: (value: boolean) => void;
+  retry: (id: string) => void;
 }
 
 export function useAttachments(
@@ -201,9 +202,21 @@ export function useAttachments(
     dispatch({ type: "CLEAR_ATTACHMENTS" });
   }, [dispatch]);
 
+  const retry = useCallback((id: string) => {
+    const file = filesRef.current.get(id);
+    if (!file) {
+      setNotice({ text: "The original file handle is no longer available. Remove and attach it again.", tone: "error" });
+      return;
+    }
+    const attachment = attachments.find((a) => a.id === id);
+    if (!attachment || attachment.status !== "error") return;
+    dispatch({ type: "ATTACHMENT_RETRY", id });
+    void processFile({ ...attachment, file }, dispatch, setNotice);
+  }, [attachments, dispatch]);
+
   const setToJudge = useCallback((value: boolean) => {
     dispatch({ type: "SET_ATTACHMENTS_TO_JUDGE", value });
   }, [dispatch]);
 
-  return { notice, thumbnails, addFiles, remove, clear, setToJudge };
+  return { notice, thumbnails, addFiles, remove, clear, setToJudge, retry };
 }

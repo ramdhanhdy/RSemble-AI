@@ -21,7 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Paperclip, Sparkles } from "lucide-react";
 import type { Action } from "../studio-engine";
-import { estimateAttachmentTokens, estimateTokens } from "../lib/cost";
+import { estimateAttachmentInput, estimateTokens } from "../lib/cost";
 import { EXAMPLE_TASKS } from "../lib/test-cases";
 import type { Attachment } from "../lib/attachments/types";
 
@@ -209,10 +209,10 @@ export function TaskInput({
 
 function Counter({ value, attachments }: { value: string; attachments: Attachment[] }) {
   const tokens = estimateTokens(value);
-  const fromFiles = attachments.length > 0 ? estimateAttachmentTokens(attachments) : 0;
+  const fromFiles = attachments.length > 0 ? estimateAttachmentInput(attachments) : { textTokens: 0, hasUnknownMedia: false };
   return (
     <span className="pointer-events-none absolute bottom-2.5 right-3 font-mono text-xs tabular-nums text-text-muted">
-      ~{tokens} tokens{fromFiles > 0 ? ` · +${fromFiles} from files` : ""}
+      ~{tokens} tokens{fromFiles.textTokens > 0 ? ` · +${fromFiles.textTokens} text tokens from files` : ""}{fromFiles.hasUnknownMedia ? " · native media cost unknown" : ""}
     </span>
   );
 }

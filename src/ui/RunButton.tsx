@@ -1,10 +1,10 @@
 // =============================================================================
-// RunButton — the primary action. Cyan, disabled until ≥1 model enabled and the
-// prompt is non-empty. Executes fanout → Judge (+ fusion if Fuse). Per UI.md §3.4.
+// RunButton — the primary action. Cyan, disabled until ≥2 models are enabled
+// and the prompt is non-empty. Executes fanout → Judge (+ fusion if Fuse).
 // =============================================================================
 
 import { Play, Square } from "lucide-react";
-import { estimateAttachmentTokens, estimateRunCost, estimateRunTime } from "../lib/cost";
+import { estimateAttachmentInput, estimateRunCost, estimateRunTime } from "../lib/cost";
 import type { ProviderId } from "../lib/providers/types";
 import type { Attachment } from "../lib/attachments/types";
 import type { Mode } from "../studio-data";
@@ -41,14 +41,15 @@ export function RunButton({
   /** Slug → providerId for exact catalog pricing. */
   providerIdsBySlug?: Record<string, ProviderId>;
 }) {
-  const attachmentTokens = attachments ? estimateAttachmentTokens(attachments) : 0;
+  const attachmentEstimate = attachments ? estimateAttachmentInput(attachments) : { textTokens: 0, hasUnknownMedia: false };
   const cost =
     hasPrompt && enabledCount > 0
-      ? estimateRunCost(prompt, enabledSlugs, attachmentTokens, {
+      ? estimateRunCost(prompt, enabledSlugs, attachmentEstimate.textTokens, {
           providerIds: providerIdsBySlug,
           mode,
           judgeProvider: judge?.providerId,
           judgeModel: judge?.model,
+          mediaUnknown: attachmentEstimate.hasUnknownMedia,
         })
       : null;
   const time = enabledCount > 0 ? estimateRunTime(enabledSlugs) : 0;
@@ -63,10 +64,12 @@ export function RunButton({
     : !hasPrompt
       ? "Enter a task to run"
       : enabledCount === 0
-        ? "Enable at least one model"
-        : blockReason
-          ? blockReason
-          : canRun
+        ? "Enable at least two candidate models."
+        : enabledCount === 1
+          ? "Add or enable one more candidate to compare."
+          : blockReason
+            ? blockReason
+            : canRun
             ? `${enabledCount} model${enabledCount === 1 ? "" : "s"} · 1 judge${mode === "fuse" ? " + fusion" : ""}${
                 forecast ? ` · ${forecast}${partialCost ? " (partial)" : ""}` : ""
               }`

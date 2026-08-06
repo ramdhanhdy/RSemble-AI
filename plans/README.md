@@ -13,8 +13,8 @@ work completes.
 | [001](./001-experiment-roster-extension.md) | Extend a finished experiment with one model and run only its new evidence | P1 | L | — | DONE — merged in PR #2 (`8f22a6e`) |
 | [002](./002-hardening-program-decisions.md) | Lock the hardening program's product and technical decisions | P0 | S | 001 | DONE |
 | [003](./003-credential-and-bridge-boundary-hardening.md) | Harden credential handling and local bridge boundaries | P0 | L | 002 | DONE — owner validation pending |
-| [004](./004-run-integrity-and-truthful-preflight.md) | Restore run integrity and make Compare preflight truthful | P0 | L | 003 | TODO |
-| [005](./005-execution-reliability-and-cross-tab-leases.md) | Add execution deadlines and cross-tab coordination | P1 | L | 004 | TODO |
+| [004](./004-run-integrity-and-truthful-preflight.md) | Restore run integrity and make Compare preflight truthful | P0 | L | 003 | DONE — owner validation pending |
+| [005](./005-execution-reliability-and-cross-tab-leases.md) | Add execution deadlines and cross-tab coordination | P1 | L | 004 | DONE — owner validation pending |
 | [006](./006-quality-gate-and-documentation-reconciliation.md) | Establish a complete quality gate and reconcile documentation | P1 | L | 005 | TODO |
 | [007](./007-controlled-maintainability-extraction.md) | Reduce module responsibility convergence without behavior drift | P2 | XL | 006 | TODO |
 | [008](./008-measured-loading-and-protocol-compatibility.md) | Optimize loading and isolate protocol-sensitive integrations | P3 | L | 007 | TODO |

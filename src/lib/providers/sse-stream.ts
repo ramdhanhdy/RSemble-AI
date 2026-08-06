@@ -20,6 +20,7 @@
 import type { CostRecord, UsageBreakdown } from "./types";
 import { ProviderError, type ProviderId } from "./types";
 import { parseOpenAICompatibleUsage, parseProviderReportedCost } from "./usage";
+import { providerAbortError } from "../execution-deadline";
 
 export interface SseChunk {
   choices?: { delta?: { content?: string } }[];
@@ -61,8 +62,10 @@ export async function* readSseChatStream(
         done = result.done;
         value = result.value;
       } catch (err) {
-        // Client abort propagates as-is so the orchestrator treats it as cancel.
-        if (err instanceof DOMException && err.name === "AbortError") throw err;
+        // Preserve structured timeout reasons and user aborts. AbortError may
+        // be a plain Error in some fetch implementations.
+        const abort = providerAbortError(err, signal);
+        if (abort !== null) throw abort;
         // Any other read rejection = upstream connection dropped mid-stream.
         throw new ProviderError(
           `${label} stream interrupted — upstream read failure. Partial output discarded.`,
@@ -113,7 +116,7 @@ export async function* readSseChatStream(
     if (!sawDone) {
       // If the abort signal fired, this "unexpected EOF" is actually a cancel.
       if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
+        throw providerAbortError(undefined, signal) ?? new DOMException("Aborted", "AbortError");
       }
       throw new ProviderError(
         `${label} stream ended unexpectedly (no [DONE] sentinel). The response may be incomplete.`,

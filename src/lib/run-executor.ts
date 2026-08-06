@@ -13,7 +13,7 @@
 //   executeFusionAttempt — Fusion/Re-fuse from frozen accepted evidence
 // =============================================================================
 
-import type { ChatMessage, ChatOptions, CostRecord, CriticRef, ProviderId, ReasoningPolicy, UsageBreakdown } from "./providers/types";
+import type { ChatMessage, ChatOptions, CostRecord, CriticRef, InputUsageEstimate, ProviderId, ReasoningPolicy, UsageBreakdown } from "./providers/types";
 import type {
   BlindCandidate,
   Candidate,
@@ -35,7 +35,7 @@ import {
   sanitizePersistedError,
   type SanitizeErrorContext,
 } from "./persistence/error-redaction";
-import { costFromSnapshot, estimateTokens } from "./cost";
+import { costFromSnapshot, estimateTokens, inputUsageEstimate } from "./cost";
 import { getModelPricing } from "./providers/pricing";
 import {
   buildFanoutJobs,
@@ -54,6 +54,13 @@ import {
 import type { AdHocEvaluationConfig } from "./evaluations/evaluation-profile-adhoc";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
 import { devTerminalLog, type DevTerminalFields } from "./dev-terminal-log";
+import {
+  DEFAULT_PROVIDER_DEADLINE_POLICY,
+  isExecutionTimeoutError,
+  runWithExecutionDeadlines,
+  streamWithExecutionDeadlines,
+  type DeadlineDependencies,
+} from "./execution-deadline";
 
 // --- Request types -----------------------------------------------------------
 
@@ -156,11 +163,12 @@ export interface RunExecutorEvents {
     result: {
       segments: CandidateSegment[];
       summary: string;
-      tokensIn: number;
-      tokensOut: number;
+      tokensIn: number | null;
+      tokensOut: number | null;
+      inputEstimate?: InputUsageEstimate;
       finishedAt: number;
     },
-  ): void;
+  ): void | Promise<void>;
   onFanoutTerminal(done: Candidate[]): Promise<void>;
   onCandidateAttemptStart(
     candidateId: string,
@@ -176,6 +184,7 @@ export interface RunExecutorEvents {
       tokensIn: number | null;
       tokensOut: number | null;
       usage?: UsageBreakdown | null;
+      inputEstimate?: InputUsageEstimate;
       cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
@@ -200,6 +209,7 @@ export interface RunExecutorEvents {
       report: JudgeReport | null;
       consensus: ConsensusBreakdown | null;
       usage?: UsageBreakdown | null;
+      inputEstimate?: InputUsageEstimate;
       cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
@@ -222,6 +232,7 @@ export interface RunExecutorEvents {
       status: AttemptStatus;
       result: string | null;
       usage?: UsageBreakdown | null;
+      inputEstimate?: InputUsageEstimate;
       cost?: CostRecord | null;
       error: PersistedError | null;
       finishedAt: number;
@@ -238,6 +249,15 @@ export interface RunExecutor {
   executeFusionAttempt(request: FrozenFusionRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void>;
 }
 
+export interface ExecutionDeadlinePolicy {
+  /** Time from dispatch until the first provider response/stream event. */
+  connectMs: number;
+  /** Maximum gap between accepted stream events. */
+  inactivityMs: number;
+  /** Optional total ceiling; omitted by default for long reasoning. */
+  overallMs?: number;
+}
+
 export interface RunExecutorDeps {
   /** Random source for the blind-label shuffle. Tests inject deterministic. */
   random?: () => number;
@@ -245,6 +265,10 @@ export interface RunExecutorDeps {
   generateId?: () => string;
   /** Clock for timestamps. Tests inject deterministic. Defaults to Date.now. */
   now?: () => number;
+  /** Provider-neutral deadline overrides; adapters may replace these defaults. */
+  deadlines?: Partial<ExecutionDeadlinePolicy>;
+  /** Fake clock/timer surface for deterministic deadline tests. */
+  deadlineDeps?: DeadlineDependencies;
 }
 
 // --- Factory -----------------------------------------------------------------
@@ -253,13 +277,21 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
   const random = deps.random ?? Math.random;
   const generateId = deps.generateId ?? (() => crypto.randomUUID());
   const now = deps.now ?? (() => Date.now());
+  const deadlinePolicy: ExecutionDeadlinePolicy = {
+    ...DEFAULT_PROVIDER_DEADLINE_POLICY,
+    ...deps.deadlines,
+  };
+  // Execution timestamps and deadline clocks are separate seams. Do not feed
+  // the persistence `now` into deadline timers unless tests explicitly inject
+  // `deadlineDeps`; otherwise ordinary lifecycle tests gain extra clock ticks.
+  const deadlineDeps: DeadlineDependencies = { ...deps.deadlineDeps };
 
   /**
    * Honest fallback when a provider omits native usage/cost (spec 06 §4):
    * catalog-estimate only when an exact execution-time price is known,
    * otherwise an Unknown record — never a fabricated total.
    */
-  function estimateFallbackCost(providerId: string, model: string, tokensIn: number, tokensOut: number): CostRecord {
+  function estimateFallbackCost(providerId: string, model: string, tokensIn: number | null, tokensOut: number | null): CostRecord {
     const snapshot = getModelPricing(providerId as ProviderId, model);
     const estimated = costFromSnapshot(snapshot ?? undefined, { inputTokens: tokensIn, outputTokens: tokensOut });
     return estimated ?? { usd: null, source: "unknown" };
@@ -273,7 +305,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
   // byte-capped message plus category/stage/model/at — never raw provider
   // bodies or configured credential values.
   function sanitizeError(err: unknown, ctx: SanitizeErrorContext): PersistedError {
-    return sanitizePersistedError(err, ctx, now, configuredCredentialValues());
+    const timeout = isExecutionTimeoutError(err) ? err : null;
+    return sanitizePersistedError(
+      err,
+      timeout
+        ? { ...ctx, category: "timeout", timeoutKind: timeout.kind, configuredDurationMs: timeout.configuredDurationMs, elapsedMs: timeout.elapsedMs }
+        : ctx,
+      now,
+      configuredCredentialValues(),
+    );
   }
 
   function sourceFields(source: RunSource | undefined): DevTerminalFields {
@@ -294,7 +334,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     events: RunExecutorEvents,
     signal: AbortSignal,
     diagnostics: { source?: RunSource; attemptId: string; reasoningEffort?: ReasoningPolicy["candidates"] },
-  ): Promise<{ content: string; segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; usage?: UsageBreakdown | null; cost?: CostRecord | null; finishedAt: number } | { error: PersistedError } | null> {
+  ): Promise<{ content: string; segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; usage?: UsageBreakdown | null; cost?: CostRecord | null; finishedAt: number } | { error: PersistedError } | null> {
     const provider = getProvider(job.providerId);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
@@ -316,10 +356,24 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         messages,
         temperature,
         reasoningEffort: diagnostics.reasoningEffort,
+        connectMs: deadlinePolicy.connectMs,
+        inactivityMs: deadlinePolicy.inactivityMs,
+        overallMs: deadlinePolicy.overallMs,
         signal: ctrl.signal,
       };
+      const streamOptions = {
+        ...deadlineDeps,
+        ...deadlinePolicy,
+        provider: job.providerId,
+        model: job.slug,
+        stage: "candidate",
+        signal: ctrl.signal,
+        abortController: ctrl,
+      };
       if (provider.chatCompletionStreamDetailed) {
-        for await (const event of provider.chatCompletionStreamDetailed(opts)) {
+        const source = provider.chatCompletionStreamDetailed(opts);
+        const stream = provider.executionDeadlines ? source : streamWithExecutionDeadlines(source, streamOptions);
+        for await (const event of stream) {
           if (isAborted(signal)) return null;
           if (event.delta) {
             content += event.delta;
@@ -329,7 +383,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           if (event.cost) cost = event.cost;
         }
       } else {
-        for await (const delta of provider.chatCompletionStream(opts)) {
+        const source = provider.chatCompletionStream(opts);
+        const stream = provider.executionDeadlines ? source : streamWithExecutionDeadlines(source, streamOptions);
+        for await (const delta of stream) {
           if (isAborted(signal)) return null;
           content += delta;
           events.onCandidateDelta(job.id, delta);
@@ -338,7 +394,8 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       if (isAborted(signal)) return null;
       const segments = splitSegments(content, job.id);
       const summary = summarize(content);
-      const tokensIn = usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join(""));
+      const inputEstimate = inputUsageEstimate(messages, usage);
+      const tokensIn = inputEstimate.totalTokens;
       const tokensOut = usage?.outputTokens ?? estimateTokens(content);
       const resolvedCost =
         cost ?? estimateFallbackCost(job.providerId, job.slug, tokensIn, tokensOut);
@@ -349,10 +406,31 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         tokensIn,
         tokensOut,
       }, "info");
-      return { content, segments, summary, tokensIn, tokensOut, usage, cost: resolvedCost, finishedAt: now() };
+      return { content, segments, summary, tokensIn, tokensOut, inputEstimate, usage, cost: resolvedCost, finishedAt: now() };
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return null;
-      if (isAborted(signal)) return null;
+      if (isExecutionTimeoutError(err)) {
+        const error = sanitizeError(err, { category: "timeout", stage: "candidate", model: job.slug });
+        devTerminalLog("provider.request.failed", { ...context, status: "failed", durationMs: Date.now() - requestStartedAt, error: error.message, timeoutKind: err.kind }, "error");
+        return { error };
+      }
+      if (err instanceof DOMException && err.name === "AbortError") {
+        if (isAborted(signal)) {
+          devTerminalLog("provider.request.aborted", {
+            ...context,
+            status: "aborted",
+            durationMs: Date.now() - requestStartedAt,
+          }, "warn");
+        }
+        return null;
+      }
+      if (isAborted(signal)) {
+        devTerminalLog("provider.request.aborted", {
+          ...context,
+          status: "aborted",
+          durationMs: Date.now() - requestStartedAt,
+        }, "warn");
+        return null;
+      }
       // Provider errors fail this candidate (not the whole run); return the
       // bounded sanitized error so the caller records it on the attempt.
       const error = sanitizeError(err, { category: "provider", stage: "candidate", model: job.slug });
@@ -438,15 +516,37 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         messages,
         temperature: 0.1,
         reasoningEffort: request.reasoningPolicy?.judge,
+        connectMs: deadlinePolicy.connectMs,
+        inactivityMs: deadlinePolicy.inactivityMs,
+        overallMs: deadlinePolicy.overallMs,
         signal: ctrl.signal,
       };
+      const operationOptions = {
+        ...deadlineDeps,
+        ...deadlinePolicy,
+        provider: request.critic.providerId,
+        model: request.critic.model,
+        stage: "judge",
+        signal: ctrl.signal,
+        abortController: ctrl,
+      };
       if (provider.chatCompletionDetailed) {
-        const detailed = await provider.chatCompletionDetailed(judgeOpts);
+        const detailed = provider.executionDeadlines
+          ? await provider.chatCompletionDetailed(judgeOpts)
+          : await runWithExecutionDeadlines(
+            (deadlineSignal) => provider.chatCompletionDetailed!({ ...judgeOpts, signal: deadlineSignal }),
+            operationOptions,
+          );
         content = detailed.content;
         usage = detailed.usage;
         cost = detailed.cost;
       } else {
-        content = await provider.chatCompletion(judgeOpts);
+        content = provider.executionDeadlines
+          ? await provider.chatCompletion(judgeOpts)
+          : await runWithExecutionDeadlines(
+            (deadlineSignal) => provider.chatCompletion({ ...judgeOpts, signal: deadlineSignal }),
+            operationOptions,
+          );
       }
       if (isAborted(signal)) {
         await events.onJudgeTerminal(attemptId, {
@@ -455,16 +555,17 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         return { ok: false };
       }
       const { breakdown, scoresById, report } = parseJudge(content, blindSet, profile, done);
+      const inputEstimate = inputUsageEstimate(messages, usage);
       const resolvedCost =
         cost ??
         estimateFallbackCost(
           request.critic.providerId,
           request.critic.model,
-          usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join("")),
+          inputEstimate.totalTokens,
           usage?.outputTokens ?? estimateTokens(content),
         );
       await events.onJudgeTerminal(attemptId, {
-        status: "completed", report, consensus: breakdown, usage, cost: resolvedCost, error: null, finishedAt: now(),
+        status: "completed", report, consensus: breakdown, usage, inputEstimate, cost: resolvedCost, error: null, finishedAt: now(),
       });
       devTerminalLog("judge.request.completed", {
         ...judgeContext,
@@ -473,13 +574,43 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       }, "info");
       return { ok: true, attemptId, report, consensus: breakdown, scoresById, blindSet };
     } catch (err) {
+      if (isExecutionTimeoutError(err)) {
+        const error = sanitizeError(err, { category: "timeout", stage: "judge", model: request.critic.model });
+        await events.onJudgeTerminal(attemptId, {
+          status: "failed", report: null, consensus: null,
+          error,
+          finishedAt: now(),
+        }).catch(() => {});
+        devTerminalLog("judge.request.failed", {
+          ...judgeContext,
+          status: "failed",
+          durationMs: Date.now() - judgeLogStartedAt,
+          error: error.message,
+          timeoutKind: err.kind,
+        }, "error");
+        return { ok: false };
+      }
       if (err instanceof DOMException && err.name === "AbortError") {
+        if (isAborted(signal)) {
+          devTerminalLog("judge.request.aborted", {
+            ...judgeContext,
+            status: "aborted",
+            durationMs: Date.now() - judgeLogStartedAt,
+          }, "warn");
+        }
         await events.onJudgeTerminal(attemptId, {
           status: "aborted", report: null, consensus: null, error: null, finishedAt: now(),
         }).catch(() => {});
         return { ok: false };
       }
-      if (isAborted(signal)) return { ok: false };
+      if (isAborted(signal)) {
+        devTerminalLog("judge.request.aborted", {
+          ...judgeContext,
+          status: "aborted",
+          durationMs: Date.now() - judgeLogStartedAt,
+        }, "warn");
+        return { ok: false };
+      }
       const error = sanitizeError(err, { category: "provider", stage: "judge", model: request.critic.model });
       await events.onJudgeTerminal(attemptId, {
         status: "failed", report: null, consensus: null,
@@ -523,6 +654,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     });
     const attemptId = generateId();
     const startedAt = now();
+    const fusionLogStartedAt = Date.now();
 
     try {
       await events.onFusionStart(attemptId, {
@@ -539,6 +671,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     if (isAborted(signal)) return { ok: false, result: null };
 
+    devTerminalLog("fusion.request.started", {
+      attemptId,
+      modelKey: `${request.critic.providerId}:${request.critic.model}`,
+      stage: "fusion",
+    }, "info");
     const provider = getProvider(request.critic.providerId);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
@@ -552,15 +689,37 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         messages,
         temperature: 0.3,
         reasoningEffort: request.reasoningPolicy?.judge,
+        connectMs: deadlinePolicy.connectMs,
+        inactivityMs: deadlinePolicy.inactivityMs,
+        overallMs: deadlinePolicy.overallMs,
         signal: ctrl.signal,
       };
+      const operationOptions = {
+        ...deadlineDeps,
+        ...deadlinePolicy,
+        provider: request.critic.providerId,
+        model: request.critic.model,
+        stage: "fusion",
+        signal: ctrl.signal,
+        abortController: ctrl,
+      };
       if (provider.chatCompletionDetailed) {
-        const detailed = await provider.chatCompletionDetailed(fusionOpts);
+        const detailed = provider.executionDeadlines
+          ? await provider.chatCompletionDetailed(fusionOpts)
+          : await runWithExecutionDeadlines(
+            (deadlineSignal) => provider.chatCompletionDetailed!({ ...fusionOpts, signal: deadlineSignal }),
+            operationOptions,
+          );
         content = detailed.content;
         usage = detailed.usage;
         cost = detailed.cost;
       } else {
-        content = await provider.chatCompletion(fusionOpts);
+        content = provider.executionDeadlines
+          ? await provider.chatCompletion(fusionOpts)
+          : await runWithExecutionDeadlines(
+            (deadlineSignal) => provider.chatCompletion({ ...fusionOpts, signal: deadlineSignal }),
+            operationOptions,
+          );
       }
       if (isAborted(signal)) {
         await events.onFusionTerminal(attemptId, {
@@ -568,30 +727,83 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         }).catch(() => {});
         return { ok: false, result: null };
       }
+      const inputEstimate = inputUsageEstimate(messages, usage);
       const resolvedCost =
         cost ??
         estimateFallbackCost(
           request.critic.providerId,
           request.critic.model,
-          usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join("")),
+          inputEstimate.totalTokens,
           usage?.outputTokens ?? estimateTokens(content),
         );
       await events.onFusionTerminal(attemptId, {
-        status: "completed", result: content, usage, cost: resolvedCost, error: null, finishedAt: now(),
+        status: "completed", result: content, usage, inputEstimate, cost: resolvedCost, error: null, finishedAt: now(),
       });
+      devTerminalLog("fusion.request.completed", {
+        attemptId,
+        modelKey: `${request.critic.providerId}:${request.critic.model}`,
+        stage: "fusion",
+        status: "completed",
+        durationMs: Date.now() - fusionLogStartedAt,
+      }, "info");
       return { ok: true, result: content };
     } catch (err) {
+      if (isExecutionTimeoutError(err)) {
+        const error = sanitizeError(err, { category: "timeout", stage: "fusion", model: request.critic.model });
+        await events.onFusionTerminal(attemptId, {
+          status: "failed", result: null,
+          error,
+          finishedAt: now(),
+        }).catch(() => {});
+        devTerminalLog("fusion.request.failed", {
+          attemptId,
+          modelKey: `${request.critic.providerId}:${request.critic.model}`,
+          stage: "fusion",
+          status: "failed",
+          durationMs: Date.now() - fusionLogStartedAt,
+          error: error.message,
+          timeoutKind: err.kind,
+        }, "error");
+        return { ok: false, result: null };
+      }
       if (err instanceof DOMException && err.name === "AbortError") {
+        if (isAborted(signal)) {
+          devTerminalLog("fusion.request.aborted", {
+            attemptId,
+            modelKey: `${request.critic.providerId}:${request.critic.model}`,
+            stage: "fusion",
+            status: "aborted",
+            durationMs: Date.now() - fusionLogStartedAt,
+          }, "warn");
+        }
         await events.onFusionTerminal(attemptId, {
           status: "aborted", result: null, error: null, finishedAt: now(),
         }).catch(() => {});
         return { ok: false, result: null };
       }
-      if (isAborted(signal)) return { ok: false, result: null };
+      if (isAborted(signal)) {
+        devTerminalLog("fusion.request.aborted", {
+          attemptId,
+          modelKey: `${request.critic.providerId}:${request.critic.model}`,
+          stage: "fusion",
+          status: "aborted",
+          durationMs: Date.now() - fusionLogStartedAt,
+        }, "warn");
+        return { ok: false, result: null };
+      }
+      const error = sanitizeError(err, { category: "provider", stage: "fusion", model: request.critic.model });
       await events.onFusionTerminal(attemptId, {
         status: "failed", result: null,
-        error: sanitizeError(err, { category: "provider", stage: "fusion", model: request.critic.model }), finishedAt: now(),
+        error, finishedAt: now(),
       }).catch(() => {});
+      devTerminalLog("fusion.request.failed", {
+        attemptId,
+        modelKey: `${request.critic.providerId}:${request.critic.model}`,
+        stage: "fusion",
+        status: "failed",
+        durationMs: Date.now() - fusionLogStartedAt,
+        error: error.message,
+      }, "error");
       return { ok: false, result: null };
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -656,7 +868,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           throw new Error(`candidateExecution: missing seed attempt ID for reused candidate ${c.id}`);
         }
       }
-      const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; finishedAt: number; content: string }> = new Map();
+      const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; finishedAt: number; content: string }> = new Map();
 
       // Execute only the requested model keys.
       const executeJobs = jobs.filter((j) => executeSet.has(`${j.providerId}:${j.slug}`));
@@ -701,27 +913,35 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
             return;
           }
 
-          events.onCandidateTerminal(job.id, {
-            segments: result.segments,
-            summary: result.summary,
-            tokensIn: result.tokensIn,
-            tokensOut: result.tokensOut,
-            finishedAt: result.finishedAt,
-          });
+          // Persist and fence the terminal attempt before making it visible to
+          // the UI or adding it to the successful candidate set. A reclaimed
+          // controller must not turn a late provider result into accepted state.
+          try {
+            await events.onCandidateAttemptTerminal(job.id, attemptId, {
+              status: "completed",
+              output: result.content,
+              tokensIn: result.tokensIn,
+              tokensOut: result.tokensOut,
+              usage: result.usage,
+              inputEstimate: result.inputEstimate,
+              cost: result.cost,
+              error: null,
+              finishedAt: result.finishedAt,
+            });
+            await events.onCandidateTerminal(job.id, {
+              segments: result.segments,
+              summary: result.summary,
+              tokensIn: result.tokensIn,
+              tokensOut: result.tokensOut,
+              inputEstimate: result.inputEstimate,
+              finishedAt: result.finishedAt,
+            });
+          } catch {
+            return;
+          }
 
           candidateAttemptIds[job.id] = attemptId;
           candidateResults.set(job.id, result);
-
-          await events.onCandidateAttemptTerminal(job.id, attemptId, {
-            status: "completed",
-            output: result.content,
-            tokensIn: result.tokensIn,
-            tokensOut: result.tokensOut,
-            usage: result.usage,
-            cost: result.cost,
-            error: null,
-            finishedAt: result.finishedAt,
-          }).catch(() => {});
         }),
       );
 
@@ -798,7 +1018,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (isAborted(signal)) return;
 
     const candidateAttemptIds: Record<string, string> = {};
-    const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number; tokensOut: number; finishedAt: number; content: string }> = new Map();
+    const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; finishedAt: number; content: string }> = new Map();
 
     await Promise.all(
       jobs.map(async (job): Promise<void> => {
@@ -844,27 +1064,34 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           return;
         }
 
-        events.onCandidateTerminal(job.id, {
-          segments: result.segments,
-          summary: result.summary,
-          tokensIn: result.tokensIn,
-          tokensOut: result.tokensOut,
-          finishedAt: result.finishedAt,
-        });
+        // Persist and fence the terminal attempt before making it visible to
+        // the UI or adding it to the successful candidate set.
+        try {
+          await events.onCandidateAttemptTerminal(job.id, attemptId, {
+            status: "completed",
+            output: result.content,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+            usage: result.usage,
+            inputEstimate: result.inputEstimate,
+            cost: result.cost,
+            error: null,
+            finishedAt: result.finishedAt,
+          });
+          await events.onCandidateTerminal(job.id, {
+            segments: result.segments,
+            summary: result.summary,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+            inputEstimate: result.inputEstimate,
+            finishedAt: result.finishedAt,
+          });
+        } catch {
+          return;
+        }
 
         candidateAttemptIds[job.id] = attemptId;
         candidateResults.set(job.id, result);
-
-        await events.onCandidateAttemptTerminal(job.id, attemptId, {
-          status: "completed",
-          output: result.content,
-          tokensIn: result.tokensIn,
-          tokensOut: result.tokensOut,
-          usage: result.usage,
-          cost: result.cost,
-          error: null,
-          finishedAt: result.finishedAt,
-        }).catch(() => {});
       }),
     );
 
@@ -985,24 +1212,31 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       return; // failure → no downstream calls
     }
 
-    events.onCandidateTerminal(job.id, {
-      segments: result.segments,
-      summary: result.summary,
-      tokensIn: result.tokensIn,
-      tokensOut: result.tokensOut,
-      finishedAt: result.finishedAt,
-    });
-
-    await events.onCandidateAttemptTerminal(job.id, attemptId, {
-      status: "completed",
-      output: result.content,
-      tokensIn: result.tokensIn,
-      tokensOut: result.tokensOut,
-      usage: result.usage,
-      cost: result.cost,
-      error: null,
-      finishedAt: result.finishedAt,
-    }).catch(() => {});
+    // Persist and fence the terminal attempt before making it visible to the
+    // UI or allowing the retry to proceed to Judge.
+    try {
+      await events.onCandidateAttemptTerminal(job.id, attemptId, {
+        status: "completed",
+        output: result.content,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
+        usage: result.usage,
+        inputEstimate: result.inputEstimate,
+        cost: result.cost,
+        error: null,
+        finishedAt: result.finishedAt,
+      });
+      await events.onCandidateTerminal(job.id, {
+        segments: result.segments,
+        summary: result.summary,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
+        inputEstimate: result.inputEstimate,
+        finishedAt: result.finishedAt,
+      });
+    } catch {
+      return;
+    }
 
     if (isAborted(signal)) return;
 

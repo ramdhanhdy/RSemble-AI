@@ -126,7 +126,7 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
       <TaskInput prompt="hello" exampleIndex={-1} dispatch={noop} attachments={[IMAGE_ATTACHMENT]} onAddFiles={noAddFiles} />,
     );
     // 1024×512 → ceil(1024/512)×ceil(512/512)×170 + 85 = 425.
-    expect(html).toContain("+425 from files");
+    expect(html).toContain("native media cost unknown");
   });
 
   it("keeps the plain counter when no attachments are present", () => {

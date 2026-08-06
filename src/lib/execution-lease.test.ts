@@ -257,7 +257,12 @@ describe("createExecutionLease (Dexie-backed)", () => {
     // A fresh acquisition wins with an incremented fence.
     const taken = await lease.acquire();
     expect(taken.fence).toBe(2);
-    expect(taken.ownerId).not.toBe(acquired.ownerId);
+    // A lease repository represents one stable browser tab/session; takeover
+    // after expiry advances the fence while retaining that tab identity.
+    expect(taken.ownerId).toBe(acquired.ownerId);
+    expect(taken.leaseId).not.toBe(acquired.leaseId);
+    expect(taken.acquiredAt).toBe(clock.now());
+    expect(taken.heartbeatAt).toBe(clock.now());
   });
 
   // Test 4: only the lease owner converts stale "running" runs to "interrupted".
@@ -525,5 +530,39 @@ describe("InMemoryExecutionLease", () => {
     expect(await tabB.isOwner()).toBe(false);
     const current = await tabB.getCurrent();
     expect(current).not.toBeNull();
+  });
+});
+
+
+describe("ExecutionLease metadata and fencing (Plan 005)", () => {
+  it("records kind, execution identity, acquisition/heartbeat timestamps and initial subscription state", async () => {
+    let now = 1000;
+    const store = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const lease = new InMemoryExecutionLease(store, null, { now: () => now, ownerId: "tab-a", ttl: 100 });
+    const states: string[] = [];
+    const unsubscribe = lease.subscribe((state) => states.push(state.status));
+    const acquired = await lease.acquire({ kind: "compare", executionId: "run-a" });
+    expect(acquired).toMatchObject({ ownerId: "tab-a", kind: "compare", executionId: "run-a", acquiredAt: 1000, heartbeatAt: 1000, fence: 1 });
+    expect(acquired.leaseId).toBeTruthy();
+    expect(states[0]).toBe("free");
+    expect(states).toContain("owned");
+    unsubscribe();
+    lease.dispose();
+  });
+
+  it("stale release and heartbeat cannot affect a newer reclaimed lease", async () => {
+    let now = 0;
+    const store = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const a = new InMemoryExecutionLease(store, null, { now: () => now, ownerId: "tab-a", ttl: 10 });
+    const b = new InMemoryExecutionLease(store, null, { now: () => now, ownerId: "tab-b", ttl: 10 });
+    const old = await a.acquire({ kind: "compare", executionId: "old" });
+    now = 11;
+    const fresh = await b.acquire({ kind: "compare", executionId: "new" });
+    expect(fresh.fence).toBe(2);
+    await a.release();
+    expect(store.lease?.leaseId).toBe(fresh.leaseId);
+    await expect(a.renew()).rejects.toMatchObject({ kind: "expired" });
+    expect(store.lease?.executionId).toBe("new");
+    expect(old.leaseId).not.toBe(fresh.leaseId);
   });
 });

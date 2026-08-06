@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
+import { inputUsageLabel } from "../../lib/cost";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import { formatRunDetail, type DetailSection } from "./run-view-model";
@@ -347,8 +348,8 @@ function CandidatesSection({
               </span>
             )}
           </div>
-          <div className="mb-2 flex gap-3 text-xs text-text-muted tabular-nums">
-            {acceptedAttempt.tokensIn != null && <span>In: {acceptedAttempt.tokensIn}</span>}
+          <div className="mb-2 flex flex-wrap gap-3 text-xs text-text-muted tabular-nums">
+            <span data-input-usage="">{inputUsageLabel(acceptedAttempt.inputEstimate, acceptedAttempt.tokensIn)}</span>
             {acceptedAttempt.tokensOut != null && <span>Out: {acceptedAttempt.tokensOut}</span>}
             {acceptedAttempt.finishedAt != null && acceptedAttempt.startedAt != null && (
               <span>Latency: {Math.round((acceptedAttempt.finishedAt - acceptedAttempt.startedAt) / 1000)}s</span>
@@ -393,6 +394,9 @@ function JudgeAttemptPanel({
         <span className="text-text-muted">·</span>
         <span className="text-text-muted">Attempt {attempt.attemptId.slice(0, 8)}</span>
       </div>
+      <p data-input-usage="" className="mb-2 text-xs text-text-muted tabular-nums">
+        {inputUsageLabel(attempt.inputEstimate, attempt.usage?.inputTokens)}
+      </p>
       {/* Blind-label mapping — persisted mapping only, never recomputed */}
       <div className="mb-2 flex flex-wrap gap-2 text-sm">
         <span className="text-text-muted">Blind-label mapping:</span>
@@ -483,6 +487,9 @@ function FusionSection({ record }: { record: RunRecordV2 }) {
           <div className="mb-2 text-sm text-text-muted">
             <CompactModelLabel providerId={accepted.providerId} slug={accepted.model} />
           </div>
+          <p data-input-usage="" className="mb-2 text-xs text-text-muted tabular-nums">
+            {inputUsageLabel(accepted.inputEstimate, accepted.usage?.inputTokens)}
+          </p>
           <div className="prose prose-invert max-w-none text-sm">
             <Markdown text={accepted.result} />
           </div>

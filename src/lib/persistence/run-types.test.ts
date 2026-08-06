@@ -27,6 +27,7 @@ import type {
   PersistedCandidate,
   RunArchiveV1,
   RunRecordV2,
+  FusionAttemptRecord,
 } from "./run-types";
 import {
   isAttemptStatus,
@@ -317,6 +318,36 @@ describe("missing IDs", () => {
       { role: "developer", content: "bad role" },
     ];
     expect(isPersistedCandidate(c)).toBe(false);
+  });
+});
+
+describe("fusion usage provenance", () => {
+  const fusionAttempt: FusionAttemptRecord = {
+    attemptId: "fusion-1",
+    providerId: "openrouter",
+    model: "judge",
+    messages: [{ role: "user", content: "judge" }],
+    sourceJudgeAttemptId: "judge-1",
+    candidateAttemptIdsByCandidateId: {},
+    startedAt: 1,
+    finishedAt: 2,
+    status: "completed",
+    error: null,
+    result: "fused",
+    usage: { inputTokens: 10, outputTokens: 2, reasoningTokens: null, cacheReadTokens: null, cacheWriteTokens: null },
+    inputEstimate: { totalTokens: 10, textTokens: 10, method: "provider-reported", partial: false },
+    cost: { usd: null, source: "unknown" },
+  };
+
+  it("accepts additive fusion usage fields and rejects malformed fields", () => {
+    const r = validRunRecord();
+    r.fusion.attempts = [clone(fusionAttempt)];
+    expect(isRunRecordV2(r)).toBe(true);
+    const malformed = clone(r) as unknown as Record<string, unknown>;
+    const fusion = malformed.fusion as Record<string, unknown>;
+    const attempts = fusion.attempts as Array<Record<string, unknown>>;
+    attempts[0].inputEstimate = { totalTokens: -1, textTokens: 1, method: "text-heuristic", partial: true };
+    expect(isRunRecordV2(malformed)).toBe(false);
   });
 });
 

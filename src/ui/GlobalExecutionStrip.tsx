@@ -21,6 +21,7 @@ import type { ExperimentRecord } from "../lib/evaluations/evaluation-types";
 import { useExecutionOwner } from "../lib/execution-owner-context";
 import { useEvaluationRepository, useStorageState } from "../lib/persistence/repository-context";
 import { useExecutionLease } from "../lib/evaluations/experiment-controller-hooks";
+import type { LeaseInfo } from "../lib/execution-lease";
 
 // --- View model ---------------------------------------------------------------
 
@@ -91,19 +92,25 @@ export function buildStripViewModel(deps: {
   pathname: string;
   compareRunning: boolean;
   leaseOwnedElsewhere: boolean;
+  /** Live metadata for an owning tab, when available. */
+  lease?: LeaseInfo | null;
+  now?: () => number;
   storageFailed: boolean;
 }): StripViewModel | null {
-  const { owner, experiment, pathname, compareRunning, leaseOwnedElsewhere, storageFailed } = deps;
+  const { owner, experiment, pathname, compareRunning, leaseOwnedElsewhere, lease, now = () => Date.now(), storageFailed } = deps;
   const alert = storageFailed ? STORAGE_FAILURE_ALERT : null;
 
   if (owner === null) {
     if (!leaseOwnedElsewhere) return null;
     // Execution owned by another tab: this tab has no progress page for it,
     // so the strip is informational only (no View progress link).
+    const leaseKind = lease?.kind === "experiment" ? "Experiment" : "Compare";
+    const elapsedMs = lease?.acquiredAt !== undefined ? Math.max(0, now() - lease.acquiredAt) : null;
+    const age = elapsedMs === null ? "" : ` · ${formatElapsed(elapsedMs)} active`;
     return {
       kind: "other-tab",
-      caption: "Execution is active in another tab",
-      elapsedMs: null,
+      caption: lease ? `${leaseKind} is active in another tab${age}` : "Execution is active in another tab",
+      elapsedMs,
       href: "",
       status: "other-tab",
       alert,
@@ -210,6 +217,11 @@ export function GlobalExecutionStrip({ view }: { view: StripViewModel | null }):
       <span aria-hidden="true" className="min-w-0 flex-1 truncate font-mono text-xs text-text">
         {view.caption}
       </span>
+      {view.status === "other-tab" && (
+        <span data-execution-guidance="" className="max-w-[14rem] shrink-0 truncate text-[11px] text-text-muted">
+          Open the owning execution or wait for lease expiry.
+        </span>
+      )}
       <span className="sr-only">{view.caption}</span>
       {view.elapsedMs !== null && (
         <span className="shrink-0 font-mono text-xs tabular-nums text-text-muted">
@@ -249,6 +261,7 @@ export function GlobalExecutionStripContainer({
 
   const [experiment, setExperiment] = useState<ExperimentRecord | null>(null);
   const [leaseOwnedElsewhere, setLeaseOwnedElsewhere] = useState(false);
+  const [contestedLease, setContestedLease] = useState<LeaseInfo | null>(null);
   const [, setTick] = useState(0);
 
   const ownerKind = owner?.kind ?? null;
@@ -282,10 +295,12 @@ export function GlobalExecutionStripContainer({
   useEffect(() => {
     if (lease === null) {
       setLeaseOwnedElsewhere(false);
+      setContestedLease(null);
       return;
     }
     return lease.subscribe((state) => {
       setLeaseOwnedElsewhere(state.status === "contested");
+      setContestedLease(state.status === "contested" ? state.lease : null);
     });
   }, [lease]);
 
@@ -305,6 +320,7 @@ export function GlobalExecutionStripContainer({
     pathname,
     compareRunning,
     leaseOwnedElsewhere,
+    lease: contestedLease,
     storageFailed: storageState === "blocked" || storageState === "unavailable",
   });
 

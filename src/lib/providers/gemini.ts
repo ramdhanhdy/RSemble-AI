@@ -15,6 +15,13 @@ import { resolveReasoningEffort } from "./reasoning";
 import { credentialStore } from "../credentials/credential-store";
 import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
+import {
+  PROVIDER_DEADLINES,
+  createHeadersReady,
+  runProviderRequest,
+  wrapProviderStream,
+} from "./provider-deadline";
+import { composeAbortSignals, isExecutionTimeoutError, providerAbortError } from "../execution-deadline";
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -163,9 +170,28 @@ function normalizeGeminiCatalog(items: unknown[]): CatalogModel[] {
   return out;
 }
 
+async function runGeminiRequest<T>(
+  opts: ChatOptions,
+  operation: (signal: AbortSignal, onHeadersReady: () => void) => Promise<T>,
+): Promise<T> {
+  return runProviderRequest(operation, {
+    provider: "gemini",
+    model: opts.model,
+    stage: "provider",
+    signal: opts.signal,
+    policy: {
+      ...PROVIDER_DEADLINES,
+      connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,
+      inactivityMs: opts.inactivityMs ?? PROVIDER_DEADLINES.inactivityMs,
+      overallMs: opts.overallMs ?? PROVIDER_DEADLINES.overallMs,
+    },
+  });
+}
+
 export const geminiProvider: LLMProvider = {
   id: "gemini",
   label: "Gemini",
+  executionDeadlines: true,
 
   async testConnection(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness> {
     const candidateKey = apiKey.trim();
@@ -176,7 +202,8 @@ export const geminiProvider: LLMProvider = {
       const raw = await readBoundedResponseText(res).catch(() => "");
       return { ok: false, reason: providerErrorDetail(raw, "Gemini", res.status) };
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      const abort = providerAbortError(err, signal);
+      if (abort !== null) throw abort;
       return { ok: false, reason: "Network error reaching Gemini." };
     }
   },
@@ -205,146 +232,168 @@ export const geminiProvider: LLMProvider = {
     const model = opts.model.startsWith("models/") ? opts.model.slice(7) : opts.model;
     const url = `${BASE_URL}/models/${model}:generateContent?key=${key}`;
     const thinkingConfig = buildThinkingConfig(model, opts.reasoningEffort, opts.reasoningStrict);
-    let res: Response;
     try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction,
-          contents,
-          generationConfig: {
-            temperature: opts.temperature,
-            maxOutputTokens: opts.maxTokens,
-            ...thinkingConfig,
-          },
-        }),
-        signal: opts.signal,
+      return await runGeminiRequest(opts, async (signal, onHeadersReady) => {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction,
+            contents,
+            generationConfig: {
+              temperature: opts.temperature,
+              maxOutputTokens: opts.maxTokens,
+              ...thinkingConfig,
+            },
+          }),
+          signal,
+        });
+        onHeadersReady();
+        if (!res.ok) {
+          const raw = await readBoundedResponseText(res).catch(() => "");
+          throw new ProviderError(providerErrorDetail(raw, "Gemini", res.status), "gemini", res.status);
+        }
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (typeof text !== "string" || text.trim().length === 0) {
+          throw new ProviderError("Gemini returned an empty response.", "gemini");
+        }
+        return text;
       });
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      if (isExecutionTimeoutError(err)) throw err;
+      const abort = providerAbortError(err, opts.signal);
+      if (abort !== null) throw abort;
+      if (err instanceof ProviderError) throw err;
       throw new ProviderError("Network error reaching Gemini. Check your connection.", "gemini");
     }
-
-    if (!res.ok) {
-      // Shared provider-error policy (review fix 3): recognized structured
-      // messages are bounded and credential-redacted; unknown JSON, plain
-      // text, and HTML bodies become a generic status error. The raw body
-      // never reaches ProviderError.message.
-      const raw = await readBoundedResponseText(res).catch(() => "");
-      throw new ProviderError(
-        providerErrorDetail(raw, "Gemini", res.status),
-        "gemini",
-        res.status
-      );
-    }
-
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (typeof text !== "string" || text.trim().length === 0) {
-      throw new ProviderError("Gemini returned an empty response.", "gemini");
-    }
-    return text;
   },
 
-  async *chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
-    const key = getApiKey();
-    if (!key) {
-      throw new ProviderError(
-        "Missing VITE_GEMINI_KEY. Add it to a .env file at the project root.",
-        "gemini"
-      );
-    }
+  chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
+    const headers = createHeadersReady();
+    const streamAbort = new AbortController();
+    const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+    const source = (async function*(): AsyncGenerator<string, void, unknown> {
+      const key = getApiKey();
+      if (!key) {
+        composed.cleanup();
+        throw new ProviderError(
+          "Missing VITE_GEMINI_KEY. Add it to a .env file at the project root.",
+          "gemini"
+        );
+      }
 
-    const { systemInstruction, contents } = mapMessagesToGemini(opts.messages);
-    const model = opts.model.startsWith("models/") ? opts.model.slice(7) : opts.model;
-    const url = `${BASE_URL}/models/${model}:streamGenerateContent?key=${key}&alt=sse`;
-    const thinkingConfig = buildThinkingConfig(model, opts.reasoningEffort, opts.reasoningStrict);
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction,
-          contents,
-          generationConfig: {
-            temperature: opts.temperature,
-            maxOutputTokens: opts.maxTokens,
-            ...thinkingConfig,
-          },
-        }),
-        signal: opts.signal,
-      });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
-      throw new ProviderError("Network error reaching Gemini. Check your connection.", "gemini");
-    }
+      let systemInstruction: unknown;
+      let contents: unknown;
+      let model: string;
+      let url: string;
+      let thinkingConfig: Record<string, unknown>;
+      try {
+        ({ systemInstruction, contents } = mapMessagesToGemini(opts.messages));
+        model = opts.model.startsWith("models/") ? opts.model.slice(7) : opts.model;
+        url = `${BASE_URL}/models/${model}:streamGenerateContent?key=${key}&alt=sse`;
+        thinkingConfig = buildThinkingConfig(model, opts.reasoningEffort, opts.reasoningStrict);
+      } catch (error) {
+        composed.cleanup();
+        throw error;
+      }
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction,
+            contents,
+            generationConfig: {
+              temperature: opts.temperature,
+              maxOutputTokens: opts.maxTokens,
+              ...thinkingConfig,
+            },
+          }),
+          signal: composed.signal,
+        });
+        headers.resolve();
+        if (!res.ok || !res.body) {
+          const raw = await readBoundedResponseText(res).catch(() => "");
+          throw new ProviderError(providerErrorDetail(raw, "Gemini", res.status), "gemini", res.status);
+        }
 
-    if (!res.ok || !res.body) {
-      const raw = await readBoundedResponseText(res).catch(() => "");
-      throw new ProviderError(
-        providerErrorDetail(raw, "Gemini", res.status),
-        "gemini",
-        res.status
-      );
-    }
-
-    // Gemini SSE: data: lines containing { candidates: [{ content: { parts: [{ text }] } }] }
-    // No [DONE] sentinel — stream ends when the reader is done. We still guard
-    // against empty streams and distinguish read failures from aborts.
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let yieldedAny = false;
-
-    try {
-      while (true) {
-        let done: boolean;
-        let value: Uint8Array | undefined;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let yieldedAny = false;
         try {
-          const result = await reader.read();
-          done = result.done;
-          value = result.value;
-        } catch (err) {
-          if (err instanceof DOMException && err.name === "AbortError") throw err;
-          throw new ProviderError(
-            "Gemini stream interrupted — upstream read failure. Partial output discarded.",
-            "gemini",
-          );
-        }
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (line.length === 0 || !line.startsWith("data:")) continue;
-          const payload = line.slice(5).trim();
-          try {
-            const chunk = JSON.parse(payload) as {
-              candidates?: { content?: { parts?: { text?: string }[] } }[];
-            };
-            const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) {
-              yieldedAny = true;
-              yield text;
+          while (true) {
+            let done: boolean;
+            let value: Uint8Array | undefined;
+            try {
+              const result = await reader.read();
+              done = result.done;
+              value = result.value;
+            } catch (err) {
+              const abort = providerAbortError(err, composed.signal);
+              if (abort !== null) throw abort;
+              throw new ProviderError(
+                "Gemini stream interrupted — upstream read failure. Partial output discarded.",
+                "gemini",
+              );
             }
-          } catch {
-            // Buffer incomplete JSON
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            let nl: number;
+            while ((nl = buffer.indexOf("\n")) !== -1) {
+              const line = buffer.slice(0, nl).trim();
+              buffer = buffer.slice(nl + 1);
+              if (line.length === 0 || !line.startsWith("data:")) continue;
+              const payload = line.slice(5).trim();
+              try {
+                const chunk = JSON.parse(payload) as {
+                  candidates?: { content?: { parts?: { text?: string }[] } }[];
+                };
+                const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                  yieldedAny = true;
+                  yield text;
+                }
+              } catch {
+                // Buffer incomplete JSON.
+              }
+            }
           }
+          if (!yieldedAny) {
+            if (composed.signal.aborted) {
+              throw providerAbortError(undefined, composed.signal) ?? new DOMException("Aborted", "AbortError");
+            }
+            throw new ProviderError("Gemini returned an empty stream.", "gemini");
+          }
+        } finally {
+          reader.releaseLock();
         }
+      } catch (err) {
+        headers.resolve();
+        if (isExecutionTimeoutError(err)) throw err;
+        const abort = providerAbortError(err, composed.signal);
+        if (abort !== null) throw abort;
+        if (err instanceof ProviderError) throw err;
+        throw new ProviderError("Network error reaching Gemini. Check your connection.", "gemini");
+      } finally {
+        composed.cleanup();
       }
-      if (!yieldedAny) {
-        if (opts.signal?.aborted) {
-          throw new DOMException("Aborted", "AbortError");
-        }
-        throw new ProviderError("Gemini returned an empty stream.", "gemini");
-      }
-    } finally {
-      reader.releaseLock();
-    }
+    })();
+    return wrapProviderStream(source, headers.promise, {
+      provider: "gemini",
+      model: opts.model,
+      stage: "provider",
+      signal: composed.signal,
+      abortController: streamAbort,
+      policy: {
+        ...PROVIDER_DEADLINES,
+        connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,
+        inactivityMs: opts.inactivityMs ?? PROVIDER_DEADLINES.inactivityMs,
+        overallMs: opts.overallMs ?? PROVIDER_DEADLINES.overallMs,
+      },
+    });
   },
 
   async listModels(signal?: AbortSignal): Promise<CatalogModel[]> {
@@ -363,7 +412,8 @@ export const geminiProvider: LLMProvider = {
     } catch (err) {
       // Preserve abort semantics (spec §9): an aborted list request must
       // propagate, not silently resolve to the fallback.
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      const abort = providerAbortError(err, signal);
+      if (abort !== null) throw abort;
       return fallbackGeminiCatalog();
     }
   },

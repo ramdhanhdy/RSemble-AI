@@ -97,6 +97,9 @@ export interface SanitizeErrorContext {
   category: string;
   stage: string;
   model?: string;
+  timeoutKind?: "connect_timeout" | "stream_inactivity_timeout" | "overall_timeout";
+  configuredDurationMs?: number;
+  elapsedMs?: number;
 }
 
 /**
@@ -115,6 +118,9 @@ export function sanitizePersistedError(
     category: ctx.category,
     stage: ctx.stage,
     ...(ctx.model !== undefined ? { model: ctx.model } : {}),
+    ...(ctx.timeoutKind !== undefined ? { timeoutKind: ctx.timeoutKind } : {}),
+    ...(ctx.configuredDurationMs !== undefined ? { configuredDurationMs: ctx.configuredDurationMs } : {}),
+    ...(ctx.elapsedMs !== undefined ? { elapsedMs: ctx.elapsedMs } : {}),
     at: now(),
   };
 }

@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { createOpenAICompatProvider } from "./openai-compat";
+import { DEFAULT_PROVIDER_DEADLINE_POLICY } from "../execution-deadline";
 
 export const commandcodeProvider = createOpenAICompatProvider({
   id: "commandcode",
@@ -15,4 +16,5 @@ export const commandcodeProvider = createOpenAICompatProvider({
   modelsPath: "/provider/v1/models",
   completionsPath: "/provider/v1/chat/completions",
   supportsImages: true,
+  deadlines: DEFAULT_PROVIDER_DEADLINE_POLICY,
 });

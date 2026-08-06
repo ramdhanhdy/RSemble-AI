@@ -29,6 +29,69 @@ function stubKey() {
   });
 }
 
+describe("createOpenAICompatProvider — abort classification", () => {
+  it("keeps an overall ceiling after headers while response parsing is stalled", async () => {
+    vi.useFakeTimers();
+    try {
+      stubKey();
+      const body = new ReadableStream<Uint8Array>({ pull: () => new Promise<void>(() => {}) });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 200 })));
+      const provider = createOpenAICompatProvider({
+        ...config,
+        deadlines: { connectMs: 10, inactivityMs: 20, overallMs: 30 },
+      });
+      const pending = provider.chatCompletion({
+        model: "m",
+        messages: [{ role: "user", content: "hi" }],
+      }).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(30);
+      await expect(pending).resolves.toMatchObject({ kind: "overall_timeout", providerId: "umans" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not wrap a caller abort as a network ProviderError", async () => {
+    stubKey();
+    const ctrl = new AbortController();
+    ctrl.abort(new Error("user stopped the request"));
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("aborted")));
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider.chatCompletion({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+      signal: ctrl.signal,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DOMException);
+    expect((err as DOMException).name).toBe("AbortError");
+    expect(err).not.toBeInstanceOf(ProviderError);
+  });
+});
+
+describe("createOpenAICompatProvider — deadline integration", () => {
+  it("classifies a fetch that never reaches response headers as connect_timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      stubKey();
+      vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+      const provider = createOpenAICompatProvider({
+        ...config,
+        deadlines: { connectMs: 10, inactivityMs: 20 },
+      });
+      const pending = provider.chatCompletion({
+        model: "m",
+        messages: [{ role: "user", content: "hi" }],
+      }).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(10);
+      await expect(pending).resolves.toMatchObject({ kind: "connect_timeout", providerId: "umans" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+});
+
 describe("createOpenAICompatProvider — error preservation", () => {
   it("maps plain-text (non-JSON) upstream error bodies to a generic status error (review fix 3)", async () => {
     stubKey();

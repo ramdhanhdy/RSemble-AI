@@ -66,6 +66,15 @@ export interface UsageBreakdown {
   cacheWriteTokens: number | null;
 }
 
+/** Additive provenance for fallback input-usage accounting. */
+export interface InputUsageEstimate {
+  totalTokens: number | null;
+  textTokens: number | null;
+  method: "provider-reported" | "text-heuristic" | "provider-specific" | "unknown";
+  partial: boolean;
+  note?: string;
+}
+
 export type CostSource = "provider-reported" | "catalog-estimate" | "unknown";
 
 export interface ModelPricingSnapshot {
@@ -133,6 +142,10 @@ export interface ChatOptions {
   reasoningEffort?: ReasoningEffort;
   /** Strict suite preflight rejects documented aliases/remaps. */
   reasoningStrict?: boolean;
+  /** Paid-request clocks applied at the provider fetch boundary. */
+  connectMs?: number;
+  inactivityMs?: number;
+  overallMs?: number;
   signal?: AbortSignal;
 }
 
@@ -153,6 +166,8 @@ export type ProviderReadiness =
 export interface LLMProvider {
   readonly id: ProviderId;
   readonly label: string;
+  /** True when the adapter owns response-header and stream clocks at fetch. */
+  readonly executionDeadlines?: boolean;
 
   /** Sync/async check: credentials + (for Codex) bridge reachability. */
   readiness(signal?: AbortSignal): ProviderReadiness | Promise<ProviderReadiness>;

@@ -16,6 +16,13 @@ import { bridgeAuthHeaders } from "./bridge-auth";
 import { buildBridgeRequestBody } from "./bridge-body";
 import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
+import {
+  PROVIDER_DEADLINES,
+  createHeadersReady,
+  runProviderRequest,
+  wrapProviderStream,
+} from "./provider-deadline";
+import { composeAbortSignals, isExecutionTimeoutError, providerAbortError } from "../execution-deadline";
 
 function getBridgeUrl(): string {
   return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
@@ -47,9 +54,32 @@ async function parseBridgeError(res: Response, label: string): Promise<ProviderE
   return new ProviderError(providerErrorDetail(raw, label, res.status), "chatgpt-codex", res.status);
 }
 
+function deadlinePolicy(opts: ChatOptions): typeof PROVIDER_DEADLINES {
+  const policy = {
+    connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,
+    inactivityMs: opts.inactivityMs ?? PROVIDER_DEADLINES.inactivityMs,
+    ...(opts.overallMs === undefined ? {} : { overallMs: opts.overallMs }),
+  };
+  return policy;
+}
+
+async function runCodexRequest<T>(
+  opts: ChatOptions,
+  operation: (signal: AbortSignal, onHeadersReady: () => void) => Promise<T>,
+): Promise<T> {
+  return runProviderRequest(operation, {
+    provider: "chatgpt-codex",
+    model: opts.model,
+    stage: "provider",
+    signal: opts.signal,
+    policy: deadlinePolicy(opts),
+  });
+}
+
 export const chatgptCodexProvider: LLMProvider = {
   id: "chatgpt-codex",
   label: "ChatGPT (Codex)",
+  executionDeadlines: true,
 
   async readiness(signal?: AbortSignal): Promise<ProviderReadiness> {
     const baseUrl = getBridgeUrl();
@@ -88,7 +118,8 @@ export const chatgptCodexProvider: LLMProvider = {
         reason: data.error || "ChatGPT (Codex) not logged in. Run 'codex login'.",
       };
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      const abort = providerAbortError(err, signal);
+      if (abort !== null) throw abort;
       return {
         ok: false,
         reason: "Codex bridge unreachable on 127.0.0.1:8787. Start the bridge (npm run dev:bridge).",
@@ -99,75 +130,95 @@ export const chatgptCodexProvider: LLMProvider = {
   async chatCompletion(opts: ChatOptions): Promise<string> {
     const baseUrl = getBridgeUrl();
     validateReasoning(opts);
-    let res: Response;
     try {
-      const body = buildBody(
-        {
-          model: opts.model,
-          messages: opts.messages,
-          temperature: opts.temperature,
-          max_tokens: opts.maxTokens,
-        },
-        opts.messages.some((m) => Array.isArray(m.content)),
-      );
-      res = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...bridgeAuthHeaders() },
-        body,
-        signal: opts.signal,
+      return await runCodexRequest(opts, async (signal, onHeadersReady) => {
+        const body = buildBody(
+          {
+            model: opts.model,
+            messages: opts.messages,
+            temperature: opts.temperature,
+            max_tokens: opts.maxTokens,
+          },
+          opts.messages.some((m) => Array.isArray(m.content)),
+        );
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...bridgeAuthHeaders() },
+          body,
+          signal,
+        });
+        onHeadersReady();
+        if (!res.ok) throw await parseBridgeError(res, "ChatGPT (Codex)");
+
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (typeof content !== "string" || content.trim().length === 0) {
+          throw new ProviderError("ChatGPT (Codex) returned an empty response.", "chatgpt-codex");
+        }
+        return content;
       });
     } catch (err) {
+      if (isExecutionTimeoutError(err)) throw err;
+      const abort = providerAbortError(err, opts.signal);
+      if (abort !== null) throw abort;
       if (err instanceof ProviderError) throw err;
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
       throw new ProviderError(
         "Network error reaching Codex bridge on 127.0.0.1. Ensure bridge is running.",
-        "chatgpt-codex"
+        "chatgpt-codex",
       );
     }
-
-    if (!res.ok) throw await parseBridgeError(res, "ChatGPT (Codex)");
-
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (typeof content !== "string" || content.trim().length === 0) {
-      throw new ProviderError("ChatGPT (Codex) returned an empty response.", "chatgpt-codex");
-    }
-    return content;
   },
 
-  async *chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
+  chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
     const baseUrl = getBridgeUrl();
-    validateReasoning(opts);
-    let res: Response;
-    try {
-      const body = buildBody(
-        {
-          model: opts.model,
-          messages: opts.messages,
-          temperature: opts.temperature,
-          max_tokens: opts.maxTokens,
-          stream: true,
-        },
-        opts.messages.some((m) => Array.isArray(m.content)),
-      );
-      res = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...bridgeAuthHeaders() },
-        body,
-        signal: opts.signal,
-      });
-    } catch (err) {
-      if (err instanceof ProviderError) throw err;
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
-      throw new ProviderError(
-        "Network error reaching Codex bridge on 127.0.0.1. Ensure bridge is running.",
-        "chatgpt-codex"
-      );
-    }
-
-    if (!res.ok || !res.body) throw await parseBridgeError(res, "ChatGPT (Codex)");
-
-    yield* readSseChatStream(res.body, "chatgpt-codex", "ChatGPT (Codex)", opts.signal);
+    const headers = createHeadersReady();
+    const streamAbort = new AbortController();
+    const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+    const streamOpts = { ...opts, signal: composed.signal };
+    const source = (async function*(): AsyncGenerator<string, void, unknown> {
+      try {
+        validateReasoning(opts);
+        const body = buildBody(
+          {
+            model: opts.model,
+            messages: opts.messages,
+            temperature: opts.temperature,
+            max_tokens: opts.maxTokens,
+            stream: true,
+          },
+          opts.messages.some((m) => Array.isArray(m.content)),
+        );
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...bridgeAuthHeaders() },
+          body,
+          signal: composed.signal,
+        });
+        headers.resolve();
+        if (!res.ok || !res.body) throw await parseBridgeError(res, "ChatGPT (Codex)");
+        yield* readSseChatStream(res.body, "chatgpt-codex", "ChatGPT (Codex)", composed.signal);
+      } catch (err) {
+        headers.resolve();
+        if (isExecutionTimeoutError(err)) throw err;
+        const abort = providerAbortError(err, composed.signal);
+        if (abort !== null) throw abort;
+        if (err instanceof ProviderError) throw err;
+        throw new ProviderError(
+          "Network error reaching Codex bridge on 127.0.0.1. Ensure bridge is running.",
+          "chatgpt-codex",
+        );
+      } finally {
+        composed.cleanup();
+      }
+    })();
+    return wrapProviderStream(source, headers.promise, {
+      provider: "chatgpt-codex",
+      model: opts.model,
+      stage: "provider",
+      signal: composed.signal,
+      abortController: streamAbort,
+      policy: deadlinePolicy(streamOpts),
+    });
   },
 
   async listModels(signal?: AbortSignal): Promise<CatalogModel[]> {
@@ -192,7 +243,8 @@ export const chatgptCodexProvider: LLMProvider = {
         };
       });
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      const abort = providerAbortError(err, signal);
+      if (abort !== null) throw abort;
       if (err instanceof ProviderError) throw err;
       return [];
     }

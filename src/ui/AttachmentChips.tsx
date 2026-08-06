@@ -7,7 +7,7 @@
 // because picker rejections must be user-visible, not just spoken (spec §3.1).
 // =============================================================================
 
-import { FileCode2, FileText, FileType2, ImageIcon, X } from "lucide-react";
+import { FileCode2, FileText, FileType2, ImageIcon, X, RotateCcw } from "lucide-react";
 import type { Attachment } from "../lib/attachments/types";
 import { formatBytes } from "../lib/attachments/limits";
 import type { AttachmentNotice } from "./useAttachments";
@@ -37,14 +37,14 @@ function KindIcon({ kind }: { kind: Attachment["kind"] }) {
 
 function statusLine(a: Attachment): string {
   if (a.status === "error") return middleEllipsis(a.error ?? "Failed", 48);
-  if (a.status === "reading") return "Reading…";
+  if (a.status === "reading" || a.status === "extracting") return "Reading…";
   const size = formatBytes(a.bytes);
   return a.pages !== undefined ? `${size} · ${a.pages} page${a.pages === 1 ? "" : "s"}` : size;
 }
 
 function statusClass(a: Attachment): string {
   if (a.status === "error") return "text-error";
-  if (a.status === "reading") return "text-text-muted";
+  if (a.status === "reading" || a.status === "extracting") return "text-text-muted";
   return "text-text-secondary";
 }
 
@@ -64,11 +64,13 @@ export function AttachmentChips({
   thumbnails,
   notice,
   onRemove,
+  onRetry,
 }: {
   attachments: Attachment[];
   thumbnails: Record<string, string>;
   notice: AttachmentNotice | null;
   onRemove: (id: string) => void;
+  onRetry?: (id: string) => void;
 }) {
   if (attachments.length === 0 && notice === null) return null;
 
@@ -103,6 +105,17 @@ export function AttachmentChips({
                   </span>
                   <span className={`block text-[11px] ${statusClass(a)}`}>{statusLine(a)}</span>
                 </div>
+                {a.status === "error" && onRetry && (
+                  <button
+                    type="button"
+                    onClick={() => onRetry(a.id)}
+                    aria-label={`Retry ${a.name}`}
+                    title={`Retry ${a.name}`}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-card-hover hover:text-warning"
+                  >
+                    <RotateCcw size={13} aria-hidden="true" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => onRemove(a.id)}

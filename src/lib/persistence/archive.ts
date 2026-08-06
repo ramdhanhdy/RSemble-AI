@@ -40,6 +40,7 @@ import {
 } from "../evaluations/evaluation-types";
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
 import { REDACTED } from "./error-redaction";
+import { inputUsageLabel } from "../cost";
 
 // --- Archive shape -------------------------------------------------------------
 
@@ -615,6 +616,9 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       candidate.attempts.find((a) => a.attemptId === candidate.acceptedAttemptId) ??
       candidate.attempts[candidate.attempts.length - 1];
     lines.push(`### ${mdSafe(candidate.model)} (${mdSafe(candidate.providerId)}:${mdSafe(candidate.slug)})`, ``);
+    if (attempt) {
+      lines.push(`- ${inputUsageLabel(attempt.inputEstimate, attempt.tokensIn)}`, ``);
+    }
     if (attempt && typeof attempt.output === "string") {
       lines.push(attempt.output, ``);
     } else if (attempt && attempt.error !== null) {
@@ -625,6 +629,12 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
   }
 
   const report = record.judge.report;
+  const acceptedJudgeAttempt = record.judge.acceptedAttemptId
+    ? record.judge.attempts.find((a) => a.attemptId === record.judge.acceptedAttemptId)
+    : undefined;
+  if (acceptedJudgeAttempt) {
+    lines.push(`## Judge Usage`, ``, `- ${inputUsageLabel(acceptedJudgeAttempt.inputEstimate, acceptedJudgeAttempt.usage?.inputTokens)}`, ``);
+  }
   if (report) {
     lines.push(`## Score Explanations`, ``);
     for (const { label, candidateId } of report.labelMap) {
@@ -690,6 +700,7 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
     record.fusion.attempts.find((a) => a.attemptId === record.fusion.acceptedAttemptId) ??
     record.fusion.attempts[record.fusion.attempts.length - 1];
   if (fusionAttempt && typeof fusionAttempt.result === "string") {
+    lines.push(`## Fusion Usage`, ``, `- ${inputUsageLabel(fusionAttempt.inputEstimate, fusionAttempt.usage?.inputTokens)}`, ``);
     lines.push(`## Fused Answer`, ``, fusionAttempt.result, ``);
   }
 

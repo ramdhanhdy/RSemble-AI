@@ -6,6 +6,7 @@ import type { Candidate } from "../studio-data";
 import type { StreamDeltaBuffer } from "./stream-buffer";
 import { ProviderError, type ProviderId } from "./providers/types";
 import type { EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
+import { InMemoryExecutionLease, type ExecutionLease } from "./execution-lease";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -89,6 +90,33 @@ function makeDeps(state: StudioState, now: () => number = () => Date.now()) {
   return { deps, dispatched, stateRef, runEpochRef, abortControllersRef };
 }
 
+function linkedLeaseChannels(): [unknown, unknown] {
+  type Listener = ((event: { data: unknown }) => void) | null;
+  const listeners = new Set<(event: { data: unknown }) => void>();
+  const endpoint = () => {
+    let listener: Listener = null;
+    const channel = {
+      postMessage(data: unknown) {
+        for (const other of [...listeners]) other({ data });
+      },
+      close() {
+        if (listener) listeners.delete(listener);
+        listener = null;
+      },
+      set onmessage(next: Listener) {
+        if (listener) listeners.delete(listener);
+        listener = next;
+        if (listener) listeners.add(listener);
+      },
+      get onmessage() {
+        return listener;
+      },
+    };
+    return channel;
+  };
+  return [endpoint(), endpoint()];
+}
+
 function stateWithSlots(slots: StudioState["slots"], mode: "rank" | "fuse" = "rank"): StudioState {
   return {
     ...initialState,
@@ -159,14 +187,26 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("run-controller — guarded paths", () => {
-  it("runFanout with no enabled slots does nothing (no dispatch, no provider calls)", async () => {
+  it("runFanout with no enabled slots is blocked before any provider call", async () => {
     const state = stateWithSlots([
       { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "a", enabled: false },
     ]);
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
-    expect(dispatched).toHaveLength(0);
+    expect(dispatched).toContainEqual({ type: "FANOUT_BLOCKED", reason: "Enable at least two candidate models." });
+    expect(chatStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("runFanout with exactly one enabled slot is blocked before any provider call", async () => {
+    const state = stateWithSlots([
+      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "a", enabled: true },
+      { id: "s2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "b", enabled: false },
+    ]);
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    expect(dispatched).toContainEqual({ type: "FANOUT_BLOCKED", reason: "Add or enable one more candidate to compare." });
     expect(chatStreamMock).not.toHaveBeenCalled();
   });
 
@@ -435,6 +475,30 @@ describe("run-controller — guarded paths", () => {
     expect(chatCompletionMock).toHaveBeenCalledTimes(1);
     expect(addRun).not.toHaveBeenCalled();
     expect(dispatched.map((a) => a.type)).not.toContain("FUSION_START");
+  });
+
+  it("keeps frozen Fuse active through Fusion when the UI switches to Rank", async () => {
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    const { deps, stateRef, dispatched } = makeDeps(state);
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    deps.lease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-fuse", now: () => 1000, ttl: 10_000 });
+    let candidateCall = 0;
+    chatStreamMock.mockImplementation(() => (async function* () {
+      candidateCall += 1;
+      stateRef.current = { ...stateRef.current, mode: "rank" };
+      yield `answer-${candidateCall}`;
+    })());
+    chatCompletionMock
+      .mockResolvedValueOnce(judgeResponse([["A", 4.0], ["B", 3.0]]))
+      .mockResolvedValueOnce("fused answer");
+
+    await createRunController(deps).runFanout();
+
+    expect(chatCompletionMock).toHaveBeenCalledTimes(2);
+    expect(dispatched.map((a) => a.type)).toContain("FUSION_START");
+    expect(dispatched.map((a) => a.type)).toContain("FUSION_RESULT");
+    expect(stateRef.current.running).toBe(false);
+    expect(shared.lease).toBeNull();
   });
 });
 
@@ -1156,6 +1220,15 @@ function retryJudgeResponse(scores: Array<readonly [string, number]>): string {
 }
 
 describe("run-controller — retryJudge (Judge-only recovery)", () => {
+  it("uses the captured Fuse mode when a legacy context omitted mode", async () => {
+    const state = judgeRetryState("fuse");
+    chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
+    const { deps, dispatched } = makeDeps(state);
+    await createRunController(deps).retryJudge();
+
+    expect(dispatched).toContainEqual(expect.objectContaining({ type: "JUDGE_RESULT", mode: "fuse" }));
+  });
+
   it("makes exactly one Judge completion call and zero candidate stream calls", async () => {
     const state = judgeRetryState();
     chatCompletionMock.mockResolvedValue(retryJudgeResponse([["A", 4.0], ["B", 3.0]]));
@@ -1612,5 +1685,174 @@ describe("retryCandidate — frozen attachment set from runContext (7.6.6)", () 
     const messages = (chatStreamMock.mock.calls[0][0] as { messages: { content: string | unknown[] }[] })
       .messages;
     expect(JSON.stringify(messages)).toContain("attached notes body");
+  });
+});
+
+
+function makeRecorderSpies() {
+  return {
+    begin: vi.fn().mockResolvedValue("run-a"),
+    saveFanout: vi.fn().mockResolvedValue(undefined),
+    beginCandidateAttempt: vi.fn().mockResolvedValue(undefined),
+    finishCandidateAttempt: vi.fn().mockResolvedValue(undefined),
+    beginJudgeAttempt: vi.fn().mockResolvedValue(undefined),
+    finishJudgeAttempt: vi.fn().mockResolvedValue(undefined),
+    beginFusionAttempt: vi.fn().mockResolvedValue(undefined),
+    finishFusionAttempt: vi.fn().mockResolvedValue(undefined),
+    rebindExecution: vi.fn().mockResolvedValue(undefined),
+    markAborted: vi.fn().mockResolvedValue(undefined),
+    getRecord: vi.fn().mockResolvedValue(null),
+  };
+}
+
+function withoutLeaseNotifications(tab: InMemoryExecutionLease): ExecutionLease {
+  return {
+    acquire: tab.acquire.bind(tab),
+    renew: tab.renew.bind(tab),
+    release: tab.release.bind(tab),
+    verify: tab.verify.bind(tab),
+    isOwner: tab.isOwner.bind(tab),
+    getCurrent: tab.getCurrent.bind(tab),
+    subscribe: () => () => {},
+    recoverInterruptedRuns: tab.recoverInterruptedRuns.bind(tab),
+    dispose: tab.dispose.bind(tab),
+  };
+}
+
+describe("run-controller — cross-tab paid execution lease", () => {
+  it("rejects a conflicting live lease before any candidate provider call", async () => {
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const now = () => 1000;
+    const tabA = new InMemoryExecutionLease(shared, null, { ownerId: "tab-a", now, ttl: 10_000 });
+    const tabB = new InMemoryExecutionLease(shared, null, { ownerId: "tab-b", now, ttl: 10_000 });
+    await tabA.acquire({ kind: "compare", executionId: "run-a" });
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps, dispatched } = makeDeps(state);
+    deps.lease = tabB;
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    expect(dispatched).toContainEqual(expect.objectContaining({ type: "FANOUT_BLOCKED", reason: expect.stringContaining("Another execution") }));
+    expect(chatStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("acquires, heartbeats, and releases its lease on terminal execution", async () => {
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const now = () => 1000;
+    const lease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-a", now, ttl: 10_000 });
+    const state = stateWithSlots(TWO_SLOTS);
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValue(JSON.stringify({
+      consensus: [], contradictions: [], uniqueInsights: [], comparisons: [],
+      evaluations: [
+        { label: "A", score: 4, position: "a", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
+        { label: "B", score: 3, position: "b", rationale: "r", strengths: ["s"], deductions: [], missedRequirements: [], criterionScores: [] },
+      ],
+    }));
+    const { deps } = makeDeps(state);
+    deps.lease = lease;
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    expect(shared.lease).toBeNull();
+    expect(chatStreamMock).toHaveBeenCalled();
+  });
+
+  it("rejects a late candidate result after tab B reclaims before tab A's next heartbeat", async () => {
+    let clock = 1_000;
+    const now = () => clock;
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const [channelA, channelB] = linkedLeaseChannels();
+    const tabA = new InMemoryExecutionLease(shared, channelA as never, { ownerId: "tab-a", now, ttl: 10_000 });
+    const tabB = new InMemoryExecutionLease(shared, channelB as never, { ownerId: "tab-b", now, ttl: 10_000 });
+    const recorder = makeRecorderSpies();
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps, dispatched } = makeDeps(state, now);
+    deps.lease = tabA;
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+
+    const resolvers: Array<() => void> = [];
+    chatStreamMock.mockImplementation(() => (async function* () {
+      await new Promise<void>((resolve) => resolvers.push(resolve));
+      yield "late answer from reclaimed tab A";
+    })());
+    const runPromise = createRunController(deps).runFanout();
+    await vi.waitFor(() => expect(chatStreamMock).toHaveBeenCalledTimes(2));
+
+    const stale = shared.lease!;
+    clock += 10_001;
+    const ownerB = await tabB.acquire({ kind: "compare", executionId: "run-b" });
+    for (const resolve of resolvers) resolve();
+    await runPromise;
+
+    const types = dispatched.map((action) => action.type);
+    expect(types).toContain("LEASE_LOST");
+    expect(types).not.toContain("CANDIDATE_RESULT");
+    expect(types).not.toContain("RETRY_CANDIDATE_RESULT");
+    expect(types).not.toContain("JUDGE_START");
+    expect(recorder.finishCandidateAttempt).not.toHaveBeenCalled();
+    expect(shared.lease).toMatchObject(ownerB);
+    await tabA.release(stale);
+    expect(shared.lease).toMatchObject(ownerB);
+  });
+
+  it("rejects a completed Judge terminal acceptance after tab B reclaims", async () => {
+    let clock = 1_000;
+    const now = () => clock;
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const tabA = new InMemoryExecutionLease(shared, null, { ownerId: "tab-a", now, ttl: 10_000 });
+    const tabB = new InMemoryExecutionLease(shared, null, { ownerId: "tab-b", now, ttl: 10_000 });
+    const recorder = makeRecorderSpies();
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps, dispatched } = makeDeps(state, now);
+    deps.lease = withoutLeaseNotifications(tabA);
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    let resolveJudge!: (value: string) => void;
+    chatCompletionMock.mockImplementation(() => new Promise<string>((resolve) => { resolveJudge = resolve; }));
+
+    const runPromise = createRunController(deps).runFanout();
+    await vi.waitFor(() => expect(chatCompletionMock).toHaveBeenCalledTimes(1));
+    const stale = shared.lease!;
+    clock += 10_001;
+    const ownerB = await tabB.acquire({ kind: "compare", executionId: "run-b" });
+    resolveJudge(judgeResponse([["A", 4], ["B", 3]]));
+    await runPromise;
+
+    expect(dispatched.map((action) => action.type)).not.toContain("JUDGE_RESULT");
+    expect(recorder.finishJudgeAttempt).not.toHaveBeenCalled();
+    expect(shared.lease).toMatchObject(ownerB);
+    await tabA.release(stale);
+    expect(shared.lease).toMatchObject(ownerB);
+  });
+
+  it("rejects a completed Fusion terminal acceptance after tab B reclaims", async () => {
+    let clock = 1_000;
+    const now = () => clock;
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const tabA = new InMemoryExecutionLease(shared, null, { ownerId: "tab-a", now, ttl: 10_000 });
+    const tabB = new InMemoryExecutionLease(shared, null, { ownerId: "tab-b", now, ttl: 10_000 });
+    const recorder = makeRecorderSpies();
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    const { deps, dispatched } = makeDeps(state, now);
+    deps.lease = withoutLeaseNotifications(tabA);
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    let resolveFusion!: (value: string) => void;
+    chatCompletionMock
+      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockImplementationOnce(() => new Promise<string>((resolve) => { resolveFusion = resolve; }));
+
+    const runPromise = createRunController(deps).runFanout();
+    await vi.waitFor(() => expect(chatCompletionMock).toHaveBeenCalledTimes(2));
+    const stale = shared.lease!;
+    clock += 10_001;
+    const ownerB = await tabB.acquire({ kind: "compare", executionId: "run-b" });
+    resolveFusion("late fusion from reclaimed tab A");
+    await runPromise;
+
+    expect(dispatched.map((action) => action.type)).not.toContain("FUSION_RESULT");
+    expect(recorder.finishFusionAttempt).not.toHaveBeenCalled();
+    expect(shared.lease).toMatchObject(ownerB);
+    await tabA.release(stale);
+    expect(shared.lease).toMatchObject(ownerB);
   });
 });

@@ -24,6 +24,16 @@ import { buildBridgeRequestBody } from "./bridge-body";
 import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
 import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
+import {
+  DEFAULT_PROVIDER_DEADLINE_POLICY,
+  composeAbortSignals,
+  isExecutionTimeoutError,
+  markStreamHeadersReady,
+  providerAbortError,
+  runWithExecutionDeadlines,
+  streamWithExecutionDeadlines,
+  type ProviderDeadlinePolicy,
+} from "../execution-deadline";
 
 export interface OpenAICompatConfig {
   id: ProviderId;
@@ -58,6 +68,9 @@ export interface OpenAICompatConfig {
    * before any request is sent (spec §5).
    */
   supportsImages?: boolean;
+  /** Optional paid-request deadline policy. Catalog probes remain caller
+   * bounded; production adapters opt into the shared conservative defaults. */
+  deadlines?: Partial<ProviderDeadlinePolicy>;
 }
 
 /** Resolve credentials through the shared CredentialStore (Plan 003 A). */
@@ -98,6 +111,13 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
     bridgeSecret = false,
     bridgeBodyLimitBytes = undefined,
   } = config;
+  const deadlinePolicy = config.deadlines;
+  const requestDeadlinePolicy: ProviderDeadlinePolicy | null = deadlinePolicy
+    ? {
+        ...DEFAULT_PROVIDER_DEADLINE_POLICY,
+        ...deadlinePolicy,
+      }
+    : null;
 
   function getApiKey(): string {
     return getKey(id);
@@ -167,9 +187,39 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
     );
   }
 
+  async function runRequest<T>(
+    opts: ChatOptions,
+    operation: (signal: AbortSignal, onHeadersReady: () => void) => Promise<T>,
+    forceDeadline = false,
+  ): Promise<T> {
+    // The executor already owns a composed signal for paid runs. Preserve the
+    // caller signal identity in that path (some bridge integrations inspect it)
+    // while direct calls without a caller signal still get adapter deadlines.
+    const hasExplicitOverride = opts.connectMs !== undefined || opts.inactivityMs !== undefined || opts.overallMs !== undefined;
+    if (!requestDeadlinePolicy || (opts.signal && !hasExplicitOverride && !forceDeadline)) {
+      return operation(opts.signal ?? new AbortController().signal, () => {});
+    }
+    return runWithExecutionDeadlines(operation, {
+      ...requestDeadlinePolicy,
+      connectMs: opts.connectMs ?? requestDeadlinePolicy.connectMs,
+      overallMs: opts.overallMs ?? requestDeadlinePolicy.overallMs,
+      provider: id,
+      model: opts.model,
+      stage: "provider",
+      signal: opts.signal,
+    });
+  }
+
+  function createHeadersReady(): { promise: Promise<void>; resolve: () => void } {
+    let resolvePromise!: () => void;
+    const promise = new Promise<void>((resolve) => { resolvePromise = resolve; });
+    return { promise, resolve: resolvePromise };
+  }
+
   return {
     id,
     label,
+    executionDeadlines: requestDeadlinePolicy !== null,
 
     async testConnection(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness> {
       const candidateKey = apiKey.trim();
@@ -178,7 +228,8 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
       try {
         res = await probeModels(candidateKey, signal);
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") throw err;
+        const abort = providerAbortError(err, signal);
+        if (abort !== null) throw abort;
         return { ok: false, reason: `Network error reaching ${label}. Check the endpoint or local bridge.` };
       }
       if (!res.ok) {
@@ -240,85 +291,120 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         throw new ProviderError(error instanceof Error ? error.message : String(error), id);
       }
 
-      let res: Response;
       try {
-        const body = buildBody(
-          {
-            model: opts.model,
-            messages: toOpenAIMessages(opts.messages),
-            temperature: opts.temperature,
-            max_tokens: opts.maxTokens,
-            stream: false,
-            ...reasoning,
-          },
-          opts.messages.some((m) => Array.isArray(m.content)),
-        );
-        res = await fetch(`${baseUrl}${completionsPath}`, {
-          method: "POST",
-          headers: buildHeaders(key),
-          body,
-          signal: opts.signal,
+        return await runRequest(opts, async (signal, onHeadersReady) => {
+          const body = buildBody(
+            {
+              model: opts.model,
+              messages: toOpenAIMessages(opts.messages),
+              temperature: opts.temperature,
+              max_tokens: opts.maxTokens,
+              stream: false,
+              ...reasoning,
+            },
+            opts.messages.some((m) => Array.isArray(m.content)),
+          );
+          const res = await fetch(`${baseUrl}${completionsPath}`, {
+            method: "POST",
+            headers: buildHeaders(key),
+            body,
+            signal,
+          });
+          onHeadersReady();
+          if (!res.ok) throw await parseError(res, id);
+          const data = await res.json();
+          const content = data?.choices?.[0]?.message?.content;
+          if (typeof content !== "string" || content.trim().length === 0) {
+            throw new ProviderError(`${label} returned an empty response.`, id);
+          }
+          return content;
         });
       } catch (err) {
+        if (isExecutionTimeoutError(err)) throw err;
+        const abort = providerAbortError(err, opts.signal);
+        if (abort !== null) throw abort;
         if (err instanceof ProviderError) throw err;
-        if (err instanceof DOMException && err.name === "AbortError") throw err;
         throw new ProviderError(`Network error reaching ${label}. Check your connection.`, id);
       }
-
-      if (!res.ok) throw await parseError(res, id);
-
-      const data = await res.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== "string" || content.trim().length === 0) {
-        throw new ProviderError(`${label} returned an empty response.`, id);
-      }
-      return content;
     },
 
-    async *chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
-      const key = getApiKey();
-      if (!key && apiKeyRequired) {
-        throw new ProviderError(
-          `Missing ${envKey}. Add it to a .env file or the Connections panel.`,
-          id
-        );
-      }
-      assertTransportable(opts.messages);
-      let reasoning: Record<string, unknown>;
-      try {
-        reasoning = nativeReasoningPayload(id, opts.model, opts.reasoningEffort, opts.reasoningStrict).payload;
-      } catch (error) {
-        throw new ProviderError(error instanceof Error ? error.message : String(error), id);
-      }
+    chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
+      const headers = createHeadersReady();
+      const streamAbort = new AbortController();
+      const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+      const source = (async function*(): AsyncGenerator<string, void, unknown> {
+        const key = getApiKey();
+        if (!key && apiKeyRequired) {
+          composed.cleanup();
+          throw new ProviderError(
+            `Missing ${envKey}. Add it to a .env file or the Connections panel.`,
+            id
+          );
+        }
+        try {
+          assertTransportable(opts.messages);
+        } catch (error) {
+          composed.cleanup();
+          throw error;
+        }
+        let reasoning: Record<string, unknown>;
+        try {
+          reasoning = nativeReasoningPayload(id, opts.model, opts.reasoningEffort, opts.reasoningStrict).payload;
+        } catch (error) {
+          composed.cleanup();
+          throw new ProviderError(error instanceof Error ? error.message : String(error), id);
+        }
 
-      let res: Response;
-      try {
-        const body = buildBody(
-          {
-            model: opts.model,
-            messages: toOpenAIMessages(opts.messages),
-            temperature: opts.temperature,
-            max_tokens: opts.maxTokens,
-            stream: true,
-            ...reasoning,
-          },
-          opts.messages.some((m) => Array.isArray(m.content)),
-        );
-        res = await fetch(`${baseUrl}${completionsPath}`, {
-          method: "POST",
-          headers: buildHeaders(key),
-          body,
-          signal: opts.signal,
-        });
-      } catch (err) {
-        if (err instanceof ProviderError) throw err;
-        if (err instanceof DOMException && err.name === "AbortError") throw err;
-        throw new ProviderError(`Network error reaching ${label}. Check your connection.`, id);
-      }
-
-      if (!res.ok || !res.body) throw await parseError(res, id);
-
-      yield* readSseChatStream(res.body, id, label, opts.signal);
+        try {
+          // The outer streamWithExecutionDeadlines owns the single connect and
+          // inactivity clock. This fetch resolves the header marker directly;
+          // wrapping it again here would create duplicate clocks.
+          const body = buildBody(
+            {
+              model: opts.model,
+              messages: toOpenAIMessages(opts.messages),
+              temperature: opts.temperature,
+              max_tokens: opts.maxTokens,
+              stream: true,
+              ...reasoning,
+            },
+            opts.messages.some((m) => Array.isArray(m.content)),
+          );
+          const response = await fetch(`${baseUrl}${completionsPath}`, {
+            method: "POST",
+            headers: buildHeaders(key),
+            body,
+            signal: composed.signal,
+          });
+          headers.resolve();
+          const res = response;
+          if (!res.ok || !res.body) throw await parseError(res, id);
+          yield* readSseChatStream(res.body, id, label, composed.signal);
+        } catch (err) {
+          headers.resolve();
+          if (isExecutionTimeoutError(err)) throw err;
+          const abort = providerAbortError(err, composed.signal);
+          if (abort !== null) throw abort;
+          if (err instanceof ProviderError) throw err;
+          throw new ProviderError(`Network error reaching ${label}. Check your connection.`, id);
+        } finally {
+          composed.cleanup();
+        }
+      })();
+      const marked = markStreamHeadersReady(source, headers.promise);
+      if (!requestDeadlinePolicy) return marked as AsyncGenerator<string, void, unknown>;
+      return streamWithExecutionDeadlines(marked, {
+        ...requestDeadlinePolicy,
+        connectMs: opts.connectMs ?? requestDeadlinePolicy.connectMs,
+        inactivityMs: opts.inactivityMs ?? requestDeadlinePolicy.inactivityMs,
+        overallMs: opts.overallMs ?? requestDeadlinePolicy.overallMs,
+        provider: id,
+        model: opts.model,
+        stage: "provider",
+        signal: composed.signal,
+        abortController: streamAbort,
+        headersReady: headers.promise,
+      });
     },
 
     async listModels(signal?: AbortSignal): Promise<CatalogModel[]> {
@@ -362,7 +448,8 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
           })
           .sort((a, b) => a.id.localeCompare(b.id));
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") throw err;
+        const abort = providerAbortError(err, signal);
+        if (abort !== null) throw abort;
         return [];
       }
     },
