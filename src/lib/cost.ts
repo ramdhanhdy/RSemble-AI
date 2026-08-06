@@ -84,7 +84,9 @@ export function estimateAttachmentTokens(
 ): number {
   return attachments.reduce((total, attachment) => {
     if (attachment.kind === "image") return total;
-    if (attachment.kind === "pdf" && typeof attachment.data === "string") return total;
+    // Extracted PDF text is useful partial evidence for text-capable routes;
+    // native file contribution remains Unknown and execution-time messages
+    // decide whether text is actually withheld to avoid double counting.
     return total + (attachment.text ? estimateTokens(attachment.text) : 0);
   }, 0);
 }

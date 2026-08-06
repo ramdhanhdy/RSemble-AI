@@ -24,7 +24,12 @@ export function buildExportMarkdown(s: StudioState): string | null {
   const done = s.candidates.filter((c) => c.status === "done");
   if (done.length === 0 && !s.fusedText) return null;
 
-  const lines: string[] = [`# RSemble AI — Export`, ``, `## Task`, ``, s.prompt, ``];
+  const frozenTask = s.runContext?.task;
+  const exportPrompt = frozenTask?.prompt ?? s.runContext?.prompt ?? s.prompt;
+  const exportAttachments = s.runContext?.attachments ?? s.attachments;
+  const exportMode = s.runContext?.mode ?? s.mode;
+  const exportJudgeInstruction = s.runContext?.judgeInstruction ?? s.judgeInstruction;
+  const lines: string[] = [`# RSemble AI — Export`, ``, `## Task`, ``, exportPrompt, ``];
 
   // Use the frozen run policy, not the mutable command pane. Effective levels
   // are resolved against the frozen candidate/Judge identities so an export
@@ -43,9 +48,9 @@ export function buildExportMarkdown(s: StudioState): string | null {
 
   // Attachment metadata (spec §9, plan 7.7.3) — names/kinds/sizes only, the
   // record never contains the bytes or extracted text.
-  if (s.attachments.length > 0) {
+  if (exportAttachments.length > 0) {
     lines.push(`## Attachments`, ``);
-    for (const a of s.attachments) {
+    for (const a of exportAttachments) {
       lines.push(`- ${a.name} — ${a.kind}, ${formatBytes(a.bytes)}${a.truncated ? " (truncated)" : ""}`);
     }
     lines.push(``);
@@ -53,8 +58,8 @@ export function buildExportMarkdown(s: StudioState): string | null {
 
   // Record how the result was judged when a custom judge instruction was
   // applied — enough context to understand the ranking/fusion afterwards.
-  if (s.judgeInstruction.trim().length > 0) {
-    lines.push(`## Judge Instruction`, ``, s.judgeInstruction.trim(), ``);
+  if (exportJudgeInstruction.trim().length > 0) {
+    lines.push(`## Judge Instruction`, ``, exportJudgeInstruction.trim(), ``);
   }
 
   // Blind judge audit trail — the resolved post-judgment mapping and every
@@ -122,7 +127,7 @@ export function buildExportMarkdown(s: StudioState): string | null {
     }
   }
 
-  if (s.mode === "fuse" && s.fusedText) {
+  if (exportMode === "fuse" && s.fusedText) {
     lines.push(`## Fused Answer`, ``, s.fusedText, ``);
   } else {
     const ranked = [...done].sort((a, b) => b.weightedScore - a.weightedScore);
