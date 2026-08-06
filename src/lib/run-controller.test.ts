@@ -159,14 +159,26 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("run-controller — guarded paths", () => {
-  it("runFanout with no enabled slots does nothing (no dispatch, no provider calls)", async () => {
+  it("runFanout with no enabled slots is blocked before any provider call", async () => {
     const state = stateWithSlots([
       { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "a", enabled: false },
     ]);
     const { deps, dispatched } = makeDeps(state);
     const controller = createRunController(deps);
     await controller.runFanout();
-    expect(dispatched).toHaveLength(0);
+    expect(dispatched).toContainEqual({ type: "FANOUT_BLOCKED", reason: "Enable at least two candidate models." });
+    expect(chatStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("runFanout with exactly one enabled slot is blocked before any provider call", async () => {
+    const state = stateWithSlots([
+      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "a", enabled: true },
+      { id: "s2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "b", enabled: false },
+    ]);
+    const { deps, dispatched } = makeDeps(state);
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    expect(dispatched).toContainEqual({ type: "FANOUT_BLOCKED", reason: "Add or enable one more candidate to compare." });
     expect(chatStreamMock).not.toHaveBeenCalled();
   });
 

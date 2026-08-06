@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { reducer, initialState, type StudioState } from "./studio-engine";
 import type { Candidate } from "./studio-data";
-import type { ProviderId } from "./lib/providers/types";
+import type { ProviderId, ReasoningPolicy } from "./lib/providers/types";
 import type { EvaluationProfileSnapshot } from "./lib/evaluations/evaluation-types";
 import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-profile-adhoc";
 import type { Attachment } from "./lib/attachments/types";
@@ -564,6 +564,35 @@ describe("reducer — retained run evaluation context", () => {
     expect(edited.evaluation).toEqual({ kind: "holistic" });
     const stored = started.runContext?.evaluation;
     expect(stored).toEqual(testEvaluation());
+  });
+
+
+
+  it("FANOUT_START deep-copies the complete reasoning policy into the frozen context", () => {
+    const c1 = makeCandidate("c1", "openrouter", "model-a");
+    const policy: ReasoningPolicy = { candidates: "medium", judge: "high" };
+    const next = reducer(initialState, {
+      type: "FANOUT_START",
+      candidates: [{ ...c1, status: "pending" }],
+      context: {
+        mode: "rank",
+        task: { prompt: "task", systemPrompt: "system", temperature: 0.2 },
+        prompt: "task",
+        evaluation: HOLISTIC_EVALUATION,
+        slots: [{ ...initialState.slots[0] }],
+        critic: { ...initialState.critic },
+        judgeInstruction: "frozen instruction",
+        attachments: [],
+        attachmentsToJudge: true,
+        reasoningPolicy: policy,
+      },
+    });
+    policy.candidates = "low";
+    policy.judge = "minimal";
+    expect(next.runContext?.reasoningPolicy).toEqual({ candidates: "medium", judge: "high" });
+    expect(next.runContext?.reasoningPolicy).not.toBe(policy);
+    expect(next.runContext?.mode).toBe("rank");
+    expect(next.runContext?.task).toEqual({ prompt: "task", systemPrompt: "system", temperature: 0.2 });
   });
 
   it("RESET_SESSION clears the retained run context", () => {

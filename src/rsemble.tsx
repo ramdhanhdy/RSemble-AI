@@ -41,6 +41,7 @@ import { MobileWorkspaceNav } from "./ui/MobileWorkspaceNav";
 import { StreamDeltaBuffer } from "./lib/stream-buffer";
 import { createRunController } from "./lib/run-controller";
 import { checkAttachmentEligibility } from "./lib/pipeline";
+import { evaluateComparePreflight } from "./lib/compare-preflight";
 import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
@@ -124,6 +125,7 @@ export default function RSemble() {
   // never falls back to the legacy localStorage addRun path (spec §7.7).
   // ---------------------------------------------------------------------------
   const runRepo = useRunRepository();
+  const comparePreflightRef = useRef<((current: StudioState) => ReturnType<typeof evaluateComparePreflight>) | null>(null);
   const recorder = useMemo(
     () => (runRepo ? createRunRecorder(runRepo) : null),
     [runRepo],
@@ -137,6 +139,7 @@ export default function RSemble() {
         abortControllersRef,
         streamBuffer,
         recorder: recorder ?? undefined,
+        preflight: (current) => comparePreflightRef.current?.(current) ?? { ok: false, code: "active-execution", message: "Compare preflight is not ready." },
       }),
     [dispatch, streamBuffer, recorder],
   );
@@ -145,16 +148,10 @@ export default function RSemble() {
   // ---------------------------------------------------------------------------
   // Readiness + catalog probes — parallel, bounded, with diagnosable failures.
   // ---------------------------------------------------------------------------
-  const [readinessMap, setReadinessMap] = useState<Record<ProviderId, boolean>>({
-    openrouter: isProviderReadySync("openrouter"),
-    "chatgpt-codex": false,
-    gemini: isProviderReadySync("gemini"),
-    deepseek: isProviderReadySync("deepseek"),
-    commandcode: isProviderReadySync("commandcode"),
-    clinepass: isProviderReadySync("clinepass"),
-    umans: false,
-    "9router": false,
-  });
+  const [readinessMap, setReadinessMap] = useState<Record<ProviderId, boolean>>(() =>
+    Object.fromEntries(listProviders().map((provider) => [provider.id, isProviderReadySync(provider.id)])) as Record<ProviderId, boolean>,
+  );
+  const [readinessReasons, setReadinessReasons] = useState<Partial<Record<ProviderId, string>>>({});
   // False until the first probe cycle has settled. While checking, the header
   // shows a neutral "Checking" pill and no offline banner — an unprobed
   // provider is unknown, not disconnected.
@@ -171,9 +168,10 @@ export default function RSemble() {
     const results = cycle.results;
     setReadinessSettled(true);
     const map: Record<string, boolean> = {};
+    const reasons: Partial<Record<ProviderId, string>> = {};
     const mergedCatalog: CatalogModel[] = [];
     // Only banner errors for providers the user is actually using. An idle
-    // chatgpt-codex catalog timeout must not interrupt a suite on other providers.
+    // catalog timeout must not interrupt a suite on other providers.
     const inUse = new Set<ProviderId>([
       ...stateRef.current.slots.filter((s) => s.enabled).map((s) => s.providerId),
       stateRef.current.critic.providerId,
@@ -181,12 +179,14 @@ export default function RSemble() {
     let firstError: string | null = null;
     for (const r of results) {
       map[r.id] = r.readiness.ok;
+      if (!r.readiness.ok) reasons[r.id] = r.readiness.reason;
       if (r.catalog.length > 0) mergedCatalog.push(...r.catalog);
       if (r.error && !firstError && inUse.has(r.id)) {
         firstError = `${r.id}: ${r.error}`;
       }
     }
     setReadinessMap(map as Record<ProviderId, boolean>);
+    setReadinessReasons(reasons);
     if (mergedCatalog.length > 0) {
       dispatch({ type: "SET_MODELS", models: mergedCatalog });
     }
@@ -258,14 +258,7 @@ export default function RSemble() {
     return () => window.removeEventListener("rsemble:toggle-focus-mode", onToggle);
   }, []);
 
-  const apiKeyPresent =
-    readinessMap.openrouter ||
-    readinessMap["chatgpt-codex"] ||
-    readinessMap.gemini ||
-    readinessMap.deepseek ||
-    readinessMap.commandcode ||
-    readinessMap.clinepass ||
-    readinessMap.umans;
+  const apiKeyPresent = listProviders().some((provider) => readinessMap[provider.id] === true);
   const connectionState: ConnectionState = state.running
     ? "running"
     : apiKeyPresent
@@ -277,23 +270,33 @@ export default function RSemble() {
   // ---------------------------------------------------------------------------
   // Run gate + requestRun
   // ---------------------------------------------------------------------------
-  const enabledSlots = state.slots.filter((s) => s.enabled);
-  const slotsReady = enabledSlots.every((s) => readinessMap[s.providerId] === true);
-  const criticReady = readinessMap[state.critic.providerId] === true;
-
-  // Attachment gate (spec §5.1, plan 7.6.8): Run is disabled while any
-  // attachment is still reading, or when the §5.1 image-eligibility check
-  // blocks the run. The reason surfaces as the Run button caption/tooltip.
-  const attachmentsReady = state.attachments.every((a) => a.status === "ready");
   const attachmentEligibility = checkAttachmentEligibility(state.slots, state.attachments);
-  const attachmentBlockReason =
-    !attachmentsReady && state.attachments.length > 0
-      ? "Waiting for attachments to finish reading…"
-      : "blocked" in attachmentEligibility
-        ? attachmentEligibility.blocked
-        : null;
-  const canRun =
-    !state.running && !experimentActive && state.prompt.trim().length > 0 && enabledSlots.length > 0 && slotsReady && criticReady && attachmentBlockReason === null;
+  const preflight = evaluateComparePreflight({
+    running: state.running,
+    experimentActive,
+    prompt: state.prompt,
+    slots: state.slots,
+    readinessMap,
+    readinessReasons,
+    critic: state.critic,
+    attachments: state.attachments,
+    attachmentEligibility,
+  });
+  const canRun = preflight.ok;
+  const attachmentBlockReason = preflight.ok ? null : preflight.message;
+  // The controller is created once, but this ref is refreshed every render so
+  // keyboard, mobile, palette, and race paths all consult the same snapshot.
+  comparePreflightRef.current = (current) => evaluateComparePreflight({
+    running: current.running,
+    experimentActive,
+    prompt: current.prompt,
+    slots: current.slots,
+    readinessMap,
+    readinessReasons,
+    critic: current.critic,
+    attachments: current.attachments,
+    attachmentEligibility: checkAttachmentEligibility(current.slots, current.attachments),
+  });
 
   const canRunRef = useRef(canRun);
   useEffect(() => {
@@ -306,7 +309,15 @@ export default function RSemble() {
     const runId = `cmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     if (!ownerRegistry.tryAcquire({ kind: "compare", id: runId })) return;
     compareRunIdRef.current = runId;
-    void runFanout();
+    void runFanout().finally(() => {
+      // A controller-side race/preflight rejection never transitions running
+      // true, so release the local owner explicitly rather than leaving the
+      // Compare shell permanently locked.
+      if (!stateRef.current.running && compareRunIdRef.current === runId) {
+        ownerRegistry.release(runId);
+        compareRunIdRef.current = null;
+      }
+    });
   }, [runFanout, ownerRegistry]);
 
   // Release Compare ownership when the run finishes (running → false).
@@ -383,18 +394,6 @@ export default function RSemble() {
       );
     } else {
       requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("rsemble:add-model")));
-    }
-  }, [focusCommandPane, focusMode]);
-
-  const addCriterion = useCallback(() => {
-    focusCommandPane();
-    if (focusMode) {
-      setFocusMode(false);
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("rsemble:add-criterion"))),
-      );
-    } else {
-      requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("rsemble:add-criterion")));
     }
   }, [focusCommandPane, focusMode]);
 
@@ -542,7 +541,6 @@ export default function RSemble() {
         onAbort={abortRun}
         onToggleMode={toggleMode}
         onAddModel={addModel}
-        onAddCriterion={addCriterion}
         onOpenConnections={() => setConnectionsOpen(true)}
         onToggleFocusMode={toggleFocusMode}
         onExport={exportResult}
@@ -704,6 +702,7 @@ function CommandPane({
         thumbnails={attachmentUi.thumbnails}
         notice={attachmentUi.notice}
         onRemove={attachmentUi.remove}
+        onRetry={attachmentUi.retry}
       />
       <AttachmentCapabilityStrip
         slots={state.slots}
@@ -834,9 +833,9 @@ function NoKeyBanner() {
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning">
       <span>
-        <span className="font-semibold">No provider connected.</span> Add an API key for any
-        provider (OpenRouter, Gemini, DeepSeek, CommandCode, ClinePass, Umans) via the connection status
-        button in the header — or set <code className="rounded bg-warning/10 px-1">VITE_*_KEY</code> in{" "}
+        <span className="font-semibold">No provider connected.</span> Connect any configured
+        provider via the connection status button in the header — or set a supported{" "}
+        <code className="rounded bg-warning/10 px-1">VITE_*_KEY</code> in{" "}
         <code className="rounded bg-warning/10 px-1">.env</code> and restart the dev server to enable live runs.
       </span>
     </div>

@@ -5,6 +5,7 @@
 import { candidateFullText } from "./pipeline";
 import type { StudioState } from "../studio-engine";
 import { formatBytes } from "./attachments/limits";
+import { resolveReasoningEffort } from "./providers/reasoning";
 
 /**
  * Sanitize judge-provided or model-provided free text for safe Markdown export.
@@ -24,6 +25,21 @@ export function buildExportMarkdown(s: StudioState): string | null {
   if (done.length === 0 && !s.fusedText) return null;
 
   const lines: string[] = [`# RSemble AI — Export`, ``, `## Task`, ``, s.prompt, ``];
+
+  // Use the frozen run policy, not the mutable command pane. Effective levels
+  // are resolved against the frozen candidate/Judge identities so an export
+  // remains coherent with the persisted provenance shown in Run Detail.
+  const frozenPolicy = s.runContext?.reasoningPolicy ?? s.reasoningPolicy;
+  const frozenSlots = s.runContext?.slots ?? s.slots;
+  const frozenCritic = s.runContext?.critic ?? s.critic;
+  lines.push(`## Reasoning Policy`, ``);
+  lines.push(`- Candidates: requested \`${frozenPolicy.candidates}\``);
+  for (const slot of frozenSlots.filter((slot) => slot.enabled)) {
+    const effective = resolveReasoningEffort(slot.providerId, slot.slug, frozenPolicy.candidates);
+    lines.push(`  - ${mdSafe(slot.model)}: effective \`${effective.ok ? effective.effective : "provider-default"}\` (${effective.ok ? effective.capabilities.source : "unknown"})`);
+  }
+  const judgeEffective = resolveReasoningEffort(frozenCritic.providerId, frozenCritic.model, frozenPolicy.judge);
+  lines.push(`- Judge: requested \`${frozenPolicy.judge}\`, effective \`${judgeEffective.ok ? judgeEffective.effective : "provider-default"}\` (${judgeEffective.ok ? judgeEffective.capabilities.source : "unknown"})`, ``);
 
   // Attachment metadata (spec §9, plan 7.7.3) — names/kinds/sizes only, the
   // record never contains the bytes or extracted text.

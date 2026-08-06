@@ -21,6 +21,13 @@
 
 ## Status
 
+**DONE — owner validation pending**
+
+Deterministic implementation and verification are complete in the Plan 004
+checkpoint commit. Live provider behavior, provider-reported media usage, and
+owner browser validation remain on the owner-PC checklist; Plan 005 follows
+only after this checkpoint.
+
 - **Priority**: P0
 - **Effort**: L
 - **Risk**: HIGH

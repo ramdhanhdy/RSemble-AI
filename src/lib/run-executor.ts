@@ -35,7 +35,7 @@ import {
   sanitizePersistedError,
   type SanitizeErrorContext,
 } from "./persistence/error-redaction";
-import { costFromSnapshot, estimateTokens } from "./cost";
+import { costFromSnapshot, estimateMessageInput, estimateTokens } from "./cost";
 import { getModelPricing } from "./providers/pricing";
 import {
   buildFanoutJobs,
@@ -259,7 +259,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
    * catalog-estimate only when an exact execution-time price is known,
    * otherwise an Unknown record — never a fabricated total.
    */
-  function estimateFallbackCost(providerId: string, model: string, tokensIn: number, tokensOut: number): CostRecord {
+  function estimateFallbackCost(providerId: string, model: string, tokensIn: number | null, tokensOut: number | null): CostRecord {
     const snapshot = getModelPricing(providerId as ProviderId, model);
     const estimated = costFromSnapshot(snapshot ?? undefined, { inputTokens: tokensIn, outputTokens: tokensOut });
     return estimated ?? { usd: null, source: "unknown" };
@@ -338,10 +338,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       if (isAborted(signal)) return null;
       const segments = splitSegments(content, job.id);
       const summary = summarize(content);
-      const tokensIn = usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join(""));
+      const inputEstimate = estimateMessageInput(messages);
+      const tokensIn = usage?.inputTokens ?? inputEstimate.textTokens;
       const tokensOut = usage?.outputTokens ?? estimateTokens(content);
+      // Native media has no provider-neutral token/cost formula. Preserve the
+      // text-only display estimate, but keep the cost total Unknown until usage
+      // is reported by the provider.
+      const costInputTokens = usage?.inputTokens ?? (inputEstimate.hasNativeMedia ? null : inputEstimate.inputTokens);
       const resolvedCost =
-        cost ?? estimateFallbackCost(job.providerId, job.slug, tokensIn, tokensOut);
+        cost ?? estimateFallbackCost(job.providerId, job.slug, costInputTokens, tokensOut);
       devTerminalLog("provider.request.completed", {
         ...context,
         status: "completed",
@@ -455,12 +460,13 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         return { ok: false };
       }
       const { breakdown, scoresById, report } = parseJudge(content, blindSet, profile, done);
+      const inputEstimate = estimateMessageInput(messages);
       const resolvedCost =
         cost ??
         estimateFallbackCost(
           request.critic.providerId,
           request.critic.model,
-          usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join("")),
+          usage?.inputTokens ?? (inputEstimate.hasNativeMedia ? null : inputEstimate.inputTokens),
           usage?.outputTokens ?? estimateTokens(content),
         );
       await events.onJudgeTerminal(attemptId, {
@@ -568,12 +574,13 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         }).catch(() => {});
         return { ok: false, result: null };
       }
+      const inputEstimate = estimateMessageInput(messages);
       const resolvedCost =
         cost ??
         estimateFallbackCost(
           request.critic.providerId,
           request.critic.model,
-          usage?.inputTokens ?? estimateTokens(messages.map((m) => m.content).join("")),
+          usage?.inputTokens ?? (inputEstimate.hasNativeMedia ? null : inputEstimate.inputTokens),
           usage?.outputTokens ?? estimateTokens(content),
         );
       await events.onFusionTerminal(attemptId, {

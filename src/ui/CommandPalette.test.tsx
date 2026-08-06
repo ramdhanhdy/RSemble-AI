@@ -59,7 +59,6 @@ interface Spies {
   onAbort: Mock;
   onToggleMode: Mock;
   onAddModel: Mock;
-  onAddCriterion: Mock;
   onOpenConnections: Mock;
   onToggleFocusMode: Mock;
   onExport: Mock;
@@ -75,7 +74,6 @@ function renderPalette(overrides: PaletteProps = {}): { h: Harness; spies: Spies
     onAbort: vi.fn(),
     onToggleMode: vi.fn(),
     onAddModel: vi.fn(),
-    onAddCriterion: vi.fn(),
     onOpenConnections: vi.fn(),
     onToggleFocusMode: vi.fn(),
     onExport: vi.fn(),
@@ -91,7 +89,6 @@ function renderPalette(overrides: PaletteProps = {}): { h: Harness; spies: Spies
       onAbort={spies.onAbort}
       onToggleMode={spies.onToggleMode}
       onAddModel={spies.onAddModel}
-      onAddCriterion={spies.onAddCriterion}
       onOpenConnections={spies.onOpenConnections}
       onToggleFocusMode={spies.onToggleFocusMode}
       onExport={spies.onExport}
@@ -224,17 +221,17 @@ describe("CommandPalette workspace awareness (plan 8.2)", () => {
     expect(labels).toContain("Toggle Rank ↔ Fuse");
     expect(labels).toContain("Toggle focus mode");
     expect(labels).toContain("Add a model");
-    expect(labels).toContain("Add evaluation criterion");
+    expect(labels).not.toContain("Add evaluation criterion");
     expect(labels).toContain("Export result");
     expect(labels).toContain("Open connections");
     cleanup(h);
   });
 
-  it("labels the criterion command 'Add evaluation criterion', never 'Add rubric criterion'", async () => {
+  it("does not expose the unsupported inert criterion command", async () => {
     const { h } = renderPalette({ workspace: "compare" });
     await settle();
 
-    expect(findOption(h, "Add evaluation criterion")).toBeTruthy();
+    expect(findOption(h, "Add evaluation criterion")).toBeNull();
     expect(findOption(h, "Add rubric criterion")).toBeNull();
     expect(document.body.textContent).not.toContain("rubric criterion");
     cleanup(h);

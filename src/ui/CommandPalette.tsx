@@ -13,7 +13,6 @@ import {
   Link2,
   Maximize2,
   Plus,
-  PlusCircle,
   Power,
   Search,
 } from "lucide-react";
@@ -26,7 +25,6 @@ interface CommandPaletteProps {
   onAbort: () => void;
   onToggleMode: () => void;
   onAddModel: () => void;
-  onAddCriterion: () => void;
   onOpenConnections: () => void;
   onToggleFocusMode: () => void;
   onExport: () => void;
@@ -63,7 +61,6 @@ export function CommandPalette({
   onAbort,
   onToggleMode,
   onAddModel,
-  onAddCriterion,
   onOpenConnections,
   onToggleFocusMode,
   onExport,
@@ -140,13 +137,6 @@ export function CommandPalette({
               icon: Plus,
               run: onAddModel,
             },
-            {
-              id: "add-criterion",
-              label: "Add evaluation criterion",
-              group: "Configure",
-              icon: PlusCircle,
-              run: onAddCriterion,
-            },
           ]
         : [];
     const experimentCommands: Command[] =
@@ -202,8 +192,7 @@ export function CommandPalette({
     onToggleMode,
     onToggleFocusMode,
     onAddModel,
-    onAddCriterion,
-    onOpenConnections,
+      onOpenConnections,
     onExport,
     workspace,
     onNavigate,

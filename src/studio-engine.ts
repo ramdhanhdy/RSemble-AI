@@ -36,16 +36,30 @@ import {
 
 export type StageStatus = "idle" | "running" | "done" | "error";
 
-/** Frozen evaluation inputs captured at fanout start (run-recovery spec §5.2).
- *  A Judge-only retry re-judges the retained candidate outputs against THESE
- *  prompt/evaluation values — not whatever the command pane currently shows —
- *  while the Judge provider/model, judge instruction, and mode stay live.
- *  Deep-copied by the reducer so later command edits cannot mutate the
- *  snapshot. Current-session only: cleared on reset, replaced on every new
- *  fanout. Never carries provider secrets or candidate outputs. */
+/** Frozen execution protocol captured at fanout start (run-recovery spec §5.2).
+ *  Every paid stage and retry consumes this snapshot; mutable command-pane state
+ *  cannot change reasoning, Judge/candidate identity, mode, task, rubric,
+ *  attachments, or retry inputs after execution begins. Deep-copied by the
+ *  reducer so later edits cannot mutate the snapshot. Current-session only:
+ *  cleared on reset, replaced on every new fanout. Never carries provider
+ *  secrets or candidate outputs. */
 export interface RunEvaluationContext {
+  /** Frozen execution mode and task protocol. Legacy prompt/evaluation fields
+   * remain below so pre-hardening in-memory callers and persisted records stay
+   * readable; new runs always populate both representations. */
+  mode?: Mode;
+  task?: {
+    prompt: string;
+    systemPrompt: string;
+    temperature: number;
+  };
   prompt: string;
   evaluation: AdHocEvaluationConfig;
+  /** Frozen candidate roster — retries never resolve mutable slot state. */
+  slots?: ModelSlot[];
+  /** Frozen Judge/Fusion target and instruction. */
+  critic?: CriticRef;
+  judgeInstruction?: string;
   /** Frozen attachment set the candidates saw — retries reproduce it exactly
    *  (plan 7.6.6), even if the user edits the command pane afterwards. */
   attachments: Attachment[];
@@ -132,6 +146,7 @@ export type Action =
   | { type: "ADD_ATTACHMENTS"; attachments: Attachment[] }
   | { type: "ATTACHMENT_READY"; id: string; data?: string; text?: string; truncated?: boolean; width?: number; height?: number; pageCount?: number; mimeType?: string }
   | { type: "ATTACHMENT_FAILED"; id: string; error: string }
+  | { type: "ATTACHMENT_RETRY"; id: string }
   | { type: "REMOVE_ATTACHMENT"; id: string }
   | { type: "CLEAR_ATTACHMENTS" }
   | { type: "SET_ATTACHMENTS_TO_JUDGE"; value: boolean }
@@ -344,6 +359,16 @@ export function reducer(state: StudioState, action: Action): StudioState {
         ),
       };
 
+    case "ATTACHMENT_RETRY":
+      return {
+        ...state,
+        attachments: state.attachments.map((a) =>
+          a.id === action.id
+            ? { ...a, status: "reading", error: undefined }
+            : a,
+        ),
+      };
+
     case "REMOVE_ATTACHMENT": {
       const next = state.attachments.filter((a) => a.id !== action.id);
       return {
@@ -381,10 +406,18 @@ export function reducer(state: StudioState, action: Action): StudioState {
         // here (defense in depth) so neither the caller's payload nor later
         // command-pane edits can mutate what a Judge retry evaluates against.
         runContext: {
+          mode: action.context.mode,
+          task: action.context.task ? { ...action.context.task } : undefined,
           prompt: action.context.prompt,
           evaluation: deepCopyEvaluationConfig(action.context.evaluation),
+          slots: action.context.slots?.map((slot) => ({ ...slot })),
+          critic: action.context.critic ? { ...action.context.critic } : undefined,
+          judgeInstruction: action.context.judgeInstruction,
           attachments: action.context.attachments.map((a) => ({ ...a })),
           attachmentsToJudge: action.context.attachmentsToJudge,
+          reasoningPolicy: action.context.reasoningPolicy
+            ? { ...action.context.reasoningPolicy }
+            : undefined,
         },
         audit: logAudit(state.audit, `Fanout started across ${action.candidates.length} candidate(s).`),
       };

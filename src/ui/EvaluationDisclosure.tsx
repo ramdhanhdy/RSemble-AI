@@ -3,8 +3,8 @@
 //
 // Compare can choose:
 //   1. Holistic judgment (default — no explicit criteria)
-//   2. Saved profile (pins an exact version)
-//   3. Custom criteria (one-off snapshot; Save as profile is separate)
+//   2. A previously pinned profile snapshot (displayed read-only in Compare)
+//   3. Custom criteria (one-off snapshot)
 //
 // No goal/metric/gap kinds, no preset chips. Criteria use a one-open accordion
 // with blur validation, normalized header preview, and total-weight summary.
@@ -68,19 +68,6 @@ export function EvaluationDisclosure({
             />
           )}
 
-          {evaluation.kind === "custom" && (
-            <button
-              type="button"
-              className="pressable flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              onClick={() => {
-                // Save as profile is a separate deliberate action — it opens a
-                // named draft and does not silently mutate Compare.
-                window.dispatchEvent(new CustomEvent("rsemble:save-profile"));
-              }}
-            >
-              Save as profile
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -111,13 +98,6 @@ function EvaluationModeSelector({
         label="Holistic judgment"
         active={evaluation.kind === "holistic"}
         onClick={() => dispatch({ type: "SET_EVALUATION", config: HOLISTIC_EVALUATION })}
-      />
-      <ModeOption
-        label="Saved profile…"
-        active={evaluation.kind === "profile"}
-        onClick={() => {
-          window.dispatchEvent(new CustomEvent("rsemble:select-profile"));
-        }}
       />
       <ModeOption
         label="Custom criteria"

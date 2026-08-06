@@ -4,6 +4,8 @@ import {
   estimateCost,
   estimateRunCost,
   pricingFor,
+  estimateMessageInput,
+  estimateAttachmentInput,
 } from "./cost";
 import { clearModelPricing, parseOpenRouterPricing, setModelPricing } from "./providers/pricing";
 
@@ -107,3 +109,30 @@ describe("costFromSnapshot", () => {
     expect(costFromSnapshot(snapshot, null)).toBeNull();
   });
 });
+
+
+describe("truthful multipart estimation", () => {
+  it("counts text parts without stringifying media objects", () => {
+    const estimate = estimateMessageInput([
+      { role: "user", content: [{ type: "text", text: "hello" }, { type: "image", mimeType: "image/png", data: "abc" }] },
+    ]);
+    expect(estimate.textTokens).toBe(2);
+    expect(estimate.hasNativeMedia).toBe(true);
+    expect(estimate.note).toContain("unknown");
+    expect(estimate.inputTokens).not.toBe(estimateTokensUnsafe("hello[object Object]"));
+  });
+  it("preserves extracted text while marking native media unknown", () => {
+    const estimate = estimateAttachmentInput([
+      { kind: "text", text: "document text" },
+      { kind: "pdf", text: "native pdf text", data: "encoded-pdf" },
+      { kind: "image", data: "encoded-image" },
+    ]);
+    expect(estimate.textTokens).toBeGreaterThan(0);
+    expect(estimate.hasUnknownMedia).toBe(true);
+  });
+  it("returns no attachment contribution for empty arrays", () => {
+    expect(estimateAttachmentInput([])).toEqual({ textTokens: 0, hasUnknownMedia: false });
+  });
+});
+
+function estimateTokensUnsafe(text: string): number { return Math.ceil(text.length / 4); }
