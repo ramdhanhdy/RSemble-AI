@@ -12,17 +12,13 @@ import {
   ProviderError,
 } from "./types";
 import { resolveReasoningEffort } from "./reasoning";
+import { credentialStore } from "../credentials/credential-store";
+import { readBoundedResponseText } from "../../../shared/http";
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
 function getApiKey(): string {
-  const envKey = ((import.meta.env.VITE_GEMINI_KEY as string | undefined) ?? "").trim();
-  if (envKey) return envKey;
-  try {
-    return (localStorage.getItem("rsemble.key.gemini") ?? "").trim();
-  } catch {
-    return "";
-  }
+  return credentialStore.get("gemini");
 }
 
 function buildThinkingConfig(
@@ -230,12 +226,17 @@ export const geminiProvider: LLMProvider = {
     }
 
     if (!res.ok) {
+      // Bounded read + known error shape only; never serialize arbitrary
+      // upstream JSON into provider errors (Plan 003 workstream D).
+      const raw = await readBoundedResponseText(res).catch(() => "");
       let detail = "";
-      try {
-        const body = await res.json();
-        detail = body?.error?.message ?? JSON.stringify(body);
-      } catch {
-        detail = await res.text().catch(() => "");
+      if (raw) {
+        try {
+          const body = JSON.parse(raw) as { error?: { message?: string } };
+          detail = typeof body?.error?.message === "string" ? body.error.message : "";
+        } catch {
+          detail = raw;
+        }
       }
       throw new ProviderError(
         detail || `Gemini request failed (HTTP ${res.status}).`,
@@ -287,12 +288,15 @@ export const geminiProvider: LLMProvider = {
     }
 
     if (!res.ok || !res.body) {
+      const raw = await readBoundedResponseText(res).catch(() => "");
       let detail = "";
-      try {
-        const body = await res.json();
-        detail = body?.error?.message ?? JSON.stringify(body);
-      } catch {
-        detail = await res.text().catch(() => "");
+      if (raw) {
+        try {
+          const body = JSON.parse(raw) as { error?: { message?: string } };
+          detail = typeof body?.error?.message === "string" ? body.error.message : "";
+        } catch {
+          detail = raw;
+        }
       }
       throw new ProviderError(
         detail || `Gemini streaming request failed (HTTP ${res.status}).`,

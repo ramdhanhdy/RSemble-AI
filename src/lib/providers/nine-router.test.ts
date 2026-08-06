@@ -12,7 +12,7 @@ afterEach(() => {
 
 function stubLocalStorage(key: string): void {
   vi.stubGlobal("localStorage", {
-    getItem: (k: string) => (k === "rsemble.key.9router" ? key : null),
+    getItem: (k: string) => (k === "rsemble.key.9router.v2" ? key : null),
     setItem: () => {},
     removeItem: () => {},
   });

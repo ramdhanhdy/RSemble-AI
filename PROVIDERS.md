@@ -442,7 +442,7 @@ Bind: `127.0.0.1` only. Default port: `8787` (configurable via env
 | `GET` | `/auth/status` | `{ ok, authMode?, accountLabel?, plan?, lastRefresh?, error? }` — **no raw tokens** |
 | `GET` | `/v1/models` | OpenAI-ish list or simplified `{ data: [{ id, name }] }` |
 | `POST` | `/v1/chat/completions` | OpenAI-compatible façade (non-stream + `stream: true` SSE) so the web adapter stays simple |
-| `POST` | `/v1/responses` | Optional native passthrough for debugging |
+| `POST` | `/v1/responses` | **Not retained** — the exact route table (Plan 003 B) does not expose it; it returns `404` without contacting any upstream |
 
 CORS: allow Vite origin only (`http://localhost:5173` and configured
 alternatives). CORS preflight must advertise `X-RSemble-Bridge-Secret` when a

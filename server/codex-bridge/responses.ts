@@ -5,6 +5,7 @@
 import http from "node:http";
 import { once } from "node:events";
 import { getValidToken } from "./auth.js";
+import { readBoundedResponseText } from "../../shared/http.js";
 
 export interface ChatMessageInput {
   role: "system" | "user" | "assistant";
@@ -219,15 +220,20 @@ export async function handleCompletions(
     }
 
     if (!upstreamRes.ok) {
+      // Bounded read + known error shapes only; never serialize arbitrary
+      // upstream JSON into responses or logs (Plan 003 workstream D).
       let errorText = "";
+      let raw = "";
       try {
-        const json = (await upstreamRes.json()) as {
+        raw = await readBoundedResponseText(upstreamRes);
+        const json = JSON.parse(raw) as {
           error?: { message?: string };
           detail?: string;
         };
-        errorText = json?.error?.message || json?.detail || JSON.stringify(json);
+        errorText = typeof json?.error?.message === "string" ? json.error.message
+          : typeof json?.detail === "string" ? json.detail : "";
       } catch {
-        errorText = await upstreamRes.text().catch(() => "Upstream error");
+        errorText = raw;
       }
 
       sendJson(res, upstreamRes.status, {

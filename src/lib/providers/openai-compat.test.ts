@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createOpenAICompatProvider } from "./openai-compat";
 import { clearModelCapabilities, getModelCapabilities } from "./capabilities";
+import { resetCredentialStoreForTests } from "../credentials/credential-store";
 import { ProviderError } from "./types";
 
 const config = {
@@ -17,6 +18,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   clearModelCapabilities();
+  resetCredentialStoreForTests();
 });
 
 function stubKey() {
@@ -422,5 +424,124 @@ describe("createOpenAICompatProvider — per-model capability metadata", () => {
     expect(getModelCapabilities("umans", "vision")).toEqual({ image: true, pdf: false });
     expect(getModelCapabilities("umans", "text-only")).toEqual({ image: false, pdf: false });
     expect(getModelCapabilities("umans", "undocumented")).toEqual({ image: false, pdf: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bounded error bodies and bridge authentication — Plan 003 C/D
+// ---------------------------------------------------------------------------
+
+describe("createOpenAICompatProvider — bounded error bodies (Plan 003 D)", () => {
+  it("caps an oversized plain-text error body to the byte bound", async () => {
+    stubKey();
+    const big = "E".repeat(20_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(big, { status: 502, headers: { "Content-Type": "text/plain" } }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message.length).toBeLessThanOrEqual(8192);
+    expect((err as ProviderError).message).not.toContain(big.slice(9000));
+  });
+
+  it("does not serialize arbitrary JSON error bodies into the message", async () => {
+    stubKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ foo: { bar: [1, 2, 3] } }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).toContain("502");
+    expect((err as ProviderError).message).not.toContain("bar");
+  });
+});
+
+describe("createOpenAICompatProvider — bridge secret header (Plan 003 C)", () => {
+  it("attaches X-RSemble-Bridge-Secret when configured", async () => {
+    stubKey();
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, bridgeSecret: true });
+    await provider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-RSemble-Bridge-Secret"]).toBe("test-bridge-secret");
+  });
+
+  it("omits the header when no secret is configured", async () => {
+    stubKey();
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, bridgeSecret: true });
+    await provider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-RSemble-Bridge-Secret"]).toBeUndefined();
+  });
+
+  it("does not attach the header for providers that are not bridge-routed", async () => {
+    stubKey();
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider(config); // bridgeSecret: false
+    await provider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-RSemble-Bridge-Secret"]).toBeUndefined();
+  });
+});
+
+describe("createOpenAICompatProvider — encoded body preflight (Plan 003 E)", () => {
+  it("blocks an oversized encoded body before fetch with an exact transport-size error", async () => {
+    stubKey();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, bridgeBodyLimitBytes: 1024 });
+    const messages = [
+      { role: "user" as const, content: [{ type: "text" as const, text: "x".repeat(2000) }] },
+    ];
+    const err = await provider
+      .chatCompletion({ model: "m", messages })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).toMatch(/bridge limit/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks oversized streaming bodies before fetch too", async () => {
+    stubKey();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, bridgeBodyLimitBytes: 1024 });
+    const messages = [
+      { role: "user" as const, content: [{ type: "text" as const, text: "x".repeat(2000) }] },
+    ];
+    const stream = provider.chatCompletionStream({ model: "m", messages });
+    await expect(stream.next()).rejects.toMatchObject({ name: "ProviderError" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

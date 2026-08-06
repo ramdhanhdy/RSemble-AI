@@ -6,7 +6,7 @@ import { capabilitiesForModel, clearModelReasoningCapabilities, setModelReasonin
 
 function stubKey(): void {
   vi.stubGlobal("localStorage", {
-    getItem: (k: string) => (k === "rsemble.key.openrouter" ? "sk-test" : null),
+    getItem: (k: string) => (k === "rsemble.key.openrouter.v2" ? "sk-test" : null),
     setItem: () => {},
     removeItem: () => {},
   });
@@ -27,6 +27,8 @@ afterEach(() => {
 beforeEach(() => {
   clearModelCapabilities();
   clearModelReasoningCapabilities();
+  // Deterministic: never let the developer's .env leak into test requests.
+  vi.stubEnv("VITE_OPENROUTER_KEY", "");
 });
 
 // ---------------------------------------------------------------------------

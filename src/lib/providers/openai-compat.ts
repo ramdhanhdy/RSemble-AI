@@ -18,16 +18,33 @@ import { readSseChatStream } from "./sse-stream";
 import { toOpenAIMessages } from "./content";
 import { setModelCapabilities } from "./capabilities";
 import { nativeReasoningPayload } from "./reasoning";
+import { credentialStore } from "../credentials/credential-store";
+import { bridgeAuthHeaders } from "./bridge-auth";
+import { buildBridgeRequestBody } from "./bridge-body";
+import { readBoundedResponseText } from "../../../shared/http";
+import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 
 export interface OpenAICompatConfig {
   id: ProviderId;
   label: string;
   baseUrl: string;
   envKey: string;
-  storageKey: string;
+  /** Legacy option retained for configuration compatibility; the store now
+   *  resolves credentials under the provider id and this value is unused. */
+  storageKey?: string;
   modelsPath: string;
   completionsPath: string;
   extraHeaders?: Record<string, string>;
+  /**
+   * Route requests through the localhost bridge with `X-RSemble-Bridge-Secret`
+   * when `VITE_RSEMBLE_BRIDGE_SECRET` is configured (Plan 002 D3).
+   */
+  bridgeSecret?: boolean;
+  /**
+   * Enforce the encoded-body ceiling before fetch for bridge-routed providers
+   * (Plan 002 D4 / Plan 003 workstream E). Default: undefined (no preflight).
+   */
+  bridgeBodyLimitBytes?: number;
   /** When false, a blank API key is accepted (e.g. 9Router with auth disabled). Default: true. */
   apiKeyRequired?: boolean;
   /** How readiness is established: "credential" (sync key check) or "models" (async /models probe). Default: "credential". */
@@ -42,14 +59,9 @@ export interface OpenAICompatConfig {
   supportsImages?: boolean;
 }
 
-function getKey(envKey: string, storageKey: string): string {
-  const envVal = ((import.meta.env[envKey] as string | undefined) ?? "").trim();
-  if (envVal) return envVal;
-  try {
-    return (localStorage.getItem(storageKey) ?? "").trim();
-  } catch {
-    return "";
-  }
+/** Resolve credentials through the shared CredentialStore (Plan 003 A). */
+function getKey(id: ProviderId): string {
+  return credentialStore.get(id);
 }
 
 /** Read an explicit per-model vision declaration without guessing from a slug. */
@@ -78,14 +90,16 @@ function explicitImageCapability(model: unknown): boolean | null {
 
 export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvider {
   const {
-    id, label, baseUrl, envKey, storageKey, modelsPath, completionsPath, extraHeaders,
+    id, label, baseUrl, envKey, modelsPath, completionsPath, extraHeaders,
     apiKeyRequired = true,
     readinessProbe = "credential",
     supportsImages = false,
+    bridgeSecret = false,
+    bridgeBodyLimitBytes = undefined,
   } = config;
 
   function getApiKey(): string {
-    return getKey(envKey, storageKey);
+    return getKey(id);
   }
 
   function buildHeaders(apiKey: string): Record<string, string> {
@@ -93,6 +107,9 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
       "Content-Type": "application/json",
       "X-Title": "RSemble AI",
       ...(extraHeaders ?? {}),
+      // Bridge authentication (Plan 002 D3): attached only when the web-side
+      // secret is configured; the bridge enforces it when its own secret is set.
+      ...(bridgeSecret ? bridgeAuthHeaders() : {}),
     };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     return headers;
@@ -119,14 +136,18 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
   }
 
   async function parseError(res: Response, providerId: ProviderId): Promise<ProviderError> {
+    // Bound the body read: oversized/hostile upstream bodies must never enter
+    // provider errors, logs, or persisted evidence (Plan 003 workstream D).
+    const rawBody = await readBoundedResponseText(res).catch(() => "");
     let detail = "";
-    const rawBody = await res.text().catch(() => "");
     if (rawBody) {
       try {
         const body = JSON.parse(rawBody) as { error?: { message?: string } };
-        detail = body?.error?.message ?? rawBody;
+        // Known error shape: preserve the message (already bounded).
+        detail = typeof body?.error?.message === "string" ? body.error.message : "";
       } catch {
-        // Plain-text upstream error (e.g. gateway/proxy pages): preserve verbatim.
+        // Plain-text upstream error (e.g. gateway/proxy pages): preserve the
+        // bounded excerpt verbatim; never serialize arbitrary JSON.
         detail = rawBody;
       }
     }
@@ -143,6 +164,20 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
       headers: buildHeaders(key),
       signal,
     });
+  }
+
+  /** Serialize a request body once, enforcing the encoded bridge ceiling
+   *  before any fetch when configured (Plan 002 D4 / Plan 003 E). */
+  function buildBody(
+    payload: Record<string, unknown>,
+    hasParts: boolean,
+  ): string {
+    return buildBridgeRequestBody(
+      payload,
+      id,
+      hasParts,
+      bridgeBodyLimitBytes ?? BRIDGE_MAX_BODY_BYTES,
+    );
   }
 
   return {
@@ -220,20 +255,25 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
 
       let res: Response;
       try {
-        res = await fetch(`${baseUrl}${completionsPath}`, {
-          method: "POST",
-          headers: buildHeaders(key),
-          body: JSON.stringify({
+        const body = buildBody(
+          {
             model: opts.model,
             messages: toOpenAIMessages(opts.messages),
             temperature: opts.temperature,
             max_tokens: opts.maxTokens,
             stream: false,
             ...reasoning,
-          }),
+          },
+          opts.messages.some((m) => Array.isArray(m.content)),
+        );
+        res = await fetch(`${baseUrl}${completionsPath}`, {
+          method: "POST",
+          headers: buildHeaders(key),
+          body,
           signal: opts.signal,
         });
       } catch (err) {
+        if (err instanceof ProviderError) throw err;
         if (err instanceof DOMException && err.name === "AbortError") throw err;
         throw new ProviderError(`Network error reaching ${label}. Check your connection.`, id);
       }
@@ -266,20 +306,25 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
 
       let res: Response;
       try {
-        res = await fetch(`${baseUrl}${completionsPath}`, {
-          method: "POST",
-          headers: buildHeaders(key),
-          body: JSON.stringify({
+        const body = buildBody(
+          {
             model: opts.model,
             messages: toOpenAIMessages(opts.messages),
             temperature: opts.temperature,
             max_tokens: opts.maxTokens,
             stream: true,
             ...reasoning,
-          }),
+          },
+          opts.messages.some((m) => Array.isArray(m.content)),
+        );
+        res = await fetch(`${baseUrl}${completionsPath}`, {
+          method: "POST",
+          headers: buildHeaders(key),
+          body,
           signal: opts.signal,
         });
       } catch (err) {
+        if (err instanceof ProviderError) throw err;
         if (err instanceof DOMException && err.name === "AbortError") throw err;
         throw new ProviderError(`Network error reaching ${label}. Check your connection.`, id);
       }

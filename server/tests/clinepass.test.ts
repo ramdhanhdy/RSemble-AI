@@ -39,7 +39,7 @@ describe("ClinePass bridge proxy", () => {
     vi.stubGlobal("fetch", fetchMock);
     const res = makeRes();
 
-    await handleClinePassProxy(makeReq(), res, "/clinepass/api/v1/chat/completions");
+    await handleClinePassProxy(makeReq(), res, "/clinepass/v1/chat/completions");
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.cline.bot/api/v1/chat/completions",

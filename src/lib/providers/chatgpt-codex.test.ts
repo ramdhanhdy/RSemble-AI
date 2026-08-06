@@ -95,3 +95,38 @@ describe("chatgptCodexProvider readiness — capability feed (7.4.4)", () => {
     expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({ image: true, pdf: false });
   });
 });
+
+describe("chatgptCodexProvider — bridge secret header (Plan 003 C)", () => {
+  function okChatResponse(): Response {
+    return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("attaches X-RSemble-Bridge-Secret when VITE_RSEMBLE_BRIDGE_SECRET is configured", async () => {
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret");
+    const fetchMock = vi.fn().mockResolvedValue(okChatResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    await chatgptCodexProvider.chatCompletion({
+      model: "gpt-5.6-sol",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-RSemble-Bridge-Secret"]).toBe("test-bridge-secret");
+  });
+
+  it("omits the header when no secret is configured", async () => {
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "");
+    const fetchMock = vi.fn().mockResolvedValue(okChatResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    await chatgptCodexProvider.chatCompletion({
+      model: "gpt-5.6-sol",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-RSemble-Bridge-Secret"]).toBeUndefined();
+  });
+});

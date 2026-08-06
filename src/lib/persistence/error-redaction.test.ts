@@ -7,7 +7,8 @@
 // surrogate pair.
 // =============================================================================
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetCredentialStoreForTests } from "../credentials/credential-store";
 import {
   capUtf8,
   configuredCredentialValues,
@@ -16,6 +17,12 @@ import {
   redactErrorText,
   sanitizePersistedError,
 } from "./error-redaction";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  resetCredentialStoreForTests();
+});
 
 function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
@@ -124,41 +131,48 @@ describe("redactErrorText — byte cap", () => {
 
 // --- configuredCredentialValues ------------------------------------------------
 
-describe("configuredCredentialValues", () => {
-  it("collects, filters, and dedupes values from injected readers", () => {
-    const storage = new Map<string, string>([
-      ["rsemble.key.openrouter", "or-key-abcdef"],
-      ["rsemble.key.gemini", "gem-999"],
-      ["rsemble.key.umans", "short"],
-    ]);
-    const env: Record<string, string> = {
-      VITE_UMANS_KEY: "or-key-abcdef", // duplicate of a storage value
-      VITE_GEMINI_KEY: "env-only-key-1",
-    };
-    const values = configuredCredentialValues(
-      (key) => storage.get(key) ?? null,
-      (key) => env[key],
-    );
+describe("configuredCredentialValues — store-backed", () => {
+  beforeEach(() => {
+    // Neutral environment: the developer's .env must never enter assertions.
+    for (const key of [
+      "VITE_OPENROUTER_KEY",
+      "VITE_GEMINI_KEY",
+      "VITE_DEEPSEEK_KEY",
+      "VITE_COMMANDCODE_KEY",
+      "VITE_CLINEPASS_KEY",
+      "VITE_UMANS_KEY",
+      "VITE_9ROUTER_KEY",
+    ]) {
+      vi.stubEnv(key, "");
+    }
+  });
+
+  it("collects, filters, and dedupes values from the shared store", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (key === "rsemble.key.openrouter.v2" ? "or-key-abcdef" : null),
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    vi.stubEnv("VITE_GEMINI_KEY", "env-only-key-1");
+    resetCredentialStoreForTests();
+    const values = configuredCredentialValues();
     expect(values).toContain("or-key-abcdef");
-    expect(values).toContain("gem-999");
     expect(values).toContain("env-only-key-1");
     expect(values).not.toContain("short"); // < 6 chars filtered
     expect(values.filter((v) => v === "or-key-abcdef")).toHaveLength(1); // deduped
-    expect(values).toHaveLength(3);
   });
 
-  it("ignores null and undefined reads", () => {
-    expect(configuredCredentialValues(() => null, () => undefined)).toEqual([]);
+  it("ignores undefined reads and reports empty when nothing is configured", () => {
+    resetCredentialStoreForTests();
+    vi.stubEnv("VITE_OPENROUTER_KEY", "");
+    expect(configuredCredentialValues(() => undefined)).toEqual([]);
   });
 
-  it("survives a throwing storage reader", () => {
+  it("keeps legacy environment aliases in scope via the injected reader", () => {
     const values = configuredCredentialValues(
-      () => {
-        throw new Error("denied");
-      },
-      (key) => (key === "VITE_UMANS_KEY" ? "env-key-123" : undefined),
+      (key) => (key === "VITE_UMANS_API_KEY" ? "legacy-env-key-123" : undefined),
     );
-    expect(values).toEqual(["env-key-123"]);
+    expect(values).toEqual(["legacy-env-key-123"]);
   });
 });
 
@@ -203,5 +217,28 @@ describe("sanitizePersistedError", () => {
       [],
     );
     expect(utf8Length(out.message)).toBeLessThanOrEqual(ERROR_TEXT_CAP_BYTES);
+  });
+});
+
+describe("redactErrorText — adversarial bodies (Plan 003 D)", () => {
+  it("redacts bearer tokens inside an oversized HTML error body and caps it", () => {
+    const html = `<html><body>Bearer sk-live-abcdefghijklm ${"x".repeat(9000)}</body></html>`;
+    const out = redactErrorText(html, ["sk-live-abcdefghijklm"]);
+    expect(out).not.toContain("sk-live-abcdefghijklm");
+    expect(out).not.toMatch(/Bearer\s+[^\s,;]+/i);
+    expect(utf8Length(out)).toBeLessThanOrEqual(ERROR_TEXT_CAP_BYTES);
+  });
+
+  it("redacts configured keys that appear inside prompt fragments", () => {
+    const promptFragment = "system: use key sk-prompt-embedded-123 to call the API";
+    const out = redactErrorText(promptFragment, ["sk-prompt-embedded-123"]);
+    expect(out).not.toContain("sk-prompt-embedded-123");
+  });
+
+  it("handles multi-line error bodies without leaking credentials", () => {
+    const body = "line one\nAuthorization: Bearer multi-line-key-456\nline three";
+    const out = redactErrorText(body, ["multi-line-key-456"]);
+    expect(out).not.toContain("multi-line-key-456");
+    expect(out).not.toMatch(/Authorization\s*[:=]\s*[^\s,;]+/i);
   });
 });

@@ -21,7 +21,6 @@ export interface DevTerminalFields {
   judgeCalls?: number;
   reusedOutputs?: number;
   error?: string;
-  stack?: string;
 }
 
 export function devTerminalLog(
