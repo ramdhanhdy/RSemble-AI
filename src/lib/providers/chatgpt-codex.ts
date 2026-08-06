@@ -12,6 +12,10 @@ import {
 import { readSseChatStream } from "./sse-stream";
 import { setProviderCapabilities } from "./capabilities";
 import { nativeReasoningPayload } from "./reasoning";
+import { bridgeAuthHeaders } from "./bridge-auth";
+import { buildBridgeRequestBody } from "./bridge-body";
+import { providerErrorDetail } from "./error-message";
+import { readBoundedResponseText } from "../../../shared/http";
 
 function getBridgeUrl(): string {
   return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
@@ -28,6 +32,21 @@ function validateReasoning(opts: ChatOptions): void {
   }
 }
 
+/** Serialize once and enforce the encoded bridge ceiling before fetch
+ *  (Plan 002 D4 / Plan 003 workstream E). */
+function buildBody(payload: Record<string, unknown>, hasParts: boolean): string {
+  return buildBridgeRequestBody(payload, "chatgpt-codex", hasParts);
+}
+
+/** Bounded error parse under the shared provider-error policy (review fix 3):
+ *  recognized structured messages are bounded and credential-redacted; unknown
+ *  JSON, plain text, and HTML bodies become a generic status error. The raw
+ *  body never reaches ProviderError.message. */
+async function parseBridgeError(res: Response, label: string): Promise<ProviderError> {
+  const raw = await readBoundedResponseText(res).catch(() => "");
+  return new ProviderError(providerErrorDetail(raw, label, res.status), "chatgpt-codex", res.status);
+}
+
 export const chatgptCodexProvider: LLMProvider = {
   id: "chatgpt-codex",
   label: "ChatGPT (Codex)",
@@ -36,7 +55,7 @@ export const chatgptCodexProvider: LLMProvider = {
     const baseUrl = getBridgeUrl();
     try {
       const [authRes, healthRes] = await Promise.all([
-        fetch(`${baseUrl}/auth/status`, { signal }),
+        fetch(`${baseUrl}/auth/status`, { signal, headers: bridgeAuthHeaders() }),
         fetch(`${baseUrl}/health`, { signal }),
       ]);
       if (!authRes.ok) {
@@ -82,18 +101,23 @@ export const chatgptCodexProvider: LLMProvider = {
     validateReasoning(opts);
     let res: Response;
     try {
-      res = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const body = buildBody(
+        {
           model: opts.model,
           messages: opts.messages,
           temperature: opts.temperature,
           max_tokens: opts.maxTokens,
-        }),
+        },
+        opts.messages.some((m) => Array.isArray(m.content)),
+      );
+      res = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...bridgeAuthHeaders() },
+        body,
         signal: opts.signal,
       });
     } catch (err) {
+      if (err instanceof ProviderError) throw err;
       if (err instanceof DOMException && err.name === "AbortError") throw err;
       throw new ProviderError(
         "Network error reaching Codex bridge on 127.0.0.1. Ensure bridge is running.",
@@ -101,20 +125,7 @@ export const chatgptCodexProvider: LLMProvider = {
       );
     }
 
-    if (!res.ok) {
-      let detail = "";
-      try {
-        const body = await res.json();
-        detail = body?.error?.message ?? JSON.stringify(body);
-      } catch {
-        detail = await res.text().catch(() => "");
-      }
-      throw new ProviderError(
-        detail || `ChatGPT (Codex) request failed (HTTP ${res.status}).`,
-        "chatgpt-codex",
-        res.status
-      );
-    }
+    if (!res.ok) throw await parseBridgeError(res, "ChatGPT (Codex)");
 
     const data = await res.json();
     const content = data?.choices?.[0]?.message?.content;
@@ -129,19 +140,24 @@ export const chatgptCodexProvider: LLMProvider = {
     validateReasoning(opts);
     let res: Response;
     try {
-      res = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const body = buildBody(
+        {
           model: opts.model,
           messages: opts.messages,
           temperature: opts.temperature,
           max_tokens: opts.maxTokens,
           stream: true,
-        }),
+        },
+        opts.messages.some((m) => Array.isArray(m.content)),
+      );
+      res = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...bridgeAuthHeaders() },
+        body,
         signal: opts.signal,
       });
     } catch (err) {
+      if (err instanceof ProviderError) throw err;
       if (err instanceof DOMException && err.name === "AbortError") throw err;
       throw new ProviderError(
         "Network error reaching Codex bridge on 127.0.0.1. Ensure bridge is running.",
@@ -149,20 +165,7 @@ export const chatgptCodexProvider: LLMProvider = {
       );
     }
 
-    if (!res.ok || !res.body) {
-      let detail = "";
-      try {
-        const body = await res.json();
-        detail = body?.error?.message ?? JSON.stringify(body);
-      } catch {
-        detail = await res.text().catch(() => "");
-      }
-      throw new ProviderError(
-        detail || `ChatGPT (Codex) streaming request failed (HTTP ${res.status}).`,
-        "chatgpt-codex",
-        res.status
-      );
-    }
+    if (!res.ok || !res.body) throw await parseBridgeError(res, "ChatGPT (Codex)");
 
     yield* readSseChatStream(res.body, "chatgpt-codex", "ChatGPT (Codex)", opts.signal);
   },
@@ -170,7 +173,7 @@ export const chatgptCodexProvider: LLMProvider = {
   async listModels(signal?: AbortSignal): Promise<CatalogModel[]> {
     const baseUrl = getBridgeUrl();
     try {
-      const res = await fetch(`${baseUrl}/v1/models`, { signal });
+      const res = await fetch(`${baseUrl}/v1/models`, { signal, headers: bridgeAuthHeaders() });
       if (!res.ok) {
         throw new ProviderError(
           `Could not load Codex model catalog (HTTP ${res.status}).`,

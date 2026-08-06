@@ -3,6 +3,7 @@ import { clinepassProvider } from "./clinepass";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -31,7 +32,7 @@ describe("ClinePass browser adapter", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8787/clinepass/api/v1/chat/completions",
+      "http://127.0.0.1:8787/clinepass/v1/chat/completions",
       expect.any(Object),
     );
     const init = fetchMock.mock.calls[0][1] as RequestInit;

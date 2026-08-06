@@ -10,43 +10,21 @@
 // =============================================================================
 
 import { errorMessage } from "../llm-utils";
+import { credentialStore, readStaticEnvValue } from "../credentials/credential-store";
 import type { PersistedError } from "./run-types";
 
 export const REDACTED = "[REDACTED]";
 export const ERROR_TEXT_CAP_BYTES = 4096;
 
 /** Shorter configured values are never redacted — avoids mangling prose. */
-const MIN_CREDENTIAL_LENGTH = 6;
-
-/** localStorage keys that hold provider credentials. */
-const STORAGE_CREDENTIAL_KEYS: readonly string[] = [
-  "rsemble.key.openrouter",
-  "rsemble.key.gemini",
-  "rsemble.key.deepseek",
-  "rsemble.key.commandcode",
-  "rsemble.key.clinepass",
-  "rsemble.key.umans",
-  "rsemble.umans.key",
-  "rsemble.key.9router",
-];
-
-/** Environment keys that hold provider credentials. */
-const ENV_CREDENTIAL_KEYS: readonly string[] = [
-  "VITE_OPENROUTER_KEY",
-  "VITE_GEMINI_KEY",
-  "VITE_DEEPSEEK_KEY",
-  "VITE_COMMANDCODE_KEY",
-  "VITE_CLINEPASS_KEY",
-  "VITE_UMANS_KEY",
-  "VITE_UMANS_API_KEY",
-  "VITE_9ROUTER_KEY",
-];
+export const MIN_CREDENTIAL_LENGTH = 6;
 
 /** Authorization-fragment patterns — the scheme/header word plus its value. */
 const AUTH_FRAGMENT_PATTERNS: readonly RegExp[] = [
   /bearer\s+[^\s,;]+/gi,
   /basic\s+[^\s,;]+/gi,
   /authorization\s*[:=]\s*[^\s,;]+/gi,
+  /x-rsemble-bridge-secret\s*[:=]\s*[^\s,;]+/gi,
 ];
 
 /** UTF-8 byte cap that never splits a surrogate pair. */
@@ -63,24 +41,19 @@ export function capUtf8(text: string, maxBytes: number): string {
   return units === text.length ? text : text.slice(0, units);
 }
 
-function defaultReadStorage(key: string): string | null {
-  try {
-    return globalThis.localStorage?.getItem(key) ?? null;
-  } catch {
-    return null;
-  }
-}
-
+// Static, explicit environment references only (review fix 1) — never dynamic
+// `import.meta.env[key]` property access.
 function defaultReadEnv(key: string): string | undefined {
-  return (import.meta.env as Record<string, unknown>)[key] as string | undefined;
+  return readStaticEnvValue(key);
 }
 
 /**
- * All configured credential values (≥ 6 chars) from the allowlisted
- * storage/env keys. Injectable readers for tests.
+ * All configured credential values (≥ MIN_CREDENTIAL_LENGTH chars) resolved
+ * through the shared CredentialStore plus legacy environment aliases that
+ * predate the store. `readEnv` is injectable for tests; production callers use
+ * the default reader.
  */
 export function configuredCredentialValues(
-  readStorage: (key: string) => string | null = defaultReadStorage,
   readEnv: (key: string) => string | undefined = defaultReadEnv,
 ): string[] {
   const seen = new Set<string>();
@@ -91,20 +64,13 @@ export function configuredCredentialValues(
     seen.add(value);
     values.push(value);
   };
-  for (const key of STORAGE_CREDENTIAL_KEYS) {
-    try {
-      collect(readStorage(key));
-    } catch {
-      // storage access denied — skip this key
-    }
-  }
-  for (const key of ENV_CREDENTIAL_KEYS) {
-    try {
-      collect(readEnv(key));
-    } catch {
-      // env access failed — skip this key
-    }
-  }
+  for (const value of credentialStore.configuredValues()) collect(value);
+  // Additional sensitive environment values that are NOT provider credentials:
+  // legacy aliases that predate the store, and the browser-side bridge secret
+  // (VITE_RSEMBLE_BRIDGE_SECRET). They never enter the CredentialStore's
+  // provider resolution paths — they are collected here solely so every
+  // redaction path removes them (final review fix).
+  for (const key of ["VITE_UMANS_API_KEY", "VITE_RSEMBLE_BRIDGE_SECRET"]) collect(readEnv(key));
   return values;
 }
 

@@ -442,19 +442,38 @@ Bind: `127.0.0.1` only. Default port: `8787` (configurable via env
 | `GET` | `/auth/status` | `{ ok, authMode?, accountLabel?, plan?, lastRefresh?, error? }` — **no raw tokens** |
 | `GET` | `/v1/models` | OpenAI-ish list or simplified `{ data: [{ id, name }] }` |
 | `POST` | `/v1/chat/completions` | OpenAI-compatible façade (non-stream + `stream: true` SSE) so the web adapter stays simple |
-| `POST` | `/v1/responses` | Optional native passthrough for debugging |
+| `POST` | `/v1/responses` | **Not retained** — the exact route table (Plan 003 B) does not expose it; it returns `404` without contacting any upstream |
 
-CORS: allow Vite origin only (`http://localhost:5173` and configured alternatives).
+CORS: allow Vite origin only (`http://localhost:5173` and configured
+alternatives). CORS preflight must advertise `X-RSemble-Bridge-Secret` when a
+secret is configured.
 
-Optional shared secret: `RSEMBLE_BRIDGE_SECRET` header required if set (defense
-in depth on shared machines).
+#### Bridge authentication (Plan 002, decision D3)
+
+`RSEMBLE_BRIDGE_SECRET` is optional configuration, but **when set it is
+enforced**:
+
+- `/health` remains unauthenticated (`public`).
+- `/auth/status` is public metadata: login presence, a truncated account
+  prefix, a plan label, and a refresh timestamp — never raw tokens.
+- Every credential-bearing endpoint — Codex `/v1/models`, `/v1/chat/completions`,
+  `/v1/responses` (if retained), and the Umans / ClinePass / 9Router proxy
+  routes — **must** receive `X-RSemble-Bridge-Secret` when configured.
+- Supplied and configured values are compared without early-exit string
+  comparison; failure is `401` with `bridge_auth_required` (missing header) or
+  `bridge_auth_invalid` (mismatch).
+- The configured secret is never echoed in responses or logs.
+- Loopback binding and CORS are defense-in-depth, **not** substitutes for the
+  configured secret.
+- The browser sources the secret from `VITE_RSEMBLE_BRIDGE_SECRET` (or the
+  agreed local runtime source); see `DECISIONS.md` #11.
 
 #### 8.2.7 Web adapter (`chatgpt-codex.ts`)
 
 | Item | Spec |
 |---|---|
 | Base URL | `import.meta.env.VITE_CODEX_BRIDGE_URL` default `http://127.0.0.1:8787` |
-| Auth to bridge | None, or static secret header if configured |
+| Auth to bridge | None, or `X-RSemble-Bridge-Secret` from `VITE_RSEMBLE_BRIDGE_SECRET` when configured (Plan 002 D3) |
 | `readiness` | `GET /auth/status` → ok |
 | `chatCompletion` / stream | `POST /v1/chat/completions` with native model id |
 | `listModels` | `GET /v1/models` → tag `providerId: "chatgpt-codex"` |
@@ -537,6 +556,31 @@ Do not block Phase 3 on a full proxy if direct browser access works for the buil
 9Router is a **routing provider**: one requested model ID produces one RSemble
 candidate. RSemble does not perform a second fallback — 9Router owns internal
 retry, account rotation, and combo resolution.
+
+### 8.5 Umans and ClinePass bridge routes (Plan 002, decision D3)
+
+Umans and ClinePass are reachable only through the local bridge because their
+APIs do not permit credentialed browser CORS requests. The bridge exposes an
+**exact allowlist**, never a prefix proxy:
+
+| Method | Bridge path | Upstream |
+|---|---|---|
+| `GET` | `/umans/v1/models` | `https://api.code.umans.ai/v1/models` |
+| `POST` | `/umans/v1/chat/completions` | `https://api.code.umans.ai/v1/chat/completions` |
+| `GET` | `/clinepass/v1/models` | `https://api.cline.bot/api/v1/models` |
+| `POST` | `/clinepass/v1/chat/completions` | `https://api.cline.bot/api/v1/chat/completions` |
+
+Rules:
+
+- Unknown paths return `404` **without contacting any upstream**.
+- A known path with the wrong method returns `405` with an exact `Allow` header.
+- Non-JSON `POST` bodies return `415`.
+- Caller `Authorization` is forwarded **only** on approved routes and is omitted
+  entirely when blank (never forwarded as an empty bearer value).
+- Upstream redirects are rejected (`redirect: "manual"`); credentials never
+  follow a redirect.
+- Query strings are forwarded only for an already-approved exact path.
+- Bridge authentication (D3) applies when `RSEMBLE_BRIDGE_SECRET` is set.
 ---
 
 ## 9. Configuration
@@ -555,7 +599,8 @@ retry, account rotation, and combo resolution.
 | `VITE_CODEX_BRIDGE_URL` | Web → bridge | Default `http://127.0.0.1:8787` |
 | `RSEMBLE_9ROUTER_URL` | Bridge → 9Router upstream | Default `http://127.0.0.1:20128`; `http:`/`https:` only |
 | `RSEMBLE_CODEX_BRIDGE_PORT` | Bridge | Default `8787` |
-| `RSEMBLE_BRIDGE_SECRET` | Bridge + web | Optional |
+| `RSEMBLE_BRIDGE_SECRET` | Bridge | Optional; **enforced when set** (Plan 002 D3) |
+| `VITE_RSEMBLE_BRIDGE_SECRET` | Web → bridge | Must match `RSEMBLE_BRIDGE_SECRET` when configured; embedded in the client bundle |
 | `CODEX_HOME` | Bridge | Optional Codex override |
 
 Update `.env.example` with commented placeholders. Never commit real secrets.
@@ -570,14 +615,44 @@ Connections panel (command pane footer or header menu — keep chrome minimal):
 | ChatGPT (Codex) | Status badge, "How to connect" (`codex login` + bridge), refresh status |
 | Gemini | Key input, test, clear |
 
-Keys in settings may live in `localStorage` under `rsemble.providers.v1` for
-personal convenience. Document XSS risk. Env vars remain the zero-UI path.
+#### 9.2.1 Credential policy (Plan 002, decision D1)
+
+- Environment-provided keys have the highest precedence and are shown as
+  read-only in the UI.
+- Keys entered in Connections are **session-only by default** (module memory
+  until the tab/process exits).
+- Persistent browser storage is an **explicit per-key opt-in** labeled
+  **Remember on this device**, stored under versioned keys
+  (`rsemble.key.<provider>.v2`); the UI discloses that same-origin JavaScript
+  can read them.
+- Legacy `rsemble.key.<provider>` values are migrated deliberately and
+  idempotently — never silently copied into the new store in a way that changes
+  the user's prior behavior, and never logged.
+- Test-before-save behavior is preserved: a key is tested before it is stored.
+- All provider adapters resolve credentials through the shared `CredentialStore`
+  contract; no adapter reads browser storage directly.
 
 ### 9.3 Vite note
 
 `VITE_*` values are embedded in the client bundle. README already warns:
 local/personal use only; shared deployment needs a server-side secret path.
 Multi-provider does not change that rule.
+
+### 9.4 Attachment size authority (Plan 002, decision D4)
+
+Two distinct limits exist and are enforced at the correct boundary:
+
+| Limit | Value | Enforced at |
+|---|---|---|
+| Raw aggregate attachment limit | 40 MiB (10 files, 20 MiB each) | UI admission |
+| Encoded bridge body ceiling | 64 MiB | Local bridge (`413`) |
+
+- The UI must not admit a request the selected provider transport cannot carry.
+- Bridge-routed requests run an **encoded-size preflight** (base64 + JSON
+  overhead) before any fetch; a request over the encoded ceiling is blocked
+  locally with an exact transport-size error.
+- Provider-specific lower limits remain capability constraints surfaced before
+  execution, never silent drops.
 
 ---
 
@@ -639,6 +714,18 @@ configuration of the fanout, not a second mode.
 `errorMessage(err)` in `llm-utils.ts` handles `ProviderError`, `DOMException`
 AbortError, and generic `Error`.
 
+### 11.1 Timeout semantics (Plan 002, decision D5)
+
+Implementation must distinguish four clocks:
+
+- **connect/header deadline** — request dispatch until response headers;
+- **stream inactivity deadline** — time since the last valid stream event;
+- **optional total execution ceiling** — provider/stage configurable, generous;
+- **explicit user abort** — never reported as a timeout.
+
+A single short wall-clock timeout is rejected: reasoning models may remain
+healthy while running for a long time.
+
 Streaming parity target: OpenRouter and Codex bridge SSE; Gemini stream API.
 If Gemini stream is delayed, ship non-stream fanout for Gemini only with a
 single full-text yield — mark as temporary in the phase notes.
@@ -654,6 +741,12 @@ Guiding rules:
 - No provider-specific branches inside `draftMessages` / `judgeMessages` /
   `fusionMessages`.
 - Do not add vendors beyond §4.
+
+> The historical phase checklist below predates the hardening program. The
+> authoritative execution order is the Plan 002–008 sequence in
+> [`plans/README.md`](../plans/README.md) (Plan 002 decision D6); hardening work
+> must not be re-sequenced through the historical checkboxes. Where a checklist
+> item conflicts with Plan 002 decisions, the decision wins.
 
 ---
 
@@ -719,7 +812,7 @@ Guiding rules:
       *or* a documented simpler delta protocol the web adapter understands.
 - [ ] **2.6** `GET /auth/status`, `GET /health`, `GET /v1/models`.
 - [ ] **2.7** `POST /v1/chat/completions` façade (translate messages ↔ Responses).
-- [ ] **2.8** Bind 127.0.0.1 only; CORS allowlist; optional bridge secret.
+- [x] **2.8** Bind 127.0.0.1 only; CORS allowlist; optional bridge secret — **superseded by Plan 002 D3** (secret enforced when set).
 - [ ] **2.9** npm scripts: `dev:bridge`, compose into `dev`.
 - [ ] **2.10** README: `codex login`, bridge, troubleshooting (not logged in /
       keyring-only / port in use).
@@ -777,7 +870,7 @@ Guiding rules:
 **Goal.** Day-to-day usable multi-provider without editing `.env` for every change.
 
 - [ ] **4.1** Connections UI (minimal, DESIGN.md-compliant).
-- [ ] **4.2** Optional `localStorage` key store with clear/export-none.
+- [x] **4.2** Optional `localStorage` key store with clear/export-none — **superseded by Plan 002 D1** (session-only default with explicit per-key opt-in).
 - [ ] **4.3** Per-provider test connection actions.
 - [ ] **4.4** Catalog merge UX: filter by provider; badges on rows.
 - [ ] **4.5** Judge combobox searches across ready providers (grouped).
@@ -840,9 +933,9 @@ Guiding rules:
 - [ ] No access/refresh tokens in frontend state, logs, or analytics.
 - [ ] `.gitignore` covers `.env`, any local auth copies.
 - [ ] README warns: personal use; don't expose bridge; treat `auth.json` as a password.
-- [ ] Optional bridge secret on shared workstations.
+- [x] Bridge secret (`RSEMBLE_BRIDGE_SECRET`) is enforced when set (Plan 002 D3).
 - [ ] Do not paste `auth.json` into issues/chats.
-- [ ] Gemini/OpenRouter keys: prefer env for long-lived; settings store is convenience only.
+- [x] Keys: environment variables preferred; UI keys session-only unless explicitly remembered (Plan 002 D1).
 
 ---
 
@@ -918,3 +1011,21 @@ patterns from.
 - Orchestration: `src/rsemble.tsx`
 - Domain: `src/studio-data.ts`, `src/studio-engine.ts`
 - Pipeline: `src/lib/pipeline.ts`
+
+
+---
+
+## 20. Hardening terminology (Plan 002, workstream B)
+
+Shared vocabulary used by the hardening program and its implementation:
+
+- `session credential` — memory-only credential until the tab/process exits.
+- `remembered credential` — explicit persistent browser credential (per-key opt-in).
+- `bridge secret` — local request-authentication token (`X-RSemble-Bridge-Secret`), not a provider key.
+- `raw attachment bytes` — original admitted files.
+- `encoded request bytes` — serialized transport body.
+- `reported usage` — provider-authoritative usage.
+- `estimated usage` — estimator with an identified method and limitations.
+- `unknown usage` — no defensible estimate.
+- `execution owner` — in-tab execution ownership.
+- `execution lease` — cross-tab persisted execution coordination.

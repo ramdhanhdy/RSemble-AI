@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createOpenAICompatProvider } from "./openai-compat";
 import { clearModelCapabilities, getModelCapabilities } from "./capabilities";
+import { resetCredentialStoreForTests } from "../credentials/credential-store";
 import { ProviderError } from "./types";
 
 const config = {
@@ -17,6 +18,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   clearModelCapabilities();
+  resetCredentialStoreForTests();
 });
 
 function stubKey() {
@@ -28,7 +30,7 @@ function stubKey() {
 }
 
 describe("createOpenAICompatProvider — error preservation", () => {
-  it("preserves plain-text (non-JSON) upstream error bodies as the ProviderError message", async () => {
+  it("maps plain-text (non-JSON) upstream error bodies to a generic status error (review fix 3)", async () => {
     stubKey();
     vi.stubGlobal(
       "fetch",
@@ -44,7 +46,8 @@ describe("createOpenAICompatProvider — error preservation", () => {
       .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ProviderError);
-    expect((err as ProviderError).message).toBe("502 Bad Gateway: upstream timed out");
+    // Raw plain-text bodies never reach ProviderError.message (review fix 3).
+    expect((err as ProviderError).message).toBe("Umans request failed (HTTP 502).");
     expect((err as ProviderError).status).toBe(502);
     expect((err as ProviderError).providerId).toBe("umans");
   });
@@ -422,5 +425,259 @@ describe("createOpenAICompatProvider — per-model capability metadata", () => {
     expect(getModelCapabilities("umans", "vision")).toEqual({ image: true, pdf: false });
     expect(getModelCapabilities("umans", "text-only")).toEqual({ image: false, pdf: false });
     expect(getModelCapabilities("umans", "undocumented")).toEqual({ image: false, pdf: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bounded error bodies and bridge authentication — Plan 003 C/D
+// ---------------------------------------------------------------------------
+
+describe("createOpenAICompatProvider — bounded error bodies (Plan 003 D)", () => {
+  it("caps an oversized plain-text error body to the byte bound", async () => {
+    stubKey();
+    const big = "E".repeat(20_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(big, { status: 502, headers: { "Content-Type": "text/plain" } }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message.length).toBeLessThanOrEqual(8192);
+    expect((err as ProviderError).message).not.toContain(big.slice(9000));
+  });
+
+  it("does not serialize arbitrary JSON error bodies into the message", async () => {
+    stubKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ foo: { bar: [1, 2, 3] } }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).toContain("502");
+    expect((err as ProviderError).message).not.toContain("bar");
+  });
+});
+
+describe("createOpenAICompatProvider — bridge secret header (Plan 003 C)", () => {
+  it("attaches X-RSemble-Bridge-Secret when configured", async () => {
+    stubKey();
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, bridgeSecret: true });
+    await provider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-RSemble-Bridge-Secret"]).toBe("test-bridge-secret");
+  });
+
+  it("omits the header when no secret is configured", async () => {
+    stubKey();
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, bridgeSecret: true });
+    await provider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-RSemble-Bridge-Secret"]).toBeUndefined();
+  });
+
+  it("does not attach the header for providers that are not bridge-routed", async () => {
+    stubKey();
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider(config); // bridgeSecret: false
+    await provider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-RSemble-Bridge-Secret"]).toBeUndefined();
+  });
+});
+
+describe("createOpenAICompatProvider — encoded body preflight (Plan 003 E)", () => {
+  it("blocks an oversized encoded body before fetch with an exact transport-size error", async () => {
+    stubKey();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, bridgeBodyLimitBytes: 1024 });
+    const messages = [
+      { role: "user" as const, content: [{ type: "text" as const, text: "x".repeat(2000) }] },
+    ];
+    const err = await provider
+      .chatCompletion({ model: "m", messages })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).toMatch(/bridge limit/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks oversized streaming bodies before fetch too", async () => {
+    stubKey();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createOpenAICompatProvider({ ...config, bridgeBodyLimitBytes: 1024 });
+    const messages = [
+      { role: "user" as const, content: [{ type: "text" as const, text: "x".repeat(2000) }] },
+    ];
+    const stream = provider.chatCompletionStream({ model: "m", messages });
+    await expect(stream.next()).rejects.toMatchObject({ name: "ProviderError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider-error policy — review fix 3
+// ---------------------------------------------------------------------------
+
+describe("createOpenAICompatProvider — raw provider bodies never surface (review fix 3)", () => {
+  function stubConfiguredKey(): void {
+    // Seed a configured credential through the store (env path) so redaction
+    // has a real value to remove.
+    vi.stubEnv("VITE_UMANS_KEY", "sk-configured-umans-123456");
+    resetCredentialStoreForTests();
+  }
+
+  it("redacts a configured key inside a recognized structured message", async () => {
+    stubConfiguredKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "401 invalid key sk-configured-umans-123456" } }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).not.toContain("sk-configured-umans-123456");
+  });
+
+  it("redacts bearer fragments and authorization header values in structured messages", async () => {
+    stubConfiguredKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { message: "Bearer sk-bearer-secret-999 rejected; Authorization: sk-hdr-888" },
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    const message = (err as ProviderError).message;
+    expect(message).not.toContain("sk-bearer-secret-999");
+    expect(message).not.toContain("sk-hdr-888");
+    expect(message).not.toMatch(/Bearer\s+[^\s,;]+/i);
+    expect(message).not.toMatch(/Authorization\s*[:=]\s*[^\s,;]+/i);
+  });
+
+  it("maps an HTML error body to a generic status error without raw content", async () => {
+    stubConfiguredKey();
+    const html = `<html><body>Proxy Error sk-configured-umans-123456 prompt fragment "hello world"</body></html>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("Umans request failed (HTTP 502).");
+  });
+
+  it("maps arbitrary JSON with prompt fragments to a generic status error", async () => {
+    stubConfiguredKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ trace: { request: "summarize the attached prompt" } }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("Umans request failed (HTTP 500).");
+  });
+
+  it("maps a plain-text prompt echo to a generic status error", async () => {
+    stubConfiguredKey();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response('echo: "user task: summarize the attached prompt"', {
+          status: 503,
+          headers: { "Content-Type": "text/plain" },
+        }),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).toBe("Umans request failed (HTTP 503).");
+  });
+});
+
+describe("createOpenAICompatProvider — bridge secret never reaches thrown errors (final review fix)", () => {
+  it("redacts a configured bridge secret from a structured message", async () => {
+    stubKey();
+    vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret-123456");
+    vi.stubEnv("VITE_UMANS_KEY", "");
+    resetCredentialStoreForTests();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { message: "401 X-RSemble-Bridge-Secret: test-bridge-secret-123456 invalid" },
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const provider = createOpenAICompatProvider(config);
+    const err = await provider
+      .chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).not.toContain("test-bridge-secret-123456");
+    expect((err as ProviderError).message).not.toMatch(/X-RSemble-Bridge-Secret\s*[:=]\s*[^\s,;]+/i);
   });
 });

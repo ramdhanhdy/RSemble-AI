@@ -360,8 +360,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         ...context,
         status: "failed",
         durationMs: Date.now() - requestStartedAt,
+        // Only the already-sanitized message crosses the log boundary; raw
+        // stacks may contain provider bodies or credentials (Plan 003 D).
         error: error.message,
-        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
       }, "error");
       return { error };
     } finally {
@@ -488,8 +489,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         ...judgeContext,
         status: "failed",
         durationMs: Date.now() - judgeLogStartedAt,
+        // Only the already-sanitized message crosses the log boundary; raw
+        // stacks may contain provider bodies or credentials (Plan 003 D).
         error: error.message,
-        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
       }, "error");
       return { ok: false };
     } finally {
