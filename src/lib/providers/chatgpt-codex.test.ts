@@ -288,3 +288,176 @@ describe("chatgptCodexProvider — raw provider bodies never surface (review fix
     expect((err as ProviderError).message).toBe("ChatGPT (Codex) request failed (HTTP 502).");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Codex compatibility classification (Plan 008 W/D; CodeRabbit CR-17/CR-18)
+// ---------------------------------------------------------------------------
+
+describe("chatgptCodexProvider — compatibility classification", () => {
+  it("prefixes only a known compatibility category from the bridge (CR-18)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { message: "bad request", compatibility: "protocol_shape_changed" },
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const err = await chatgptCodexProvider
+      .chatCompletion({ model: "gpt-5.6-sol", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).toContain(
+      "[Codex compatibility: protocol_shape_changed]",
+    );
+    expect((err as ProviderError).compatibility).toBe("protocol_shape_changed");
+  });
+
+  it("ignores an unknown compatibility category from the bridge (CR-18)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { message: "bad request", compatibility: "some_unknown_category" },
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const err = await chatgptCodexProvider
+      .chatCompletion({ model: "gpt-5.6-sol", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).message).not.toContain("[Codex compatibility:");
+    expect((err as ProviderError).compatibility).toBeUndefined();
+  });
+
+  it("ignores an empty compatibility category from the bridge (CR-18)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "bad request", compatibility: "" } }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const err = await chatgptCodexProvider
+      .chatCompletion({ model: "gpt-5.6-sol", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect((err as ProviderError).message).not.toContain("[Codex compatibility:");
+    expect((err as ProviderError).compatibility).toBeUndefined();
+  });
+
+  it("tags a truncated stream exactly once with stream_terminated_unexpectedly (CR-17)", async () => {
+    // Streaming upstream body that ends without a [DONE] sentinel.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode('data: {"type":"response.output_text.delta","delta":"hi"}\n\n'),
+        );
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+        ),
+    );
+
+    const gen = chatgptCodexProvider.chatCompletionStream({
+      model: "gpt-5.6-sol",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    const err = await (async () => {
+      try {
+        for await (const _ of gen) {
+          // consume
+        }
+        return null;
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect(err).toBeInstanceOf(ProviderError);
+    const message = (err as ProviderError).message;
+    expect(message).toContain("[Codex compatibility: stream_terminated_unexpectedly]");
+    // Exactly one prefix.
+    expect(message.split("[Codex compatibility:").length - 1).toBe(1);
+    expect((err as ProviderError).compatibility).toBe("stream_terminated_unexpectedly");
+  });
+
+  it("does not double-prefix an already classified error on the STREAMING path (CR-17)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "Bad request: incomplete request body",
+              compatibility: "protocol_shape_changed",
+            },
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const gen = chatgptCodexProvider.chatCompletionStream({
+      model: "gpt-5.6-sol",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    const err = await (async () => {
+      try {
+        for await (const _ of gen) {
+          // consume
+        }
+        return null;
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect(err).toBeInstanceOf(ProviderError);
+    const message = (err as ProviderError).message;
+    // The streaming catch sees an already-classified protocol_shape_changed
+    // error whose detail contains "incomplete"; it must NOT re-tag it as
+    // stream_terminated_unexpectedly and must NOT prefix it twice.
+    expect(message.split("[Codex compatibility:").length - 1).toBe(1);
+    expect(message).toContain("[Codex compatibility: protocol_shape_changed]");
+    expect(message).not.toContain("[Codex compatibility: stream_terminated_unexpectedly]");
+  });
+  it("does not double-prefix an already classified error (CR-17)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "Bad request: incomplete request body",
+              compatibility: "protocol_shape_changed",
+            },
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const err = await chatgptCodexProvider
+      .chatCompletion({ model: "gpt-5.6-sol", messages: [{ role: "user", content: "hi" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    const message = (err as ProviderError).message;
+    // The message contains the word "incomplete" but the error is already
+    // classified as protocol_shape_changed; it must NOT be re-tagged as
+    // stream_terminated_unexpectedly and must NOT be prefixed twice.
+    expect(message.split("[Codex compatibility:").length - 1).toBe(1);
+    expect(message).toContain("[Codex compatibility: protocol_shape_changed]");
+    expect(message).not.toContain("[Codex compatibility: stream_terminated_unexpectedly]");
+  });
+});

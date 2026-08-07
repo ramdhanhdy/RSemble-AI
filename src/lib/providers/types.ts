@@ -194,6 +194,9 @@ export class ProviderError extends Error {
     message: string,
     public readonly providerId: ProviderId,
     public readonly status?: number,
+    /** Optional Codex compatibility category (Plan 008 W/D). Only set when a
+     *  recognized category is known; undefined otherwise. */
+    public readonly compatibility?: string,
   ) {
     super(message);
     this.name = "ProviderError";

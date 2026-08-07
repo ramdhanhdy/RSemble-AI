@@ -16,6 +16,7 @@ import { bridgeAuthHeaders } from "./bridge-auth";
 import { buildBridgeRequestBody } from "./bridge-body";
 import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
+import { isCodexCompatibilityFailure } from "../../../shared/codex-compatibility";
 import {
   PROVIDER_DEADLINES,
   createHeadersReady,
@@ -70,13 +71,16 @@ async function parseBridgeError(res: Response, label: string): Promise<ProviderE
   try {
     const parsed = JSON.parse(raw) as { error?: { compatibility?: string } };
     const cat = parsed?.error?.compatibility;
-    if (typeof cat === "string" && cat.length > 0) compatibility = cat;
+    // Accept only the known Codex compatibility categories; unknown, malformed,
+    // or empty bridge strings are ignored so users see the normal sanitized
+    // error detail rather than an unvalidated label.
+    if (isCodexCompatibilityFailure(cat)) compatibility = cat;
   } catch {
     // non-JSON body: no compatibility field to surface; fall through.
   }
   const detail = providerErrorDetail(raw, label, res.status);
   const message = compatibility ? `[Codex compatibility: ${compatibility}] ${detail}` : detail;
-  return new ProviderError(message, "chatgpt-codex", res.status);
+  return new ProviderError(message, "chatgpt-codex", res.status, compatibility);
 }
 
 function deadlinePolicy(opts: ChatOptions): typeof PROVIDER_DEADLINES {
@@ -230,12 +234,18 @@ export const chatgptCodexProvider: LLMProvider = {
         if (abort !== null) throw abort;
         if (err instanceof ProviderError) {
           // Surf a truncated Codex stream as a distinct experimental-integration
-          // diagnosis (Plan 008 W/D), not a generic network failure.
-          if (/stream ended unexpectedly|incomplete/.test(err.message)) {
+          // diagnosis (Plan 008 W/D), not a generic network failure. The typed
+          // compatibility field prevents double-prefixing: an error that is
+          // already classified (e.g. by parseBridgeError) is left unchanged.
+          if (
+            err.compatibility === undefined &&
+            /stream ended unexpectedly|incomplete/.test(err.message)
+          ) {
             throw new ProviderError(
               `[Codex compatibility: stream_terminated_unexpectedly] ${err.message}`,
               err.providerId,
               err.status,
+              "stream_terminated_unexpectedly",
             );
           }
           throw err;
