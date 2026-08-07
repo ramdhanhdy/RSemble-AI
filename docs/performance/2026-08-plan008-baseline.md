@@ -111,13 +111,13 @@ observed at every commit, not build-to-build reshuffling. No lazy chunk
 increased; PDF/lib/Runs/Evaluations unchanged.
 
 **Budget recommendation** (modest headroom, robust to harmless hash reshuffling):
-- initial JS budget: **≤ 910 kB raw** / **≤ 275 kB gzip** — computed as +15% of
-  the authoritative baseline totals (792.07 × 1.15 = 910.88 raw; 239.52 × 1.15 =
-  275.45 gzip), rounded down to whole kB so harmless dedup/renaming does not fail CI;
+- initial JS budget: **≤ 910.88 kB raw** / **≤ 275.45 kB gzip** — computed as
+  +15% of the authoritative baseline totals (792.07 × 1.15 = 910.88 raw;
+  239.52 × 1.15 = 275.45 gzip);
 - unexpected-growth threshold: the CI should fail if the initial gzip total
   regresses by more than **+15%** from the recorded baseline **239.52 kB** on a
-  clean build (i.e. above 275.45 kB). Do not gate on chunk counts or hashes
-  (they reshuffle constantly).
+  clean build — i.e. above the same **275.45 kB** budget limit. Do not gate on
+  chunk counts or hashes (they reshuffle constantly).
 
 These budgets are advisory in this branch (CI is owner-managed); they are
 recorded here for a future owner-owned gate.
