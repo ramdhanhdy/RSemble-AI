@@ -434,6 +434,15 @@ path exists). Prefer: load tokens Codex already wrote; refresh the same way
 Codex does; avoid inventing a second OAuth client if the cached refresh flow
 suffices.
 
+> **Plan 008 — protocol isolation.** These upstream constants (endpoint, version,
+> User-Agent, Originator, OAuth client id, token endpoint) and the request
+> translation now live in one `CodexProtocolAdapter`
+> (`server/codex-bridge/protocol.ts`) with fixture-based compatibility tests.
+> The Codex integration is **experimental**: protocol drift surfaces as a
+> distinct compatibility diagnosis, not a generic network failure. See
+> [docs/hardening/codex-compatibility.md](docs/hardening/codex-compatibility.md)
+> for the update/smoke procedure.
+
 #### 8.2.6 Bridge HTTP API (browser → bridge)
 
 Bind: `127.0.0.1` only. Default port: `8787` (configurable via env
