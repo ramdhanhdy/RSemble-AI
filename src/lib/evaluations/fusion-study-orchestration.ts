@@ -26,6 +26,8 @@ import {
 } from "./complementarity";
 import { buildPlaybook } from "./fusion-playbook";
 import {
+  activePoolSlots,
+  modelKeyOf,
   runStageA,
   runStageB,
   runStageC,
@@ -56,14 +58,6 @@ export const DEFAULT_SHORTLIST_RULE: ShortlistRule = {
   minSynthesisHeadroom: 0.15,
   minSelectionHeadroom: 0.25,
 };
-
-function activePoolSlots(pool: PoolManifestVersion): ModelSlot[] {
-  return [...pool.core, ...pool.challengers].filter((s) => s.enabled);
-}
-
-function modelKeyOf(slot: ModelSlot): string {
-  return `${slot.providerId}:${slot.slug}`;
-}
 
 /**
  * Pick the stratified Stage A pairs (spec §7.1): highest-headroom pair, a
