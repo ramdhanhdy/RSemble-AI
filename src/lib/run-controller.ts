@@ -234,13 +234,8 @@ export function createRunController(deps: RunControllerDeps) {
     // use this immutable token; a later acquisition by another tab cannot be
     // mistaken for continued ownership.
     const capturedLease = leaseToken ?? activeLeaseRef.current;
-    const persistedFence: ExecutionFence | undefined = capturedLease
-      ? {
-          ownerId: capturedLease.ownerId,
-          fence: capturedLease.fence,
-          ...(capturedLease.leaseId ? { leaseId: capturedLease.leaseId } : {}),
-        }
-      : undefined;
+    const persistedFence: ExecutionFence | undefined = fenceFromLease(capturedLease);
+
     // Legacy contexts may omit mode; capture the fallback at event creation so
     // a command-pane edit cannot rewrite persisted protocol state later.
     const capturedMode = frozenContext?.mode ?? stateRef.current.mode;
@@ -596,13 +591,7 @@ export function createRunController(deps: RunControllerDeps) {
     const abortedRunId = runIdRef.current;
     if (recorder && abortedRunId) {
       const token = activeLeaseRef.current;
-      const fence = token
-        ? {
-            ownerId: token.ownerId,
-            fence: token.fence,
-            ...(token.leaseId ? { leaseId: token.leaseId } : {}),
-          }
-        : undefined;
+      const fence = fenceFromLease(token);
       abortPersistenceRef.current = assertCurrentLease(token)
         .then(() => recorder.markAborted(abortedRunId, fence))
         .catch(() => {
@@ -821,17 +810,26 @@ export function createRunController(deps: RunControllerDeps) {
           recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null;
         const candidateAttemptIdsByCandidateId: Record<string, string> =
           acceptedAttemptIdsByCandidate(recorded);
-        let judgeAttemptId = "";
-        let blindLabelToCandidateId: Record<string, string> = {};
-        if (recorded) {
-          judgeAttemptId = recorded.judge.acceptedAttemptId ?? "";
-          const acceptedJudge = recorded.judge.attempts.find(
-            (a) => a.attemptId === recorded.judge.acceptedAttemptId,
-          );
-          if (acceptedJudge) {
-            blindLabelToCandidateId = acceptedJudge.blindLabelToCandidateId;
-          }
+        // A re-Fuse that will persist a sourceJudgeAttemptId must reference an
+        // actual accepted Judge attempt; never persist an empty string. When
+        // the recorder is active but the persisted record has no accepted
+        // Judge attempt, block the re-Fuse with a clear reason instead of
+        // writing a provenance-less fusion (Plan 007).
+        const acceptedJudgeAttemptId = recorded?.judge.acceptedAttemptId ?? "";
+        if (recorder && runIdRef.current && !acceptedJudgeAttemptId) {
+          dispatch({
+            type: "FUSION_FAILED",
+            error: "An accepted Judge attempt is required before re-fusing.",
+          });
+          return;
         }
+        const judgeAttemptId = acceptedJudgeAttemptId;
+        const acceptedJudge = recorded?.judge.attempts.find(
+          (a) => a.attemptId === acceptedJudgeAttemptId,
+        );
+        const blindLabelToCandidateId: Record<string, string> = acceptedJudge
+          ? acceptedJudge.blindLabelToCandidateId
+          : {};
 
         const ctx = stateRef.current.runContext;
         const events = makeEvents(

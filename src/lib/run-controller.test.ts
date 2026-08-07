@@ -767,10 +767,11 @@ describe("run-controller — guarded paths", () => {
     recorder.getRecord.mockClear();
     chatCompletionMock.mockImplementation(() => "fused re-fuse");
     controller.triggerFusion(true);
-    await new Promise((r) => setTimeout(r, 10));
+    // Wait for the detached re-Fuse task to reach the persisted-record fetch
+    // (the observable effect), rather than relying on a fixed delay.
+    await vi.waitFor(() => expect(recorder.getRecord).toHaveBeenCalledTimes(1));
 
     // Exactly one persisted-record fetch for the re-Fuse.
-    expect(recorder.getRecord).toHaveBeenCalledTimes(1);
     const fusionAttemptInputs = recorder.beginFusionAttempt.mock.calls.map(
       (c) => c[2] as import("./persistence/run-record-builder").FusionAttemptStartInput,
     );
@@ -782,6 +783,58 @@ describe("run-controller — guarded paths", () => {
       "cand-s1": "cand-att-1",
       "cand-s2": "cand-att-2",
     });
+  });
+
+  it("blocks re-fuse and never persists an empty sourceJudgeAttemptId when the record has no accepted Judge attempt", async () => {
+    // The recorder is active (so the fusion would be persisted), but the
+    // record carries no accepted Judge attempt. triggerFusion must refuse to
+    // re-fuse rather than write an empty sourceJudgeAttemptId (Plan 007).
+    const state = stateWithSlots(TWO_SLOTS, "fuse");
+    state.judgeStatus = "done";
+    state.judgeReport = { labelMap: [], evaluationsById: {}, comparisons: [] };
+    const recorder = makeRecorderSpies();
+    recorder.getRecord.mockResolvedValue({
+      id: "run-1",
+      revision: 1,
+      candidates: [{ candidateId: "cand-s1", acceptedAttemptId: "cand-att-1" }],
+      judge: { status: "completed", acceptedAttemptId: null, attempts: [] },
+    } as never);
+
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
+      .mockResolvedValue("fused answer");
+
+    const shared = { lease: null as import("./execution-lease").LeaseInfo | null, fence: 0 };
+    const { deps, dispatched } = makeDeps(state);
+    deps.recorder = recorder as unknown as import("./run-controller").RunControllerDeps["recorder"];
+    deps.lease = new InMemoryExecutionLease(shared, null, {
+      ownerId: "tab-fuse",
+      now: () => 1000,
+      ttl: 10_000,
+    });
+
+    const controller = createRunController(deps);
+    await controller.runFanout();
+    expect(recorder.beginFusionAttempt).toHaveBeenCalledTimes(1);
+
+    // Re-fuse now finds a record without an accepted Judge attempt.
+    recorder.getRecord.mockClear();
+    recorder.beginFusionAttempt.mockClear();
+    chatCompletionMock.mockImplementation(() => "fused re-fuse");
+    controller.triggerFusion(true);
+    await vi.waitFor(() =>
+      expect(dispatched.map((a) => a.type)).toContain(
+        "FUSION_FAILED" as unknown as (typeof dispatched)[number]["type"],
+      ),
+    );
+    // No second fusion was started or persisted with an empty source judge ID.
+    expect(recorder.beginFusionAttempt).not.toHaveBeenCalled();
   });
 });
 
