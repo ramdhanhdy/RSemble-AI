@@ -14,6 +14,7 @@
 // =============================================================================
 
 import type { Candidate, ModelSlot } from "../studio-data";
+import type { CriticRef } from "./providers/types";
 import type { RunEvaluationContext } from "../studio-engine";
 import type { FanoutJob } from "./pipeline";
 import type { ExecutionFence, PersistedCandidate } from "./persistence/run-types";
@@ -26,7 +27,7 @@ export interface FrozenContextSource {
   temperature: number;
   evaluation: RunEvaluationContext["evaluation"];
   slots: ModelSlot[];
-  critic: RunEvaluationContext["critic"];
+  critic: CriticRef;
   judgeInstruction: string | undefined;
   attachments: RunEvaluationContext["attachments"];
   attachmentsToJudge: boolean;
@@ -35,6 +36,10 @@ export interface FrozenContextSource {
 
 /**
  * Freeze one immutable protocol snapshot from mutable command-pane state.
+ * The returned context is a one-level copy: array members (slots, attachments)
+ * and the critic/reasoning-policy objects are fresh copies, so mutating a
+ * top-level member or an array slot on the source cannot reach the snapshot.
+ * Nested objects inside a slot/attachment are shared (one-level guarantee).
  * The executor and every retry/stage afterwards receive this same object even
  * if the command pane changes meanwhile (spec §5.1 immutable protocol).
  */
@@ -49,7 +54,7 @@ export function buildFrozenContext(source: FrozenContextSource): RunEvaluationCo
     prompt: source.prompt,
     evaluation: source.evaluation,
     slots: source.slots.map((slot) => ({ ...slot })),
-    critic: { ...source.critic! },
+    critic: { ...source.critic },
     judgeInstruction: source.judgeInstruction,
     attachments: source.attachments.map((a) => ({ ...a })),
     attachmentsToJudge: source.attachmentsToJudge,

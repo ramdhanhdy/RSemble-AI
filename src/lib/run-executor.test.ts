@@ -1122,17 +1122,38 @@ describe("run-executor — dev log containment", () => {
     }
   });
 
-  it("logs only the sanitized error message for provider failures", () => {
-    // The sanitized PersistedError message is the only error payload passed to
-    // devTerminalLog; raw bodies/stacks must not cross that boundary. In the
-    // Compare spine this lives in execution-stages; keep run-executor covered too.
+  it("logs only the sanitized error message for provider failures, never the raw stack marker", async () => {
+    // Behavioral containment: trigger a provider failure whose stack carries a
+    // unique marker and assert the terminal logger receives only the sanitized
+    // message — raw bodies/stacks must never cross the devTerminalLog boundary
+    // (Plan 003 Workstream D), regardless of the local variable name.
+    const marker = "SECRET_RAW_STACK_MARKER_9f41";
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    const raw = new Error("judge provider unavailable");
+    raw.stack = `Error: judge provider unavailable\n    at throwProviderFailure ${marker}\n    at judge`;
+    chatCompletionMock.mockRejectedValue(raw);
+
+    const executor = createRunExecutor({ random: () => 0.999, now: () => 99 });
+    const { events } = makeEvents();
+    await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
+
+    const failedLog = devLogMock.mock.calls.find((c) => c[0] === "judge.request.failed");
+    expect(failedLog).toBeTruthy();
+    const payload = JSON.stringify(failedLog![1]);
+    // The sanitized message is present so the operator can diagnose...
+    expect(payload).toContain("judge provider unavailable");
+    // ...but the raw stack marker (the sensitive payload) never crosses.
+    expect(payload).not.toContain(marker);
+    expect(payload).not.toContain("at throwProviderFailure");
+
+    // Optional secondary coverage: the logged error field is only the sanitized
+    // message, and no raw JSON.stringify(err) reaches the source.
+    expect((failedLog![1] as { error: string }).error).toBe("judge provider unavailable");
     const files = ["src/lib/run-executor.ts", "src/lib/execution-stages.ts"];
     for (const file of files) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source).not.toContain("JSON.stringify(err)");
     }
-    const stages = readFileSync(join(process.cwd(), "src/lib/execution-stages.ts"), "utf8");
-    expect(stages).toContain("error: error.message");
   });
 });
 

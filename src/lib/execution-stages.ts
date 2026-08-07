@@ -190,7 +190,13 @@ export async function runCandidateStream(
   const provider = getProvider(job.providerId);
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort();
-  signal.addEventListener("abort", onAbort);
+  if (signal.aborted) {
+    // Already aborted before the stream started — abort the child controller
+    // immediately instead of registering a listener that will never fire.
+    ctrl.abort();
+  } else {
+    signal.addEventListener("abort", onAbort);
+  }
   const requestStartedAt = Date.now();
   const context = {
     ...sourceFields(diagnostics.source),
@@ -620,6 +626,7 @@ export async function runFusion(
   ctx: RunStageContext,
   blindCandidates: BlindCandidate[],
   request: {
+    source?: RunSource;
     task: CandidateTaskSnapshot;
     evaluation: AdHocEvaluationConfig;
     critic: CriticRef;
@@ -640,6 +647,7 @@ export async function runFusion(
     deadlineDeps,
     estimateFallbackCost,
     sanitizeError,
+    sourceFields,
     isAborted,
   } = ctx;
   if (isAborted(signal)) return { ok: false, result: null };
@@ -657,6 +665,12 @@ export async function runFusion(
   const attemptId = generateId();
   const startedAt = now();
   const fusionLogStartedAt = Date.now();
+  const fusionContext = {
+    ...sourceFields(request.source),
+    attemptId,
+    modelKey: `${request.critic.providerId}:${request.critic.model}`,
+    stage: "fusion",
+  };
 
   try {
     await events.onFusionStart(attemptId, {
@@ -675,9 +689,7 @@ export async function runFusion(
   devTerminalLog(
     "fusion.request.started",
     {
-      attemptId,
-      modelKey: `${request.critic.providerId}:${request.critic.model}`,
-      stage: "fusion",
+      ...fusionContext,
     },
     "info",
   );
@@ -759,9 +771,7 @@ export async function runFusion(
     devTerminalLog(
       "fusion.request.completed",
       {
-        attemptId,
-        modelKey: `${request.critic.providerId}:${request.critic.model}`,
-        stage: "fusion",
+        ...fusionContext,
         status: "completed",
         durationMs: Date.now() - fusionLogStartedAt,
       },
@@ -786,9 +796,7 @@ export async function runFusion(
       devTerminalLog(
         "fusion.request.failed",
         {
-          attemptId,
-          modelKey: `${request.critic.providerId}:${request.critic.model}`,
-          stage: "fusion",
+          ...fusionContext,
           status: "failed",
           durationMs: Date.now() - fusionLogStartedAt,
           error: error.message,
@@ -803,9 +811,7 @@ export async function runFusion(
         devTerminalLog(
           "fusion.request.aborted",
           {
-            attemptId,
-            modelKey: `${request.critic.providerId}:${request.critic.model}`,
-            stage: "fusion",
+            ...fusionContext,
             status: "aborted",
             durationMs: Date.now() - fusionLogStartedAt,
           },
@@ -826,9 +832,7 @@ export async function runFusion(
       devTerminalLog(
         "fusion.request.aborted",
         {
-          attemptId,
-          modelKey: `${request.critic.providerId}:${request.critic.model}`,
-          stage: "fusion",
+          ...fusionContext,
           status: "aborted",
           durationMs: Date.now() - fusionLogStartedAt,
         },
@@ -852,9 +856,7 @@ export async function runFusion(
     devTerminalLog(
       "fusion.request.failed",
       {
-        attemptId,
-        modelKey: `${request.critic.providerId}:${request.critic.model}`,
-        stage: "fusion",
+        ...fusionContext,
         status: "failed",
         durationMs: Date.now() - fusionLogStartedAt,
         error: error.message,

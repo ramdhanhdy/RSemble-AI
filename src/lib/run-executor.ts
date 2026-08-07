@@ -101,6 +101,7 @@ export interface FrozenCandidateRetryRequest {
 }
 
 export interface FrozenJudgeRetryRequest {
+  source?: RunSource;
   mode: "rank" | "fuse";
   task: CandidateTaskSnapshot;
   evaluation: AdHocEvaluationConfig;
@@ -117,6 +118,7 @@ export interface FrozenJudgeRetryRequest {
 }
 
 export interface FrozenFusionRequest {
+  source?: RunSource;
   mode: "fuse";
   task: CandidateTaskSnapshot;
   evaluation: AdHocEvaluationConfig;
@@ -515,6 +517,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           stageContext,
           judgeResult.blindSet.candidates,
           {
+            source: request.source,
             task: request.task,
             evaluation: request.evaluation,
             critic: request.critic,
@@ -715,6 +718,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         stageContext,
         judgeResult.blindSet.candidates,
         {
+          source: request.source,
           task: request.task,
           evaluation: request.evaluation,
           critic: request.critic,
@@ -894,6 +898,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         stageContext,
         judgeResult.blindSet.candidates,
         {
+          source: request.source,
           task: request.task,
           evaluation: request.evaluation,
           critic: request.critic,
@@ -947,6 +952,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         stageContext,
         judgeResult.blindSet.candidates,
         {
+          source: request.source,
           task: request.task,
           evaluation: request.evaluation,
           critic: request.critic,
@@ -991,6 +997,7 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       stageContext,
       blindCandidates,
       {
+        source: request.source,
         task: request.task,
         evaluation: request.evaluation,
         critic: request.critic,

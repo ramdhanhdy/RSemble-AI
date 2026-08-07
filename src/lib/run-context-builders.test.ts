@@ -51,7 +51,7 @@ describe("buildFrozenContext", () => {
     expect(ctx.critic).toEqual({ providerId: "openrouter", model: "judge" });
   });
 
-  it("deep-copies slots and attachments so later mutation cannot leak", () => {
+  it("copies slots and attachments one level so later top-level mutation cannot leak", () => {
     const src = sampleSource();
     const ctx = buildFrozenContext(src);
     src.slots[0].model = "CHANGED";
