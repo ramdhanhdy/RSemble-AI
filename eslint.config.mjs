@@ -186,7 +186,11 @@ export default tseslint.config(
           ],
           patterns: [
             {
-              group: ["**/persistence/*"],
+              group: ["react/*", "react-dom/*"],
+              message: "Domain modules must not import React subpaths (Plan 007 boundary).",
+            },
+            {
+              group: ["**/persistence", "**/persistence/**", "**/persistence/*"],
               message: "Domain modules must not import persistence (Plan 007 boundary).",
             },
           ],

@@ -9,8 +9,11 @@ completion record at the end of this document.
 
 Baseline gate (start of Plan 007): 142 files / 2068 tests / coverage stmts
 79.17 / branch 72.07 / funcs 80.85 / lines 83.29. Final gate (after
-Workstreams A–G): 143 files / 2076 tests / coverage 79.25 / 72.22 / 80.95 /
-83.37.
+Workstreams A–G): 143 files / 2076 tests / coverage 79.24 / 72.22 / 80.93 /
+83.38 — the authoritative post-extraction measurement is repeated verbatim in
+the "Workstream completion record" section at the end of this document. These
+two points (start vs post-extraction) are intentionally different measurement
+gates; only the final value was measured twice and is reported once here.
 
 ## Purpose
 
