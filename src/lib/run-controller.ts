@@ -17,6 +17,12 @@ import type { ExecutionFence } from "./persistence/run-types";
 import { HEARTBEAT_INTERVAL, type ExecutionLease, type LeaseInfo } from "./execution-lease";
 import { createExecutionHeartbeat, type ExecutionHeartbeat } from "./execution-heartbeat";
 import { createRunExecutor, type RunExecutorEvents } from "./run-executor";
+import {
+  buildFrozenContext,
+  buildPlaceholders,
+  fenceFromLease,
+  acceptedAttemptIdsByCandidate,
+} from "./run-context-builders";
 import type { StudioState, Action, RunEvaluationContext } from "../studio-engine";
 import type { StreamDeltaBuffer } from "./stream-buffer";
 
@@ -64,7 +70,6 @@ export function createRunController(deps: RunControllerDeps) {
         attachmentEligibility: checkAttachmentEligibility(state.slots, state.attachments),
       }));
   const runIdRef: { current: string | null } = { current: null };
-  const currentAbortRef: { current: AbortController | null } = { current: null };
   const activeLeaseRef: { current: LeaseInfo | null } = { current: null };
   // Cleanup epoch fences asynchronous finally blocks from an earlier run. A
   // late cleanup must never clear the heartbeat or release a newer lease.
@@ -211,7 +216,6 @@ export function createRunController(deps: RunControllerDeps) {
 
   function freshAbort(): AbortController {
     const ctrl = new AbortController();
-    currentAbortRef.current = ctrl;
     abortControllersRef.current.add(ctrl);
     return ctrl;
   }
@@ -263,40 +267,26 @@ export function createRunController(deps: RunControllerDeps) {
         const s = stateRef.current;
         const context =
           frozenContext ??
-          ({
+          buildFrozenContext({
             mode: s.mode,
-            task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
             prompt: s.prompt,
+            systemPrompt: s.systemPrompt,
+            temperature: s.temperature,
             evaluation: s.evaluation,
-            slots: (slotsOverride ?? s.slots).map((slot) => ({ ...slot })),
+            slots: slotsOverride ?? s.slots,
             critic: { ...s.critic },
             judgeInstruction: s.judgeInstruction,
-            attachments: s.attachments.map((a) => ({ ...a })),
+            attachments: s.attachments,
             attachmentsToJudge: s.attachmentsToJudge,
-            reasoningPolicy: { ...s.reasoningPolicy },
-          } satisfies RunEvaluationContext);
+            reasoningPolicy: s.reasoningPolicy,
+          });
         const runId = `run-${now()}-${random().toString(36).slice(2, 8)}`;
         runIdRef.current = runId;
         // The eligibility gate may have filtered slots for this run
         // (spec §5.1 auto-disable) — placeholders must match what the executor
         // actually fans out, or the candidate roster would include ghosts.
         const jobs = buildFanoutJobs(slotsOverride ?? s.slots);
-        const ts = now();
-        const placeholders: Candidate[] = jobs.map((j) => ({
-          id: j.id,
-          model: j.displayName,
-          provider: j.provider,
-          providerId: j.providerId,
-          slug: j.slug,
-          accent: j.accent,
-          strategy: j.strategyLabel,
-          summary: "",
-          scores: {},
-          weightedScore: 0,
-          segments: [],
-          status: "pending",
-          startedAt: ts,
-        }));
+        const placeholders = buildPlaceholders(jobs, now());
         if (recorder) {
           await assertCurrentLease(leaseToken);
           await recorder.begin({
@@ -528,18 +518,19 @@ export function createRunController(deps: RunControllerDeps) {
 
     // Capture every protocol-affecting input once. Retries and later stages
     // receive this same object even if the command pane changes meanwhile.
-    const frozenContext: RunEvaluationContext = {
+    const frozenContext = buildFrozenContext({
       mode: s.mode,
-      task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
       prompt: s.prompt,
+      systemPrompt: s.systemPrompt,
+      temperature: s.temperature,
       evaluation: s.evaluation,
-      slots: slots.map((slot) => ({ ...slot })),
+      slots,
       critic: { ...s.critic },
       judgeInstruction: s.judgeInstruction,
-      attachments: s.attachments.map((a) => ({ ...a })),
+      attachments: s.attachments,
       attachmentsToJudge: s.attachmentsToJudge,
-      reasoningPolicy: { ...s.reasoningPolicy },
-    };
+      reasoningPolicy: s.reasoningPolicy,
+    });
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
@@ -658,11 +649,7 @@ export function createRunController(deps: RunControllerDeps) {
       dispatch({ type: "RETRY_CANDIDATE_START", id: candidate.id });
       if (recorder && runIdRef.current && leaseToken) {
         await assertCurrentLease(leaseToken);
-        await recorder.rebindExecution(runIdRef.current, {
-          ownerId: leaseToken.ownerId,
-          fence: leaseToken.fence,
-          ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
-        });
+        await recorder.rebindExecution(runIdRef.current, fenceFromLease(leaseToken)!);
       }
 
       const events = makeEvents(
@@ -675,17 +662,10 @@ export function createRunController(deps: RunControllerDeps) {
       const peerCandidates = s.candidates.filter((c) => c.id !== candidate.id);
 
       // Load the persisted record to get real accepted attempt IDs
-      const candidateAttemptIdsByCandidateId: Record<string, string> = {};
-      if (recorder && runIdRef.current) {
-        const record = await recorder.getRecord(runIdRef.current);
-        if (record) {
-          for (const c of record.candidates) {
-            if (c.acceptedAttemptId) {
-              candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
-            }
-          }
-        }
-      }
+      const candidateAttemptIdsByCandidateId: Record<string, string> =
+        acceptedAttemptIdsByCandidate(
+          recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null,
+        );
 
       await executor.retryCandidate(
         {
@@ -761,25 +741,14 @@ export function createRunController(deps: RunControllerDeps) {
       await assertCurrentLease(leaseToken);
       if (recorder && runIdRef.current && leaseToken) {
         await assertCurrentLease(leaseToken);
-        await recorder.rebindExecution(runIdRef.current, {
-          ownerId: leaseToken.ownerId,
-          fence: leaseToken.fence,
-          ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
-        });
+        await recorder.rebindExecution(runIdRef.current, fenceFromLease(leaseToken)!);
       }
 
       // Load the persisted record to get real accepted attempt IDs
-      const candidateAttemptIdsByCandidateId: Record<string, string> = {};
-      if (recorder && runIdRef.current) {
-        const record = await recorder.getRecord(runIdRef.current);
-        if (record) {
-          for (const c of record.candidates) {
-            if (c.acceptedAttemptId) {
-              candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
-            }
-          }
-        }
-      }
+      const candidateAttemptIdsByCandidateId: Record<string, string> =
+        acceptedAttemptIdsByCandidate(
+          recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null,
+        );
 
       const events = makeEvents(epoch, false, ctx.slots, ctx, leaseToken ?? undefined);
       await executor.retryJudge(
@@ -842,24 +811,18 @@ export function createRunController(deps: RunControllerDeps) {
         await assertCurrentLease(leaseToken);
         if (recorder && runIdRef.current && leaseToken) {
           await assertCurrentLease(leaseToken);
-          await recorder.rebindExecution(runIdRef.current, {
-            ownerId: leaseToken.ownerId,
-            fence: leaseToken.fence,
-            ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
-          });
+          await recorder.rebindExecution(runIdRef.current, fenceFromLease(leaseToken)!);
         }
         // Load the persisted record for real accepted attempt IDs
-        const candidateAttemptIdsByCandidateId: Record<string, string> = {};
+        const candidateAttemptIdsByCandidateId: Record<string, string> =
+          acceptedAttemptIdsByCandidate(
+            recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null,
+          );
         let judgeAttemptId = "";
         let blindLabelToCandidateId: Record<string, string> = {};
         if (recorder && runIdRef.current) {
           const record = await recorder.getRecord(runIdRef.current);
           if (record) {
-            for (const c of record.candidates) {
-              if (c.acceptedAttemptId) {
-                candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
-              }
-            }
             judgeAttemptId = record.judge.acceptedAttemptId ?? "";
             const acceptedJudge = record.judge.attempts.find(
               (a) => a.attemptId === record.judge.acceptedAttemptId,
