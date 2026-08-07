@@ -6,6 +6,8 @@ const read = (file: string) => readFileSync(join(process.cwd(), file), "utf8");
 const header = read("src/ui/Header.tsx");
 const runButton = read("src/ui/RunButton.tsx");
 const shell = read("src/rsemble.tsx");
+const shellFragments = [read("src/rsemble.tsx"), read("src/ui/CompareShell.tsx")];
+const anyShell = (needle: string) => shellFragments.some((s) => s.includes(needle));
 
 describe("primary action motion", () => {
   it("removes the redundant header running gradient", () => {
@@ -20,9 +22,10 @@ describe("primary action motion", () => {
   });
 
   it("uses the shared primary-control treatment in FocusStrip", () => {
-    expect(shell).toContain("pressable mt-auto flex h-11 w-11");
-    expect(shell).toContain("bg-accent text-on-accent hover-lift");
-    expect(shell).not.toContain("hover:-translate-y-0.5");
+    // FocusStrip moved to CompareShell.tsx in Plan 007 Workstream D.
+    expect(anyShell("pressable mt-auto flex h-11 w-11")).toBe(true);
+    expect(anyShell("bg-accent text-on-accent hover-lift")).toBe(true);
+    expect(anyShell("hover:-translate-y-0.5")).toBe(false);
   });
 
   it("keeps ResetButton geometry stable while armed", () => {
