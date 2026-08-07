@@ -7,6 +7,13 @@ import { once } from "node:events";
 import { getValidToken } from "./auth.js";
 import { sanitizeProviderErrorMessage } from "../../shared/error-policy.js";
 import { readBoundedResponseText } from "../../shared/http.js";
+import {
+  codexResponsesUrl,
+  translateToCodexRequestBody,
+  buildUpstreamHeaders,
+  parseCodexSseEvent,
+  classifyCodexOutcome,
+} from "./protocol.js";
 
 export interface ChatMessageInput {
   role: "system" | "user" | "assistant";
@@ -22,23 +29,6 @@ export type BridgeContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } }
   | { type: "file"; file: { filename: string; file_data: string } };
-
-/**
- * Map one OpenAI-style part to the Responses API input-item shape (spec §7):
- * `input_text` for text, `input_image` with a data URL for images. File parts
- * are rejected with 415 before translation ever runs.
- */
-function toResponseApiPart(part: BridgeContentPart): unknown {
-  switch (part.type) {
-    case "text":
-      return { type: "input_text", text: part.text };
-    case "image_url":
-      return { type: "input_image", image_url: part.image_url.url };
-    case "file":
-      // Unreachable: file parts are rejected with 415 above translation.
-      return { type: "input_file", filename: part.file.filename, file_data: part.file.file_data };
-  }
-}
 
 export interface CompletionRequestBody {
   model: string;
@@ -122,57 +112,14 @@ export async function handleCompletions(
   }
 
   const { token, accountId } = tokenData;
-  const targetUrl = "https://chatgpt.com/backend-api/codex/responses?client_version=0.144.1";
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-    "User-Agent": "Codex/0.144.1",
-    version: "0.144.1",
-    Originator: "codex_exec",
-  };
-  if (accountId) {
-    headers["ChatGPT-Account-ID"] = accountId;
-  }
+  const targetUrl = codexResponsesUrl();
+  const headers: Record<string, string> = buildUpstreamHeaders({ token, accountId });
 
   const clientWantsStream = Boolean(reqBody.stream);
 
-  // Separate system prompt from non-system messages
-  const systemMsg = reqBody.messages.find((m) => m.role === "system");
-  const nonSystemMsgs = reqBody.messages.filter((m) => m.role !== "system");
-
-  const instructions = systemMsg
-    ? typeof systemMsg.content === "string"
-      ? systemMsg.content
-      : systemMsg.content
-          .filter((p): p is Extract<BridgeContentPart, { type: "text" }> => p.type === "text")
-          .map((p) => p.text)
-          .join("\n")
-    : "You are a helpful, rigorous assistant.";
-
-  const modelSlug = reqBody.model && reqBody.model.length > 0 ? reqBody.model : "gpt-5.6-sol";
-
-  let input: unknown[];
-  if (hasParts) {
-    input = nonSystemMsgs.map((m) => ({
-      type: "message",
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: Array.isArray(m.content)
-        ? m.content.map(toResponseApiPart)
-        : [{ type: "input_text", text: m.content }],
-    }));
-    if (input.length === 0) {
-      input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }];
-    }
-  } else {
-    const inputPrompt = nonSystemMsgs
-      .map((m) => {
-        const text = typeof m.content === "string" ? m.content : "";
-        return m.role === "user" ? text : `Assistant: ${text}`;
-      })
-      .join("\n\n");
-    input = [{ role: "user", content: inputPrompt || "hello" }];
-  }
+  // Translate the bridge request into the upstream Codex Responses-API shape
+  // (Plan 008 W/D: single protocol-translation authority).
+  const { model: modelSlug, instructions, input } = translateToCodexRequestBody(reqBody);
 
   const upstreamBody = {
     model: modelSlug,
@@ -228,10 +175,15 @@ export async function handleCompletions(
       const raw = await readBoundedResponseText(upstreamRes).catch(() => "");
       const errorText = sanitizeProviderErrorMessage(raw, "Codex", upstreamRes.status);
 
+      // Plan 008 W/D: classify protocol drift separately from a generic network
+      // failure. Only the classification label travels (never the raw body).
+      const diagnosis = classifyCodexOutcome({ httpStatus: upstreamRes.status });
+
       sendJson(res, upstreamRes.status, {
         error: {
           message: errorText || `Codex request failed (HTTP ${upstreamRes.status}).`,
           type: "codex_error",
+          compatibility: diagnosis.category,
           status: upstreamRes.status,
         },
       });
@@ -338,28 +290,12 @@ export async function handleCompletions(
             if (!line || !line.startsWith("data:")) continue;
 
             const payloadStr = line.slice(5).trim();
-            if (payloadStr === "[DONE]") break;
-
-            try {
-              const parsed = JSON.parse(payloadStr) as {
-                type?: string;
-                delta?: string;
-                text?: string;
-              };
-              if (
-                parsed.type === "response.output_text.delta" &&
-                typeof parsed.delta === "string"
-              ) {
-                fullText += parsed.delta;
-              } else if (
-                parsed.type === "response.output_text.done" &&
-                typeof parsed.text === "string" &&
-                fullText.length === 0
-              ) {
-                fullText = parsed.text;
-              }
-            } catch {
-              // Ignore partial JSON
+            const evt = parseCodexSseEvent(payloadStr);
+            if (evt.type === "done") break;
+            if (evt.type === "text_delta") {
+              fullText += evt.delta;
+            } else if (evt.type === "text_done" && fullText.length === 0) {
+              fullText = evt.text;
             }
           }
         }
@@ -385,10 +321,14 @@ export async function handleCompletions(
       ],
     });
   } catch (err) {
+    // A bridge-internal failure is not a diagnosable upstream protocol change;
+    // classify conservatively rather than mislabeling a generic network error.
+    const compat = classifyCodexOutcome({ httpStatus: null });
     sendJson(res, 500, {
       error: {
         message: `Bridge error: ${err instanceof Error ? err.message : String(err)}`,
         type: "bridge_internal_error",
+        compatibility: compat.category,
       },
     });
   } finally {

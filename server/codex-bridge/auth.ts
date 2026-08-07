@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_ENDPOINT } from "./protocol.js";
 
 export interface AuthStatus {
   ok: boolean;
@@ -93,11 +94,10 @@ export async function refreshTokens(): Promise<boolean> {
   if (!data?.tokens?.refresh_token) return false;
 
   const refreshToken = data.tokens.refresh_token;
-  // Codex OAuth client_id
-  const clientId = "app_EMoZ7jN3k6L7sD2m";
+  const clientId = CODEX_OAUTH_CLIENT_ID;
 
   try {
-    const res = await fetch("https://auth.openai.com/oauth/token", {
+    const res = await fetch(CODEX_OAUTH_TOKEN_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

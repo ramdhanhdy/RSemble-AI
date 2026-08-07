@@ -1,0 +1,23 @@
+{
+  "codex-sse": {
+    "description": "Synthetic Codex Responses-API SSE event forms (no real output).",
+    "done_sentinel": "[DONE]",
+    "delta": {
+      "type": "response.output_text.delta",
+      "delta": "Hello, world."
+    },
+    "done_event": {
+      "type": "response.output_text.done",
+      "text": "Hello, world."
+    },
+    "created": {
+      "type": "response.created",
+      "id": "resp_synthetic_1"
+    },
+    "error_shape": {
+      "error": {
+        "message": "invalid request: unexpected field"
+      }
+    }
+  }
+}
