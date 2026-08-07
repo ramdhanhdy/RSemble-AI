@@ -575,6 +575,42 @@ describe("handleCompletions — terminal detection (Plan 008 W/D)", () => {
     expect(body.error).toBeUndefined();
   });
 
+  it("drops same-chunk events after output_text.done in the non-streaming path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"A"}\n\n',
+          'data: {"type":"response.output_text.done","text":"T"}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"B"}\n\n',
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    // output_text.done is a terminal: the trailing same-chunk delta must
+    // not be appended; the earlier delta text is preserved.
+    expect(body.choices[0].message.content).toBe("A");
+  });
+  it("ignores post-terminal deltas after [DONE] in the non-streaming path (CR-20)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
+          "data: [DONE]\n\n",
+          'data: {"type":"response.output_text.delta","delta":"LEAK"}\n\n',
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    // First-terminal semantics: content after [DONE] must be excluded.
+    expect(body.choices[0].message.content).toBe("Hel");
+  });
+
   it("returns a stream_terminated_unexpectedly error after a truncated non-streaming stream", async () => {
     const fetchMock = vi
       .fn()

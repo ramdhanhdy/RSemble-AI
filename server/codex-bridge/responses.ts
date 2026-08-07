@@ -176,7 +176,9 @@ export async function handleCompletions(
       const errorText = sanitizeProviderErrorMessage(raw, "Codex", upstreamRes.status);
 
       // Plan 008 W/D: classify protocol drift separately from a generic network
-      // failure, using only the bounded-redacted body text as evidence. The
+      // failure, using only the BOUNDED body text as evidence (redaction is
+      // applied to the surfaced message below; the classifier itself only
+      // extracts fixed category labels and never propagates body content). The
       // raw body never travels; only the classification label does, and only
       // when concrete evidence justifies a category.
       const diagnosis = classifyCodexOutcome({
@@ -213,90 +215,88 @@ export async function handleCompletions(
         return;
       }
 
-      if (upstreamRes.body) {
-        const reader = upstreamRes.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        // Plan 008 W/D: a raw upstream EOF without a recognized terminal
-        // event is truncation, NOT a successful completion — do not forge a
-        // [DONE] sentinel. Track terminal state explicitly.
-        let sawAnyDelta = false;
+      const reader = upstreamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      // Plan 008 W/D: a raw upstream EOF without a recognized terminal
+      // event is truncation, NOT a successful completion — do not forge a
+      // [DONE] sentinel. Track terminal state explicitly.
+      let sawAnyDelta = false;
 
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            resetUpstreamTimeout();
-            buffer += decoder.decode(value, { stream: true });
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          resetUpstreamTimeout();
+          buffer += decoder.decode(value, { stream: true });
 
-            let nl: number;
-            while ((nl = buffer.indexOf("\n")) !== -1) {
-              const line = buffer.slice(0, nl).trim();
-              buffer = buffer.slice(nl + 1);
-              if (!line || !line.startsWith("data:")) continue;
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line || !line.startsWith("data:")) continue;
 
-              const payloadStr = line.slice(5).trim();
-              const evt = parseCodexSseEvent(payloadStr);
-              if (evt.type === "done") {
-                // [DONE] sentinel — recognized terminal.
-                await writeChunk(res, "data: [DONE]\n\n");
-                res.end();
-                return;
-              }
-              if (evt.type === "text_done") {
-                // response.output_text.done — recognized terminal that also
-                // carries final text. Without a preceding delta, forward the
-                // text so a done-only response does not lose content.
-                if (!sawAnyDelta && typeof evt.text === "string" && evt.text.length > 0) {
-                  const doneChunk = {
-                    id: `chatcmpl-${Date.now()}`,
-                    object: "chat.completion.chunk",
-                    created: Math.floor(Date.now() / 1000),
-                    model: modelSlug,
-                    choices: [{ index: 0, delta: { content: evt.text }, finish_reason: null }],
-                  };
-                  await writeChunk(res, `data: ${JSON.stringify(doneChunk)}\n\n`);
-                }
-                await writeChunk(res, "data: [DONE]\n\n");
-                res.end();
-                return;
-              }
-              if (evt.type === "text_delta") {
-                sawAnyDelta = true;
-                const sseChunk = {
+            const payloadStr = line.slice(5).trim();
+            const evt = parseCodexSseEvent(payloadStr);
+            if (evt.type === "done") {
+              // [DONE] sentinel — recognized terminal.
+              await writeChunk(res, "data: [DONE]\n\n");
+              res.end();
+              return;
+            }
+            if (evt.type === "text_done") {
+              // response.output_text.done — recognized terminal that also
+              // carries final text. Without a preceding delta, forward the
+              // text so a done-only response does not lose content.
+              if (!sawAnyDelta && typeof evt.text === "string" && evt.text.length > 0) {
+                const doneChunk = {
                   id: `chatcmpl-${Date.now()}`,
                   object: "chat.completion.chunk",
                   created: Math.floor(Date.now() / 1000),
                   model: modelSlug,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: { content: evt.delta },
-                      finish_reason: null,
-                    },
-                  ],
+                  choices: [{ index: 0, delta: { content: evt.text }, finish_reason: null }],
                 };
-                await writeChunk(res, `data: ${JSON.stringify(sseChunk)}\n\n`);
+                await writeChunk(res, `data: ${JSON.stringify(doneChunk)}\n\n`);
               }
+              await writeChunk(res, "data: [DONE]\n\n");
+              res.end();
+              return;
+            }
+            if (evt.type === "text_delta") {
+              sawAnyDelta = true;
+              const sseChunk = {
+                id: `chatcmpl-${Date.now()}`,
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model: modelSlug,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: evt.delta },
+                    finish_reason: null,
+                  },
+                ],
+              };
+              await writeChunk(res, `data: ${JSON.stringify(sseChunk)}\n\n`);
             }
           }
-        } catch (err) {
-          // Headers already sent: cannot switch to a JSON error. End the
-          // stream without a [DONE] so the web SSE reader surfaces truncation.
-          if (err instanceof Error && err.name === "AbortError") {
-            // Client disconnected or timeout — nothing useful left to send.
-          }
-          res.end();
-          return;
-        } finally {
-          reader.releaseLock();
         }
-
-        // Upstream EOF with NO recognized terminal event: truncation. End
-        // without a [DONE] so the web-side SSE reader surfaces it.
+      } catch (err) {
+        // Headers already sent: cannot switch to a JSON error. End the
+        // stream without a [DONE] so the web SSE reader surfaces truncation.
+        if (err instanceof Error && err.name === "AbortError") {
+          // Client disconnected or timeout — nothing useful left to send.
+        }
         res.end();
         return;
+      } finally {
+        reader.releaseLock();
       }
+
+      // Upstream EOF with NO recognized terminal event: truncation. End
+      // without a [DONE] so the web-side SSE reader surfaces it.
+      res.end();
+      return;
     }
     // Client requested non-streaming completion: accumulate text from stream.
     // Track whether a recognized terminal event (done sentinel or
@@ -337,11 +337,18 @@ export async function handleCompletions(
               sawTerminal = true;
               // response.output_text.done carries final text; prefer it
               // when no delta preceded it so a done-only response keeps it.
+              // Terminals are symmetric with the [DONE] sentinel: break the
+              // inner loop so same-chunk events after the terminal are dropped.
               if (!sawAnyContent) {
                 fullText = evt.text ?? "";
               }
+              break;
             }
           }
+          // First recognized terminal event ends further upstream reading:
+          // discard any events after [DONE]/output_text.done instead of
+          // appending them to the accumulated text.
+          if (sawTerminal) break;
         }
       } finally {
         reader.releaseLock();
