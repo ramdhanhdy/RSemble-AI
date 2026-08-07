@@ -79,5 +79,31 @@ for images / direct text read), and Compare startup pays no parser cost.
 
 ## Workstream F — after measurement
 
-(To be filled after the implementation lands. Re-run the identical baseline
-procedure and compare like-with-like.)
+Re-ran the identical procedure at the implementation head. Because the loading
+optimizations PDF/DOCX laziness and route splitting were already in place, and
+the heavy easing deferrals (Dexie, @base-ui shell overlays) were deliberately
+rejected on evidence, the initial bundle is essentially unchanged.
+
+| Initial chunk | baseline raw | after raw |
+| --- | --- | --- |
+| index-*.js | 629.40 kB | 630.73 kB (614.6 raw parse) |
+| createLucideIcon-*.js | 49.77 kB | 48.6 kB |
+| run-types-*.js | 110.45 kB | 107.9 kB |
+| rolldown-runtime + preload-helper | 2.45 kB | 2.4 kB |
+| **Initial total** | **792.07 kB** | **789.7 kB** (gzip ~same ~240 kB) |
+
+The index chunk grew by ~1.3 kB (the RouteErrorBoundary added to the eager
+shell — the price of the chunk-failure safety fix). Module-percentage variance
+(614.6 vs 629.4) reflects Prettier/hash reshuffling between the two build runs,
+not a semantic change. No lazy chunk increased; PDF/lib/Runs/Evaluations
+unchanged.
+
+**Budget recommendation** (modest headroom, robust to harmless hash reshuffling):
+- initial JS budget: **≤ 900 kB raw** / **≤ 280 kB gzip** (headroom above the
+  recorded ~790/~240, so harmless dedup/renaming does not fail CI);
+- unexpected-growth threshold: the CI should fail if the initial gzip total
+  regresses by more than **+15%** from the recorded ~240 kB on a clean build.
+  Do not gate on chunk counts or hashes (they reshuffle constantly).
+
+These budgets are advisory in this branch (CI is owner-managed); they are
+recorded here for a future owner-owned gate.
