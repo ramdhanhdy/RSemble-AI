@@ -70,11 +70,22 @@ export interface StageDriverDeps {
   repo: FusionStudyRepository;
 }
 
-function modelKeyOf(slot: ModelSlot): string {
+/**
+ * Common typed stage-driver contract (Plan 007 Workstream F). Every Fusion
+ * Study stage takes a `StageDriverDeps` (repos/controller/budget) and one
+ * explicit, already-validated driver input, and returns one bounded result.
+ * Inputs carry their own prerequisites (frozen recipes, pair table, holdout
+ * judge selection), so an invalid stage transition is rejected at the caller
+ * by construction before any paid call; the orchestration `runFusionStudy`
+ * validates study/pool/recipe existence up front.
+ */
+export type StageDriver<TIn, TOut> = (deps: StageDriverDeps, input: TIn) => Promise<TOut>;
+
+export function modelKeyOf(slot: ModelSlot): string {
   return `${slot.providerId}:${slot.slug}`;
 }
 
-function activePoolSlots(pool: PoolManifestVersion): ModelSlot[] {
+export function activePoolSlots(pool: PoolManifestVersion): ModelSlot[] {
   return [...pool.core, ...pool.challengers].filter((s) => s.enabled);
 }
 

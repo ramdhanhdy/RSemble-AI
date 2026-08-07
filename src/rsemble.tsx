@@ -8,17 +8,9 @@
 // UI components live in ./ui; state + reducer in ./studio-engine.
 // =============================================================================
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Play, RotateCcw, Square } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
@@ -29,6 +21,7 @@ import { Header, type ConnectionState } from "./ui/Header";
 import { type Action, type StudioState, initialState, reducer } from "./studio-engine";
 
 import { useResizableSplit } from "./ui/useResizableSplit";
+import { useMediaQuery } from "./ui/useMediaQuery";
 import { ModeToggle } from "./ui/ModeToggle";
 import { ModelList } from "./ui/ModelList";
 import { EvaluationDisclosure } from "./ui/EvaluationDisclosure";
@@ -42,7 +35,6 @@ import { OutputPane } from "./ui/OutputPane";
 import { ConnectionsModal } from "./ui/ConnectionsModal";
 import { CommandPalette } from "./ui/CommandPalette";
 import { ShortcutCheatsheet } from "./ui/ShortcutCheatsheet";
-import { BrandAvatar } from "./ui/brand-icons";
 import { ModelProbeProvider } from "./ui/ModelProbeContext";
 import { AppRoutes } from "./app-router";
 import { MobileWorkspaceNav } from "./ui/MobileWorkspaceNav";
@@ -62,6 +54,7 @@ import {
   useExperimentController,
 } from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
+import { CloseIcon, SplitDivider, FocusStrip, PaneLabel, NoKeyBanner } from "./ui/CompareShell";
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -523,7 +516,7 @@ export default function RSemble() {
                       </section>
 
                       {!focusActive && (
-                        <Divider
+                        <SplitDivider
                           dragging={dragging}
                           value={commandWidth}
                           min={min}
@@ -633,103 +626,6 @@ export default function RSemble() {
         />
       </div>
     </ModelProbeProvider>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-    >
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
-  );
-}
-
-function Divider({
-  dragging,
-  value,
-  min,
-  max,
-  onPointerDown,
-  onKeyDown,
-  onDoubleClick,
-}: {
-  dragging: boolean;
-  value: number;
-  min: number;
-  max: number;
-  onPointerDown: (e: React.PointerEvent) => void;
-  onKeyDown: (e: React.KeyboardEvent) => void;
-  onDoubleClick: () => void;
-}) {
-  return (
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- role="separator" with aria-valuenow is a focusable ARIA widget; pointer/keyboard resizing is its purpose
-    <div
-      role="separator"
-      aria-label="Resize command and output panes"
-      aria-orientation="vertical"
-      aria-valuenow={Math.round(value)}
-      aria-valuemin={min}
-      aria-valuemax={max}
-      data-dragging={dragging ? "true" : undefined}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onKeyDown={onKeyDown}
-      onDoubleClick={onDoubleClick}
-      className="rsemble-divider hidden lg:block"
-    />
-  );
-}
-
-function FocusStrip({
-  state,
-  canRun,
-  onRun,
-  onAbort,
-  blockReason,
-}: {
-  state: StudioState;
-  canRun: boolean;
-  onRun: () => void;
-  onAbort: () => void;
-  /** Attachment gate reason surfaced as the button tooltip (plan 7.6.8). */
-  blockReason?: string | null;
-}) {
-  const enabledSlots = state.slots.filter((s) => s.enabled);
-  return (
-    <div className="flex h-full w-14 flex-col items-center gap-3 py-4">
-      <div className="flex flex-col items-center gap-2">
-        {enabledSlots.map((slot) => (
-          <BrandAvatar key={slot.id} slug={slot.slug} size={28} className="rounded-md" />
-        ))}
-        {enabledSlots.length === 0 && (
-          <span className="font-mono text-[11px] text-text-muted">—</span>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={state.running ? onAbort : onRun}
-        disabled={!canRun && !state.running}
-        aria-label={state.running ? "Stop run" : "Re-run pipeline"}
-        title={state.running ? "Stop run" : (blockReason ?? "Re-run pipeline")}
-        className={`pressable mt-auto flex h-11 w-11 items-center justify-center rounded-md ${
-          state.running
-            ? "bg-error/20 text-error"
-            : canRun
-              ? "bg-accent text-on-accent hover-lift"
-              : "border border-edge bg-card text-text-secondary opacity-60 cursor-not-allowed"
-        }`}
-      >
-        {state.running ? <Square size={16} /> : <Play size={16} />}
-      </button>
-    </div>
   );
 }
 
@@ -874,68 +770,4 @@ function ResetButton({
       </span>
     </button>
   );
-}
-
-// ---- small presentational helpers ----
-
-function PaneLabel({
-  index,
-  title,
-  hint,
-  action,
-}: {
-  index: string;
-  title: string;
-  hint: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-2">
-      <div>
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-xs font-semibold tabular-nums text-accent">{index}</span>
-          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
-            {title}
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-text-muted">{hint}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-// =============================================================================
-// Helpers / banner
-// =============================================================================
-
-function NoKeyBanner() {
-  return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning">
-      <span>
-        <span className="font-semibold">No provider connected.</span> Connect any configured
-        provider via the connection status button in the header — or set a supported{" "}
-        <code className="rounded bg-warning/10 px-1">VITE_*_KEY</code> in{" "}
-        <code className="rounded bg-warning/10 px-1">.env</code> and restart the dev server to
-        enable live runs.
-      </span>
-    </div>
-  );
-}
-
-// Reactive CSS media query — returns true while the query matches. Used to
-// gate focus mode to the lg horizontal split only.
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia(query).matches;
-  });
-  useEffect(() => {
-    const mql = window.matchMedia(query);
-    const onChange = () => setMatches(mql.matches);
-    onChange();
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, [query]);
-  return matches;
 }

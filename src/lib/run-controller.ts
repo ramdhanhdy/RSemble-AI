@@ -17,6 +17,12 @@ import type { ExecutionFence } from "./persistence/run-types";
 import { HEARTBEAT_INTERVAL, type ExecutionLease, type LeaseInfo } from "./execution-lease";
 import { createExecutionHeartbeat, type ExecutionHeartbeat } from "./execution-heartbeat";
 import { createRunExecutor, type RunExecutorEvents } from "./run-executor";
+import {
+  buildFrozenContext,
+  buildPlaceholders,
+  fenceFromLease,
+  acceptedAttemptIdsByCandidate,
+} from "./run-context-builders";
 import type { StudioState, Action, RunEvaluationContext } from "../studio-engine";
 import type { StreamDeltaBuffer } from "./stream-buffer";
 
@@ -64,7 +70,6 @@ export function createRunController(deps: RunControllerDeps) {
         attachmentEligibility: checkAttachmentEligibility(state.slots, state.attachments),
       }));
   const runIdRef: { current: string | null } = { current: null };
-  const currentAbortRef: { current: AbortController | null } = { current: null };
   const activeLeaseRef: { current: LeaseInfo | null } = { current: null };
   // Cleanup epoch fences asynchronous finally blocks from an earlier run. A
   // late cleanup must never clear the heartbeat or release a newer lease.
@@ -211,7 +216,6 @@ export function createRunController(deps: RunControllerDeps) {
 
   function freshAbort(): AbortController {
     const ctrl = new AbortController();
-    currentAbortRef.current = ctrl;
     abortControllersRef.current.add(ctrl);
     return ctrl;
   }
@@ -230,13 +234,8 @@ export function createRunController(deps: RunControllerDeps) {
     // use this immutable token; a later acquisition by another tab cannot be
     // mistaken for continued ownership.
     const capturedLease = leaseToken ?? activeLeaseRef.current;
-    const persistedFence: ExecutionFence | undefined = capturedLease
-      ? {
-          ownerId: capturedLease.ownerId,
-          fence: capturedLease.fence,
-          ...(capturedLease.leaseId ? { leaseId: capturedLease.leaseId } : {}),
-        }
-      : undefined;
+    const persistedFence: ExecutionFence | undefined = fenceFromLease(capturedLease);
+
     // Legacy contexts may omit mode; capture the fallback at event creation so
     // a command-pane edit cannot rewrite persisted protocol state later.
     const capturedMode = frozenContext?.mode ?? stateRef.current.mode;
@@ -263,40 +262,26 @@ export function createRunController(deps: RunControllerDeps) {
         const s = stateRef.current;
         const context =
           frozenContext ??
-          ({
+          buildFrozenContext({
             mode: s.mode,
-            task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
             prompt: s.prompt,
+            systemPrompt: s.systemPrompt,
+            temperature: s.temperature,
             evaluation: s.evaluation,
-            slots: (slotsOverride ?? s.slots).map((slot) => ({ ...slot })),
+            slots: slotsOverride ?? s.slots,
             critic: { ...s.critic },
             judgeInstruction: s.judgeInstruction,
-            attachments: s.attachments.map((a) => ({ ...a })),
+            attachments: s.attachments,
             attachmentsToJudge: s.attachmentsToJudge,
-            reasoningPolicy: { ...s.reasoningPolicy },
-          } satisfies RunEvaluationContext);
+            reasoningPolicy: s.reasoningPolicy,
+          });
         const runId = `run-${now()}-${random().toString(36).slice(2, 8)}`;
         runIdRef.current = runId;
         // The eligibility gate may have filtered slots for this run
         // (spec §5.1 auto-disable) — placeholders must match what the executor
         // actually fans out, or the candidate roster would include ghosts.
         const jobs = buildFanoutJobs(slotsOverride ?? s.slots);
-        const ts = now();
-        const placeholders: Candidate[] = jobs.map((j) => ({
-          id: j.id,
-          model: j.displayName,
-          provider: j.provider,
-          providerId: j.providerId,
-          slug: j.slug,
-          accent: j.accent,
-          strategy: j.strategyLabel,
-          summary: "",
-          scores: {},
-          weightedScore: 0,
-          segments: [],
-          status: "pending",
-          startedAt: ts,
-        }));
+        const placeholders = buildPlaceholders(jobs, now());
         if (recorder) {
           await assertCurrentLease(leaseToken);
           await recorder.begin({
@@ -528,18 +513,19 @@ export function createRunController(deps: RunControllerDeps) {
 
     // Capture every protocol-affecting input once. Retries and later stages
     // receive this same object even if the command pane changes meanwhile.
-    const frozenContext: RunEvaluationContext = {
+    const frozenContext = buildFrozenContext({
       mode: s.mode,
-      task: { prompt: s.prompt, systemPrompt: s.systemPrompt, temperature: s.temperature },
       prompt: s.prompt,
+      systemPrompt: s.systemPrompt,
+      temperature: s.temperature,
       evaluation: s.evaluation,
-      slots: slots.map((slot) => ({ ...slot })),
+      slots,
       critic: { ...s.critic },
       judgeInstruction: s.judgeInstruction,
-      attachments: s.attachments.map((a) => ({ ...a })),
+      attachments: s.attachments,
       attachmentsToJudge: s.attachmentsToJudge,
-      reasoningPolicy: { ...s.reasoningPolicy },
-    };
+      reasoningPolicy: s.reasoningPolicy,
+    });
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
@@ -605,13 +591,7 @@ export function createRunController(deps: RunControllerDeps) {
     const abortedRunId = runIdRef.current;
     if (recorder && abortedRunId) {
       const token = activeLeaseRef.current;
-      const fence = token
-        ? {
-            ownerId: token.ownerId,
-            fence: token.fence,
-            ...(token.leaseId ? { leaseId: token.leaseId } : {}),
-          }
-        : undefined;
+      const fence = fenceFromLease(token);
       abortPersistenceRef.current = assertCurrentLease(token)
         .then(() => recorder.markAborted(abortedRunId, fence))
         .catch(() => {
@@ -658,11 +638,7 @@ export function createRunController(deps: RunControllerDeps) {
       dispatch({ type: "RETRY_CANDIDATE_START", id: candidate.id });
       if (recorder && runIdRef.current && leaseToken) {
         await assertCurrentLease(leaseToken);
-        await recorder.rebindExecution(runIdRef.current, {
-          ownerId: leaseToken.ownerId,
-          fence: leaseToken.fence,
-          ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
-        });
+        await recorder.rebindExecution(runIdRef.current, fenceFromLease(leaseToken)!);
       }
 
       const events = makeEvents(
@@ -675,17 +651,10 @@ export function createRunController(deps: RunControllerDeps) {
       const peerCandidates = s.candidates.filter((c) => c.id !== candidate.id);
 
       // Load the persisted record to get real accepted attempt IDs
-      const candidateAttemptIdsByCandidateId: Record<string, string> = {};
-      if (recorder && runIdRef.current) {
-        const record = await recorder.getRecord(runIdRef.current);
-        if (record) {
-          for (const c of record.candidates) {
-            if (c.acceptedAttemptId) {
-              candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
-            }
-          }
-        }
-      }
+      const candidateAttemptIdsByCandidateId: Record<string, string> =
+        acceptedAttemptIdsByCandidate(
+          recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null,
+        );
 
       await executor.retryCandidate(
         {
@@ -761,25 +730,14 @@ export function createRunController(deps: RunControllerDeps) {
       await assertCurrentLease(leaseToken);
       if (recorder && runIdRef.current && leaseToken) {
         await assertCurrentLease(leaseToken);
-        await recorder.rebindExecution(runIdRef.current, {
-          ownerId: leaseToken.ownerId,
-          fence: leaseToken.fence,
-          ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
-        });
+        await recorder.rebindExecution(runIdRef.current, fenceFromLease(leaseToken)!);
       }
 
       // Load the persisted record to get real accepted attempt IDs
-      const candidateAttemptIdsByCandidateId: Record<string, string> = {};
-      if (recorder && runIdRef.current) {
-        const record = await recorder.getRecord(runIdRef.current);
-        if (record) {
-          for (const c of record.candidates) {
-            if (c.acceptedAttemptId) {
-              candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
-            }
-          }
-        }
-      }
+      const candidateAttemptIdsByCandidateId: Record<string, string> =
+        acceptedAttemptIdsByCandidate(
+          recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null,
+        );
 
       const events = makeEvents(epoch, false, ctx.slots, ctx, leaseToken ?? undefined);
       await executor.retryJudge(
@@ -842,33 +800,36 @@ export function createRunController(deps: RunControllerDeps) {
         await assertCurrentLease(leaseToken);
         if (recorder && runIdRef.current && leaseToken) {
           await assertCurrentLease(leaseToken);
-          await recorder.rebindExecution(runIdRef.current, {
-            ownerId: leaseToken.ownerId,
-            fence: leaseToken.fence,
-            ...(leaseToken.leaseId ? { leaseId: leaseToken.leaseId } : {}),
+          await recorder.rebindExecution(runIdRef.current, fenceFromLease(leaseToken)!);
+        }
+        // Load the persisted record exactly once and derive every frozen
+        // reference (candidate accepted attempt IDs, accepted Judge attempt ID,
+        // and the Judge's blind-label map) from that single snapshot so a re-Fuse
+        // request is built from one consistent record (Plan 007).
+        const recorded =
+          recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null;
+        const candidateAttemptIdsByCandidateId: Record<string, string> =
+          acceptedAttemptIdsByCandidate(recorded);
+        // A re-Fuse that will persist a sourceJudgeAttemptId must reference an
+        // actual accepted Judge attempt; never persist an empty string. When
+        // the recorder is active but the persisted record has no accepted
+        // Judge attempt, block the re-Fuse with a clear reason instead of
+        // writing a provenance-less fusion (Plan 007).
+        const acceptedJudgeAttemptId = recorded?.judge.acceptedAttemptId ?? "";
+        if (recorder && runIdRef.current && !acceptedJudgeAttemptId) {
+          dispatch({
+            type: "FUSION_FAILED",
+            error: "An accepted Judge attempt is required before re-fusing.",
           });
+          return;
         }
-        // Load the persisted record for real accepted attempt IDs
-        const candidateAttemptIdsByCandidateId: Record<string, string> = {};
-        let judgeAttemptId = "";
-        let blindLabelToCandidateId: Record<string, string> = {};
-        if (recorder && runIdRef.current) {
-          const record = await recorder.getRecord(runIdRef.current);
-          if (record) {
-            for (const c of record.candidates) {
-              if (c.acceptedAttemptId) {
-                candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
-              }
-            }
-            judgeAttemptId = record.judge.acceptedAttemptId ?? "";
-            const acceptedJudge = record.judge.attempts.find(
-              (a) => a.attemptId === record.judge.acceptedAttemptId,
-            );
-            if (acceptedJudge) {
-              blindLabelToCandidateId = acceptedJudge.blindLabelToCandidateId;
-            }
-          }
-        }
+        const judgeAttemptId = acceptedJudgeAttemptId;
+        const acceptedJudge = recorded?.judge.attempts.find(
+          (a) => a.attemptId === acceptedJudgeAttemptId,
+        );
+        const blindLabelToCandidateId: Record<string, string> = acceptedJudge
+          ? acceptedJudge.blindLabelToCandidateId
+          : {};
 
         const ctx = stateRef.current.runContext;
         const events = makeEvents(

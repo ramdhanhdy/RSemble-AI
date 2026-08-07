@@ -157,6 +157,20 @@ export interface CommitTerminalInput {
   repair?: ExperimentTaskExecutionPlan;
 }
 
+/** Opaque snapshot of the engine's full in-memory state. The controller uses
+ *  it to roll back a task-terminal transition that failed to persist, so a
+ *  failed durable commit cannot leave the persisted experiment "running" with
+ *  a terminal engine record (Plan 008 Workstream D / findings review). */
+export interface ExperimentEngineSnapshot {
+  record: ExperimentRecord;
+  queue: string[];
+  activeTaskId: string | null;
+  activeAttemptId: string | null;
+  experimentEpoch: number;
+  taskEpoch: number;
+  pauseRequestedFlag: boolean;
+}
+
 export interface ExperimentEngine {
   readonly record: ExperimentRecord;
   readonly pauseRequested: boolean;
@@ -165,6 +179,11 @@ export interface ExperimentEngine {
   readonly activeTaskId: string | null;
   readonly activeAttemptId: string | null;
   readonly queuedTaskIds: readonly string[];
+  /** Capture a full snapshot of engine state (used to make a task-terminal
+   *  commit recoverable when its durable persistence phase fails). */
+  snapshot(): ExperimentEngineSnapshot;
+  /** Restore a previously captured snapshot exactly. */
+  restore(snapshot: ExperimentEngineSnapshot): void;
   /** What the controller should do next. */
   nextAction(): EngineAction;
   start(fence: ExecutionFence, now: number): TransitionResult;
@@ -266,6 +285,28 @@ export function createExperimentEngine(initial: ExperimentRecord): ExperimentEng
     },
     get queuedTaskIds() {
       return queue;
+    },
+
+    snapshot() {
+      return {
+        record,
+        queue: [...queue],
+        activeTaskId,
+        activeAttemptId,
+        experimentEpoch,
+        taskEpoch,
+        pauseRequestedFlag,
+      };
+    },
+
+    restore(snapshot) {
+      record = snapshot.record;
+      queue = [...snapshot.queue];
+      activeTaskId = snapshot.activeTaskId;
+      activeAttemptId = snapshot.activeAttemptId;
+      experimentEpoch = snapshot.experimentEpoch;
+      taskEpoch = snapshot.taskEpoch;
+      pauseRequestedFlag = snapshot.pauseRequestedFlag;
     },
 
     nextAction(): EngineAction {

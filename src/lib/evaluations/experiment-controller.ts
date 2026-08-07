@@ -372,6 +372,98 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     };
   }
 
+  /**
+   * Commit a single task attempt atomically: finalize the engine attempt, then
+   * persist run + attempt in one Unit-of-Work commit, sync experiment status,
+   * and emit the terminal event. This is the ONE atomic terminal commit
+   * boundary — fresh, repaired, and roster-extension attempts all funnel here
+   * so a structural change cannot split or duplicate it (Plan 007 Workstream E;
+   * cross-phase invariant #7).
+   */
+  async function commitTaskTerminal(opts: {
+    taskId: string;
+    attemptId: string;
+    finalRun: RunRecordV2;
+    finalSummary: FullRunSummaryV2;
+    fence: ExecutionFence;
+    /** Optional repair/extension plan ridden on the commit (sets repair.). */
+    plan?: ExperimentTaskExecutionPlan;
+    /** Optional roster-extension model key surfaced in the persistence log. */
+    logModelKey?: string;
+  }): Promise<void> {
+    if (!engine) throw new Error("Engine not initialized");
+    const { taskId, attemptId, finalRun, finalSummary, fence, plan, logModelKey } = opts;
+    const record = engine.record;
+    // Derive coverage from the accepted Judge report (spec §11.5) so the
+    // coverage-aware attempt selector has real metadata.
+    const snapshotKeys = new Set(
+      record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`),
+    );
+    const coverage = deriveAttemptCoverage(finalRun, snapshotKeys);
+
+    // Treat the in-memory terminal transition + its durable persistence as one
+    // fenced operation: if the atomic UoW write fails the engine state must not
+    // stay advanced, otherwise a failed final-task commit would leave the
+    // persisted experiment "running" while the in-memory record is already
+    // terminal. Snapshot before committing so the transition is recoverable.
+    const preCommitState = engine.snapshot();
+    const commitResult = engine.commitTaskTerminal({
+      taskId,
+      attemptId,
+      runStatus: finalRun.status,
+      epoch: engine.taskEpoch,
+      error: null,
+      now: now(),
+      coverage,
+      ...(plan ? { repair: plan } : {}),
+    });
+    if (!commitResult.ok) throw new Error(commitResult.reason ?? "commitTaskTerminal failed");
+
+    // Persist: atomically finalize run + attempt (coverage rides along). If
+    // the durable write fails, roll the engine back to its pre-transition
+    // state and rethrow; the run loop's failure path then finalizes the run,
+    // aborts the engine, and persists a deterministic aborted status before
+    // ownership is released.
+    let commitRev;
+    try {
+      commitRev = await uow.commitTaskTerminal({
+        experimentId: record.id,
+        taskId,
+        attemptId,
+        run: finalRun,
+        summary: finalSummary,
+        expectedRunRevision: finalRun.revision,
+        expectedExperimentRevision: persistedExperimentRevision,
+        fence,
+        coverage,
+        ...(plan ? { repair: plan } : {}),
+      });
+    } catch (err) {
+      engine.restore(preCommitState);
+      throw err;
+    }
+    persistedExperimentRevision = commitRev.experimentRevision;
+
+    devTerminalLog(
+      "experiment.task.persisted",
+      {
+        experimentId: record.id,
+        runId: finalRun.id,
+        taskId,
+        experimentAttemptId: attemptId,
+        ...(logModelKey !== undefined ? { modelKey: logModelKey } : {}),
+        stage: "persistence",
+        status: finalRun.status,
+      },
+      "info",
+    );
+
+    // Sync experiment status (completed, completed_with_failures, paused).
+    await syncExperimentStatus(persistedExperimentRevision);
+
+    emit({ kind: "task-terminal", taskId, attemptId, status: finalRun.status });
+  }
+
   /** Execute a single task: begin, run executor, commit. Returns the final
    *  run status or throws on persistence failure. An optional `plan` rides
    *  the run source and the terminal attempt (roster-extension full-roster
@@ -499,54 +591,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Engine transition: commitTaskTerminal with scored coverage derived from
     // the accepted Judge report (spec §11.5) so the coverage-aware attempt
     // selector has real metadata.
-    const snapshotKeys = new Set(
-      record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`),
-    );
-    const coverage = deriveAttemptCoverage(finalRun, snapshotKeys);
-    const commitResult = engine.commitTaskTerminal({
+    await commitTaskTerminal({
       taskId,
       attemptId,
-      runStatus: finalRun.status,
-      epoch: engine.taskEpoch,
-      error: null,
-      now: now(),
-      coverage,
-      ...(plan ? { repair: plan } : {}),
-    });
-    if (!commitResult.ok) throw new Error(commitResult.reason ?? "commitTaskTerminal failed");
-
-    // Persist: atomically finalize run + attempt (coverage rides along).
-    const commitRev = await uow.commitTaskTerminal({
-      experimentId: record.id,
-      taskId,
-      attemptId,
-      run: finalRun,
-      summary: finalSummary,
-      expectedRunRevision: finalRun.revision,
-      expectedExperimentRevision: persistedExperimentRevision,
+      finalRun,
+      finalSummary,
       fence,
-      coverage,
-      ...(plan ? { repair: plan } : {}),
+      plan,
+      logModelKey: plan?.kind === "roster-extension" ? plan.addedModelKey : undefined,
     });
-    persistedExperimentRevision = commitRev.experimentRevision;
-
-    devTerminalLog(
-      "experiment.task.persisted",
-      {
-        experimentId: record.id,
-        runId,
-        taskId,
-        experimentAttemptId: attemptId,
-        stage: "persistence",
-        status: finalRun.status,
-      },
-      "info",
-    );
-
-    // Sync experiment status (completed, completed_with_failures, paused).
-    await syncExperimentStatus(persistedExperimentRevision);
-
-    emit({ kind: "task-terminal", taskId, attemptId, status: finalRun.status });
     return finalRun.status;
   }
 
@@ -1439,54 +1492,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     );
     const finalSummary = builder.deriveSummary(finalRun);
 
-    // Derive coverage from the accepted Judge report.
-    const snapshotKeys = new Set(
-      record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`),
-    );
-    const coverage = deriveAttemptCoverage(finalRun, snapshotKeys);
-
-    const commitResult = engine.commitTaskTerminal({
+    await commitTaskTerminal({
       taskId,
       attemptId,
-      runStatus: finalRun.status,
-      epoch: engine.taskEpoch,
-      error: null,
-      now: now(),
-      coverage,
-      repair: plan,
-    });
-    if (!commitResult.ok) throw new Error(commitResult.reason ?? "commitTaskTerminal failed");
-
-    const commitRev = await uow.commitTaskTerminal({
-      experimentId: record.id,
-      taskId,
-      attemptId,
-      run: finalRun,
-      summary: finalSummary,
-      expectedRunRevision: finalRun.revision,
-      expectedExperimentRevision: persistedExperimentRevision,
+      finalRun,
+      finalSummary,
       fence,
-      coverage,
-      repair: plan,
+      plan,
+      logModelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
     });
-    persistedExperimentRevision = commitRev.experimentRevision;
-
-    devTerminalLog(
-      "experiment.task.persisted",
-      {
-        experimentId: record.id,
-        runId,
-        taskId,
-        experimentAttemptId: attemptId,
-        modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
-        stage: "persistence",
-        status: finalRun.status,
-      },
-      "info",
-    );
-
-    await syncExperimentStatus(persistedExperimentRevision);
-    emit({ kind: "task-terminal", taskId, attemptId, status: finalRun.status });
   }
   // --- Return public API ------------------------------------------------------
 
