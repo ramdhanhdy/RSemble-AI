@@ -37,6 +37,7 @@ import { CommandPalette } from "./ui/CommandPalette";
 import { ShortcutCheatsheet } from "./ui/ShortcutCheatsheet";
 import { ModelProbeProvider } from "./ui/ModelProbeContext";
 import { AppRoutes } from "./app-router";
+import { RouteErrorBoundary } from "./ui/RouteErrorBoundary";
 import { MobileWorkspaceNav } from "./ui/MobileWorkspaceNav";
 import { StreamDeltaBuffer } from "./lib/stream-buffer";
 import { createRunController } from "./lib/run-controller";
@@ -467,84 +468,86 @@ export default function RSemble() {
               compareOutlet so the reducer/controller/state stays mounted above
               the router and persists across navigation. */}
             <div className="flex min-h-0 flex-1 flex-col pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0">
-              <AppRoutes
-                compareOutlet={
-                  <div className="flex min-h-0 flex-1 flex-col">
-                    <div
-                      data-compare-toolbar=""
-                      className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
-                    >
-                      <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
-                        Finish
-                      </span>
-                      <ModeToggle
-                        mode={state.mode}
-                        onChange={handleModeChange}
-                        disabled={state.running}
-                      />
-                    </div>
-                    <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
-                      <section
-                        aria-label="Command"
-                        className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
-                          focusActive
-                            ? "lg:!w-14 lg:!overflow-hidden lg:!border-r"
-                            : "lg:w-[var(--cmd-w)]"
-                        } md:w-full`}
-                        style={
-                          focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }
-                        }
+              <RouteErrorBoundary>
+                <AppRoutes
+                  compareOutlet={
+                    <div className="flex min-h-0 flex-1 flex-col">
+                      <div
+                        data-compare-toolbar=""
+                        className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
                       >
-                        {focusActive ? (
-                          <FocusStrip
-                            state={state}
-                            canRun={canRun}
-                            onRun={requestRun}
-                            onAbort={abortRun}
-                            blockReason={attachmentBlockReason}
-                          />
-                        ) : (
-                          <CommandPane
-                            state={state}
-                            dispatch={dispatch}
-                            canRun={canRun}
-                            onRun={requestRun}
-                            onAbort={abortRun}
-                            blockReason={attachmentBlockReason}
+                        <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                          Finish
+                        </span>
+                        <ModeToggle
+                          mode={state.mode}
+                          onChange={handleModeChange}
+                          disabled={state.running}
+                        />
+                      </div>
+                      <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
+                        <section
+                          aria-label="Command"
+                          className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
+                            focusActive
+                              ? "lg:!w-14 lg:!overflow-hidden lg:!border-r"
+                              : "lg:w-[var(--cmd-w)]"
+                          } md:w-full`}
+                          style={
+                            focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }
+                          }
+                        >
+                          {focusActive ? (
+                            <FocusStrip
+                              state={state}
+                              canRun={canRun}
+                              onRun={requestRun}
+                              onAbort={abortRun}
+                              blockReason={attachmentBlockReason}
+                            />
+                          ) : (
+                            <CommandPane
+                              state={state}
+                              dispatch={dispatch}
+                              canRun={canRun}
+                              onRun={requestRun}
+                              onAbort={abortRun}
+                              blockReason={attachmentBlockReason}
+                            />
+                          )}
+                        </section>
+
+                        {!focusActive && (
+                          <SplitDivider
+                            dragging={dragging}
+                            value={commandWidth}
+                            min={min}
+                            max={max}
+                            onPointerDown={onDividerPointerDown}
+                            onKeyDown={onDividerKeyDown}
+                            onDoubleClick={onDoubleClick}
                           />
                         )}
-                      </section>
 
-                      {!focusActive && (
-                        <SplitDivider
-                          dragging={dragging}
-                          value={commandWidth}
-                          min={min}
-                          max={max}
-                          onPointerDown={onDividerPointerDown}
-                          onKeyDown={onDividerKeyDown}
-                          onDoubleClick={onDoubleClick}
-                        />
-                      )}
-
-                      <section
-                        aria-label="Output"
-                        className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin"
-                      >
-                        <OutputPane
-                          state={state}
-                          onFuse={handleFuseFromRank}
-                          onRefuse={() => triggerFusion(true)}
-                          onRetryCandidate={retryCandidate}
-                          onRetryJudge={retryJudge}
-                        />
-                      </section>
+                        <section
+                          aria-label="Output"
+                          className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin"
+                        >
+                          <OutputPane
+                            state={state}
+                            onFuse={handleFuseFromRank}
+                            onRefuse={() => triggerFusion(true)}
+                            onRetryCandidate={retryCandidate}
+                            onRetryJudge={retryJudge}
+                          />
+                        </section>
+                      </div>
                     </div>
-                  </div>
-                }
-                models={state.models}
-                availableProviderIds={availableProviderIds}
-              />
+                  }
+                  models={state.models}
+                  availableProviderIds={availableProviderIds}
+                />
+              </RouteErrorBoundary>
             </div>
           </div>
         </div>
