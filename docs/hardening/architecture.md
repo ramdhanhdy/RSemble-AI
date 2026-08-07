@@ -1,10 +1,16 @@
-# Architecture: Current Responsibility Map (Plan 007 / Workstream A)
+# Architecture: Responsibility Map (Plan 007 — completed)
 
-Status: `IN PROGRESS` — snapshot taken at Plan 007 start on branch
-`refactor/controlled-maintainability` from `master` (post-Plan-006 merge `83afb53`).
+Status: `RECONCILED` — Plan 007 (controlled maintainability extraction) is
+complete on branch `refactor/controlled-maintainability` from `master`
+(post-Plan-006 merge `83afb53`). The dependency map and characterization
+analysis below were captured at Plan 007 start; the post-extraction ownership
+map and deliberately-rejected extractions are recorded in the Workstream
+completion record at the end of this document.
 
-Baseline gate: 142 files / 2068 tests / coverage stmts 79.17 / branch 72.07 /
-funcs 80.85 / lines 83.29.
+Baseline gate (start of Plan 007): 142 files / 2068 tests / coverage stmts
+79.17 / branch 72.07 / funcs 80.85 / lines 83.29. Final gate (after
+Workstreams A–G): 143 files / 2076 tests / coverage 79.25 / 72.22 / 80.95 /
+83.37.
 
 ## Purpose
 

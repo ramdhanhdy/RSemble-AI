@@ -813,23 +813,23 @@ export function createRunController(deps: RunControllerDeps) {
           await assertCurrentLease(leaseToken);
           await recorder.rebindExecution(runIdRef.current, fenceFromLease(leaseToken)!);
         }
-        // Load the persisted record for real accepted attempt IDs
+        // Load the persisted record exactly once and derive every frozen
+        // reference (candidate accepted attempt IDs, accepted Judge attempt ID,
+        // and the Judge's blind-label map) from that single snapshot so a re-Fuse
+        // request is built from one consistent record (Plan 007).
+        const recorded =
+          recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null;
         const candidateAttemptIdsByCandidateId: Record<string, string> =
-          acceptedAttemptIdsByCandidate(
-            recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null,
-          );
+          acceptedAttemptIdsByCandidate(recorded);
         let judgeAttemptId = "";
         let blindLabelToCandidateId: Record<string, string> = {};
-        if (recorder && runIdRef.current) {
-          const record = await recorder.getRecord(runIdRef.current);
-          if (record) {
-            judgeAttemptId = record.judge.acceptedAttemptId ?? "";
-            const acceptedJudge = record.judge.attempts.find(
-              (a) => a.attemptId === record.judge.acceptedAttemptId,
-            );
-            if (acceptedJudge) {
-              blindLabelToCandidateId = acceptedJudge.blindLabelToCandidateId;
-            }
+        if (recorded) {
+          judgeAttemptId = recorded.judge.acceptedAttemptId ?? "";
+          const acceptedJudge = recorded.judge.attempts.find(
+            (a) => a.attemptId === recorded.judge.acceptedAttemptId,
+          );
+          if (acceptedJudge) {
+            blindLabelToCandidateId = acceptedJudge.blindLabelToCandidateId;
           }
         }
 
