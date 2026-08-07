@@ -401,6 +401,12 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     );
     const coverage = deriveAttemptCoverage(finalRun, snapshotKeys);
 
+    // Treat the in-memory terminal transition + its durable persistence as one
+    // fenced operation: if the atomic UoW write fails the engine state must not
+    // stay advanced, otherwise a failed final-task commit would leave the
+    // persisted experiment "running" while the in-memory record is already
+    // terminal. Snapshot before committing so the transition is recoverable.
+    const preCommitState = engine.snapshot();
     const commitResult = engine.commitTaskTerminal({
       taskId,
       attemptId,
@@ -413,19 +419,29 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     });
     if (!commitResult.ok) throw new Error(commitResult.reason ?? "commitTaskTerminal failed");
 
-    // Persist: atomically finalize run + attempt (coverage rides along).
-    const commitRev = await uow.commitTaskTerminal({
-      experimentId: record.id,
-      taskId,
-      attemptId,
-      run: finalRun,
-      summary: finalSummary,
-      expectedRunRevision: finalRun.revision,
-      expectedExperimentRevision: persistedExperimentRevision,
-      fence,
-      coverage,
-      ...(plan ? { repair: plan } : {}),
-    });
+    // Persist: atomically finalize run + attempt (coverage rides along). If
+    // the durable write fails, roll the engine back to its pre-transition
+    // state and rethrow; the run loop's failure path then finalizes the run,
+    // aborts the engine, and persists a deterministic aborted status before
+    // ownership is released.
+    let commitRev;
+    try {
+      commitRev = await uow.commitTaskTerminal({
+        experimentId: record.id,
+        taskId,
+        attemptId,
+        run: finalRun,
+        summary: finalSummary,
+        expectedRunRevision: finalRun.revision,
+        expectedExperimentRevision: persistedExperimentRevision,
+        fence,
+        coverage,
+        ...(plan ? { repair: plan } : {}),
+      });
+    } catch (err) {
+      engine.restore(preCommitState);
+      throw err;
+    }
     persistedExperimentRevision = commitRev.experimentRevision;
 
     devTerminalLog(
@@ -582,6 +598,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       finalSummary,
       fence,
       plan,
+      logModelKey: plan?.kind === "roster-extension" ? plan.addedModelKey : undefined,
     });
     return finalRun.status;
   }

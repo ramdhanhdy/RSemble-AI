@@ -489,6 +489,39 @@ describe("experiment-controller — persistence failure", () => {
     // Ownership released so the user can act again.
     expect(h.owner.get()).toBeNull();
   });
+
+  it("a failed final-task commit rolls back the engine and persists an aborted experiment, not a running one", async () => {
+    // Single-task experiment: begin = tx 1, final commit = tx 2. Injecting a
+    // failure into the commit must restore the engine's pre-transition state
+    // (so the run-loop failure path can abort it) and leave the persisted
+    // experiment "aborted" — never "running" with a terminal in-memory record.
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    let commits = 0;
+    const originalCommit = h.store.runInTransaction.bind(h.store);
+    h.store.runInTransaction = async (fn) => {
+      commits += 1;
+      // begin = tx 1; the final commit = tx 2 → inject the failure there.
+      if (commits === 2) h.store.failAfterWrites = 0;
+      return originalCommit(fn);
+    };
+
+    const result = await h.controller.start("suite-1");
+    expect(result.ok).toBe(true);
+    await h.controller.whenIdle();
+
+    const experiment = await h.evalRepo.getExperiment(result.ok ? result.experimentId : "");
+    expect(experiment).toBeTruthy();
+    // Deterministic terminal failure — never left "running" with a terminal engine.
+    expect(experiment!.status).toBe("aborted");
+    // The single attempt was finalized as aborted (the run loop aborts the engine).
+    expect(experiment!.tasks[0].attempts[0].status).toBe("aborted");
+    const errorEvents = h.events.filter((e) => e.kind === "error");
+    expect(errorEvents.length).toBeGreaterThan(0);
+    // Ownership released after the deterministic abort.
+    expect(h.owner.get()).toBeNull();
+  });
 });
 
 describe("experiment-controller — pause / resume / abort", () => {
