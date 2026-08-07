@@ -10,9 +10,11 @@
 // (the Plan 007 root-mount contract). Without it React would unmount the whole
 // tree and destroy Compare/experiment state.
 //
-// It renders only a small inline heading + a Retry action; it does not flash a
-// full-screen spinner or hide the app chrome. The user can retry the chunk
-// (remoteModule = true) or clear the error and re-render the current route.
+// It renders only a small inline heading + Reload app / Dismiss actions; it
+// does not flash a full-screen spinner or hide the app chrome. Reloading
+// re-requests the failed chunk but restarts the app (and may interrupt an
+// active run/experiment); Dismiss clears the error and re-renders the current
+// route while the root state stays mounted.
 // =============================================================================
 import { Component, type ReactNode } from "react";
 

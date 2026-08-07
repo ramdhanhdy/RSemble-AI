@@ -619,4 +619,26 @@ describe("handleCompletions — terminal detection (Plan 008 W/D)", () => {
     expect(sse).toContain("done-text");
     expect(sse).toContain("data: [DONE]");
   });
+  it("ends a streaming request without [DONE] when the successful upstream response has no body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+
+    // SSE headers were sent for the streaming request...
+    expect(res.writeHead).toHaveBeenCalledWith(
+      200,
+      expect.objectContaining({ "Content-Type": "text/event-stream" }),
+    );
+    // ...but no [DONE] is forged and no JSON body is written after headers.
+    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => c[0] as string,
+    );
+    expect(writes.join("")).not.toContain("data: [DONE]");
+    // The stream ends without a JSON payload (no 502 body after SSE headers);
+    // a fallthrough into the non-streaming path would have written one.
+    const endArgs = (res.end as ReturnType<typeof vi.fn>).mock.calls;
+    expect(endArgs.length).toBeGreaterThan(0);
+    expect(endArgs.every((c: unknown[]) => typeof c[0] !== "string")).toBe(true);
+  });
 });

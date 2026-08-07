@@ -202,6 +202,17 @@ export async function handleCompletions(
         Connection: "keep-alive",
       });
 
+      if (!upstreamRes.body) {
+        // Successful upstream response with no stream body while the client
+        // requested streaming: treat as truncated. Headers are already sent
+        // (200 text/event-stream), so end WITHOUT forging a [DONE] and let the
+        // web-side SSE reader classify the missing terminal event as
+        // stream_terminated_unexpectedly. Never fall through into the JSON
+        // non-streaming path after SSE headers were sent.
+        res.end();
+        return;
+      }
+
       if (upstreamRes.body) {
         const reader = upstreamRes.body.getReader();
         const decoder = new TextDecoder();
