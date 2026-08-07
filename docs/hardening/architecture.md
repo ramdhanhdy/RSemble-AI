@@ -290,3 +290,57 @@ fusion-confirmation.ts (runConfirmationStudy), consuming shared evaluatePairBloc
 
 Cross-cutting E&F: hide thin-wrappers; extract shared inner runner/finisher first, then split by responsibility,
 keeping ONE authority (one runLoop; one commit invoker; one StageDriver dispatch; one sealTrial).
+
+
+## Workstream completion record (post-extraction ownership map)
+
+All workstreams A–G landed on `refactor/controlled-maintainability`. Final gate:
+143 files / 2076 tests / coverage 79.24/72.22/80.93/83.38.
+
+### B — Execution stage runners
+`src/lib/execution-stages.ts` (new) owns `runCandidateStream` / `runJudge` /
+`runFusion` plus a typed `RunStageContext` and `createRunStageContext`.
+`src/lib/execution-cost.ts` (new) owns `estimateFallbackCost`. `run-executor.ts`
+is orchestration only (1777 → 1010 lines); its 4-method public `RunExecutor`
+interface is unchanged.
+
+### C — Compare controller builders
+`src/lib/run-context-builders.ts` (new, 8 tests) owns the frozen-context
+snapshot, executor-matching placeholders, lease→fence shape, and accepted-
+attempt-ID resolution. `run-controller.ts` still returns the byte-identical
+5-method facade; the dead write-only `currentAbortRef` was deleted.
+
+### D — Compare shell
+`src/ui/CompareShell.tsx` (new) owns CloseIcon / SplitDivider / FocusStrip /
+PaneLabel / NoKeyBanner; `src/ui/useMediaQuery.ts` owns the SSR-guarded hook.
+`rsemble.tsx` (941 → 773 lines) remains the root-mounted orchestration shell
+above AppRoutes (Compare state survives navigation). CommandPane/ResetButton
+stay local (command-pane orchestration, not static shell).
+
+### E — Experiment atomic commit
+`experiment-controller.ts` now funnels every task-terminal commit (fresh,
+repair, roster-extension) through one `commitTaskTerminal` factory helper —
+the single atomic commit boundary. The full task-runner and ownership-helper
+extractions were rejected (see Workstream E section).
+
+### F — Fusion Study stage contract
+`fusion-study-stages.ts` adds a typed `StageDriver<TIn,TOut>` contract; the
+duplicated `activePoolSlots`/`modelKeyOf` were exported from stages and their
+byte-identical copies removed from fusion-study-orchestration. Per-stage file
+split rejected (see Workstream F section).
+
+### G — Import boundary + docs
+`eslint.config.mjs` now forbids React + persistence imports into `pipeline.ts`
+(the provider-neutral prompt/parse domain), enforced by `no-restricted-imports`.
+
+### Deliberately rejected extractions (rationale)
+- E: full task-runner merge of executeTask/executeCompoundTask — the two paths
+  differ in seeding/plan and sharing them risks the single atomic-commit
+  boundary and lease/fence guarantees (STOP). Ownership-helper collapsing 5×
+  lease acquire rejected: each entrypoint has distinct acquire/pre/post logic.
+- F: split stages into stage-a/b/pair/c modules — drivers are cohesive and
+  share seal/finish + cost/persistence helpers; fragmenting adds import noise
+  without clarifying ownership.
+- D: extracting useCompareEngine/useProviderReadiness to route components was
+  rejected because Compare/readiness state MUST stay mounted above AppRoutes to
+  survive navigation; the presentational split was the safe, valuable part.

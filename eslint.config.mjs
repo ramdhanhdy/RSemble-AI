@@ -159,4 +159,39 @@ export default tseslint.config(
     languageOptions: { sourceType: "commonjs" },
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
+  {
+    // Plan 007 Workstream G — import-boundary rules.
+    // pipeline.ts is the provider-neutral prompt/parse domain module (the "one
+    // pipeline" spine). It must stay free of React and persistence so it can be
+    // unit-tested deterministically and reused without a React/storage runtime.
+    // This is a stable, useful boundary, not an aesthetic preference: it
+    // protects the "one pipeline, transport- and React-independent" invariant
+    // (plans/README.md, Decision #5). The stage runners (execution-stages) are
+    // deliberately NOT included: they emit PersistedError records and so import
+    // error-redaction/run-types by contract.
+    files: ["src/lib/pipeline.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "react",
+              message: "Domain modules must not import React (Plan 007 boundary).",
+            },
+            {
+              name: "react-dom",
+              message: "Domain modules must not import react-dom (Plan 007 boundary).",
+            },
+          ],
+          patterns: [
+            {
+              group: ["**/persistence/*"],
+              message: "Domain modules must not import persistence (Plan 007 boundary).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
