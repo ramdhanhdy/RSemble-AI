@@ -91,16 +91,15 @@ export function AttachmentChips({
                 className="flex max-w-full items-center gap-2 rounded-md border border-edge bg-card py-1.5 pl-1.5 pr-1"
               >
                 {thumb ? (
-                  <img
-                    src={thumb}
-                    alt=""
-                    className="h-8 w-8 shrink-0 rounded-sm object-cover"
-                  />
+                  <img src={thumb} alt="" className="h-8 w-8 shrink-0 rounded-sm object-cover" />
                 ) : (
                   <KindIcon kind={a.kind} />
                 )}
                 <div className="min-w-0">
-                  <span className="block max-w-[180px] truncate font-mono text-xs text-text" title={a.name}>
+                  <span
+                    className="block max-w-[180px] truncate font-mono text-xs text-text"
+                    title={a.name}
+                  >
                     {middleEllipsis(a.name)}
                   </span>
                   <span className={`block text-[11px] ${statusClass(a)}`}>{statusLine(a)}</span>

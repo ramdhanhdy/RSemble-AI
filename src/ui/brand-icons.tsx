@@ -1,12 +1,6 @@
 import { BRAND_DEFAULT, brandForSlug, type BrandIconKey } from "../studio-data";
 
-export function HexCubeLogo({
-  size = 22,
-  className,
-}: {
-  size?: number;
-  className?: string;
-}) {
+export function HexCubeLogo({ size = 22, className }: { size?: number; className?: string }) {
   return (
     <svg
       width={size}
@@ -27,7 +21,17 @@ export function HexCubeLogo({
 
 function GlmMark({ size }: { size: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M6 5.5h12L6 18.5h12" />
     </svg>
   );
@@ -35,7 +39,17 @@ function GlmMark({ size }: { size: number }) {
 
 function MiniMaxMark({ size }: { size: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M7 7.5l4 4-4 4M17 7.5l-4 4 4 4" />
     </svg>
   );
@@ -43,7 +57,17 @@ function MiniMaxMark({ size }: { size: number }) {
 
 function DeepSeekMark({ size }: { size: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M5 7l7 4.5L19 7M5 12.5l7 4.5 7-4.5" />
     </svg>
   );
@@ -51,7 +75,16 @@ function DeepSeekMark({ size }: { size: number }) {
 
 function GenericMark({ size }: { size: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <rect x="4.5" y="4.5" width="6.5" height="6.5" rx="1.5" />
       <rect x="13" y="4.5" width="6.5" height="6.5" rx="1.5" />
       <rect x="4.5" y="13" width="6.5" height="6.5" rx="1.5" />

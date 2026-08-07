@@ -28,8 +28,22 @@ function makeSuite(overrides: Partial<EvaluationSuite> = {}): EvaluationSuite {
       },
     ],
     modelSlots: [
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "m1", slug: "org/m1", enabled: true },
-      { id: "s2", providerId: "gemini", provider: "Gemini", model: "m2", slug: "m2", enabled: true },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m1",
+        slug: "org/m1",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "gemini",
+        provider: "Gemini",
+        model: "m2",
+        slug: "m2",
+        enabled: true,
+      },
     ],
     defaultJudge: { providerId: "openrouter", model: "org/judge" },
     defaultEvaluation: { kind: "holistic" },
@@ -59,7 +73,11 @@ async function seededRepo(suite: EvaluationSuite): Promise<InMemoryEvaluationRep
 describe("appendModelToSuite", () => {
   it("appends the exact slot identity and increments version and revision", async () => {
     const repo = await seededRepo(makeSuite());
-    const result = await appendModelToSuite(repo, { suiteId: "suite-1", slot: NEW_SLOT, now: 5000 });
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+    });
 
     expect(result).toEqual({ ok: true, suiteVersion: 4 });
 
@@ -77,7 +95,11 @@ describe("appendModelToSuite", () => {
   it("never rewrites tasks, judge, evaluation pins, description, creation time, or archive state", async () => {
     const original = makeSuite();
     const repo = await seededRepo(original);
-    const result = await appendModelToSuite(repo, { suiteId: "suite-1", slot: NEW_SLOT, now: 5000 });
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+    });
     expect(result.ok).toBe(true);
 
     const saved = await repo.getSuite("suite-1");
@@ -92,7 +114,11 @@ describe("appendModelToSuite", () => {
 
   it("rejects an archived suite with a results-only message and never saves", async () => {
     const repo = await seededRepo(makeSuite({ archivedAt: 1500 }));
-    const result = await appendModelToSuite(repo, { suiteId: "suite-1", slot: NEW_SLOT, now: 5000 });
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+    });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -126,7 +152,11 @@ describe("appendModelToSuite", () => {
     repo.saveSuite = async () => {
       throw new StorageError("conflict", "Stale revision: expected 1, got 2");
     };
-    const result = await appendModelToSuite(repo, { suiteId: "suite-1", slot: NEW_SLOT, now: 5000 });
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+    });
     repo.saveSuite = originalSave;
 
     expect(result.ok).toBe(false);
@@ -140,7 +170,11 @@ describe("appendModelToSuite", () => {
 
   it("reports a missing suite as results-only", async () => {
     const repo = new InMemoryEvaluationRepository();
-    const result = await appendModelToSuite(repo, { suiteId: "suite-missing", slot: NEW_SLOT, now: 5000 });
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-missing",
+      slot: NEW_SLOT,
+      now: 5000,
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe("not-found");
@@ -153,7 +187,11 @@ describe("appendModelToSuite", () => {
     repo.getSuite = async () => {
       throw new StorageError("unavailable", "IndexedDB blocked");
     };
-    const result = await appendModelToSuite(repo, { suiteId: "suite-1", slot: NEW_SLOT, now: 5000 });
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe("storage");
@@ -167,7 +205,11 @@ describe("appendModelToSuite", () => {
     repo.saveSuite = async () => {
       throw new StorageError("quota", "QuotaExceededError");
     };
-    const result = await appendModelToSuite(repo, { suiteId: "suite-1", slot: NEW_SLOT, now: 5000 });
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe("storage");

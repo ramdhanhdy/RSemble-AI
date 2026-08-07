@@ -20,18 +20,10 @@ import {
   InMemoryExperimentStore,
   type ExperimentUnitOfWork,
 } from "./experiment-unit-of-work";
-import { RSembleEvaluationDB } from "./database";
-import { StorageError } from "./database";
+import { RSembleEvaluationDB, StorageError } from "./database";
 import { LEASE_KEY, FENCE_KEY } from "../execution-lease";
-import type {
-  EvaluationSuite,
-  ExperimentRecord,
-} from "../evaluations/evaluation-types";
-import type {
-  ExecutionFence,
-  FullRunSummaryV2,
-  RunRecordV2,
-} from "./run-types";
+import type { EvaluationSuite, ExperimentRecord } from "../evaluations/evaluation-types";
+import type { ExecutionFence, FullRunSummaryV2, RunRecordV2 } from "./run-types";
 
 // --- Fixtures -----------------------------------------------------------------
 
@@ -57,7 +49,14 @@ function makeSuite(id: string): EvaluationSuite {
       },
     ],
     modelSlots: [
-      { id: "s1", providerId: "openrouter", provider: "OR", model: "m1", slug: "m1", enabled: true },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OR",
+        model: "m1",
+        slug: "m1",
+        enabled: true,
+      },
       { id: "s2", providerId: "gemini", provider: "GM", model: "m2", slug: "m2", enabled: true },
     ],
     defaultJudge: { providerId: "openrouter", model: "judge" },
@@ -172,8 +171,17 @@ function beginInput(overrides: Record<string, unknown> = {}) {
 }
 
 function terminalInput(overrides: Record<string, unknown> = {}) {
-  const run: RunRecordV2 = { ...makeRun("r1"), status: "completed", completedAt: NOW + 500, revision: 0 };
-  const summary: FullRunSummaryV2 = { ...makeSummary("r1"), status: "completed", completedAt: NOW + 500 };
+  const run: RunRecordV2 = {
+    ...makeRun("r1"),
+    status: "completed",
+    completedAt: NOW + 500,
+    revision: 0,
+  };
+  const summary: FullRunSummaryV2 = {
+    ...makeSummary("r1"),
+    status: "completed",
+    completedAt: NOW + 500,
+  };
   return {
     experimentId: "e1",
     taskId: "task-1",
@@ -309,7 +317,11 @@ describe("ExperimentUnitOfWork (InMemoryExperimentStore)", () => {
     // Current experiment revision (1) so the conflict — not staleness — is hit.
     await expect(
       uow.beginTask(
-        beginInput({ run: makeRun("r2"), summary: makeSummary("r2"), expectedExperimentRevision: 1 }),
+        beginInput({
+          run: makeRun("r2"),
+          summary: makeSummary("r2"),
+          expectedExperimentRevision: 1,
+        }),
       ),
     ).rejects.toThrow(/conflict|already/i);
   });
@@ -356,7 +368,11 @@ describe("ExperimentUnitOfWork (InMemoryExperimentStore)", () => {
 
   it("copies the exact roster-extension plan to the committed attempt", async () => {
     await uow.beginTask(beginInput());
-    const plan = { kind: "roster-extension", addedModelKey: "gemini:m3", baseRunId: "run-base" } as const;
+    const plan = {
+      kind: "roster-extension",
+      addedModelKey: "gemini:m3",
+      baseRunId: "run-base",
+    } as const;
     await uow.commitTaskTerminal(terminalInput({ repair: plan }));
 
     const exp = store.experiments.get("e1")!;
@@ -391,9 +407,9 @@ describe("ExperimentUnitOfWork (InMemoryExperimentStore)", () => {
   // --- CAS protection -------------------------------------------------------------------
 
   it("begin rejects a stale experiment revision", async () => {
-    await expect(
-      uow.beginTask(beginInput({ expectedExperimentRevision: 99 })),
-    ).rejects.toThrow(/stale/i);
+    await expect(uow.beginTask(beginInput({ expectedExperimentRevision: 99 }))).rejects.toThrow(
+      /stale/i,
+    );
   });
 
   it("commit rejects a stale run revision", async () => {
@@ -419,7 +435,10 @@ describe("ExperimentUnitOfWork (DexieExperimentStore)", () => {
     store = new DexieExperimentStore(db);
     uow = createExperimentUnitOfWork(store, { now: () => NOW });
     // Seed the lease rows the fence check reads.
-    await db.storageMeta.put({ key: LEASE_KEY, value: { ownerId: FENCE.ownerId, fence: FENCE.fence, expiresAt: NOW + 5000 } });
+    await db.storageMeta.put({
+      key: LEASE_KEY,
+      value: { ownerId: FENCE.ownerId, fence: FENCE.fence, expiresAt: NOW + 5000 },
+    });
     await db.storageMeta.put({ key: FENCE_KEY, value: { value: FENCE.fence } });
     // Seed the experiment through the raw table.
     const experiment = makeExperiment("e1", "s1");

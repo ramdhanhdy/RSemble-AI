@@ -10,17 +10,76 @@ import { MemoryRouter } from "react-router-dom";
 import { ExperimentResults } from "../src/workspaces/evaluations/ExperimentResults";
 
 const SLOTS = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "DeepSeek V4 Flash", slug: "deepseek/deepseek-v4-flash-0731", enabled: true },
-  { id: "s2", providerId: "umans", provider: "Umans", model: "Kimi K3", slug: "umans-kimi-k3", enabled: true },
-  { id: "s3", providerId: "umans", provider: "Umans", model: "GLM 5.2", slug: "umans-glm-5.2", enabled: true },
-  { id: "s4", providerId: "openrouter", provider: "OpenRouter", model: "Grok 4.5", slug: "x-ai/grok-4.5", enabled: true },
-  { id: "s5", providerId: "openrouter", provider: "OpenRouter", model: "GPT-5.6 Luna", slug: "openai/gpt-5.6-luna", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "DeepSeek V4 Flash",
+    slug: "deepseek/deepseek-v4-flash-0731",
+    enabled: true,
+  },
+  {
+    id: "s2",
+    providerId: "umans",
+    provider: "Umans",
+    model: "Kimi K3",
+    slug: "umans-kimi-k3",
+    enabled: true,
+  },
+  {
+    id: "s3",
+    providerId: "umans",
+    provider: "Umans",
+    model: "GLM 5.2",
+    slug: "umans-glm-5.2",
+    enabled: true,
+  },
+  {
+    id: "s4",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "Grok 4.5",
+    slug: "x-ai/grok-4.5",
+    enabled: true,
+  },
+  {
+    id: "s5",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "GPT-5.6 Luna",
+    slug: "openai/gpt-5.6-luna",
+    enabled: true,
+  },
 ] as const;
 
 const TASKS = [
-  { id: "t1", title: "PulseFit board deck (integrative)", prompt: "p", systemPrompt: "", evaluation: { kind: "inherit" as const }, judgeInstructionOverride: "", order: 0 },
-  { id: "t2", title: "Fable & Fern cohort economics (unit-economics isolation)", prompt: "p", systemPrompt: "", evaluation: { kind: "inherit" as const }, judgeInstructionOverride: "", order: 1 },
-  { id: "t3", title: "The free-tier question (market & strategy isolation)", prompt: "p", systemPrompt: "", evaluation: { kind: "inherit" as const }, judgeInstructionOverride: "", order: 2 },
+  {
+    id: "t1",
+    title: "PulseFit board deck (integrative)",
+    prompt: "p",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" as const },
+    judgeInstructionOverride: "",
+    order: 0,
+  },
+  {
+    id: "t2",
+    title: "Fable & Fern cohort economics (unit-economics isolation)",
+    prompt: "p",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" as const },
+    judgeInstructionOverride: "",
+    order: 1,
+  },
+  {
+    id: "t3",
+    title: "The free-tier question (market & strategy isolation)",
+    prompt: "p",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" as const },
+    judgeInstructionOverride: "",
+    order: 2,
+  },
 ];
 
 // Mirrors the user's real scores from the screenshot.
@@ -60,7 +119,10 @@ function runRecord(runId: string, taskIdx: number) {
       status: "done" as const,
       acceptedAttemptId: "jatt-1",
       report: {
-        labelMap: SLOTS.map((s, i) => ({ label: String.fromCharCode(65 + i), candidateId: `cand-${s.id}` })),
+        labelMap: SLOTS.map((s, i) => ({
+          label: String.fromCharCode(65 + i),
+          candidateId: `cand-${s.id}`,
+        })),
         evaluationsById: Object.fromEntries(
           SLOTS.map((s) => [
             `cand-${s.id}`,
@@ -110,7 +172,15 @@ const experiment = {
     taskId: t.id,
     selectedAttemptId: `att-${i}`,
     attempts: [
-      { id: `att-${i}`, runId: `run-${i + 1}`, trial: 1, status: "completed" as const, startedAt: 1, finishedAt: 2, error: null },
+      {
+        id: `att-${i}`,
+        runId: `run-${i + 1}`,
+        trial: 1,
+        status: "completed" as const,
+        startedAt: 1,
+        finishedAt: 2,
+        error: null,
+      },
     ],
   })),
   createdAt: 1700000000000,

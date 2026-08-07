@@ -181,7 +181,9 @@ function repositorySuite(name: string, makeRepo: () => FusionStudyRepository & o
       expect(sealed.sealedAt).toBe(5000);
       // Seal is final: no second seal, no link updates.
       await expect(repo.sealTrial("trial-1", 1, 6000)).rejects.toThrow(/final/);
-      await expect(repo.updateTrialLinks({ ...sealed, updatedAt: 6000 }, 1)).rejects.toThrow(/final/);
+      await expect(repo.updateTrialLinks({ ...sealed, updatedAt: 6000 }, 1)).rejects.toThrow(
+        /final/,
+      );
     });
 
     it("rejects sealing when Judge 2 = Judge 1, naming the conflict", async () => {

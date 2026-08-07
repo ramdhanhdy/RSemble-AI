@@ -25,7 +25,9 @@ describe("compact state geometry", () => {
     expect(suiteEditor).toContain('data-geometry="suite-settings-trigger"');
     expect(suiteEditor).toContain('data-geometry="suite-settings-panel"');
     expect(suiteEditor).toMatch(/transition-transform duration-150 ease-out/);
-    expect(source("src/index.css")).toMatch(/\.disclosure-chevron,[\s\S]*transition-duration: 0ms !important/);
+    expect(source("src/index.css")).toMatch(
+      /\.disclosure-chevron,[\s\S]*transition-duration: 0ms !important/,
+    );
   });
 
   it("reserves the suite archive slot width across the arm-to-confirm swap", () => {

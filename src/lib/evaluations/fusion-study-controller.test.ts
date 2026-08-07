@@ -15,11 +15,7 @@ import {
 } from "./fusion-study-controller";
 import type { ModelSlot } from "../../studio-data";
 import type { CriticRef } from "../providers/types";
-import type {
-  FusionRecipeVersion,
-  FusionStudy,
-  FusionTrial,
-} from "./fusion-study-types";
+import type { FusionRecipeVersion, FusionStudy, FusionTrial } from "./fusion-study-types";
 
 const judge1: CriticRef = { providerId: "openrouter", model: "acme/judge-1" };
 const judge2: CriticRef = { providerId: "gemini", model: "acme/judge-2" };
@@ -202,8 +198,12 @@ describe("Trial/Attempt semantics matrix (spec §6.2, test 3)", () => {
 describe("anti-circularity seal check (spec test 2)", () => {
   it("rejects Judge 2 = Judge 1 at seal, naming the conflict", async () => {
     const { controller } = await setup({ judge2: judge1 });
-    const trial = await controller.createTrial(fuseTrialInput(makeStudy("study-1", { judge2: judge1 })));
-    await expect(controller.seal(trial.id)).rejects.toThrow(/development judge openrouter:acme\/judge-1/);
+    const trial = await controller.createTrial(
+      fuseTrialInput(makeStudy("study-1", { judge2: judge1 })),
+    );
+    await expect(controller.seal(trial.id)).rejects.toThrow(
+      /development judge openrouter:acme\/judge-1/,
+    );
   });
 
   it("rejects Judge 2 = synthesizer at seal, naming the conflict", async () => {
@@ -259,7 +259,11 @@ describe("cost accounting (spec §6.4, test 10)", () => {
   it("trial cost accumulates clean edges as policy and retries as experimental-only", async () => {
     const { controller } = await setup();
     const trial: FusionTrial = await controller.createTrial(fuseTrialInput(makeStudy()));
-    await controller.addCostEdge(trial.id, { tokensIn: 1000, tokensOut: 500, countsTowardPolicy: true });
+    await controller.addCostEdge(trial.id, {
+      tokensIn: 1000,
+      tokensOut: 500,
+      countsTowardPolicy: true,
+    });
     const after = await controller.addCostEdge(trial.id, {
       tokensIn: 300,
       tokensOut: 120,

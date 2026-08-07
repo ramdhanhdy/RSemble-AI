@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import http from "node:http";
-import { handleClinePassProxy } from "../codex-bridge/clinepass";
+import { handleClinePassProxy } from "../codex-bridge/clinepass.js";
 
 function makeReq(body = "{}"): http.IncomingMessage {
   const req = new http.IncomingMessage(null as never);
@@ -34,7 +34,10 @@ afterEach(() => {
 describe("ClinePass bridge proxy", () => {
   it("forwards the request to the official Cline API", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response('{"data":[]}', { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response('{"data":[]}', {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const res = makeRes();

@@ -16,22 +16,23 @@
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
-import { createExperimentController, type ExperimentControllerEvent } from "./experiment-controller";
-import { createExperimentUnitOfWork, InMemoryExperimentStore } from "../persistence/experiment-unit-of-work";
+import {
+  createExperimentController,
+  type ExperimentControllerEvent,
+} from "./experiment-controller";
+import {
+  createExperimentUnitOfWork,
+  InMemoryExperimentStore,
+} from "../persistence/experiment-unit-of-work";
 import { InMemoryEvaluationRepository } from "../persistence/evaluation-repository";
 import { InMemoryRunRepository } from "../persistence/run-repository";
 import { InMemoryExecutionLease, type LeaseInfo } from "../execution-lease";
 import { ExecutionOwnerRegistry } from "../execution-owner";
 import type { ExperimentRecord, EvaluationSuite, EvaluationTask } from "./evaluation-types";
-import type {
-  FullRunSummaryV2,
-  RunRecordV2,
-  RunSummary,
-} from "../persistence/run-types";
+import type { FullRunSummaryV2, RunRecordV2, RunSummary } from "../persistence/run-types";
 import type { RunExecutor, RunExecutorEvents, RunRequest } from "../run-executor";
 import { candidateIdForSlot } from "../pipeline";
-import type { JudgeReport } from "../../studio-data";
-import type { ModelSlot } from "../../studio-data";
+import { type JudgeReport, type ModelSlot } from "../../studio-data";
 import { StorageError } from "../persistence/database";
 import { rotateExperimentRoster } from "./experiment-roster-extension";
 import { createExperimentRecord } from "./experiment-engine";
@@ -49,7 +50,11 @@ function makeSlot(id: string, slug: string, providerId = "openrouter"): ModelSlo
   };
 }
 
-function makeTask(id: string, order: number, overrides: Partial<EvaluationTask> = {}): EvaluationTask {
+function makeTask(
+  id: string,
+  order: number,
+  overrides: Partial<EvaluationTask> = {},
+): EvaluationTask {
   return {
     id,
     title: `Task ${id}`,
@@ -80,7 +85,10 @@ function makeSuite(taskIds: string[]): EvaluationSuite {
 }
 
 function makeJudgeReport(candidates: Array<{ id: string; score: number }>): JudgeReport {
-  const labelMap = candidates.map((c, i) => ({ label: String.fromCharCode(65 + i), candidateId: c.id }));
+  const labelMap = candidates.map((c, i) => ({
+    label: String.fromCharCode(65 + i),
+    candidateId: c.id,
+  }));
   const evaluationsById: JudgeReport["evaluationsById"] = {};
   for (const { label, candidateId } of labelMap) {
     const score = candidates.find((c) => c.id === candidateId)!.score;
@@ -124,7 +132,11 @@ function makeFakeExecutor(opts: {
   const calls: RunRequest[] = [];
   const behaviorRef: { current: (request: RunRequest) => FakeOutcome } = { current: opts.behavior };
   const abortedSignals: AbortSignal[] = opts.abortedSignals ?? [];
-  async function executeTask(request: RunRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void> {
+  async function executeTask(
+    request: RunRequest,
+    events: RunExecutorEvents,
+    signal: AbortSignal,
+  ): Promise<void> {
     calls.push(request);
     const outcome = behaviorRef.current(request);
     const enabledSlots = request.slots.filter((s) => s.enabled);
@@ -136,26 +148,54 @@ function makeFakeExecutor(opts: {
     for (const slot of enabledSlots) {
       const candidateId = candidateIdForSlot(slot.id);
       const attemptId = opts.generateId();
-      const failThisOne = outcome.kind === "one-candidate-fails" && slot.id === enabledSlots[enabledSlots.length - 1].id;
-      await events.onCandidateAttemptStart(candidateId, attemptId, { messages: [], startedAt: opts.now() });
+      const failThisOne =
+        outcome.kind === "one-candidate-fails" &&
+        slot.id === enabledSlots[enabledSlots.length - 1].id;
+      await events.onCandidateAttemptStart(candidateId, attemptId, {
+        messages: [],
+        startedAt: opts.now(),
+      });
       if (failThisOne) {
         await events.onCandidateAttemptTerminal(candidateId, attemptId, {
-          status: "failed", output: null, tokensIn: null, tokensOut: null,
-          error: { message: "provider error" }, finishedAt: opts.now(),
+          status: "failed",
+          output: null,
+          tokensIn: null,
+          tokensOut: null,
+          error: { message: "provider error" },
+          finishedAt: opts.now(),
         });
         continue;
       }
-      events.onCandidateTerminal(candidateId, {
-        segments: [], summary: "s", tokensIn: 1, tokensOut: 1, finishedAt: opts.now(),
+      await events.onCandidateTerminal(candidateId, {
+        segments: [],
+        summary: "s",
+        tokensIn: 1,
+        tokensOut: 1,
+        finishedAt: opts.now(),
       });
       await events.onCandidateAttemptTerminal(candidateId, attemptId, {
-        status: "completed", output: `output-${slot.slug}`, tokensIn: 1, tokensOut: 1, error: null, finishedAt: opts.now(),
+        status: "completed",
+        output: `output-${slot.slug}`,
+        tokensIn: 1,
+        tokensOut: 1,
+        error: null,
+        finishedAt: opts.now(),
       });
       candidateAttemptIds[candidateId] = attemptId;
       done.push({
-        id: candidateId, model: slot.model, provider: slot.provider, providerId: slot.providerId,
-        slug: slot.slug, accent: "indigo", strategy: "Parallel model", summary: "s",
-        scores: {}, weightedScore: 0, segments: [], status: "done", startedAt: opts.now(),
+        id: candidateId,
+        model: slot.model,
+        provider: slot.provider,
+        providerId: slot.providerId,
+        slug: slot.slug,
+        accent: "indigo",
+        strategy: "Parallel model",
+        summary: "s",
+        scores: {},
+        weightedScore: 0,
+        segments: [],
+        status: "done",
+        startedAt: opts.now(),
       });
     }
     await events.onFanoutTerminal(done);
@@ -172,20 +212,29 @@ function makeFakeExecutor(opts: {
       model: request.critic.model,
       instruction: request.judgeInstruction,
       messages: [],
-      blindLabelToCandidateId: Object.fromEntries(done.map((c, i) => [String.fromCharCode(65 + i), c.id])),
+      blindLabelToCandidateId: Object.fromEntries(
+        done.map((c, i) => [String.fromCharCode(65 + i), c.id]),
+      ),
       candidateAttemptIdsByCandidateId: candidateAttemptIds,
       startedAt: opts.now(),
     });
     if (outcome.kind === "judge-fails") {
       await events.onJudgeTerminal(judgeAttemptId, {
-        status: "failed", report: null, consensus: null,
-        error: { message: "judge exploded" }, finishedAt: opts.now(),
+        status: "failed",
+        report: null,
+        consensus: null,
+        error: { message: "judge exploded" },
+        finishedAt: opts.now(),
       });
       return;
     }
     const report = makeJudgeReport(done.map((c, i) => ({ id: c.id, score: 4 - i * 0.5 })));
     await events.onJudgeTerminal(judgeAttemptId, {
-      status: "completed", report, consensus: null, error: null, finishedAt: opts.now(),
+      status: "completed",
+      report,
+      consensus: null,
+      error: null,
+      finishedAt: opts.now(),
     });
   }
 
@@ -198,7 +247,9 @@ function makeFakeExecutor(opts: {
   } as unknown as FakeExecutor;
   Object.defineProperty(obj, "behavior", {
     get: () => behaviorRef.current,
-    set: (v: (request: RunRequest) => FakeOutcome) => { behaviorRef.current = v; },
+    set: (v: (request: RunRequest) => FakeOutcome) => {
+      behaviorRef.current = v;
+    },
     enumerable: true,
     configurable: true,
   });
@@ -222,10 +273,12 @@ interface Harness {
   ids: () => string;
 }
 
-function makeHarness(opts: {
-  behavior?: (request: RunRequest) => FakeOutcome;
-  midTask?: (request: RunRequest) => void;
-} = {}): Harness {
+function makeHarness(
+  opts: {
+    behavior?: (request: RunRequest) => FakeOutcome;
+    midTask?: (request: RunRequest) => void;
+  } = {},
+): Harness {
   let nowValue = 10_000;
   const now = () => nowValue;
   let idCounter = 0;
@@ -313,8 +366,12 @@ describe("experiment-controller — sequential execution", () => {
     // Tasks executed in suite order; each task's commit landed before the
     // next begin (task-terminal events strictly precede the next task-began).
     expect(taskIds(h.executor)).toEqual(["t1", "t2", "t3"]);
-    const beganIdx = h.events.map((e, i) => (e.kind === "task-began" ? i : -1)).filter((i) => i >= 0);
-    const terminalIdx = h.events.map((e, i) => (e.kind === "task-terminal" ? i : -1)).filter((i) => i >= 0);
+    const beganIdx = h.events
+      .map((e, i) => (e.kind === "task-began" ? i : -1))
+      .filter((i) => i >= 0);
+    const terminalIdx = h.events
+      .map((e, i) => (e.kind === "task-terminal" ? i : -1))
+      .filter((i) => i >= 0);
     expect(beganIdx).toHaveLength(3);
     expect(terminalIdx).toHaveLength(3);
     for (let i = 0; i < 3; i++) {
@@ -439,7 +496,8 @@ describe("experiment-controller — pause / resume / abort", () => {
     let controllerRef: Harness["controller"] | null = null;
     const h = makeHarness({
       midTask: () => {
-        controllerRef!.requestPause();
+        // Pause is a signal; the harness keeps driving the queue.
+        void controllerRef!.requestPause();
       },
     });
     controllerRef = h.controller;
@@ -464,7 +522,8 @@ describe("experiment-controller — pause / resume / abort", () => {
     let controllerRef: Harness["controller"] | null = null;
     const h = makeHarness({
       midTask: () => {
-        controllerRef!.requestPause();
+        // Pause is a signal; the harness keeps driving the queue.
+        void controllerRef!.requestPause();
       },
     });
     controllerRef = h.controller;
@@ -650,7 +709,9 @@ describe("experiment-controller — retry incomplete tasks", () => {
 
     // The retry executor request must carry the SNAPSHOT roster and judge,
     // not the edited live suite.
-    const retryCalls = h.executor.calls.filter((c) => c.source.kind === "experiment" && c.source.taskId === "t2");
+    const retryCalls = h.executor.calls.filter(
+      (c) => c.source.kind === "experiment" && c.source.taskId === "t2",
+    );
     const lastCall = retryCalls[retryCalls.length - 1];
     expect(lastCall).toBeTruthy();
     // Snapshot roster: s1/m1 + s2/m2 — NOT the edited s9/edited-model.
@@ -672,7 +733,8 @@ describe("experiment-controller — execution ownership", () => {
     let controllerRef: Harness["controller"] | null = null;
     const h = makeHarness({
       midTask: () => {
-        controllerRef!.requestPause();
+        // Pause is a signal; the harness keeps driving the queue.
+        void controllerRef!.requestPause();
       },
     });
     controllerRef = h.controller;
@@ -744,7 +806,11 @@ describe("experiment-controller — reload and recovery", () => {
 
     // Fresh controller over the same stores — the "reload". New lease instance.
     const leaseB = new InMemoryExecutionLease(h.leaseStore, null, { now: h.now });
-    const executorB = makeFakeExecutor({ now: h.now, generateId: h.ids, behavior: () => ({ kind: "success" }) });
+    const executorB = makeFakeExecutor({
+      now: h.now,
+      generateId: h.ids,
+      behavior: () => ({ kind: "success" }),
+    });
     createExperimentController({
       evalRepo: h.evalRepo,
       uow: createExperimentUnitOfWork(h.store, { now: h.now }),
@@ -796,7 +862,13 @@ describe("experiment-controller — reload and recovery", () => {
       task: { title: "Task t1", prompt: "Prompt for t1", systemPrompt: "", temperature: 0.7 },
       evaluation: { profile: null, candidateMessages: [] },
       candidates: [],
-      judge: { status: "idle", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+      judge: {
+        status: "idle",
+        acceptedAttemptId: null,
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
       fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
       winnerKeys: [],
     };
@@ -834,10 +906,17 @@ describe("experiment-controller — reload and recovery", () => {
         {
           taskId: "t1",
           selectedAttemptId: null,
-          attempts: [{
-            id: "att-crash-1", runId: "run-crash-1", trial: 0,
-            status: "running", startedAt: h.now(), finishedAt: null, error: null,
-          }],
+          attempts: [
+            {
+              id: "att-crash-1",
+              runId: "run-crash-1",
+              trial: 0,
+              status: "running",
+              startedAt: h.now(),
+              finishedAt: null,
+              error: null,
+            },
+          ],
         },
         { taskId: "t2", selectedAttemptId: null, attempts: [] },
       ],
@@ -902,22 +981,48 @@ describe("experiment-controller — reload and recovery", () => {
       evaluation: { profile: null, candidateMessages: [] },
       candidates: [
         {
-          candidateId: "cand-s1", slotId: "s1", modelKey: "openrouter:m1",
-          providerId: "openrouter", model: "Model m1", slug: "m1",
+          candidateId: "cand-s1",
+          slotId: "s1",
+          modelKey: "openrouter:m1",
+          providerId: "openrouter",
+          model: "Model m1",
+          slug: "m1",
           acceptedAttemptId: "ca-1",
-          attempts: [{
-            attemptId: "ca-1", messages: [], startedAt: h.now(), finishedAt: h.now(),
-            status: "completed", output: "out", tokensIn: 1, tokensOut: 1, error: null,
-          }],
+          attempts: [
+            {
+              attemptId: "ca-1",
+              messages: [],
+              startedAt: h.now(),
+              finishedAt: h.now(),
+              status: "completed",
+              output: "out",
+              tokensIn: 1,
+              tokensOut: 1,
+              error: null,
+            },
+          ],
         },
         {
-          candidateId: "cand-s2", slotId: "s2", modelKey: "gemini:m2",
-          providerId: "gemini", model: "Model m2", slug: "m2",
+          candidateId: "cand-s2",
+          slotId: "s2",
+          modelKey: "gemini:m2",
+          providerId: "gemini",
+          model: "Model m2",
+          slug: "m2",
           acceptedAttemptId: "ca-2",
-          attempts: [{
-            attemptId: "ca-2", messages: [], startedAt: h.now(), finishedAt: h.now(),
-            status: "completed", output: "out", tokensIn: 1, tokensOut: 1, error: null,
-          }],
+          attempts: [
+            {
+              attemptId: "ca-2",
+              messages: [],
+              startedAt: h.now(),
+              finishedAt: h.now(),
+              status: "completed",
+              output: "out",
+              tokensIn: 1,
+              tokensOut: 1,
+              error: null,
+            },
+          ],
         },
       ],
       judge: {
@@ -958,7 +1063,12 @@ describe("experiment-controller — reload and recovery", () => {
     h.store.runSummaries.set("run-committed-1", committedSummary);
 
     const { createExperimentRecord } = await import("./experiment-engine");
-    const record = createExperimentRecord({ id: "exp-committed", suite, profiles: [], now: h.now() });
+    const record = createExperimentRecord({
+      id: "exp-committed",
+      suite,
+      profiles: [],
+      now: h.now(),
+    });
     const crashed: ExperimentRecord = {
       ...record,
       status: "running",
@@ -967,10 +1077,17 @@ describe("experiment-controller — reload and recovery", () => {
         {
           taskId: "t1",
           selectedAttemptId: null,
-          attempts: [{
-            id: "att-committed-1", runId: "run-committed-1", trial: 0,
-            status: "running", startedAt: h.now(), finishedAt: null, error: null,
-          }],
+          attempts: [
+            {
+              id: "att-committed-1",
+              runId: "run-committed-1",
+              trial: 0,
+              status: "running",
+              startedAt: h.now(),
+              finishedAt: null,
+              error: null,
+            },
+          ],
         },
         { taskId: "t2", selectedAttemptId: null, attempts: [] },
       ],
@@ -1011,7 +1128,10 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     const expId = startRes.ok ? startRes.experimentId : "";
 
     // Attempt repair with invalid/unknown task id -> planner rejection.
-    const res = await h.controller.repairMissingCells(expId, { taskId: "unknown-task", modelKeys: ["openrouter:m1"] });
+    const res = await h.controller.repairMissingCells(expId, {
+      taskId: "unknown-task",
+      modelKeys: ["openrouter:m1"],
+    });
     expect(res.ok).toBe(false);
 
     // Execution owner and lease must be released.
@@ -1036,7 +1156,10 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     h.executor.behavior = () => ({ kind: "success" });
 
     // Repair the missing cell on t1.
-    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    const res = await h.controller.repairMissingCells(expId, {
+      taskId: "t1",
+      modelKeys: ["gemini:m2"],
+    });
     expect(res.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -1068,7 +1191,10 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     const expId = startRes.ok ? startRes.experimentId : "";
 
     h.executor.behavior = () => ({ kind: "success" });
-    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    const res = await h.controller.repairMissingCells(expId, {
+      taskId: "t1",
+      modelKeys: ["gemini:m2"],
+    });
     expect(res.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -1105,7 +1231,10 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     };
 
     h.executor.behavior = () => ({ kind: "success" });
-    const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+    const res = await h.controller.repairMissingCells(expId, {
+      taskId: "t1",
+      modelKeys: ["gemini:m2"],
+    });
     expect(res.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -1134,7 +1263,10 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
       throw new Error("storage unavailable");
     };
     try {
-      const res = await h.controller.repairMissingCells(expId, { taskId: "t1", modelKeys: ["gemini:m2"] });
+      const res = await h.controller.repairMissingCells(expId, {
+        taskId: "t1",
+        modelKeys: ["gemini:m2"],
+      });
       expect(res.ok).toBe(false);
       if (!res.ok) expect(res.error).toMatch(/storage unavailable/i);
     } finally {
@@ -1213,7 +1345,10 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
       expect(task.attempts).toHaveLength(2);
       expect(task.attempts[1].status).toBe("completed");
       expect(task.selectedAttemptId).toBe(task.attempts[1].id);
-      expect(task.attempts[1].repair).toMatchObject({ kind: "roster-extension", addedModelKey: EXT_KEY });
+      expect(task.attempts[1].repair).toMatchObject({
+        kind: "roster-extension",
+        addedModelKey: EXT_KEY,
+      });
     }
     expect(after!.status).toBe("completed");
     expect(after!.execution).toBeNull();
@@ -1282,7 +1417,9 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("falls back to a full-roster attempt for a task with no reusable evidence", async () => {
     const h = makeHarness({
       behavior: (request) =>
-        request.source.kind === "experiment" && request.source.taskId === "t2" && !request.source.repair
+        request.source.kind === "experiment" &&
+        request.source.taskId === "t2" &&
+        !request.source.repair
           ? { kind: "judge-fails" }
           : { kind: "success" },
     });
@@ -1302,7 +1439,10 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     expect(t1Ext.candidateExecution).toBeDefined();
     expect(t1Ext.candidateExecution!.executeModelKeys).toEqual([EXT_KEY]);
     if (t1Ext.source.kind !== "experiment") throw new Error("expected experiment source");
-    expect(t1Ext.source.repair).toMatchObject({ kind: "roster-extension", baseRunId: expect.any(String) });
+    expect(t1Ext.source.repair).toMatchObject({
+      kind: "roster-extension",
+      baseRunId: expect.any(String),
+    });
 
     expect(t2Ext.candidateExecution).toBeUndefined();
     expect(t2Ext.slots).toHaveLength(3);
@@ -1337,7 +1477,9 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     if (!dup.ok) expect(dup.error).toMatch(/already/i);
 
     // Disabled slot.
-    const disabled = await h.controller.addModelAndRun(expId, { slot: { ...EXT_SLOT, enabled: false } });
+    const disabled = await h.controller.addModelAndRun(expId, {
+      slot: { ...EXT_SLOT, enabled: false },
+    });
     expect(disabled.ok).toBe(false);
 
     // Lease held by another tab.
@@ -1376,7 +1518,12 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1"]));
     const running: ExperimentRecord = {
-      ...createExperimentRecord({ id: "exp-running", suite: makeSuite(["t1"]), profiles: [], now: h.now() }),
+      ...createExperimentRecord({
+        id: "exp-running",
+        suite: makeSuite(["t1"]),
+        profiles: [],
+        now: h.now(),
+      }),
       status: "running",
       execution: { ownerId: "some-tab", fence: 1 },
     };
@@ -1395,7 +1542,10 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     const h = makeHarness({
       midTask: (request) => {
         // Pause as soon as the first EXTENSION task begins.
-        if (request.source.kind === "experiment" && request.source.repair?.kind === "roster-extension") {
+        if (
+          request.source.kind === "experiment" &&
+          request.source.repair?.kind === "roster-extension"
+        ) {
           void controllerRef?.requestPause();
         }
       },
@@ -1432,7 +1582,10 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     let controllerRef: Harness["controller"] | null = null;
     const h = makeHarness({
       midTask: (request) => {
-        if (request.source.kind === "experiment" && request.source.repair?.kind === "roster-extension") {
+        if (
+          request.source.kind === "experiment" &&
+          request.source.repair?.kind === "roster-extension"
+        ) {
           void controllerRef?.abort();
         }
       },
@@ -1504,18 +1657,32 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
         {
           taskId: "t1",
           selectedAttemptId: "att-t1",
-          attempts: [{
-            id: "att-t1", runId: "run-t1", trial: 0, status: "completed",
-            startedAt: h.now(), finishedAt: h.now(), error: null,
-          }],
+          attempts: [
+            {
+              id: "att-t1",
+              runId: "run-t1",
+              trial: 0,
+              status: "completed",
+              startedAt: h.now(),
+              finishedAt: h.now(),
+              error: null,
+            },
+          ],
         },
         {
           taskId: "t2",
           selectedAttemptId: "att-t2",
-          attempts: [{
-            id: "att-t2", runId: "run-t2", trial: 0, status: "completed",
-            startedAt: h.now(), finishedAt: h.now(), error: null,
-          }],
+          attempts: [
+            {
+              id: "att-t2",
+              runId: "run-t2",
+              trial: 0,
+              status: "completed",
+              startedAt: h.now(),
+              finishedAt: h.now(),
+              error: null,
+            },
+          ],
         },
       ],
     };
@@ -1523,7 +1690,11 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     // Rotate the roster, then craft the mid-extension crashed state: t1's
     // extension attempt is "running" in the record but its run already
     // committed terminal; t2's extension attempt is queued.
-    const rotation = rotateExperimentRoster({ experiment: base, slot: EXT_SLOT, extendedAt: h.now() });
+    const rotation = rotateExperimentRoster({
+      experiment: base,
+      slot: EXT_SLOT,
+      extendedAt: h.now(),
+    });
     expect(rotation.ok).toBe(true);
     if (!rotation.ok) return;
     const rotated = rotation.record;
@@ -1538,8 +1709,13 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
           attempts: [
             ...rotated.tasks[0].attempts,
             {
-              id: "att-ext-1", runId: "run-ext-1", trial: 1, status: "running",
-              startedAt: h.now(), finishedAt: null, error: null,
+              id: "att-ext-1",
+              runId: "run-ext-1",
+              trial: 1,
+              status: "running",
+              startedAt: h.now(),
+              finishedAt: null,
+              error: null,
               repair: { kind: "roster-extension", addedModelKey: EXT_KEY, baseRunId: "run-t1" },
             },
           ],
@@ -1549,8 +1725,13 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
           attempts: [
             ...rotated.tasks[1].attempts,
             {
-              id: "att-ext-2", runId: null, trial: 1, status: "queued",
-              startedAt: null, finishedAt: null, error: null,
+              id: "att-ext-2",
+              runId: null,
+              trial: 1,
+              status: "queued",
+              startedAt: null,
+              finishedAt: null,
+              error: null,
               repair: { kind: "roster-extension", addedModelKey: EXT_KEY },
             },
           ],
@@ -1585,7 +1766,13 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
       task: { title: "Task t1", prompt: "Prompt for t1", systemPrompt: "", temperature: 0.7 },
       evaluation: { profile: null, candidateMessages: [] },
       candidates: [],
-      judge: { status: "done", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+      judge: {
+        status: "done",
+        acceptedAttemptId: null,
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
       fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
       winnerKeys: [],
     };

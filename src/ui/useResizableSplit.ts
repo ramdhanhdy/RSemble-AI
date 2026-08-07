@@ -12,7 +12,9 @@ function readStoredRatio(): number | null {
       const ratio = parseFloat(stored);
       if (!isNaN(ratio) && ratio > 0 && ratio < 1) return ratio;
     }
-  } catch {}
+  } catch {
+    // Preference read is best-effort; fall back to the default split.
+  }
   return null;
 }
 
@@ -57,7 +59,9 @@ export function useResizableSplit() {
       const containerW = rect?.width ?? window.innerWidth;
       const ratio = containerW > 0 ? w / containerW : 0;
       localStorage.setItem(STORAGE_KEY, String(ratio));
-    } catch {}
+    } catch {
+      // Preference write is best-effort; layout still works in-memory.
+    }
   }, []);
 
   const onPointerMove = useCallback((e: PointerEvent) => {
@@ -78,46 +82,52 @@ export function useResizableSplit() {
     persist(widthRef.current);
   }, [onPointerMove, persist]);
 
-  const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    widthRef.current = commandWidth;
-    setDragging(true);
-    document.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerup", onPointerUp);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, [onPointerMove, onPointerUp, commandWidth]);
+  const onDividerPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      widthRef.current = commandWidth;
+      setDragging(true);
+      document.addEventListener("pointermove", onPointerMove);
+      document.addEventListener("pointerup", onPointerUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [onPointerMove, onPointerUp, commandWidth],
+  );
 
-  const onDividerKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const step = e.shiftKey ? 64 : 16;
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      setCommandWidth((w) => {
-        const next = Math.max(MIN_WIDTH, w - step);
-        widthRef.current = next;
-        persist(next);
-        return next;
-      });
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      setCommandWidth((w) => {
-        const next = Math.min(MAX_WIDTH, w + step);
-        widthRef.current = next;
-        persist(next);
-        return next;
-      });
-    } else if (e.key === "Home") {
-      e.preventDefault();
-      widthRef.current = MIN_WIDTH;
-      persist(MIN_WIDTH);
-      setCommandWidth(MIN_WIDTH);
-    } else if (e.key === "End") {
-      e.preventDefault();
-      widthRef.current = MAX_WIDTH;
-      persist(MAX_WIDTH);
-      setCommandWidth(MAX_WIDTH);
-    }
-  }, [persist]);
+  const onDividerKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = e.shiftKey ? 64 : 16;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setCommandWidth((w) => {
+          const next = Math.max(MIN_WIDTH, w - step);
+          widthRef.current = next;
+          persist(next);
+          return next;
+        });
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setCommandWidth((w) => {
+          const next = Math.min(MAX_WIDTH, w + step);
+          widthRef.current = next;
+          persist(next);
+          return next;
+        });
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        widthRef.current = MIN_WIDTH;
+        persist(MIN_WIDTH);
+        setCommandWidth(MIN_WIDTH);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        widthRef.current = MAX_WIDTH;
+        persist(MAX_WIDTH);
+        setCommandWidth(MAX_WIDTH);
+      }
+    },
+    [persist],
+  );
 
   const onDoubleClick = useCallback(() => {
     widthRef.current = DEFAULT_WIDTH;

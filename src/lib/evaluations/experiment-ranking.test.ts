@@ -28,7 +28,10 @@ describe("deriveDisplayRanking", () => {
   it("groups complete models as eligible and incomplete as provisional", () => {
     const complete = model("umans:model", 4.38, true, 0);
     const provisional = model("9router:model", 4.54, false, 1);
-    const result = deriveDisplayRanking([complete, provisional], order("umans:model", "9router:model"));
+    const result = deriveDisplayRanking(
+      [complete, provisional],
+      order("umans:model", "9router:model"),
+    );
 
     expect(result.eligible).toEqual([complete]);
     expect(result.provisional).toEqual([provisional]);
@@ -37,7 +40,10 @@ describe("deriveDisplayRanking", () => {
   it("returns the provisional leader only when its mean exceeds the eligible winner", () => {
     const complete = model("umans:model", 4.38, true, 0);
     const provisional = model("9router:model", 4.54, false, 1);
-    const result = deriveDisplayRanking([complete, provisional], order("umans:model", "9router:model"));
+    const result = deriveDisplayRanking(
+      [complete, provisional],
+      order("umans:model", "9router:model"),
+    );
 
     expect(result.provisionalLeader?.modelKey).toBe("9router:model");
   });
@@ -63,7 +69,10 @@ describe("deriveDisplayRanking", () => {
     const low = model("openrouter:low", 4.0, true, 0);
     const high = model("openrouter:high", 4.8, true, 1);
     const mid = model("openrouter:mid", 4.4, true, 2);
-    const result = deriveDisplayRanking([low, high, mid], order("openrouter:low", "openrouter:high", "openrouter:mid"));
+    const result = deriveDisplayRanking(
+      [low, high, mid],
+      order("openrouter:low", "openrouter:high", "openrouter:mid"),
+    );
 
     expect(result.eligible.map((m) => m.modelKey)).toEqual([
       "openrouter:high",
@@ -91,7 +100,10 @@ describe("deriveDisplayRanking", () => {
   it("sorts null-mean models last within their group", () => {
     const noScores = model("9router:none", null, false, 0);
     const scored = model("9router:scored", 3.5, false, 1);
-    const result = deriveDisplayRanking([noScores, scored], order("9router:none", "9router:scored"));
+    const result = deriveDisplayRanking(
+      [noScores, scored],
+      order("9router:none", "9router:scored"),
+    );
 
     expect(result.provisional.map((m) => m.modelKey)).toEqual(["9router:scored", "9router:none"]);
   });

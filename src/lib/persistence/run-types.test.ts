@@ -9,8 +9,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { ModelSlot } from "../../studio-data";
-import type { EvaluationCriterion, EvaluationProfile, EvaluationSuite, EvaluationTask } from "../evaluations/evaluation-types";
 import {
+  type EvaluationCriterion,
+  type EvaluationProfile,
+  type EvaluationSuite,
+  type EvaluationTask,
   isEvaluationProfile,
   isEvaluationProfileRef,
   isEvaluationSelection,
@@ -20,16 +23,14 @@ import {
   isProfileRecord,
   isTaskEvaluationSelection,
 } from "../evaluations/evaluation-types";
-import type {
-  CandidateAttemptRecord,
-  FullRunSummaryV2,
-  LegacyRunSummary,
-  PersistedCandidate,
-  RunArchiveV1,
-  RunRecordV2,
-  FusionAttemptRecord,
-} from "./run-types";
 import {
+  type CandidateAttemptRecord,
+  type FullRunSummaryV2,
+  type LegacyRunSummary,
+  type PersistedCandidate,
+  type RunArchiveV1,
+  type RunRecordV2,
+  type FusionAttemptRecord,
   isAttemptStatus,
   isFullRunSummaryV2,
   isLegacyRunSummary,
@@ -217,7 +218,14 @@ function validSuite(): EvaluationSuite {
 
 describe("isRunStatus / isAttemptStatus", () => {
   it("accepts every valid RunStatus and rejects unknown values", () => {
-    for (const s of ["running", "completed", "partial", "failed", "aborted", "interrupted"] as const) {
+    for (const s of [
+      "running",
+      "completed",
+      "partial",
+      "failed",
+      "aborted",
+      "interrupted",
+    ] as const) {
       expect(isRunStatus(s)).toBe(true);
     }
     expect(isRunStatus("queued")).toBe(false);
@@ -334,7 +342,13 @@ describe("fusion usage provenance", () => {
     status: "completed",
     error: null,
     result: "fused",
-    usage: { inputTokens: 10, outputTokens: 2, reasoningTokens: null, cacheReadTokens: null, cacheWriteTokens: null },
+    usage: {
+      inputTokens: 10,
+      outputTokens: 2,
+      reasoningTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+    },
     inputEstimate: { totalTokens: 10, textTokens: 10, method: "provider-reported", partial: false },
     cost: { usd: null, source: "unknown" },
   };
@@ -346,7 +360,12 @@ describe("fusion usage provenance", () => {
     const malformed = clone(r) as unknown as Record<string, unknown>;
     const fusion = malformed.fusion as Record<string, unknown>;
     const attempts = fusion.attempts as Array<Record<string, unknown>>;
-    attempts[0].inputEstimate = { totalTokens: -1, textTokens: 1, method: "text-heuristic", partial: true };
+    attempts[0].inputEstimate = {
+      totalTokens: -1,
+      textTokens: 1,
+      method: "text-heuristic",
+      partial: true,
+    };
     expect(isRunRecordV2(malformed)).toBe(false);
   });
 });
@@ -462,7 +481,11 @@ describe("isRunSource", () => {
         taskId: "t1",
         experimentTaskAttemptId: "att-1",
         trial: 1,
-        repair: { kind: "missing-cells", baseRunId: "run-base", requestedModelKeys: ["openrouter:m1"] },
+        repair: {
+          kind: "missing-cells",
+          baseRunId: "run-base",
+          requestedModelKeys: ["openrouter:m1"],
+        },
       }),
     ).toBe(true);
   });
@@ -557,14 +580,18 @@ describe("isLegacyRunSummary fabrication rejection", () => {
     expect(isLegacyRunSummary(validLegacySummary())).toBe(true);
   });
 
-  it.each(["status", "mode", "judgeModelKey", "source", "evaluationProfileId", "evaluationProfileVersion"])(
-    "rejects a legacy summary carrying fabricated %s",
-    (field) => {
-      const s = validLegacySummary() as unknown as Record<string, unknown>;
-      s[field] = "fabricated";
-      expect(isLegacyRunSummary(s)).toBe(false);
-    },
-  );
+  it.each([
+    "status",
+    "mode",
+    "judgeModelKey",
+    "source",
+    "evaluationProfileId",
+    "evaluationProfileVersion",
+  ])("rejects a legacy summary carrying fabricated %s", (field) => {
+    const s = validLegacySummary() as unknown as Record<string, unknown>;
+    s[field] = "fabricated";
+    expect(isLegacyRunSummary(s)).toBe(false);
+  });
 
   it("rejects a wrong schemaVersion tag", () => {
     const s = validLegacySummary();
@@ -747,7 +774,9 @@ describe("isEvaluationCriterion / isEvaluationProfile anchors + weights", () => 
     const c = clone(validCriterion) as unknown as Record<string, unknown>;
     (c.anchors as Record<string, unknown>).five = undefined;
     delete (c.anchors as Record<string, unknown>).five;
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c as unknown as EvaluationCriterion] })).toBe(false);
+    expect(
+      isEvaluationProfile({ ...validProfile(), criteria: [c as unknown as EvaluationCriterion] }),
+    ).toBe(false);
   });
 
   it("rejects a criterion missing the one anchor", () => {
@@ -810,11 +839,15 @@ describe("isTaskEvaluationSelection discrimination", () => {
   });
 
   it("accepts a pinned-profile selection with a valid ref", () => {
-    expect(isTaskEvaluationSelection({ kind: "profile", profile: { id: "p", version: 1 } })).toBe(true);
+    expect(isTaskEvaluationSelection({ kind: "profile", profile: { id: "p", version: 1 } })).toBe(
+      true,
+    );
   });
 
   it("rejects a pinned-profile selection with an invalid ref", () => {
-    expect(isTaskEvaluationSelection({ kind: "profile", profile: { id: "", version: 1 } })).toBe(false);
+    expect(isTaskEvaluationSelection({ kind: "profile", profile: { id: "", version: 1 } })).toBe(
+      false,
+    );
     expect(isTaskEvaluationSelection({ kind: "profile", profile: null })).toBe(false);
   });
 
@@ -862,7 +895,13 @@ describe("isEvaluationSuite structural validity", () => {
     const s = validSuite();
     s.modelSlots = [
       validSlot1,
-      { ...validSlot2, providerId: "openrouter", provider: "OpenRouter", model: "foo", slug: "foo" },
+      {
+        ...validSlot2,
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "foo",
+        slug: "foo",
+      },
     ];
     expect(isEvaluationSuite(s)).toBe(true);
   });
@@ -1035,7 +1074,15 @@ describe("isExperimentRecord", () => {
 
   it("rejects an invalid task attempt in the tasks list", () => {
     const e = validExperiment();
-    (e.tasks[0].attempts as unknown[]).push({ id: "", trial: 0, status: "queued", runId: null, startedAt: null, finishedAt: null, error: null });
+    (e.tasks[0].attempts as unknown[]).push({
+      id: "",
+      trial: 0,
+      status: "queued",
+      runId: null,
+      startedAt: null,
+      finishedAt: null,
+      error: null,
+    });
     expect(isExperimentRecord(e)).toBe(false);
   });
 });
@@ -1075,7 +1122,11 @@ describe("experiment repair provenance schema (Task 8)", () => {
 
   function validExperimentWithRepair() {
     const e = validExperiment() as unknown as {
-      tasks: Array<{ taskId: string; selectedAttemptId: string | null; attempts: Array<Record<string, unknown>> }>;
+      tasks: Array<{
+        taskId: string;
+        selectedAttemptId: string | null;
+        attempts: Array<Record<string, unknown>>;
+      }>;
     };
     e.tasks[0].attempts = [
       {
@@ -1087,7 +1138,11 @@ describe("experiment repair provenance schema (Task 8)", () => {
         finishedAt: 2,
         error: null,
         coverage: { scoredModelKeys: ["openrouter:m1", "openrouter:m2"], totalModels: 2 },
-        repair: { kind: "missing-cells", baseRunId: "run-base", requestedModelKeys: ["openrouter:m1"] },
+        repair: {
+          kind: "missing-cells",
+          baseRunId: "run-base",
+          requestedModelKeys: ["openrouter:m1"],
+        },
       },
     ];
     return e;
@@ -1103,7 +1158,10 @@ describe("experiment repair provenance schema (Task 8)", () => {
 
   it("rejects coverage with duplicate scored model keys", () => {
     const e = validExperimentWithRepair();
-    (e.tasks[0].attempts[0].coverage as Record<string, unknown>).scoredModelKeys = ["openrouter:m1", "openrouter:m1"];
+    (e.tasks[0].attempts[0].coverage as Record<string, unknown>).scoredModelKeys = [
+      "openrouter:m1",
+      "openrouter:m1",
+    ];
     expect(isExperimentRecord(e)).toBe(false);
   });
 
@@ -1127,13 +1185,18 @@ describe("experiment repair provenance schema (Task 8)", () => {
 
   it("rejects a repair plan with duplicate requested model keys", () => {
     const e = validExperimentWithRepair();
-    (e.tasks[0].attempts[0].repair as Record<string, unknown>).requestedModelKeys = ["openrouter:m1", "openrouter:m1"];
+    (e.tasks[0].attempts[0].repair as Record<string, unknown>).requestedModelKeys = [
+      "openrouter:m1",
+      "openrouter:m1",
+    ];
     expect(isExperimentRecord(e)).toBe(false);
   });
 
   it("rejects a repair plan with a credential-shaped key", () => {
     const e = validExperimentWithRepair();
-    (e.tasks[0].attempts[0].repair as Record<string, unknown>).requestedModelKeys = ["sk-secret-abcdef"];
+    (e.tasks[0].attempts[0].repair as Record<string, unknown>).requestedModelKeys = [
+      "sk-secret-abcdef",
+    ];
     expect(isExperimentRecord(e)).toBe(false);
   });
 
@@ -1145,7 +1208,11 @@ describe("experiment repair provenance schema (Task 8)", () => {
 
   it("accepts a roster-extension attempt plan (compound and fallback)", () => {
     const compound = validExperiment() as unknown as {
-      tasks: Array<{ taskId: string; selectedAttemptId: string | null; attempts: Array<Record<string, unknown>> }>;
+      tasks: Array<{
+        taskId: string;
+        selectedAttemptId: string | null;
+        attempts: Array<Record<string, unknown>>;
+      }>;
     };
     compound.tasks[0].attempts.push({
       id: "att-ext",
@@ -1160,7 +1227,11 @@ describe("experiment repair provenance schema (Task 8)", () => {
     expect(isExperimentRecord(compound)).toBe(true);
 
     const fallback = validExperiment() as unknown as {
-      tasks: Array<{ taskId: string; selectedAttemptId: string | null; attempts: Array<Record<string, unknown>> }>;
+      tasks: Array<{
+        taskId: string;
+        selectedAttemptId: string | null;
+        attempts: Array<Record<string, unknown>>;
+      }>;
     };
     fallback.tasks[0].attempts.push({
       id: "att-ext-f",
@@ -1180,7 +1251,14 @@ describe("experiment repair provenance schema (Task 8)", () => {
     e.rosterExtensions = [
       {
         addedModelKey: "gemini:m3",
-        addedSlot: { id: "slot-ext", providerId: "gemini", provider: "Gemini", model: "m3", slug: "m3", enabled: true },
+        addedSlot: {
+          id: "slot-ext",
+          providerId: "gemini",
+          provider: "Gemini",
+          model: "m3",
+          slug: "m3",
+          enabled: true,
+        },
         priorFingerprint: "fp",
         extendedAt: 10,
       },
@@ -1193,13 +1271,27 @@ describe("experiment repair provenance schema (Task 8)", () => {
     e.rosterExtensions = [
       {
         addedModelKey: "gemini:m3",
-        addedSlot: { id: "slot-ext", providerId: "gemini", provider: "Gemini", model: "m3", slug: "m3", enabled: true },
+        addedSlot: {
+          id: "slot-ext",
+          providerId: "gemini",
+          provider: "Gemini",
+          model: "m3",
+          slug: "m3",
+          enabled: true,
+        },
         priorFingerprint: "fp",
         extendedAt: 10,
       },
       {
         addedModelKey: "gemini:m3",
-        addedSlot: { id: "slot-ext-2", providerId: "gemini", provider: "Gemini", model: "m3", slug: "m3", enabled: true },
+        addedSlot: {
+          id: "slot-ext-2",
+          providerId: "gemini",
+          provider: "Gemini",
+          model: "m3",
+          slug: "m3",
+          enabled: true,
+        },
         priorFingerprint: "fp2",
         extendedAt: 20,
       },
@@ -1212,7 +1304,14 @@ describe("experiment repair provenance schema (Task 8)", () => {
     e.rosterExtensions = [
       {
         addedModelKey: "umans:other",
-        addedSlot: { id: "slot-ext", providerId: "gemini", provider: "Gemini", model: "m3", slug: "m3", enabled: true },
+        addedSlot: {
+          id: "slot-ext",
+          providerId: "gemini",
+          provider: "Gemini",
+          model: "m3",
+          slug: "m3",
+          enabled: true,
+        },
         priorFingerprint: "fp",
         extendedAt: 10,
       },
@@ -1261,7 +1360,8 @@ describe("candidate attempt reusedFrom provenance (Task 8)", () => {
 
   it("rejects reusedFrom missing a field", () => {
     const c = attemptWithReuse();
-    const { sourceAttemptId: _, ...partial } = (c.attempts[0] as unknown as Record<string, unknown>).reusedFrom as Record<string, string>;
+    const { sourceAttemptId: _, ...partial } = (c.attempts[0] as unknown as Record<string, unknown>)
+      .reusedFrom as Record<string, string>;
     (c.attempts[0] as unknown as Record<string, unknown>).reusedFrom = partial;
     expect(isPersistedCandidate(c)).toBe(false);
   });

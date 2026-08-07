@@ -57,8 +57,7 @@ export interface RosterExtensionPlan {
 }
 
 export type RosterExtensionPlanResult =
-  | { ok: true; plan: RosterExtensionPlan }
-  | { ok: false; reason: string };
+  { ok: true; plan: RosterExtensionPlan } | { ok: false; reason: string };
 
 export type RosterRotationResult =
   | {
@@ -75,9 +74,7 @@ export function modelKeyOf(slot: Pick<ModelSlot, "providerId" | "slug">): string
 
 /** All model keys already present: snapshot roster + extension history. */
 export function takenModelKeys(experiment: ExperimentRecord): Set<string> {
-  const keys = new Set<string>(
-    experiment.snapshot.modelSlots.map((s) => modelKeyOf(s)),
-  );
+  const keys = new Set<string>(experiment.snapshot.modelSlots.map((s) => modelKeyOf(s)));
   for (const entry of experiment.rosterExtensions ?? []) {
     keys.add(entry.addedModelKey);
   }
@@ -125,8 +122,7 @@ export function planRosterExtension(input: {
     };
   }
 
-  const rotatedEnabledCount =
-    experiment.snapshot.modelSlots.filter((s) => s.enabled).length + 1;
+  const rotatedEnabledCount = experiment.snapshot.modelSlots.filter((s) => s.enabled).length + 1;
   const fullRosterCandidateCount = rotatedEnabledCount;
 
   const taskPlans: RosterExtensionTaskPlan[] = [];
@@ -141,13 +137,8 @@ export function planRosterExtension(input: {
     taskPlans.push(taskPlan);
   }
 
-  const fullRosterFallbackCount = taskPlans.filter(
-    (p) => p.mode === "full-roster",
-  ).length;
-  const reusedOutputCount = taskPlans.reduce(
-    (sum, p) => sum + p.reusedModelKeys.length,
-    0,
-  );
+  const fullRosterFallbackCount = taskPlans.filter((p) => p.mode === "full-roster").length;
+  const reusedOutputCount = taskPlans.reduce((sum, p) => sum + p.reusedModelKeys.length, 0);
 
   return {
     ok: true,
@@ -175,9 +166,7 @@ function planTask(input: {
 }): RosterExtensionTaskPlan {
   const { experiment, taskId, addedModelKey, fullRosterCandidateCount, resolveRunRecord } = input;
 
-  const fallback = (
-    baseRunId?: string,
-  ): RosterExtensionTaskPlan => ({
+  const fallback = (baseRunId?: string): RosterExtensionTaskPlan => ({
     taskId,
     executionPlan: {
       kind: "roster-extension",
@@ -291,10 +280,7 @@ export function rotateExperimentRoster(input: {
     ...experiment,
     protocolFingerprint: newFingerprint,
     snapshot: rotatedSnapshot,
-    rosterExtensions: [
-      ...(experiment.rosterExtensions ?? []),
-      historyEntry,
-    ],
+    rosterExtensions: [...(experiment.rosterExtensions ?? []), historyEntry],
   };
 
   return { ok: true, record, historyEntry };

@@ -172,8 +172,16 @@ function makePlaybook(): FusionPlaybook {
         confidence: "medium",
       },
     ],
-    recommendation: { kind: "do_not_fuse", rationale: "Rank matches Fuse within MPID at lower cost." },
-    poolAdequacy: { probed: true, outcome: "confirmed", challengerKeys: ["g/m8"], note: "Challenger failed on the same instances." },
+    recommendation: {
+      kind: "do_not_fuse",
+      rationale: "Rank matches Fuse within MPID at lower cost.",
+    },
+    poolAdequacy: {
+      probed: true,
+      outcome: "confirmed",
+      challengerKeys: ["g/m8"],
+      note: "Challenger failed on the same instances.",
+    },
     claimLevel: "exploratory",
     conclusion: "Rank A+C when cost matters; do not use fusion for routine runs.",
     createdAt: 1000,
@@ -224,7 +232,21 @@ describe("fusion-study type guards — prohibited keys", () => {
     const trial = { ...makeTrial(), authorization: "Bearer …" };
     expect(isFusionTrial(trial)).toBe(false);
 
-    const playbook = { ...makePlaybook(), rows: [...makePlaybook().rows, { policy: "rank", configuration: "A+C", score: 4.3, lift: 0.1, costMultiplier: 2.4, confidence: "high", token: "t" }] };
+    const playbook = {
+      ...makePlaybook(),
+      rows: [
+        ...makePlaybook().rows,
+        {
+          policy: "rank",
+          configuration: "A+C",
+          score: 4.3,
+          lift: 0.1,
+          costMultiplier: 2.4,
+          confidence: "high",
+          token: "t",
+        },
+      ],
+    };
     expect(isFusionPlaybook(playbook)).toBe(false);
   });
 });

@@ -15,11 +15,7 @@
 // =============================================================================
 
 import type { ChatMessage } from "../providers/types";
-import type {
-  BlindCandidate,
-  ConsensusBreakdown,
-  JudgeReport,
-} from "../../studio-data";
+import type { BlindCandidate, ConsensusBreakdown, JudgeReport } from "../../studio-data";
 import type { EvaluationProfileSnapshot } from "./evaluation-types";
 import type { FusionRecipeRef, FusionRecipeVersion } from "./fusion-study-types";
 import {
@@ -101,9 +97,15 @@ export function deriveRankWinner(
     }
   }
   if (best === null) {
-    throw new Error("Cannot derive a rank winner: no judge evaluations match the blind candidates.");
+    throw new Error(
+      "Cannot derive a rank winner: no judge evaluations match the blind candidates.",
+    );
   }
-  return { winnerCandidateId: best.candidateId, winnerBlindLabel: best.label, winnerScore: best.score };
+  return {
+    winnerCandidateId: best.candidateId,
+    winnerBlindLabel: best.label,
+    winnerScore: best.score,
+  };
 }
 
 /**

@@ -18,26 +18,26 @@
 import type { EvaluationRepository } from "../persistence/evaluation-repository";
 import type { ExperimentUnitOfWork } from "../persistence/experiment-unit-of-work";
 import type { RunRepository } from "../persistence/run-repository";
-import type { RunRecorder } from "../persistence/run-recorder";
-import { createRunRecorder } from "../persistence/run-recorder";
+import { type RunRecorder, createRunRecorder } from "../persistence/run-recorder";
 import {
   createRunRecordBuilder,
   type RunRecordBuilderState,
   type BuilderDeps,
 } from "../persistence/run-record-builder";
-import type { ExecutionLease, LeaseInfo } from "../execution-lease";
-import { LeaseError } from "../execution-lease";
+import { type ExecutionLease, type LeaseInfo, LeaseError } from "../execution-lease";
 import { createExecutionHeartbeat, type ExecutionHeartbeat } from "../execution-heartbeat";
 import type { ExecutionOwnerRegistry } from "../execution-owner";
 import type { RunExecutor, RunExecutorEvents } from "../run-executor";
-import type {
-  EvaluationSuite,
-  EvaluationTask,
-  EvaluationProfileSnapshot,
-  EvaluationSelection,
-  ExperimentRecord,
-  ExperimentTaskState,
-  ExperimentTaskAttempt,
+import {
+  type EvaluationSuite,
+  type EvaluationTask,
+  type EvaluationProfileSnapshot,
+  type EvaluationSelection,
+  type ExperimentRecord,
+  type ExperimentTaskState,
+  type ExperimentTaskAttempt,
+  type ExperimentRepairPlan,
+  type ExperimentTaskExecutionPlan,
 } from "./evaluation-types";
 import {
   createExperimentEngine,
@@ -49,7 +49,6 @@ import {
 import { planMissingCellRepair } from "./experiment-repair";
 import { planRosterExtension, rotateExperimentRoster } from "./experiment-roster-extension";
 import { aggregateExperiment } from "./experiment-aggregation";
-import type { ExperimentRepairPlan, ExperimentTaskExecutionPlan } from "./evaluation-types";
 import type {
   RunRecordV2,
   FullRunSummaryV2,
@@ -57,10 +56,8 @@ import type {
   RunSource,
   ExecutionFence,
 } from "../persistence/run-types";
-import type { AdHocEvaluationConfig } from "./evaluation-profile-adhoc";
-import { HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
-import type { Candidate } from "../../studio-data";
-import type { ModelSlot } from "../../studio-data";
+import { type AdHocEvaluationConfig, HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
+import { type Candidate, type ModelSlot } from "../../studio-data";
 import type { ProviderId } from "../providers/types";
 import { devTerminalLog } from "../dev-terminal-log";
 
@@ -154,9 +151,7 @@ function taskEvaluationConfig(
   profiles: EvaluationProfileSnapshot[],
 ): AdHocEvaluationConfig {
   const sel: EvaluationSelection =
-    task.evaluation.kind === "inherit"
-      ? suite.defaultEvaluation
-      : task.evaluation;
+    task.evaluation.kind === "inherit" ? suite.defaultEvaluation : task.evaluation;
   if (sel.kind === "holistic") return HOLISTIC_EVALUATION;
   // Profile selection: find the pinned snapshot by { id, version }.
   const snapshot = profiles.find(
@@ -390,7 +385,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     if (!engine || !suite) throw new Error("Engine or suite not initialized");
     const record = engine.record;
     const task = suite.tasks.find((t) => t.id === taskId);
-    if (!task) throw new Error(`Task ${taskId} not found in suite`); 
+    if (!task) throw new Error(`Task ${taskId} not found in suite`);
 
     const taskState = record.tasks.find((t) => t.taskId === taskId);
     const trial = taskState?.attempts.find((a) => a.id === attemptId)?.trial ?? 0;
@@ -398,14 +393,18 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     const runId = `run-${generateId()}`;
     const baseSource = experimentRunSource(record, suite, taskId, attemptId, trial);
     const runSource: RunSource = plan ? { ...baseSource, repair: plan } : baseSource;
-    devTerminalLog("experiment.task.created", {
-      experimentId: record.id,
-      runId,
-      taskId,
-      experimentAttemptId: attemptId,
-      stage: "begin",
-      status: "queued",
-    }, "info");
+    devTerminalLog(
+      "experiment.task.created",
+      {
+        experimentId: record.id,
+        runId,
+        taskId,
+        experimentAttemptId: attemptId,
+        stage: "begin",
+        status: "queued",
+      },
+      "info",
+    );
     const evalConfig = taskEvaluationConfig(task, suite, record.snapshot.profiles);
 
     // Build initial run + summary.
@@ -444,14 +443,18 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
     // Execute via the shared executor.
     abortController = new AbortController();
-    devTerminalLog("experiment.task.execution.started", {
-      experimentId: record.id,
-      runId,
-      taskId,
-      experimentAttemptId: attemptId,
-      stage: plan?.kind === "roster-extension" ? "roster-extension" : "full-run",
-      status: "running",
-    }, "info");
+    devTerminalLog(
+      "experiment.task.execution.started",
+      {
+        experimentId: record.id,
+        runId,
+        taskId,
+        experimentAttemptId: attemptId,
+        stage: plan?.kind === "roster-extension" ? "roster-extension" : "full-run",
+        status: "running",
+      },
+      "info",
+    );
     await executor.executeTask(
       {
         source: runSource,
@@ -479,20 +482,26 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Read the final run from the repo.
     const finalRun = await runRepo.get(runId);
     if (!finalRun) throw new Error(`Run ${runId} not found after execution`);
-    devTerminalLog("experiment.task.execution.finished", {
-      experimentId: record.id,
-      runId,
-      taskId,
-      experimentAttemptId: attemptId,
-      stage: "execution",
-      status: finalRun.status,
-    }, finalRun.status === "completed" ? "info" : "warn");
+    devTerminalLog(
+      "experiment.task.execution.finished",
+      {
+        experimentId: record.id,
+        runId,
+        taskId,
+        experimentAttemptId: attemptId,
+        stage: "execution",
+        status: finalRun.status,
+      },
+      finalRun.status === "completed" ? "info" : "warn",
+    );
     const finalSummary = builder.deriveSummary(finalRun);
 
     // Engine transition: commitTaskTerminal with scored coverage derived from
     // the accepted Judge report (spec §11.5) so the coverage-aware attempt
     // selector has real metadata.
-    const snapshotKeys = new Set(record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`));
+    const snapshotKeys = new Set(
+      record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`),
+    );
     const coverage = deriveAttemptCoverage(finalRun, snapshotKeys);
     const commitResult = engine.commitTaskTerminal({
       taskId,
@@ -521,14 +530,18 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     });
     persistedExperimentRevision = commitRev.experimentRevision;
 
-    devTerminalLog("experiment.task.persisted", {
-      experimentId: record.id,
-      runId,
-      taskId,
-      experimentAttemptId: attemptId,
-      stage: "persistence",
-      status: finalRun.status,
-    }, "info");
+    devTerminalLog(
+      "experiment.task.persisted",
+      {
+        experimentId: record.id,
+        runId,
+        taskId,
+        experimentAttemptId: attemptId,
+        stage: "persistence",
+        status: finalRun.status,
+      },
+      "info",
+    );
 
     // Sync experiment status (completed, completed_with_failures, paused).
     await syncExperimentStatus(persistedExperimentRevision);
@@ -589,15 +602,19 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         } catch (err) {
           // Persistence failure or execution error: stop the queue.
           const message = err instanceof Error ? err.message : String(err);
-          devTerminalLog("experiment.task.failed", {
-            experimentId: engine?.record.id,
-            taskId,
-            experimentAttemptId: attemptId,
-            stage: "controller",
-            status: "failed",
-            error: message,
-            ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
-          }, "error");
+          devTerminalLog(
+            "experiment.task.failed",
+            {
+              experimentId: engine?.record.id,
+              taskId,
+              experimentAttemptId: attemptId,
+              stage: "controller",
+              status: "failed",
+              error: message,
+              ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+            },
+            "error",
+          );
           emit({ kind: "error", error: message });
           // Abort the engine if it hasn't reached a terminal state.
           // The engine may have already committed the task terminal in
@@ -667,14 +684,18 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
   }
 
   async function abortInternal(reason: string): Promise<void> {
-    devTerminalLog("experiment.execution.aborted", {
-      experimentId: engine?.record.id ?? experimentId ?? undefined,
-      taskId: engine?.activeTaskId ?? undefined,
-      experimentAttemptId: engine?.activeAttemptId ?? undefined,
-      stage: reason === "Lease lost" ? "lease" : "controller",
-      status: "aborted",
-      error: reason,
-    }, reason === "Lease lost" ? "error" : "warn");
+    devTerminalLog(
+      "experiment.execution.aborted",
+      {
+        experimentId: engine?.record.id ?? experimentId ?? undefined,
+        taskId: engine?.activeTaskId ?? undefined,
+        experimentAttemptId: engine?.activeAttemptId ?? undefined,
+        stage: reason === "Lease lost" ? "lease" : "controller",
+        status: "aborted",
+        error: reason,
+      },
+      reason === "Lease lost" ? "error" : "warn",
+    );
     if (abortController) {
       abortController.abort();
       abortController = null;
@@ -719,7 +740,10 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Resolve pinned profiles from the suite's tasks.
     for (const task of loadedSuite.tasks) {
       if (task.evaluation.kind === "profile") {
-        const p = await evalRepo.getProfile(task.evaluation.profile.id, task.evaluation.profile.version);
+        const p = await evalRepo.getProfile(
+          task.evaluation.profile.id,
+          task.evaluation.profile.version,
+        );
         if (p && !profiles.find((x) => x.id === p.id && x.version === p.version)) {
           profiles.push(p);
         }
@@ -920,9 +944,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
             };
             const updatedTask: ExperimentTaskState = {
               ...taskState,
-              attempts: taskState.attempts.map((a) =>
-                a.id === runningAttempt.id ? finalized : a,
-              ),
+              attempts: taskState.attempts.map((a) => (a.id === runningAttempt.id ? finalized : a)),
             };
             updatedTask.selectedAttemptId = selectAttemptId(updatedTask);
             updatedRecord = {
@@ -1078,7 +1100,12 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         fence: leaseInfo.fence,
         ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
       };
-      const queueResult = engine.queuePlannedAttempts([{ taskId: request.taskId, repair: repairPlan }], generateId, fence, now());
+      const queueResult = engine.queuePlannedAttempts(
+        [{ taskId: request.taskId, repair: repairPlan }],
+        generateId,
+        fence,
+        now(),
+      );
       if (!queueResult.ok) {
         return { ok: false, error: queueResult.reason ?? "Failed to queue repair" };
       }
@@ -1109,10 +1136,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
    *  tasks and falls back to a full-roster attempt per task otherwise. The
    *  rotated snapshot + queued attempts persist in ONE CAS so a failure can
    *  never strand a rotated-but-unqueued record. */
-  async function addModelAndRun(
-    expId: string,
-    input: { slot: ModelSlot },
-  ): Promise<StartResult> {
+  async function addModelAndRun(expId: string, input: { slot: ModelSlot }): Promise<StartResult> {
     const record = await evalRepo.getExperiment(expId);
     if (!record) return { ok: false, error: `Experiment ${expId} not found` };
     // Acquire cross-tab lease.
@@ -1161,15 +1185,19 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
         return { ok: false, error: planResult.reason };
       }
       const plan = planResult.plan;
-      devTerminalLog("experiment.roster-extension.planned", {
-        experimentId: record.id,
-        modelKey: plan.addedModelKey,
-        stage: "planning",
-        status: "ready",
-        candidateCalls: plan.candidateCalls,
-        judgeCalls: plan.judgeCalls,
-        reusedOutputs: plan.reusedOutputCount,
-      }, "info");
+      devTerminalLog(
+        "experiment.roster-extension.planned",
+        {
+          experimentId: record.id,
+          modelKey: plan.addedModelKey,
+          stage: "planning",
+          status: "ready",
+          candidateCalls: plan.candidateCalls,
+          judgeCalls: plan.judgeCalls,
+          reusedOutputs: plan.reusedOutputCount,
+        },
+        "info",
+      );
 
       // Rotate the snapshot in memory: append the slot, recompute the
       // fingerprint, append the history entry. The record stays terminal —
@@ -1246,9 +1274,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Model keys to execute: the repair's requested keys, or exactly the
     // added model for a roster-extension compound attempt.
     const requestedModelKeys: string[] =
-      plan.kind === "missing-cells"
-        ? plan.requestedModelKeys
-        : [plan.addedModelKey];
+      plan.kind === "missing-cells" ? plan.requestedModelKeys : [plan.addedModelKey];
 
     // Build the seeded fresh run.
     const runId = `run-${generateId()}`;
@@ -1263,20 +1289,29 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       trial: taskState.attempts.find((a) => a.id === attemptId)?.trial ?? 0,
       repair: plan,
     };
-    devTerminalLog("experiment.task.created", {
-      experimentId: record.id,
-      runId,
-      taskId,
-      experimentAttemptId: attemptId,
-      modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
-      stage: plan.kind,
-      status: "queued",
-    }, "info");
+    devTerminalLog(
+      "experiment.task.created",
+      {
+        experimentId: record.id,
+        runId,
+        taskId,
+        experimentAttemptId: attemptId,
+        modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
+        stage: plan.kind,
+        status: "queued",
+      },
+      "info",
+    );
 
     const seedRun = builder.buildRepairRunSeed({
       runId,
       source: runSource,
-      task: { title: task.title, prompt: task.prompt, systemPrompt: task.systemPrompt, temperature: 0.7 },
+      task: {
+        title: task.title,
+        prompt: task.prompt,
+        systemPrompt: task.systemPrompt,
+        temperature: 0.7,
+      },
       evaluation: { profile: null, candidateMessages: [] },
       slots: suite.modelSlots,
       critic: suite.defaultJudge,
@@ -1350,15 +1385,19 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     const events = makeEvents(runId, recorder);
 
     abortController = new AbortController();
-    devTerminalLog("experiment.task.execution.started", {
-      experimentId: record.id,
-      runId,
-      taskId,
-      experimentAttemptId: attemptId,
-      modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
-      stage: plan.kind,
-      status: "running",
-    }, "info");
+    devTerminalLog(
+      "experiment.task.execution.started",
+      {
+        experimentId: record.id,
+        runId,
+        taskId,
+        experimentAttemptId: attemptId,
+        modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
+        stage: plan.kind,
+        status: "running",
+      },
+      "info",
+    );
     await executor.executeTask(
       {
         source: runSource,
@@ -1385,19 +1424,25 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     // Read the final run.
     const finalRun = await runRepo.get(runId);
     if (!finalRun) throw new Error(`Run ${runId} not found after repair execution`);
-    devTerminalLog("experiment.task.execution.finished", {
-      experimentId: record.id,
-      runId,
-      taskId,
-      experimentAttemptId: attemptId,
-      modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
-      stage: plan.kind,
-      status: finalRun.status,
-    }, finalRun.status === "completed" ? "info" : "warn");
+    devTerminalLog(
+      "experiment.task.execution.finished",
+      {
+        experimentId: record.id,
+        runId,
+        taskId,
+        experimentAttemptId: attemptId,
+        modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
+        stage: plan.kind,
+        status: finalRun.status,
+      },
+      finalRun.status === "completed" ? "info" : "warn",
+    );
     const finalSummary = builder.deriveSummary(finalRun);
 
     // Derive coverage from the accepted Judge report.
-    const snapshotKeys = new Set(record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`));
+    const snapshotKeys = new Set(
+      record.snapshot.modelSlots.map((s) => `${s.providerId}:${s.slug}`),
+    );
     const coverage = deriveAttemptCoverage(finalRun, snapshotKeys);
 
     const commitResult = engine.commitTaskTerminal({
@@ -1426,15 +1471,19 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     });
     persistedExperimentRevision = commitRev.experimentRevision;
 
-    devTerminalLog("experiment.task.persisted", {
-      experimentId: record.id,
-      runId,
-      taskId,
-      experimentAttemptId: attemptId,
-      modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
-      stage: "persistence",
-      status: finalRun.status,
-    }, "info");
+    devTerminalLog(
+      "experiment.task.persisted",
+      {
+        experimentId: record.id,
+        runId,
+        taskId,
+        experimentAttemptId: attemptId,
+        modelKey: plan.kind === "roster-extension" ? plan.addedModelKey : undefined,
+        stage: "persistence",
+        status: finalRun.status,
+      },
+      "info",
+    );
 
     await syncExperimentStatus(persistedExperimentRevision);
     emit({ kind: "task-terminal", taskId, attemptId, status: finalRun.status });
@@ -1467,10 +1516,7 @@ export interface ExperimentController {
   ): Promise<SimpleResult>;
   /** Roster extension (roster spec §9.1): extend a terminal experiment with
    *  one new model and execute only that model across every task. */
-  addModelAndRun(
-    experimentId: string,
-    input: { slot: ModelSlot },
-  ): Promise<StartResult>;
+  addModelAndRun(experimentId: string, input: { slot: ModelSlot }): Promise<StartResult>;
   recoverOnStartup(): Promise<number>;
   subscribe(listener: (e: ExperimentControllerEvent) => void): () => void;
   whenIdle(): Promise<void>;

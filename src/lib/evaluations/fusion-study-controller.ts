@@ -22,12 +22,7 @@
 // =============================================================================
 
 import type { CriticRef, ChatMessage } from "../providers/types";
-import type {
-  BlindCandidate,
-  ConsensusBreakdown,
-  JudgeReport,
-  ModelSlot,
-} from "../../studio-data";
+import type { BlindCandidate, ConsensusBreakdown, JudgeReport, ModelSlot } from "../../studio-data";
 import type {
   EvaluationObservation,
   FusionArtifactRef,
@@ -291,7 +286,10 @@ export function createFusionStudyController(deps: FusionControllerDeps): FusionS
     return { trial: { ...updated, revision }, observation: full };
   }
 
-  async function rerunTreatment(trialId: string, reason: FusionAttemptReason): Promise<FusionTrial> {
+  async function rerunTreatment(
+    trialId: string,
+    reason: FusionAttemptReason,
+  ): Promise<FusionTrial> {
     const trial = await requireTrial(trialId);
     const timestamp = now();
     const successor: FusionTrial = {

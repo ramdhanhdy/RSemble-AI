@@ -83,8 +83,22 @@ function makeTask(id: string, title: string, order: number): EvaluationTask {
 
 function makeSlots(): ModelSlot[] {
   return [
-    { id: "slot-1", providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "openai/gpt-4o", enabled: true },
-    { id: "slot-2", providerId: "gemini", provider: "Gemini", model: "flash", slug: "gemini-2.0-flash", enabled: true },
+    {
+      id: "slot-1",
+      providerId: "openrouter",
+      provider: "OpenRouter",
+      model: "gpt-4o",
+      slug: "openai/gpt-4o",
+      enabled: true,
+    },
+    {
+      id: "slot-2",
+      providerId: "gemini",
+      provider: "Gemini",
+      model: "flash",
+      slug: "gemini-2.0-flash",
+      enabled: true,
+    },
   ];
 }
 
@@ -93,7 +107,16 @@ function makeAttempt(
   status: ExperimentTaskAttempt["status"],
   overrides: Partial<ExperimentTaskAttempt> = {},
 ): ExperimentTaskAttempt {
-  return { id, runId: null, trial: 1, status, startedAt: null, finishedAt: null, error: null, ...overrides };
+  return {
+    id,
+    runId: null,
+    trial: 1,
+    status,
+    startedAt: null,
+    finishedAt: null,
+    error: null,
+    ...overrides,
+  };
 }
 
 function taskState(taskId: string, attempts: ExperimentTaskAttempt[]): ExperimentTaskState {
@@ -128,8 +151,16 @@ function makeExperiment(overrides: Partial<ExperimentRecord> = {}): ExperimentRe
       createdAt: now - 60_000,
     },
     tasks: [
-      taskState("task-1", [makeAttempt("att-1", "completed", { runId: "run-1", startedAt: now - 60_000, finishedAt: now - 30_000 })]),
-      taskState("task-2", [makeAttempt("att-2", "running", { runId: "run-2", startedAt: now - 5_000 })]),
+      taskState("task-1", [
+        makeAttempt("att-1", "completed", {
+          runId: "run-1",
+          startedAt: now - 60_000,
+          finishedAt: now - 30_000,
+        }),
+      ]),
+      taskState("task-2", [
+        makeAttempt("att-2", "running", { runId: "run-2", startedAt: now - 5_000 }),
+      ]),
       taskState("task-3", [makeAttempt("att-3", "queued")]),
     ],
     createdAt: now - 60_000,
@@ -237,7 +268,9 @@ describe("buildStripViewModel", () => {
       experiment: makeExperiment({
         status: "paused",
         tasks: [
-          taskState("task-1", [makeAttempt("att-1", "completed", { runId: "run-1", startedAt: Date.now() - 60_000 })]),
+          taskState("task-1", [
+            makeAttempt("att-1", "completed", { runId: "run-1", startedAt: Date.now() - 60_000 }),
+          ]),
           taskState("task-2", [makeAttempt("att-2", "queued")]),
           taskState("task-3", [makeAttempt("att-3", "queued")]),
         ],
@@ -273,7 +306,16 @@ describe("buildStripViewModel", () => {
       pathname: "/runs",
       compareRunning: false,
       leaseOwnedElsewhere: true,
-      lease: { leaseId: "lease-b", ownerId: "tab-b", kind: "compare", executionId: "run-b", acquiredAt: 1_000, heartbeatAt: 2_000, fence: 2, expiresAt: 12_000 },
+      lease: {
+        leaseId: "lease-b",
+        ownerId: "tab-b",
+        kind: "compare",
+        executionId: "run-b",
+        acquiredAt: 1_000,
+        heartbeatAt: 2_000,
+        fence: 2,
+        expiresAt: 12_000,
+      },
       now: () => 6_000,
       storageFailed: false,
     });
@@ -402,7 +444,12 @@ describe("GlobalExecutionStrip", () => {
     expect(mutations).toHaveLength(0);
 
     // Meaningful stage transition → announced once
-    rerender(h, <GlobalExecutionStrip view={{ ...BASE_VIEW, caption: "Evaluation · Task 3/3 · Summarize logs" }} />);
+    rerender(
+      h,
+      <GlobalExecutionStrip
+        view={{ ...BASE_VIEW, caption: "Evaluation · Task 3/3 · Summarize logs" }}
+      />,
+    );
     await settle();
     expect(polite.textContent).toBe("Evaluation · Task 3/3 · Summarize logs");
     expect(mutations.length).toBeGreaterThan(0);

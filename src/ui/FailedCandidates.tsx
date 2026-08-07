@@ -10,10 +10,12 @@ import { ChevronRight } from "lucide-react";
 import type { Candidate } from "../studio-data";
 
 export function FailedCandidates({ candidates }: { candidates: Candidate[] }) {
+  // Hooks must run in the same order every render: the early return below is
+  // data-dependent, so the state hook lives above it.
+  const [open, setOpen] = useState(false);
+
   const failed = candidates.filter((c) => c.status === "error");
   if (failed.length === 0) return null;
-
-  const [open, setOpen] = useState(false);
 
   return (
     <div className="rounded-lg border border-error/40 bg-error/[0.08]">
@@ -41,9 +43,7 @@ export function FailedCandidates({ candidates }: { candidates: Candidate[] }) {
                 <span className="text-text">{c.model}</span>
               </div>
               {c.errorMessage && (
-                <p className="mt-1 pl-4 text-sm leading-relaxed text-error/70">
-                  {c.errorMessage}
-                </p>
+                <p className="mt-1 pl-4 text-sm leading-relaxed text-error/70">{c.errorMessage}</p>
               )}
             </li>
           ))}

@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chatgptCodexProvider } from "./chatgpt-codex";
 import { ProviderError } from "./types";
-import {
-  clearModelCapabilities,
-  getModelCapabilities,
-  setModelCapabilities,
-} from "./capabilities";
+import { clearModelCapabilities, getModelCapabilities, setModelCapabilities } from "./capabilities";
 
 const BRIDGE = "http://127.0.0.1:8787";
 
 function healthResponse(capabilities?: { image: boolean; pdf: boolean }): Response {
   return new Response(
-    JSON.stringify({ status: "ok", service: "rsemble-codex-bridge", ...(capabilities ? { capabilities } : {}) }),
+    JSON.stringify({
+      status: "ok",
+      service: "rsemble-codex-bridge",
+      ...(capabilities ? { capabilities } : {}),
+    }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
 }
@@ -38,8 +38,14 @@ describe("chatgptCodexProvider readiness — capability feed (7.4.4)", () => {
     expect(result).toEqual({ ok: true });
 
     // Every Codex model (listed or not) inherits the bridge capability set.
-    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({ image: true, pdf: false });
-    expect(getModelCapabilities("chatgpt-codex", "gpt-5.4-mini")).toEqual({ image: true, pdf: false });
+    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({
+      image: true,
+      pdf: false,
+    });
+    expect(getModelCapabilities("chatgpt-codex", "gpt-5.4-mini")).toEqual({
+      image: true,
+      pdf: false,
+    });
     // Both endpoints probed; the provider never hardcodes a bridge version.
     expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
       `${BRIDGE}/auth/status`,
@@ -55,7 +61,10 @@ describe("chatgptCodexProvider readiness — capability feed (7.4.4)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await chatgptCodexProvider.readiness();
-    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({ image: false, pdf: false });
+    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({
+      image: false,
+      pdf: false,
+    });
   });
 
   it("stays unknown when /health omits capabilities (conservative default)", async () => {
@@ -66,19 +75,27 @@ describe("chatgptCodexProvider readiness — capability feed (7.4.4)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await chatgptCodexProvider.readiness();
-    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({ image: false, pdf: false });
+    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({
+      image: false,
+      pdf: false,
+    });
   });
 
   it("does not record capabilities when the bridge is not logged in", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, error: "not logged in" }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: false, error: "not logged in" }), { status: 200 }),
+      )
       .mockResolvedValueOnce(healthResponse({ image: true, pdf: false }));
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await chatgptCodexProvider.readiness();
     expect(result.ok).toBe(false);
-    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({ image: false, pdf: false });
+    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({
+      image: false,
+      pdf: false,
+    });
   });
 
   it("lets a per-model record override the provider-wide default", async () => {
@@ -91,9 +108,15 @@ describe("chatgptCodexProvider readiness — capability feed (7.4.4)", () => {
 
     await chatgptCodexProvider.readiness();
     // Overridden model: per-model entry wins.
-    expect(getModelCapabilities("chatgpt-codex", "gpt-5.4-mini")).toEqual({ image: false, pdf: false });
+    expect(getModelCapabilities("chatgpt-codex", "gpt-5.4-mini")).toEqual({
+      image: false,
+      pdf: false,
+    });
     // Unlisted model: provider default applies.
-    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({ image: true, pdf: false });
+    expect(getModelCapabilities("chatgpt-codex", "gpt-5.6-sol")).toEqual({
+      image: true,
+      pdf: false,
+    });
   });
 });
 
@@ -154,9 +177,11 @@ describe("chatgptCodexProvider — execution deadlines", () => {
   it("uses ChatOptions.connectMs and preserves the structured timeout", async () => {
     vi.useFakeTimers();
     try {
-      const fetchMock = vi.fn().mockImplementation(
-        (_input: unknown, _init: RequestInit) => new Promise<Response>(() => {}),
-      );
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(
+          (_input: unknown, _init: RequestInit) => new Promise<Response>(() => {}),
+        );
       vi.stubGlobal("fetch", fetchMock);
 
       const pending = chatgptCodexProvider.chatCompletion({
@@ -186,24 +211,27 @@ describe("chatgptCodexProvider — execution deadlines", () => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           release = () => {
-            controller.enqueue(encoder.encode(
-              'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n',
-            ));
+            controller.enqueue(
+              encoder.encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n'),
+            );
             controller.close();
           };
         },
       });
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+        );
       vi.stubGlobal("fetch", fetchMock);
 
-      const iterator = chatgptCodexProvider.chatCompletionStream({
+      const stream = chatgptCodexProvider.chatCompletionStream({
         model: "gpt-5.6-sol",
         messages: [{ role: "user", content: "hi" }],
         connectMs: 10,
         inactivityMs: 1_000,
-      })[Symbol.asyncIterator]();
+      });
+      const iterator = stream[Symbol.asyncIterator]();
       const first = iterator.next();
       await vi.advanceTimersByTimeAsync(20);
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -226,12 +254,14 @@ describe("chatgptCodexProvider — raw provider bodies never surface (review fix
   it("redacts bearer fragments inside a recognized structured message", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ error: { message: "401 Bearer sk-codex-leaked-123 rejected" } }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ error: { message: "401 Bearer sk-codex-leaked-123 rejected" } }),
+            { status: 401, headers: { "Content-Type": "application/json" } },
+          ),
         ),
-      ),
     );
     const err = await chatgptCodexProvider
       .chatCompletion({ model: "gpt-5.6-sol", messages: [{ role: "user", content: "hi" }] })

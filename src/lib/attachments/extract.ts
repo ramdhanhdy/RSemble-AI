@@ -3,10 +3,7 @@
 // =============================================================================
 
 import type { AttachmentKind } from "./types";
-import {
-  MAX_TEXT_CHARS_PER_FILE,
-  MAX_IMAGE_DIM,
-} from "./limits";
+import { MAX_TEXT_CHARS_PER_FILE, MAX_IMAGE_DIM } from "./limits";
 
 /** Read a File as base64 (no data-URL prefix), chunked to avoid stack overflow. */
 export async function readAsBase64(file: File): Promise<string> {
@@ -27,7 +24,8 @@ export function truncateText(text: string): { text: string; truncated: boolean }
     return { text, truncated: false };
   }
   return {
-    text: text.slice(0, MAX_TEXT_CHARS_PER_FILE) +
+    text:
+      text.slice(0, MAX_TEXT_CHARS_PER_FILE) +
       `\n\n[truncated: ${MAX_TEXT_CHARS_PER_FILE} of ${text.length} characters shown]`,
     truncated: true,
   };
@@ -36,7 +34,7 @@ export function truncateText(text: string): { text: string; truncated: boolean }
 // --- Image extraction ---------------------------------------------------------
 
 export interface PreparedImage {
-  data: string;       // base64, no prefix
+  data: string; // base64, no prefix
   width: number;
   height: number;
   mimeType: string;
@@ -100,9 +98,7 @@ export async function extractPdf(file: File): Promise<PdfExtraction> {
     for (let i = 1; i <= pageCount; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ("str" in item ? item.str : ""))
-        .join(" ");
+      const pageText = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
       textParts.push(pageText);
     }
 
@@ -141,8 +137,8 @@ export async function extractDocx(file: File): Promise<{ text: string; truncated
 // --- Unified extraction dispatcher ---------------------------------------------
 
 export interface ExtractionResult {
-  data?: string;          // base64 for image/pdf
-  text?: string;          // extracted text for text/doc/pdf-fallback
+  data?: string; // base64 for image/pdf
+  text?: string; // extracted text for text/doc/pdf-fallback
   truncated?: boolean;
   width?: number;
   height?: number;

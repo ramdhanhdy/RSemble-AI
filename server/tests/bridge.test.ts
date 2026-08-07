@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { createBridgeServer, DEFAULT_MAX_BODY_BYTES } from "../codex-bridge/index";
+import { createBridgeServer, DEFAULT_MAX_BODY_BYTES } from "../codex-bridge/index.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -294,7 +294,10 @@ describe("bridge — browser credential-route policy", () => {
 
   it("preserves query parameters on proxied ClinePass requests", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response('{"data":[]}', { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response('{"data":[]}', {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const { server, url } = await startServer();
@@ -317,9 +320,15 @@ describe("bridge — Umans request safety", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { server, url } = await startServer({ maxBodyBytes: 32 });
     try {
-      const res = await rawRequest(url, "/umans/v1/chat/completions", "POST", JSON.stringify({ pad: "x".repeat(128) }), {
-        "Content-Type": "application/json",
-      });
+      const res = await rawRequest(
+        url,
+        "/umans/v1/chat/completions",
+        "POST",
+        JSON.stringify({ pad: "x".repeat(128) }),
+        {
+          "Content-Type": "application/json",
+        },
+      );
       expect(res.status).toBe(413);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
@@ -364,9 +373,15 @@ describe("bridge — 9Router request safety", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { server, url } = await startServer({ maxBodyBytes: 32 });
     try {
-      const res = await rawRequest(url, "/9router/v1/chat/completions", "POST", JSON.stringify({ pad: "x".repeat(128) }), {
-        "Content-Type": "application/json",
-      });
+      const res = await rawRequest(
+        url,
+        "/9router/v1/chat/completions",
+        "POST",
+        JSON.stringify({ pad: "x".repeat(128) }),
+        {
+          "Content-Type": "application/json",
+        },
+      );
       expect(res.status).toBe(413);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
@@ -374,20 +389,23 @@ describe("bridge — 9Router request safety", () => {
     }
   });
 
-  it.each(["PUT", "PATCH", "DELETE"])("rejects unsupported 9Router %s on /v1/models", async (method) => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const { server, url } = await startServer();
-    try {
-      const res = await rawRequest(url, "/9router/v1/models", method, undefined, {
-        "Content-Type": "application/json",
-      });
-      expect(res.status).toBe(405);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      await closeServer(server);
-    }
-  });
+  it.each(["PUT", "PATCH", "DELETE"])(
+    "rejects unsupported 9Router %s on /v1/models",
+    async (method) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const { server, url } = await startServer();
+      try {
+        const res = await rawRequest(url, "/9router/v1/models", method, undefined, {
+          "Content-Type": "application/json",
+        });
+        expect(res.status).toBe(405);
+        expect(fetchMock).not.toHaveBeenCalled();
+      } finally {
+        await closeServer(server);
+      }
+    },
+  );
 
   it("rejects POST on /9router/v1/models (GET only)", async () => {
     const fetchMock = vi.fn();

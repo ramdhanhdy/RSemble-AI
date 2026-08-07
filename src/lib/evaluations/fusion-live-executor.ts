@@ -12,7 +12,12 @@ import type { ChatMessage, CriticRef } from "../providers/types";
 import { getProvider } from "../providers/registry";
 import { contentToText } from "../providers/content";
 import { estimateTokens } from "../cost";
-import type { Candidate, CandidateSegment, JudgeReport } from "../../studio-data";
+import {
+  type Candidate,
+  type CandidateSegment,
+  type JudgeReport,
+  type ModelSlot,
+} from "../../studio-data";
 import {
   createBlindCandidateSet,
   draftMessages,
@@ -21,7 +26,6 @@ import {
   splitSegments,
 } from "../pipeline";
 import type { EvaluationProfileSnapshot, EvaluationTask } from "./evaluation-types";
-import type { ModelSlot } from "../../studio-data";
 import type {
   BlockedRunResult,
   FusionPolicyExecutor,
@@ -89,7 +93,12 @@ export function createLiveFusionExecutor(deps?: {
     profile: EvaluationProfileSnapshot | null,
     judge: CriticRef,
     candidates: Candidate[],
-  ): Promise<{ report: JudgeReport; consensus: BlockedRunResult["consensus"]; cost: BlockedRunResult["judgeCost"]; blindSet: ReturnType<typeof createBlindCandidateSet> }> {
+  ): Promise<{
+    report: JudgeReport;
+    consensus: BlockedRunResult["consensus"];
+    cost: BlockedRunResult["judgeCost"];
+    blindSet: ReturnType<typeof createBlindCandidateSet>;
+  }> {
     const blindSet = createBlindCandidateSet(candidates, random);
     const messages = judgeMessages(task.prompt, profile, blindSet.candidates);
     const content = await chatOnce(judge, messages, 0.1);
@@ -147,7 +156,18 @@ export function createLiveFusionExecutor(deps?: {
     async runHoldout(task, profile, judge2, artifacts: HoldoutArtifact[]) {
       // Holdout evaluates policy artifacts blind and randomized (spec §5.3).
       const candidates = artifacts.map((a) =>
-        candidateFromOutput(a.key, { id: a.key, providerId: judge2.providerId, provider: "policy", model: a.key, slug: a.key, enabled: true }, a.text),
+        candidateFromOutput(
+          a.key,
+          {
+            id: a.key,
+            providerId: judge2.providerId,
+            provider: "policy",
+            model: a.key,
+            slug: a.key,
+            enabled: true,
+          },
+          a.text,
+        ),
       );
       const blindSet = createBlindCandidateSet(candidates, random);
       const messages = judgeMessages(task.prompt, profile, blindSet.candidates);

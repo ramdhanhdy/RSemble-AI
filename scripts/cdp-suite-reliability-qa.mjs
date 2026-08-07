@@ -32,7 +32,8 @@ import path from "node:path";
 
 const baseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? "http://localhost:5176/";
 const outDir = path.resolve("docs/qa/suite-execution-reliability");
-const chromePath = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const chromePath =
+  process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const debugPort = 9339;
 const results = {
   generatedAt: new Date().toISOString(),
@@ -43,15 +44,19 @@ const results = {
 
 fs.mkdirSync(outDir, { recursive: true });
 
-const chrome = spawn(chromePath, [
-  "--headless=new",
-  "--disable-gpu",
-  `--remote-debugging-port=${debugPort}`,
-  `--user-data-dir=${path.join(os.tmpdir(), `rsemble-suite-reliability-${Date.now()}`)}`,
-  "--no-first-run",
-  "--no-default-browser-check",
-  "about:blank",
-], { stdio: "ignore" });
+const chrome = spawn(
+  chromePath,
+  [
+    "--headless=new",
+    "--disable-gpu",
+    `--remote-debugging-port=${debugPort}`,
+    `--user-data-dir=${path.join(os.tmpdir(), `rsemble-suite-reliability-${Date.now()}`)}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -59,11 +64,15 @@ async function getPageWebSocketUrl() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       const pages = await new Promise((resolve, reject) => {
-        http.get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
-          let body = "";
-          response.on("data", (chunk) => { body += chunk; });
-          response.on("end", () => resolve(JSON.parse(body)));
-        }).on("error", reject);
+        http
+          .get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
+            let body = "";
+            response.on("data", (chunk) => {
+              body += chunk;
+            });
+            response.on("end", () => resolve(JSON.parse(body)));
+          })
+          .on("error", reject);
       });
       const page = pages.find((candidate) => candidate.type === "page");
       if (page) return page.webSocketDebuggerUrl;
@@ -85,7 +94,9 @@ socket.onmessage = (event) => {
   pending.delete(message.id);
   resolve(message);
 };
-await new Promise((resolve) => { socket.onopen = resolve; });
+await new Promise((resolve) => {
+  socket.onopen = resolve;
+});
 
 function send(method, params = {}) {
   return new Promise((resolve, reject) => {
@@ -99,11 +110,16 @@ function send(method, params = {}) {
 }
 
 async function evaluate(expression) {
-  const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+  const result = await send("Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+  });
   if (result.exceptionDetails) {
-    const detail = result.exceptionDetails.exception?.description
-      ?? result.exceptionDetails.text
-      ?? "Runtime evaluation failed.";
+    const detail =
+      result.exceptionDetails.exception?.description ??
+      result.exceptionDetails.text ??
+      "Runtime evaluation failed.";
     throw new Error(detail);
   }
   return result.result?.value;
@@ -129,14 +145,18 @@ async function setViewport({ width, height, mobile = false, touch = false }) {
     deviceScaleFactor: mobile ? 2 : 1,
     mobile,
   });
-  await send("Emulation.setTouchEmulationEnabled", touch
-    ? { enabled: true, maxTouchPoints: 5 }
-    : { enabled: false });
+  await send(
+    "Emulation.setTouchEmulationEnabled",
+    touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
+  );
 }
 
 async function navigate() {
   await send("Page.navigate", { url: baseUrl });
-  await waitFor("Boolean(document.querySelector('main, [role=main], #root > *'))", "application shell");
+  await waitFor(
+    "Boolean(document.querySelector('main, [role=main], #root > *'))",
+    "application shell",
+  );
   await wait(400);
 }
 
@@ -579,7 +599,8 @@ try {
   await navigate();
   await waitFor("Boolean(window.indexedDB)", "indexedDB");
   const seeded = await evaluate(SEED_SOURCE);
-  if (seeded?.__seedError) throw new Error(`Seed failed: ${seeded.__seedError}\n${seeded.__seedStack}`);
+  if (seeded?.__seedError)
+    throw new Error(`Seed failed: ${seeded.__seedError}\n${seeded.__seedStack}`);
   results.seeded = seeded;
 
   // --- Scenario 1: model preflight ready / failed / untested -------------------
@@ -641,9 +662,15 @@ try {
   // --- Scenario 2: failed preflight confirmation with unchanged roster ---------
   await evaluate("window.__qaFailCompletions = true");
   await send("Page.navigate", { url: `${baseUrl}#/evaluations/suite-qa` });
-  await waitFor("Boolean(document.querySelector('[data-action=\"run-suite\"]'))", "suite editor run");
+  await waitFor(
+    "Boolean(document.querySelector('[data-action=\"run-suite\"]'))",
+    "suite editor run",
+  );
   await clickButton("Settings");
-  await waitFor("Boolean(document.querySelector('#suite-settings-disclosure'))", "suite settings disclosure");
+  await waitFor(
+    "Boolean(document.querySelector('#suite-settings-disclosure'))",
+    "suite settings disclosure",
+  );
   const preflightRosterBefore = await evaluate(`[
     ...document.querySelectorAll('button[aria-label^="Test model "]')
   ].map((button) => button.getAttribute("aria-label"))`);
@@ -667,13 +694,16 @@ try {
   })()`);
   record("preflight-failed-confirmation", {
     ...preflightDialog,
-    rosterUnchanged: JSON.stringify(preflightRosterBefore) === JSON.stringify(preflightDialog.roster),
-    pass: preflightDialog.failedListed
-      && preflightDialog.runAnyway
-      && preflightDialog.reviewTests
-      && preflightDialog.noReadySubset
-      && JSON.stringify(preflightRosterBefore) === JSON.stringify(preflightDialog.roster),
-    reason: "failed preflight lists failures, requires Run anyway, and preserves the exact selected roster",
+    rosterUnchanged:
+      JSON.stringify(preflightRosterBefore) === JSON.stringify(preflightDialog.roster),
+    pass:
+      preflightDialog.failedListed &&
+      preflightDialog.runAnyway &&
+      preflightDialog.reviewTests &&
+      preflightDialog.noReadySubset &&
+      JSON.stringify(preflightRosterBefore) === JSON.stringify(preflightDialog.roster),
+    reason:
+      "failed preflight lists failures, requires Run anyway, and preserves the exact selected roster",
   });
   await screenshot("qa-preflight-failed");
   await press("Escape", "Escape", 27);
@@ -681,7 +711,10 @@ try {
 
   // --- Scenario 3: complete winner + provisional leader ------------------------
   await send("Page.navigate", { url: `${baseUrl}#/experiments/exp-qa` });
-  await waitFor("Boolean(document.querySelector('[data-testid=\"winner-callout\"]'))", "winner callout");
+  await waitFor(
+    "Boolean(document.querySelector('[data-testid=\"winner-callout\"]'))",
+    "winner callout",
+  );
   const winner = await evaluate(`(() => {
     const callout = document.querySelector('[data-testid="winner-callout"]');
     const text = document.body.textContent ?? "";
@@ -690,7 +723,7 @@ try {
     return {
       winnerTitle: callout?.textContent ?? "",
       provisionalRows: provisionalHeading?.nextElementSibling?.textContent ?? "",
-      provisionalHasNumericRank: /#\s*\d+/.test(provisionalHeading?.nextElementSibling?.textContent ?? ""),
+      provisionalHasNumericRank: /#\\s*\\d+/.test(provisionalHeading?.nextElementSibling?.textContent ?? ""),
       hasProvisionalLeader: text.includes("Provisional score leader"),
       notEligible: text.includes("not winner-eligible"),
       hasProvisionalResults: text.includes("Provisional results"),
@@ -699,14 +732,16 @@ try {
   })()`);
   record("winner-provisional-15-14", {
     ...winner,
-    pass: (winner.winnerTitle ?? "").includes("Complete-coverage winner")
-      && (winner.winnerTitle ?? "").includes("umans")
-      && winner.hasProvisionalLeader
-      && winner.notEligible
-      && winner.hasProvisionalResults
-      && !winner.provisionalHasNumericRank
-      && !winner.overflowX,
-    reason: "complete 15/15 model crowned; incomplete 14/15 labeled provisional without numeric rank",
+    pass:
+      (winner.winnerTitle ?? "").includes("Complete-coverage winner") &&
+      (winner.winnerTitle ?? "").includes("umans") &&
+      winner.hasProvisionalLeader &&
+      winner.notEligible &&
+      winner.hasProvisionalResults &&
+      !winner.provisionalHasNumericRank &&
+      !winner.overflowX,
+    reason:
+      "complete 15/15 model crowned; incomplete 14/15 labeled provisional without numeric rank",
   });
   await screenshot("qa-winner-provisional");
 
@@ -732,15 +767,17 @@ try {
   })()`);
   record("matrix-250-sticky", {
     ...matrix,
-    pass: matrix.rowsMounted <= 50
-      && matrix.rangeText === "1–50 of 250"
-      && matrix.headerStickyLeft
-      && matrix.firstRowStickyLeft
-      && matrix.footerStickyLeft
-      && matrix.regionFocusable
-      && matrix.headerStickyTop
-      && matrix.opaqueHeader,
-    reason: "250-task matrix mounts <=50 rows, sticky first column (header/row/footer) and focusable scroll region",
+    pass:
+      matrix.rowsMounted <= 50 &&
+      matrix.rangeText === "1–50 of 250" &&
+      matrix.headerStickyLeft &&
+      matrix.firstRowStickyLeft &&
+      matrix.footerStickyLeft &&
+      matrix.regionFocusable &&
+      matrix.headerStickyTop &&
+      matrix.opaqueHeader,
+    reason:
+      "250-task matrix mounts <=50 rows, sticky first column (header/row/footer) and focusable scroll region",
   });
   await evaluate(`(() => {
     const region = document.querySelector("table")?.closest("[role='region']");
@@ -775,7 +812,10 @@ try {
     return true;
   })()`);
   if (!confirmed) throw new Error("Could not find repair confirm action");
-  await waitFor("!document.querySelector('[role=\"dialog\"]') || Boolean(document.querySelector('[data-recovery-message]'))", "recovery result");
+  await waitFor(
+    "!document.querySelector('[role=\"dialog\"]') || Boolean(document.querySelector('[data-recovery-message]'))",
+    "recovery result",
+  );
   const recoveryError = await evaluate(`(() => {
     const dialog = document.querySelector('[role="dialog"]');
     return dialog?.querySelector('[data-recovery-message]')?.textContent ?? null;
@@ -783,12 +823,16 @@ try {
   if (recoveryError) throw new Error(`Repair start failed: ${recoveryError}`);
   // The repair commits a newly judged compound attempt. Wait until the exact
   // t1 matrix row is scored and its recovery action disappears.
-  await waitFor(`(() => {
+  await waitFor(
+    `(() => {
     const row = [...document.querySelectorAll("tbody tr")]
       .find((candidate) => (candidate.querySelector("th")?.textContent ?? "").trim() === "Task t1");
     return Boolean(row) && !(row.textContent ?? "").includes("No score")
       && !row.querySelector("[data-recovery-action]");
-  })()`, "repaired t1 result", 240);
+  })()`,
+    "repaired t1 result",
+    240,
+  );
   const afterRepair = await evaluate(`(() => {
     const repairButtons = [...document.querySelectorAll("[data-recovery-action='repair-cell']")];
     return {
@@ -827,9 +871,12 @@ try {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     failedTaskState = await readExperimentTaskState("exp-big", "t2");
     const latestStatus = failedTaskState?.attempts?.at(-1)?.status;
-    if ((failedTaskState?.attempts?.length ?? 0) >= 3
-      && latestStatus !== "queued"
-      && latestStatus !== "running") break;
+    if (
+      (failedTaskState?.attempts?.length ?? 0) >= 3 &&
+      latestStatus !== "queued" &&
+      latestStatus !== "running"
+    )
+      break;
     await wait(125);
   }
   const failedRepair = await evaluate(`(() => {
@@ -850,14 +897,16 @@ try {
     attempts: failedTaskState?.attempts?.length ?? 0,
     selectedAttemptId: failedTaskState?.selectedAttemptId ?? null,
     latestAttemptStatus: latestFailedAttemptStatus,
-    pass: failedRepair.surfaceAlive
-      && failedRepair.cellStillMissing
-      && failedRepair.repairActionStillOffered
-      && (failedTaskState?.attempts?.length ?? 0) >= 3
-      && failedTaskState?.selectedAttemptId === "att-t2"
-      && latestFailedAttemptStatus !== "queued"
-      && latestFailedAttemptStatus !== "running",
-    reason: "a terminal judge-failing repair adds an attempt but preserves the better selected evidence and leaves the repair action available",
+    pass:
+      failedRepair.surfaceAlive &&
+      failedRepair.cellStillMissing &&
+      failedRepair.repairActionStillOffered &&
+      (failedTaskState?.attempts?.length ?? 0) >= 3 &&
+      failedTaskState?.selectedAttemptId === "att-t2" &&
+      latestFailedAttemptStatus !== "queued" &&
+      latestFailedAttemptStatus !== "running",
+    reason:
+      "a terminal judge-failing repair adds an attempt but preserves the better selected evidence and leaves the repair action available",
   });
   await evaluate(`(() => {
     const row = [...document.querySelectorAll("tbody tr")]
@@ -881,10 +930,11 @@ try {
   })()`);
   record("ledger-250-page1", {
     ...ledger,
-    pass: ledger.rowsMounted <= 50
-      && ledger.rangeText === "1–50 of 250"
-      && ledger.instrumentVisible
-      && ledger.historyCollapsed,
+    pass:
+      ledger.rowsMounted <= 50 &&
+      ledger.rangeText === "1–50 of 250" &&
+      ledger.instrumentVisible &&
+      ledger.historyCollapsed,
     reason: "250-task ledger mounts <=50 rows with sticky instrument header and collapsed history",
   });
   await screenshot("qa-ledger-250-page1");
@@ -911,7 +961,10 @@ try {
     if (disclosure) disclosure.click();
     return Boolean(disclosure);
   })()`);
-  await waitFor("Boolean(document.querySelector('[data-attempt-row]'))", "attempt history expanded");
+  await waitFor(
+    "Boolean(document.querySelector('[data-attempt-row]'))",
+    "attempt history expanded",
+  );
   const history = await evaluate(`(() => {
     return {
       attemptRows: document.querySelectorAll("[data-attempt-row]").length,
@@ -923,13 +976,19 @@ try {
     pass: history.attemptRows > 0 && history.hasOldFailed,
     reason: "expanding the disclosure mounts attempt rows including historical failures",
   });
-  await evaluate(`document.querySelector("[data-attempt-history]")?.scrollIntoView({ block: "center" })`);
+  await evaluate(
+    `document.querySelector("[data-attempt-history]")?.scrollIntoView({ block: "center" })`,
+  );
   await screenshot("qa-ledger-history-expanded");
 
   // --- Scenario 9: mobile pagination -------------------------------------------
   await setViewport({ width: 390, height: 844, mobile: true, touch: true });
   await send("Page.navigate", { url: `${baseUrl}#/experiments/exp-big` });
-  await waitFor("Boolean(document.querySelector('select#mobile-experiment-model-select'))", "mobile results", 240);
+  await waitFor(
+    "Boolean(document.querySelector('select#mobile-experiment-model-select'))",
+    "mobile results",
+    240,
+  );
   const mobile = await evaluate(`(() => {
     const select = document.querySelector("select#mobile-experiment-model-select");
     const root = select?.parentElement?.parentElement;
@@ -947,11 +1006,14 @@ try {
   });
   await screenshot("qa-mobile-250");
   await clickButton("Next page");
-  await waitFor(`(() => {
+  await waitFor(
+    `(() => {
     const select = document.querySelector("select#mobile-experiment-model-select");
     const root = select?.parentElement?.parentElement;
     return (root?.querySelector('nav[aria-label="Pagination"]')?.textContent ?? "").includes("51–100 of 250");
-  })()`, "mobile page two");
+  })()`,
+    "mobile page two",
+  );
   const mobilePage2 = await evaluate(`(() => {
     const select = document.querySelector("select#mobile-experiment-model-select");
     const root = select?.parentElement?.parentElement;
@@ -969,7 +1031,12 @@ try {
 
   // --- Scenario 10: keyboard-only dialog flow ----------------------------------
   await setViewport({ width: 1440, height: 1000, mobile: false, touch: false });
-  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   await send("Emulation.setTouchEmulationEnabled", { enabled: false });
   await send("Page.navigate", { url: `${baseUrl}#/compare` });
   await waitFor("Boolean(document.querySelector('textarea'))", "compare for keyboard");
@@ -1000,19 +1067,26 @@ try {
   })()`);
   if (!trapPrepared) throw new Error("Could not prepare dialog focus-trap assertion");
   await press("Tab", "Tab", 9);
-  const tabTrapped = await evaluate("Boolean(document.querySelector('[role=dialog]')?.contains(document.activeElement))");
+  const tabTrapped = await evaluate(
+    "Boolean(document.querySelector('[role=dialog]')?.contains(document.activeElement))",
+  );
   record("dialog-keyboard-focus", {
     ...dialog,
     keyboardOpened: keyboardTriggerFocused,
     tabTrapped,
     pass: keyboardTriggerFocused && dialog.focusInDialog && tabTrapped && !dialog.overflowX,
-    reason: "keyboard opens the dialog, focus enters it, and Tab remains trapped without horizontal overflow",
+    reason:
+      "keyboard opens the dialog, focus enters it, and Tab remains trapped without horizontal overflow",
   });
   await screenshot("qa-dialog");
   await press("Escape", "Escape", 27);
   await waitFor("!document.querySelector('[role=dialog]')", "dialog close");
   const restored = await evaluate("document.activeElement === window.__qaTrigger");
-  record("dialog-focus-restored", { restored, pass: restored, reason: "Escape restores focus to the trigger" });
+  record("dialog-focus-restored", {
+    restored,
+    pass: restored,
+    reason: "Escape restores focus to the trigger",
+  });
 
   // --- Scenario 11: 200% zoom --------------------------------------------------
   await setViewport({ width: 720, height: 500 });
@@ -1030,7 +1104,9 @@ try {
 
   // --- Scenario 12: reduced motion ----------------------------------------------
   await setViewport({ width: 1440, height: 1000 });
-  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  await send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
   await navigate();
   const reduced = await evaluate(`(() => {
     const spinner = document.createElement("span");
@@ -1053,7 +1129,10 @@ try {
   fs.writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify(results, null, 2)}\n`);
   console.log(`Suite-reliability QA passed. Evidence: ${outDir}`);
 } catch (error) {
-  fs.writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify({ ...results, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`);
+  fs.writeFileSync(
+    path.join(outDir, "results.json"),
+    `${JSON.stringify({ ...results, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`,
+  );
   console.error(error);
   process.exitCode = 1;
 } finally {

@@ -21,10 +21,7 @@ export interface ProfileUsage {
  * versions pinned and where (suite default, task-level, or both). Archived
  * suites are excluded; holistic and inherit-only suites never match.
  */
-export function suitesUsingProfile(
-  suites: EvaluationSuite[],
-  profileId: string,
-): ProfileUsage[] {
+export function suitesUsingProfile(suites: EvaluationSuite[], profileId: string): ProfileUsage[] {
   const out: ProfileUsage[] = [];
   for (const suite of suites) {
     if (suite.archivedAt != null) continue;
@@ -38,10 +35,7 @@ export function suitesUsingProfile(
       levels.add("default");
     }
     for (const task of suite.tasks) {
-      if (
-        task.evaluation.kind === "profile" &&
-        task.evaluation.profile.id === profileId
-      ) {
+      if (task.evaluation.kind === "profile" && task.evaluation.profile.id === profileId) {
         versions.add(task.evaluation.profile.version);
         levels.add("task");
       }

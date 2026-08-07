@@ -42,7 +42,7 @@ export interface AttachmentDraft extends Attachment {
  */
 export function createAttachmentDrafts(
   existing: { bytes: number }[],
-  files: File[]
+  files: File[],
 ): { drafts: AttachmentDraft[]; rejections: { name: string; reason: string }[] } {
   const { accepted, rejections } = admitFiles(existing, files);
   const drafts: AttachmentDraft[] = [];
@@ -69,7 +69,7 @@ export function createAttachmentDrafts(
 async function processFile(
   draft: AttachmentDraft,
   dispatch: React.Dispatch<Action>,
-  onReadyNotice: (notice: AttachmentNotice) => void
+  onReadyNotice: (notice: AttachmentNotice) => void,
 ): Promise<void> {
   const { id, kind, name, file } = draft;
   try {
@@ -126,7 +126,7 @@ export interface UseAttachmentsResult {
 
 export function useAttachments(
   attachments: Attachment[],
-  dispatch: React.Dispatch<Action>
+  dispatch: React.Dispatch<Action>,
 ): UseAttachmentsResult {
   const [notice, setNotice] = useState<AttachmentNotice | null>(null);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
@@ -147,13 +147,16 @@ export function useAttachments(
     setThumbnails(Object.fromEntries(thumbnailsRef.current));
   }, [attachments]);
 
-  // Unmount: revoke everything (spec §10.8 leak audit). The cleanup reads the
-  // ref at unmount time — capturing the values at mount would revoke nothing.
+  // Unmount: revoke everything (spec §10.8 leak audit). The Maps are created
+  // once in useRef and mutated in place, so capturing the stable Map instances
+  // at effect setup still observes every URL added during the hook's lifetime.
   useEffect(() => {
+    const thumbnails = thumbnailsRef.current;
+    const files = filesRef.current;
     return () => {
-      for (const url of thumbnailsRef.current.values()) URL.revokeObjectURL(url);
-      thumbnailsRef.current.clear();
-      filesRef.current.clear();
+      for (const url of thumbnails.values()) URL.revokeObjectURL(url);
+      thumbnails.clear();
+      files.clear();
     };
   }, []);
 
@@ -162,9 +165,7 @@ export function useAttachments(
       if (files.length === 0) return;
       const { drafts, rejections } = createAttachmentDrafts(attachments, files);
       const rejectionText =
-        rejections.length > 0
-          ? rejections.map((r) => `${r.name}: ${r.reason}`).join(" · ")
-          : null;
+        rejections.length > 0 ? rejections.map((r) => `${r.name}: ${r.reason}`).join(" · ") : null;
 
       if (drafts.length === 0) {
         if (rejectionText) setNotice({ text: rejectionText, tone: "warning" });
@@ -176,9 +177,12 @@ export function useAttachments(
         rejectionText
           ? { text: rejectionText, tone: "warning" }
           : {
-              text: drafts.length === 1 ? `${drafts[0].name} attached` : `${drafts.length} files attached`,
+              text:
+                drafts.length === 1
+                  ? `${drafts[0].name} attached`
+                  : `${drafts.length} files attached`,
               tone: "info",
-            }
+            },
       );
 
       for (const draft of drafts) {
@@ -191,32 +195,44 @@ export function useAttachments(
         void processFile(draft, dispatch, setNotice);
       }
     },
-    [attachments, dispatch]
+    [attachments, dispatch],
   );
 
-  const remove = useCallback((id: string) => {
-    dispatch({ type: "REMOVE_ATTACHMENT", id });
-  }, [dispatch]);
+  const remove = useCallback(
+    (id: string) => {
+      dispatch({ type: "REMOVE_ATTACHMENT", id });
+    },
+    [dispatch],
+  );
 
   const clear = useCallback(() => {
     dispatch({ type: "CLEAR_ATTACHMENTS" });
   }, [dispatch]);
 
-  const retry = useCallback((id: string) => {
-    const file = filesRef.current.get(id);
-    if (!file) {
-      setNotice({ text: "The original file handle is no longer available. Remove and attach it again.", tone: "error" });
-      return;
-    }
-    const attachment = attachments.find((a) => a.id === id);
-    if (!attachment || attachment.status !== "error") return;
-    dispatch({ type: "ATTACHMENT_RETRY", id });
-    void processFile({ ...attachment, file }, dispatch, setNotice);
-  }, [attachments, dispatch]);
+  const retry = useCallback(
+    (id: string) => {
+      const file = filesRef.current.get(id);
+      if (!file) {
+        setNotice({
+          text: "The original file handle is no longer available. Remove and attach it again.",
+          tone: "error",
+        });
+        return;
+      }
+      const attachment = attachments.find((a) => a.id === id);
+      if (!attachment || attachment.status !== "error") return;
+      dispatch({ type: "ATTACHMENT_RETRY", id });
+      void processFile({ ...attachment, file }, dispatch, setNotice);
+    },
+    [attachments, dispatch],
+  );
 
-  const setToJudge = useCallback((value: boolean) => {
-    dispatch({ type: "SET_ATTACHMENTS_TO_JUDGE", value });
-  }, [dispatch]);
+  const setToJudge = useCallback(
+    (value: boolean) => {
+      dispatch({ type: "SET_ATTACHMENTS_TO_JUDGE", value });
+    },
+    [dispatch],
+  );
 
   return { notice, thumbnails, addFiles, remove, clear, setToJudge, retry };
 }

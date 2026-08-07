@@ -25,7 +25,13 @@ const IMAGE_ATTACHMENT: Attachment = {
 describe("TaskInput — one-click 'Try an example' control", () => {
   it("renders an accessible control labelled 'Try an example' near the task input", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt=""
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     expect(html).toContain("Try an example");
     // It must be a real focusable control with an aria-label so keyboard/AT
@@ -35,7 +41,13 @@ describe("TaskInput — one-click 'Try an example' control", () => {
 
   it("the control is keyboard-focusable (not disabled) when the task is empty", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt=""
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     const match = html.match(/<(button|a)[^>]*aria-label="Try an example"[^>]*>/);
     expect(match).not.toBeNull();
@@ -44,7 +56,13 @@ describe("TaskInput — one-click 'Try an example' control", () => {
 
   it("shows a 'replace' confirmation affordance when the task already has user text", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="my own task" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt="my own task"
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     // When user text is present (not an unedited example), the control must
     // surface a replace confirmation (visible hint or title) rather than
@@ -54,21 +72,39 @@ describe("TaskInput — one-click 'Try an example' control", () => {
 
   it("still renders the control when the task has text (not hidden)", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="my own task" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt="my own task"
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     expect(html).toMatch(/aria-label="Try an example"/);
   });
 
   it("renders a token counter for the prompt", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="hello world" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt="hello world"
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     expect(html).toContain("tokens");
   });
 
   it("preserves the prompt textarea and its label", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt=""
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     expect(html).toContain('id="prompt"');
     expect(html).toContain('aria-label="Task"');
@@ -76,7 +112,13 @@ describe("TaskInput — one-click 'Try an example' control", () => {
 
   it("the control meets the 44px touch-target minimum (WCAG 2.5.5)", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt=""
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     // The button must carry a min-height class that guarantees a 44px touch
     // target on mobile — matching the h-11 convention used by ResetButton and
@@ -97,12 +139,24 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
     const onAddFiles = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
-      root!.render(<TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={onAddFiles} />);
+      root!.render(
+        <TaskInput
+          prompt=""
+          exampleIndex={-1}
+          dispatch={noop}
+          attachments={[]}
+          onAddFiles={onAddFiles}
+        />,
+      );
     });
     act(() => {
-      (container.querySelector('button[aria-label="Attach files to this task"]') as HTMLButtonElement).click();
+      (
+        container.querySelector(
+          'button[aria-label="Attach files to this task"]',
+        ) as HTMLButtonElement
+      ).click();
     });
     expect(clickSpy).toHaveBeenCalledTimes(1);
     act(() => root?.unmount());
@@ -112,7 +166,13 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
 
   it("restricts the picker to the accepted attachment types", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt=""
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     const match = html.match(/<input[^>]*type="file"[^>]*>/);
     expect(match).not.toBeNull();
@@ -123,7 +183,13 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
 
   it("adds the file-token contribution to the counter", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="hello" exampleIndex={-1} dispatch={noop} attachments={[IMAGE_ATTACHMENT]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt="hello"
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[IMAGE_ATTACHMENT]}
+        onAddFiles={noAddFiles}
+      />,
     );
     // 1024×512 → ceil(1024/512)×ceil(512/512)×170 + 85 = 425.
     expect(html).toContain("native media cost unknown");
@@ -131,7 +197,13 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
 
   it("keeps the plain counter when no attachments are present", () => {
     const html = renderToStaticMarkup(
-      <TaskInput prompt="hello" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />,
+      <TaskInput
+        prompt="hello"
+        exampleIndex={-1}
+        dispatch={noop}
+        attachments={[]}
+        onAddFiles={noAddFiles}
+      />,
     );
     expect(html).toContain("~2 tokens");
     expect(html).not.toContain("from files");
@@ -140,9 +212,17 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
   it("shows the drop overlay on dragenter and hides it on dragleave", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
-      root!.render(<TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={noAddFiles} />);
+      root!.render(
+        <TaskInput
+          prompt=""
+          exampleIndex={-1}
+          dispatch={noop}
+          attachments={[]}
+          onAddFiles={noAddFiles}
+        />,
+      );
     });
     const field = container.querySelector("div.relative") as HTMLElement;
     expect(field).not.toBeNull();
@@ -164,9 +244,17 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
     const onAddFiles = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
-      root!.render(<TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={onAddFiles} />);
+      root!.render(
+        <TaskInput
+          prompt=""
+          exampleIndex={-1}
+          dispatch={noop}
+          attachments={[]}
+          onAddFiles={onAddFiles}
+        />,
+      );
     });
     const field = container.querySelector("div.relative") as HTMLElement;
     const file = new File(["png"], "drop.png", { type: "image/png" });
@@ -184,9 +272,17 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
     const onAddFiles = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
-      root!.render(<TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={onAddFiles} />);
+      root!.render(
+        <TaskInput
+          prompt=""
+          exampleIndex={-1}
+          dispatch={noop}
+          attachments={[]}
+          onAddFiles={onAddFiles}
+        />,
+      );
     });
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
     const file = new File(["shot"], "shot.png", { type: "image/png" });
@@ -204,9 +300,17 @@ describe("TaskInput — attachment surface (7.5.4)", () => {
     const onAddFiles = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
-      root!.render(<TaskInput prompt="" exampleIndex={-1} dispatch={noop} attachments={[]} onAddFiles={onAddFiles} />);
+      root!.render(
+        <TaskInput
+          prompt=""
+          exampleIndex={-1}
+          dispatch={noop}
+          attachments={[]}
+          onAddFiles={onAddFiles}
+        />,
+      );
     });
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["md"], "notes.md", { type: "text/markdown" });

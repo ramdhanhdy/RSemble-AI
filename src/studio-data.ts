@@ -159,7 +159,9 @@ export const BRAND_MAP: Record<string, BrandAsset> = {
 export const BRAND_DEFAULT: BrandAsset = { brandColor: "#46586f", icon: "generic" };
 
 export function brandForSlug(slug: string): BrandAsset {
-  const vendor = (slug.includes("/") ? slug.slice(0, slug.indexOf("/")) : slug.split("-")[0]).toLowerCase();
+  const vendor = (
+    slug.includes("/") ? slug.slice(0, slug.indexOf("/")) : slug.split("-")[0]
+  ).toLowerCase();
   return BRAND_MAP[vendor] ?? BRAND_DEFAULT;
 }
 
@@ -182,9 +184,30 @@ export const SYSTEM_PROMPT_DEFAULT =
 // Candidates are generated live from the model fanout, so there are no seeds.
 
 export const SEED_SLOTS: ModelSlot[] = [
-  { id: "slot-1", providerId: "openrouter", provider: "Z-AI", model: "GLM 5.2", slug: "z-ai/glm-5.2", enabled: true },
-  { id: "slot-2", providerId: "chatgpt-codex", provider: "ChatGPT", model: "GPT-5.6 Sol", slug: "gpt-5.6-sol", enabled: false },
-  { id: "slot-3", providerId: "openrouter", provider: "DeepSeek", model: "DeepSeek V4 Flash", slug: "deepseek/deepseek-v4-flash", enabled: true },
+  {
+    id: "slot-1",
+    providerId: "openrouter",
+    provider: "Z-AI",
+    model: "GLM 5.2",
+    slug: "z-ai/glm-5.2",
+    enabled: true,
+  },
+  {
+    id: "slot-2",
+    providerId: "chatgpt-codex",
+    provider: "ChatGPT",
+    model: "GPT-5.6 Sol",
+    slug: "gpt-5.6-sol",
+    enabled: false,
+  },
+  {
+    id: "slot-3",
+    providerId: "openrouter",
+    provider: "DeepSeek",
+    model: "DeepSeek V4 Flash",
+    slug: "deepseek/deepseek-v4-flash",
+    enabled: true,
+  },
 ];
 
 // Historical scorecard rows accumulate from real runs; empty on a fresh start.

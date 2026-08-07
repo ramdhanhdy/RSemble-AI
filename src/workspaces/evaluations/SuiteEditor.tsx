@@ -34,13 +34,14 @@ import type { ExecutionOwner } from "../../lib/execution-owner";
 import { SuiteExperimentHistory } from "./SuiteExperimentHistory";
 import { FusionStudyPanel } from "./FusionStudyPanel";
 import { useFusionStudyRepository } from "../../lib/persistence/repository-context";
-import type {
-  EvaluationSuite,
-  EvaluationTask,
-  EvaluationProfileRef,
-  ExperimentRecord,
+import {
+  type EvaluationSuite,
+  type EvaluationTask,
+  type EvaluationProfileRef,
+  type ExperimentRecord,
+  type EvaluationProfile,
+  type ProfileRecord,
 } from "../../lib/evaluations/evaluation-types";
-import type { EvaluationProfile, ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import {
   isSuiteDirty,
@@ -68,7 +69,12 @@ function generateTaskId(): string {
   return `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function SuiteEditor({ repo, models, controller: controllerProp, executionOwner: ownerProp }: SuiteEditorProps) {
+export function SuiteEditor({
+  repo,
+  models,
+  controller: controllerProp,
+  executionOwner: ownerProp,
+}: SuiteEditorProps) {
   const { suiteId } = useParams<{ suiteId: string }>();
   const navigate = useNavigate();
 
@@ -139,11 +145,14 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
     let cancelled = false;
     setLatestExperiment(null);
     if (!repo || !persisted) return;
-    void repo.listExperiments(persisted.id).then((list) => {
-      if (!cancelled) setLatestExperiment(list[0] ?? null);
-    }).catch(() => {
-      if (!cancelled) setLatestExperiment(null);
-    });
+    void repo
+      .listExperiments(persisted.id)
+      .then((list) => {
+        if (!cancelled) setLatestExperiment(list[0] ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setLatestExperiment(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -163,14 +172,17 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
       setPinnedProfileLoaded(true);
       return;
     }
-    void repo.getProfile(ev.profile.id, ev.profile.version).then((p) => {
-      if (!cancelled) {
-        setPinnedProfile(p);
-        setPinnedProfileLoaded(true);
-      }
-    }).catch(() => {
-      if (!cancelled) setPinnedProfileLoaded(true);
-    });
+    void repo
+      .getProfile(ev.profile.id, ev.profile.version)
+      .then((p) => {
+        if (!cancelled) {
+          setPinnedProfile(p);
+          setPinnedProfileLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPinnedProfileLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -251,21 +263,22 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
     });
   }, []);
 
-  const deleteTask = useCallback((taskId: string) => {
-    setDraft((prev) => {
-      if (!prev) return prev;
-      const tasks = prev.tasks
-        .filter((t) => t.id !== taskId)
-        .map((t, i) => ({ ...t, order: i }));
-      return { ...prev, tasks, updatedAt: Date.now() };
-    });
-    setSelectedTaskId((prev) => {
-      if (prev !== taskId) return prev;
-      // Move selection to the nearest remaining task.
-      const remaining = draft?.tasks.filter((t) => t.id !== taskId) ?? [];
-      return remaining[0]?.id ?? null;
-    });
-  }, [draft]);
+  const deleteTask = useCallback(
+    (taskId: string) => {
+      setDraft((prev) => {
+        if (!prev) return prev;
+        const tasks = prev.tasks.filter((t) => t.id !== taskId).map((t, i) => ({ ...t, order: i }));
+        return { ...prev, tasks, updatedAt: Date.now() };
+      });
+      setSelectedTaskId((prev) => {
+        if (prev !== taskId) return prev;
+        // Move selection to the nearest remaining task.
+        const remaining = draft?.tasks.filter((t) => t.id !== taskId) ?? [];
+        return remaining[0]?.id ?? null;
+      });
+    },
+    [draft],
+  );
 
   // --- Save ---
   const handleSave = useCallback(async () => {
@@ -289,7 +302,12 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
         setDraft(structuredClone({ ...fresh, revision: newRevision }));
       }
     } catch (err: unknown) {
-      const msg = err instanceof StorageError ? friendlyStorageError(err) : err instanceof Error ? err.message : "Could not save the suite.";
+      const msg =
+        err instanceof StorageError
+          ? friendlyStorageError(err)
+          : err instanceof Error
+            ? err.message
+            : "Could not save the suite.";
       setSaveError(msg);
     } finally {
       setSaving(false);
@@ -302,7 +320,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
     setRunError(null);
     const result = await controller.start(persisted.id);
     if (result.ok) {
-      navigate(`/experiments/${result.experimentId}`);
+      void navigate(`/experiments/${result.experimentId}`);
     } else {
       setRunError(result.error);
     }
@@ -365,7 +383,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
   const runDisabledReason = dirty
     ? "Save this suite before running"
     : !execValidation.valid
-      ? execValidation.errors[0]?.message ?? "Suite is not ready to run."
+      ? (execValidation.errors[0]?.message ?? "Suite is not ready to run.")
       : !controller
         ? "Storage unavailable — cannot start an experiment"
         : executionOwner
@@ -426,7 +444,11 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
             >
               <ChevronDown
                 size={14}
-                className={settingsOpen ? "disclosure-chevron shrink-0 rotate-180 transition-transform duration-150 ease-out" : "disclosure-chevron shrink-0 transition-transform duration-150 ease-out"}
+                className={
+                  settingsOpen
+                    ? "disclosure-chevron shrink-0 rotate-180 transition-transform duration-150 ease-out"
+                    : "disclosure-chevron shrink-0 transition-transform duration-150 ease-out"
+                }
                 aria-hidden="true"
               />
               Settings
@@ -465,28 +487,32 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
         {/* Dirty / validation state line */}
         <div className="flex items-center gap-3 text-xs">
           {dirty ? (
-            <span className="text-warning">
-              Unsaved changes · next version v{nextVersion}
-            </span>
+            <span className="text-warning">Unsaved changes · next version v{nextVersion}</span>
           ) : (
             <span className="text-success">Saved · v{persisted.version}</span>
           )}
-          {runDisabledReason && (
-            <span className="text-text-secondary">· {runDisabledReason}</span>
-          )}
+          {runDisabledReason && <span className="text-text-secondary">· {runDisabledReason}</span>}
         </div>
 
         {saveError && (
-          <p role="alert" className="text-sm text-error">{saveError}</p>
+          <p role="alert" className="text-sm text-error">
+            {saveError}
+          </p>
         )}
         {runError && (
-          <p role="alert" className="text-sm text-error">{runError}</p>
+          <p role="alert" className="text-sm text-error">
+            {runError}
+          </p>
         )}
       </header>
 
       {/* Settings disclosure (in-page, not a permanent third pane) */}
       {settingsOpen && (
-        <div id="suite-settings-disclosure" data-geometry="suite-settings-panel" className="border-b border-edge p-3">
+        <div
+          id="suite-settings-disclosure"
+          data-geometry="suite-settings-panel"
+          className="border-b border-edge p-3"
+        >
           <SuiteSettings
             suite={draft}
             onChange={patchDraft}
@@ -499,7 +525,10 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
 
       {/* Two-pane split: task list | task editor */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-3 lg:flex-row">
-        <section aria-label="Task list" className="min-h-0 lg:w-[320px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-edge lg:pr-3">
+        <section
+          aria-label="Task list"
+          className="min-h-0 lg:w-[320px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-edge lg:pr-3"
+        >
           <SuiteTaskList
             tasks={draft.tasks}
             selectedTaskId={selectedTaskId}
@@ -507,7 +536,7 @@ export function SuiteEditor({ repo, models, controller: controllerProp, executio
               setSelectedTaskId(id);
               // On mobile, navigate to the task route for deep-linking.
               if (suiteId && !window.matchMedia("(min-width: 1024px)").matches) {
-                navigate(`/evaluations/${suiteId}/tasks/${id}`);
+                void navigate(`/evaluations/${suiteId}/tasks/${id}`);
               }
             }}
             onAdd={addTask}
@@ -575,7 +604,7 @@ function friendlyStorageError(err: StorageError): string {
     case "blocked":
     case "versionchange":
       return "Storage is blocked by another tab. Close it and retry.";
-    default:
-      return err.message || "Storage is unavailable.";
+    case "unavailable":
+      return "Storage is unavailable — retry; your existing data was not modified.";
   }
 }

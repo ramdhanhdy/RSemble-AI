@@ -16,8 +16,7 @@
 //   - user-initiated only; no automatic retry; no Judge or fusion stage
 // =============================================================================
 
-import type { LLMProvider, ProviderId } from "./types";
-import { ProviderError } from "./types";
+import { type LLMProvider, type ProviderId, ProviderError } from "./types";
 
 export type ModelProbeFailureCategory =
   | "unauthorized"
@@ -54,9 +53,7 @@ export const DEFAULT_PROBE_TIMEOUT_MS = 20_000;
  * structured result. Never calls readiness() — the point is to exercise the
  * exact model route.
  */
-export async function probeModelRoute(
-  opts: ProbeModelRouteOptions,
-): Promise<ModelProbeState> {
+export async function probeModelRoute(opts: ProbeModelRouteOptions): Promise<ModelProbeState> {
   const { provider, providerId, model } = opts;
   const now = opts.now ?? Date.now;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
@@ -102,12 +99,7 @@ export async function probeModelRoute(
       );
     });
 
-    let result: boolean;
-    try {
-      result = await Promise.race([consume(), timeoutPromise]);
-    } catch (err) {
-      throw err;
-    }
+    const result = await Promise.race([consume(), timeoutPromise]);
 
     if (!result) {
       return {
@@ -183,24 +175,34 @@ function categorizeByStatus(
   return categorizeByMessage(message, providerId);
 }
 
-function categorizeByMessage(
-  message: string,
-  _providerId?: ProviderId,
-): ModelProbeFailureCategory {
+function categorizeByMessage(message: string, _providerId?: ProviderId): ModelProbeFailureCategory {
   const lower = message.toLowerCase();
   if (lower.includes("no [done] sentinel") || lower.includes("ended unexpectedly")) {
     return "protocol-incompatible";
   }
-  if (lower.includes("unauthorized") || lower.includes("invalid api key") || lower.includes("authentication")) {
+  if (
+    lower.includes("unauthorized") ||
+    lower.includes("invalid api key") ||
+    lower.includes("authentication")
+  ) {
     return "unauthorized";
   }
-  if (lower.includes("not found") || lower.includes("unavailable") || lower.includes("does not exist")) {
+  if (
+    lower.includes("not found") ||
+    lower.includes("unavailable") ||
+    lower.includes("does not exist")
+  ) {
     return "unavailable";
   }
   if (lower.includes("rate limit") || lower.includes("too many requests")) {
     return "rate-limited";
   }
-  if (lower.includes("network") || lower.includes("fetch") || lower.includes("reach") || lower.includes("connection")) {
+  if (
+    lower.includes("network") ||
+    lower.includes("fetch") ||
+    lower.includes("reach") ||
+    lower.includes("connection")
+  ) {
     return "network";
   }
   if (lower.includes("empty stream") || lower.includes("no content")) {

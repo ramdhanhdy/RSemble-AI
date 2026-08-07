@@ -76,9 +76,15 @@ describe("validatePoolManifest", () => {
 
   it("requires supersedesVersion to be a lower positive version", () => {
     const manifest = poolOf(6, 0);
-    expect(validatePoolManifest({ ...manifest, version: 3, supersedesVersion: 2 }).valid).toBe(true);
-    expect(validatePoolManifest({ ...manifest, version: 3, supersedesVersion: 3 }).valid).toBe(false);
-    expect(validatePoolManifest({ ...manifest, version: 3, supersedesVersion: 0 }).valid).toBe(false);
+    expect(validatePoolManifest({ ...manifest, version: 3, supersedesVersion: 2 }).valid).toBe(
+      true,
+    );
+    expect(validatePoolManifest({ ...manifest, version: 3, supersedesVersion: 3 }).valid).toBe(
+      false,
+    );
+    expect(validatePoolManifest({ ...manifest, version: 3, supersedesVersion: 0 }).valid).toBe(
+      false,
+    );
   });
 });
 

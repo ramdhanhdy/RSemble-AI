@@ -27,10 +27,12 @@ import { formatRunRow } from "../workspaces/runs/run-view-model";
 import { RecordRow } from "./RecordRow";
 import type { RunSummary } from "../lib/persistence/run-types";
 
-export function scrollLiveTranscriptToEnd(transcript: { scrollTop: number; readonly scrollHeight: number }): void {
+export function scrollLiveTranscriptToEnd(transcript: {
+  scrollTop: number;
+  readonly scrollHeight: number;
+}): void {
   transcript.scrollTop = transcript.scrollHeight;
 }
-
 
 /** After this many ms with no text, the waiting caption adopts a warning tone. */
 const FIRST_TOKEN_PATIENCE_MS = 15_000;
@@ -87,10 +89,10 @@ export function OutputPane({
       : state.judgeStatus === "error" || state.fusionStatus === "error";
   const stageErrorMessage =
     state.mode === "rank"
-      ? state.judgeError ?? "Judge failed."
+      ? (state.judgeError ?? "Judge failed.")
       : state.judgeStatus === "error"
-        ? state.judgeError ?? "Judge failed."
-        : state.fusionError ?? "Fusion failed.";
+        ? (state.judgeError ?? "Judge failed.")
+        : (state.fusionError ?? "Fusion failed.");
 
   // Judge-only retry availability (spec §5.1): a terminal Judge failure, no
   // stage active, run not aborted, ≥2 usable candidates, and the frozen run
@@ -123,7 +125,12 @@ export function OutputPane({
               shrink so each card gets a bounded, scrollable body. */}
           <ul className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto scroll-thin xl:grid-cols-2 2xl:grid-cols-3">
             {state.candidates.map((c) => (
-              <LiveCandidateCard key={c.id} candidate={c} onRetry={state.running ? undefined : onRetryCandidate} now={liveNow} />
+              <LiveCandidateCard
+                key={c.id}
+                candidate={c}
+                onRetry={state.running ? undefined : onRetryCandidate}
+                now={liveNow}
+              />
             ))}
           </ul>
         </div>
@@ -154,17 +161,16 @@ export function OutputPane({
         !state.insufficient &&
         !stageError &&
         !state.aborted &&
-        state.mode === "rank" && (
-          compareMode ? (
-            <CompareView
-              candidates={state.candidates}
-              criteria={state.evaluation.kind === "holistic" ? [] : state.evaluation.profile.criteria}
-              onClose={() => setCompareMode(false)}
-            />
-          ) : (
-            <RankResult state={state} onFuse={onFuse} onCompare={() => setCompareMode(true)} />
-          )
-        )}
+        state.mode === "rank" &&
+        (compareMode ? (
+          <CompareView
+            candidates={state.candidates}
+            criteria={state.evaluation.kind === "holistic" ? [] : state.evaluation.profile.criteria}
+            onClose={() => setCompareMode(false)}
+          />
+        ) : (
+          <RankResult state={state} onFuse={onFuse} onCompare={() => setCompareMode(true)} />
+        ))}
       {hasRun &&
         !state.running &&
         !state.insufficient &&
@@ -208,8 +214,12 @@ export function InsufficientState({
     <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-warning/40 bg-warning/[0.08] py-10 px-6 text-center">
       <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-warning">Stopped</p>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">
-        Only <span className="font-semibold text-text">{done} of {done + failed}</span> candidate(s)
-        succeeded — need at least <span className="font-semibold text-text">2</span> to {verb}.
+        Only{" "}
+        <span className="font-semibold text-text">
+          {done} of {done + failed}
+        </span>{" "}
+        candidate(s) succeeded — need at least <span className="font-semibold text-text">2</span> to{" "}
+        {verb}.
       </p>
       {failed > 0 && (
         <p className="mt-1 font-mono text-sm text-text-muted">
@@ -228,16 +238,24 @@ export function InsufficientState({
               ? "Completed but produced no content — response was empty or truncated."
               : c.errorMessage || "Candidate failed during generation.";
             return (
-              <li key={c.id} className="flex items-start gap-2 rounded-sm border border-error/30 bg-error/[0.06] px-3 py-2">
+              <li
+                key={c.id}
+                className="flex items-start gap-2 rounded-sm border border-error/30 bg-error/[0.06] px-3 py-2"
+              >
                 <span className="mt-1 size-2 shrink-0 rounded-full bg-error" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <BrandAvatar slug={c.slug} size={18} />
-                    <span className="truncate font-mono text-sm text-text" title={c.provider}>{c.model}</span>
+                    <span className="truncate font-mono text-sm text-text" title={c.provider}>
+                      {c.model}
+                    </span>
                   </div>
                   <p className="mt-1 text-sm leading-relaxed text-error/80">{reason}</p>
                   {failureGuidance(reason) !== null && (
-                    <p data-timeout-guidance="" className="mt-1 text-xs leading-relaxed text-text-muted">
+                    <p
+                      data-timeout-guidance=""
+                      className="mt-1 text-xs leading-relaxed text-text-muted"
+                    >
                       {failureGuidance(reason)}
                     </p>
                   )}
@@ -335,8 +353,12 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
   const elapsedMs = candidate.startedAt ? (candidate.finishedAt ?? now) - candidate.startedAt : 0;
   const impatient = waiting && elapsedMs >= FIRST_TOKEN_PATIENCE_MS;
 
-  const { ref: transcriptRef, onScroll, pinned, jumpToLatest } =
-    useStickToBottom<HTMLParagraphElement>(liveText);
+  const {
+    ref: transcriptRef,
+    onScroll,
+    pinned,
+    jumpToLatest,
+  } = useStickToBottom<HTMLParagraphElement>(liveText);
   const [copied, setCopied] = useState(false);
 
   const copy = async (e: React.MouseEvent) => {
@@ -351,12 +373,16 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
   };
 
   return (
-    <li className={`relative flex min-h-0 flex-col rounded-md border bg-card px-3 py-2 ${
-      candidate.status === "error" || unusable ? "border-warning/40" : "border-edge"
-    }`}>
+    <li
+      className={`relative flex min-h-0 flex-col rounded-md border bg-card px-3 py-2 ${
+        candidate.status === "error" || unusable ? "border-warning/40" : "border-edge"
+      }`}
+    >
       <div className="flex items-center gap-2">
         {active && <Loader2 size={12} className="animate-spin-ease text-accent" />}
-        {candidate.status === "done" && !unusable && <span className="size-2 rounded-full bg-success" />}
+        {candidate.status === "done" && !unusable && (
+          <span className="size-2 rounded-full bg-success" />
+        )}
         {candidate.status === "error" && <span className="size-2 rounded-full bg-error" />}
         {unusable && <AlertCircle size={12} className="text-warning" />}
         <BrandAvatar slug={candidate.slug} size={24} />
@@ -364,7 +390,9 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
           {candidate.model}
         </span>
         {candidate.tokensOut != null && candidate.tokensOut > 0 && (
-          <span className="font-mono text-xs tabular-nums text-text-muted">{candidate.tokensOut} tok</span>
+          <span className="font-mono text-xs tabular-nums text-text-muted">
+            {candidate.tokensOut} tok
+          </span>
         )}
         <span className="font-mono text-xs tabular-nums text-text-muted">{elapsed}s</span>
         <span
@@ -480,7 +508,9 @@ function PaneLabel({ index, title, hint }: { index: string; title: string; hint:
     <div className="flex items-baseline justify-between gap-2">
       <div className="flex items-baseline gap-2">
         <span className="font-mono text-xs font-semibold tabular-nums text-accent">{index}</span>
-        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">{title}</span>
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+          {title}
+        </span>
       </div>
       <span className="font-mono text-[11px] uppercase tracking-wider text-text-muted">{hint}</span>
     </div>
@@ -555,7 +585,6 @@ function RecentRuns({ summaries }: { summaries: RunSummary[] }) {
   );
 }
 
-
 function ErrorState({
   message,
   candidates,
@@ -582,7 +611,10 @@ function ErrorState({
         <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-error">Error</p>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">{message}</p>
         {guidance !== null && (
-          <p data-timeout-guidance="" className="mt-2 max-w-md text-sm leading-relaxed text-text-muted">
+          <p
+            data-timeout-guidance=""
+            className="mt-2 max-w-md text-sm leading-relaxed text-text-muted"
+          >
             {guidance}
           </p>
         )}
@@ -655,10 +687,15 @@ function AbortedState({
     <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-md border border-edge bg-card py-10 px-6 text-center">
       <AlertCircle size={24} className="text-text-secondary" />
       <div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary">{conflict ? "Execution conflict" : "Aborted"}</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary">
+          {conflict ? "Execution conflict" : "Aborted"}
+        </p>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">
-          {conflict ? `${conflict} Wait for the newer Compare execution to finish, then retry.` : null}
-          Run stopped. {done.length > 0
+          {conflict
+            ? `${conflict} Wait for the newer Compare execution to finish, then retry.`
+            : null}
+          Run stopped.{" "}
+          {done.length > 0
             ? `${done.length} candidate${done.length === 1 ? "" : "s"} completed before abort — partial results are preserved below.`
             : "No candidates completed before abort."}
         </p>
@@ -666,9 +703,14 @@ function AbortedState({
       {done.length > 0 && (
         <ul className="w-full max-w-md space-y-1 text-left">
           {done.map((c) => (
-            <li key={c.id} className="flex items-center gap-2 rounded-sm border border-edge bg-panel px-3 py-2">
+            <li
+              key={c.id}
+              className="flex items-center gap-2 rounded-sm border border-edge bg-panel px-3 py-2"
+            >
               <span className="size-2 shrink-0 rounded-full bg-success" />
-              <span className="flex-1 truncate font-mono text-sm text-text" title={c.model}>{c.model}</span>
+              <span className="flex-1 truncate font-mono text-sm text-text" title={c.model}>
+                {c.model}
+              </span>
               <span className="font-mono text-xs text-text-muted">{c.summary.slice(0, 60)}</span>
             </li>
           ))}

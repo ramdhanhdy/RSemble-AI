@@ -1,6 +1,7 @@
 # CLAUDE.md — Agent Guidelines & Code Rules
 
-> Authority hierarchy: `PRODUCT.md` > `PROVIDERS.md` > `UI.md` / `DESIGN.md`.
+> Authority hierarchy: `PRODUCT.md` > `PROVIDERS.md`. (`UI.md` / `DESIGN.md`
+> are historical and no longer shipped; references to them are provenance-only.)
 
 ## Principles
 1. **Maintain single pipeline spine:** Task → Evaluation → Compare (N models in parallel) → Judge → Rank / Fuse. The pipeline serves one-off Compare runs and per-task suite execution alike; do not branch `pipeline.ts` by workspace or provider.

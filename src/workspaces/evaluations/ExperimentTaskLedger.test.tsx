@@ -58,9 +58,8 @@ async function settle() {
 
 function findButton(h: Harness, name: string): HTMLButtonElement | null {
   return (
-    ([...h.container.querySelectorAll("button")].find(
-      (b) => b.textContent?.trim() === name,
-    ) as HTMLButtonElement | undefined) ?? null
+    ([...h.container.querySelectorAll("button")].find((b) => b.textContent?.trim() === name) as
+      HTMLButtonElement | undefined) ?? null
   );
 }
 
@@ -184,7 +183,13 @@ function makeRunningExperiment(): ExperimentRecord {
       {
         taskId: "task-1",
         selectedAttemptId: null,
-        attempts: [makeAttempt("att-1", "completed", { runId: "run-1", coverage: makeCoverage(8, 8), startedAt: now - 60_000 })],
+        attempts: [
+          makeAttempt("att-1", "completed", {
+            runId: "run-1",
+            coverage: makeCoverage(8, 8),
+            startedAt: now - 60_000,
+          }),
+        ],
       },
       {
         taskId: "task-2",
@@ -213,9 +218,21 @@ function makeStressExperiment(): ExperimentRecord {
         taskId: id,
         selectedAttemptId: null,
         attempts: [
-          makeAttempt(`${id}-a1`, "completed", { trial: 1, coverage: makeCoverage(8, 8), startedAt: now - 90_000 }),
-          makeAttempt(`${id}-a2`, "failed", { trial: 2, startedAt: now - 45_000, finishedAt: now - 40_000 }),
-          makeAttempt(`${id}-a3`, "running", { trial: 3, runId: `run-${id}`, startedAt: now - 5_000 }),
+          makeAttempt(`${id}-a1`, "completed", {
+            trial: 1,
+            coverage: makeCoverage(8, 8),
+            startedAt: now - 90_000,
+          }),
+          makeAttempt(`${id}-a2`, "failed", {
+            trial: 2,
+            startedAt: now - 45_000,
+            finishedAt: now - 40_000,
+          }),
+          makeAttempt(`${id}-a3`, "running", {
+            trial: 3,
+            runId: `run-${id}`,
+            startedAt: now - 5_000,
+          }),
         ],
       });
     } else if (i === 1) {
@@ -223,9 +240,21 @@ function makeStressExperiment(): ExperimentRecord {
         taskId: id,
         selectedAttemptId: null,
         attempts: [
-          makeAttempt(`${id}-a1`, "failed", { trial: 1, startedAt: now - 80_000, finishedAt: now - 70_000 }),
-          makeAttempt(`${id}-a2`, "partial", { trial: 2, coverage: makeCoverage(5, 8), startedAt: now - 50_000 }),
-          makeAttempt(`${id}-a3`, "partial", { trial: 3, coverage: makeCoverage(4, 8), startedAt: now - 20_000 }),
+          makeAttempt(`${id}-a1`, "failed", {
+            trial: 1,
+            startedAt: now - 80_000,
+            finishedAt: now - 70_000,
+          }),
+          makeAttempt(`${id}-a2`, "partial", {
+            trial: 2,
+            coverage: makeCoverage(5, 8),
+            startedAt: now - 50_000,
+          }),
+          makeAttempt(`${id}-a3`, "partial", {
+            trial: 3,
+            coverage: makeCoverage(4, 8),
+            startedAt: now - 20_000,
+          }),
         ],
       });
     } else {
@@ -233,9 +262,21 @@ function makeStressExperiment(): ExperimentRecord {
         taskId: id,
         selectedAttemptId: null,
         attempts: [
-          makeAttempt(`${id}-a1`, "completed", { trial: 1, coverage: makeCoverage(8, 8), startedAt: now - 100_000 }),
-          makeAttempt(`${id}-a2`, "completed", { trial: 2, coverage: makeCoverage(8, 8), startedAt: now - 60_000 }),
-          makeAttempt(`${id}-a3`, "partial", { trial: 3, coverage: makeCoverage(6, 8), startedAt: now - 10_000 }),
+          makeAttempt(`${id}-a1`, "completed", {
+            trial: 1,
+            coverage: makeCoverage(8, 8),
+            startedAt: now - 100_000,
+          }),
+          makeAttempt(`${id}-a2`, "completed", {
+            trial: 2,
+            coverage: makeCoverage(8, 8),
+            startedAt: now - 60_000,
+          }),
+          makeAttempt(`${id}-a3`, "partial", {
+            trial: 3,
+            coverage: makeCoverage(6, 8),
+            startedAt: now - 10_000,
+          }),
         ],
       });
     }
@@ -249,7 +290,11 @@ describe("ExperimentTaskLedger — stress", () => {
   it("mounts at most 50 primary rows, discloses attempts lazily, and keeps instrument controls before the ledger (250 tasks)", async () => {
     const controller = makeController();
     const h = render(
-      <ExperimentTaskLedger experiment={makeStressExperiment()} controller={controller} now={Date.now()} />,
+      <ExperimentTaskLedger
+        experiment={makeStressExperiment()}
+        controller={controller}
+        now={Date.now()}
+      />,
     );
     await settle();
 
@@ -260,8 +305,8 @@ describe("ExperimentTaskLedger — stress", () => {
     expect(h.container.textContent).toContain("1–50 of 250");
 
     // Historical attempt records remain in the fixture but never mount in this view.
-    expect(h.$$('[data-attempt-row]')).toHaveLength(0);
-    expect(h.$$('[data-attempt-toggle]')).toHaveLength(0);
+    expect(h.$$("[data-attempt-row]")).toHaveLength(0);
+    expect(h.$$("[data-attempt-toggle]")).toHaveLength(0);
     expect(h.container.textContent).not.toMatch(/Attempt [0-9]+/);
     expect(h.$('a[href="/runs/run-task-000"]')).not.toBeNull();
 
@@ -288,7 +333,11 @@ describe("ExperimentTaskLedger — stress", () => {
 
   it("filtering never mutates canonical order and short/long titles share row geometry", async () => {
     const h = render(
-      <ExperimentTaskLedger experiment={makeStressExperiment()} controller={makeController()} now={Date.now()} />,
+      <ExperimentTaskLedger
+        experiment={makeStressExperiment()}
+        controller={makeController()}
+        now={Date.now()}
+      />,
     );
     await settle();
 
@@ -337,7 +386,11 @@ describe("ExperimentTaskLedger — stress", () => {
 describe("ExperimentTaskLedger — controls and counts", () => {
   it("shows current task, counts, and live elapsed time for the running attempt", async () => {
     const h = render(
-      <ExperimentTaskLedger experiment={makeRunningExperiment()} controller={makeController()} now={Date.now()} />,
+      <ExperimentTaskLedger
+        experiment={makeRunningExperiment()}
+        controller={makeController()}
+        now={Date.now()}
+      />,
     );
     await settle();
     const text = h.container.textContent ?? "";
@@ -357,7 +410,11 @@ describe("ExperimentTaskLedger — controls and counts", () => {
   it("Pause after current task calls requestPause; Abort calls abort", async () => {
     const controller = makeController();
     const h = render(
-      <ExperimentTaskLedger experiment={makeRunningExperiment()} controller={controller} now={Date.now()} />,
+      <ExperimentTaskLedger
+        experiment={makeRunningExperiment()}
+        controller={controller}
+        now={Date.now()}
+      />,
     );
     await settle();
     const pause = findButton(h, "Pause after current task")!;
@@ -393,13 +450,20 @@ describe("ExperimentTaskLedger — controls and counts", () => {
         {
           taskId: "task-1",
           selectedAttemptId: null,
-          attempts: [makeAttempt("att-1", "completed", { coverage: makeCoverage(8, 8), startedAt: now - 60_000 })],
+          attempts: [
+            makeAttempt("att-1", "completed", {
+              coverage: makeCoverage(8, 8),
+              startedAt: now - 60_000,
+            }),
+          ],
         },
         { taskId: "task-2", selectedAttemptId: null, attempts: [makeAttempt("att-2", "queued")] },
       ],
       "paused",
     );
-    const h = render(<ExperimentTaskLedger experiment={paused} controller={controller} now={now} />);
+    const h = render(
+      <ExperimentTaskLedger experiment={paused} controller={controller} now={now} />,
+    );
     await settle();
     expect(findButton(h, "Pause after current task")).toBeNull();
     // The boundary note belongs to the running state only.
@@ -415,7 +479,11 @@ describe("ExperimentTaskLedger — controls and counts", () => {
 
   it("disables Pause/Abort when the controller is unavailable", async () => {
     const h = render(
-      <ExperimentTaskLedger experiment={makeRunningExperiment()} controller={null} now={Date.now()} />,
+      <ExperimentTaskLedger
+        experiment={makeRunningExperiment()}
+        controller={null}
+        now={Date.now()}
+      />,
     );
     await settle();
     expect(findButton(h, "Pause after current task")!.disabled).toBe(true);
@@ -439,19 +507,43 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
         {
           taskId: "task-1",
           selectedAttemptId: null,
-          attempts: [makeAttempt("att-1", "completed", { coverage: makeCoverage(8, 8), startedAt: now - 60_000 })],
+          attempts: [
+            makeAttempt("att-1", "completed", {
+              coverage: makeCoverage(8, 8),
+              startedAt: now - 60_000,
+            }),
+          ],
         },
-        { taskId: "task-2", selectedAttemptId: null, attempts: [makeAttempt("att-2", "failed", { startedAt: now - 30_000, error: { message: "Judge unavailable" } })] },
+        {
+          taskId: "task-2",
+          selectedAttemptId: null,
+          attempts: [
+            makeAttempt("att-2", "failed", {
+              startedAt: now - 30_000,
+              error: { message: "Judge unavailable" },
+            }),
+          ],
+        },
         {
           taskId: "task-3",
           selectedAttemptId: null,
-          attempts: [makeAttempt("att-3", "partial", { coverage: makeCoverage(5, 8), startedAt: now - 20_000 })],
+          attempts: [
+            makeAttempt("att-3", "partial", {
+              coverage: makeCoverage(5, 8),
+              startedAt: now - 20_000,
+            }),
+          ],
         },
         { taskId: "task-4", selectedAttemptId: null, attempts: [makeAttempt("att-4", "queued")] },
         {
           taskId: "task-5",
           selectedAttemptId: null,
-          attempts: [makeAttempt("att-5", "completed", { coverage: makeCoverage(8, 8), startedAt: now - 10_000 })],
+          attempts: [
+            makeAttempt("att-5", "completed", {
+              coverage: makeCoverage(8, 8),
+              startedAt: now - 10_000,
+            }),
+          ],
         },
       ],
       "paused",
@@ -460,7 +552,11 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
 
   it("filters by status category and preserves canonical order", async () => {
     const h = render(
-      <ExperimentTaskLedger experiment={makeMixedExperiment()} controller={makeController()} now={Date.now()} />,
+      <ExperimentTaskLedger
+        experiment={makeMixedExperiment()}
+        controller={makeController()}
+        now={Date.now()}
+      />,
     );
     await settle();
 
@@ -497,7 +593,11 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
 
   it("searches titles without disturbing order", async () => {
     const h = render(
-      <ExperimentTaskLedger experiment={makeMixedExperiment()} controller={makeController()} now={Date.now()} />,
+      <ExperimentTaskLedger
+        experiment={makeMixedExperiment()}
+        controller={makeController()}
+        now={Date.now()}
+      />,
     );
     await settle();
     const input = h.$('input[type="search"]') as HTMLInputElement;
@@ -518,7 +618,10 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
 
   it("pages 120 tasks in 50-row pages with Previous/Next and range text", async () => {
     const now = Date.now();
-    const tasks = Array.from({ length: 120 }, (_, i) => ({ id: `task-${i}`, title: `Task ${i + 1}` }));
+    const tasks = Array.from({ length: 120 }, (_, i) => ({
+      id: `task-${i}`,
+      title: `Task ${i + 1}`,
+    }));
     const states = tasks.map((t, i) => ({
       taskId: t.id,
       selectedAttemptId: null,
@@ -530,7 +633,9 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
       ],
     }));
     const experiment = makeExperiment(tasks, states, "paused", 8);
-    const h = render(<ExperimentTaskLedger experiment={experiment} controller={makeController()} now={now} />);
+    const h = render(
+      <ExperimentTaskLedger experiment={experiment} controller={makeController()} now={now} />,
+    );
     await settle();
 
     expect(h.$$("[data-task-row]")).toHaveLength(50);
@@ -561,11 +666,15 @@ describe("ExperimentTaskLedger — filter, search, pagination, disclosure", () =
 
   it("renders current task errors without exposing numbered history", async () => {
     const h = render(
-      <ExperimentTaskLedger experiment={makeMixedExperiment()} controller={makeController()} now={Date.now()} />,
+      <ExperimentTaskLedger
+        experiment={makeMixedExperiment()}
+        controller={makeController()}
+        now={Date.now()}
+      />,
     );
     await settle();
-    expect(h.$$('[data-attempt-row]')).toHaveLength(0);
-    expect(h.$$('[data-attempt-toggle]')).toHaveLength(0);
+    expect(h.$$("[data-attempt-row]")).toHaveLength(0);
+    expect(h.$$("[data-attempt-toggle]")).toHaveLength(0);
     expect(h.container.textContent).toContain("Error details");
     expect(h.container.textContent).not.toMatch(/Attempt [0-9]+/);
     const details = h.$("details");

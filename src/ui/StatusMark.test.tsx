@@ -38,18 +38,18 @@ afterEach(() => {
 describe("StatusMark", () => {
   // Spec §6.1: every status uses exact shared color + icon/shape contract.
   const cases: Array<{ status: string; icon: string }> = [
-    { status: "draft", icon: "svg" },           // FilePenLine
-    { status: "queued", icon: "svg" },          // hollow circle
-    { status: "running", icon: "svg" },         // Loader2
-    { status: "paused", icon: "svg" },          // Pause
-    { status: "completed", icon: "svg" },       // Check
+    { status: "draft", icon: "svg" }, // FilePenLine
+    { status: "queued", icon: "svg" }, // hollow circle
+    { status: "running", icon: "svg" }, // Loader2
+    { status: "paused", icon: "svg" }, // Pause
+    { status: "completed", icon: "svg" }, // Check
     { status: "completed_with_failures", icon: "svg" }, // AlertTriangle
-    { status: "partial", icon: "svg" },         // CircleDashed
-    { status: "failed", icon: "svg" },           // XCircle
-    { status: "aborted", icon: "svg" },          // Square
-    { status: "interrupted", icon: "svg" },      // Unplug
-    { status: "ready", icon: "svg" },            // CirclePlay — runnable workload (identity spec §5.2)
-    { status: "reusable", icon: "svg" },         // BadgeCheck — live pinnable rubric (identity spec §5.2)
+    { status: "partial", icon: "svg" }, // CircleDashed
+    { status: "failed", icon: "svg" }, // XCircle
+    { status: "aborted", icon: "svg" }, // Square
+    { status: "interrupted", icon: "svg" }, // Unplug
+    { status: "ready", icon: "svg" }, // CirclePlay — runnable workload (identity spec §5.2)
+    { status: "reusable", icon: "svg" }, // BadgeCheck — live pinnable rubric (identity spec §5.2)
   ];
 
   for (const { status } of cases) {

@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, useReducer } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { useReducer } from "react";
 import { useAttachments, createAttachmentDrafts } from "./useAttachments";
 import { initialState, reducer } from "../studio-engine";
 import { MAX_FILES } from "../lib/attachments/limits";
@@ -72,7 +71,10 @@ function Harness() {
   const ui = useAttachments(state.attachments, dispatch);
   return (
     <div>
-      <button data-testid="add" onClick={() => ui.addFiles([new File(["hello"], "note.txt", { type: "text/plain" })])}>
+      <button
+        data-testid="add"
+        onClick={() => ui.addFiles([new File(["hello"], "note.txt", { type: "text/plain" })])}
+      >
         add
       </button>
       <button
@@ -108,6 +110,36 @@ function byId(container: HTMLElement, id: string): HTMLElement {
   return container.querySelector(`[data-testid="${id}"]`) as HTMLElement;
 }
 
+/**
+ * Poll until the rendered state satisfies the predicate. Each iteration
+ * completes an async act() flush — React only processes queued updates when
+ * the act callback finishes, so the check must happen between flushes, not
+ * inside one long act scope.
+ */
+async function settleUntil(
+  container: HTMLElement,
+  testId: string,
+  predicate: (text: string | null) => boolean,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const start = Date.now();
+  for (;;) {
+    let satisfied = false;
+    await act(async () => {
+      satisfied = predicate(byId(container, testId).textContent);
+      if (!satisfied) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
+    });
+    if (satisfied) return;
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(
+        `settleUntil timed out: data-testid="${testId}" is "${byId(container, testId).textContent}"`,
+      );
+    }
+  }
+}
+
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
@@ -123,9 +155,7 @@ describe("useAttachments — File → dispatch lifecycle (7.5.2)", () => {
     expect(byId(container, "count").textContent).toBe("1");
     expect(byId(container, "status").textContent).toBe("reading");
 
-    await vi.waitFor(() => {
-      expect(byId(container, "status").textContent).toBe("ready");
-    });
+    await settleUntil(container, "status", (t) => t === "ready");
     expect(byId(container, "notice").textContent).toContain("note.txt attached");
   });
 
@@ -140,14 +170,10 @@ describe("useAttachments — File → dispatch lifecycle (7.5.2)", () => {
 
     // Extraction settles (image decode may fail in happy-dom — either terminal
     // state proves the lifecycle ended).
-    await vi.waitFor(() => {
-      expect(["ready", "error"]).toContain(byId(container, "status").textContent);
-    });
+    await settleUntil(container, "status", (t) => t === "ready" || t === "error");
 
     act(() => byId(container, "remove").click());
-    await vi.waitFor(() => {
-      expect(byId(container, "count").textContent).toBe("0");
-    });
+    await settleUntil(container, "count", (t) => t === "0");
     expect(revokeSpy).toHaveBeenCalledWith("blob:test-url");
   });
 
@@ -158,9 +184,7 @@ describe("useAttachments — File → dispatch lifecycle (7.5.2)", () => {
 
     const container = mount();
     act(() => byId(container, "add-img").click());
-    await vi.waitFor(() => {
-      expect(createSpy).toHaveBeenCalledTimes(1);
-    });
+    await settleUntil(container, "count", (t) => t === "1");
 
     act(() => root?.unmount());
     root = null;

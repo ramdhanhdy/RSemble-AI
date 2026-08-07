@@ -35,9 +35,7 @@ export function resolveEvaluationProfile(
  * Deep-copy an AdHocEvaluationConfig so later command edits cannot mutate
  * the frozen run snapshot.
  */
-export function deepCopyEvaluationConfig(
-  config: AdHocEvaluationConfig,
-): AdHocEvaluationConfig {
+export function deepCopyEvaluationConfig(config: AdHocEvaluationConfig): AdHocEvaluationConfig {
   if (config.kind === "holistic") return { kind: "holistic" };
   return {
     kind: config.kind,

@@ -19,10 +19,7 @@ import {
   type RepositoryContextValue,
 } from "../lib/persistence/repository-context";
 import { RSembleEvaluationDB } from "../lib/persistence/database";
-import {
-  importWorkbenchArchive,
-  type WorkbenchArchiveV1,
-} from "../lib/persistence/archive";
+import { importWorkbenchArchive, type WorkbenchArchiveV1 } from "../lib/persistence/archive";
 import type { EvaluationSuite } from "../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../lib/persistence/run-types";
 
@@ -44,9 +41,7 @@ function renderWithContext(node: React.ReactNode, value: RepositoryContextValue)
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(
-      <RepositoryContext.Provider value={value}>{node}</RepositoryContext.Provider>,
-    );
+    root.render(<RepositoryContext.Provider value={value}>{node}</RepositoryContext.Provider>);
   });
   return {
     container,
@@ -88,8 +83,22 @@ function makeSuite(id: string, name = `Suite ${id}`): EvaluationSuite {
       },
     ],
     modelSlots: [
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "m1", slug: "m1", enabled: true },
-      { id: "s2", providerId: "gemini", provider: "Gemini", model: "m2", slug: "m2", enabled: true },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m1",
+        slug: "m1",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "gemini",
+        provider: "Gemini",
+        model: "m2",
+        slug: "m2",
+        enabled: true,
+      },
     ],
     defaultJudge: { providerId: "openrouter", model: "judge" },
     defaultEvaluation: { kind: "holistic" },
@@ -154,8 +163,18 @@ function archiveWithSuites(suites: EvaluationSuite[]): WorkbenchArchiveV1 {
   };
 }
 
-function contextValue(db: RSembleEvaluationDB | null, storageState: RepositoryContextValue["storageState"]): RepositoryContextValue {
-  return { runRepo: null, evalRepo: null, fusionRepo: null, db, storageState, retry: () => undefined };
+function contextValue(
+  db: RSembleEvaluationDB | null,
+  storageState: RepositoryContextValue["storageState"],
+): RepositoryContextValue {
+  return {
+    runRepo: null,
+    evalRepo: null,
+    fusionRepo: null,
+    db,
+    storageState,
+    retry: () => undefined,
+  };
 }
 
 async function chooseFile(h: Harness, file: File) {

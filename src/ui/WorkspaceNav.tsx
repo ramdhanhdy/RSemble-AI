@@ -30,9 +30,7 @@ export function WorkspaceNav() {
           aria-current="page"
           className={({ isActive }) =>
             `flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors duration-150 ${
-              isActive
-                ? "text-accent"
-                : "text-text-secondary hover:bg-panel hover:text-text"
+              isActive ? "text-accent" : "text-text-secondary hover:bg-panel hover:text-text"
             }`
           }
         >

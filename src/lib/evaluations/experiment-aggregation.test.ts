@@ -23,8 +23,7 @@ import type {
   ExperimentTaskState,
 } from "./evaluation-types";
 import type { RunRecordV2 } from "../persistence/run-types";
-import type { CandidateEvaluation } from "../../studio-data";
-import type { ModelSlot } from "../../studio-data";
+import { type CandidateEvaluation, type ModelSlot } from "../../studio-data";
 
 // --- Fixtures -------------------------------------------------------------------
 
@@ -120,7 +119,10 @@ function makeEvaluation(
 function makeRun(
   runId: string,
   scores: Record<string, number>,
-  opts: { profile?: EvaluationProfile | null; criterionScores?: Record<string, Record<string, number>> } = {},
+  opts: {
+    profile?: EvaluationProfile | null;
+    criterionScores?: Record<string, Record<string, number>>;
+  } = {},
 ): RunRecordV2 {
   const candidates = Object.keys(scores).map((modelKey, i) => ({
     candidateId: `cand-${i}`,
@@ -170,7 +172,11 @@ function makeRun(
 
 function makeTaskState(
   taskId: string,
-  attempts: Array<{ id: string; runId: string; status: ExperimentTaskState["attempts"][number]["status"] }>,
+  attempts: Array<{
+    id: string;
+    runId: string;
+    status: ExperimentTaskState["attempts"][number]["status"];
+  }>,
   selectedAttemptId: string | null,
 ): ExperimentTaskState {
   return {
@@ -239,16 +245,25 @@ describe("aggregateExperiment", () => {
       "r-b1": makeRun("r-b1", { [MK1]: 3.0, [MK2]: 3.0 }),
     };
     const taskStates = [
-      makeTaskState("t1", [
-        { id: "a1", runId: "r-a1", status: "completed" },
-        { id: "a2", runId: "r-a2", status: "completed" },
-      ], "a2"),
+      makeTaskState(
+        "t1",
+        [
+          { id: "a1", runId: "r-a1", status: "completed" },
+          { id: "a2", runId: "r-a2", status: "completed" },
+        ],
+        "a2",
+      ),
       makeTaskState("t2", [{ id: "b1", runId: "r-b1", status: "completed" }], "b1"),
     ];
     const result = aggregate(["t1", "t2"], taskStates, runs);
 
     const t1Cells = result.cells[0];
-    expect(t1Cells[0]).toMatchObject({ kind: "scored", score: 5.0, attemptId: "a2", runId: "r-a2" });
+    expect(t1Cells[0]).toMatchObject({
+      kind: "scored",
+      score: 5.0,
+      attemptId: "a2",
+      runId: "r-a2",
+    });
     expect(t1Cells[1]).toMatchObject({ kind: "scored", score: 4.0 });
 
     // Means: m1 = (5+3)/2 = 4.0, m2 = (4+3)/2 = 3.5
@@ -434,18 +449,39 @@ describe("aggregateExperiment — winner vs provisional ranking", () => {
       const scores: Record<string, number> = { "umans:model": 4.38 };
       if (i < 14) scores["9router:model"] = 4.54;
       runs[runId] = makeRun(runId, scores);
-      taskStates.push(makeTaskState(taskId, [{ id: `a-${taskId}`, runId, status: "completed" }], `a-${taskId}`));
+      taskStates.push(
+        makeTaskState(taskId, [{ id: `a-${taskId}`, runId, status: "completed" }], `a-${taskId}`),
+      );
     }
     const snapshot: ExperimentSnapshot = {
       suiteId: "s",
       suiteVersion: 1,
       tasks: taskIds.map((id, i) => ({
-        id, title: `Task ${id}`, prompt: "p", systemPrompt: "",
-        evaluation: { kind: "holistic" as const }, judgeInstructionOverride: "", order: i,
+        id,
+        title: `Task ${id}`,
+        prompt: "p",
+        systemPrompt: "",
+        evaluation: { kind: "holistic" as const },
+        judgeInstructionOverride: "",
+        order: i,
       })),
       modelSlots: [
-        { id: "s1", providerId: "umans", provider: "Umans", model: "Model", slug: "model", enabled: true },
-        { id: "s2", providerId: "9router", provider: "9Router", model: "Route", slug: "model", enabled: true },
+        {
+          id: "s1",
+          providerId: "umans",
+          provider: "Umans",
+          model: "Model",
+          slug: "model",
+          enabled: true,
+        },
+        {
+          id: "s2",
+          providerId: "9router",
+          provider: "9Router",
+          model: "Route",
+          slug: "model",
+          enabled: true,
+        },
       ],
       defaultJudge: { providerId: "openrouter", model: "judge" },
       defaultEvaluation: { kind: "holistic" as const },
@@ -463,7 +499,7 @@ describe("aggregateExperiment — winner vs provisional ranking", () => {
     expect(result.winnerKeys).toContain("umans:model");
     expect(result.winnerKeys).not.toContain("9router:model");
 
- // The provisional model has a higher mean but is not complete.
+    // The provisional model has a higher mean but is not complete.
     const provisional = result.models.find((m) => m.modelKey === "9router:model");
     expect(provisional).toBeTruthy();
     expect(provisional!.complete).toBe(false);

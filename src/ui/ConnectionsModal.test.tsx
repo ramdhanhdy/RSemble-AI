@@ -13,7 +13,7 @@ describe("ConnectionsModal", () => {
   });
 
   it("offers a test connection action for API-key providers", () => {
-    expect(source).toContain('aria-label={`Test ${d.label} connection`}');
+    expect(source).toContain("aria-label={`Test ${d.label} connection`}");
     expect(source).toContain('id: "clinepass"');
     expect(source).toContain('id: "openrouter"');
   });

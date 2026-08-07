@@ -58,14 +58,35 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 const TWO_SLOTS: ModelSlot[] = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "A",
+    slug: "model-a",
+    enabled: true,
+  },
   { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
 ];
 
 const THREE_SLOTS: ModelSlot[] = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "A",
+    slug: "model-a",
+    enabled: true,
+  },
   { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
-  { id: "s3", providerId: "gemini", provider: "Gemini", model: "C", slug: "model-c", enabled: true },
+  {
+    id: "s3",
+    providerId: "gemini",
+    provider: "Gemini",
+    model: "C",
+    slug: "model-c",
+    enabled: true,
+  },
 ];
 
 function makeRequest(mode: "rank" | "fuse" = "rank", slots: ModelSlot[] = TWO_SLOTS): RunRequest {
@@ -84,16 +105,32 @@ function makeRequest(mode: "rank" | "fuse" = "rank", slots: ModelSlot[] = TWO_SL
 function makeEvents(): { events: RunExecutorEvents; calls: string[] } {
   const calls: string[] = [];
   const events: RunExecutorEvents = {
-    onFanoutStart: vi.fn(async () => { calls.push("fanout-start"); }),
+    onFanoutStart: vi.fn(async () => {
+      calls.push("fanout-start");
+    }),
     onCandidateDelta: vi.fn(() => {}),
     onCandidateTerminal: vi.fn(() => {}),
-    onFanoutTerminal: vi.fn(async () => { calls.push("fanout-terminal"); }),
-    onCandidateAttemptStart: vi.fn(async () => { calls.push("candidate-attempt-start"); }),
-    onCandidateAttemptTerminal: vi.fn(async () => { calls.push("candidate-attempt-terminal"); }),
-    onJudgeStart: vi.fn(async () => { calls.push("judge-start"); }),
-    onJudgeTerminal: vi.fn(async () => { calls.push("judge-terminal"); }),
-    onFusionStart: vi.fn(async () => { calls.push("fusion-start"); }),
-    onFusionTerminal: vi.fn(async () => { calls.push("fusion-terminal"); }),
+    onFanoutTerminal: vi.fn(async () => {
+      calls.push("fanout-terminal");
+    }),
+    onCandidateAttemptStart: vi.fn(async () => {
+      calls.push("candidate-attempt-start");
+    }),
+    onCandidateAttemptTerminal: vi.fn(async () => {
+      calls.push("candidate-attempt-terminal");
+    }),
+    onJudgeStart: vi.fn(async () => {
+      calls.push("judge-start");
+    }),
+    onJudgeTerminal: vi.fn(async () => {
+      calls.push("judge-terminal");
+    }),
+    onFusionStart: vi.fn(async () => {
+      calls.push("fusion-start");
+    }),
+    onFusionTerminal: vi.fn(async () => {
+      calls.push("fusion-terminal");
+    }),
   };
   return { events, calls };
 }
@@ -108,7 +145,8 @@ function judgeResponse(scores: Array<readonly [string, number]>): string {
     contradictions: [],
     uniqueInsights: [],
     evaluations: scores.map(([label, score]) => ({
-      label, score,
+      label,
+      score,
       position: `Position ${label}`,
       rationale: `Evidence ${label}`,
       strengths: [`Strength ${label}`],
@@ -122,10 +160,20 @@ function judgeResponse(scores: Array<readonly [string, number]>): string {
 
 function makeCandidate(id: string, text: string): Candidate {
   return {
-    id, model: id, provider: "OpenRouter", providerId: "openrouter", slug: id,
-    accent: "indigo", strategy: "Parallel model", summary: text,
-    scores: {}, weightedScore: 0, segments: [{ id: `${id}-s0`, text }],
-    status: "done", startedAt: 1000, finishedAt: 2000,
+    id,
+    model: id,
+    provider: "OpenRouter",
+    providerId: "openrouter",
+    slug: id,
+    accent: "indigo",
+    strategy: "Parallel model",
+    summary: text,
+    scores: {},
+    weightedScore: 0,
+    segments: [{ id: `${id}-s0`, text }],
+    status: "done",
+    startedAt: 1000,
+    finishedAt: 2000,
   };
 }
 
@@ -142,9 +190,20 @@ describe("RunExecutor — executeTask", () => {
   it("runs candidate providers in parallel", async () => {
     const callOrder: string[] = [];
     chatStreamMock
-      .mockImplementationOnce(() => { callOrder.push("A-start"); return streamOf("answer A"); })
-      .mockImplementationOnce(() => { callOrder.push("B-start"); return streamOf("answer B"); });
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+      .mockImplementationOnce(() => {
+        callOrder.push("A-start");
+        return streamOf("answer A");
+      })
+      .mockImplementationOnce(() => {
+        callOrder.push("B-start");
+        return streamOf("answer B");
+      });
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -168,8 +227,22 @@ describe("RunExecutor — executeTask", () => {
 
   it("rejects duplicate enabled provider:model keys before any provider call", async () => {
     const dupSlots: ModelSlot[] = [
-      { id: "s1", providerId: "openrouter", provider: "OR", model: "A", slug: "same", enabled: true },
-      { id: "s2", providerId: "openrouter", provider: "OR", model: "B", slug: "same", enabled: true },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OR",
+        model: "A",
+        slug: "same",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "openrouter",
+        provider: "OR",
+        model: "B",
+        slug: "same",
+        enabled: true,
+      },
     ];
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
@@ -181,7 +254,12 @@ describe("RunExecutor — executeTask", () => {
 
   it("Rank request never calls Fusion", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -191,7 +269,12 @@ describe("RunExecutor — executeTask", () => {
   it("Fuse request calls Fusion only after valid Judge", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
       .mockResolvedValueOnce("fused answer");
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
@@ -203,7 +286,12 @@ describe("RunExecutor — executeTask", () => {
   it("persists Unknown cost when the provider exposes no native usage", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
       .mockResolvedValueOnce("fused answer");
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
@@ -224,8 +312,12 @@ describe("RunExecutor — executeTask", () => {
     }
     const judgeInputs = terminalInputs.judge;
     const fusionInputs = terminalInputs.fusion;
-    expect(judgeInputs[judgeInputs.length - 1]).toMatchObject({ cost: { usd: null, source: "unknown" } });
-    expect(fusionInputs[fusionInputs.length - 1]).toMatchObject({ cost: { usd: null, source: "unknown" } });
+    expect(judgeInputs[judgeInputs.length - 1]).toMatchObject({
+      cost: { usd: null, source: "unknown" },
+    });
+    expect(fusionInputs[fusionInputs.length - 1]).toMatchObject({
+      cost: { usd: null, source: "unknown" },
+    });
   });
 
   it("does not call Fusion when Judge fails", async () => {
@@ -241,7 +333,9 @@ describe("RunExecutor — executeTask", () => {
   it("does not call Judge when fewer than 2 usable candidates", async () => {
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("B failed"); });
+      .mockImplementationOnce(() => {
+        throw new Error("B failed");
+      });
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -251,10 +345,15 @@ describe("RunExecutor — executeTask", () => {
   it("abort suppresses stale events and queue completion", async () => {
     const ctrl = new AbortController();
     let resolveB: () => void = () => {};
-    const deferredB = new Promise<void>((r) => { resolveB = r; });
+    const deferredB = new Promise<void>((r) => {
+      resolveB = r;
+    });
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(async () => { await deferredB; return streamOf("answer B"); });
+      .mockImplementationOnce(async () => {
+        await deferredB;
+        return streamOf("answer B");
+      });
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
     const promise = executor.executeTask(makeRequest("rank"), events, ctrl.signal);
@@ -266,7 +365,9 @@ describe("RunExecutor — executeTask", () => {
 
   it("rejected fanout-start makes zero provider calls", async () => {
     const { events, calls } = makeEvents();
-    events.onFanoutStart = vi.fn(async () => { throw new Error("persistence rejected"); });
+    events.onFanoutStart = vi.fn(async () => {
+      throw new Error("persistence rejected");
+    });
     const executor = createRunExecutor({ random: () => 0.999 });
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
     expect(chatStreamMock).not.toHaveBeenCalled();
@@ -276,7 +377,9 @@ describe("RunExecutor — executeTask", () => {
   it("surfaces candidate-attempt persistence errors instead of leaving generic placeholders", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     const { events } = makeEvents();
-    events.onCandidateAttemptStart = vi.fn(async () => { throw new Error("persistence rejected"); });
+    events.onCandidateAttemptStart = vi.fn(async () => {
+      throw new Error("persistence rejected");
+    });
     const executor = createRunExecutor({ random: () => 0.999 });
 
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -291,7 +394,9 @@ describe("RunExecutor — executeTask", () => {
   it("rejected fanout-terminal stops before Judge", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     const { events, calls } = makeEvents();
-    events.onFanoutTerminal = vi.fn(async () => { throw new Error("persistence rejected"); });
+    events.onFanoutTerminal = vi.fn(async () => {
+      throw new Error("persistence rejected");
+    });
     const executor = createRunExecutor({ random: () => 0.999 });
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
     expect(calls).not.toContain("judge-start");
@@ -300,7 +405,9 @@ describe("RunExecutor — executeTask", () => {
   it("rejected judge-start makes zero Judge calls", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     const { events } = makeEvents();
-    events.onJudgeStart = vi.fn(async () => { throw new Error("persistence rejected"); });
+    events.onJudgeStart = vi.fn(async () => {
+      throw new Error("persistence rejected");
+    });
     const executor = createRunExecutor({ random: () => 0.999 });
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
     expect(chatCompletionMock).not.toHaveBeenCalled();
@@ -308,9 +415,16 @@ describe("RunExecutor — executeTask", () => {
 
   it("rejected judge-terminal stops before Fusion", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const { events, calls } = makeEvents();
-    events.onJudgeTerminal = vi.fn(async () => { throw new Error("persistence rejected"); });
+    events.onJudgeTerminal = vi.fn(async () => {
+      throw new Error("persistence rejected");
+    });
     const executor = createRunExecutor({ random: () => 0.999 });
     await executor.executeTask(makeRequest("fuse"), events, new AbortController().signal);
     expect(calls).not.toContain("fusion-start");
@@ -318,9 +432,16 @@ describe("RunExecutor — executeTask", () => {
 
   it("rejected fusion-start makes zero Fusion calls", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const { events } = makeEvents();
-    events.onFusionStart = vi.fn(async () => { throw new Error("persistence rejected"); });
+    events.onFusionStart = vi.fn(async () => {
+      throw new Error("persistence rejected");
+    });
     const executor = createRunExecutor({ random: () => 0.999 });
     await executor.executeTask(makeRequest("fuse"), events, new AbortController().signal);
     // The fusion provider call (chatCompletion) should not have been called
@@ -330,7 +451,12 @@ describe("RunExecutor — executeTask", () => {
 
   it("emits exact rendered messages in candidate-attempt-start", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -341,7 +467,12 @@ describe("RunExecutor — executeTask", () => {
 
   it("emits exact rendered messages and blind map in judge-start", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -354,7 +485,12 @@ describe("RunExecutor — executeTask", () => {
   it("emits judge terminal with report on success, error on failure", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     // First: success
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -366,7 +502,12 @@ describe("RunExecutor — executeTask", () => {
   it("emits fusion start with source judge attempt ID matching judge attemptId", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
       .mockResolvedValueOnce("fused answer");
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
@@ -383,23 +524,37 @@ describe("RunExecutor — executeTask", () => {
   it("partial candidate success reaches Judge with two usable", async () => {
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("B failed"); })
+      .mockImplementationOnce(() => {
+        throw new Error("B failed");
+      })
       .mockImplementationOnce(() => streamOf("answer C"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
-    await executor.executeTask(makeRequest("rank", THREE_SLOTS), events, new AbortController().signal);
+    await executor.executeTask(
+      makeRequest("rank", THREE_SLOTS),
+      events,
+      new AbortController().signal,
+    );
     expect(calls).toContain("judge-start");
   });
 
   it("emits bounded sanitized provider error on candidate failure", async () => {
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("connection reset by peer"); });
+      .mockImplementationOnce(() => {
+        throw new Error("connection reset by peer");
+      });
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
-    const terminalCalls = (events.onCandidateAttemptTerminal as ReturnType<typeof vi.fn>).mock.calls;
+    const terminalCalls = (events.onCandidateAttemptTerminal as ReturnType<typeof vi.fn>).mock
+      .calls;
     const failedCall = terminalCalls.find((c) => c[2].status === "failed");
     expect(failedCall).toBeTruthy();
     expect(failedCall![2].error).not.toBeNull();
@@ -432,7 +587,12 @@ describe("RunExecutor — retryCandidate", () => {
 
   it("resolves the candidate slot and streams a new answer", async () => {
     chatStreamMock.mockImplementation(() => streamOf("retry answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
     await executor.retryCandidate(
@@ -447,7 +607,12 @@ describe("RunExecutor — retryCandidate", () => {
 
   it("success opens/runs a new Judge from frozen inputs", async () => {
     chatStreamMock.mockImplementation(() => streamOf("retry answer"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
     await executor.retryCandidate(
@@ -462,7 +627,12 @@ describe("RunExecutor — retryCandidate", () => {
   it("success in Fuse mode runs a new Fusion attempt from frozen inputs", async () => {
     chatStreamMock.mockImplementation(() => streamOf("retry answer"));
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
       .mockResolvedValueOnce("fused answer");
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
@@ -474,7 +644,9 @@ describe("RunExecutor — retryCandidate", () => {
   });
 
   it("failure makes no downstream calls (no Judge, no Fusion)", async () => {
-    chatStreamMock.mockImplementation(() => { throw new Error("provider failed"); });
+    chatStreamMock.mockImplementation(() => {
+      throw new Error("provider failed");
+    });
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
     await executor.retryCandidate(
@@ -507,7 +679,12 @@ describe("RunExecutor — retryJudge", () => {
   }
 
   it("makes zero candidate stream calls", async () => {
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
     await executor.retryJudge(makeJudgeRetryRequest(), events, new AbortController().signal);
@@ -515,7 +692,12 @@ describe("RunExecutor — retryJudge", () => {
   });
 
   it("uses only frozen candidates and emits judge events", async () => {
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
     await executor.retryJudge(makeJudgeRetryRequest(), events, new AbortController().signal);
@@ -526,7 +708,12 @@ describe("RunExecutor — retryJudge", () => {
 
   it("Fuse mode runs Fusion after successful Judge", async () => {
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
       .mockResolvedValueOnce("fused answer");
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events, calls } = makeEvents();
@@ -607,7 +794,9 @@ describe("RunExecutor — executeFusionAttempt", () => {
 
   it("rejected fusion-start makes zero fusion provider calls", async () => {
     const { events, calls } = makeEvents();
-    events.onFusionStart = vi.fn(async () => { throw new Error("persistence rejected"); });
+    events.onFusionStart = vi.fn(async () => {
+      throw new Error("persistence rejected");
+    });
     const executor = createRunExecutor({ random: () => 0.999 });
     await executor.executeFusionAttempt(makeFusionRequest(), events, new AbortController().signal);
     expect(chatCompletionMock).not.toHaveBeenCalled();
@@ -634,7 +823,8 @@ describe("RunExecutor — persisted error sanitization", () => {
   });
 
   function failedCandidateError(events: RunExecutorEvents) {
-    const terminalCalls = (events.onCandidateAttemptTerminal as ReturnType<typeof vi.fn>).mock.calls;
+    const terminalCalls = (events.onCandidateAttemptTerminal as ReturnType<typeof vi.fn>).mock
+      .calls;
     const failed = terminalCalls.find((c) => c[2].status === "failed");
     expect(failed).toBeTruthy();
     return failed![2].error!;
@@ -643,7 +833,9 @@ describe("RunExecutor — persisted error sanitization", () => {
   it("redacts configured credential values from persisted candidate errors", async () => {
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error(`401 unauthorized: Bearer ${CRED_VALUE}`); });
+      .mockImplementationOnce(() => {
+        throw new Error(`401 unauthorized: Bearer ${CRED_VALUE}`);
+      });
     const executor = createRunExecutor({ random: () => 0.999, now: () => 4242 });
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -660,7 +852,9 @@ describe("RunExecutor — persisted error sanitization", () => {
   it("caps persisted error messages at 4096 UTF-8 bytes", async () => {
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new Error("x".repeat(9000) + "😀"); });
+      .mockImplementationOnce(() => {
+        throw new Error("x".repeat(9000) + "😀");
+      });
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -692,7 +886,12 @@ describe("RunExecutor — persisted error sanitization", () => {
   it("persists fusion failures with provider/fusion context", async () => {
     chatStreamMock.mockImplementation(() => streamOf("answer"));
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4],
+          ["B", 3],
+        ]),
+      )
       .mockRejectedValueOnce(new Error("fusion blew up"));
     const executor = createRunExecutor({ random: () => 0.999 });
     const { events } = makeEvents();
@@ -711,7 +910,9 @@ describe("RunExecutor — persisted error sanitization", () => {
   it("classifies aborted candidate attempts with the aborted category", async () => {
     chatStreamMock
       .mockImplementationOnce(() => streamOf("answer A"))
-      .mockImplementationOnce(() => { throw new DOMException("aborted", "AbortError"); });
+      .mockImplementationOnce(() => {
+        throw new DOMException("aborted", "AbortError");
+      });
     const executor = createRunExecutor({ random: () => 0.999, now: () => 7 });
     const { events } = makeEvents();
     await executor.executeTask(makeRequest("rank"), events, new AbortController().signal);
@@ -773,9 +974,24 @@ describe("executeTask — candidateExecution (Task 10)", () => {
     } as never;
 
     chatStreamMock.mockResolvedValue(streamOf("fresh-output"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3], ["C", 2], ["D", 1], ["E", 5], ["F", 4], ["G", 3], ["H", 2]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+        ["C", 2],
+        ["D", 1],
+        ["E", 5],
+        ["F", 4],
+        ["G", 3],
+        ["H", 2],
+      ]),
+    );
 
-    await executor.executeTask({ ...request, candidateExecution }, events, new AbortController().signal);
+    await executor.executeTask(
+      { ...request, candidateExecution },
+      events,
+      new AbortController().signal,
+    );
 
     expect(chatStreamMock).toHaveBeenCalledTimes(1);
     expect(onCandidateAttemptStart).toHaveBeenCalledTimes(1);
@@ -797,7 +1013,11 @@ describe("executeTask — candidateExecution (Task 10)", () => {
     chatStreamMock.mockResolvedValue(streamOf("fresh-output"));
     chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4]]));
 
-    await executor.executeTask({ ...request, candidateExecution }, events, new AbortController().signal);
+    await executor.executeTask(
+      { ...request, candidateExecution },
+      events,
+      new AbortController().signal,
+    );
 
     const calledSlugs = chatStreamMock.mock.calls.map((c) => (c[0] as { model?: string }).model);
     expect(calledSlugs).toEqual(["model-8"]);
@@ -816,14 +1036,32 @@ describe("executeTask — candidateExecution (Task 10)", () => {
     } as never;
 
     chatStreamMock.mockResolvedValue(streamOf("fresh-output"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3], ["C", 2], ["D", 1], ["E", 5], ["F", 4], ["G", 3], ["H", 2]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+        ["C", 2],
+        ["D", 1],
+        ["E", 5],
+        ["F", 4],
+        ["G", 3],
+        ["H", 2],
+      ]),
+    );
 
-    await executor.executeTask({ ...request, candidateExecution }, events, new AbortController().signal);
+    await executor.executeTask(
+      { ...request, candidateExecution },
+      events,
+      new AbortController().signal,
+    );
 
     expect(onJudgeStart).toHaveBeenCalledTimes(1);
     const judgeArg = (onJudgeStart.mock.calls[0] as unknown[])[0];
     if (judgeArg && typeof judgeArg === "object" && "blindLabelToCandidateId" in judgeArg) {
-      const judgeObj = judgeArg as { blindLabelToCandidateId: Record<string, string>; candidateAttemptIdsByCandidateId: Record<string, string> };
+      const judgeObj = judgeArg as {
+        blindLabelToCandidateId: Record<string, string>;
+        candidateAttemptIdsByCandidateId: Record<string, string>;
+      };
       const candidateIds = Object.values(judgeObj.blindLabelToCandidateId);
       expect(candidateIds).toHaveLength(8);
       // Every judged candidate has an immutable attempt reference.
@@ -843,9 +1081,23 @@ describe("executeTask — candidateExecution (Task 10)", () => {
     } as never;
 
     chatStreamMock.mockRejectedValue(new Error("provider unavailable"));
-    chatCompletionMock.mockResolvedValue(judgeResponse([["A", 4], ["B", 3], ["C", 2], ["D", 1], ["E", 5], ["F", 4], ["G", 3]]));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+        ["C", 2],
+        ["D", 1],
+        ["E", 5],
+        ["F", 4],
+        ["G", 3],
+      ]),
+    );
 
-    await executor.executeTask({ ...request, candidateExecution }, events, new AbortController().signal);
+    await executor.executeTask(
+      { ...request, candidateExecution },
+      events,
+      new AbortController().signal,
+    );
 
     const onFanoutTerminal = events.onFanoutTerminal as ReturnType<typeof vi.fn>;
     expect(onFanoutTerminal).toHaveBeenCalledTimes(1);
@@ -874,14 +1126,17 @@ describe("run-executor — dev log containment", () => {
   });
 });
 
-
 describe("RunExecutor — deadline classification", () => {
   it("maps a response that never yields headers into connect_timeout without a provider call", async () => {
     vi.useFakeTimers();
     try {
-      chatStreamMock.mockImplementation((opts: { signal?: AbortSignal }) => (async function* () {
-        await new Promise<void>((resolve) => opts.signal?.addEventListener("abort", () => resolve(), { once: true }));
-      })());
+      chatStreamMock.mockImplementation((opts: { signal?: AbortSignal }) =>
+        (async function* () {
+          await new Promise<void>((resolve) =>
+            opts.signal?.addEventListener("abort", () => resolve(), { once: true }),
+          );
+        })(),
+      );
       const { events } = makeEvents();
       const terminal = vi.mocked(events.onCandidateAttemptTerminal);
       const executor = createRunExecutor({
@@ -890,7 +1145,9 @@ describe("RunExecutor — deadline classification", () => {
       const run = executor.executeTask(makeRequest(), events, new AbortController().signal);
       await vi.advanceTimersByTimeAsync(50);
       await run;
-      const failed = terminal.mock.calls.map((call) => call[2]).find((input) => input.status === "failed");
+      const failed = terminal.mock.calls
+        .map((call) => call[2])
+        .find((input) => input.status === "failed");
       expect(failed?.error?.category).toBe("timeout");
       expect(failed?.error?.message).toContain("connect_timeout");
       expect(chatCompletionMock).not.toHaveBeenCalled();
@@ -903,10 +1160,13 @@ describe("RunExecutor — deadline classification", () => {
     vi.useFakeTimers();
     try {
       chatStreamMock.mockImplementation(() => streamOf("candidate answer"));
-      chatCompletionMock.mockImplementation((opts: { signal?: AbortSignal }) =>
-        new Promise<string>((_resolve, reject) => {
-          opts.signal?.addEventListener("abort", () => reject(opts.signal?.reason), { once: true });
-        }),
+      chatCompletionMock.mockImplementation(
+        (opts: { signal?: AbortSignal }) =>
+          new Promise<string>((_resolve, reject) => {
+            opts.signal?.addEventListener("abort", () => reject(opts.signal?.reason), {
+              once: true,
+            });
+          }),
       );
       const { events } = makeEvents();
       const executor = createRunExecutor({ deadlines: { connectMs: 25, inactivityMs: 100 } });
@@ -914,9 +1174,14 @@ describe("RunExecutor — deadline classification", () => {
       await vi.advanceTimersByTimeAsync(25);
       await run;
       const timeoutLog = devLogMock.mock.calls.find(
-        (call: unknown[]) => call[0] === "judge.request.failed" && (call[1] as { timeoutKind?: string }).timeoutKind,
+        (call: unknown[]) =>
+          call[0] === "judge.request.failed" && (call[1] as { timeoutKind?: string }).timeoutKind,
       );
-      expect(timeoutLog?.[1]).toMatchObject({ stage: "judge", status: "failed", timeoutKind: "connect_timeout" });
+      expect(timeoutLog?.[1]).toMatchObject({
+        stage: "judge",
+        status: "failed",
+        timeoutKind: "connect_timeout",
+      });
       expect(typeof (timeoutLog?.[1] as { durationMs?: unknown }).durationMs).toBe("number");
       expect((timeoutLog?.[1] as { error?: string }).error).not.toMatch(/candidate answer/);
     } finally {
@@ -929,11 +1194,19 @@ describe("RunExecutor — deadline classification", () => {
     try {
       chatStreamMock.mockImplementation(() => streamOf("candidate answer"));
       chatCompletionMock
-        .mockResolvedValueOnce(judgeResponse([["A", 4], ["B", 3]]))
-        .mockImplementationOnce((opts: { signal?: AbortSignal }) =>
-          new Promise<string>((_resolve, reject) => {
-            opts.signal?.addEventListener("abort", () => reject(opts.signal?.reason), { once: true });
-          }),
+        .mockResolvedValueOnce(
+          judgeResponse([
+            ["A", 4],
+            ["B", 3],
+          ]),
+        )
+        .mockImplementationOnce(
+          (opts: { signal?: AbortSignal }) =>
+            new Promise<string>((_resolve, reject) => {
+              opts.signal?.addEventListener("abort", () => reject(opts.signal?.reason), {
+                once: true,
+              });
+            }),
         );
       const { events } = makeEvents();
       const executor = createRunExecutor({ deadlines: { connectMs: 25, inactivityMs: 100 } });
@@ -941,9 +1214,14 @@ describe("RunExecutor — deadline classification", () => {
       await vi.advanceTimersByTimeAsync(25);
       await run;
       const timeoutLog = devLogMock.mock.calls.find(
-        (call: unknown[]) => call[0] === "fusion.request.failed" && (call[1] as { timeoutKind?: string }).timeoutKind,
+        (call: unknown[]) =>
+          call[0] === "fusion.request.failed" && (call[1] as { timeoutKind?: string }).timeoutKind,
       );
-      expect(timeoutLog?.[1]).toMatchObject({ stage: "fusion", status: "failed", timeoutKind: "connect_timeout" });
+      expect(timeoutLog?.[1]).toMatchObject({
+        stage: "fusion",
+        status: "failed",
+        timeoutKind: "connect_timeout",
+      });
       expect(typeof (timeoutLog?.[1] as { durationMs?: unknown }).durationMs).toBe("number");
     } finally {
       vi.useRealTimers();

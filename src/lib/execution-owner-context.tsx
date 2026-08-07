@@ -23,16 +23,9 @@ export function ExecutionOwnerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => registry.subscribe(setOwner), [registry]);
 
-  const value = useMemo<ExecutionOwnerContextValue>(
-    () => ({ registry, owner }),
-    [registry, owner],
-  );
+  const value = useMemo<ExecutionOwnerContextValue>(() => ({ registry, owner }), [registry, owner]);
 
-  return (
-    <ExecutionOwnerContext.Provider value={value}>
-      {children}
-    </ExecutionOwnerContext.Provider>
-  );
+  return <ExecutionOwnerContext.Provider value={value}>{children}</ExecutionOwnerContext.Provider>;
 }
 
 export function useExecutionOwner(): ExecutionOwnerContextValue {

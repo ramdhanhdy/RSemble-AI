@@ -23,7 +23,8 @@ import path from "node:path";
 
 const baseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? "http://localhost:5176/";
 const outDir = path.resolve("docs/qa/evaluations-identity-ux");
-const chromePath = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const chromePath =
+  process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const debugPort = 9340;
 const results = {
   generatedAt: new Date().toISOString(),
@@ -33,15 +34,19 @@ const results = {
 };
 fs.mkdirSync(outDir, { recursive: true });
 
-const chrome = spawn(chromePath, [
-  "--headless=new",
-  "--disable-gpu",
-  `--remote-debugging-port=${debugPort}`,
-  `--user-data-dir=${path.join(os.tmpdir(), `rsemble-identity-qa-${Date.now()}`)}`,
-  "--no-first-run",
-  "--no-default-browser-check",
-  "about:blank",
-], { stdio: "ignore" });
+const chrome = spawn(
+  chromePath,
+  [
+    "--headless=new",
+    "--disable-gpu",
+    `--remote-debugging-port=${debugPort}`,
+    `--user-data-dir=${path.join(os.tmpdir(), `rsemble-identity-qa-${Date.now()}`)}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -49,11 +54,15 @@ async function getPageWebSocketUrl() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       const pages = await new Promise((resolve, reject) => {
-        http.get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
-          let body = "";
-          response.on("data", (chunk) => { body += chunk; });
-          response.on("end", () => resolve(JSON.parse(body)));
-        }).on("error", reject);
+        http
+          .get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
+            let body = "";
+            response.on("data", (chunk) => {
+              body += chunk;
+            });
+            response.on("end", () => resolve(JSON.parse(body)));
+          })
+          .on("error", reject);
       });
       const page = pages.find((candidate) => candidate.type === "page");
       if (page) return page.webSocketDebuggerUrl;
@@ -74,7 +83,9 @@ socket.onmessage = (event) => {
   pending.delete(message.id);
   resolve(message);
 };
-await new Promise((resolve) => { socket.onopen = resolve; });
+await new Promise((resolve) => {
+  socket.onopen = resolve;
+});
 
 function send(method, params = {}) {
   return new Promise((resolve, reject) => {
@@ -88,11 +99,16 @@ function send(method, params = {}) {
 }
 
 async function evaluate(expression) {
-  const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+  const result = await send("Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+  });
   if (result.exceptionDetails) {
-    const detail = result.exceptionDetails.exception?.description
-      ?? result.exceptionDetails.text
-      ?? "Runtime evaluation failed.";
+    const detail =
+      result.exceptionDetails.exception?.description ??
+      result.exceptionDetails.text ??
+      "Runtime evaluation failed.";
     throw new Error(detail);
   }
   return result.result?.value;
@@ -118,9 +134,10 @@ async function setViewport({ width, height, mobile = false, touch = false }) {
     deviceScaleFactor: mobile ? 2 : 1,
     mobile,
   });
-  await send("Emulation.setTouchEmulationEnabled", touch
-    ? { enabled: true, maxTouchPoints: 5 }
-    : { enabled: false });
+  await send(
+    "Emulation.setTouchEmulationEnabled",
+    touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
+  );
 }
 
 async function screenshot(name) {
@@ -137,7 +154,10 @@ function record(name, value) {
 
 async function navigateTo(hash) {
   await send("Page.navigate", { url: `${baseUrl}${hash}` });
-  await waitFor("Boolean(document.querySelector('main, [role=main], #root > *'))", "application shell");
+  await waitFor(
+    "Boolean(document.querySelector('main, [role=main], #root > *'))",
+    "application shell",
+  );
   await wait(500);
 }
 
@@ -291,12 +311,19 @@ try {
   const desktop = await evaluate(IDENTITY_ASSERT_SOURCE);
   record("desktop-1440", {
     ...desktop,
-    pass: !desktop.overflowX && desktop.workloadEyebrow && desktop.pinnedChip
-      && desktop.chipLink === "#/evaluations/profiles/prof-matrix"
-      && desktop.holisticChip && desktop.latestRun
-      && desktop.sublabelCount === 2 && desktop.sublabelsVisible
-      && desktop.suiteNames && desktop.slotMinWidth === "136px",
-    reason: "no overflow; identity grammar, chip link, latest run, sublabels, and stable archive slot all render",
+    pass:
+      !desktop.overflowX &&
+      desktop.workloadEyebrow &&
+      desktop.pinnedChip &&
+      desktop.chipLink === "#/evaluations/profiles/prof-matrix" &&
+      desktop.holisticChip &&
+      desktop.latestRun &&
+      desktop.sublabelCount === 2 &&
+      desktop.sublabelsVisible &&
+      desktop.suiteNames &&
+      desktop.slotMinWidth === "136px",
+    reason:
+      "no overflow; identity grammar, chip link, latest run, sublabels, and stable archive slot all render",
   });
   await screenshot("qa-desktop-1440");
 
@@ -307,8 +334,13 @@ try {
   const tablet = await evaluate(IDENTITY_ASSERT_SOURCE);
   record("tablet-1024", {
     ...tablet,
-    pass: !tablet.overflowX && tablet.workloadEyebrow && tablet.pinnedChip
-      && tablet.holisticChip && tablet.sublabelCount === 2 && tablet.suiteNames,
+    pass:
+      !tablet.overflowX &&
+      tablet.workloadEyebrow &&
+      tablet.pinnedChip &&
+      tablet.holisticChip &&
+      tablet.sublabelCount === 2 &&
+      tablet.suiteNames,
     reason: "identity grammar holds at tablet width without overflow",
   });
   await screenshot("qa-tablet-1024");
@@ -320,8 +352,12 @@ try {
   const portrait = await evaluate(IDENTITY_ASSERT_SOURCE);
   record("tablet-portrait-768", {
     ...portrait,
-    pass: !portrait.overflowX && portrait.workloadEyebrow && portrait.pinnedChip
-      && portrait.holisticChip && portrait.suiteNames,
+    pass:
+      !portrait.overflowX &&
+      portrait.workloadEyebrow &&
+      portrait.pinnedChip &&
+      portrait.holisticChip &&
+      portrait.suiteNames,
     reason: "identity grammar holds at portrait tablet width without overflow",
   });
   await screenshot("qa-tablet-portrait-768");
@@ -347,9 +383,14 @@ try {
   })()`);
   record("mobile-390", {
     ...mobile,
-    pass: !mobile.overflowX && mobile.workloadEyebrow && mobile.pinnedChip
-      && mobile.chipLink === "#/evaluations/profiles/prof-matrix"
-      && mobile.holisticChip && mobile.titleVisible && mobile.suiteNames,
+    pass:
+      !mobile.overflowX &&
+      mobile.workloadEyebrow &&
+      mobile.pinnedChip &&
+      mobile.chipLink === "#/evaluations/profiles/prof-matrix" &&
+      mobile.holisticChip &&
+      mobile.titleVisible &&
+      mobile.suiteNames,
     reason: "icon-only chips and eyebrow keep titles legible at 390px without overflow",
   });
   await screenshot("qa-mobile-390");
@@ -371,8 +412,11 @@ try {
   })()`);
   record("profiles-1440", {
     ...profilesPage,
-    pass: !profilesPage.overflowX && profilesPage.rubricEyebrow
-      && profilesPage.reusableStatus && profilesPage.profileRow,
+    pass:
+      !profilesPage.overflowX &&
+      profilesPage.rubricEyebrow &&
+      profilesPage.reusableStatus &&
+      profilesPage.profileRow,
     reason: "profile rows show rubric identity and honest reusable status",
   });
   await screenshot("qa-profiles-1440");
@@ -398,7 +442,9 @@ try {
 
   // --- Reduced motion --------------------------------------------------------------
   await setViewport({ width: 1440, height: 1000 });
-  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  await send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
   await navigateTo("#/evaluations");
   await waitFor("Boolean(document.querySelector('[data-record-row]'))", "suite rows");
   const reduced = await evaluate(`(() => {
@@ -422,7 +468,10 @@ try {
   fs.writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify(results, null, 2)}\n`);
   console.log(`Evaluations-identity QA passed. Evidence: ${outDir}`);
 } catch (error) {
-  fs.writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify({ ...results, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`);
+  fs.writeFileSync(
+    path.join(outDir, "results.json"),
+    `${JSON.stringify({ ...results, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`,
+  );
   console.error(error);
   process.exitCode = 1;
 } finally {

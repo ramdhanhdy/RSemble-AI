@@ -1,0 +1,45 @@
+# =============================================================================
+# RSemble AI quality gate — Plan 006 workstream D.
+#
+# Minimal, deterministic, credential-free: a fresh checkout must be able to
+# run `npm ci` and `npm run check` (format + lint + typechecks + tests +
+# production build) plus the coverage gate. Provider adapters are exercised
+# through mocks/fixtures only — no live provider, Codex login, bridge secret,
+# or paid quota is required or accepted here.
+# =============================================================================
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Fresh-checkout quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Clean install
+        run: npm ci
+
+      - name: Full quality gate (format + lint + typechecks + tests + build)
+        run: npm run check
+
+      - name: Coverage thresholds
+        run: npm run test:coverage

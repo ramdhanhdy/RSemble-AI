@@ -121,7 +121,10 @@ function makeStudy(overrides: Partial<FusionStudy> = {}): FusionStudy {
 /** Minimal mock executor: deterministic scores, no provider calls. */
 function mockExecutor(): FusionPolicyExecutor {
   const judgeReport = (outputs: Array<{ candidateId: string; modelKey: string }>) => ({
-    labelMap: outputs.map((o, i) => ({ label: String.fromCharCode(65 + i), candidateId: o.candidateId })),
+    labelMap: outputs.map((o, i) => ({
+      label: String.fromCharCode(65 + i),
+      candidateId: o.candidateId,
+    })),
     evaluationsById: Object.fromEntries(
       outputs.map((o, i) => [
         o.candidateId,
@@ -136,7 +139,12 @@ function mockExecutor(): FusionPolicyExecutor {
           missedRequirements: [],
           criterionScores: [
             { criterionId: "acc", label: "Accuracy", score: i % 2 === 0 ? 5 : 3, rationale: "r" },
-            { criterionId: "comp", label: "Completeness", score: i % 2 === 0 ? 3 : 5, rationale: "r" },
+            {
+              criterionId: "comp",
+              label: "Completeness",
+              score: i % 2 === 0 ? 3 : 5,
+              rationale: "r",
+            },
           ],
         },
       ]),
@@ -180,7 +188,9 @@ function mockExecutor(): FusionPolicyExecutor {
         })),
         report: judgeReport(outputs),
         consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
-        candidateAttemptIdsByCandidateId: Object.fromEntries(outputs.map((o) => [o.candidateId, `catt-${o.slot.id}`])),
+        candidateAttemptIdsByCandidateId: Object.fromEntries(
+          outputs.map((o) => [o.candidateId, `catt-${o.slot.id}`]),
+        ),
         judgeAttemptId: `jatt-${task.id}`,
         candidateRunId: `run-cand-${task.id}`,
         devJudgeRunId: `run-judge-${task.id}`,
@@ -189,12 +199,18 @@ function mockExecutor(): FusionPolicyExecutor {
       };
     },
     async runSynthesis(_s, messages) {
-      return { text: `synth:${messages[1].content.length}`, cost: { tokensIn: 300, tokensOut: 150 } };
+      return {
+        text: `synth:${messages[1].content.length}`,
+        cost: { tokensIn: 300, tokensOut: 150 },
+      };
     },
     async runHoldout(_t, _p, _j, artifacts) {
       return {
         scoresByKey: Object.fromEntries(
-          artifacts.map((a) => [a.key, a.key === "best_fixed" ? 3.5 : a.key === "rank" ? 4.0 : 4.2]),
+          artifacts.map((a) => [
+            a.key,
+            a.key === "best_fixed" ? 3.5 : a.key === "rank" ? 4.0 : 4.2,
+          ]),
         ),
         cost: { tokensIn: 400, tokensOut: 200 },
       };
@@ -300,7 +316,12 @@ describe("FusionStudyPanel", () => {
     await settle();
 
     // Create then run.
-    act(() => h.$$("button").find((b) => b.textContent === "New study")!.click());
+    act(() =>
+      h
+        .$$("button")
+        .find((b) => b.textContent === "New study")!
+        .click(),
+    );
     await settle();
     const runButton = h.$$("button").find((b) => b.textContent === "Run");
     expect(runButton).toBeDefined();
@@ -314,7 +335,12 @@ describe("FusionStudyPanel", () => {
     expect(studies[0].stageResults.stageA?.survivors).toHaveLength(2);
     expect(studies[0].stageResults.stageB?.screenedPairs.length).toBeGreaterThan(0);
     const playbook = await repo.getPlaybook(studies[0].playbookRef!);
-    expect(playbook?.rows.map((r) => r.policy).sort()).toEqual(["best_fixed", "fuse", "rank", "refine"]);
+    expect(playbook?.rows.map((r) => r.policy).sort()).toEqual([
+      "best_fixed",
+      "fuse",
+      "rank",
+      "refine",
+    ]);
     const trials = await repo.listTrials(studies[0].id);
     expect(trials.length).toBeGreaterThan(0);
     expect(trials.every((t) => t.status === "sealed")).toBe(true);

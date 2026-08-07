@@ -10,7 +10,13 @@
 
 import { Crown, GitMerge, Columns2 } from "lucide-react";
 import type { StudioState } from "../studio-engine";
-import type { Candidate, ConsensusBreakdown, JudgeReport, CandidateEvaluation, JudgeComparison } from "../studio-data";
+import type {
+  Candidate,
+  ConsensusBreakdown,
+  JudgeReport,
+  CandidateEvaluation,
+  JudgeComparison,
+} from "../studio-data";
 import { isUsableCandidate } from "../lib/pipeline";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
@@ -50,9 +56,7 @@ export function RankResult({
 
   const hasScores = ranked.some((c) => Object.keys(c.scores ?? {}).length > 0);
   const criteria = hasScores
-    ? Array.from(
-        new Set(ranked.flatMap((c) => Object.keys(c.scores ?? {}))),
-      )
+    ? Array.from(new Set(ranked.flatMap((c) => Object.keys(c.scores ?? {}))))
     : [];
 
   return (
@@ -100,9 +104,7 @@ export function RankResult({
       )}
 
       {/* 4.2c Criterion matrix — models × criteria heat grid */}
-      {hasScores && criteria.length > 0 && (
-        <CriterionMatrix ranked={ranked} criteria={criteria} />
-      )}
+      {hasScores && criteria.length > 0 && <CriterionMatrix ranked={ranked} criteria={criteria} />}
 
       {/* 4.2b Blind evaluation key — revealed only after judging completes. */}
       {report && <BlindKey report={report} ranked={ranked} />}
@@ -158,9 +160,7 @@ function Recommendation({
       <div className="flex items-center gap-2">
         <BrandAvatar slug={winner.slug} size={18} className="rounded-sm" />
         <Crown size={13} className="text-success" />
-        <span className="font-mono text-xs uppercase tracking-wider text-success">
-          Recommend
-        </span>
+        <span className="font-mono text-xs uppercase tracking-wider text-success">Recommend</span>
       </div>
       <p className="mt-1 text-sm text-text">
         Use <span className="font-semibold">{winner.model}</span> for this kind of task —{" "}
@@ -219,10 +219,7 @@ function buildWhyItWon(
   const wonPart = bestCriterion
     ? `Won on ${bestCriterion} (${bestScore.toFixed(1)})`
     : "highest evaluation fit";
-  const lostPart =
-    lostCriterion && lostTo
-      ? `; lost ${lostCriterion} to ${lostTo.model}`
-      : "";
+  const lostPart = lostCriterion && lostTo ? `; lost ${lostCriterion} to ${lostTo.model}` : "";
   return `${wonPart}${lostPart}`;
 }
 
@@ -238,9 +235,7 @@ function NoRankedState() {
 
 function Leaderboard({ ranked }: { ranked: Candidate[] }) {
   const top = ranked[0]?.weightedScore ?? 5;
-  const allCriteria = Array.from(
-    new Set(ranked.flatMap((c) => Object.keys(c.scores ?? {}))),
-  );
+  const allCriteria = Array.from(new Set(ranked.flatMap((c) => Object.keys(c.scores ?? {}))));
   return (
     <div>
       <div className="mb-2 font-mono text-xs uppercase tracking-wider text-text-muted">
@@ -264,15 +259,15 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
             >
               <span className="w-4 font-mono text-xs text-text-muted">{i + 1}</span>
               <BrandAvatar slug={c.slug} size={28} className="rounded-md" />
-              <span className="w-40 truncate font-mono text-sm" title={`${c.provider} · ${c.model}`}>
+              <span
+                className="w-40 truncate font-mono text-sm"
+                title={`${c.provider} · ${c.model}`}
+              >
                 {c.model}
               </span>
               <div className="flex flex-1 flex-col gap-1">
                 <div className="relative h-2 overflow-hidden rounded-full bg-card-hover">
-                  <div
-                    className={`h-full ${t.bar}`}
-                    style={{ width: `${widthPct}%` }}
-                  />
+                  <div className={`h-full ${t.bar}`} style={{ width: `${widthPct}%` }} />
                 </div>
                 {hasMicro && (
                   <div className="flex flex-wrap gap-1">
@@ -316,13 +311,7 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
 
 // ---- 4.2c criterion matrix — models × criteria heat grid --------------------
 
-function CriterionMatrix({
-  ranked,
-  criteria,
-}: {
-  ranked: Candidate[];
-  criteria: string[];
-}) {
+function CriterionMatrix({ ranked, criteria }: { ranked: Candidate[]; criteria: string[] }) {
   return (
     <div>
       <div className="mb-2 font-mono text-xs uppercase tracking-wider text-text-muted">
@@ -394,11 +383,7 @@ function CriterionMatrix({
 
 // ---- 4.3 judge breakdown (consensus / contradiction) -------------------------
 
-function Breakdown({
-  breakdown,
-}: {
-  breakdown: NonNullable<StudioState["consensus"]>;
-}) {
+function Breakdown({ breakdown }: { breakdown: NonNullable<StudioState["consensus"]> }) {
   const { consensus, contradictions } = breakdown;
   if (consensus.length === 0 && contradictions.length === 0) return null;
   return (
@@ -433,16 +418,16 @@ function BreakdownCard({
   const accent = tone === "amber" ? "text-warning" : "text-text-secondary";
   return (
     <div className="rounded-lg border border-edge p-3">
-      <div className={`mb-2 font-mono text-xs uppercase tracking-wider ${accent}`}>
-        {title}
-      </div>
+      <div className={`mb-2 font-mono text-xs uppercase tracking-wider ${accent}`}>{title}</div>
       {items.length === 0 ? (
         <p className="text-sm leading-relaxed text-text-muted">{empty}</p>
       ) : (
         <ul className="space-y-1">
           {items.map((item, i) => (
             <li key={i} className="flex gap-2 text-sm leading-relaxed text-text">
-              <span className={`mt-2 size-1 shrink-0 rounded-full ${tone === "amber" ? "bg-warning" : "bg-text-muted"}`} />
+              <span
+                className={`mt-2 size-1 shrink-0 rounded-full ${tone === "amber" ? "bg-warning" : "bg-text-muted"}`}
+              />
               <span>{item}</span>
             </li>
           ))}
@@ -503,9 +488,7 @@ function BlindKey({ report, ranked }: { report: JudgeReport; ranked: Candidate[]
               </span>
               <span className="truncate font-mono text-sm text-text">
                 {model}
-                {showProvider && (
-                  <span className="text-text-muted"> · {provider}</span>
-                )}
+                {showProvider && <span className="text-text-muted"> · {provider}</span>}
               </span>
             </div>
           );
@@ -565,9 +548,7 @@ function ExplanationCard({
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="font-mono text-sm text-text">
           {candidate.model}
-          {showProvider && (
-            <span className="text-text-muted"> · {candidate.provider}</span>
-          )}
+          {showProvider && <span className="text-text-muted"> · {candidate.provider}</span>}
         </span>
         <span className="font-mono text-xs text-text-muted">
           (Candidate {evaluation.blindLabel})
@@ -639,9 +620,7 @@ function DisclosureList({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null;
   return (
     <div>
-      <div className="mb-1 font-mono text-xs uppercase tracking-wider text-text-muted">
-        {title}
-      </div>
+      <div className="mb-1 font-mono text-xs uppercase tracking-wider text-text-muted">{title}</div>
       <ul className="space-y-1">
         {items.map((item, i) => (
           <li key={i} className="flex gap-2 text-sm leading-relaxed text-text">
@@ -672,7 +651,10 @@ function ComparisonsSection({
           const a = modelFor(cmp.candidateIds[0], ranked);
           const b = modelFor(cmp.candidateIds[1], ranked);
           return (
-            <div key={i} className="rounded-lg border border-edge p-3 text-sm leading-relaxed text-text">
+            <div
+              key={i}
+              className="rounded-lg border border-edge p-3 text-sm leading-relaxed text-text"
+            >
               <span className="font-mono text-text-secondary">
                 Candidate {cmp.blindLabels[0]} ({a}) vs Candidate {cmp.blindLabels[1]} ({b}):
               </span>{" "}

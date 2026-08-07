@@ -57,7 +57,9 @@ export interface PairedDeltaOptions {
  * Per-task paired deltas with repeats averaged within task — the defensible
  * v1 (spec §7.4). Tasks missing scores on either side are dropped.
  */
-export function pairedTaskDeltas(tasks: PolicyTaskRepeats[]): Array<{ taskId: string; delta: number }> {
+export function pairedTaskDeltas(
+  tasks: PolicyTaskRepeats[],
+): Array<{ taskId: string; delta: number }> {
   const deltas: Array<{ taskId: string; delta: number }> = [];
   for (const t of tasks) {
     if (t.scoresP.length === 0 || t.scoresQ.length === 0) continue;
@@ -86,7 +88,10 @@ export function bootstrapTaskCi(
   means.sort((a, b) => a - b);
   const alpha = 1 - opts.ciLevel;
   const loIdx = Math.min(means.length - 1, Math.max(0, Math.floor((alpha / 2) * means.length)));
-  const hiIdx = Math.min(means.length - 1, Math.max(0, Math.ceil((1 - alpha / 2) * means.length) - 1));
+  const hiIdx = Math.min(
+    means.length - 1,
+    Math.max(0, Math.ceil((1 - alpha / 2) * means.length) - 1),
+  );
   return { low: means[loIdx], high: means[hiIdx] };
 }
 
@@ -155,8 +160,7 @@ export function pairedDeltaComparison(
   }
 
   const sorted = [...deltas].sort((a, b) => a - b);
-  const median =
-    n % 2 === 1 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+  const median = n % 2 === 1 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
   const meanDelta = deltas.reduce((a, v) => a + v, 0) / n;
 
   let wins = 0;

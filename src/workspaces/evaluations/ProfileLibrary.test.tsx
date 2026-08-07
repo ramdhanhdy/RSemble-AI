@@ -26,19 +26,12 @@ function flush(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function renderWithRouter(
-  node: React.ReactNode,
-  initialEntries?: string[],
-): Harness {
+function renderWithRouter(node: React.ReactNode, initialEntries?: string[]): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() =>
-    root.render(
-      <MemoryRouter initialEntries={initialEntries ?? ["/"]}>
-        {node}
-      </MemoryRouter>,
-    ),
+    root.render(<MemoryRouter initialEntries={initialEntries ?? ["/"]}>{node}</MemoryRouter>),
   );
   return {
     container,
@@ -176,12 +169,8 @@ describe("ProfileList", () => {
     await settle();
     const links = h.$$("a[href^='/evaluations/profiles/']");
     expect(links).toHaveLength(2);
-    expect(
-      links.some((l) => l.getAttribute("href") === "/evaluations/profiles/p-1"),
-    ).toBe(true);
-    expect(
-      links.some((l) => l.getAttribute("href") === "/evaluations/profiles/p-2"),
-    ).toBe(true);
+    expect(links.some((l) => l.getAttribute("href") === "/evaluations/profiles/p-1")).toBe(true);
+    expect(links.some((l) => l.getAttribute("href") === "/evaluations/profiles/p-2")).toBe(true);
     cleanup(h);
   });
 
@@ -323,10 +312,7 @@ describe("ProfileList", () => {
     await seedProfile(repo, "p-1", "Quality");
     const h = renderWithRouter(<ProfileList repo={repo} />);
     await settle();
-    const interactives = [
-      ...h.$$("button"),
-      ...h.$$("a[href^='/evaluations/profiles/']"),
-    ];
+    const interactives = [...h.$$("button"), ...h.$$("a[href^='/evaluations/profiles/']")];
     for (const el of interactives) {
       const cls = el.getAttribute("class") ?? "";
       // 44px is expressed via min-h-[44px] or h-11 (44px)
@@ -453,10 +439,7 @@ describe("ProfileDetail", () => {
     expect(saveBtn).toBeTruthy();
 
     act(() => {
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )!.set!;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
       setter.call(nameInput, "Renamed");
       nameInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -503,9 +486,7 @@ describe("ProfileDetail", () => {
 
   it("missing profile shows not-found state with back link", async () => {
     const repo = new InMemoryEvaluationRepository();
-    const h = renderWithRouter(
-      <ProfileDetail repo={repo} profileId="nope" />,
-    );
+    const h = renderWithRouter(<ProfileDetail repo={repo} profileId="nope" />);
     await settle();
     expect(h.container.textContent).toMatch(/not found/i);
     const back = h.$("a[href='/evaluations/profiles']");

@@ -27,10 +27,7 @@ import type {
   PoolManifestVersion,
 } from "./fusion-study-types";
 import { buildPlaybook, recommendPolicy } from "./fusion-playbook";
-import {
-  evaluatePairBlocked,
-  type StageDriverDeps,
-} from "./fusion-study-stages";
+import { evaluatePairBlocked, type StageDriverDeps } from "./fusion-study-stages";
 
 /** The configuration frozen at selection time — the ONLY thing a confirmation evaluates. */
 export interface PreselectedConfig {
@@ -125,7 +122,9 @@ export async function runConfirmationStudy(
     confirmation.poolRef.version,
   );
   if (!pool) {
-    throw new Error(`Pool manifest ${confirmation.poolRef.id} v${confirmation.poolRef.version} not found`);
+    throw new Error(
+      `Pool manifest ${confirmation.poolRef.id} v${confirmation.poolRef.version} not found`,
+    );
   }
 
   const config = preselectedConfigFrom(source, sourcePlaybook);
@@ -141,7 +140,8 @@ export async function runConfirmationStudy(
         return null;
       })()
     : null;
-  if (!recipe) throw new Error(`Frozen recipe family ${config.recipeFamily} not found in the recipe store`);
+  if (!recipe)
+    throw new Error(`Frozen recipe family ${config.recipeFamily} not found in the recipe store`);
 
   // Evaluate the preselected pair blocked on fresh tasks — no screening, no
   // shortlist, no Stage A, no re-derived baseline. The best-fixed model comes

@@ -2,7 +2,15 @@
 // Provider contracts and shared interfaces
 // =============================================================================
 
-export type ProviderId = "openrouter" | "chatgpt-codex" | "gemini" | "deepseek" | "commandcode" | "clinepass" | "umans" | "9router";
+export type ProviderId =
+  | "openrouter"
+  | "chatgpt-codex"
+  | "gemini"
+  | "deepseek"
+  | "commandcode"
+  | "clinepass"
+  | "umans"
+  | "9router";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -21,13 +29,7 @@ export type ContentPart =
   | { type: "file"; mimeType: string; data: string; filename: string };
 
 export type ReasoningEffort =
-  | "provider-default"
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max";
+  "provider-default" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export const REASONING_EFFORTS: readonly ReasoningEffort[] = [
   "provider-default",
@@ -159,9 +161,7 @@ export interface CatalogModel {
   pricing?: ModelPricingSnapshot;
 }
 
-export type ProviderReadiness =
-  | { ok: true }
-  | { ok: false; reason: string };
+export type ProviderReadiness = { ok: true } | { ok: false; reason: string };
 
 export interface LLMProvider {
   readonly id: ProviderId;
@@ -182,7 +182,9 @@ export interface LLMProvider {
   /** Optional native usage/cost path; legacy string API remains compatible. */
   chatCompletionDetailed?(opts: ChatOptions): Promise<ProviderCompletionResult>;
   /** Optional stream events carrying final usage/cost metadata. */
-  chatCompletionStreamDetailed?(opts: ChatOptions): AsyncGenerator<ProviderStreamEvent, void, unknown>;
+  chatCompletionStreamDetailed?(
+    opts: ChatOptions,
+  ): AsyncGenerator<ProviderStreamEvent, void, unknown>;
 
   listModels?(signal?: AbortSignal): Promise<CatalogModel[]>;
 }
@@ -191,7 +193,7 @@ export class ProviderError extends Error {
   constructor(
     message: string,
     public readonly providerId: ProviderId,
-    public readonly status?: number
+    public readonly status?: number,
   ) {
     super(message);
     this.name = "ProviderError";

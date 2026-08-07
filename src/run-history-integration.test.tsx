@@ -44,7 +44,14 @@ vi.mock("./lib/run-history", () => ({
 // ---------------------------------------------------------------------------
 
 const TWO_SLOTS: StudioState["slots"] = [
-  { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+  {
+    id: "s1",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "A",
+    slug: "model-a",
+    enabled: true,
+  },
   { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
 ];
 
@@ -86,7 +93,10 @@ function judgeResponse(scores: Array<readonly [string, number]>): string {
   });
 }
 
-function makeDeps(state: StudioState, recorder: ReturnType<typeof createRunRecorder> | null): {
+function makeDeps(
+  state: StudioState,
+  recorder: ReturnType<typeof createRunRecorder> | null,
+): {
   deps: RunControllerDeps;
   stateRef: React.MutableRefObject<StudioState>;
 } {
@@ -146,7 +156,12 @@ describe("run-history integration: one stable run ID lifecycle", () => {
 
     // --- Step 1: Execute a successful Rank run ---
     chatStreamMock.mockImplementation(() => streamOf("answer A"));
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     await controller.runFanout();
 
     // --- Step 2: Assert one summary ID ---
@@ -268,7 +283,12 @@ describe("run-history integration: one stable run ID lifecycle", () => {
     const controller = createRunController(deps);
 
     chatStreamMock.mockImplementation(() => streamOf("answer"));
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4.0], ["B", 3.0]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
     await controller.runFanout();
 
     // No recorder → no addRun fallback, evidence stays in memory only

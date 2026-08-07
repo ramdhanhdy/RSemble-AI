@@ -55,7 +55,10 @@ describe("classifyFile", () => {
 
   it("accepts .docx by MIME", () => {
     const result = classifyFile(
-      makeFile("doc.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+      makeFile(
+        "doc.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
     );
     expect(result).toEqual({
       kind: "doc",

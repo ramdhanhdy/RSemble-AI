@@ -60,7 +60,6 @@ export function sanitizeProviderErrorMessage(
       // Non-JSON / plain-text / HTML bodies → generic error, never raw.
     }
   }
-  const message =
-    detail.length > 0 ? detail : `${providerLabel} request failed (HTTP ${status}).`;
+  const message = detail.length > 0 ? detail : `${providerLabel} request failed (HTTP ${status}).`;
   return capTextBytes(redactAuthFragments(message), maxMessageBytes);
 }

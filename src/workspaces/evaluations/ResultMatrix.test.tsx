@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, afterEach, vi } from "vitest";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import type { ReactNode } from "react";
 import { ResultMatrix, cellEvidenceLink } from "./ResultMatrix";
 import { ExperimentResults } from "./ExperimentResults";
 import type {
@@ -12,14 +11,8 @@ import type {
   MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
 import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
-import type {
-  EvaluationTask,
-  ExperimentRecord,
-} from "../../lib/evaluations/evaluation-types";
-import type {
-  PersistedCandidate,
-  RunRecordV2,
-} from "../../lib/persistence/run-types";
+import type { EvaluationTask, ExperimentRecord } from "../../lib/evaluations/evaluation-types";
+import type { PersistedCandidate, RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -74,15 +67,60 @@ const KEY_B = "openrouter:anthropic/claude-4.5-sonnet";
 const KEY_C = "umans:umans-kimi-k3";
 
 const SLOTS: ModelSlot[] = [
-  { id: "slot-a", providerId: "gemini", provider: "Gemini", model: "Gemini 3 Pro", slug: "gemini-3-pro-preview", enabled: true },
-  { id: "slot-b", providerId: "openrouter", provider: "OpenRouter", model: "Claude 4.5 Sonnet", slug: "anthropic/claude-4.5-sonnet", enabled: true },
-  { id: "slot-c", providerId: "umans", provider: "Umans", model: "Kimi K3", slug: "umans-kimi-k3", enabled: true },
+  {
+    id: "slot-a",
+    providerId: "gemini",
+    provider: "Gemini",
+    model: "Gemini 3 Pro",
+    slug: "gemini-3-pro-preview",
+    enabled: true,
+  },
+  {
+    id: "slot-b",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "Claude 4.5 Sonnet",
+    slug: "anthropic/claude-4.5-sonnet",
+    enabled: true,
+  },
+  {
+    id: "slot-c",
+    providerId: "umans",
+    provider: "Umans",
+    model: "Kimi K3",
+    slug: "umans-kimi-k3",
+    enabled: true,
+  },
 ];
 
 const TASKS: EvaluationTask[] = [
-  { id: "t1", title: "Task 1: Summarize", prompt: "p1", systemPrompt: "", evaluation: { kind: "inherit" }, judgeInstructionOverride: "", order: 0 },
-  { id: "t2", title: "Task 2: Classify", prompt: "p2", systemPrompt: "", evaluation: { kind: "inherit" }, judgeInstructionOverride: "", order: 1 },
-  { id: "t3", title: "Task 3: Rewrite", prompt: "p3", systemPrompt: "", evaluation: { kind: "inherit" }, judgeInstructionOverride: "", order: 2 },
+  {
+    id: "t1",
+    title: "Task 1: Summarize",
+    prompt: "p1",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: 0,
+  },
+  {
+    id: "t2",
+    title: "Task 2: Classify",
+    prompt: "p2",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: 1,
+  },
+  {
+    id: "t3",
+    title: "Task 3: Rewrite",
+    prompt: "p3",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: 2,
+  },
 ];
 
 function scored(score: number, runId: string): CellState {
@@ -139,7 +177,10 @@ const NO_WINNER: ExperimentAggregation = {
 };
 
 function makeCandidate(candidateId: string, modelKey: string): PersistedCandidate {
-  const [providerId, slug] = [modelKey.slice(0, modelKey.indexOf(":")), modelKey.slice(modelKey.indexOf(":") + 1)];
+  const [providerId, slug] = [
+    modelKey.slice(0, modelKey.indexOf(":")),
+    modelKey.slice(modelKey.indexOf(":") + 1),
+  ];
   return {
     candidateId,
     slotId: `slot-${candidateId}`,
@@ -175,7 +216,8 @@ function makeRunRecord(
     ],
     judge: {
       status: "done",
-      acceptedAttemptId: overrides.acceptedAttemptId === undefined ? "jatt-1" : overrides.acceptedAttemptId,
+      acceptedAttemptId:
+        overrides.acceptedAttemptId === undefined ? "jatt-1" : overrides.acceptedAttemptId,
       report: null,
       consensus: null,
       attempts: [],
@@ -198,7 +240,12 @@ function renderMatrix(
   runRecords: ReadonlyMap<string, RunRecordV2> = defaultRecords(),
 ): Harness {
   return renderWithRouter(
-    <ResultMatrix aggregation={aggregation} tasks={TASKS} modelSlots={SLOTS} runRecords={runRecords} />,
+    <ResultMatrix
+      aggregation={aggregation}
+      tasks={TASKS}
+      modelSlots={SLOTS}
+      runRecords={runRecords}
+    />,
   );
 }
 
@@ -327,7 +374,9 @@ describe("ResultMatrix — evidence links (plan 7.2 #4)", () => {
     // no candidate for this modelKey
     expect(cellEvidenceLink(cell, KEY_C, makeRunRecord("run-1"))).toBe("/runs/run-1");
     // no accepted judge attempt
-    expect(cellEvidenceLink(cell, KEY_A, makeRunRecord("run-1", { acceptedAttemptId: null }))).toBe("/runs/run-1");
+    expect(cellEvidenceLink(cell, KEY_A, makeRunRecord("run-1", { acceptedAttemptId: null }))).toBe(
+      "/runs/run-1",
+    );
     // record unavailable
     expect(cellEvidenceLink(cell, KEY_A, undefined)).toBe("/runs/run-1");
   });
@@ -398,7 +447,9 @@ describe("ResultMatrix — winner treatment (plan 7.2 #6, #7, #11)", () => {
   it("shows truthful No complete-coverage winner copy when no model is complete", () => {
     const h = renderMatrix(NO_WINNER);
     expect(h.container.textContent).toContain("No complete-coverage winner");
-    expect(h.$$('thead th[scope="col"]').some((th) => th.className.includes("ring-success/40"))).toBe(false);
+    expect(
+      h.$$('thead th[scope="col"]').some((th) => th.className.includes("ring-success/40")),
+    ).toBe(false);
     cleanup(h);
   });
 
@@ -577,21 +628,45 @@ function makeExperiment(): ExperimentRecord {
         taskId: "t1",
         selectedAttemptId: "att-1",
         attempts: [
-          { id: "att-1", runId: "run-1", trial: 1, status: "completed", startedAt: 1, finishedAt: 2, error: null },
+          {
+            id: "att-1",
+            runId: "run-1",
+            trial: 1,
+            status: "completed",
+            startedAt: 1,
+            finishedAt: 2,
+            error: null,
+          },
         ],
       },
       {
         taskId: "t2",
         selectedAttemptId: null,
         attempts: [
-          { id: "att-f1", runId: "run-f1", trial: 1, status: "failed", startedAt: 1, finishedAt: 2, error: { message: "Judge error" } },
+          {
+            id: "att-f1",
+            runId: "run-f1",
+            trial: 1,
+            status: "failed",
+            startedAt: 1,
+            finishedAt: 2,
+            error: { message: "Judge error" },
+          },
         ],
       },
       {
         taskId: "t3",
         selectedAttemptId: "att-3",
         attempts: [
-          { id: "att-3", runId: "run-3", trial: 1, status: "completed", startedAt: 1, finishedAt: 2, error: null },
+          {
+            id: "att-3",
+            runId: "run-3",
+            trial: 1,
+            status: "completed",
+            startedAt: 1,
+            finishedAt: 2,
+            error: null,
+          },
         ],
       },
     ],
@@ -762,7 +837,7 @@ describe("ResultMatrix — large-suite paging and sticky context (Task 14)", () 
       />,
     );
     const modelHeader = h.$$("thead th")[1];
-    expect((modelHeader?.getAttribute("class") ?? "")).toContain("sticky top-0");
+    expect(modelHeader?.getAttribute("class") ?? "").toContain("sticky top-0");
     const region = h.$("[role='region']");
     expect(region?.getAttribute("tabindex")).toBe("0");
     cleanup(h);

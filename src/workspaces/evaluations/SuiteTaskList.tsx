@@ -8,7 +8,10 @@
 
 import { useState } from "react";
 import { Plus, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
-import type { EvaluationTask, TaskEvaluationSelection } from "../../lib/evaluations/evaluation-types";
+import type {
+  EvaluationTask,
+  TaskEvaluationSelection,
+} from "../../lib/evaluations/evaluation-types";
 
 interface SuiteTaskListProps {
   tasks: EvaluationTask[];
@@ -27,7 +30,10 @@ function evaluationModeBadge(sel: TaskEvaluationSelection): { label: string; tit
     case "holistic":
       return { label: "Holistic", title: "Holistic judgment for this task" };
     case "profile":
-      return { label: "Profile", title: `Pinned profile ${sel.profile.id} v${sel.profile.version}` };
+      return {
+        label: "Profile",
+        title: `Pinned profile ${sel.profile.id} v${sel.profile.version}`,
+      };
   }
 }
 
@@ -49,9 +55,7 @@ export function SuiteTaskList({
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-muted">
-          Tasks
-        </span>
+        <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-muted">Tasks</span>
         <button
           type="button"
           data-action="add-task"

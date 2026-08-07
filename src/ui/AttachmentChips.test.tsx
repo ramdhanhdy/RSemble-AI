@@ -17,7 +17,14 @@ const READY: Attachment = {
   pages: 12,
 };
 
-const READING: Attachment = { ...READY, id: "att-2", name: "shot.png", kind: "image", mimeType: "image/png", status: "reading" };
+const READING: Attachment = {
+  ...READY,
+  id: "att-2",
+  name: "shot.png",
+  kind: "image",
+  mimeType: "image/png",
+  status: "reading",
+};
 
 const FAILED: Attachment = {
   id: "att-3",
@@ -76,7 +83,13 @@ describe("AttachmentChips — a11y and status rendering (7.5.3)", () => {
 
   it("exposes a reachable Retry action for a failed attachment when provided", () => {
     const html = renderToStaticMarkup(
-      <AttachmentChips attachments={[FAILED]} thumbnails={{}} notice={null} onRemove={() => {}} onRetry={() => {}} />,
+      <AttachmentChips
+        attachments={[FAILED]}
+        thumbnails={{}}
+        notice={null}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
     );
     expect(html).toContain('aria-label="Retry notes.docx"');
   });
@@ -90,7 +103,12 @@ describe("AttachmentChips — a11y and status rendering (7.5.3)", () => {
 
   it("renders image thumbnails from object URLs", () => {
     const html = renderToStaticMarkup(
-      <AttachmentChips attachments={[READING]} thumbnails={{ "att-2": "blob:thumb" }} notice={null} onRemove={() => {}} />,
+      <AttachmentChips
+        attachments={[READING]}
+        thumbnails={{ "att-2": "blob:thumb" }}
+        notice={null}
+        onRemove={() => {}}
+      />,
     );
     expect(html).toContain('src="blob:thumb"');
   });
@@ -113,14 +131,18 @@ describe("AttachmentChips — a11y and status rendering (7.5.3)", () => {
     const onRemove = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <AttachmentChips attachments={[READY]} thumbnails={{}} notice={null} onRemove={onRemove} />,
       );
     });
     act(() => {
-      (container.querySelector('button[aria-label="Remove quarterly-report.pdf"]') as HTMLButtonElement).click();
+      (
+        container.querySelector(
+          'button[aria-label="Remove quarterly-report.pdf"]',
+        ) as HTMLButtonElement
+      ).click();
     });
     expect(onRemove).toHaveBeenCalledWith("att-1");
     act(() => root?.unmount());

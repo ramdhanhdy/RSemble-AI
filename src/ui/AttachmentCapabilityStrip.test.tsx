@@ -65,7 +65,11 @@ afterEach(() => {
 describe("AttachmentCapabilityStrip (7.5.5)", () => {
   it("renders nothing when attachments carry no native media", () => {
     const html = renderToStaticMarkup(
-      <AttachmentCapabilityStrip slots={[slot("s1", "Model A", "a/model-a")]} attachments={[TEXT]} dispatch={() => {}} />,
+      <AttachmentCapabilityStrip
+        slots={[slot("s1", "Model A", "a/model-a")]}
+        attachments={[TEXT]}
+        dispatch={() => {}}
+      />,
     );
     expect(html).toBe("");
   });
@@ -102,7 +106,11 @@ describe("AttachmentCapabilityStrip (7.5.5)", () => {
   it("hides the disable action when every enabled slot can see images", () => {
     setModelCapabilities("openrouter", "a/model-a", { image: true, pdf: false });
     const html = renderToStaticMarkup(
-      <AttachmentCapabilityStrip slots={[slot("s1", "Model A", "a/model-a")]} attachments={[IMAGE]} dispatch={() => {}} />,
+      <AttachmentCapabilityStrip
+        slots={[slot("s1", "Model A", "a/model-a")]}
+        attachments={[IMAGE]}
+        dispatch={() => {}}
+      />,
     );
     expect(html).not.toContain("Disable incompatible");
   });
@@ -114,11 +122,15 @@ describe("AttachmentCapabilityStrip (7.5.5)", () => {
     const dispatched: Action[] = [];
     const container = document.createElement("div");
     document.body.appendChild(container);
-    let root: Root | null = createRoot(container);
+    const root: Root | null = createRoot(container);
     act(() => {
       root!.render(
         <AttachmentCapabilityStrip
-          slots={[slot("s1", "Model A", "a/model-a"), slot("s2", "Model B", "b/model-b"), slot("s3", "Model C", "c/model-c")]}
+          slots={[
+            slot("s1", "Model A", "a/model-a"),
+            slot("s2", "Model B", "b/model-b"),
+            slot("s3", "Model C", "c/model-c"),
+          ]}
           attachments={[IMAGE]}
           dispatch={(a) => dispatched.push(a)}
         />,

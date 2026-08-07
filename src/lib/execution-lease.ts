@@ -189,7 +189,11 @@ async function readFence(db: RSembleEvaluationDB): Promise<number> {
  * to "interrupted". Shared by both implementations; the caller must already
  * hold the lease (verified before invoking).
  */
-async function sweepInterrupted(runRepo: RunRepository, lease: LeaseInfo, now: () => number = () => Date.now()): Promise<number> {
+async function sweepInterrupted(
+  runRepo: RunRepository,
+  lease: LeaseInfo,
+  now: () => number = () => Date.now(),
+): Promise<number> {
   const summaries = await runRepo.list({
     status: "running",
     limit: Number.MAX_SAFE_INTEGER,
@@ -320,7 +324,9 @@ export function createExecutionLease(
     }
   }
 
-  async function acquire(acquireOptions: { kind?: LeaseKind; executionId?: string } = {}): Promise<LeaseInfo> {
+  async function acquire(
+    acquireOptions: { kind?: LeaseKind; executionId?: string } = {},
+  ): Promise<LeaseInfo> {
     db.assertWritable();
     const lease = await db.transaction("rw", db.storageMeta, async () => {
       const t = now();
@@ -363,9 +369,9 @@ export function createExecutionLease(
 
   async function renew(token?: LeaseInfo): Promise<LeaseInfo> {
     db.assertWritable();
-    const expected = token ?? (currentOwner && currentLeaseId
-      ? { ownerId: currentOwner, leaseId: currentLeaseId }
-      : null);
+    const expected =
+      token ??
+      (currentOwner && currentLeaseId ? { ownerId: currentOwner, leaseId: currentLeaseId } : null);
     const lease = await db.transaction("rw", db.storageMeta, async () => {
       const t = now();
       const existing = await readLease(db);
@@ -393,9 +399,9 @@ export function createExecutionLease(
 
   async function release(token?: LeaseInfo): Promise<void> {
     db.assertWritable();
-    const expected = token ?? (currentOwner && currentLeaseId
-      ? { ownerId: currentOwner, leaseId: currentLeaseId }
-      : null);
+    const expected =
+      token ??
+      (currentOwner && currentLeaseId ? { ownerId: currentOwner, leaseId: currentLeaseId } : null);
     let released = false;
     await db.transaction("rw", db.storageMeta, async () => {
       const existing = await readLease(db);
@@ -421,7 +427,9 @@ export function createExecutionLease(
     if (!isLive(existing, t)) return null;
     if (token) return matchesToken(existing, token) ? existing : null;
     if (currentOwner === null || currentLeaseId === null) return null;
-    return matchesToken(existing, { ownerId: currentOwner, leaseId: currentLeaseId }) ? existing : null;
+    return matchesToken(existing, { ownerId: currentOwner, leaseId: currentLeaseId })
+      ? existing
+      : null;
   }
 
   async function isOwner(): Promise<boolean> {
@@ -556,7 +564,9 @@ export class InMemoryExecutionLease implements ExecutionLease {
     }
   }
 
-  async acquire(acquireOptions: { kind?: LeaseKind; executionId?: string } = {}): Promise<LeaseInfo> {
+  async acquire(
+    acquireOptions: { kind?: LeaseKind; executionId?: string } = {},
+  ): Promise<LeaseInfo> {
     const t = this.now();
     const existing = this.store.lease;
     if (isLive(existing, t)) {
@@ -569,9 +579,14 @@ export class InMemoryExecutionLease implements ExecutionLease {
     // Monotonic fence: always strictly greater than the high-water mark.
     const fence = this.store.fence + 1;
     const lease: LeaseInfo = {
-      leaseId: newLeaseId(), ownerId: this.ownerId,
-      kind: acquireOptions.kind ?? "compare", executionId: acquireOptions.executionId ?? "unknown",
-      acquiredAt: t, heartbeatAt: t, fence, expiresAt: t + this.ttl,
+      leaseId: newLeaseId(),
+      ownerId: this.ownerId,
+      kind: acquireOptions.kind ?? "compare",
+      executionId: acquireOptions.executionId ?? "unknown",
+      acquiredAt: t,
+      heartbeatAt: t,
+      fence,
+      expiresAt: t + this.ttl,
     };
     this.store.lease = lease;
     this.store.fence = fence;
@@ -584,9 +599,11 @@ export class InMemoryExecutionLease implements ExecutionLease {
   async renew(token?: LeaseInfo): Promise<LeaseInfo> {
     const t = this.now();
     const existing = this.store.lease;
-    const expected = token ?? (this.currentOwner && this.currentLeaseId
-      ? { ownerId: this.currentOwner, leaseId: this.currentLeaseId }
-      : null);
+    const expected =
+      token ??
+      (this.currentOwner && this.currentLeaseId
+        ? { ownerId: this.currentOwner, leaseId: this.currentLeaseId }
+        : null);
     if (!matchesToken(existing, expected) || !isLive(existing, t)) {
       throw new LeaseError("expired", "Cannot renew: lease token is no longer current", existing);
     }
@@ -602,9 +619,11 @@ export class InMemoryExecutionLease implements ExecutionLease {
 
   async release(token?: LeaseInfo): Promise<void> {
     const existing = this.store.lease;
-    const expected = token ?? (this.currentOwner && this.currentLeaseId
-      ? { ownerId: this.currentOwner, leaseId: this.currentLeaseId }
-      : null);
+    const expected =
+      token ??
+      (this.currentOwner && this.currentLeaseId
+        ? { ownerId: this.currentOwner, leaseId: this.currentLeaseId }
+        : null);
     if (!matchesToken(existing, expected)) return;
     this.store.lease = null;
     // fence counter persists for monotonic takeover.
@@ -621,7 +640,9 @@ export class InMemoryExecutionLease implements ExecutionLease {
     if (!isLive(existing, t)) return null;
     if (token) return matchesToken(existing, token) ? existing : null;
     if (this.currentOwner === null || this.currentLeaseId === null) return null;
-    return matchesToken(existing, { ownerId: this.currentOwner, leaseId: this.currentLeaseId }) ? existing : null;
+    return matchesToken(existing, { ownerId: this.currentOwner, leaseId: this.currentLeaseId })
+      ? existing
+      : null;
   }
 
   async isOwner(): Promise<boolean> {

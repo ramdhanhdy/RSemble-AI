@@ -8,8 +8,7 @@
 // blocked by another tab or upgraded out from under it.
 // =============================================================================
 
-import Dexie from "dexie";
-import type { Table } from "dexie";
+import Dexie, { type Table } from "dexie";
 
 // Indexed row shapes — a search/summary row is the stored summary plus the
 // indexes Dexie needs to filter and paginate without loading detail records.
@@ -136,20 +135,11 @@ export interface StorageMetaRow {
 }
 
 /** Lifecycle state surfaced to React. */
-export type StorageState =
-  | "ready"
-  | "blocked"
-  | "versionchange"
-  | "unavailable";
+export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
 /** Classified storage failure surfaced to callers and UI. */
 export type StorageErrorKind =
-  | "quota"
-  | "unavailable"
-  | "validation"
-  | "conflict"
-  | "blocked"
-  | "versionchange";
+  "quota" | "unavailable" | "validation" | "conflict" | "blocked" | "versionchange";
 
 export class StorageError extends Error {
   readonly kind: StorageErrorKind;
@@ -166,8 +156,7 @@ export class StorageError extends Error {
 export function classifyStorageError(err: unknown): StorageError {
   if (err instanceof StorageError) return err;
   const name = (err as { name?: string } | null)?.name ?? "";
-  const message =
-    (err as { message?: string } | null)?.message ?? "storage error";
+  const message = (err as { message?: string } | null)?.message ?? "storage error";
   if (name === "QuotaExceededError" || /quota/i.test(message)) {
     return new StorageError("quota", message, err);
   }
@@ -224,8 +213,7 @@ export class RSembleEvaluationDB extends Dexie {
       profiles: "id, revision, latestVersion, updatedAt, archivedAt",
       profileVersions: "[id+version], id, version, updatedAt",
       suites: "id, revision, version, updatedAt, archivedAt",
-      experiments:
-        "id, revision, suiteId, suiteVersion, protocolFingerprint, createdAt, status",
+      experiments: "id, revision, suiteId, suiteVersion, protocolFingerprint, createdAt, status",
       storageMeta: "key",
     });
 
@@ -282,10 +270,16 @@ export class RSembleEvaluationDB extends Dexie {
    */
   assertWritable(): void {
     if (this.closed || this._storageState === "versionchange") {
-      throw new StorageError("versionchange", "Database is unavailable due to a version change. Reload the page.");
+      throw new StorageError(
+        "versionchange",
+        "Database is unavailable due to a version change. Reload the page.",
+      );
     }
     if (this._storageState === "blocked") {
-      throw new StorageError("blocked", "Database upgrade is blocked. Close other RSemble tabs to continue.");
+      throw new StorageError(
+        "blocked",
+        "Database upgrade is blocked. Close other RSemble tabs to continue.",
+      );
     }
     if (this._storageState === "unavailable") {
       throw new StorageError("unavailable", "Database is unavailable.");

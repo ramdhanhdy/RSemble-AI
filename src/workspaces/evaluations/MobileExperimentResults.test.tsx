@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, afterEach, vi } from "vitest";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import type { ReactNode } from "react";
 import { MobileExperimentResults } from "./MobileExperimentResults";
 import type {
   CellState,
@@ -12,10 +11,7 @@ import type {
 } from "../../lib/evaluations/experiment-aggregation";
 import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
-import type {
-  PersistedCandidate,
-  RunRecordV2,
-} from "../../lib/persistence/run-types";
+import type { PersistedCandidate, RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -59,15 +55,60 @@ const KEY_B = "openrouter:anthropic/claude-4.5-sonnet";
 const KEY_C = "umans:umans-kimi-k3";
 
 const SLOTS: ModelSlot[] = [
-  { id: "slot-a", providerId: "gemini", provider: "Gemini", model: "Gemini 3 Pro", slug: "gemini-3-pro-preview", enabled: true },
-  { id: "slot-b", providerId: "openrouter", provider: "OpenRouter", model: "Claude 4.5 Sonnet", slug: "anthropic/claude-4.5-sonnet", enabled: true },
-  { id: "slot-c", providerId: "umans", provider: "Umans", model: "Kimi K3", slug: "umans-kimi-k3", enabled: true },
+  {
+    id: "slot-a",
+    providerId: "gemini",
+    provider: "Gemini",
+    model: "Gemini 3 Pro",
+    slug: "gemini-3-pro-preview",
+    enabled: true,
+  },
+  {
+    id: "slot-b",
+    providerId: "openrouter",
+    provider: "OpenRouter",
+    model: "Claude 4.5 Sonnet",
+    slug: "anthropic/claude-4.5-sonnet",
+    enabled: true,
+  },
+  {
+    id: "slot-c",
+    providerId: "umans",
+    provider: "Umans",
+    model: "Kimi K3",
+    slug: "umans-kimi-k3",
+    enabled: true,
+  },
 ];
 
 const TASKS: EvaluationTask[] = [
-  { id: "t1", title: "Task 1: Summarize", prompt: "p1", systemPrompt: "", evaluation: { kind: "inherit" }, judgeInstructionOverride: "", order: 0 },
-  { id: "t2", title: "Task 2: Classify", prompt: "p2", systemPrompt: "", evaluation: { kind: "inherit" }, judgeInstructionOverride: "", order: 1 },
-  { id: "t3", title: "Task 3: Rewrite", prompt: "p3", systemPrompt: "", evaluation: { kind: "inherit" }, judgeInstructionOverride: "", order: 2 },
+  {
+    id: "t1",
+    title: "Task 1: Summarize",
+    prompt: "p1",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: 0,
+  },
+  {
+    id: "t2",
+    title: "Task 2: Classify",
+    prompt: "p2",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: 1,
+  },
+  {
+    id: "t3",
+    title: "Task 3: Rewrite",
+    prompt: "p3",
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: 2,
+  },
 ];
 
 function scored(score: number, runId: string): CellState {
@@ -323,7 +364,6 @@ describe("MobileExperimentResults — recovery actions (spec §11.1)", () => {
   });
 });
 
-
 describe("MobileExperimentResults — 390px layout (plan 7.3 #5, #6)", () => {
   it("has no horizontal scrolling and no fixed widths above 390px", () => {
     const h = renderMobile();
@@ -346,7 +386,9 @@ describe("MobileExperimentResults — 390px layout (plan 7.3 #5, #6)", () => {
     // Choice: the root always reserves the 56px mobile bottom nav + safe-area
     // inset so the surface stays clear of the fixed nav even when mounted
     // outside the app shell's own clearance wrapper.
-    expect(root.getAttribute("class") ?? "").toContain("pb-[calc(56px+env(safe-area-inset-bottom))]");
+    expect(root.getAttribute("class") ?? "").toContain(
+      "pb-[calc(56px+env(safe-area-inset-bottom))]",
+    );
     cleanup(h);
   });
 });
@@ -358,7 +400,9 @@ describe("MobileExperimentResults — large-suite paging (Task 14)", () => {
       taskIds,
       modelKeys: [KEY_A],
       cells: taskIds.map((_id, i) => [scored(4, `run-${i}`)]),
-      models: [{ modelKey: KEY_A, mean: 4, scoredTasks: taskCount, totalTasks: taskCount, complete: true }],
+      models: [
+        { modelKey: KEY_A, mean: 4, scoredTasks: taskCount, totalTasks: taskCount, complete: true },
+      ],
       winnerKeys: [KEY_A],
     };
   }

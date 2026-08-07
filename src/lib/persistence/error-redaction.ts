@@ -112,14 +112,19 @@ export function sanitizePersistedError(
   now: () => number,
   credentialValues?: readonly string[],
 ): PersistedError {
-  const message = redactErrorText(errorMessage(err), credentialValues ?? configuredCredentialValues());
+  const message = redactErrorText(
+    errorMessage(err),
+    credentialValues ?? configuredCredentialValues(),
+  );
   return {
     message,
     category: ctx.category,
     stage: ctx.stage,
     ...(ctx.model !== undefined ? { model: ctx.model } : {}),
     ...(ctx.timeoutKind !== undefined ? { timeoutKind: ctx.timeoutKind } : {}),
-    ...(ctx.configuredDurationMs !== undefined ? { configuredDurationMs: ctx.configuredDurationMs } : {}),
+    ...(ctx.configuredDurationMs !== undefined
+      ? { configuredDurationMs: ctx.configuredDurationMs }
+      : {}),
     ...(ctx.elapsedMs !== undefined ? { elapsedMs: ctx.elapsedMs } : {}),
     at: now(),
   };

@@ -18,7 +18,6 @@ import type {
 } from "../../lib/evaluations/evaluation-types";
 import type { ModelSlot } from "../../studio-data";
 
-
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 interface Harness {
@@ -60,9 +59,8 @@ async function settle() {
 
 function findButton(h: Harness, name: string): HTMLButtonElement | null {
   return (
-    ([...h.container.querySelectorAll("button")].find(
-      (b) => b.textContent?.trim() === name,
-    ) as HTMLButtonElement | undefined) ?? null
+    ([...h.container.querySelectorAll("button")].find((b) => b.textContent?.trim() === name) as
+      HTMLButtonElement | undefined) ?? null
   );
 }
 
@@ -119,8 +117,22 @@ function makeTask(id: string, title: string, order: number): EvaluationTask {
 
 function makeSlots(): ModelSlot[] {
   return [
-    { id: "slot-1", providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "openai/gpt-4o", enabled: true },
-    { id: "slot-2", providerId: "gemini", provider: "Gemini", model: "flash", slug: "gemini-2.0-flash", enabled: true },
+    {
+      id: "slot-1",
+      providerId: "openrouter",
+      provider: "OpenRouter",
+      model: "gpt-4o",
+      slug: "openai/gpt-4o",
+      enabled: true,
+    },
+    {
+      id: "slot-2",
+      providerId: "gemini",
+      provider: "Gemini",
+      model: "flash",
+      slug: "gemini-2.0-flash",
+      enabled: true,
+    },
   ];
 }
 
@@ -129,7 +141,16 @@ function makeAttempt(
   status: ExperimentTaskAttempt["status"],
   overrides: Partial<ExperimentTaskAttempt> = {},
 ): ExperimentTaskAttempt {
-  return { id, runId: null, trial: 0, status, startedAt: null, finishedAt: null, error: null, ...overrides };
+  return {
+    id,
+    runId: null,
+    trial: 0,
+    status,
+    startedAt: null,
+    finishedAt: null,
+    error: null,
+    ...overrides,
+  };
 }
 
 function taskState(taskId: string, attempts: ExperimentTaskAttempt[]): ExperimentTaskState {
@@ -164,8 +185,16 @@ function makeExperiment(overrides: Partial<ExperimentRecord> = {}): ExperimentRe
       createdAt: now - 60_000,
     },
     tasks: [
-      taskState("task-1", [makeAttempt("att-1", "completed", { runId: "run-1", startedAt: now - 60_000, finishedAt: now - 30_000 })]),
-      taskState("task-2", [makeAttempt("att-2", "running", { runId: "run-2", startedAt: now - 5_000 })]),
+      taskState("task-1", [
+        makeAttempt("att-1", "completed", {
+          runId: "run-1",
+          startedAt: now - 60_000,
+          finishedAt: now - 30_000,
+        }),
+      ]),
+      taskState("task-2", [
+        makeAttempt("att-2", "running", { runId: "run-2", startedAt: now - 5_000 }),
+      ]),
       taskState("task-3", [makeAttempt("att-3", "queued")]),
     ],
     createdAt: now - 60_000,
@@ -179,7 +208,9 @@ function makeExperiment(overrides: Partial<ExperimentRecord> = {}): ExperimentRe
 describe("ExperimentProgress", () => {
   it("shows the completed/total count, current task title, suite version, and started timestamp with timezone (plan 7.1 #1)", async () => {
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     const text = h.container.textContent ?? "";
     expect(text).toContain("Task 2 of 3");
@@ -194,7 +225,11 @@ describe("ExperimentProgress", () => {
   it("derives missing-result scope from the live plan, not the latest extension history", async () => {
     const deepSeekKey = "deepseek:deepseek-v4-flash";
     const umansKey = "umans:umans-glm-5.2";
-    const historySlot = (key: string, id: string, providerId: ModelSlot["providerId"]): ModelSlot => {
+    const historySlot = (
+      key: string,
+      id: string,
+      providerId: ModelSlot["providerId"],
+    ): ModelSlot => {
       const [, slug] = key.split(":");
       return {
         id,
@@ -235,7 +270,9 @@ describe("ExperimentProgress", () => {
       ],
     });
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={experiment} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={experiment} controller={controller} />,
+    );
     await settle();
     const text = h.container.textContent ?? "";
     expect(text).toContain("Completing missing results");
@@ -251,7 +288,11 @@ describe("ExperimentProgress", () => {
       tasks: [
         taskState("task-1", [
           makeAttempt("att-extension", "running", {
-            repair: { kind: "roster-extension", addedModelKey: extensionKey, baseRunId: "run-base" },
+            repair: {
+              kind: "roster-extension",
+              addedModelKey: extensionKey,
+              baseRunId: "run-base",
+            },
           }),
         ]),
         taskState("task-2", [makeAttempt("att-2", "queued")]),
@@ -259,7 +300,9 @@ describe("ExperimentProgress", () => {
       ],
     });
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={experiment} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={experiment} controller={controller} />,
+    );
     await settle();
     expect(h.container.textContent).toContain("Roster extension in progress");
     expect(h.container.textContent).toContain(extensionKey);
@@ -281,7 +324,9 @@ describe("ExperimentProgress", () => {
       ],
     });
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={experiment} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={experiment} controller={controller} />,
+    );
     await settle();
     expect(h.container.textContent).toContain("Completing missing results");
     expect(h.container.textContent).toContain(key);
@@ -290,7 +335,9 @@ describe("ExperimentProgress", () => {
 
   it("does not show targeted scope for a normal full run", async () => {
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     expect(h.$("[data-extension-scope]")).toBeNull();
     expect(h.container.textContent).not.toContain("Completing missing results");
@@ -300,7 +347,9 @@ describe("ExperimentProgress", () => {
 
   it("renders one primary ledger row per task with StatusMark text, never color-only (plan 7.1 #2)", async () => {
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     const rows = h.$$("[data-task-row]");
     expect(rows).toHaveLength(3);
@@ -325,18 +374,22 @@ describe("ExperimentProgress", () => {
 
   it("keeps the task ledger free of numbered attempt chrome", async () => {
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     expect(h.$("[data-ledger-instrument]")).not.toBeNull();
-    expect(h.$$('[data-attempt-row]')).toHaveLength(0);
-    expect(h.$$('[data-attempt-toggle]')).toHaveLength(0);
+    expect(h.$$("[data-attempt-row]")).toHaveLength(0);
+    expect(h.$$("[data-attempt-toggle]")).toHaveLength(0);
     expect(h.container.textContent).not.toMatch(/Attempt [0-9]+/);
     cleanup(h);
   });
 
   it("shows ticking elapsed time for the active task attempt (plan 7.1 #3)", async () => {
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     const text = h.container.textContent ?? "";
     // Attempt started 5s before fixture creation → m:ss render
@@ -346,7 +399,9 @@ describe("ExperimentProgress", () => {
 
   it("Pause after current task calls requestPause and communicates the task boundary (plan 7.1 #4)", async () => {
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     const pause = findButton(h, "Pause after current task");
     expect(pause).not.toBeNull();
@@ -371,7 +426,9 @@ describe("ExperimentProgress", () => {
     const paused = makeExperiment({
       status: "paused",
       tasks: [
-        taskState("task-1", [makeAttempt("att-1", "completed", { runId: "run-1", startedAt: Date.now() - 60_000 })]),
+        taskState("task-1", [
+          makeAttempt("att-1", "completed", { runId: "run-1", startedAt: Date.now() - 60_000 }),
+        ]),
         taskState("task-2", [makeAttempt("att-2", "queued")]),
         taskState("task-3", [makeAttempt("att-3", "queued")]),
       ],
@@ -391,7 +448,9 @@ describe("ExperimentProgress", () => {
 
   it("Abort experiment has an explicit accessible name and calls abort (plan 7.1 #5)", async () => {
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     const abort = findButton(h, "Abort experiment");
     expect(abort).not.toBeNull();
@@ -409,12 +468,21 @@ describe("ExperimentProgress", () => {
     const retryable = makeExperiment({
       status: "paused",
       tasks: [
-        taskState("task-1", [makeAttempt("att-1", "completed", { runId: "run-1", startedAt: Date.now() - 60_000 })]),
-        taskState("task-2", [makeAttempt("att-2", "failed", { startedAt: Date.now() - 30_000, finishedAt: Date.now() - 20_000 })]),
+        taskState("task-1", [
+          makeAttempt("att-1", "completed", { runId: "run-1", startedAt: Date.now() - 60_000 }),
+        ]),
+        taskState("task-2", [
+          makeAttempt("att-2", "failed", {
+            startedAt: Date.now() - 30_000,
+            finishedAt: Date.now() - 20_000,
+          }),
+        ]),
         taskState("task-3", [makeAttempt("att-3", "queued")]),
       ],
     });
-    const h = renderWithRouter(<ExperimentProgress experiment={retryable} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={retryable} controller={controller} />,
+    );
     await settle();
     const retry = findButton(h, "Retry incomplete tasks");
     expect(retry).not.toBeNull();
@@ -432,9 +500,24 @@ describe("ExperimentProgress", () => {
     const allDone = makeExperiment({
       status: "completed",
       tasks: [
-        taskState("task-1", [makeAttempt("att-1", "completed", { startedAt: Date.now() - 60_000, finishedAt: Date.now() - 50_000 })]),
-        taskState("task-2", [makeAttempt("att-2", "completed", { startedAt: Date.now() - 40_000, finishedAt: Date.now() - 30_000 })]),
-        taskState("task-3", [makeAttempt("att-3", "completed", { startedAt: Date.now() - 20_000, finishedAt: Date.now() - 10_000 })]),
+        taskState("task-1", [
+          makeAttempt("att-1", "completed", {
+            startedAt: Date.now() - 60_000,
+            finishedAt: Date.now() - 50_000,
+          }),
+        ]),
+        taskState("task-2", [
+          makeAttempt("att-2", "completed", {
+            startedAt: Date.now() - 40_000,
+            finishedAt: Date.now() - 30_000,
+          }),
+        ]),
+        taskState("task-3", [
+          makeAttempt("att-3", "completed", {
+            startedAt: Date.now() - 20_000,
+            finishedAt: Date.now() - 10_000,
+          }),
+        ]),
       ],
     });
     const h = renderWithRouter(<ExperimentProgress experiment={allDone} controller={controller} />);
@@ -447,12 +530,21 @@ describe("ExperimentProgress", () => {
     const { controller } = makeController();
     const runningWithFailure = makeExperiment({
       tasks: [
-        taskState("task-1", [makeAttempt("att-1", "failed", { startedAt: Date.now() - 60_000, finishedAt: Date.now() - 50_000 })]),
-        taskState("task-2", [makeAttempt("att-2", "running", { runId: "run-2", startedAt: Date.now() - 5_000 })]),
+        taskState("task-1", [
+          makeAttempt("att-1", "failed", {
+            startedAt: Date.now() - 60_000,
+            finishedAt: Date.now() - 50_000,
+          }),
+        ]),
+        taskState("task-2", [
+          makeAttempt("att-2", "running", { runId: "run-2", startedAt: Date.now() - 5_000 }),
+        ]),
         taskState("task-3", [makeAttempt("att-3", "queued")]),
       ],
     });
-    const h = renderWithRouter(<ExperimentProgress experiment={runningWithFailure} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={runningWithFailure} controller={controller} />,
+    );
     await settle();
     expect(findButton(h, "Retry incomplete tasks")).toBeNull();
     cleanup(h);
@@ -460,7 +552,9 @@ describe("ExperimentProgress", () => {
 
   it("shows a role=alert region with the failed operation and next action on a controller error event (plan 7.1 #8)", async () => {
     const { controller, emit } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     expect(h.$('[role="alert"]')).toBeNull();
     await act(async () => {
@@ -475,9 +569,13 @@ describe("ExperimentProgress", () => {
   });
 
   it("disables controls with a truthful helper when the controller is unavailable (plan 7.1 #13)", async () => {
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={null} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={null} />,
+    );
     await settle();
-    expect(h.container.textContent).toContain("Execution controller unavailable (storage not ready).");
+    expect(h.container.textContent).toContain(
+      "Execution controller unavailable (storage not ready).",
+    );
     const pause = findButton(h, "Pause after current task");
     const abort = findButton(h, "Abort experiment");
     expect(pause).not.toBeNull();
@@ -489,7 +587,9 @@ describe("ExperimentProgress", () => {
 
   it("links Back to suite at the owning suite route with a ≥44px target", async () => {
     const { controller } = makeController();
-    const h = renderWithRouter(<ExperimentProgress experiment={makeExperiment()} controller={controller} />);
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
     await settle();
     const back = h.$('a[href="/evaluations/suite-1"]')!;
     expect(back).not.toBeNull();

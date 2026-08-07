@@ -9,10 +9,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "./database";
 import { InMemoryRunRepository } from "./run-repository";
-import {
-  createEvaluationRepository,
-  InMemoryEvaluationRepository,
-} from "./evaluation-repository";
+import { createEvaluationRepository, InMemoryEvaluationRepository } from "./evaluation-repository";
 import type {
   EvaluationProfile,
   EvaluationSuite,
@@ -75,8 +72,22 @@ function makeSuite(id: string, revision = 0): EvaluationSuite {
       },
     ],
     modelSlots: [
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "m1", slug: "m1", enabled: true },
-      { id: "s2", providerId: "gemini", provider: "Gemini", model: "m2", slug: "m2", enabled: true },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m1",
+        slug: "m1",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "gemini",
+        provider: "Gemini",
+        model: "m2",
+        slug: "m2",
+        enabled: true,
+      },
     ],
     defaultJudge: { providerId: "openrouter", model: "judge" },
     defaultEvaluation: { kind: "holistic" },
@@ -351,15 +362,27 @@ describe("EvaluationRepository (Dexie-backed)", () => {
       const run = makeRun("r1");
       const summary = makeSummary("r1");
       await evalRepo.beginExperimentTask({
-        experimentId: "e1", taskId: "task-1", attemptId: "att-1",
-        run, summary, expectedExperimentRevision: 0,
+        experimentId: "e1",
+        taskId: "task-1",
+        attemptId: "att-1",
+        run,
+        summary,
+        expectedExperimentRevision: 0,
       });
       const terminalRun: RunRecordV2 = { ...run, status: "completed", completedAt: 2000 };
-      const terminalSummary: FullRunSummaryV2 = { ...summary, status: "completed", completedAt: 2000 };
+      const terminalSummary: FullRunSummaryV2 = {
+        ...summary,
+        status: "completed",
+        completedAt: 2000,
+      };
       const result = await evalRepo.commitExperimentTaskTerminal({
-        experimentId: "e1", taskId: "task-1", attemptId: "att-1",
-        run: terminalRun, summary: terminalSummary,
-        expectedRunRevision: 0, expectedExperimentRevision: 1,
+        experimentId: "e1",
+        taskId: "task-1",
+        attemptId: "att-1",
+        run: terminalRun,
+        summary: terminalSummary,
+        expectedRunRevision: 0,
+        expectedExperimentRevision: 1,
       });
       expect(result.runRevision).toBe(1);
       expect(result.experimentRevision).toBe(2);
@@ -375,33 +398,57 @@ describe("EvaluationRepository (Dexie-backed)", () => {
       const run = makeRun("r1");
       const summary = makeSummary("r1");
       await evalRepo.beginExperimentTask({
-        experimentId: "e1", taskId: "task-1", attemptId: "att-1",
-        run, summary, expectedExperimentRevision: 0,
+        experimentId: "e1",
+        taskId: "task-1",
+        attemptId: "att-1",
+        run,
+        summary,
+        expectedExperimentRevision: 0,
       });
       const terminalRun: RunRecordV2 = { ...run, status: "completed", completedAt: 2000 };
-      const terminalSummary: FullRunSummaryV2 = { ...summary, status: "completed", completedAt: 2000 };
+      const terminalSummary: FullRunSummaryV2 = {
+        ...summary,
+        status: "completed",
+        completedAt: 2000,
+      };
       const first = await evalRepo.commitExperimentTaskTerminal({
-        experimentId: "e1", taskId: "task-1", attemptId: "att-1",
-        run: terminalRun, summary: terminalSummary,
-        expectedRunRevision: 0, expectedExperimentRevision: 1,
+        experimentId: "e1",
+        taskId: "task-1",
+        attemptId: "att-1",
+        run: terminalRun,
+        summary: terminalSummary,
+        expectedRunRevision: 0,
+        expectedExperimentRevision: 1,
       });
       // Idempotent replay with the identical IDs/payload returns current
       // revisions without another write (spec §11.3).
       const second = await evalRepo.commitExperimentTaskTerminal({
-        experimentId: "e1", taskId: "task-1", attemptId: "att-1",
-        run: terminalRun, summary: terminalSummary,
-        expectedRunRevision: 0, expectedExperimentRevision: 1,
+        experimentId: "e1",
+        taskId: "task-1",
+        attemptId: "att-1",
+        run: terminalRun,
+        summary: terminalSummary,
+        expectedRunRevision: 0,
+        expectedExperimentRevision: 1,
       });
       expect(second).toEqual(first);
 
       // Conflicting reuse of the terminal attempt ID is still rejected.
       const conflictingRun: RunRecordV2 = { ...run, status: "failed", completedAt: 2000 };
-      const conflictingSummary: FullRunSummaryV2 = { ...summary, status: "failed", completedAt: 2000 };
+      const conflictingSummary: FullRunSummaryV2 = {
+        ...summary,
+        status: "failed",
+        completedAt: 2000,
+      };
       await expect(
         evalRepo.commitExperimentTaskTerminal({
-          experimentId: "e1", taskId: "task-1", attemptId: "att-1",
-          run: conflictingRun, summary: conflictingSummary,
-          expectedRunRevision: 1, expectedExperimentRevision: 2,
+          experimentId: "e1",
+          taskId: "task-1",
+          attemptId: "att-1",
+          run: conflictingRun,
+          summary: conflictingSummary,
+          expectedRunRevision: 1,
+          expectedExperimentRevision: 2,
         }),
       ).rejects.toThrow(/terminal|conflict|already/i);
     });

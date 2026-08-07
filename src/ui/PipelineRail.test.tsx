@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
+
+/**
+ * Server-render router-aware markup. react-router uses useLayoutEffect
+ * internally and React warns about it under SSR — expected third-party noise
+ * for a deliberately server-rendered test. Exactly that warning is filtered;
+ * any other console.error still reaches the test-environment guard.
+ */
+function renderSSR(node: React.ReactNode): string {
+  const previous = console.error;
+  console.error = (...args: unknown[]) => {
+    const text = args.map((a) => String(a)).join(" ");
+    if (text.includes("useLayoutEffect does nothing on the server")) return;
+    previous(...args);
+  };
+  try {
+    return renderToStaticMarkup(node);
+  } finally {
+    console.error = previous;
+  }
+}
 import { PipelineRail } from "./PipelineRail";
 import { GlobalExecutionStrip, type StripViewModel } from "./GlobalExecutionStrip";
 import { StatusMark } from "./StatusMark";
@@ -16,7 +36,7 @@ const runningView: StripViewModel = {
 
 describe("pipeline continuity", () => {
   it("animates only the connector feeding the active stage", () => {
-    const html = renderToStaticMarkup(
+    const html = renderSSR(
       <PipelineRail
         mode="rank"
         stages={[
@@ -27,12 +47,12 @@ describe("pipeline continuity", () => {
         ]}
       />,
     );
-    expect((html.match(/animate-dash-march/g) ?? [])).toHaveLength(1);
+    expect(html.match(/animate-dash-march/g) ?? []).toHaveLength(1);
     expect(html).toContain("motion-state");
   });
 
   it("keeps off-route running status static with visible text", () => {
-    const html = renderToStaticMarkup(
+    const html = renderSSR(
       <MemoryRouter>
         <GlobalExecutionStrip view={runningView} />
       </MemoryRouter>,

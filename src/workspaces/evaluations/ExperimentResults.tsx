@@ -9,10 +9,9 @@
 // below that the model-selectable mobile adaptation.
 // =============================================================================
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Crown } from "lucide-react";
-import type { ReactElement } from "react";
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import { useEvaluationRepository } from "../../lib/persistence/repository-context";
@@ -25,7 +24,10 @@ import {
   type MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
 import { deriveDisplayRanking } from "../../lib/evaluations/experiment-ranking";
-import { planMissingCellRepair, type CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
+import {
+  planMissingCellRepair,
+  type CompoundRepairPlan,
+} from "../../lib/evaluations/experiment-repair";
 import {
   planRosterExtension,
   takenModelKeys,
@@ -42,10 +44,7 @@ import {
   type RepairAllSummary,
   type ExperimentRecoveryMessage,
 } from "./ExperimentRecoveryDialog";
-import {
-  ExperimentAddModelDialog,
-  type AddModelDialogMessage,
-} from "./ExperimentAddModelDialog";
+import { ExperimentAddModelDialog, type AddModelDialogMessage } from "./ExperimentAddModelDialog";
 
 export interface ExperimentResultsProps {
   experiment: ExperimentRecord;
@@ -87,7 +86,6 @@ function useMediaQuery(query: string): boolean {
   }, [query]);
   return matches;
 }
-
 
 export function ExperimentResults({
   experiment,
@@ -236,13 +234,10 @@ export function ExperimentResults({
     setAddModelOpen(true);
   }, []);
 
-  const selectAddModelSlot = useCallback(
-    (slot: ModelSlot | null) => {
-      setAddModelSlot(slot);
-      setAddModelMessage(null);
-    },
-    [],
-  );
+  const selectAddModelSlot = useCallback((slot: ModelSlot | null) => {
+    setAddModelSlot(slot);
+    setAddModelMessage(null);
+  }, []);
 
   // Exact planner preview for the selected slot. Reads the already-loaded run
   // cache synchronously — the pure planner decides, no provider calls. The
@@ -289,9 +284,7 @@ export function ExperimentResults({
       } else {
         setAddModelMessage({
           tone: "error",
-          text: suiteWarning
-            ? `${result.error} (Suite note: ${suiteWarning})`
-            : result.error,
+          text: suiteWarning ? `${result.error} (Suite note: ${suiteWarning})` : result.error,
         });
       }
     } catch (err: unknown) {
@@ -303,7 +296,15 @@ export function ExperimentResults({
     } finally {
       setAddModelBusy(false);
     }
-  }, [controller, addModelSlot, addModelBusy, addModelSync, evalRepo, experiment.suiteId, experimentId]);
+  }, [
+    controller,
+    addModelSlot,
+    addModelBusy,
+    addModelSync,
+    evalRepo,
+    experiment.suiteId,
+    experimentId,
+  ]);
 
   if (!runRecords) {
     return (
@@ -380,8 +381,7 @@ export function ExperimentResults({
   let repairableCount = 0;
   for (const plan of taskRepairPlans.values()) repairableCount += plan.requestedModelKeys.length;
   const fallbackCount = missingCellCount - repairableCount;
-  const showRecoveryToolbar =
-    recoveryEnabled && (missingCellCount > 0 || retryableTaskCount > 0);
+  const showRecoveryToolbar = recoveryEnabled && (missingCellCount > 0 || retryableTaskCount > 0);
 
   /** Aggregate planner counts for the batch "Repair all" action (spec §11.7).
    *  Built from the GROUPED per-task plans: one call per task, all its keys. */
@@ -504,7 +504,6 @@ export function ExperimentResults({
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const startedText = `${new Date(experiment.createdAt).toLocaleString()} · ${timeZone}`;
 
-
   // Coverage issues derive from CURRENT aggregation cells (spec §12.4 #6): a
   // repaired cell leaves this list as soon as the selected attempt changes.
   const coverageIssues: {
@@ -540,8 +539,12 @@ export function ExperimentResults({
       ? profiles.map((p) => `${p.name} v${p.version}`).join(", ")
       : "Holistic judgment";
 
-  const winnerModels = aggregation.models.filter((m) => aggregation.winnerKeys.includes(m.modelKey));
-  const snapshotOrder = new Map(experiment.snapshot.modelSlots.map((s, i) => [`${s.providerId}:${s.slug}`, i]));
+  const winnerModels = aggregation.models.filter((m) =>
+    aggregation.winnerKeys.includes(m.modelKey),
+  );
+  const snapshotOrder = new Map(
+    experiment.snapshot.modelSlots.map((s, i) => [`${s.providerId}:${s.slug}`, i]),
+  );
   const displayRanking = deriveDisplayRanking(aggregation.models, snapshotOrder);
   const { eligible, provisional, provisionalLeader } = displayRanking;
 
@@ -630,8 +633,8 @@ export function ExperimentResults({
       {provisionalLeader && provisionalLeader.mean !== null ? (
         <p className="text-sm text-text-secondary">
           <span className="font-medium text-text">Provisional score leader</span> ·{" "}
-          {formatAggregateMean(provisionalLeader.mean)} mean over{" "}
-          {provisionalLeader.scoredTasks}/{provisionalLeader.totalTasks} tasks · not winner-eligible
+          {formatAggregateMean(provisionalLeader.mean)} mean over {provisionalLeader.scoredTasks}/
+          {provisionalLeader.totalTasks} tasks · not winner-eligible
         </p>
       ) : null}
 
@@ -644,11 +647,12 @@ export function ExperimentResults({
             const slot = slotsByKey.get(model.modelKey);
             const isWinner = aggregation.winnerKeys.includes(model.modelKey);
             return (
-              <li key={model.modelKey} className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+              <li
+                key={model.modelKey}
+                className="flex min-w-0 flex-wrap items-center gap-2 text-sm"
+              >
                 <span className="w-7 font-mono text-xs text-text-muted">#{rank + 1}</span>
-                {isWinner ? (
-                  <Crown size={12} className="text-success" aria-label="Winner" />
-                ) : null}
+                {isWinner ? <Crown size={12} className="text-success" aria-label="Winner" /> : null}
                 {slot ? (
                   <CompactModelLabel providerId={slot.providerId} slug={slot.slug} />
                 ) : (
@@ -774,7 +778,9 @@ export function ExperimentResults({
                 <StatusMark status={MISSING_CELL_DISPLAY[reason].status} size={12} />
                 <span className="min-w-0 truncate text-sm text-text">{taskTitle}</span>
                 <span className="font-mono text-xs text-text-muted">{modelKey}</span>
-                <span className="text-xs text-text-secondary">{MISSING_CELL_DISPLAY[reason].text}</span>
+                <span className="text-xs text-text-secondary">
+                  {MISSING_CELL_DISPLAY[reason].text}
+                </span>
                 {runId ? (
                   <Link
                     to={`/runs/${runId}`}
@@ -789,7 +795,6 @@ export function ExperimentResults({
         </section>
       ) : null}
 
-
       {/* Recovery toolbar (spec §11.1) — above the matrix, only while this surface
           owns the lease. Reports repairable vs fallback counts and offers the
           batch repair plus the existing full-roster retry fallback. */}
@@ -801,8 +806,8 @@ export function ExperimentResults({
           <div className="min-w-0 flex-1">
             <p className="text-sm text-text">
               {missingCellCount} missing result{missingCellCount === 1 ? "" : "s"} —{" "}
-              {repairableCount} repairable, {fallbackCount} {fallbackCount === 1 ? "needs" : "need"} a
-              full task retry.
+              {repairableCount} repairable, {fallbackCount} {fallbackCount === 1 ? "needs" : "need"}{" "}
+              a full task retry.
             </p>
             {recoveryMessage ? (
               <p
@@ -812,7 +817,9 @@ export function ExperimentResults({
                 {recoveryMessage.text}
               </p>
             ) : retryMessage ? (
-              <p role="alert" className="mt-1 text-xs text-warning">{retryMessage}</p>
+              <p role="alert" className="mt-1 text-xs text-warning">
+                {retryMessage}
+              </p>
             ) : null}
           </div>
           {repairableCount > 0 ? (

@@ -54,8 +54,7 @@ export function RunDetail({
   // Invalid deep links degrade to a compact, non-blocking notice; the run
   // overview renders normally (spec §8.3).
   const candidateMissing =
-    focusCandidateId != null &&
-    !record.candidates.some((c) => c.candidateId === focusCandidateId);
+    focusCandidateId != null && !record.candidates.some((c) => c.candidateId === focusCandidateId);
   const attemptMissing =
     focusJudgeAttemptId != null &&
     !record.judge.attempts.some((a) => a.attemptId === focusJudgeAttemptId);
@@ -83,11 +82,20 @@ export function RunDetail({
           case "cost-breakdown":
             return <CostBreakdownSection key="cost-breakdown" section={section} />;
           case "candidates":
-            return <CandidatesSection key="candidates" section={section} record={record} focusCandidateId={focusCandidateId} />;
+            return (
+              <CandidatesSection
+                key="candidates"
+                section={section}
+                record={record}
+                focusCandidateId={focusCandidateId}
+              />
+            );
           case "selected-candidate":
             return null; // handled inside CandidatesSection
           case "judge":
-            return <JudgeSection key="judge" record={record} focusJudgeAttemptId={focusJudgeAttemptId} />;
+            return (
+              <JudgeSection key="judge" record={record} focusJudgeAttemptId={focusJudgeAttemptId} />
+            );
           case "fusion":
             return <FusionSection key="fusion" record={record} />;
           case "task-config":
@@ -132,7 +140,11 @@ function HeaderSection({
         <StatusMark status={record.status as StatusMarkStatus} />
         <span>
           Started{" "}
-          <time data-time="started" dateTime={new Date(startedAt).toISOString()} className="tabular-nums">
+          <time
+            data-time="started"
+            dateTime={new Date(startedAt).toISOString()}
+            className="tabular-nums"
+          >
             {section.timestamp}
           </time>
           {section.startedRelativeTime ? ` (${section.startedRelativeTime})` : ""}
@@ -202,7 +214,9 @@ function ProvenanceSection({ section }: { section: Record<string, unknown> }) {
         Suite v{suiteVersion}
       </Link>
       <span className="text-text-muted">·</span>
-      <span className="inline-flex min-h-[44px] items-center font-mono text-text-secondary">{taskId}</span>
+      <span className="inline-flex min-h-[44px] items-center font-mono text-text-secondary">
+        {taskId}
+      </span>
       <span className="text-text-muted">·</span>
       <span className="inline-flex min-h-[44px] items-center font-mono text-text-secondary tabular-nums">
         {boundAttempt ? `${attemptId.slice(0, 8)}…` : attemptId}
@@ -230,7 +244,10 @@ function OutcomeSection({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-text-secondary">Winners:</span>
           {winners.map((w) => (
-            <span key={w} className="rounded-md border border-edge bg-panel px-2 py-1 font-mono text-sm text-text">
+            <span
+              key={w}
+              className="rounded-md border border-edge bg-panel px-2 py-1 font-mono text-sm text-text"
+            >
               {w}
             </span>
           ))}
@@ -254,10 +271,9 @@ function CandidatesSection({
   focusCandidateId?: string | null;
 }) {
   const focusExists =
-    focusCandidateId != null &&
-    record.candidates.some((c) => c.candidateId === focusCandidateId);
+    focusCandidateId != null && record.candidates.some((c) => c.candidateId === focusCandidateId);
   const [selectedId, setSelectedId] = useState<string | null>(
-    focusExists ? focusCandidateId : record.candidates[0]?.candidateId ?? null,
+    focusExists ? focusCandidateId : (record.candidates[0]?.candidateId ?? null),
   );
   const listRef = useRef<HTMLUListElement | null>(null);
 
@@ -309,7 +325,9 @@ function CandidatesSection({
                 aria-pressed={c.candidateId === selectedId}
                 className="flex min-h-[44px] w-full items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-left text-sm transition-colors duration-150 hover:border-edge-bright focus:outline-none focus:ring-2 focus:ring-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
-                <CompactModelLabel providerId={c.providerId} slug={c.slug} />
+                {/* Non-interactive: this label sits inside the row <button>; a nested
+                disclosure button would be invalid DOM nesting. */}
+                <CompactModelLabel providerId={c.providerId} slug={c.slug} interactive={false} />
                 {blindMap[c.candidateId] && (
                   <span className="rounded-md border border-edge px-1.5 py-0.5 font-mono text-xs text-text-muted">
                     Label: {blindMap[c.candidateId]}
@@ -339,7 +357,10 @@ function CandidatesSection({
       </ul>
       {/* Selected candidate output */}
       {selected && acceptedAttempt && (
-        <div data-section="selected-candidate" className="rounded-md border border-edge bg-panel p-3">
+        <div
+          data-section="selected-candidate"
+          className="rounded-md border border-edge bg-panel p-3"
+        >
           <div className="mb-2 flex items-center gap-2">
             <span className="font-mono text-sm text-text">{selected.modelKey}</span>
             {blindMap[selected.candidateId] && (
@@ -349,10 +370,15 @@ function CandidatesSection({
             )}
           </div>
           <div className="mb-2 flex flex-wrap gap-3 text-xs text-text-muted tabular-nums">
-            <span data-input-usage="">{inputUsageLabel(acceptedAttempt.inputEstimate, acceptedAttempt.tokensIn)}</span>
+            <span data-input-usage="">
+              {inputUsageLabel(acceptedAttempt.inputEstimate, acceptedAttempt.tokensIn)}
+            </span>
             {acceptedAttempt.tokensOut != null && <span>Out: {acceptedAttempt.tokensOut}</span>}
             {acceptedAttempt.finishedAt != null && acceptedAttempt.startedAt != null && (
-              <span>Latency: {Math.round((acceptedAttempt.finishedAt - acceptedAttempt.startedAt) / 1000)}s</span>
+              <span>
+                Latency:{" "}
+                {Math.round((acceptedAttempt.finishedAt - acceptedAttempt.startedAt) / 1000)}s
+              </span>
             )}
             {acceptedAttempt.cost?.usd != null && Number.isFinite(acceptedAttempt.cost.usd) && (
               <span data-cost-source={acceptedAttempt.cost.source}>
@@ -387,7 +413,9 @@ function JudgeAttemptPanel({
     >
       {highlighted && <p className="mb-1 text-xs text-accent">Selected attempt</p>}
       {historical && (
-        <p className="mb-1 text-xs text-text-secondary">Historical attempt — accepted summary unchanged</p>
+        <p className="mb-1 text-xs text-text-secondary">
+          Historical attempt — accepted summary unchanged
+        </p>
       )}
       <div className="mb-2 flex items-center gap-2 text-sm">
         <CompactModelLabel providerId={attempt.providerId} slug={attempt.model} />
@@ -401,14 +429,15 @@ function JudgeAttemptPanel({
       <div className="mb-2 flex flex-wrap gap-2 text-sm">
         <span className="text-text-muted">Blind-label mapping:</span>
         {Object.entries(attempt.blindLabelToCandidateId).map(([label, cid]) => (
-          <span key={label} className="rounded-md border border-edge px-1.5 py-0.5 font-mono text-xs text-text-secondary">
+          <span
+            key={label}
+            className="rounded-md border border-edge px-1.5 py-0.5 font-mono text-xs text-text-secondary"
+          >
             {label} → {cid}
           </span>
         ))}
       </div>
-      {attempt.instruction && (
-        <p className="text-sm text-text-secondary">{attempt.instruction}</p>
-      )}
+      {attempt.instruction && <p className="text-sm text-text-secondary">{attempt.instruction}</p>}
     </div>
   );
 }
@@ -427,7 +456,7 @@ function JudgeSection({
   // is not the accepted attempt, it renders as a separate historical panel —
   // accepted summary semantics are never overwritten (spec §12.1).
   const focusedAttempt = focusJudgeAttemptId
-    ? record.judge.attempts.find((a) => a.attemptId === focusJudgeAttemptId) ?? null
+    ? (record.judge.attempts.find((a) => a.attemptId === focusJudgeAttemptId) ?? null)
     : null;
   const historicalAttempt =
     focusedAttempt && focusedAttempt.attemptId !== record.judge.acceptedAttemptId
@@ -436,7 +465,9 @@ function JudgeSection({
 
   return (
     <section data-section="judge" className="flex flex-col gap-2">
-      <h3 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Judge Evidence</h3>
+      <h3 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">
+        Judge Evidence
+      </h3>
       {acceptedAttempt ? (
         <>
           <JudgeAttemptPanel
@@ -452,8 +483,12 @@ function JudgeSection({
                 <div key={cid} className="mb-2 border-t border-edge pt-2 text-sm">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-text">{cid}</span>
-                    <span className="rounded-md border border-edge px-1.5 py-0.5 text-xs text-text-muted">Label: {ev.blindLabel}</span>
-                    <span className="ml-auto font-mono text-text tabular-nums">{ev.overallScore.toFixed(1)}</span>
+                    <span className="rounded-md border border-edge px-1.5 py-0.5 text-xs text-text-muted">
+                      Label: {ev.blindLabel}
+                    </span>
+                    <span className="ml-auto font-mono text-text tabular-nums">
+                      {ev.overallScore.toFixed(1)}
+                    </span>
                   </div>
                   <p className="mt-1 text-text-secondary">{ev.rationale}</p>
                   {ev.strengths.length > 0 && (
@@ -481,7 +516,9 @@ function FusionSection({ record }: { record: RunRecordV2 }) {
 
   return (
     <section data-section="fusion" className="flex flex-col gap-2">
-      <h3 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Fusion Result</h3>
+      <h3 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">
+        Fusion Result
+      </h3>
       {accepted && accepted.result ? (
         <div className="rounded-md border border-edge bg-panel p-3">
           <div className="mb-2 text-sm text-text-muted">
@@ -506,7 +543,10 @@ function CostBreakdownSection({ section }: { section: DetailSection }) {
   const totalUsd = section.totalUsd as number | undefined;
   const unknown = section.unknown === true;
   return (
-    <section data-section="cost-breakdown" className="flex min-w-0 flex-col gap-1 rounded-md border border-edge bg-panel p-3">
+    <section
+      data-section="cost-breakdown"
+      className="flex min-w-0 flex-col gap-1 rounded-md border border-edge bg-panel p-3"
+    >
       <h3 className="text-sm font-semibold text-text">Cost</h3>
       {stages.length === 0 && !unknown ? (
         <p className="text-sm text-text-muted">No cost data for this run.</p>
@@ -527,7 +567,9 @@ function CostBreakdownSection({ section }: { section: DetailSection }) {
           ))}
         </ul>
       ) : null}
-      {unknown ? <p className="text-xs text-text-muted">Some accepted stages have Unknown cost.</p> : null}
+      {unknown ? (
+        <p className="text-xs text-text-muted">Some accepted stages have Unknown cost.</p>
+      ) : null}
       {totalUsd !== undefined && totalUsd > 0 ? (
         <p data-cost-total="" className="text-sm text-text">
           Incremental total: <span className="tabular-nums">${totalUsd.toFixed(6)}</span>
@@ -547,7 +589,15 @@ function TaskConfigSection({ section }: { section: DetailSection }) {
         aria-expanded={expanded}
         className="flex min-h-[44px] items-center gap-2 rounded-md border border-edge bg-panel px-3 py-2 text-left text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
       >
-        <ChevronDown size={14} className={expanded ? "rotate-180 transition-transform duration-150" : "transition-transform duration-150"} aria-hidden="true" />
+        <ChevronDown
+          size={14}
+          className={
+            expanded
+              ? "rotate-180 transition-transform duration-150"
+              : "transition-transform duration-150"
+          }
+          aria-hidden="true"
+        />
         Task & Configuration
       </button>
       {expanded && (
@@ -569,7 +619,9 @@ function TaskConfigSection({ section }: { section: DetailSection }) {
           {(section.modelRoster as string[] | undefined)?.length ? (
             <div>
               <span className="text-text-muted">Models: </span>
-              <span className="font-mono text-text">{(section.modelRoster as string[]).join(", ")}</span>
+              <span className="font-mono text-text">
+                {(section.modelRoster as string[]).join(", ")}
+              </span>
             </div>
           ) : null}
           {section.reasoning ? (
@@ -577,11 +629,13 @@ function TaskConfigSection({ section }: { section: DetailSection }) {
               <p className="mb-1 text-text-secondary">Reasoning policy</p>
               {Object.entries(section.reasoning.candidates).map(([modelKey, setting]) => (
                 <p key={modelKey} className="font-mono text-xs text-text">
-                  Candidate {modelKey}: requested {setting.requested} · effective {setting.effective} · {setting.source}
+                  Candidate {modelKey}: requested {setting.requested} · effective{" "}
+                  {setting.effective} · {setting.source}
                 </p>
               ))}
               <p className="font-mono text-xs text-text">
-                Judge: requested {section.reasoning.judge.requested} · effective {section.reasoning.judge.effective} · {section.reasoning.judge.source}
+                Judge: requested {section.reasoning.judge.requested} · effective{" "}
+                {section.reasoning.judge.effective} · {section.reasoning.judge.source}
               </p>
             </div>
           ) : null}

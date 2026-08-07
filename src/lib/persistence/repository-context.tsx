@@ -6,8 +6,21 @@
 // Runs/Evaluations show a blocking storage error with Retry.
 // =============================================================================
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { createDatabase, type DatabaseHandle, type RSembleEvaluationDB, type StorageState } from "./database";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  createDatabase,
+  type DatabaseHandle,
+  type RSembleEvaluationDB,
+  type StorageState,
+} from "./database";
 import { createRunRepository, type RunRepository } from "./run-repository";
 import { createEvaluationRepository, type EvaluationRepository } from "./evaluation-repository";
 import { createFusionStudyRepository, type FusionStudyRepository } from "./fusion-study-repository";
@@ -91,10 +104,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     setTimeout(initialize, 0);
   }, [initialize]);
 
-  const runRepo = useMemo(
-    () => (handle ? createRunRepository(handle.db) : null),
-    [handle],
-  );
+  const runRepo = useMemo(() => (handle ? createRunRepository(handle.db) : null), [handle]);
   const evalRepo = useMemo(
     () => (handle && runRepo ? createEvaluationRepository(handle.db, runRepo) : null),
     [handle, runRepo],
@@ -109,9 +119,5 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     [runRepo, evalRepo, fusionRepo, handle, storageState, retry],
   );
 
-  return (
-    <RepositoryContext.Provider value={value}>
-      {children}
-    </RepositoryContext.Provider>
-  );
+  return <RepositoryContext.Provider value={value}>{children}</RepositoryContext.Provider>;
 }

@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, afterEach, vi } from "vitest";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import type { ReactNode } from "react";
 import { SuitePreflightDialog, type SuitePreflightEntry } from "./SuitePreflightDialog";
 import type { ModelProbeState } from "../../lib/providers/model-probe";
 
@@ -131,7 +130,10 @@ describe("SuitePreflightDialog", () => {
   it("shows Run suite as primary when no failures exist", async () => {
     const { candidates, judge } = makeEntries();
     const allReady = {
-      candidates: candidates.map((c) => ({ ...c, state: c.state.kind === "failed" ? ready : c.state })),
+      candidates: candidates.map((c) => ({
+        ...c,
+        state: c.state.kind === "failed" ? ready : c.state,
+      })),
       judge,
     };
     const h = renderWithRouter(

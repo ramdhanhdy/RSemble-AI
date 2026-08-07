@@ -7,10 +7,7 @@
 // normalized weighted mean of the complete criterion vector.
 // =============================================================================
 
-import type {
-  EvaluationCriterion,
-  EvaluationProfileSnapshot,
-} from "./evaluation-types";
+import type { EvaluationCriterion, EvaluationProfileSnapshot } from "./evaluation-types";
 
 /** Maximum epsilon for floating-point winner comparison. */
 export const WINNER_EPSILON = 1e-9;
@@ -91,24 +88,18 @@ export function canonicalScore(
  * Determine the winner model keys from scores.
  * All models within WINNER_EPSILON of the maximum appear in winnerKeys.
  */
-export function computeWinnerKeys(
-  scoresByModelKey: Record<string, number>,
-): string[] {
+export function computeWinnerKeys(scoresByModelKey: Record<string, number>): string[] {
   const entries = Object.entries(scoresByModelKey);
   if (entries.length === 0) return [];
   const maxScore = Math.max(...entries.map(([, s]) => s));
-  return entries
-    .filter(([, s]) => Math.abs(s - maxScore) < WINNER_EPSILON)
-    .map(([key]) => key);
+  return entries.filter(([, s]) => Math.abs(s - maxScore) < WINNER_EPSILON).map(([key]) => key);
 }
 
 /**
  * Validate an evaluation profile snapshot for use in a run.
  * Returns an array of field-specific error messages (empty = valid).
  */
-export function validateProfile(
-  profile: EvaluationProfileSnapshot,
-): string[] {
+export function validateProfile(profile: EvaluationProfileSnapshot): string[] {
   const errors: string[] = [];
 
   if (!profile.name.trim()) {
@@ -147,9 +138,7 @@ export function validateProfile(
  * Compute normalized weights for display.
  * Returns a map of criterion ID → percentage (0–100).
  */
-export function normalizedWeights(
-  criteria: EvaluationCriterion[],
-): Record<string, number> {
+export function normalizedWeights(criteria: EvaluationCriterion[]): Record<string, number> {
   const total = criteria.reduce((sum, c) => sum + Math.max(0, c.weight), 0);
   const result: Record<string, number> = {};
   for (const c of criteria) {

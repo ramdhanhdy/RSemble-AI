@@ -87,13 +87,37 @@ describe("headroom math (spec test 4)", () => {
     const tasks: PairedTaskScores[] = [
       {
         taskId: "t1",
-        a: { overall: 5, criteria: [{ criterionId: "acc", score: 5 }, { criterionId: "comp", score: 5 }] },
-        b: { overall: 3, criteria: [{ criterionId: "acc", score: 3 }, { criterionId: "comp", score: 3 }] },
+        a: {
+          overall: 5,
+          criteria: [
+            { criterionId: "acc", score: 5 },
+            { criterionId: "comp", score: 5 },
+          ],
+        },
+        b: {
+          overall: 3,
+          criteria: [
+            { criterionId: "acc", score: 3 },
+            { criterionId: "comp", score: 3 },
+          ],
+        },
       },
       {
         taskId: "t2",
-        a: { overall: 3, criteria: [{ criterionId: "acc", score: 3 }, { criterionId: "comp", score: 3 }] },
-        b: { overall: 5, criteria: [{ criterionId: "acc", score: 5 }, { criterionId: "comp", score: 5 }] },
+        a: {
+          overall: 3,
+          criteria: [
+            { criterionId: "acc", score: 3 },
+            { criterionId: "comp", score: 3 },
+          ],
+        },
+        b: {
+          overall: 5,
+          criteria: [
+            { criterionId: "acc", score: 5 },
+            { criterionId: "comp", score: 5 },
+          ],
+        },
       },
     ];
     const result = computeHeadroom(tasks, EQUAL_WEIGHTS);
@@ -107,13 +131,37 @@ describe("headroom math (spec test 4)", () => {
     const tasks: PairedTaskScores[] = [
       {
         taskId: "t1",
-        a: { overall: null, criteria: [{ criterionId: "acc", score: 5 }, { criterionId: "comp", score: 3 }] },
-        b: { overall: null, criteria: [{ criterionId: "acc", score: 3 }, { criterionId: "comp", score: 3 }] },
+        a: {
+          overall: null,
+          criteria: [
+            { criterionId: "acc", score: 5 },
+            { criterionId: "comp", score: 3 },
+          ],
+        },
+        b: {
+          overall: null,
+          criteria: [
+            { criterionId: "acc", score: 3 },
+            { criterionId: "comp", score: 3 },
+          ],
+        },
       },
       {
         taskId: "t2",
-        a: { overall: null, criteria: [{ criterionId: "acc", score: 3 }, { criterionId: "comp", score: 3 }] },
-        b: { overall: null, criteria: [{ criterionId: "acc", score: 5 }, { criterionId: "comp", score: 3 }] },
+        a: {
+          overall: null,
+          criteria: [
+            { criterionId: "acc", score: 3 },
+            { criterionId: "comp", score: 3 },
+          ],
+        },
+        b: {
+          overall: null,
+          criteria: [
+            { criterionId: "acc", score: 5 },
+            { criterionId: "comp", score: 3 },
+          ],
+        },
       },
     ];
     const result = computeHeadroom(tasks, EQUAL_WEIGHTS);
@@ -217,10 +265,7 @@ describe("verifier gate (spec test 6)", () => {
 
   it("refuses binary metrics on rubric-only tasks", () => {
     const gate = gateBinaryMetrics(
-      [
-        { taskId: "t1", verification: { kind: "none" } },
-        { taskId: "t2" },
-      ],
+      [{ taskId: "t1", verification: { kind: "none" } }, { taskId: "t2" }],
       outcomes,
       ["a/m1", "b/m2"],
     );
@@ -284,26 +329,38 @@ describe("pool adequacy probe (spec §5.6)", () => {
 
   it("does not trigger when any single condition fails", () => {
     expect(
-      probePoolAdequacy({ bestModelMean: 4.8, ceiling: 5, poolOracleHeadroom: 0.02, maxPairHeadroom: 0.04 })
-        .triggerChallengers,
+      probePoolAdequacy({
+        bestModelMean: 4.8,
+        ceiling: 5,
+        poolOracleHeadroom: 0.02,
+        maxPairHeadroom: 0.04,
+      }).triggerChallengers,
     ).toBe(false);
     expect(
-      probePoolAdequacy({ bestModelMean: 3.9, ceiling: 5, poolOracleHeadroom: 0.2, maxPairHeadroom: 0.04 })
-        .triggerChallengers,
+      probePoolAdequacy({
+        bestModelMean: 3.9,
+        ceiling: 5,
+        poolOracleHeadroom: 0.2,
+        maxPairHeadroom: 0.04,
+      }).triggerChallengers,
     ).toBe(false);
     expect(
-      probePoolAdequacy({ bestModelMean: 3.9, ceiling: 5, poolOracleHeadroom: 0.02, maxPairHeadroom: 0.3 })
-        .triggerChallengers,
+      probePoolAdequacy({
+        bestModelMean: 3.9,
+        ceiling: 5,
+        poolOracleHeadroom: 0.02,
+        maxPairHeadroom: 0.3,
+      }).triggerChallengers,
     ).toBe(false);
   });
 
   it("challenger outcome: headroom opened → unconfirmed; same failures → confirmed", () => {
-    expect(
-      assessChallengerOutcome([{ modelKey: "x/m9", maxPairHeadroomWithPool: 0.4 }]),
-    ).toBe("unconfirmed");
-    expect(
-      assessChallengerOutcome([{ modelKey: "x/m9", maxPairHeadroomWithPool: 0.02 }]),
-    ).toBe("confirmed");
+    expect(assessChallengerOutcome([{ modelKey: "x/m9", maxPairHeadroomWithPool: 0.4 }])).toBe(
+      "unconfirmed",
+    );
+    expect(assessChallengerOutcome([{ modelKey: "x/m9", maxPairHeadroomWithPool: 0.02 }])).toBe(
+      "confirmed",
+    );
   });
 });
 
@@ -311,7 +368,13 @@ describe("taskOverall", () => {
   it("prefers criterion-weighted means and falls back to holistic overalls", () => {
     expect(
       taskOverall(
-        { overall: 1, criteria: [{ criterionId: "acc", score: 5 }, { criterionId: "comp", score: 3 }] },
+        {
+          overall: 1,
+          criteria: [
+            { criterionId: "acc", score: 5 },
+            { criterionId: "comp", score: 3 },
+          ],
+        },
         EQUAL_WEIGHTS,
       ),
     ).toBeCloseTo(4, 10);

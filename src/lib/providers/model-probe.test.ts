@@ -9,8 +9,7 @@
 // =============================================================================
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { probeModelRoute } from "./model-probe";
-import type { LLMProvider, ProviderId } from "./types";
-import { ProviderError } from "./types";
+import { type LLMProvider, type ProviderId, ProviderError } from "./types";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -46,7 +45,9 @@ describe("probeModelRoute — contract", () => {
     });
 
     expect(stream).toHaveBeenCalledTimes(1);
-    const call = stream.mock.calls[0] as unknown as [{ model: string; temperature?: number; maxTokens?: number }];
+    const call = stream.mock.calls[0] as unknown as [
+      { model: string; temperature?: number; maxTokens?: number },
+    ];
     expect(call[0].model).toBe("cmc/model");
   });
 
@@ -64,11 +65,12 @@ describe("probeModelRoute — contract", () => {
       timeoutMs: 5_000,
     });
 
-    const call = stream.mock.calls[0] as unknown as [{ model: string; temperature?: number; maxTokens?: number }];
+    const call = stream.mock.calls[0] as unknown as [
+      { model: string; temperature?: number; maxTokens?: number },
+    ];
     expect(call[0].temperature).toBe(0);
     expect(call[0].maxTokens).toBe(128);
   });
-
 
   it("consumes the streaming iterator to completion", async () => {
     let yieldCount = 0;
@@ -203,7 +205,10 @@ describe("probeModelRoute — contract", () => {
   it("returns failed with network category on generic fetch error", async () => {
     const provider = makeProvider({
       chatCompletionStream: vi.fn(async function* (): AsyncGenerator<string, void, unknown> {
-        throw new ProviderError("Network error reaching 9Router. Check your connection.", "9router");
+        throw new ProviderError(
+          "Network error reaching 9Router. Check your connection.",
+          "9router",
+        );
       }),
     });
 
@@ -251,7 +256,8 @@ describe("probeModelRoute — contract", () => {
   it("never discloses raw upstream response body content in the message", async () => {
     // An upstream body with an unusual token format that the old regex-based
     // sanitizer would have passed through verbatim.
-    const rawBody = '{"error":{"code":"model_overloaded","message":"The server is overloaded with requests. Please retry. Trace ID: xyz-abc-123"}}';
+    const rawBody =
+      '{"error":{"code":"model_overloaded","message":"The server is overloaded with requests. Please retry. Trace ID: xyz-abc-123"}}';
     const provider = makeProvider({
       chatCompletionStream: vi.fn(async function* (): AsyncGenerator<string, void, unknown> {
         throw new ProviderError(rawBody, "9router", 503);

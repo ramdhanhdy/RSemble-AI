@@ -128,7 +128,10 @@ export function setModelPricing(snapshot: ModelPricingSnapshot): void {
   schedulePricingPersist();
 }
 
-export function getModelPricing(providerId: ProviderId, modelId: string): ModelPricingSnapshot | null {
+export function getModelPricing(
+  providerId: ProviderId,
+  modelId: string,
+): ModelPricingSnapshot | null {
   hydratePricing();
   return pricingByModel.get(key(providerId, modelId)) ?? null;
 }

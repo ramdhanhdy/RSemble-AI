@@ -139,7 +139,9 @@ export function findBlindnessViolations(
   const violations: string[] = [];
   const haystacks = messages.map((m) => contentToText(m.content));
   for (const identity of identities) {
-    for (const [field, value] of Object.entries(identity) as Array<[keyof CandidateIdentity, string]>) {
+    for (const [field, value] of Object.entries(identity) as Array<
+      [keyof CandidateIdentity, string]
+    >) {
       const needle = value.trim();
       // Slugs/provider ids are distinctive; display names shorter than 3 chars
       // would false-positive on prose and are not identifying anyway.
@@ -282,8 +284,7 @@ function attachmentMaterial(input: {
     return { textBlocks: "", native: [] as NativeAttachmentPart[], withheld: false, count: 0 };
   }
   const caps = input.criticCapabilities;
-  const native =
-    input.includeNativeMedia && caps ? selectNativeParts(atts, caps) : [];
+  const native = input.includeNativeMedia && caps ? selectNativeParts(atts, caps) : [];
   const withheld =
     hasNativeMedia(atts) &&
     (input.includeNativeMedia !== true ||
@@ -340,7 +341,9 @@ export function renderRecipeMessages(
   if (attachment.textBlocks.length > 0) userParts.push(attachment.textBlocks);
   if (rubric.length > 0) userParts.push(rubric);
   if (analysisBlock.length > 0) userParts.push(analysisBlock);
-  userParts.push(`Candidate answers (anonymized):\n${blindCandidateSection(input.blindCandidates)}`);
+  userParts.push(
+    `Candidate answers (anonymized):\n${blindCandidateSection(input.blindCandidates)}`,
+  );
 
   const userText = userParts.join("\n\n");
   const user: string | ContentPart[] =
@@ -351,7 +354,7 @@ export function renderRecipeMessages(
           ...attachment.native.map((p) =>
             p.type === "image"
               ? { type: "image" as const, mimeType: p.mimeType, data: p.data }
-              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename }
+              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename },
           ),
         ];
   return [
@@ -412,7 +415,9 @@ export function renderRefineWinnerMessages(input: RefineWinnerInput): ChatMessag
   if (attachment.textBlocks.length > 0) userParts.push(attachment.textBlocks);
   if (rubric.length > 0) userParts.push(rubric);
   userParts.push(`Winning draft (Candidate ${input.winnerLabel}):\n${input.winnerContent}`);
-  userParts.push(`Reference candidate answers (anonymized):\n${blindCandidateSection(input.blindCandidates)}`);
+  userParts.push(
+    `Reference candidate answers (anonymized):\n${blindCandidateSection(input.blindCandidates)}`,
+  );
 
   const userText = userParts.join("\n\n");
   const user: string | ContentPart[] =
@@ -423,7 +428,7 @@ export function renderRefineWinnerMessages(input: RefineWinnerInput): ChatMessag
           ...attachment.native.map((p) =>
             p.type === "image"
               ? { type: "image" as const, mimeType: p.mimeType, data: p.data }
-              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename }
+              : { type: "file" as const, mimeType: p.mimeType, data: p.data, filename: p.filename },
           ),
         ];
   return [

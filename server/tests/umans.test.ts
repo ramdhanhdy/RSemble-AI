@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "node:http";
-import { handleUmansProxy } from "../codex-bridge/umans";
+import { handleUmansProxy } from "../codex-bridge/umans.js";
 
 function makeReq(method = "POST", body?: string): http.IncomingMessage {
   const req = new http.IncomingMessage(null as never);
@@ -50,10 +50,16 @@ afterEach(() => {
 describe("handleUmansProxy — plain proxy behavior", () => {
   it("forwards upstream status, content-type, and body chunks and cleans its watchdog", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(upstreamWithChunks(['data: a\n\n', 'data: b\n\n'])));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(upstreamWithChunks(["data: a\n\n", "data: b\n\n"])),
+    );
     const res = makeRes();
     await handleUmansProxy(makeReq("POST", "{}"), res, "/umans/v1/chat/completions");
-    expect(res.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({ "Content-Type": "text/event-stream" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      200,
+      expect.objectContaining({ "Content-Type": "text/event-stream" }),
+    );
     expect(res.written).toHaveLength(2);
     expect(res.end).toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
@@ -61,14 +67,20 @@ describe("handleUmansProxy — plain proxy behavior", () => {
 
   it("passes an AbortSignal to the upstream fetch and preserves upstream error status", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response('{"error":{"message":"bad key"}}', { status: 401, headers: { "Content-Type": "application/json" } }),
+      new Response('{"error":{"message":"bad key"}}', {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const res = makeRes();
     await handleUmansProxy(makeReq("POST", "{}"), res, "/umans/v1/chat/completions");
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.signal).toBeInstanceOf(AbortSignal);
-    expect(res.writeHead).toHaveBeenCalledWith(401, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      401,
+      expect.objectContaining({ "Content-Type": "application/json" }),
+    );
     // Plain-text/provider error body is forwarded untouched to the client.
     const body = Buffer.concat(res.written).toString();
     expect(body).toContain("bad key");
@@ -78,7 +90,10 @@ describe("handleUmansProxy — plain proxy behavior", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ENOTFOUND")));
     const res = makeRes();
     await handleUmansProxy(makeReq("POST", "{}"), res, "/umans/v1/chat/completions");
-    expect(res.writeHead).toHaveBeenCalledWith(502, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      502,
+      expect.objectContaining({ "Content-Type": "application/json" }),
+    );
     const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
     expect(body.error.message).toContain("api.code.umans.ai");
   });
@@ -103,7 +118,10 @@ describe("handleUmansProxy — timeout", () => {
     });
     await vi.advanceTimersByTimeAsync(6_000);
     await promise;
-    expect(res.writeHead).toHaveBeenCalledWith(504, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      504,
+      expect.objectContaining({ "Content-Type": "application/json" }),
+    );
     const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
     expect(body.error.type).toBe("upstream_timeout");
     expect(vi.getTimerCount()).toBe(0);
@@ -112,12 +130,20 @@ describe("handleUmansProxy — timeout", () => {
 
   it("cleans its watchdog when a redirect is rejected", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(null, { status: 302, headers: { Location: "https://other.example" } }),
-    ));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(null, { status: 302, headers: { Location: "https://other.example" } }),
+        ),
+    );
     const res = makeRes();
     await handleUmansProxy(makeReq("GET"), res, "/umans/v1/models", { upstreamTimeoutMs: 5_000 });
-    expect(res.writeHead).toHaveBeenCalledWith(502, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      502,
+      expect.objectContaining({ "Content-Type": "application/json" }),
+    );
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -129,11 +155,16 @@ describe("handleUmansProxy — timeout", () => {
       "fetch",
       vi.fn((_url: string, init?: RequestInit) => {
         upstreamSignal = init?.signal ?? undefined;
-        return Promise.resolve(new Response(new ReadableStream<Uint8Array>({
-          start(controller) {
-            streamController = controller;
-          },
-        }), { headers: { "Content-Type": "text/event-stream" } }));
+        return Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                streamController = controller;
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          ),
+        );
       }),
     );
     const res = makeRes();
@@ -186,7 +217,9 @@ describe("handleUmansProxy — backpressure", () => {
     expect(written).toHaveLength(4);
     expect(written[0]).toContain("chunk-0");
     expect(written[3]).toContain("chunk-3");
-    expect((res.once as ReturnType<typeof vi.fn>).mock.calls.some((c) => c[0] === "drain")).toBe(true);
+    expect((res.once as ReturnType<typeof vi.fn>).mock.calls.some((c) => c[0] === "drain")).toBe(
+      true,
+    );
     expect(res.end).toHaveBeenCalled();
   });
 });

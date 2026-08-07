@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  EXAMPLE_TASKS,
-  nextExampleIndex,
-  type ExampleTask,
-} from "./test-cases";
+import { EXAMPLE_TASKS, nextExampleIndex, type ExampleTask } from "./test-cases";
 
 const CONSTRAINT_MARKERS = [
   "must",

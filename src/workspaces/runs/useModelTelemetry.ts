@@ -31,8 +31,7 @@ export function useModelTelemetry(
 
   return useMemo(() => {
     const matching = summaries.filter(
-      (s): s is FullRunSummaryV2 =>
-        s.kind === "full" && s.modelKeys.includes(modelKey),
+      (s): s is FullRunSummaryV2 => s.kind === "full" && s.modelKeys.includes(modelKey),
     );
     if (matching.length === 0) return null;
 

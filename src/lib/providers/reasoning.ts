@@ -1,11 +1,11 @@
-import type {
-  ModelReasoningCapabilities,
-  ProviderId,
-  ReasoningEffort,
-  ReasoningResolution,
-  ReasoningTransport,
+import {
+  type ModelReasoningCapabilities,
+  type ProviderId,
+  type ReasoningEffort,
+  type ReasoningResolution,
+  type ReasoningTransport,
+  REASONING_EFFORTS,
 } from "./types";
-import { REASONING_EFFORTS } from "./types";
 import type { ModelSlot } from "../../studio-data";
 
 const UNKNOWN_REASONING: ModelReasoningCapabilities = Object.freeze({
@@ -58,7 +58,13 @@ function parseStoredCapabilities(value: unknown): ModelReasoningCapabilities | n
   const source = record.source;
   const transport = record.transport;
   if (source !== "catalog" && source !== "provider-docs") return null;
-  if (transport !== "openrouter" && transport !== "deepseek" && transport !== "gemini3" && transport !== "none") return null;
+  if (
+    transport !== "openrouter" &&
+    transport !== "deepseek" &&
+    transport !== "gemini3" &&
+    transport !== "none"
+  )
+    return null;
   return { supportedEfforts: [...efforts], source, transport };
 }
 
@@ -211,7 +217,12 @@ export function nativeReasoningPayload(
   requested: ReasoningEffort | undefined,
   strict = false,
 ): { resolution: Extract<ReasoningResolution, { ok: true }>; payload: Record<string, unknown> } {
-  const resolution = resolveReasoningEffort(providerId, model, requested ?? "provider-default", strict);
+  const resolution = resolveReasoningEffort(
+    providerId,
+    model,
+    requested ?? "provider-default",
+    strict,
+  );
   if (!resolution.ok) {
     throw new Error(resolution.reason);
   }

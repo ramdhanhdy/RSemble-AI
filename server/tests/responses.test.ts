@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "node:http";
-import { handleCompletions, DEFAULT_UPSTREAM_TIMEOUT_MS, type CompletionRequestBody } from "../codex-bridge/responses";
+import {
+  handleCompletions,
+  DEFAULT_UPSTREAM_TIMEOUT_MS,
+  type CompletionRequestBody,
+} from "../codex-bridge/responses.js";
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -15,7 +19,7 @@ function makeRes(): http.ServerResponse {
   return res;
 }
 
-function authOk() {
+async function authOk() {
   return { token: "test-token", accountId: "acct-1" };
 }
 
@@ -73,15 +77,23 @@ describe("handleCompletions — upstream timeout", () => {
     });
     await vi.advanceTimersByTimeAsync(6_000);
     await promise;
-    expect(res.writeHead).toHaveBeenCalledWith(504, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      504,
+      expect.objectContaining({ "Content-Type": "application/json" }),
+    );
     const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
     expect(body.error.type).toBe("upstream_timeout");
   });
 
   it("passes an AbortSignal to the upstream fetch", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      sseUpstream(['data: {"type":"response.output_text.delta","delta":"hi"}\n\n', "data: [DONE]\n\n"]),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"hi"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const res = makeRes();
     await handleCompletions(BASE_BODY, res, { getToken: authOk });
@@ -125,7 +137,9 @@ describe("handleCompletions — upstream timeout", () => {
     await vi.advanceTimersByTimeAsync(120);
     await promise;
 
-    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map((call) =>
+      String(call[0]),
+    );
     expect(writes.some((chunk) => chunk.includes('"content":"one"'))).toBe(true);
     expect(writes.some((chunk) => chunk.includes('"content":"two"'))).toBe(true);
     expect(writes).toContain("data: [DONE]\n\n");
@@ -186,7 +200,9 @@ describe("handleCompletions — backpressure", () => {
     expect(sseWrites[4]).toContain("chunk-4");
     expect(sseWrites[5]).toBe("data: [DONE]\n\n");
     // The pump must have registered at least one drain wait (buffer was full).
-    expect((res.once as ReturnType<typeof vi.fn>).mock.calls.some((c) => c[0] === "drain")).toBe(true);
+    expect((res.once as ReturnType<typeof vi.fn>).mock.calls.some((c) => c[0] === "drain")).toBe(
+      true,
+    );
     expect(res.end).toHaveBeenCalled();
   });
 });
@@ -203,7 +219,9 @@ describe("handleCompletions — headers-sent-safe stream errors", () => {
       pull(controller) {
         reads += 1;
         if (reads === 1) {
-          controller.enqueue(encoder.encode('data: {"type":"response.output_text.delta","delta":"partial"}\n\n'));
+          controller.enqueue(
+            encoder.encode('data: {"type":"response.output_text.delta","delta":"partial"}\n\n'),
+          );
         } else {
           controller.error(new Error("upstream exploded"));
         }
@@ -211,9 +229,11 @@ describe("handleCompletions — headers-sent-safe stream errors", () => {
     });
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+        ),
     );
 
     const res = makeRes();
@@ -234,7 +254,10 @@ describe("handleCompletions — headers-sent-safe stream errors", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connection refused")));
     const res = makeRes();
     await handleCompletions(BASE_BODY, res, { getToken: authOk });
-    expect(res.writeHead).toHaveBeenCalledWith(500, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      500,
+      expect.objectContaining({ "Content-Type": "application/json" }),
+    );
     const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
     expect(body.error.type).toBe("bridge_internal_error");
   });
@@ -252,7 +275,10 @@ describe("handleCompletions — auth", () => {
         throw new Error("Not authenticated");
       },
     });
-    expect(res.writeHead).toHaveBeenCalledWith(401, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      401,
+      expect.objectContaining({ "Content-Type": "application/json" }),
+    );
   });
 });
 
@@ -267,9 +293,9 @@ function captureUpstreamBody(fetchMock: ReturnType<typeof vi.fn>) {
 
 describe("handleCompletions — content parts (7.4.3)", () => {
   it("keeps the all-string upstream body byte-identical to pre-attachments", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const res = makeRes();
     await handleCompletions(
@@ -294,9 +320,9 @@ describe("handleCompletions — content parts (7.4.3)", () => {
   });
 
   it("translates text and image_url parts to Responses API input items", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const res = makeRes();
     await handleCompletions(
@@ -332,9 +358,9 @@ describe("handleCompletions — content parts (7.4.3)", () => {
   });
 
   it("preserves roles and wraps string messages alongside part messages", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ id: "r1", output: [] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const res = makeRes();
     await handleCompletions(
@@ -342,7 +368,10 @@ describe("handleCompletions — content parts (7.4.3)", () => {
         model: "gpt-5.6-sol",
         messages: [
           { role: "assistant", content: "first answer" },
-          { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA" } }] },
+          {
+            role: "user",
+            content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA" } }],
+          },
         ],
         stream: true,
       },
@@ -352,8 +381,16 @@ describe("handleCompletions — content parts (7.4.3)", () => {
 
     const body = captureUpstreamBody(fetchMock);
     expect(body.input).toEqual([
-      { type: "message", role: "assistant", content: [{ type: "input_text", text: "first answer" }] },
-      { type: "message", role: "user", content: [{ type: "input_image", image_url: "data:image/jpeg;base64,AAAA" }] },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "input_text", text: "first answer" }],
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_image", image_url: "data:image/jpeg;base64,AAAA" }],
+      },
     ]);
   });
 
@@ -369,7 +406,10 @@ describe("handleCompletions — content parts (7.4.3)", () => {
             role: "user",
             content: [
               { type: "text", text: "summarize" },
-              { type: "file", file: { filename: "report.pdf", file_data: "data:application/pdf;base64,JVBER" } },
+              {
+                type: "file",
+                file: { filename: "report.pdf", file_data: "data:application/pdf;base64,JVBER" },
+              },
             ],
           },
         ],
@@ -383,7 +423,10 @@ describe("handleCompletions — content parts (7.4.3)", () => {
       },
     );
 
-    expect(res.writeHead).toHaveBeenCalledWith(415, expect.objectContaining({ "Content-Type": "application/json" }));
+    expect(res.writeHead).toHaveBeenCalledWith(
+      415,
+      expect.objectContaining({ "Content-Type": "application/json" }),
+    );
     const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
     expect(body.error.type).toBe("unsupported_media_type");
     expect(body.error.message).toContain("report.pdf");

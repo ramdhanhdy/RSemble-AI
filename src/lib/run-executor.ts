@@ -13,7 +13,16 @@
 //   executeFusionAttempt — Fusion/Re-fuse from frozen accepted evidence
 // =============================================================================
 
-import type { ChatMessage, ChatOptions, CostRecord, CriticRef, InputUsageEstimate, ProviderId, ReasoningPolicy, UsageBreakdown } from "./providers/types";
+import type {
+  ChatMessage,
+  ChatOptions,
+  CostRecord,
+  CriticRef,
+  InputUsageEstimate,
+  ProviderId,
+  ReasoningPolicy,
+  UsageBreakdown,
+} from "./providers/types";
 import type {
   BlindCandidate,
   Candidate,
@@ -22,11 +31,7 @@ import type {
   JudgeReport,
   ConsensusBreakdown,
 } from "../studio-data";
-import type {
-  RunSource,
-  AttemptStatus,
-  PersistedError,
-} from "./persistence/run-types";
+import type { RunSource, AttemptStatus, PersistedError } from "./persistence/run-types";
 import { getProvider } from "./providers/registry";
 import { getModelCapabilities } from "./providers/capabilities";
 import type { Attachment } from "./attachments/types";
@@ -51,8 +56,10 @@ import {
   type BlindCandidateSet,
   type FanoutJob,
 } from "./pipeline";
-import type { AdHocEvaluationConfig } from "./evaluations/evaluation-profile-adhoc";
-import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
+import {
+  type AdHocEvaluationConfig,
+  resolveEvaluationProfile,
+} from "./evaluations/evaluation-profile-adhoc";
 import { devTerminalLog, type DevTerminalFields } from "./dev-terminal-log";
 import {
   DEFAULT_PROVIDER_DEADLINE_POLICY,
@@ -244,9 +251,21 @@ export interface RunExecutorEvents {
 
 export interface RunExecutor {
   executeTask(request: RunRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void>;
-  retryCandidate(request: FrozenCandidateRetryRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void>;
-  retryJudge(request: FrozenJudgeRetryRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void>;
-  executeFusionAttempt(request: FrozenFusionRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void>;
+  retryCandidate(
+    request: FrozenCandidateRetryRequest,
+    events: RunExecutorEvents,
+    signal: AbortSignal,
+  ): Promise<void>;
+  retryJudge(
+    request: FrozenJudgeRetryRequest,
+    events: RunExecutorEvents,
+    signal: AbortSignal,
+  ): Promise<void>;
+  executeFusionAttempt(
+    request: FrozenFusionRequest,
+    events: RunExecutorEvents,
+    signal: AbortSignal,
+  ): Promise<void>;
 }
 
 export interface ExecutionDeadlinePolicy {
@@ -291,9 +310,17 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
    * catalog-estimate only when an exact execution-time price is known,
    * otherwise an Unknown record — never a fabricated total.
    */
-  function estimateFallbackCost(providerId: string, model: string, tokensIn: number | null, tokensOut: number | null): CostRecord {
+  function estimateFallbackCost(
+    providerId: string,
+    model: string,
+    tokensIn: number | null,
+    tokensOut: number | null,
+  ): CostRecord {
     const snapshot = getModelPricing(providerId as ProviderId, model);
-    const estimated = costFromSnapshot(snapshot ?? undefined, { inputTokens: tokensIn, outputTokens: tokensOut });
+    const estimated = costFromSnapshot(snapshot ?? undefined, {
+      inputTokens: tokensIn,
+      outputTokens: tokensOut,
+    });
     return estimated ?? { usd: null, source: "unknown" };
   }
 
@@ -309,7 +336,13 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     return sanitizePersistedError(
       err,
       timeout
-        ? { ...ctx, category: "timeout", timeoutKind: timeout.kind, configuredDurationMs: timeout.configuredDurationMs, elapsedMs: timeout.elapsedMs }
+        ? {
+            ...ctx,
+            category: "timeout",
+            timeoutKind: timeout.kind,
+            configuredDurationMs: timeout.configuredDurationMs,
+            elapsedMs: timeout.elapsedMs,
+          }
         : ctx,
       now,
       configuredCredentialValues(),
@@ -333,8 +366,26 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     temperature: number,
     events: RunExecutorEvents,
     signal: AbortSignal,
-    diagnostics: { source?: RunSource; attemptId: string; reasoningEffort?: ReasoningPolicy["candidates"] },
-  ): Promise<{ content: string; segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; usage?: UsageBreakdown | null; cost?: CostRecord | null; finishedAt: number } | { error: PersistedError } | null> {
+    diagnostics: {
+      source?: RunSource;
+      attemptId: string;
+      reasoningEffort?: ReasoningPolicy["candidates"];
+    },
+  ): Promise<
+    | {
+        content: string;
+        segments: CandidateSegment[];
+        summary: string;
+        tokensIn: number | null;
+        tokensOut: number | null;
+        inputEstimate?: InputUsageEstimate;
+        usage?: UsageBreakdown | null;
+        cost?: CostRecord | null;
+        finishedAt: number;
+      }
+    | { error: PersistedError }
+    | null
+  > {
     const provider = getProvider(job.providerId);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
@@ -372,7 +423,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       };
       if (provider.chatCompletionStreamDetailed) {
         const source = provider.chatCompletionStreamDetailed(opts);
-        const stream = provider.executionDeadlines ? source : streamWithExecutionDeadlines(source, streamOptions);
+        const stream = provider.executionDeadlines
+          ? source
+          : streamWithExecutionDeadlines(source, streamOptions);
         for await (const event of stream) {
           if (isAborted(signal)) return null;
           if (event.delta) {
@@ -384,7 +437,9 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         }
       } else {
         const source = provider.chatCompletionStream(opts);
-        const stream = provider.executionDeadlines ? source : streamWithExecutionDeadlines(source, streamOptions);
+        const stream = provider.executionDeadlines
+          ? source
+          : streamWithExecutionDeadlines(source, streamOptions);
         for await (const delta of stream) {
           if (isAborted(signal)) return null;
           content += delta;
@@ -399,49 +454,93 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       const tokensOut = usage?.outputTokens ?? estimateTokens(content);
       const resolvedCost =
         cost ?? estimateFallbackCost(job.providerId, job.slug, tokensIn, tokensOut);
-      devTerminalLog("provider.request.completed", {
-        ...context,
-        status: "completed",
-        durationMs: Date.now() - requestStartedAt,
+      devTerminalLog(
+        "provider.request.completed",
+        {
+          ...context,
+          status: "completed",
+          durationMs: Date.now() - requestStartedAt,
+          tokensIn,
+          tokensOut,
+        },
+        "info",
+      );
+      return {
+        content,
+        segments,
+        summary,
         tokensIn,
         tokensOut,
-      }, "info");
-      return { content, segments, summary, tokensIn, tokensOut, inputEstimate, usage, cost: resolvedCost, finishedAt: now() };
+        inputEstimate,
+        usage,
+        cost: resolvedCost,
+        finishedAt: now(),
+      };
     } catch (err) {
       if (isExecutionTimeoutError(err)) {
-        const error = sanitizeError(err, { category: "timeout", stage: "candidate", model: job.slug });
-        devTerminalLog("provider.request.failed", { ...context, status: "failed", durationMs: Date.now() - requestStartedAt, error: error.message, timeoutKind: err.kind }, "error");
+        const error = sanitizeError(err, {
+          category: "timeout",
+          stage: "candidate",
+          model: job.slug,
+        });
+        devTerminalLog(
+          "provider.request.failed",
+          {
+            ...context,
+            status: "failed",
+            durationMs: Date.now() - requestStartedAt,
+            error: error.message,
+            timeoutKind: err.kind,
+          },
+          "error",
+        );
         return { error };
       }
       if (err instanceof DOMException && err.name === "AbortError") {
         if (isAborted(signal)) {
-          devTerminalLog("provider.request.aborted", {
-            ...context,
-            status: "aborted",
-            durationMs: Date.now() - requestStartedAt,
-          }, "warn");
+          devTerminalLog(
+            "provider.request.aborted",
+            {
+              ...context,
+              status: "aborted",
+              durationMs: Date.now() - requestStartedAt,
+            },
+            "warn",
+          );
         }
         return null;
       }
       if (isAborted(signal)) {
-        devTerminalLog("provider.request.aborted", {
-          ...context,
-          status: "aborted",
-          durationMs: Date.now() - requestStartedAt,
-        }, "warn");
+        devTerminalLog(
+          "provider.request.aborted",
+          {
+            ...context,
+            status: "aborted",
+            durationMs: Date.now() - requestStartedAt,
+          },
+          "warn",
+        );
         return null;
       }
       // Provider errors fail this candidate (not the whole run); return the
       // bounded sanitized error so the caller records it on the attempt.
-      const error = sanitizeError(err, { category: "provider", stage: "candidate", model: job.slug });
-      devTerminalLog("provider.request.failed", {
-        ...context,
-        status: "failed",
-        durationMs: Date.now() - requestStartedAt,
-        // Only the already-sanitized message crosses the log boundary; raw
-        // stacks may contain provider bodies or credentials (Plan 003 D).
-        error: error.message,
-      }, "error");
+      const error = sanitizeError(err, {
+        category: "provider",
+        stage: "candidate",
+        model: job.slug,
+      });
+      devTerminalLog(
+        "provider.request.failed",
+        {
+          ...context,
+          status: "failed",
+          durationMs: Date.now() - requestStartedAt,
+          // Only the already-sanitized message crosses the log boundary; raw
+          // stacks may contain provider bodies or credentials (Plan 003 D).
+          error: error.message,
+        },
+        "error",
+      );
       return { error };
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -452,11 +551,30 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runJudge(
     done: Candidate[],
-    request: { source?: RunSource; task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction: string; attachments: Attachment[]; attachmentsToJudge: boolean; reasoningPolicy?: ReasoningPolicy },
+    request: {
+      source?: RunSource;
+      task: CandidateTaskSnapshot;
+      evaluation: AdHocEvaluationConfig;
+      critic: CriticRef;
+      judgeInstruction: string;
+      attachments: Attachment[];
+      attachmentsToJudge: boolean;
+      reasoningPolicy?: ReasoningPolicy;
+    },
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
     signal: AbortSignal,
-  ): Promise<{ ok: true; attemptId: string; report: JudgeReport; consensus: ConsensusBreakdown; scoresById: Record<string, number>; blindSet: BlindCandidateSet } | { ok: false }> {
+  ): Promise<
+    | {
+        ok: true;
+        attemptId: string;
+        report: JudgeReport;
+        consensus: ConsensusBreakdown;
+        scoresById: Record<string, number>;
+        blindSet: BlindCandidateSet;
+      }
+    | { ok: false }
+  > {
     if (done.length < 2) return { ok: false };
     if (isAborted(signal)) return { ok: false };
 
@@ -534,9 +652,10 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         const detailed = provider.executionDeadlines
           ? await provider.chatCompletionDetailed(judgeOpts)
           : await runWithExecutionDeadlines(
-            (deadlineSignal) => provider.chatCompletionDetailed!({ ...judgeOpts, signal: deadlineSignal }),
-            operationOptions,
-          );
+              (deadlineSignal) =>
+                provider.chatCompletionDetailed!({ ...judgeOpts, signal: deadlineSignal }),
+              operationOptions,
+            );
         content = detailed.content;
         usage = detailed.usage;
         cost = detailed.cost;
@@ -544,14 +663,20 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         content = provider.executionDeadlines
           ? await provider.chatCompletion(judgeOpts)
           : await runWithExecutionDeadlines(
-            (deadlineSignal) => provider.chatCompletion({ ...judgeOpts, signal: deadlineSignal }),
-            operationOptions,
-          );
+              (deadlineSignal) => provider.chatCompletion({ ...judgeOpts, signal: deadlineSignal }),
+              operationOptions,
+            );
       }
       if (isAborted(signal)) {
-        await events.onJudgeTerminal(attemptId, {
-          status: "aborted", report: null, consensus: null, error: null, finishedAt: now(),
-        }).catch(() => {});
+        await events
+          .onJudgeTerminal(attemptId, {
+            status: "aborted",
+            report: null,
+            consensus: null,
+            error: null,
+            finishedAt: now(),
+          })
+          .catch(() => {});
         return { ok: false };
       }
       const { breakdown, scoresById, report } = parseJudge(content, blindSet, profile, done);
@@ -565,65 +690,115 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           usage?.outputTokens ?? estimateTokens(content),
         );
       await events.onJudgeTerminal(attemptId, {
-        status: "completed", report, consensus: breakdown, usage, inputEstimate, cost: resolvedCost, error: null, finishedAt: now(),
-      });
-      devTerminalLog("judge.request.completed", {
-        ...judgeContext,
         status: "completed",
-        durationMs: Date.now() - judgeLogStartedAt,
-      }, "info");
+        report,
+        consensus: breakdown,
+        usage,
+        inputEstimate,
+        cost: resolvedCost,
+        error: null,
+        finishedAt: now(),
+      });
+      devTerminalLog(
+        "judge.request.completed",
+        {
+          ...judgeContext,
+          status: "completed",
+          durationMs: Date.now() - judgeLogStartedAt,
+        },
+        "info",
+      );
       return { ok: true, attemptId, report, consensus: breakdown, scoresById, blindSet };
     } catch (err) {
       if (isExecutionTimeoutError(err)) {
-        const error = sanitizeError(err, { category: "timeout", stage: "judge", model: request.critic.model });
-        await events.onJudgeTerminal(attemptId, {
-          status: "failed", report: null, consensus: null,
-          error,
-          finishedAt: now(),
-        }).catch(() => {});
-        devTerminalLog("judge.request.failed", {
-          ...judgeContext,
-          status: "failed",
-          durationMs: Date.now() - judgeLogStartedAt,
-          error: error.message,
-          timeoutKind: err.kind,
-        }, "error");
+        const error = sanitizeError(err, {
+          category: "timeout",
+          stage: "judge",
+          model: request.critic.model,
+        });
+        await events
+          .onJudgeTerminal(attemptId, {
+            status: "failed",
+            report: null,
+            consensus: null,
+            error,
+            finishedAt: now(),
+          })
+          .catch(() => {});
+        devTerminalLog(
+          "judge.request.failed",
+          {
+            ...judgeContext,
+            status: "failed",
+            durationMs: Date.now() - judgeLogStartedAt,
+            error: error.message,
+            timeoutKind: err.kind,
+          },
+          "error",
+        );
         return { ok: false };
       }
       if (err instanceof DOMException && err.name === "AbortError") {
         if (isAborted(signal)) {
-          devTerminalLog("judge.request.aborted", {
-            ...judgeContext,
-            status: "aborted",
-            durationMs: Date.now() - judgeLogStartedAt,
-          }, "warn");
+          devTerminalLog(
+            "judge.request.aborted",
+            {
+              ...judgeContext,
+              status: "aborted",
+              durationMs: Date.now() - judgeLogStartedAt,
+            },
+            "warn",
+          );
         }
-        await events.onJudgeTerminal(attemptId, {
-          status: "aborted", report: null, consensus: null, error: null, finishedAt: now(),
-        }).catch(() => {});
+        await events
+          .onJudgeTerminal(attemptId, {
+            status: "aborted",
+            report: null,
+            consensus: null,
+            error: null,
+            finishedAt: now(),
+          })
+          .catch(() => {});
         return { ok: false };
       }
       if (isAborted(signal)) {
-        devTerminalLog("judge.request.aborted", {
-          ...judgeContext,
-          status: "aborted",
-          durationMs: Date.now() - judgeLogStartedAt,
-        }, "warn");
+        devTerminalLog(
+          "judge.request.aborted",
+          {
+            ...judgeContext,
+            status: "aborted",
+            durationMs: Date.now() - judgeLogStartedAt,
+          },
+          "warn",
+        );
         return { ok: false };
       }
-      const error = sanitizeError(err, { category: "provider", stage: "judge", model: request.critic.model });
-      await events.onJudgeTerminal(attemptId, {
-        status: "failed", report: null, consensus: null,
-        error, finishedAt: now(),
-      }).catch(() => {});
-      devTerminalLog("judge.request.failed", {
-        ...judgeContext,
-        status: "failed",
-        durationMs: Date.now() - judgeLogStartedAt,
-        // Only the already-sanitized message crosses the log boundary; raw
-        // stacks may contain provider bodies or credentials (Plan 003 D).
-        error: error.message,
-      }, "error");
+      const error = sanitizeError(err, {
+        category: "provider",
+        stage: "judge",
+        model: request.critic.model,
+      });
+      await events
+        .onJudgeTerminal(attemptId, {
+          status: "failed",
+          report: null,
+          consensus: null,
+          error,
+          finishedAt: now(),
+        })
+        .catch(() => {});
+      devTerminalLog(
+        "judge.request.failed",
+        {
+          ...judgeContext,
+          status: "failed",
+          durationMs: Date.now() - judgeLogStartedAt,
+          // Only the already-sanitized message crosses the log boundary; raw
+          // stacks may contain provider bodies or credentials (Plan 003 D).
+          error: error.message,
+        },
+        "error",
+      );
       return { ok: false };
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -634,7 +809,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   async function runFusion(
     blindCandidates: BlindCandidate[],
-    request: { task: CandidateTaskSnapshot; evaluation: AdHocEvaluationConfig; critic: CriticRef; judgeInstruction?: string; attachments: Attachment[]; attachmentsToJudge: boolean; reasoningPolicy?: ReasoningPolicy },
+    request: {
+      task: CandidateTaskSnapshot;
+      evaluation: AdHocEvaluationConfig;
+      critic: CriticRef;
+      judgeInstruction?: string;
+      attachments: Attachment[];
+      attachmentsToJudge: boolean;
+      reasoningPolicy?: ReasoningPolicy;
+    },
     sourceJudgeAttemptId: string,
     candidateAttemptIdsByCandidateId: Record<string, string>,
     events: RunExecutorEvents,
@@ -671,11 +854,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     if (isAborted(signal)) return { ok: false, result: null };
 
-    devTerminalLog("fusion.request.started", {
-      attemptId,
-      modelKey: `${request.critic.providerId}:${request.critic.model}`,
-      stage: "fusion",
-    }, "info");
+    devTerminalLog(
+      "fusion.request.started",
+      {
+        attemptId,
+        modelKey: `${request.critic.providerId}:${request.critic.model}`,
+        stage: "fusion",
+      },
+      "info",
+    );
     const provider = getProvider(request.critic.providerId);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
@@ -707,9 +894,10 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         const detailed = provider.executionDeadlines
           ? await provider.chatCompletionDetailed(fusionOpts)
           : await runWithExecutionDeadlines(
-            (deadlineSignal) => provider.chatCompletionDetailed!({ ...fusionOpts, signal: deadlineSignal }),
-            operationOptions,
-          );
+              (deadlineSignal) =>
+                provider.chatCompletionDetailed!({ ...fusionOpts, signal: deadlineSignal }),
+              operationOptions,
+            );
         content = detailed.content;
         usage = detailed.usage;
         cost = detailed.cost;
@@ -717,14 +905,20 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         content = provider.executionDeadlines
           ? await provider.chatCompletion(fusionOpts)
           : await runWithExecutionDeadlines(
-            (deadlineSignal) => provider.chatCompletion({ ...fusionOpts, signal: deadlineSignal }),
-            operationOptions,
-          );
+              (deadlineSignal) =>
+                provider.chatCompletion({ ...fusionOpts, signal: deadlineSignal }),
+              operationOptions,
+            );
       }
       if (isAborted(signal)) {
-        await events.onFusionTerminal(attemptId, {
-          status: "aborted", result: null, error: null, finishedAt: now(),
-        }).catch(() => {});
+        await events
+          .onFusionTerminal(attemptId, {
+            status: "aborted",
+            result: null,
+            error: null,
+            finishedAt: now(),
+          })
+          .catch(() => {});
         return { ok: false, result: null };
       }
       const inputEstimate = inputUsageEstimate(messages, usage);
@@ -737,73 +931,119 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           usage?.outputTokens ?? estimateTokens(content),
         );
       await events.onFusionTerminal(attemptId, {
-        status: "completed", result: content, usage, inputEstimate, cost: resolvedCost, error: null, finishedAt: now(),
-      });
-      devTerminalLog("fusion.request.completed", {
-        attemptId,
-        modelKey: `${request.critic.providerId}:${request.critic.model}`,
-        stage: "fusion",
         status: "completed",
-        durationMs: Date.now() - fusionLogStartedAt,
-      }, "info");
+        result: content,
+        usage,
+        inputEstimate,
+        cost: resolvedCost,
+        error: null,
+        finishedAt: now(),
+      });
+      devTerminalLog(
+        "fusion.request.completed",
+        {
+          attemptId,
+          modelKey: `${request.critic.providerId}:${request.critic.model}`,
+          stage: "fusion",
+          status: "completed",
+          durationMs: Date.now() - fusionLogStartedAt,
+        },
+        "info",
+      );
       return { ok: true, result: content };
     } catch (err) {
       if (isExecutionTimeoutError(err)) {
-        const error = sanitizeError(err, { category: "timeout", stage: "fusion", model: request.critic.model });
-        await events.onFusionTerminal(attemptId, {
-          status: "failed", result: null,
+        const error = sanitizeError(err, {
+          category: "timeout",
+          stage: "fusion",
+          model: request.critic.model,
+        });
+        await events
+          .onFusionTerminal(attemptId, {
+            status: "failed",
+            result: null,
+            error,
+            finishedAt: now(),
+          })
+          .catch(() => {});
+        devTerminalLog(
+          "fusion.request.failed",
+          {
+            attemptId,
+            modelKey: `${request.critic.providerId}:${request.critic.model}`,
+            stage: "fusion",
+            status: "failed",
+            durationMs: Date.now() - fusionLogStartedAt,
+            error: error.message,
+            timeoutKind: err.kind,
+          },
+          "error",
+        );
+        return { ok: false, result: null };
+      }
+      if (err instanceof DOMException && err.name === "AbortError") {
+        if (isAborted(signal)) {
+          devTerminalLog(
+            "fusion.request.aborted",
+            {
+              attemptId,
+              modelKey: `${request.critic.providerId}:${request.critic.model}`,
+              stage: "fusion",
+              status: "aborted",
+              durationMs: Date.now() - fusionLogStartedAt,
+            },
+            "warn",
+          );
+        }
+        await events
+          .onFusionTerminal(attemptId, {
+            status: "aborted",
+            result: null,
+            error: null,
+            finishedAt: now(),
+          })
+          .catch(() => {});
+        return { ok: false, result: null };
+      }
+      if (isAborted(signal)) {
+        devTerminalLog(
+          "fusion.request.aborted",
+          {
+            attemptId,
+            modelKey: `${request.critic.providerId}:${request.critic.model}`,
+            stage: "fusion",
+            status: "aborted",
+            durationMs: Date.now() - fusionLogStartedAt,
+          },
+          "warn",
+        );
+        return { ok: false, result: null };
+      }
+      const error = sanitizeError(err, {
+        category: "provider",
+        stage: "fusion",
+        model: request.critic.model,
+      });
+      await events
+        .onFusionTerminal(attemptId, {
+          status: "failed",
+          result: null,
           error,
           finishedAt: now(),
-        }).catch(() => {});
-        devTerminalLog("fusion.request.failed", {
+        })
+        .catch(() => {});
+      devTerminalLog(
+        "fusion.request.failed",
+        {
           attemptId,
           modelKey: `${request.critic.providerId}:${request.critic.model}`,
           stage: "fusion",
           status: "failed",
           durationMs: Date.now() - fusionLogStartedAt,
           error: error.message,
-          timeoutKind: err.kind,
-        }, "error");
-        return { ok: false, result: null };
-      }
-      if (err instanceof DOMException && err.name === "AbortError") {
-        if (isAborted(signal)) {
-          devTerminalLog("fusion.request.aborted", {
-            attemptId,
-            modelKey: `${request.critic.providerId}:${request.critic.model}`,
-            stage: "fusion",
-            status: "aborted",
-            durationMs: Date.now() - fusionLogStartedAt,
-          }, "warn");
-        }
-        await events.onFusionTerminal(attemptId, {
-          status: "aborted", result: null, error: null, finishedAt: now(),
-        }).catch(() => {});
-        return { ok: false, result: null };
-      }
-      if (isAborted(signal)) {
-        devTerminalLog("fusion.request.aborted", {
-          attemptId,
-          modelKey: `${request.critic.providerId}:${request.critic.model}`,
-          stage: "fusion",
-          status: "aborted",
-          durationMs: Date.now() - fusionLogStartedAt,
-        }, "warn");
-        return { ok: false, result: null };
-      }
-      const error = sanitizeError(err, { category: "provider", stage: "fusion", model: request.critic.model });
-      await events.onFusionTerminal(attemptId, {
-        status: "failed", result: null,
-        error, finishedAt: now(),
-      }).catch(() => {});
-      devTerminalLog("fusion.request.failed", {
-        attemptId,
-        modelKey: `${request.critic.providerId}:${request.critic.model}`,
-        stage: "fusion",
-        status: "failed",
-        durationMs: Date.now() - fusionLogStartedAt,
-        error: error.message,
-      }, "error");
+        },
+        "error",
+      );
       return { ok: false, result: null };
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -812,7 +1052,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   // --- executeTask ------------------------------------------------------------
 
-  async function executeTask(request: RunRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void> {
+  async function executeTask(
+    request: RunRequest,
+    events: RunExecutorEvents,
+    signal: AbortSignal,
+  ): Promise<void> {
     const jobs = buildFanoutJobs(request.slots);
     if (jobs.length === 0) return;
 
@@ -865,10 +1109,23 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         if (seededAttemptIdsByCandidateId[c.id]) {
           candidateAttemptIds[c.id] = seededAttemptIdsByCandidateId[c.id];
         } else {
-          throw new Error(`candidateExecution: missing seed attempt ID for reused candidate ${c.id}`);
+          throw new Error(
+            `candidateExecution: missing seed attempt ID for reused candidate ${c.id}`,
+          );
         }
       }
-      const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; finishedAt: number; content: string }> = new Map();
+      const candidateResults: Map<
+        string,
+        {
+          segments: CandidateSegment[];
+          summary: string;
+          tokensIn: number | null;
+          tokensOut: number | null;
+          inputEstimate?: InputUsageEstimate;
+          finishedAt: number;
+          content: string;
+        }
+      > = new Map();
 
       // Execute only the requested model keys.
       const executeJobs = jobs.filter((j) => executeSet.has(`${j.providerId}:${j.slug}`));
@@ -886,30 +1143,56 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
           try {
             await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
           } catch (err) {
-            await events.onCandidateAttemptTerminal(job.id, attemptId, {
-              status: "failed", output: null, tokensIn: null, tokensOut: null,
-              error: sanitizeError(err, { category: "storage", stage: "candidate", model: job.slug }),
-              finishedAt: now(),
-            }).catch(() => {});
+            await events
+              .onCandidateAttemptTerminal(job.id, attemptId, {
+                status: "failed",
+                output: null,
+                tokensIn: null,
+                tokensOut: null,
+                error: sanitizeError(err, {
+                  category: "storage",
+                  stage: "candidate",
+                  model: job.slug,
+                }),
+                finishedAt: now(),
+              })
+              .catch(() => {});
             return;
           }
 
           if (isAborted(signal)) return;
 
-          const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
-            source: request.source,
-            attemptId,
-            reasoningEffort: request.reasoningPolicy?.candidates,
-          });
+          const result = await runCandidateStream(
+            job,
+            messages,
+            request.task.temperature,
+            events,
+            signal,
+            {
+              source: request.source,
+              attemptId,
+              reasoningEffort: request.reasoningPolicy?.candidates,
+            },
+          );
           if (!result || "error" in result) {
             if (isAborted(signal) && !result) return;
-            await events.onCandidateAttemptTerminal(job.id, attemptId, {
-              status: "failed", output: null, tokensIn: null, tokensOut: null,
-              error: result && "error" in result
-                ? result.error
-                : sanitizeError(new Error("Candidate aborted"), { category: "aborted", stage: "candidate", model: job.slug }),
-              finishedAt: now(),
-            }).catch(() => {});
+            await events
+              .onCandidateAttemptTerminal(job.id, attemptId, {
+                status: "failed",
+                output: null,
+                tokensIn: null,
+                tokensOut: null,
+                error:
+                  result && "error" in result
+                    ? result.error
+                    : sanitizeError(new Error("Candidate aborted"), {
+                        category: "aborted",
+                        stage: "candidate",
+                        model: job.slug,
+                      }),
+                finishedAt: now(),
+              })
+              .catch(() => {});
             return;
           }
 
@@ -986,7 +1269,16 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
       const judgeResult = await runJudge(
         done,
-        { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+        {
+          source: request.source,
+          task: request.task,
+          evaluation: request.evaluation,
+          critic: request.critic,
+          judgeInstruction: request.judgeInstruction,
+          attachments: request.attachments,
+          attachmentsToJudge: request.attachmentsToJudge,
+          reasoningPolicy: request.reasoningPolicy,
+        },
         candidateAttemptIds,
         events,
         signal,
@@ -998,7 +1290,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
       if (request.mode === "fuse") {
         await runFusion(
           judgeResult.blindSet.candidates,
-          { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+          {
+            task: request.task,
+            evaluation: request.evaluation,
+            critic: request.critic,
+            judgeInstruction: request.judgeInstruction,
+            attachments: request.attachments,
+            attachmentsToJudge: request.attachmentsToJudge,
+            reasoningPolicy: request.reasoningPolicy,
+          },
           judgeResult.attemptId,
           candidateAttemptIds,
           events,
@@ -1018,7 +1318,18 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (isAborted(signal)) return;
 
     const candidateAttemptIds: Record<string, string> = {};
-    const candidateResults: Map<string, { segments: CandidateSegment[]; summary: string; tokensIn: number | null; tokensOut: number | null; inputEstimate?: InputUsageEstimate; finishedAt: number; content: string }> = new Map();
+    const candidateResults: Map<
+      string,
+      {
+        segments: CandidateSegment[];
+        summary: string;
+        tokensIn: number | null;
+        tokensOut: number | null;
+        inputEstimate?: InputUsageEstimate;
+        finishedAt: number;
+        content: string;
+      }
+    > = new Map();
 
     await Promise.all(
       jobs.map(async (job): Promise<void> => {
@@ -1034,33 +1345,56 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
         try {
           await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
         } catch (err) {
-          await events.onCandidateAttemptTerminal(job.id, attemptId, {
-            status: "failed",
-            output: null,
-            tokensIn: null,
-            tokensOut: null,
-            error: sanitizeError(err, { category: "storage", stage: "candidate", model: job.slug }),
-            finishedAt: now(),
-          }).catch(() => {});
+          await events
+            .onCandidateAttemptTerminal(job.id, attemptId, {
+              status: "failed",
+              output: null,
+              tokensIn: null,
+              tokensOut: null,
+              error: sanitizeError(err, {
+                category: "storage",
+                stage: "candidate",
+                model: job.slug,
+              }),
+              finishedAt: now(),
+            })
+            .catch(() => {});
           return;
         }
 
         if (isAborted(signal)) return;
 
-        const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
-          source: request.source,
-          attemptId,
-          reasoningEffort: request.reasoningPolicy?.candidates,
-        });
+        const result = await runCandidateStream(
+          job,
+          messages,
+          request.task.temperature,
+          events,
+          signal,
+          {
+            source: request.source,
+            attemptId,
+            reasoningEffort: request.reasoningPolicy?.candidates,
+          },
+        );
         if (!result || "error" in result) {
           if (isAborted(signal) && !result) return;
-          await events.onCandidateAttemptTerminal(job.id, attemptId, {
-            status: "failed", output: null, tokensIn: null, tokensOut: null,
-            error: result && "error" in result
-              ? result.error
-              : sanitizeError(new Error("Candidate aborted"), { category: "aborted", stage: "candidate", model: job.slug }),
-            finishedAt: now(),
-          }).catch(() => {});
+          await events
+            .onCandidateAttemptTerminal(job.id, attemptId, {
+              status: "failed",
+              output: null,
+              tokensIn: null,
+              tokensOut: null,
+              error:
+                result && "error" in result
+                  ? result.error
+                  : sanitizeError(new Error("Candidate aborted"), {
+                      category: "aborted",
+                      stage: "candidate",
+                      model: job.slug,
+                    }),
+              finishedAt: now(),
+            })
+            .catch(() => {});
           return;
         }
 
@@ -1132,7 +1466,16 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       done,
-      { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+      {
+        source: request.source,
+        task: request.task,
+        evaluation: request.evaluation,
+        critic: request.critic,
+        judgeInstruction: request.judgeInstruction,
+        attachments: request.attachments,
+        attachmentsToJudge: request.attachmentsToJudge,
+        reasoningPolicy: request.reasoningPolicy,
+      },
       candidateAttemptIds,
       events,
       signal,
@@ -1144,7 +1487,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+        {
+          task: request.task,
+          evaluation: request.evaluation,
+          critic: request.critic,
+          judgeInstruction: request.judgeInstruction,
+          attachments: request.attachments,
+          attachmentsToJudge: request.attachmentsToJudge,
+          reasoningPolicy: request.reasoningPolicy,
+        },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -1155,7 +1506,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   // --- retryCandidate ---------------------------------------------------------
 
-  async function retryCandidate(request: FrozenCandidateRetryRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void> {
+  async function retryCandidate(
+    request: FrozenCandidateRetryRequest,
+    events: RunExecutorEvents,
+    signal: AbortSignal,
+  ): Promise<void> {
     const slot = request.slots.find((s) => s.id === request.retrySlotId);
     if (!slot) return;
 
@@ -1181,33 +1536,52 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     try {
       await events.onCandidateAttemptStart(job.id, attemptId, { messages, startedAt });
     } catch (err) {
-      await events.onCandidateAttemptTerminal(job.id, attemptId, {
-        status: "failed",
-        output: null,
-        tokensIn: null,
-        tokensOut: null,
-        error: sanitizeError(err, { category: "storage", stage: "candidate", model: job.slug }),
-        finishedAt: now(),
-      }).catch(() => {});
+      await events
+        .onCandidateAttemptTerminal(job.id, attemptId, {
+          status: "failed",
+          output: null,
+          tokensIn: null,
+          tokensOut: null,
+          error: sanitizeError(err, { category: "storage", stage: "candidate", model: job.slug }),
+          finishedAt: now(),
+        })
+        .catch(() => {});
       return;
     }
 
     if (isAborted(signal)) return;
 
-    const result = await runCandidateStream(job, messages, request.task.temperature, events, signal, {
-      source: request.source,
-      attemptId,
-      reasoningEffort: request.reasoningPolicy?.candidates,
-    });
+    const result = await runCandidateStream(
+      job,
+      messages,
+      request.task.temperature,
+      events,
+      signal,
+      {
+        source: request.source,
+        attemptId,
+        reasoningEffort: request.reasoningPolicy?.candidates,
+      },
+    );
     if (!result || "error" in result) {
       if (!isAborted(signal) || (result && "error" in result)) {
-        await events.onCandidateAttemptTerminal(job.id, attemptId, {
-          status: "failed", output: null, tokensIn: null, tokensOut: null,
-          error: result && "error" in result
-            ? result.error
-            : sanitizeError(new Error("Candidate retry aborted"), { category: "aborted", stage: "candidate", model: job.slug }),
-          finishedAt: now(),
-        }).catch(() => {});
+        await events
+          .onCandidateAttemptTerminal(job.id, attemptId, {
+            status: "failed",
+            output: null,
+            tokensIn: null,
+            tokensOut: null,
+            error:
+              result && "error" in result
+                ? result.error
+                : sanitizeError(new Error("Candidate retry aborted"), {
+                    category: "aborted",
+                    stage: "candidate",
+                    model: job.slug,
+                  }),
+            finishedAt: now(),
+          })
+          .catch(() => {});
       }
       return; // failure → no downstream calls
     }
@@ -1269,7 +1643,16 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       allDone,
-      { source: request.source, task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+      {
+        source: request.source,
+        task: request.task,
+        evaluation: request.evaluation,
+        critic: request.critic,
+        judgeInstruction: request.judgeInstruction,
+        attachments: request.attachments,
+        attachmentsToJudge: request.attachmentsToJudge,
+        reasoningPolicy: request.reasoningPolicy,
+      },
       candidateAttemptIds,
       events,
       signal,
@@ -1280,7 +1663,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+        {
+          task: request.task,
+          evaluation: request.evaluation,
+          critic: request.critic,
+          judgeInstruction: request.judgeInstruction,
+          attachments: request.attachments,
+          attachmentsToJudge: request.attachmentsToJudge,
+          reasoningPolicy: request.reasoningPolicy,
+        },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -1291,7 +1682,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   // --- retryJudge -------------------------------------------------------------
 
-  async function retryJudge(request: FrozenJudgeRetryRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void> {
+  async function retryJudge(
+    request: FrozenJudgeRetryRequest,
+    events: RunExecutorEvents,
+    signal: AbortSignal,
+  ): Promise<void> {
     const done = request.candidates.filter(isUsableCandidate);
     if (done.length < 2) return;
 
@@ -1300,7 +1695,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     const judgeResult = await runJudge(
       done,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+      {
+        task: request.task,
+        evaluation: request.evaluation,
+        critic: request.critic,
+        judgeInstruction: request.judgeInstruction,
+        attachments: request.attachments,
+        attachmentsToJudge: request.attachmentsToJudge,
+        reasoningPolicy: request.reasoningPolicy,
+      },
       candidateAttemptIds,
       events,
       signal,
@@ -1311,7 +1714,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
     if (request.mode === "fuse") {
       await runFusion(
         judgeResult.blindSet.candidates,
-        { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+        {
+          task: request.task,
+          evaluation: request.evaluation,
+          critic: request.critic,
+          judgeInstruction: request.judgeInstruction,
+          attachments: request.attachments,
+          attachmentsToJudge: request.attachmentsToJudge,
+          reasoningPolicy: request.reasoningPolicy,
+        },
         judgeResult.attemptId,
         candidateAttemptIds,
         events,
@@ -1322,7 +1733,11 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
   // --- executeFusionAttempt ---------------------------------------------------
 
-  async function executeFusionAttempt(request: FrozenFusionRequest, events: RunExecutorEvents, signal: AbortSignal): Promise<void> {
+  async function executeFusionAttempt(
+    request: FrozenFusionRequest,
+    events: RunExecutorEvents,
+    signal: AbortSignal,
+  ): Promise<void> {
     const done = request.candidates.filter(isUsableCandidate);
     if (done.length < 2) return;
 
@@ -1342,7 +1757,15 @@ export function createRunExecutor(deps: RunExecutorDeps = {}): RunExecutor {
 
     await runFusion(
       blindCandidates,
-      { task: request.task, evaluation: request.evaluation, critic: request.critic, judgeInstruction: request.judgeInstruction, attachments: request.attachments, attachmentsToJudge: request.attachmentsToJudge, reasoningPolicy: request.reasoningPolicy },
+      {
+        task: request.task,
+        evaluation: request.evaluation,
+        critic: request.critic,
+        judgeInstruction: request.judgeInstruction,
+        attachments: request.attachments,
+        attachmentsToJudge: request.attachmentsToJudge,
+        reasoningPolicy: request.reasoningPolicy,
+      },
       request.judgeAttemptId,
       request.candidateAttemptIdsByCandidateId,
       events,

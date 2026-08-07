@@ -27,10 +27,9 @@ export interface HeartbeatWorker {
   terminate(): void;
 }
 
-export type HeartbeatWorkerFactory = (intervalMs: number) =>
-  | HeartbeatWorker
-  | { worker: HeartbeatWorker; revoke?: () => void }
-  | null;
+export type HeartbeatWorkerFactory = (
+  intervalMs: number,
+) => HeartbeatWorker | { worker: HeartbeatWorker; revoke?: () => void } | null;
 
 export interface BrowserHeartbeatSchedulerOptions {
   /** Override Worker construction. Returning null selects setInterval. */
@@ -82,10 +81,13 @@ function defaultWorkerFactory(intervalMs: number): WorkerHandle | null {
 export function createHeartbeatScheduler(
   options: BrowserHeartbeatSchedulerOptions = {},
 ): HeartbeatScheduler {
-  const setIntervalFn = options.setInterval ?? ((callback: () => void, intervalMs: number) =>
-    globalThis.setInterval(callback, intervalMs));
-  const clearIntervalFn = options.clearInterval ?? ((handle: unknown) =>
-    globalThis.clearInterval(handle as ReturnType<typeof globalThis.setInterval>));
+  const setIntervalFn =
+    options.setInterval ??
+    ((callback: () => void, intervalMs: number) => globalThis.setInterval(callback, intervalMs));
+  const clearIntervalFn =
+    options.clearInterval ??
+    ((handle: unknown) =>
+      globalThis.clearInterval(handle as ReturnType<typeof globalThis.setInterval>));
   const workerFactory = options.workerFactory ?? defaultWorkerFactory;
 
   return {
@@ -223,12 +225,11 @@ export interface ExecutionHeartbeat {
  * this heartbeat: `onError` is called once and scheduling is stopped.  The
  * controller can then abort its work and release (or let expire) the lease.
  */
-export function createExecutionHeartbeat(
-  options: ExecutionHeartbeatOptions,
-): ExecutionHeartbeat {
+export function createExecutionHeartbeat(options: ExecutionHeartbeatOptions): ExecutionHeartbeat {
   const intervalMs = Math.max(1, Math.floor(options.intervalMs ?? DEFAULT_HEARTBEAT_INTERVAL));
   const scheduler = options.scheduler ?? createHeartbeatScheduler();
-  const visibilityTarget = options.visibilityTarget ??
+  const visibilityTarget =
+    options.visibilityTarget ??
     (typeof globalThis.document !== "undefined" ? globalThis.document : undefined);
 
   let running = false;

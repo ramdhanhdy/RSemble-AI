@@ -28,10 +28,29 @@ import type { Attachment } from "../lib/attachments/types";
 /** Accepted picker types for the hidden input (spec §3). HEIC is offered; a
  *  browser that cannot decode it rejects at extraction with a named reason. */
 const ATTACH_ACCEPT = [
-  "image/png", "image/jpeg", "image/webp", "image/gif", "image/heic",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/heic",
   "application/pdf",
-  ".md", ".mdx", ".txt", ".csv", ".json",
-  ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".sql", ".yml", ".yaml", ".toml",
+  ".md",
+  ".mdx",
+  ".txt",
+  ".csv",
+  ".json",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".py",
+  ".go",
+  ".rs",
+  ".java",
+  ".sql",
+  ".yml",
+  ".yaml",
+  ".toml",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ].join(",");
 
@@ -51,8 +70,7 @@ export function TaskInput({
   const hasText = prompt.trim().length > 0;
   // True when the prompt is still exactly the last-loaded curated example — the
   // user has not edited it, so repeated clicks should rotate, not arm.
-  const isUneditedExample =
-    exampleIndex >= 0 && EXAMPLE_TASKS[exampleIndex]?.prompt === prompt;
+  const isUneditedExample = exampleIndex >= 0 && EXAMPLE_TASKS[exampleIndex]?.prompt === prompt;
   const [armed, setArmed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -209,10 +227,15 @@ export function TaskInput({
 
 function Counter({ value, attachments }: { value: string; attachments: Attachment[] }) {
   const tokens = estimateTokens(value);
-  const fromFiles = attachments.length > 0 ? estimateAttachmentInput(attachments) : { textTokens: 0, hasUnknownMedia: false };
+  const fromFiles =
+    attachments.length > 0
+      ? estimateAttachmentInput(attachments)
+      : { textTokens: 0, hasUnknownMedia: false };
   return (
     <span className="pointer-events-none absolute bottom-2.5 right-3 font-mono text-xs tabular-nums text-text-muted">
-      ~{tokens} tokens{fromFiles.textTokens > 0 ? ` · +${fromFiles.textTokens} text tokens from files` : ""}{fromFiles.hasUnknownMedia ? " · native media cost unknown" : ""}
+      ~{tokens} tokens
+      {fromFiles.textTokens > 0 ? ` · +${fromFiles.textTokens} text tokens from files` : ""}
+      {fromFiles.hasUnknownMedia ? " · native media cost unknown" : ""}
     </span>
   );
 }

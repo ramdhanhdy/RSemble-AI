@@ -1,11 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelSlot } from "../studio-data";
 import type { CriticRef } from "./providers/types";
-import {
-  loadStoredCritic,
-  loadStoredSlots,
-  saveCommandPreferences,
-} from "./preferences";
+import { loadStoredCritic, loadStoredSlots, saveCommandPreferences } from "./preferences";
 
 const store: Record<string, string> = {};
 

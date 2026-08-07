@@ -6,16 +6,14 @@
 // =============================================================================
 
 import { createOpenAICompatProvider } from "./openai-compat";
-import { DEFAULT_PROVIDER_DEADLINE_POLICY } from "../execution-deadline";
+import { DEFAULT_PROVIDER_DEADLINE_POLICY, providerAbortError } from "../execution-deadline";
 import type { LLMProvider, ProviderReadiness } from "./types";
 import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
-import { providerAbortError } from "../execution-deadline";
 
 function getBridgeUrl(): string {
-  return ((import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787").replace(
-    /\/$/,
-    ""
-  );
+  return (
+    (import.meta.env.VITE_CODEX_BRIDGE_URL as string | undefined) ?? "http://127.0.0.1:8787"
+  ).replace(/\/$/, "");
 }
 
 const base = createOpenAICompatProvider({
@@ -49,7 +47,8 @@ export const umansProvider: LLMProvider = {
       if (abort !== null) throw abort;
       return {
         ok: false,
-        reason: "Local bridge unreachable on 127.0.0.1:8787. Umans needs it for CORS. Start it (npm run dev:bridge).",
+        reason:
+          "Local bridge unreachable on 127.0.0.1:8787. Umans needs it for CORS. Start it (npm run dev:bridge).",
       };
     }
   },

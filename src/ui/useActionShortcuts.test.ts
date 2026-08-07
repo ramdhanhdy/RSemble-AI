@@ -34,10 +34,7 @@ interface Mounted {
   workspaceRef: { current: WorkspaceKind };
 }
 
-function mountHook(
-  workspace: WorkspaceKind,
-  stateOverrides: Partial<StudioState> = {},
-): Mounted {
+function mountHook(workspace: WorkspaceKind, stateOverrides: Partial<StudioState> = {}): Mounted {
   const spies = {
     dispatch: vi.fn(),
     requestRun: vi.fn(),

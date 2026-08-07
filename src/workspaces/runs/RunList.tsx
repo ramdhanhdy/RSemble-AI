@@ -93,7 +93,9 @@ export function RunList({
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 p-4 text-center">
         <p className="text-sm text-text-secondary">No run history yet.</p>
-        <p className="text-sm text-text-muted">Completed runs will appear here with full evidence.</p>
+        <p className="text-sm text-text-muted">
+          Completed runs will appear here with full evidence.
+        </p>
         <Link
           to="/compare"
           className="mt-2 flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
@@ -128,16 +130,18 @@ export function RunList({
                   status={vm.status ?? "completed"}
                   timestamp={vm.timestampMs}
                   modelCount={vm.modelCount}
-                  summary={[
-                    vm.winnerKeys.length > 0 ? `Winner: ${vm.winnerKeys.join(", ")}` : null,
-                    vm.topScore != null ? `Score: ${vm.topScore}` : null,
-                  ].filter(Boolean).join(" · ") || undefined}
+                  summary={
+                    [
+                      vm.winnerKeys.length > 0 ? `Winner: ${vm.winnerKeys.join(", ")}` : null,
+                      vm.topScore != null ? `Score: ${vm.topScore}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || undefined
+                  }
                   source={vm.sourceLabel}
                   href={`/runs/${vm.id}`}
                 >
-                  {isSelected && (
-                    <span className="sr-only">Selected</span>
-                  )}
+                  {isSelected && <span className="sr-only">Selected</span>}
                 </RecordRow>
               </div>
             </li>

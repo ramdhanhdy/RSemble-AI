@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { reducer, initialState, type StudioState } from "./studio-engine";
-import type { Candidate } from "./studio-data";
+import {
+  type Candidate,
+  type JudgeReport,
+  type JudgeComparison,
+  type JudgeCriterionScore,
+} from "./studio-data";
 import type { ProviderId, ReasoningPolicy } from "./lib/providers/types";
 import type { EvaluationProfileSnapshot } from "./lib/evaluations/evaluation-types";
 import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-profile-adhoc";
@@ -24,7 +29,10 @@ function makeCandidate(id: string, providerId: ProviderId, slug: string): Candid
   };
 }
 
-function runningStateWithCandidates(candidates: Candidate[], mode: "rank" | "fuse" = "rank"): StudioState {
+function runningStateWithCandidates(
+  candidates: Candidate[],
+  mode: "rank" | "fuse" = "rank",
+): StudioState {
   return {
     ...initialState,
     mode,
@@ -37,10 +45,10 @@ function runningStateWithCandidates(candidates: Candidate[], mode: "rank" | "fus
 
 describe("reducer — JUDGE_FAILED terminates run in all modes", () => {
   it("clears running and sets judgeStatus to error in RANK mode", () => {
-    const state = runningStateWithCandidates([
-      makeCandidate("c1", "openrouter", "model-a"),
-      makeCandidate("c2", "umans", "model-b"),
-    ], "rank");
+    const state = runningStateWithCandidates(
+      [makeCandidate("c1", "openrouter", "model-a"), makeCandidate("c2", "umans", "model-b")],
+      "rank",
+    );
     const next = reducer(state, { type: "JUDGE_FAILED", error: "judge exploded" });
     expect(next.running).toBe(false);
     expect(next.judgeStatus).toBe("error");
@@ -48,10 +56,10 @@ describe("reducer — JUDGE_FAILED terminates run in all modes", () => {
   });
 
   it("clears running and sets judgeStatus to error in FUSE mode (does not proceed to fusion)", () => {
-    const state = runningStateWithCandidates([
-      makeCandidate("c1", "openrouter", "model-a"),
-      makeCandidate("c2", "umans", "model-b"),
-    ], "fuse");
+    const state = runningStateWithCandidates(
+      [makeCandidate("c1", "openrouter", "model-a"), makeCandidate("c2", "umans", "model-b")],
+      "fuse",
+    );
     const next = reducer(state, { type: "JUDGE_FAILED", error: "judge exploded" });
     expect(next.running).toBe(false);
     expect(next.judgeStatus).toBe("error");
@@ -101,10 +109,10 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
   });
 
   it("keeps running=true in FUSE mode after JUDGE_RESULT (continues to fusion)", () => {
-    const state = runningStateWithCandidates([
-      makeCandidate("c1", "openrouter", "model-a"),
-      makeCandidate("c2", "umans", "model-b"),
-    ], "fuse");
+    const state = runningStateWithCandidates(
+      [makeCandidate("c1", "openrouter", "model-a"), makeCandidate("c2", "umans", "model-b")],
+      "fuse",
+    );
     const next = reducer(state, {
       type: "JUDGE_RESULT",
       mode: "fuse",
@@ -117,10 +125,10 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
   });
 
   it("uses captured RANK mode when the current UI mode changed to FUSE", () => {
-    const state = runningStateWithCandidates([
-      makeCandidate("c1", "openrouter", "model-a"),
-      makeCandidate("c2", "umans", "model-b"),
-    ], "fuse");
+    const state = runningStateWithCandidates(
+      [makeCandidate("c1", "openrouter", "model-a"), makeCandidate("c2", "umans", "model-b")],
+      "fuse",
+    );
     const next = reducer(state, {
       type: "JUDGE_RESULT",
       mode: "rank",
@@ -132,10 +140,10 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
   });
 
   it("uses captured FUSE mode when the current UI mode changed to RANK", () => {
-    const state = runningStateWithCandidates([
-      makeCandidate("c1", "openrouter", "model-a"),
-      makeCandidate("c2", "umans", "model-b"),
-    ], "rank");
+    const state = runningStateWithCandidates(
+      [makeCandidate("c1", "openrouter", "model-a"), makeCandidate("c2", "umans", "model-b")],
+      "rank",
+    );
     const next = reducer(state, {
       type: "JUDGE_RESULT",
       mode: "fuse",
@@ -149,9 +157,7 @@ describe("reducer — JUDGE_RESULT stores actual judge scores", () => {
 
 describe("reducer — INSUFFICIENT_CANDIDATES is terminal", () => {
   it("clears running and records done/failed counts", () => {
-    const state = runningStateWithCandidates([
-      makeCandidate("c1", "openrouter", "model-a"),
-    ]);
+    const state = runningStateWithCandidates([makeCandidate("c1", "openrouter", "model-a")]);
     const next = reducer(state, { type: "INSUFFICIENT_CANDIDATES", done: 1, failed: 2 });
     expect(next.running).toBe(false);
     expect(next.insufficient).toEqual({ done: 1, failed: 2 });
@@ -195,7 +201,12 @@ describe("reducer — RETRY_CANDIDATE_FAILED is terminal", () => {
       running: true,
       candidates: [c1],
     };
-    const next = reducer(state, { type: "RETRY_CANDIDATE_FAILED", id: "c1", error: "retry failed", finishedAt: 123 });
+    const next = reducer(state, {
+      type: "RETRY_CANDIDATE_FAILED",
+      id: "c1",
+      error: "retry failed",
+      finishedAt: 123,
+    });
     expect(next.running).toBe(false);
     const failed = next.candidates.find((c) => c.id === "c1")!;
     expect(failed.status).toBe("error");
@@ -293,10 +304,13 @@ describe("reducer — RESET_SESSION preserves model selection", () => {
 // toggle preserves the report; criterion scores populate Candidate.scores.
 // ---------------------------------------------------------------------------
 
-import type { JudgeReport, JudgeComparison, JudgeCriterionScore } from "./studio-data";
-
 function makeReport(
-  entries: Array<{ id: string; label: string; score: number; criterionScores?: JudgeCriterionScore[] }>,
+  entries: Array<{
+    id: string;
+    label: string;
+    score: number;
+    criterionScores?: JudgeCriterionScore[];
+  }>,
   comparisons: JudgeComparison[] = [],
 ): JudgeReport {
   return {
@@ -352,8 +366,18 @@ describe("reducer — JUDGE_RESULT stores the judge report", () => {
         label: "A",
         score: 4.5,
         criterionScores: [
-          { criterionId: "commercial-reasoning", label: "Commercial reasoning", score: 4.7, rationale: "r" },
-          { criterionId: "constraint-awareness", label: "Constraint awareness", score: 3.9, rationale: "r" },
+          {
+            criterionId: "commercial-reasoning",
+            label: "Commercial reasoning",
+            score: 4.7,
+            rationale: "r",
+          },
+          {
+            criterionId: "constraint-awareness",
+            label: "Constraint awareness",
+            score: 3.9,
+            rationale: "r",
+          },
         ],
       },
       { id: "c2", label: "B", score: 3.2 },
@@ -433,7 +457,12 @@ describe("reducer — stale reports are cleared correctly", () => {
     const next = reducer(state, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: state.prompt, evaluation: state.evaluation, attachments: [], attachmentsToJudge: true },
+      context: {
+        prompt: state.prompt,
+        evaluation: state.evaluation,
+        attachments: [],
+        attachmentsToJudge: true,
+      },
     });
     expect(next.judgeReport).toBeNull();
   });
@@ -512,7 +541,12 @@ describe("reducer — FANOUT_START clears fusion state (regression)", () => {
     const next = reducer(state, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: state.prompt, evaluation: state.evaluation, attachments: [], attachmentsToJudge: true },
+      context: {
+        prompt: state.prompt,
+        evaluation: state.evaluation,
+        attachments: [],
+        attachmentsToJudge: true,
+      },
     });
     expect(next.fusionStatus).toBe("idle");
     expect(next.fusedText).toBeNull();
@@ -527,13 +561,29 @@ describe("reducer — FANOUT_START clears fusion state (regression)", () => {
 describe("reducer — retained run evaluation context", () => {
   // initialState.evaluation is holistic — context tests need a real profile.
   const testProfile = (): EvaluationProfileSnapshot => ({
-    id: "tp", version: 1, name: "Test Profile", description: "test",
+    id: "tp",
+    version: 1,
+    name: "Test Profile",
+    description: "test",
     judgeInstruction: "",
     criteria: [
-      { id: "r1", name: "Correctness", description: "Is it right?", weight: 0.5, anchors: { one: "Poor", three: "OK", five: "Great" } },
-      { id: "r2", name: "Clarity", description: "Is it clear?", weight: 0.3, anchors: { one: "Poor", three: "OK", five: "Great" } },
+      {
+        id: "r1",
+        name: "Correctness",
+        description: "Is it right?",
+        weight: 0.5,
+        anchors: { one: "Poor", three: "OK", five: "Great" },
+      },
+      {
+        id: "r2",
+        name: "Clarity",
+        description: "Is it clear?",
+        weight: 0.3,
+        anchors: { one: "Poor", three: "OK", five: "Great" },
+      },
     ],
-    createdAt: 1000, updatedAt: 1000,
+    createdAt: 1000,
+    updatedAt: 1000,
   });
   const testEvaluation = () => ({ kind: "custom" as const, profile: testProfile() });
 
@@ -555,18 +605,24 @@ describe("reducer — retained run evaluation context", () => {
 
   it("replacing the command evaluation after fanout does not mutate the stored run evaluation", () => {
     const c1 = makeCandidate("c1", "openrouter", "model-a");
-    const started = reducer({ ...initialState, evaluation: testEvaluation() }, {
-      type: "FANOUT_START",
-      candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "original task", evaluation: testEvaluation(), attachments: [], attachmentsToJudge: true },
-    });
+    const started = reducer(
+      { ...initialState, evaluation: testEvaluation() },
+      {
+        type: "FANOUT_START",
+        candidates: [{ ...c1, status: "pending" }],
+        context: {
+          prompt: "original task",
+          evaluation: testEvaluation(),
+          attachments: [],
+          attachmentsToJudge: true,
+        },
+      },
+    );
     const edited = reducer(started, { type: "SET_EVALUATION", config: HOLISTIC_EVALUATION });
     expect(edited.evaluation).toEqual({ kind: "holistic" });
     const stored = started.runContext?.evaluation;
     expect(stored).toEqual(testEvaluation());
   });
-
-
 
   it("FANOUT_START deep-copies the complete reasoning policy into the frozen context", () => {
     const c1 = makeCandidate("c1", "openrouter", "model-a");
@@ -592,7 +648,11 @@ describe("reducer — retained run evaluation context", () => {
     expect(next.runContext?.reasoningPolicy).toEqual({ candidates: "medium", judge: "high" });
     expect(next.runContext?.reasoningPolicy).not.toBe(policy);
     expect(next.runContext?.mode).toBe("rank");
-    expect(next.runContext?.task).toEqual({ prompt: "task", systemPrompt: "system", temperature: 0.2 });
+    expect(next.runContext?.task).toEqual({
+      prompt: "task",
+      systemPrompt: "system",
+      temperature: 0.2,
+    });
   });
 
   it("RESET_SESSION clears the retained run context", () => {
@@ -600,7 +660,12 @@ describe("reducer — retained run evaluation context", () => {
     const started = reducer(initialState, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "original task", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
+      context: {
+        prompt: "original task",
+        evaluation: HOLISTIC_EVALUATION,
+        attachments: [],
+        attachmentsToJudge: true,
+      },
     });
     expect(started.runContext).not.toBeNull();
     const reset = reducer(started, { type: "RESET_SESSION" });
@@ -612,12 +677,22 @@ describe("reducer — retained run evaluation context", () => {
     const first = reducer(initialState, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "task one", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
+      context: {
+        prompt: "task one",
+        evaluation: HOLISTIC_EVALUATION,
+        attachments: [],
+        attachmentsToJudge: true,
+      },
     });
     const second = reducer(first, {
       type: "FANOUT_START",
       candidates: [{ ...c1, status: "pending" }],
-      context: { prompt: "task two", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
+      context: {
+        prompt: "task two",
+        evaluation: HOLISTIC_EVALUATION,
+        attachments: [],
+        attachmentsToJudge: true,
+      },
     });
     expect(second.runContext?.prompt).toBe("task two");
   });
@@ -637,7 +712,12 @@ describe("reducer — JUDGE_START as a standalone active-stage transition", () =
     judgeReport: makeReport([{ id: "c1", label: "A", score: 4.0 }]),
     consensus: { consensus: ["shared"], contradictions: [], uniqueInsights: [] },
     insufficient: { done: 2, failed: 1 },
-    runContext: { prompt: "original task", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
+    runContext: {
+      prompt: "original task",
+      evaluation: HOLISTIC_EVALUATION,
+      attachments: [],
+      attachmentsToJudge: true,
+    },
   });
 
   it("sets running: true when the previous state is a Judge error", () => {
@@ -692,7 +772,14 @@ describe("reducer — standalone Fusion transition", () => {
 
 describe("reducer — SWAP_SLOT switches a slot's model", () => {
   const baseSlots: StudioState["slots"] = [
-    { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+    {
+      id: "s1",
+      providerId: "openrouter",
+      provider: "OpenRouter",
+      model: "A",
+      slug: "model-a",
+      enabled: true,
+    },
   ];
 
   it("updates slug/model/provider label within the same provider", () => {
@@ -780,7 +867,10 @@ describe("reducer — ADD_ATTACHMENTS", () => {
       ...initialState,
       attachments: Array.from({ length: MAX_FILES }, (_, i) => makeAttachment(`att-${i}`)),
     };
-    const next = reducer(state, { type: "ADD_ATTACHMENTS", attachments: [makeAttachment("overflow")] });
+    const next = reducer(state, {
+      type: "ADD_ATTACHMENTS",
+      attachments: [makeAttachment("overflow")],
+    });
     expect(next.attachments.length).toBe(MAX_FILES);
     expect(next.attachments.some((a) => a.id === "overflow")).toBe(false);
   });
@@ -843,7 +933,11 @@ describe("reducer — attachment lifecycle transitions", () => {
       ...initialState,
       attachments: [makeAttachment("att-1")],
     };
-    const next = reducer(state, { type: "ATTACHMENT_FAILED", id: "att-1", error: "PDF extraction failed: x" });
+    const next = reducer(state, {
+      type: "ATTACHMENT_FAILED",
+      id: "att-1",
+      error: "PDF extraction failed: x",
+    });
     expect(next.attachments[0].status).toBe("error");
     expect(next.attachments[0].error).toBe("PDF extraction failed: x");
   });
@@ -876,7 +970,14 @@ describe("reducer — attachment lifecycle transitions", () => {
       attachments: [makeAttachment("a")],
       attachmentsToJudge: false,
       slots: [
-        { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
+        {
+          id: "s1",
+          providerId: "openrouter",
+          provider: "OpenRouter",
+          model: "A",
+          slug: "model-a",
+          enabled: true,
+        },
       ],
     };
     const next = reducer(state, { type: "RESET_SESSION" });
@@ -897,12 +998,21 @@ describe("reducer — attachmentsToJudge auto-default (spec §6.2)", () => {
     const atFour = reducer(initialState, { type: "ADD_ATTACHMENTS", attachments: four });
     expect(atFour.attachmentsToJudge).toBe(true);
 
-    const five = reducer(atFour, { type: "ADD_ATTACHMENTS", attachments: [makeAttachment("i4", { bytes: 100 })] });
+    const five = reducer(atFour, {
+      type: "ADD_ATTACHMENTS",
+      attachments: [makeAttachment("i4", { bytes: 100 })],
+    });
     expect(five.attachmentsToJudge).toBe(false);
   });
 
   it("flips to false when native bytes exceed 4 MB even with few images", () => {
-    const big = [makeAttachment("big", { kind: "pdf", mimeType: "application/pdf", bytes: 4 * 1024 * 1024 + 1 })];
+    const big = [
+      makeAttachment("big", {
+        kind: "pdf",
+        mimeType: "application/pdf",
+        bytes: 4 * 1024 * 1024 + 1,
+      }),
+    ];
     const next = reducer(initialState, { type: "ADD_ATTACHMENTS", attachments: big });
     expect(next.attachmentsToJudge).toBe(false);
   });
@@ -910,7 +1020,13 @@ describe("reducer — attachmentsToJudge auto-default (spec §6.2)", () => {
   it("stays on when a text-only attachment is added", () => {
     const next = reducer(initialState, {
       type: "ADD_ATTACHMENTS",
-      attachments: [makeAttachment("doc", { kind: "doc", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes: 30 * 1024 * 1024 })],
+      attachments: [
+        makeAttachment("doc", {
+          kind: "doc",
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          bytes: 30 * 1024 * 1024,
+        }),
+      ],
     });
     expect(next.attachmentsToJudge).toBe(true);
   });

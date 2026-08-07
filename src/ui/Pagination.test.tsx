@@ -65,7 +65,9 @@ describe("Pagination", () => {
   });
 
   it("announces the exact range on the last partial page", () => {
-    const h = render(<Pagination page={5} pageCount={5} totalItems={230} onPageChange={() => {}} />);
+    const h = render(
+      <Pagination page={5} pageCount={5} totalItems={230} onPageChange={() => {}} />,
+    );
     expect(h.container.textContent ?? "").toContain("201–230");
     cleanup(h);
   });

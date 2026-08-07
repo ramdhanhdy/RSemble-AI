@@ -51,13 +51,18 @@ describe("DeepSeek browser-direct adapter", () => {
     );
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer test-key");
-    expect(JSON.parse(String(init.body))).toMatchObject({ model: "deepseek-v4-flash", stream: false });
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: "deepseek-v4-flash",
+      stream: false,
+    });
   });
 
   it("forwards the documented DeepSeek effort shape", async () => {
     stubLocalStorage("test-key");
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     await deepseekProvider.chatCompletion({
@@ -74,7 +79,10 @@ describe("DeepSeek browser-direct adapter", () => {
     stubLocalStorage("");
     const missing = deepseekProvider.readiness();
     expect(missing).not.toBeInstanceOf(Promise);
-    expect(missing).toMatchObject({ ok: false, reason: expect.stringContaining("VITE_DEEPSEEK_KEY") });
+    expect(missing).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("VITE_DEEPSEEK_KEY"),
+    });
 
     stubLocalStorage("test-key");
     expect(deepseekProvider.readiness()).toEqual({ ok: true });

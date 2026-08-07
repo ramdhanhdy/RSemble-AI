@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { createBridgeServer } from "../codex-bridge/index";
+import { createBridgeServer } from "../codex-bridge/index.js";
 
 const SECRET = "test-bridge-secret";
 
@@ -105,18 +105,21 @@ describe("bridge — exact proxy allowlists (Plan 003 B)", () => {
     "/clinepass/v1/keys",
     "/9router/v1/models/extra",
     "/9router/control",
-  ])("rejects unknown or prefix-bypassing path %s with 404 and zero upstream calls", async (path) => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const { server, url } = await startServer();
-    try {
-      const res = await rawRequest(url, path, "GET");
-      expect(res.status).toBe(404);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      await closeServer(server);
-    }
-  });
+  ])(
+    "rejects unknown or prefix-bypassing path %s with 404 and zero upstream calls",
+    async (path) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const { server, url } = await startServer();
+      try {
+        const res = await rawRequest(url, path, "GET");
+        expect(res.status).toBe(404);
+        expect(fetchMock).not.toHaveBeenCalled();
+      } finally {
+        await closeServer(server);
+      }
+    },
+  );
 
   it("forwards query strings only on an approved exact path", async () => {
     const fetchMock = vi.fn().mockResolvedValue(upstreamOk());
@@ -216,13 +219,16 @@ describe("bridge — configured secret is enforced (Plan 002 D3)", () => {
     ["GET", "/umans/v1/models"],
     ["GET", "/clinepass/v1/models"],
     ["GET", "/9router/v1/models"],
-  ])("rejects %s %s with 401 bridge_auth_required when the header is missing", async (method, path) => {
-    await withSecret(async (url) => {
-      const res = await rawRequest(url, path, method);
-      expect(res.status).toBe(401);
-      expect(JSON.parse(res.body).error.type).toBe("bridge_auth_required");
-    });
-  });
+  ])(
+    "rejects %s %s with 401 bridge_auth_required when the header is missing",
+    async (method, path) => {
+      await withSecret(async (url) => {
+        const res = await rawRequest(url, path, method);
+        expect(res.status).toBe(401);
+        expect(JSON.parse(res.body).error.type).toBe("bridge_auth_required");
+      });
+    },
+  );
 
   it.each([
     ["POST", "/v1/chat/completions"],

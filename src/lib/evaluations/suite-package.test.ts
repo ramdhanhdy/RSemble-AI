@@ -77,9 +77,7 @@ describe("parseSuitePackage", () => {
   });
 
   it("rejects profiles with empty criteria", () => {
-    const result = parseSuitePackage(
-      makePkg({ profiles: [{ name: "P", criteria: [] }] }),
-    );
+    const result = parseSuitePackage(makePkg({ profiles: [{ name: "P", criteria: [] }] }));
     expect(result.ok).toBe(false);
   });
 });
@@ -186,7 +184,10 @@ describe("normalizeSuitePackage", () => {
   it("rejects embedded profiles with invalid criteria at the record guard", () => {
     const pkg = makePkg({
       profiles: [
-        { name: "P", criteria: [{ ...criterion("c1"), anchors: { one: "", three: "x", five: "y" } }] },
+        {
+          name: "P",
+          criteria: [{ ...criterion("c1"), anchors: { one: "", three: "x", five: "y" } }],
+        },
       ],
     });
     const result = normalizeSuitePackage(pkg, baseOpts());

@@ -9,14 +9,16 @@
 // =============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { useMemo, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { ConnectionsModal } from "./ConnectionsModal";
 import { ModelProbeProvider } from "./ModelProbeContext";
-import { credentialStore, resetCredentialStoreForTests } from "../lib/credentials/credential-store";
-import { rememberedStorageKey } from "../lib/credentials/credential-store";
+import {
+  credentialStore,
+  resetCredentialStoreForTests,
+  rememberedStorageKey,
+} from "../lib/credentials/credential-store";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,6 +44,7 @@ function mount(): { container: HTMLDivElement; root: { unmount: () => void } } {
   act(() => {
     root.render(<Harness />);
   });
+  activeRoot = root;
   return { container, root };
 }
 
@@ -86,7 +89,16 @@ function click(button: HTMLButtonElement | null): void {
   });
 }
 
+let activeRoot: { unmount: () => void } | null = null;
+
 beforeEach(() => {
+  // Deterministic: the modal probes provider readiness on open. Stub fetch so
+  // no real loopback connection is attempted (credential-free CI) and the
+  // probe rejects instantly inside the settle() window.
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("bridge offline in test"))),
+  );
   // Deterministic: neutral provider env so the developer's .env cannot
   // interfere with session/remembered policy assertions.
   for (const key of [
@@ -102,7 +114,17 @@ beforeEach(() => {
   }
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Unmount through act and let in-flight probe promises settle so no state
+  // update lands outside the test boundary.
+  if (activeRoot) {
+    const root = activeRoot;
+    activeRoot = null;
+    act(() => {
+      root.unmount();
+    });
+    await settle();
+  }
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -156,7 +178,9 @@ describe("ConnectionsModal — credential policy (Plan 002 D1)", () => {
     expect(input.value).toBe("");
     expect(input.disabled).toBe(true);
     expect(rootEl().textContent).toContain("Environment key active");
-    const saveButton = [...openrouterRow(container).querySelectorAll("button")].find((b) => b.textContent === "Save");
+    const saveButton = [...openrouterRow(container).querySelectorAll("button")].find(
+      (b) => b.textContent === "Save",
+    );
     expect(saveButton?.disabled).toBe(true);
   });
 
@@ -178,5 +202,22 @@ describe("ConnectionsModal — credential policy (Plan 002 D1)", () => {
     await settle();
     expect(credentialStore.get("openrouter")).toBe("");
     expect(credentialStore.persistence("openrouter")).toBeNull();
+  });
+});
+
+describe("ConnectionsModal accessibility (Plan 006 workstream B)", () => {
+  it("associates the Remember opt-in with a label disclosing same-origin readability", async () => {
+    mount();
+    await settle();
+    // The remember checkbox must be wrapped by/associated with a label whose
+    // text names the opt-in AND discloses the same-origin JavaScript risk
+    // (Plan 002 decision D1, DECISIONS.md #11).
+    const checkbox = rootEl().querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(checkbox).toBeTruthy();
+    const label = checkbox!.closest("label");
+    expect(label).toBeTruthy();
+    expect(label!.textContent).toContain("Remember on this device");
+    expect(label!.textContent).toContain("same-origin JavaScript");
+    // Teardown is handled by the shared afterEach (act-wrapped unmount).
   });
 });

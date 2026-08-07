@@ -32,9 +32,17 @@ function formatSlug(slug: string): { display: string; truncated: boolean } {
 export function CompactModelLabel({
   providerId,
   slug,
+  interactive = true,
 }: {
   providerId: string;
   slug: string;
+  /**
+   * When the label is rendered inside another interactive element (e.g. the
+   * Run Detail candidate-row button), the disclosure button must disappear:
+   * a <button> descendant of a <button> is invalid DOM nesting. The full
+   * opaque identity stays available through the sr-only text and title.
+   */
+  interactive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const providerLabel = PROVIDER_LABELS[providerId as ProviderId] ?? providerId;
@@ -44,21 +52,35 @@ export function CompactModelLabel({
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
       <span className="font-mono text-text-muted">{providerLabel}</span>
-      <span className="text-text-muted" aria-hidden="true">·</span>
-      <span className="font-mono text-text tabular-nums">
+      <span className="text-text-muted" aria-hidden="true">
+        ·
+      </span>
+      <span className="font-mono text-text tabular-nums" title={interactive ? undefined : fullId}>
         {expanded ? slug : display}
       </span>
-      <span data-full-id={fullId} className="sr-only">{fullId}</span>
-      <button
-        type="button"
-        data-full-id-disclosure=""
-        aria-label={`Full model identity: ${fullId}`}
-        aria-expanded={expanded}
-        onClick={() => setExpanded((e) => !e)}
-        className="flex min-h-[44px] items-center gap-0.5 rounded-sm px-1 text-text-muted transition-colors duration-150 hover:text-text focus-visible:text-accent"
-      >
-        <ChevronDown size={12} className={expanded ? "rotate-180 transition-transform duration-150" : "transition-transform duration-150"} aria-hidden="true" />
-      </button>
+      <span data-full-id={fullId} className="sr-only">
+        {fullId}
+      </span>
+      {interactive && (
+        <button
+          type="button"
+          data-full-id-disclosure=""
+          aria-label={`Full model identity: ${fullId}`}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((e) => !e)}
+          className="flex min-h-[44px] items-center gap-0.5 rounded-sm px-1 text-text-muted transition-colors duration-150 hover:text-text focus-visible:text-accent"
+        >
+          <ChevronDown
+            size={12}
+            className={
+              expanded
+                ? "rotate-180 transition-transform duration-150"
+                : "transition-transform duration-150"
+            }
+            aria-hidden="true"
+          />
+        </button>
+      )}
     </span>
   );
 }

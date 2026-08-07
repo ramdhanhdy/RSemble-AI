@@ -40,13 +40,18 @@ describe("createOpenAICompatProvider — abort classification", () => {
         ...config,
         deadlines: { connectMs: 10, inactivityMs: 20, overallMs: 30 },
       });
-      const pending = provider.chatCompletion({
-        model: "m",
-        messages: [{ role: "user", content: "hi" }],
-      }).catch((error: unknown) => error);
+      const pending = provider
+        .chatCompletion({
+          model: "m",
+          messages: [{ role: "user", content: "hi" }],
+        })
+        .catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(30);
-      await expect(pending).resolves.toMatchObject({ kind: "overall_timeout", providerId: "umans" });
+      await expect(pending).resolves.toMatchObject({
+        kind: "overall_timeout",
+        providerId: "umans",
+      });
     } finally {
       vi.useRealTimers();
     }
@@ -58,11 +63,13 @@ describe("createOpenAICompatProvider — abort classification", () => {
     ctrl.abort(new Error("user stopped the request"));
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("aborted")));
     const provider = createOpenAICompatProvider(config);
-    const err = await provider.chatCompletion({
-      model: "m",
-      messages: [{ role: "user", content: "hi" }],
-      signal: ctrl.signal,
-    }).catch((e: unknown) => e);
+    const err = await provider
+      .chatCompletion({
+        model: "m",
+        messages: [{ role: "user", content: "hi" }],
+        signal: ctrl.signal,
+      })
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(DOMException);
     expect((err as DOMException).name).toBe("AbortError");
     expect(err).not.toBeInstanceOf(ProviderError);
@@ -74,22 +81,29 @@ describe("createOpenAICompatProvider — deadline integration", () => {
     vi.useFakeTimers();
     try {
       stubKey();
-      vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => new Promise<Response>(() => {})),
+      );
       const provider = createOpenAICompatProvider({
         ...config,
         deadlines: { connectMs: 10, inactivityMs: 20 },
       });
-      const pending = provider.chatCompletion({
-        model: "m",
-        messages: [{ role: "user", content: "hi" }],
-      }).catch((error: unknown) => error);
+      const pending = provider
+        .chatCompletion({
+          model: "m",
+          messages: [{ role: "user", content: "hi" }],
+        })
+        .catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(10);
-      await expect(pending).resolves.toMatchObject({ kind: "connect_timeout", providerId: "umans" });
+      await expect(pending).resolves.toMatchObject({
+        kind: "connect_timeout",
+        providerId: "umans",
+      });
     } finally {
       vi.useRealTimers();
     }
   });
-
 });
 
 describe("createOpenAICompatProvider — error preservation", () => {
@@ -163,7 +177,9 @@ describe("createOpenAICompatProvider — connection verification", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.code.umans.ai/v1/models",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: expect.stringContaining("candidate-key") }),
+        headers: expect.objectContaining({
+          Authorization: expect.stringContaining("candidate-key"),
+        }),
       }),
     );
   });
@@ -206,7 +222,10 @@ describe("createOpenAICompatProvider — optional-key mode", () => {
     });
     vi.stubEnv("VITE_UMANS_API_KEY", "");
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ id: "m1" }] }), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify({ data: [{ id: "m1" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const provider = createOpenAICompatProvider(optionalKeyConfig);
@@ -217,7 +236,7 @@ describe("createOpenAICompatProvider — optional-key mode", () => {
     expect(headers.Authorization).toBeUndefined();
   });
 
-  it("testConnection(\"\") probes /models and may succeed", async () => {
+  it('testConnection("") probes /models and may succeed', async () => {
     vi.stubGlobal("localStorage", {
       getItem: () => "",
       setItem: () => {},
@@ -227,7 +246,10 @@ describe("createOpenAICompatProvider — optional-key mode", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ data: [{ id: "m1" }] }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        new Response(JSON.stringify({ data: [{ id: "m1" }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
       ),
     );
     const provider = createOpenAICompatProvider(optionalKeyConfig);
@@ -235,9 +257,10 @@ describe("createOpenAICompatProvider — optional-key mode", () => {
   });
 
   it("a nonblank key produces exactly Authorization: Bearer <key>", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    ));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 })),
+    );
     const provider = createOpenAICompatProvider(optionalKeyConfig);
     await provider.testConnection!("sk-[REDACTED]");
     const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
@@ -255,11 +278,16 @@ describe("createOpenAICompatProvider — optional-key mode", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ choices: [{ message: { content: "hello" } }] }), { status: 200 }),
+        new Response(JSON.stringify({ choices: [{ message: { content: "hello" } }] }), {
+          status: 200,
+        }),
       ),
     );
     const provider = createOpenAICompatProvider(optionalKeyConfig);
-    const result = await provider.chatCompletion({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    const result = await provider.chatCompletion({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+    });
     expect(result).toBe("hello");
   });
 });
@@ -272,9 +300,10 @@ describe("createOpenAICompatProvider — models-probe readiness", () => {
       removeItem: () => {},
     });
     vi.stubEnv("VITE_UMANS_API_KEY", "");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    ));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 })),
+    );
     const provider = createOpenAICompatProvider(optionalKeyConfig);
     await expect(provider.readiness()).resolves.toEqual({ ok: true });
   });
@@ -285,9 +314,14 @@ describe("createOpenAICompatProvider — models-probe readiness", () => {
       setItem: () => {},
       removeItem: () => {},
     });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: { message: "invalid key" } }), { status: 401 }),
-    ));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: { message: "invalid key" } }), { status: 401 }),
+        ),
+    );
     const provider = createOpenAICompatProvider(optionalKeyConfig);
     const result = await provider.readiness();
     expect(result.ok).toBe(false);
@@ -315,9 +349,12 @@ describe("createOpenAICompatProvider — models-probe readiness", () => {
       removeItem: () => {},
     });
     vi.stubEnv("VITE_UMANS_API_KEY", "");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ unexpected: true }), { status: 200 }),
-    ));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({ unexpected: true }), { status: 200 })),
+    );
     const provider = createOpenAICompatProvider(optionalKeyConfig);
     const result = await provider.readiness();
     expect(result.ok).toBe(false);
@@ -348,7 +385,9 @@ describe("createOpenAICompatProvider — default remains key-required", () => {
     });
     vi.stubEnv("VITE_UMANS_API_KEY", "");
     const provider = createOpenAICompatProvider(config);
-    await expect(provider.chatCompletion({ model: "m", messages: [] })).rejects.toBeInstanceOf(ProviderError);
+    await expect(provider.chatCompletion({ model: "m", messages: [] })).rejects.toBeInstanceOf(
+      ProviderError,
+    );
   });
 });
 
@@ -373,35 +412,45 @@ function stubKeyAndOkChat() {
     removeItem: () => {},
   });
   return vi.fn().mockResolvedValue(
-    new Response(JSON.stringify({ choices: [{ message: { content: "hello" } }] }), { status: 200 }),
+    new Response(JSON.stringify({ choices: [{ message: { content: "hello" } }] }), {
+      status: 200,
+    }),
   );
 }
 
 describe("createOpenAICompatProvider — supportsImages gate (7.4.2)", () => {
-  it.each(["image", "file"])("rejects a %s part before any fetch when supportsImages is off", async (partType) => {
-    const fetchMock = stubKeyAndOkChat();
-    vi.stubGlobal("fetch", fetchMock);
-    const provider = createOpenAICompatProvider(config);
+  it.each(["image", "file"])(
+    "rejects a %s part before any fetch when supportsImages is off",
+    async (partType) => {
+      const fetchMock = stubKeyAndOkChat();
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = createOpenAICompatProvider(config);
 
-    const messages = [
-      {
-        role: "user" as const,
-        content: [
-          { type: "text" as const, text: "prompt" },
-          ...(partType === "image"
-            ? [{ type: "image" as const, mimeType: "image/png", data: "iVBOR" }]
-            : [{ type: "file" as const, mimeType: "application/pdf", data: "JVBER", filename: "r.pdf" }]),
-        ],
-      },
-    ];
+      const messages = [
+        {
+          role: "user" as const,
+          content: [
+            { type: "text" as const, text: "prompt" },
+            ...(partType === "image"
+              ? [{ type: "image" as const, mimeType: "image/png", data: "iVBOR" }]
+              : [
+                  {
+                    type: "file" as const,
+                    mimeType: "application/pdf",
+                    data: "JVBER",
+                    filename: "r.pdf",
+                  },
+                ]),
+          ],
+        },
+      ];
 
-    const err = await provider
-      .chatCompletion({ model: "m", messages })
-      .catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ProviderError);
-    expect((err as ProviderError).message).toContain("supportsImages");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
+      const err = await provider.chatCompletion({ model: "m", messages }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProviderError);
+      expect((err as ProviderError).message).toContain("supportsImages");
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects media parts on the streaming path too", async () => {
     const fetchMock = stubKeyAndOkChat();
@@ -423,7 +472,10 @@ describe("createOpenAICompatProvider — supportsImages gate (7.4.2)", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const provider = createOpenAICompatProvider(config);
-    const stream = provider.chatCompletionStream({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    const stream = provider.chatCompletionStream({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+    });
     await expect(stream.next()).resolves.toMatchObject({ value: "ok" });
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
     expect(body.stream).toBe(true);
@@ -472,13 +524,16 @@ describe("createOpenAICompatProvider — per-model capability metadata", () => {
   it("records explicit vision metadata and leaves undocumented models unknown", async () => {
     stubKey();
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({
-        data: [
-          { id: "vision", architecture: { input_modalities: ["text", "image"] } },
-          { id: "text-only", architecture: { input_modalities: ["text"] } },
-          { id: "undocumented" },
-        ],
-      }), { status: 200 }),
+      new Response(
+        JSON.stringify({
+          data: [
+            { id: "vision", architecture: { input_modalities: ["text", "image"] } },
+            { id: "text-only", architecture: { input_modalities: ["text"] } },
+            { id: "undocumented" },
+          ],
+        }),
+        { status: 200 },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -501,9 +556,11 @@ describe("createOpenAICompatProvider — bounded error bodies (Plan 003 D)", () 
     const big = "E".repeat(20_000);
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(big, { status: 502, headers: { "Content-Type": "text/plain" } }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(big, { status: 502, headers: { "Content-Type": "text/plain" } }),
+        ),
     );
     const provider = createOpenAICompatProvider(config);
     const err = await provider
@@ -540,7 +597,9 @@ describe("createOpenAICompatProvider — bridge secret header (Plan 003 C)", () 
     stubKey();
     vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret");
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const provider = createOpenAICompatProvider({ ...config, bridgeSecret: true });
@@ -554,7 +613,9 @@ describe("createOpenAICompatProvider — bridge secret header (Plan 003 C)", () 
     stubKey();
     vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "");
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const provider = createOpenAICompatProvider({ ...config, bridgeSecret: true });
@@ -568,7 +629,9 @@ describe("createOpenAICompatProvider — bridge secret header (Plan 003 C)", () 
     stubKey();
     vi.stubEnv("VITE_RSEMBLE_BRIDGE_SECRET", "test-bridge-secret");
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const provider = createOpenAICompatProvider(config); // bridgeSecret: false
@@ -588,9 +651,7 @@ describe("createOpenAICompatProvider — encoded body preflight (Plan 003 E)", (
     const messages = [
       { role: "user" as const, content: [{ type: "text" as const, text: "x".repeat(2000) }] },
     ];
-    const err = await provider
-      .chatCompletion({ model: "m", messages })
-      .catch((e: unknown) => e);
+    const err = await provider.chatCompletion({ model: "m", messages }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ProviderError);
     expect((err as ProviderError).message).toMatch(/bridge limit/i);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -626,12 +687,14 @@ describe("createOpenAICompatProvider — raw provider bodies never surface (revi
     stubConfiguredKey();
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ error: { message: "401 invalid key sk-configured-umans-123456" } }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ error: { message: "401 invalid key sk-configured-umans-123456" } }),
+            { status: 401, headers: { "Content-Type": "application/json" } },
+          ),
         ),
-      ),
     );
     const provider = createOpenAICompatProvider(config);
     const err = await provider
@@ -670,9 +733,11 @@ describe("createOpenAICompatProvider — raw provider bodies never surface (revi
     const html = `<html><body>Proxy Error sk-configured-umans-123456 prompt fragment "hello world"</body></html>`;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(html, { status: 502, headers: { "Content-Type": "text/html" } }),
+        ),
     );
     const provider = createOpenAICompatProvider(config);
     const err = await provider
@@ -686,10 +751,10 @@ describe("createOpenAICompatProvider — raw provider bodies never surface (revi
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ trace: { request: "summarize the attached prompt" } }),
-          { status: 500, headers: { "Content-Type": "application/json" } },
-        ),
+        new Response(JSON.stringify({ trace: { request: "summarize the attached prompt" } }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
       ),
     );
     const provider = createOpenAICompatProvider(config);
@@ -741,6 +806,8 @@ describe("createOpenAICompatProvider — bridge secret never reaches thrown erro
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ProviderError);
     expect((err as ProviderError).message).not.toContain("test-bridge-secret-123456");
-    expect((err as ProviderError).message).not.toMatch(/X-RSemble-Bridge-Secret\s*[:=]\s*[^\s,;]+/i);
+    expect((err as ProviderError).message).not.toMatch(
+      /X-RSemble-Bridge-Secret\s*[:=]\s*[^\s,;]+/i,
+    );
   });
 });

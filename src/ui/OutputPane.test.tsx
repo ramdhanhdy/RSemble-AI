@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { OutputPane, LiveCandidateCard, scrollLiveTranscriptToEnd, InsufficientState, failureGuidance } from "./OutputPane";
+import {
+  OutputPane,
+  LiveCandidateCard,
+  scrollLiveTranscriptToEnd,
+  InsufficientState,
+  failureGuidance,
+} from "./OutputPane";
 import { initialState, type StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
@@ -69,7 +75,9 @@ describe("LiveCandidateCard — done card renders full text (no line-clamp)", ()
       finishedAt: 200,
       tokensOut: 318,
     };
-    const html = renderToStaticMarkup(<LiveCandidateCard candidate={doneWithParagraphs} now={200} />);
+    const html = renderToStaticMarkup(
+      <LiveCandidateCard candidate={doneWithParagraphs} now={200} />,
+    );
 
     expect(html).toContain("Third paragraph with the conclusion");
     expect(html).toContain("First paragraph with opening thoughts");
@@ -190,7 +198,12 @@ describe("InsufficientState — failed candidate visibility", () => {
   it("shows the failed model name and error message (not just an aggregate count)", () => {
     const failed = makeFailedCandidate("c1", "GPT-5", "rate limit exceeded");
     const html = renderToStaticMarkup(
-      <InsufficientState done={1} failed={1} mode="fuse" candidates={[makeDoneCandidate("c2", "Claude"), failed]} />,
+      <InsufficientState
+        done={1}
+        failed={1}
+        mode="fuse"
+        candidates={[makeDoneCandidate("c2", "Claude"), failed]}
+      />,
     );
     expect(html).toContain("GPT-5");
     expect(html).toContain("rate limit exceeded");
@@ -227,7 +240,12 @@ describe("InsufficientState — failed candidate visibility", () => {
   it("does not render a retry button when no onRetryCandidate callback is provided", () => {
     const failed = makeFailedCandidate("c1", "GPT-5", "rate limit exceeded");
     const html = renderToStaticMarkup(
-      <InsufficientState done={1} failed={1} mode="fuse" candidates={[makeDoneCandidate("c2", "Claude"), failed]} />,
+      <InsufficientState
+        done={1}
+        failed={1}
+        mode="fuse"
+        candidates={[makeDoneCandidate("c2", "Claude"), failed]}
+      />,
     );
     expect(html).not.toContain("Retry");
   });
@@ -357,7 +375,12 @@ function makeOutputPaneState(overrides: Partial<StudioState> = {}): StudioState 
     judgeStatus: "error",
     judgeError: "The AI judge could not be reached.",
     candidates: [makeDoneCandidate("c1", "Model A"), makeDoneCandidate("c2", "Model B")],
-    runContext: { prompt: "original task", evaluation: HOLISTIC_EVALUATION, attachments: [], attachmentsToJudge: true },
+    runContext: {
+      prompt: "original task",
+      evaluation: HOLISTIC_EVALUATION,
+      attachments: [],
+      attachmentsToJudge: true,
+    },
     ...overrides,
   };
 }
@@ -374,11 +397,13 @@ describe("OutputPane — Judge-only retry action", () => {
   it("renders timeout guidance visibly beneath the persisted failure", () => {
     const html = renderToStaticMarkup(
       <OutputPane
-        state={makeOutputPaneState({ judgeError: "stream_inactivity_timeout for provider/model judge after 100ms" })}
+        state={makeOutputPaneState({
+          judgeError: "stream_inactivity_timeout for provider/model judge after 100ms",
+        })}
         onRetryJudge={() => {}}
       />,
     );
-    expect(html).toContain('data-timeout-guidance');
+    expect(html).toContain("data-timeout-guidance");
     expect(html).toMatch(/stream stopped.*progress.*retry/i);
   });
 
@@ -454,11 +479,12 @@ describe("OutputPane — Judge-only retry action", () => {
 
   it("does not offer Judge retry when fewer than two candidates are usable", () => {
     const state = makeOutputPaneState({
-      candidates: [makeDoneCandidate("c1", "Model A"), makeFailedCandidate("c2", "Model B", "boom")],
+      candidates: [
+        makeDoneCandidate("c1", "Model A"),
+        makeFailedCandidate("c2", "Model B", "boom"),
+      ],
     });
-    const html = renderToStaticMarkup(
-      <OutputPane state={state} onRetryJudge={() => {}} />,
-    );
+    const html = renderToStaticMarkup(<OutputPane state={state} onRetryJudge={() => {}} />);
     expect(html).not.toContain("Retry Judge");
     expect(html).not.toContain('aria-label="Retry Judge using completed candidates"');
   });
@@ -471,9 +497,7 @@ describe("OutputPane — Judge-only retry action", () => {
       fusionStatus: "error",
       fusionError: "fusion exploded",
     });
-    const html = renderToStaticMarkup(
-      <OutputPane state={state} onRetryJudge={() => {}} />,
-    );
+    const html = renderToStaticMarkup(<OutputPane state={state} onRetryJudge={() => {}} />);
     // A fusion failure (Judge succeeded) must not expose Judge-only retry.
     expect(html).not.toContain("Retry Judge");
     expect(html).toContain("fusion exploded");
@@ -481,17 +505,13 @@ describe("OutputPane — Judge-only retry action", () => {
 
   it("does not offer the action while a stage is running", () => {
     const state = makeOutputPaneState({ running: true });
-    const html = renderToStaticMarkup(
-      <OutputPane state={state} onRetryJudge={() => {}} />,
-    );
+    const html = renderToStaticMarkup(<OutputPane state={state} onRetryJudge={() => {}} />);
     expect(html).not.toContain("Retry Judge");
   });
 
   it("does not offer the action when the run was aborted", () => {
     const state = makeOutputPaneState({ aborted: true });
-    const html = renderToStaticMarkup(
-      <OutputPane state={state} onRetryJudge={() => {}} />,
-    );
+    const html = renderToStaticMarkup(<OutputPane state={state} onRetryJudge={() => {}} />);
     expect(html).not.toContain("Retry Judge");
   });
 });
@@ -556,7 +576,9 @@ async function seedRecent(repo: InMemoryRunRepository, entries: Array<[string, n
 }
 
 async function settleRecent() {
-  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
 }
 
 describe("OutputPane recent runs", () => {
@@ -568,8 +590,19 @@ describe("OutputPane recent runs", () => {
     const root = createRoot(container);
     act(() => {
       root.render(
-        <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, fusionRepo: null, db: null, storageState: "ready", retry: () => {} }}>
-          <MemoryRouter><OutputPane state={initialState} /></MemoryRouter>
+        <RepositoryContext.Provider
+          value={{
+            runRepo: repo,
+            evalRepo: null,
+            fusionRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => {},
+          }}
+        >
+          <MemoryRouter>
+            <OutputPane state={initialState} />
+          </MemoryRouter>
         </RepositoryContext.Provider>,
       );
     });
@@ -583,14 +616,28 @@ describe("OutputPane recent runs", () => {
 
   it("each recent row links to /runs/:runId", async () => {
     const repo = new InMemoryRunRepository();
-    await seedRecent(repo, [["run-1", 1000], ["run-2", 2000]]);
+    await seedRecent(repo, [
+      ["run-1", 1000],
+      ["run-2", 2000],
+    ]);
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
     act(() => {
       root.render(
-        <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, fusionRepo: null, db: null, storageState: "ready", retry: () => {} }}>
-          <MemoryRouter><OutputPane state={initialState} /></MemoryRouter>
+        <RepositoryContext.Provider
+          value={{
+            runRepo: repo,
+            evalRepo: null,
+            fusionRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => {},
+          }}
+        >
+          <MemoryRouter>
+            <OutputPane state={initialState} />
+          </MemoryRouter>
         </RepositoryContext.Provider>,
       );
     });

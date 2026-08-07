@@ -2,9 +2,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { RunButton } from "./RunButton";
-import { clearModelPricing, parseOpenRouterPricing, setModelPricing } from "../lib/providers/pricing";
-import type { RunButton as RunButtonType } from "./RunButton";
+import { RunButton, type RunButton as RunButtonType } from "./RunButton";
+import {
+  clearModelPricing,
+  parseOpenRouterPricing,
+  setModelPricing,
+} from "../lib/providers/pricing";
 
 type RunButtonProps = Parameters<typeof RunButtonType>[0];
 
@@ -47,9 +50,20 @@ afterEach(() => {
 
 describe("RunButton forecast", () => {
   it("shows a complete forecast including the Judge when all prices are known", () => {
-    setModelPricing(parseOpenRouterPricing("openrouter", "a", { prompt: "0.000001", completion: "0.000001" }, 1)!);
-    setModelPricing(parseOpenRouterPricing("openrouter", "b", { prompt: "0.000001", completion: "0.000001" }, 1)!);
-    setModelPricing(parseOpenRouterPricing("openrouter", "judge", { prompt: "0.000001", completion: "0.000001" }, 1)!);
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "a", { prompt: "0.000001", completion: "0.000001" }, 1)!,
+    );
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "b", { prompt: "0.000001", completion: "0.000001" }, 1)!,
+    );
+    setModelPricing(
+      parseOpenRouterPricing(
+        "openrouter",
+        "judge",
+        { prompt: "0.000001", completion: "0.000001" },
+        1,
+      )!,
+    );
     const h = renderButton({
       mode: "rank",
       judge: { providerId: "openrouter", model: "judge" },
@@ -72,9 +86,20 @@ describe("RunButton forecast", () => {
   });
 
   it("names the conditional Fusion stage in Fuse mode", () => {
-    setModelPricing(parseOpenRouterPricing("openrouter", "a", { prompt: "0.000001", completion: "0.000001" }, 1)!);
-    setModelPricing(parseOpenRouterPricing("openrouter", "b", { prompt: "0.000001", completion: "0.000001" }, 1)!);
-    setModelPricing(parseOpenRouterPricing("openrouter", "judge", { prompt: "0.000001", completion: "0.000001" }, 1)!);
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "a", { prompt: "0.000001", completion: "0.000001" }, 1)!,
+    );
+    setModelPricing(
+      parseOpenRouterPricing("openrouter", "b", { prompt: "0.000001", completion: "0.000001" }, 1)!,
+    );
+    setModelPricing(
+      parseOpenRouterPricing(
+        "openrouter",
+        "judge",
+        { prompt: "0.000001", completion: "0.000001" },
+        1,
+      )!,
+    );
     const h = renderButton({
       mode: "fuse",
       judge: { providerId: "openrouter", model: "judge" },

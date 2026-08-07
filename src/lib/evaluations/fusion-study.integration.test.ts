@@ -17,23 +17,19 @@ import type {
   ModelSlot,
 } from "../../studio-data";
 import type { CriticRef, ChatMessage } from "../providers/types";
-import type {
-  EvaluationProfile,
-  EvaluationSuite,
-  EvaluationTask,
-} from "./evaluation-types";
-import type {
-  FusionRecipeVersion,
-  FusionStudy,
-  PoolManifestVersion,
-} from "./fusion-study-types";
+import type { EvaluationProfile, EvaluationSuite, EvaluationTask } from "./evaluation-types";
+import type { FusionRecipeVersion, FusionStudy, PoolManifestVersion } from "./fusion-study-types";
 import {
   FUSION_RECIPE_ANALYSIS_FED_V1,
   FUSION_RECIPE_ANALYSIS_SCORES_V1,
   FUSION_RECIPE_BLIND_RAW_V1,
 } from "./fusion-recipes";
 import { candidateIdForSlot } from "../pipeline";
-import { createFusionStudyController, type FusionPolicyExecutor, type PoolSweepOutput } from "./fusion-study-controller";
+import {
+  createFusionStudyController,
+  type FusionPolicyExecutor,
+  type PoolSweepOutput,
+} from "./fusion-study-controller";
 import { runStageA, runStageB, runStageC, type StageDriverDeps } from "./fusion-study-stages";
 import { buildPlaybook } from "./fusion-playbook";
 
@@ -43,7 +39,14 @@ const judge1: CriticRef = { providerId: "openrouter", model: "acme/judge-1" };
 const judge2: CriticRef = { providerId: "gemini", model: "acme/judge-2" };
 
 function slot(n: number, slug: string): ModelSlot {
-  return { id: `s${n}`, providerId: "openrouter", provider: "Test", model: slug, slug, enabled: true };
+  return {
+    id: `s${n}`,
+    providerId: "openrouter",
+    provider: "Test",
+    model: slug,
+    slug,
+    enabled: true,
+  };
 }
 
 /** Six pool models; B and C are criterion-complementary, the rest identical. */
@@ -80,8 +83,20 @@ const PROFILE: EvaluationProfile = {
   description: "test",
   judgeInstruction: "judge fairly",
   criteria: [
-    { id: "acc", name: "Accuracy", description: "correct", weight: 1, anchors: { one: "bad", three: "ok", five: "great" } },
-    { id: "comp", name: "Completeness", description: "complete", weight: 1, anchors: { one: "bad", three: "ok", five: "great" } },
+    {
+      id: "acc",
+      name: "Accuracy",
+      description: "correct",
+      weight: 1,
+      anchors: { one: "bad", three: "ok", five: "great" },
+    },
+    {
+      id: "comp",
+      name: "Completeness",
+      description: "complete",
+      weight: 1,
+      anchors: { one: "bad", three: "ok", five: "great" },
+    },
   ],
   createdAt: 1000,
   updatedAt: 1000,
@@ -138,7 +153,11 @@ const HOLDOUT_SCORES: Record<string, number> = {
   cell: 4.0,
 };
 
-function evaluationFor(candidateId: string, blindLabel: string, modelKey: string): CandidateEvaluation {
+function evaluationFor(
+  candidateId: string,
+  blindLabel: string,
+  modelKey: string,
+): CandidateEvaluation {
   const s = STRENGTHS[modelKey] ?? { acc: 4, comp: 4 };
   return {
     candidateId,
@@ -159,10 +178,17 @@ function evaluationFor(candidateId: string, blindLabel: string, modelKey: string
 function judgeReportFor(outputs: PoolSweepOutput[]): JudgeReport {
   const evaluationsById: Record<string, CandidateEvaluation> = {};
   outputs.forEach((o, i) => {
-    evaluationsById[o.candidateId] = evaluationFor(o.candidateId, String.fromCharCode(65 + i), o.modelKey);
+    evaluationsById[o.candidateId] = evaluationFor(
+      o.candidateId,
+      String.fromCharCode(65 + i),
+      o.modelKey,
+    );
   });
   return {
-    labelMap: outputs.map((o, i) => ({ label: String.fromCharCode(65 + i), candidateId: o.candidateId })),
+    labelMap: outputs.map((o, i) => ({
+      label: String.fromCharCode(65 + i),
+      candidateId: o.candidateId,
+    })),
     evaluationsById,
     comparisons: [],
   };
@@ -217,7 +243,10 @@ function makeMockExecutor(overrides: Partial<FusionPolicyExecutor> = {}): Fusion
       };
     },
     async runSynthesis(_synthesizer: CriticRef, messages: ChatMessage[]) {
-      return { text: `synth:${messages[1].content.length}`, cost: { tokensIn: 300, tokensOut: 150 } };
+      return {
+        text: `synth:${messages[1].content.length}`,
+        cost: { tokensIn: 300, tokensOut: 150 },
+      };
     },
     async runHoldout(_task, _profile, _judge, artifacts) {
       const scoresByKey: Record<string, number> = {};
@@ -295,7 +324,9 @@ describe("Fusion Study end-to-end (mock providers)", () => {
     expect(result.survivors).toHaveLength(2);
     expect(result.survivors).toContain("AnalysisScores");
     // BlindRaw (3.5) is dominated by AnalysisFed (4.2) on every stratified pair.
-    expect(result.eliminated.some((e) => e.family === "BlindRaw" && e.reason.includes("Dominated"))).toBe(true);
+    expect(
+      result.eliminated.some((e) => e.family === "BlindRaw" && e.reason.includes("Dominated")),
+    ).toBe(true);
   });
 
   it("Stage A seals fuse + refine trials per task with shared blocked lineage", async () => {
@@ -420,7 +451,14 @@ describe("Fusion Study end-to-end (mock providers)", () => {
   it("pool adequacy probe fires on a redundant pool and confirms via challengers", async () => {
     // Genuinely redundant pool: all models 4/4 → zero headroom everywhere,
     // best mean 4.0 meaningfully below the 5.0 ceiling → probe triggers.
-    const uniformSlots = [slot(11, "u-1"), slot(12, "u-2"), slot(13, "u-3"), slot(14, "u-4"), slot(15, "u-5"), slot(16, "u-6")];
+    const uniformSlots = [
+      slot(11, "u-1"),
+      slot(12, "u-2"),
+      slot(13, "u-3"),
+      slot(14, "u-4"),
+      slot(15, "u-5"),
+      slot(16, "u-6"),
+    ];
     const uniformPool: PoolManifestVersion = { ...POOL, id: "pool-uniform", core: uniformSlots };
     const probeSetup = await setup();
     await probeSetup.repo.createPoolManifest(uniformPool);
@@ -436,7 +474,12 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       pool: uniformPool,
       profile: PROFILE,
       survivingRecipes: [FUSION_RECIPE_ANALYSIS_SCORES_V1, FUSION_RECIPE_ANALYSIS_FED_V1],
-      shortlistRule: { description: "none pass", maxPairs: 5, minSynthesisHeadroom: 0.99, minSelectionHeadroom: 0.99 },
+      shortlistRule: {
+        description: "none pass",
+        maxPairs: 5,
+        minSynthesisHeadroom: 0.99,
+        minSelectionHeadroom: 0.99,
+      },
       sequentialPairs: 0,
       tasksPerPair: 1,
       mpid: 0.2,
@@ -455,7 +498,12 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       pool: POOL,
       profile: PROFILE,
       survivingRecipes: [FUSION_RECIPE_ANALYSIS_SCORES_V1, FUSION_RECIPE_ANALYSIS_FED_V1],
-      shortlistRule: { description: "rule", maxPairs: 5, minSynthesisHeadroom: 0.15, minSelectionHeadroom: 0.25 },
+      shortlistRule: {
+        description: "rule",
+        maxPairs: 5,
+        minSynthesisHeadroom: 0.15,
+        minSelectionHeadroom: 0.25,
+      },
       sequentialPairs: 2,
       tasksPerPair: 2,
       mpid: 0.2,
@@ -467,7 +515,12 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       poolAdequacy: stageB.poolAdequacy,
       stageC: null,
     });
-    expect(playbook.rows.map((r) => r.policy).sort()).toEqual(["best_fixed", "fuse", "rank", "refine"]);
+    expect(playbook.rows.map((r) => r.policy).sort()).toEqual([
+      "best_fixed",
+      "fuse",
+      "rank",
+      "refine",
+    ]);
     expect(playbook.claimLevel).toBe("exploratory");
     // Fuse fails the refine bar (+0.1 < MPID) → recommendation falls to the
     // highest-scoring baseline that clears best-fixed: refine (4.4 > 4.0).
@@ -495,7 +548,12 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       pool: POOL,
       profile: PROFILE,
       survivingRecipes: [FUSION_RECIPE_ANALYSIS_SCORES_V1, FUSION_RECIPE_ANALYSIS_FED_V1],
-      shortlistRule: { description: "rule", maxPairs: 5, minSynthesisHeadroom: 0.15, minSelectionHeadroom: 0.25 },
+      shortlistRule: {
+        description: "rule",
+        maxPairs: 5,
+        minSynthesisHeadroom: 0.15,
+        minSelectionHeadroom: 0.25,
+      },
       sequentialPairs: 0,
       tasksPerPair: 2,
       mpid: 0.2,

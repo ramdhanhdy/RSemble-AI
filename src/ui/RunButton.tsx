@@ -41,7 +41,9 @@ export function RunButton({
   /** Slug → providerId for exact catalog pricing. */
   providerIdsBySlug?: Record<string, ProviderId>;
 }) {
-  const attachmentEstimate = attachments ? estimateAttachmentInput(attachments) : { textTokens: 0, hasUnknownMedia: false };
+  const attachmentEstimate = attachments
+    ? estimateAttachmentInput(attachments)
+    : { textTokens: 0, hasUnknownMedia: false };
   const cost =
     hasPrompt && enabledCount > 0
       ? estimateRunCost(prompt, enabledSlugs, attachmentEstimate.textTokens, {
@@ -57,7 +59,7 @@ export function RunButton({
   const costStr = cost?.totalCostUsd != null ? `~$${cost.totalCostUsd.toFixed(2)}` : null;
   const partialCost = cost?.partial === true;
   const timeStr = time > 0 ? `~${time}s` : null;
-  const forecast = costStr && timeStr ? `${costStr} · ${timeStr}` : costStr ?? timeStr;
+  const forecast = costStr && timeStr ? `${costStr} · ${timeStr}` : (costStr ?? timeStr);
 
   const caption = running
     ? "Click to stop"
@@ -70,10 +72,10 @@ export function RunButton({
           : blockReason
             ? blockReason
             : canRun
-            ? `${enabledCount} model${enabledCount === 1 ? "" : "s"} · 1 judge${mode === "fuse" ? " + fusion" : ""}${
-                forecast ? ` · ${forecast}${partialCost ? " (partial)" : ""}` : ""
-              }`
-            : "Waiting for provider connections";
+              ? `${enabledCount} model${enabledCount === 1 ? "" : "s"} · 1 judge${mode === "fuse" ? " + fusion" : ""}${
+                  forecast ? ` · ${forecast}${partialCost ? " (partial)" : ""}` : ""
+                }`
+              : "Waiting for provider connections";
 
   const look = running
     ? "bg-error/15 text-error"
@@ -97,7 +99,9 @@ export function RunButton({
       )}
       <span data-geometry="run-label" className="min-w-0">
         <span className="block text-sm font-semibold">{running ? "Stop run" : "Run pipeline"}</span>
-        <span className={`mt-0.5 block truncate text-xs tabular-nums ${canRun || running ? "text-on-accent/80" : ""}`}>
+        <span
+          className={`mt-0.5 block truncate text-xs tabular-nums ${canRun || running ? "text-on-accent/80" : ""}`}
+        >
           {caption}
         </span>
       </span>

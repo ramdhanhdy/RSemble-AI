@@ -7,10 +7,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RSembleEvaluationDB } from "./database";
 import { createRunRepository, InMemoryRunRepository } from "./run-repository";
-import {
-  migrateLegacyHistory,
-  readRawLegacyEntries,
-} from "./legacy-history-migration";
+import { migrateLegacyHistory, readRawLegacyEntries } from "./legacy-history-migration";
 import type { LegacyRunSummary } from "./run-types";
 
 const STORAGE_KEY = "rsemble.runHistory.v1";
@@ -20,20 +17,27 @@ function stubLocalStorage(): void {
   const store = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => { store.set(key, value); },
-    removeItem: (key: string) => { store.delete(key); },
-    clear: () => { store.clear(); },
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => {
+      store.clear();
+    },
   });
 }
 
-
-function validEntry(overrides: Partial<{
-  taskExcerpt: string;
-  models: string[];
-  stats: Record<string, { score: number; latencyMs: number; costUsd: number | null }>;
-  winner: string;
-  timestamp: number;
-}> = {}): Record<string, unknown> {
+function validEntry(
+  overrides: Partial<{
+    taskExcerpt: string;
+    models: string[];
+    stats: Record<string, { score: number; latencyMs: number; costUsd: number | null }>;
+    winner: string;
+    timestamp: number;
+  }> = {},
+): Record<string, unknown> {
   return {
     taskExcerpt: overrides.taskExcerpt ?? "Write a 600-word article",
     models: overrides.models ?? ["openrouter:gpt-4", "gemini:gemini-pro"],
@@ -204,10 +208,7 @@ describe("migrateLegacyHistory (in-memory)", () => {
   beforeEach(() => {
     stubLocalStorage();
     repo = new InMemoryRunRepository();
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify([validEntry({ timestamp: 1700000000000 })]),
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([validEntry({ timestamp: 1700000000000 })]));
   });
 
   afterEach(() => {

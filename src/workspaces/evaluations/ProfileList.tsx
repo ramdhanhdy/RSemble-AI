@@ -39,10 +39,7 @@ interface ProfileRow {
 }
 
 function genId(): string {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
   return `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -68,7 +65,10 @@ const ACTION_BTN =
   "flex h-11 w-11 items-center justify-center text-text-secondary transition-colors hover:bg-card-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30";
 
 export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
-  const repository = repo ?? useEvaluationRepository();
+  // Hook order must be stable: read the context unconditionally, then
+  // prefer the injected repository when one is provided.
+  const contextRepository = useEvaluationRepository();
+  const repository = repo ?? contextRepository;
   const navigate = useNavigate();
   const [rows, setRows] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,9 +88,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
       const profiles = await Promise.all(
         records.map((r) => repository.getProfile(r.id, r.latestVersion)),
       );
-      setRows(
-        records.map((record, i) => ({ record, profile: profiles[i] ?? null })),
-      );
+      setRows(records.map((record, i) => ({ record, profile: profiles[i] ?? null })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load profiles.");
       setRows([]);
@@ -128,16 +126,13 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
     try {
       await repository.createProfile(record, profile);
       await load();
-      navigate(`/evaluations/profiles/${id}`);
+      void navigate(`/evaluations/profiles/${id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create profile.");
     }
   }
 
-  async function duplicateProfile(
-    record: ProfileRecord,
-    profile: EvaluationProfile | null,
-  ) {
+  async function duplicateProfile(record: ProfileRecord, profile: EvaluationProfile | null) {
     if (!repository || !profile) return;
     setBusyId(record.id);
     try {
@@ -160,7 +155,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
       };
       await repository.createProfile(newRecord, newProfile);
       await load();
-      navigate(`/evaluations/profiles/${newId}`);
+      void navigate(`/evaluations/profiles/${newId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to duplicate profile.");
     } finally {
@@ -175,11 +170,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
       const fresh = await repository.getProfileRecord(record.id);
       if (!fresh) return;
       const willArchive = !fresh.archivedAt;
-      await repository.setProfileArchived(
-        record.id,
-        willArchive,
-        fresh.revision,
-      );
+      await repository.setProfileArchived(record.id, willArchive, fresh.revision);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update profile.");
@@ -194,9 +185,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 p-4 text-center">
         <AlertCircle size={16} className="text-text-muted" aria-hidden="true" />
-        <p className="text-sm text-text-secondary">
-          Evaluation storage is unavailable.
-        </p>
+        <p className="text-sm text-text-secondary">Evaluation storage is unavailable.</p>
       </div>
     );
   }
@@ -335,18 +324,12 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
                 <button
                   type="button"
                   data-action={archived ? "restore" : "archive"}
-                  aria-label={
-                    archived ? `Restore ${label}` : `Archive ${label}`
-                  }
+                  aria-label={archived ? `Restore ${label}` : `Archive ${label}`}
                   disabled={busyId === record.id}
                   onClick={() => void toggleArchive(record)}
                   className={ACTION_BTN}
                 >
-                  {archived ? (
-                    <ArchiveRestore size={14} />
-                  ) : (
-                    <Archive size={14} />
-                  )}
+                  {archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                 </button>
               </RecordRow>
             </li>

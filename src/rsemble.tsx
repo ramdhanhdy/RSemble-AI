@@ -8,7 +8,15 @@
 // UI components live in ./ui; state + reducer in ./studio-engine.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Play, RotateCcw, Square } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -49,8 +57,10 @@ import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts"
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import { useExecutionOwner } from "./lib/execution-owner-context";
-import { useExecutionLease } from "./lib/evaluations/experiment-controller-hooks";
-import { useExperimentController } from "./lib/evaluations/experiment-controller-hooks";
+import {
+  useExecutionLease,
+  useExperimentController,
+} from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 
 export default function RSemble() {
@@ -89,7 +99,16 @@ export default function RSemble() {
   const connectionsDialogHandle = useMemo(() => Dialog.createHandle(), []);
   const cheatsheetDialogHandle = useMemo(() => Dialog.createHandle(), []);
 
-  const { commandWidth, dragging, onDividerPointerDown, onDividerKeyDown, onDoubleClick, containerRef, min, max } = useResizableSplit();
+  const {
+    commandWidth,
+    dragging,
+    onDividerPointerDown,
+    onDividerKeyDown,
+    onDoubleClick,
+    containerRef,
+    min,
+    max,
+  } = useResizableSplit();
   const [focusMode, setFocusMode] = useState(false);
 
   // Focus mode only applies to the horizontal lg split. At md (stacked) and
@@ -127,7 +146,9 @@ export default function RSemble() {
   // never falls back to the legacy localStorage addRun path (spec §7.7).
   // ---------------------------------------------------------------------------
   const runRepo = useRunRepository();
-  const comparePreflightRef = useRef<((current: StudioState) => ReturnType<typeof evaluateComparePreflight>) | null>(null);
+  const comparePreflightRef = useRef<
+    ((current: StudioState) => ReturnType<typeof evaluateComparePreflight>) | null
+  >(null);
   const recorder = useMemo(
     () => (runRepo ? createRunRecorder(runRepo, undefined, { enforceLease: true }) : null),
     [runRepo],
@@ -141,7 +162,12 @@ export default function RSemble() {
         abortControllersRef,
         streamBuffer,
         recorder: recorder ?? undefined,
-        preflight: (current) => comparePreflightRef.current?.(current) ?? { ok: false, code: "active-execution", message: "Compare preflight is not ready." },
+        preflight: (current) =>
+          comparePreflightRef.current?.(current) ?? {
+            ok: false,
+            code: "active-execution",
+            message: "Compare preflight is not ready.",
+          },
         lease: crossTabLease,
       }),
     [dispatch, streamBuffer, recorder, crossTabLease],
@@ -151,8 +177,11 @@ export default function RSemble() {
   // ---------------------------------------------------------------------------
   // Readiness + catalog probes — parallel, bounded, with diagnosable failures.
   // ---------------------------------------------------------------------------
-  const [readinessMap, setReadinessMap] = useState<Record<ProviderId, boolean>>(() =>
-    Object.fromEntries(listProviders().map((provider) => [provider.id, isProviderReadySync(provider.id)])) as Record<ProviderId, boolean>,
+  const [readinessMap, setReadinessMap] = useState<Record<ProviderId, boolean>>(
+    () =>
+      Object.fromEntries(
+        listProviders().map((provider) => [provider.id, isProviderReadySync(provider.id)]),
+      ) as Record<ProviderId, boolean>,
   );
   const [readinessReasons, setReadinessReasons] = useState<Partial<Record<ProviderId, string>>>({});
   // False until the first probe cycle has settled. While checking, the header
@@ -202,7 +231,10 @@ export default function RSemble() {
   // F1). Drives the add-model picker on terminal experiment results; catalog
   // population is a separate concern handled by state.models.
   const availableProviderIds = useMemo<ProviderId[]>(
-    () => listProviders().filter((p) => readinessMap[p.id] === true).map((p) => p.id),
+    () =>
+      listProviders()
+        .filter((p) => readinessMap[p.id] === true)
+        .map((p) => p.id),
     [readinessMap],
   );
 
@@ -289,17 +321,18 @@ export default function RSemble() {
   const attachmentBlockReason = preflight.ok ? null : preflight.message;
   // The controller is created once, but this ref is refreshed every render so
   // keyboard, mobile, palette, and race paths all consult the same snapshot.
-  comparePreflightRef.current = (current) => evaluateComparePreflight({
-    running: current.running,
-    experimentActive,
-    prompt: current.prompt,
-    slots: current.slots,
-    readinessMap,
-    readinessReasons,
-    critic: current.critic,
-    attachments: current.attachments,
-    attachmentEligibility: checkAttachmentEligibility(current.slots, current.attachments),
-  });
+  comparePreflightRef.current = (current) =>
+    evaluateComparePreflight({
+      running: current.running,
+      experimentActive,
+      prompt: current.prompt,
+      slots: current.slots,
+      readinessMap,
+      readinessReasons,
+      critic: current.critic,
+      attachments: current.attachments,
+      attachmentEligibility: checkAttachmentEligibility(current.slots, current.attachments),
+    });
 
   const canRunRef = useRef(canRun);
   useEffect(() => {
@@ -384,7 +417,9 @@ export default function RSemble() {
   const focusCommandPane = useCallback(() => {
     setCommandOpen(true);
     requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>('[aria-label="Command"]')?.scrollIntoView({ block: "nearest" });
+      document
+        .querySelector<HTMLElement>('[aria-label="Command"]')
+        ?.scrollIntoView({ block: "nearest" });
     });
   }, []);
 
@@ -406,172 +441,212 @@ export default function RSemble() {
 
   return (
     <ModelProbeProvider>
-    <div className="flex h-screen w-screen overflow-hidden bg-canvas p-2 text-text antialiased">
-      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-edge bg-shell">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <Header
-            running={state.running}
-            onOpenCommand={isCompareRoute ? () => setCommandOpen(true) : undefined}
-            onOpenConnections={() => setConnectionsOpen(true)}
-            onOpenPalette={() => setPaletteOpen(true)}
-            onOpenHelp={() => setCheatsheetOpen(true)}
-            commandDialogHandle={commandDialogHandle}
-            connectionsDialogHandle={connectionsDialogHandle}
-            cheatsheetDialogHandle={cheatsheetDialogHandle}
-            connectionState={connectionState}
-          />
+      <div className="flex h-screen w-screen overflow-hidden bg-canvas p-2 text-text antialiased">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-edge bg-shell">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <Header
+              running={state.running}
+              onOpenCommand={isCompareRoute ? () => setCommandOpen(true) : undefined}
+              onOpenConnections={() => setConnectionsOpen(true)}
+              onOpenPalette={() => setPaletteOpen(true)}
+              onOpenHelp={() => setCheatsheetOpen(true)}
+              commandDialogHandle={commandDialogHandle}
+              connectionsDialogHandle={connectionsDialogHandle}
+              cheatsheetDialogHandle={cheatsheetDialogHandle}
+              connectionState={connectionState}
+            />
 
-          {/* Global execution awareness strip (spec §5.5) — visible on every
+            {/* Global execution awareness strip (spec §5.5) — visible on every
               workspace except the exact owning progress route; never hides a
               storage failure. */}
-          <GlobalExecutionStripContainer compareRunning={state.running} />
+            <GlobalExecutionStripContainer compareRunning={state.running} />
 
-          {connectionState === "offline" && <NoKeyBanner />}
-          {catalogError && (
-            <div className="flex shrink-0 items-center gap-2 border-b border-error/40 bg-error/10 px-4 py-2 text-xs text-error">
-              <span>
-                <span className="font-semibold">Catalog probe issue:</span> {catalogError}
-              </span>
-            </div>
-          )}
+            {connectionState === "offline" && <NoKeyBanner />}
+            {catalogError && (
+              <div className="flex shrink-0 items-center gap-2 border-b border-error/40 bg-error/10 px-4 py-2 text-xs text-error">
+                <span>
+                  <span className="font-semibold">Catalog probe issue:</span> {catalogError}
+                </span>
+              </div>
+            )}
 
-          {/* Workspace content — routed. Compare content is passed as the
+            {/* Workspace content — routed. Compare content is passed as the
               compareOutlet so the reducer/controller/state stays mounted above
               the router and persists across navigation. */}
-          <div className="flex min-h-0 flex-1 flex-col pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0">
-            <AppRoutes
-              compareOutlet={
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <div
-                    data-compare-toolbar=""
-                    className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
-                  >
-                    <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">Finish</span>
-                    <ModeToggle mode={state.mode} onChange={handleModeChange} disabled={state.running} />
-                  </div>
-                  <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
-                    <section
-                      aria-label="Command"
-                      className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
-                        focusActive ? "lg:!w-14 lg:!overflow-hidden lg:!border-r" : "lg:w-[var(--cmd-w)]"
-                      } md:w-full`}
-                      style={focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }}
+            <div className="flex min-h-0 flex-1 flex-col pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0">
+              <AppRoutes
+                compareOutlet={
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div
+                      data-compare-toolbar=""
+                      className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
                     >
-                      {focusActive ? (
-                        <FocusStrip state={state} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
-                      ) : (
-                        <CommandPane state={state} dispatch={dispatch} canRun={canRun} onRun={requestRun} onAbort={abortRun} blockReason={attachmentBlockReason} />
-                      )}
-                    </section>
-
-                    {!focusActive && (
-                      <Divider
-                        dragging={dragging}
-                        value={commandWidth}
-                        min={min}
-                        max={max}
-                        onPointerDown={onDividerPointerDown}
-                        onKeyDown={onDividerKeyDown}
-                        onDoubleClick={onDoubleClick}
+                      <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                        Finish
+                      </span>
+                      <ModeToggle
+                        mode={state.mode}
+                        onChange={handleModeChange}
+                        disabled={state.running}
                       />
-                    )}
+                    </div>
+                    <div ref={containerRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
+                      <section
+                        aria-label="Command"
+                        className={`hidden min-h-0 overflow-y-auto border-b border-edge bg-panel scroll-thin lg:border-b-0 lg:border-r md:block ${
+                          focusActive
+                            ? "lg:!w-14 lg:!overflow-hidden lg:!border-r"
+                            : "lg:w-[var(--cmd-w)]"
+                        } md:w-full`}
+                        style={
+                          focusActive ? undefined : { ["--cmd-w" as string]: `${commandWidth}px` }
+                        }
+                      >
+                        {focusActive ? (
+                          <FocusStrip
+                            state={state}
+                            canRun={canRun}
+                            onRun={requestRun}
+                            onAbort={abortRun}
+                            blockReason={attachmentBlockReason}
+                          />
+                        ) : (
+                          <CommandPane
+                            state={state}
+                            dispatch={dispatch}
+                            canRun={canRun}
+                            onRun={requestRun}
+                            onAbort={abortRun}
+                            blockReason={attachmentBlockReason}
+                          />
+                        )}
+                      </section>
 
-                    <section aria-label="Output" className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin">
-                      <OutputPane state={state} onFuse={handleFuseFromRank} onRefuse={() => triggerFusion(true)} onRetryCandidate={retryCandidate} onRetryJudge={retryJudge} />
-                    </section>
+                      {!focusActive && (
+                        <Divider
+                          dragging={dragging}
+                          value={commandWidth}
+                          min={min}
+                          max={max}
+                          onPointerDown={onDividerPointerDown}
+                          onKeyDown={onDividerKeyDown}
+                          onDoubleClick={onDoubleClick}
+                        />
+                      )}
+
+                      <section
+                        aria-label="Output"
+                        className="min-h-0 flex-1 overflow-y-auto bg-panel scroll-thin"
+                      >
+                        <OutputPane
+                          state={state}
+                          onFuse={handleFuseFromRank}
+                          onRefuse={() => triggerFusion(true)}
+                          onRetryCandidate={retryCandidate}
+                          onRetryJudge={retryJudge}
+                        />
+                      </section>
+                    </div>
                   </div>
-                </div>
-              }
-              models={state.models}
-              availableProviderIds={availableProviderIds}
-            />
+                }
+                models={state.models}
+                availableProviderIds={availableProviderIds}
+              />
+            </div>
           </div>
         </div>
+
+        {/* Mobile bottom navigation — fixed, three workspaces. */}
+        <MobileWorkspaceNav />
+
+        {isCompareRoute && (
+          <Dialog.Root
+            handle={commandDialogHandle}
+            open={commandOpen}
+            onOpenChange={setCommandOpen}
+          >
+            <Dialog.Portal>
+              <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 md:hidden" />
+              <Dialog.Viewport className="fixed inset-0 z-50 flex md:hidden">
+                <Dialog.Popup className="motion-state flex h-full w-[85%] max-w-sm origin-left flex-col border-r border-edge bg-panel shadow-2xl">
+                  <div className="flex shrink-0 items-center justify-between border-b border-edge px-4 py-3">
+                    <Dialog.Title className="font-mono text-xs uppercase tracking-wider text-text-muted">
+                      Command
+                    </Dialog.Title>
+                    <Dialog.Close
+                      aria-label="Close command pane"
+                      className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card hover:text-text"
+                    >
+                      <CloseIcon />
+                    </Dialog.Close>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+                    <CommandPane
+                      state={state}
+                      dispatch={dispatch}
+                      canRun={canRun}
+                      onRun={() => {
+                        if (!canRun) return;
+                        requestRun();
+                        setCommandOpen(false);
+                      }}
+                      onAbort={abortRun}
+                    />
+                  </div>
+                </Dialog.Popup>
+              </Dialog.Viewport>
+            </Dialog.Portal>
+          </Dialog.Root>
+        )}
+        <ConnectionsModal
+          isOpen={connectionsOpen}
+          onOpenChange={setConnectionsOpen}
+          onRefresh={checkAllReadiness}
+          handle={connectionsDialogHandle}
+        />
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          onRun={requestRun}
+          onAbort={abortRun}
+          onToggleMode={toggleMode}
+          onAddModel={addModel}
+          onOpenConnections={() => setConnectionsOpen(true)}
+          onToggleFocusMode={toggleFocusMode}
+          onExport={exportResult}
+          running={state.running}
+          canRun={canRun}
+          workspace={workspace}
+          onNavigate={(path) => navigate(path)}
+          activeExperimentId={activeExperimentId}
+          onViewExperiment={() =>
+            activeExperimentId && navigate(`/experiments/${activeExperimentId}`)
+          }
+          onAbortExperiment={() => {
+            void experimentController?.abort();
+          }}
+        />
+        <ShortcutCheatsheet
+          open={cheatsheetOpen}
+          onOpenChange={setCheatsheetOpen}
+          handle={cheatsheetDialogHandle}
+        />
       </div>
-
-      {/* Mobile bottom navigation — fixed, three workspaces. */}
-      <MobileWorkspaceNav />
-
-      {isCompareRoute && (
-        <Dialog.Root
-          handle={commandDialogHandle}
-          open={commandOpen}
-          onOpenChange={setCommandOpen}
-        >
-          <Dialog.Portal>
-            <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 md:hidden" />
-            <Dialog.Viewport className="fixed inset-0 z-50 flex md:hidden">
-              <Dialog.Popup className="motion-state flex h-full w-[85%] max-w-sm origin-left flex-col border-r border-edge bg-panel shadow-2xl">
-                <div className="flex shrink-0 items-center justify-between border-b border-edge px-4 py-3">
-                  <Dialog.Title className="font-mono text-xs uppercase tracking-wider text-text-muted">
-                    Command
-                  </Dialog.Title>
-                  <Dialog.Close
-                    aria-label="Close command pane"
-                    className="flex h-11 w-11 items-center justify-center rounded-md text-text-secondary hover:bg-card hover:text-text"
-                  >
-                    <CloseIcon />
-                  </Dialog.Close>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-                  <CommandPane
-                    state={state}
-                    dispatch={dispatch}
-                    canRun={canRun}
-                    onRun={() => {
-                      if (!canRun) return;
-                      requestRun();
-                      setCommandOpen(false);
-                    }}
-                    onAbort={abortRun}
-                  />
-                </div>
-              </Dialog.Popup>
-            </Dialog.Viewport>
-          </Dialog.Portal>
-        </Dialog.Root>
-      )}
-      <ConnectionsModal
-        isOpen={connectionsOpen}
-        onOpenChange={setConnectionsOpen}
-        onRefresh={checkAllReadiness}
-        handle={connectionsDialogHandle}
-      />
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        onRun={requestRun}
-        onAbort={abortRun}
-        onToggleMode={toggleMode}
-        onAddModel={addModel}
-        onOpenConnections={() => setConnectionsOpen(true)}
-        onToggleFocusMode={toggleFocusMode}
-        onExport={exportResult}
-        running={state.running}
-        canRun={canRun}
-        workspace={workspace}
-        onNavigate={(path) => navigate(path)}
-        activeExperimentId={activeExperimentId}
-        onViewExperiment={() =>
-          activeExperimentId && navigate(`/experiments/${activeExperimentId}`)
-        }
-        onAbortExperiment={() => {
-          void experimentController?.abort();
-        }}
-      />
-      <ShortcutCheatsheet
-        open={cheatsheetOpen}
-        onOpenChange={setCheatsheetOpen}
-        handle={cheatsheetDialogHandle}
-      />
-    </div>
     </ModelProbeProvider>
   );
 }
 
 function CloseIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   );
@@ -595,6 +670,7 @@ function Divider({
   onDoubleClick: () => void;
 }) {
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- role="separator" with aria-valuenow is a focusable ARIA widget; pointer/keyboard resizing is its purpose
     <div
       role="separator"
       aria-label="Resize command and output panes"
@@ -633,14 +709,16 @@ function FocusStrip({
         {enabledSlots.map((slot) => (
           <BrandAvatar key={slot.id} slug={slot.slug} size={28} className="rounded-md" />
         ))}
-        {enabledSlots.length === 0 && <span className="font-mono text-[11px] text-text-muted">—</span>}
+        {enabledSlots.length === 0 && (
+          <span className="font-mono text-[11px] text-text-muted">—</span>
+        )}
       </div>
       <button
         type="button"
         onClick={state.running ? onAbort : onRun}
         disabled={!canRun && !state.running}
         aria-label={state.running ? "Stop run" : "Re-run pipeline"}
-        title={state.running ? "Stop run" : blockReason ?? "Re-run pipeline"}
+        title={state.running ? "Stop run" : (blockReason ?? "Re-run pipeline")}
         className={`pressable mt-auto flex h-11 w-11 items-center justify-center rounded-md ${
           state.running
             ? "bg-error/20 text-error"
@@ -723,10 +801,7 @@ function CommandPane({
         attachments={state.attachments}
         attachmentsToJudge={state.attachmentsToJudge}
       />
-      <EvaluationDisclosure
-        evaluation={state.evaluation}
-        dispatch={dispatch}
-      />
+      <EvaluationDisclosure evaluation={state.evaluation} dispatch={dispatch} />
       <RunButton
         running={state.running}
         canRun={canRun}
@@ -819,7 +894,9 @@ function PaneLabel({
       <div>
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-xs font-semibold tabular-nums text-accent">{index}</span>
-          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">{title}</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+            {title}
+          </span>
         </div>
         <p className="mt-1 text-xs text-text-muted">{hint}</p>
       </div>
@@ -839,7 +916,8 @@ function NoKeyBanner() {
         <span className="font-semibold">No provider connected.</span> Connect any configured
         provider via the connection status button in the header — or set a supported{" "}
         <code className="rounded bg-warning/10 px-1">VITE_*_KEY</code> in{" "}
-        <code className="rounded bg-warning/10 px-1">.env</code> and restart the dev server to enable live runs.
+        <code className="rounded bg-warning/10 px-1">.env</code> and restart the dev server to
+        enable live runs.
       </span>
     </div>
   );

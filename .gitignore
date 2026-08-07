@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-ssr
+coverage
 *.local
 
 # Environment files 
@@ -33,7 +34,12 @@ dist-fixed/
 .chrome-review*/
 ui-review-*.png
 
-# Generated TypeScript build metadata/config output
+# Generated TypeScript build metadata/config output.
+# `tsc -b` rewrites these on every typecheck/build, so tracking them would
+# dirty the worktree on every gate run. They are regenerated on demand and
+# must never be committed.
 *.tsbuildinfo
+vite.config.js
+vite.config.d.ts
 vitest.config.js
 vitest.config.d.ts

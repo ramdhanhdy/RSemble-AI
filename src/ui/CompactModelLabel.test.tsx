@@ -74,9 +74,7 @@ describe("CompactModelLabel", () => {
   });
 
   it("renders unknown provider gracefully", () => {
-    const h = render(
-      <CompactModelLabel providerId="custom" slug="my-model" />,
-    );
+    const h = render(<CompactModelLabel providerId="custom" slug="my-model" />);
     const text = h.container.textContent ?? "";
     expect(text).toContain("my-model");
     // Unknown provider falls back to the raw providerId
@@ -94,6 +92,27 @@ describe("CompactModelLabel", () => {
     // 44px target: min-h-[44px] on interactive elements
     const cls = disclosure?.getAttribute("class") ?? "";
     expect(cls).toContain("min-h-[44px]");
+    cleanup(h);
+  });
+});
+
+describe("CompactModelLabel non-interactive mode (Plan 006 workstream B)", () => {
+  it("renders no disclosure button inside an interactive parent context", () => {
+    const h = render(
+      <CompactModelLabel providerId="openrouter" slug="gpt-4o" interactive={false} />,
+    );
+    // No nested interactive element: safe inside a parent <button>.
+    expect(h.$("button")).toBeNull();
+    cleanup(h);
+  });
+
+  it("still exposes the full identity through accessible text when non-interactive", () => {
+    const h = render(
+      <CompactModelLabel providerId="umans" slug="claude-opus-4" interactive={false} />,
+    );
+    const accessible = h.$("[data-full-id]");
+    expect(accessible).toBeTruthy();
+    expect(accessible?.textContent).toContain("umans:claude-opus-4");
     cleanup(h);
   });
 });

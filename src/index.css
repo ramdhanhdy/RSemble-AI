@@ -73,7 +73,9 @@ body {
   flex: none;
 }
 @keyframes bg-march {
-  to { background-position: 8px center; }
+  to {
+    background-position: 8px center;
+  }
 }
 .connector-dots.animate-dash-march {
   animation: bg-march 1.2s linear infinite;
@@ -111,14 +113,21 @@ body {
 
 /* Infinite rotation must be linear — constant cadence, no ease-out stall. */
 @keyframes spin-ease {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .animate-spin-ease {
   animation: spin-ease 600ms linear infinite;
 }
 @keyframes pulse-ease {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 .animate-pulse-ease {
   animation: pulse-ease 1s steps(2, jump-none) infinite;

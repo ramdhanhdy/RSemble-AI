@@ -23,7 +23,13 @@ import {
   type Mode,
   type ModelSlot,
 } from "./studio-data";
-import { DEFAULT_REASONING_POLICY, type CatalogModel, type CriticRef, type ProviderId, type ReasoningPolicy } from "./lib/providers/types";
+import {
+  DEFAULT_REASONING_POLICY,
+  type CatalogModel,
+  type CriticRef,
+  type ProviderId,
+  type ReasoningPolicy,
+} from "./lib/providers/types";
 import { loadStoredCritic, loadStoredSlots } from "./lib/preferences";
 import { EXAMPLE_TASKS, nextExampleIndex } from "./lib/test-cases";
 import type { Attachment } from "./lib/attachments/types";
@@ -136,7 +142,14 @@ export type Action =
   | { type: "SET_EVALUATION"; config: AdHocEvaluationConfig }
   | { type: "ADD_SLOT"; slot: ModelSlot }
   | { type: "REMOVE_SLOT"; id: string }
-  | { type: "SWAP_SLOT"; id: string; providerId?: ProviderId; provider: string; model: string; slug: string }
+  | {
+      type: "SWAP_SLOT";
+      id: string;
+      providerId?: ProviderId;
+      provider: string;
+      model: string;
+      slug: string;
+    }
   | { type: "TOGGLE_SLOT"; id: string }
   | { type: "SET_TEMPERATURE"; value: number }
   | { type: "SET_SYSTEM_PROMPT"; value: string }
@@ -146,7 +159,17 @@ export type Action =
   | { type: "SET_REASONING_POLICY"; policy: ReasoningPolicy }
   // --- attachments (spec §4.1, §9) ---
   | { type: "ADD_ATTACHMENTS"; attachments: Attachment[] }
-  | { type: "ATTACHMENT_READY"; id: string; data?: string; text?: string; truncated?: boolean; width?: number; height?: number; pageCount?: number; mimeType?: string }
+  | {
+      type: "ATTACHMENT_READY";
+      id: string;
+      data?: string;
+      text?: string;
+      truncated?: boolean;
+      width?: number;
+      height?: number;
+      pageCount?: number;
+      mimeType?: string;
+    }
   | { type: "ATTACHMENT_FAILED"; id: string; error: string }
   | { type: "ATTACHMENT_RETRY"; id: string }
   | { type: "REMOVE_ATTACHMENT"; id: string }
@@ -155,13 +178,27 @@ export type Action =
   // --- pipeline ---
   | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext }
   | { type: "FANOUT_BLOCKED"; reason: string }
-  | { type: "CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number | null; tokensOut: number | null }
+  | {
+      type: "CANDIDATE_RESULT";
+      id: string;
+      segments: CandidateSegment[];
+      summary: string;
+      finishedAt: number;
+      tokensIn: number | null;
+      tokensOut: number | null;
+    }
   | { type: "CANDIDATE_DELTA"; id: string; delta: string }
   | { type: "CANDIDATE_FAILED"; id: string; error: string; finishedAt: number }
   | { type: "FANOUT_END"; count: number }
   | { type: "INSUFFICIENT_CANDIDATES"; done: number; failed: number }
   | { type: "JUDGE_START" }
-  | { type: "JUDGE_RESULT"; mode: Mode; consensus: ConsensusBreakdown; scoresById: Record<string, number>; report: JudgeReport }
+  | {
+      type: "JUDGE_RESULT";
+      mode: Mode;
+      consensus: ConsensusBreakdown;
+      scoresById: Record<string, number>;
+      report: JudgeReport;
+    }
   | { type: "JUDGE_FAILED"; error: string }
   | { type: "FUSION_START" }
   | { type: "FUSION_RESULT"; text: string }
@@ -174,7 +211,15 @@ export type Action =
   // --- single-candidate retry ---
   | { type: "RETRY_CANDIDATE_START"; id: string }
   | { type: "RETRY_CANDIDATE_DELTA"; id: string; delta: string }
-  | { type: "RETRY_CANDIDATE_RESULT"; id: string; segments: CandidateSegment[]; summary: string; finishedAt: number; tokensIn: number | null; tokensOut: number | null }
+  | {
+      type: "RETRY_CANDIDATE_RESULT";
+      id: string;
+      segments: CandidateSegment[];
+      summary: string;
+      finishedAt: number;
+      tokensIn: number | null;
+      tokensOut: number | null;
+    }
   | { type: "RETRY_CANDIDATE_FAILED"; id: string; error: string; finishedAt: number };
 
 let auditSeq = 0;
@@ -182,7 +227,11 @@ const logAudit = (audit: AuditEntry[], message: string): AuditEntry[] => {
   auditSeq += 1;
   const entry: AuditEntry = {
     id: `audit-${Date.now()}-${auditSeq}`,
-    time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    time: new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
     message,
   };
   return [entry, ...audit].slice(0, 40);
@@ -204,9 +253,7 @@ function criterionScoresToMap(
   }
   const out: Record<string, number> = {};
   for (const cs of criterionScores) {
-    const key = (labelCounts.get(cs.label) ?? 0) > 1
-      ? `${cs.label} (${cs.criterionId})`
-      : cs.label;
+    const key = (labelCounts.get(cs.label) ?? 0) > 1 ? `${cs.label} (${cs.criterionId})` : cs.label;
     out[key] = cs.score;
   }
   return out;
@@ -223,7 +270,7 @@ export const NATIVE_TO_JUDGE_MAX_IMAGES = 4;
 export function computeAttachmentsToJudgeDefault(attachments: Attachment[]): boolean {
   const nativeBytes = attachments.reduce(
     (sum, a) => sum + (a.kind === "image" || a.kind === "pdf" ? a.bytes : 0),
-    0
+    0,
   );
   const imageCount = attachments.filter((a) => a.kind === "image").length;
   return nativeBytes <= NATIVE_TO_JUDGE_MAX_BYTES && imageCount <= NATIVE_TO_JUDGE_MAX_IMAGES;
@@ -248,8 +295,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       // UI's confirm-replace affordance supplies after a second click.
       const isBlank = state.prompt.trim().length === 0;
       const isUneditedExample =
-        state.exampleIndex >= 0 &&
-        EXAMPLE_TASKS[state.exampleIndex]?.prompt === state.prompt;
+        state.exampleIndex >= 0 && EXAMPLE_TASKS[state.exampleIndex]?.prompt === state.prompt;
       if (!isBlank && !isUneditedExample && !action.force) return state;
       const index = nextExampleIndex(state.exampleIndex);
       const task = EXAMPLE_TASKS[index];
@@ -281,13 +327,16 @@ export function reducer(state: StudioState, action: Action): StudioState {
               model: action.model,
               slug: action.slug,
             }
-          : s
+          : s,
       );
       return { ...state, slots };
     }
 
     case "TOGGLE_SLOT":
-      return { ...state, slots: state.slots.map((s) => (s.id === action.id ? { ...s, enabled: !s.enabled } : s)) };
+      return {
+        ...state,
+        slots: state.slots.map((s) => (s.id === action.id ? { ...s, enabled: !s.enabled } : s)),
+      };
 
     case "SET_TEMPERATURE":
       return { ...state, temperature: action.value };
@@ -350,7 +399,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
                 pages: action.pageCount ?? a.pages,
                 mimeType: action.mimeType ?? a.mimeType,
               }
-            : a
+            : a,
         ),
       };
 
@@ -358,7 +407,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         attachments: state.attachments.map((a) =>
-          a.id === action.id ? { ...a, status: "error", error: action.error } : a
+          a.id === action.id ? { ...a, status: "error", error: action.error } : a,
         ),
       };
 
@@ -366,9 +415,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         attachments: state.attachments.map((a) =>
-          a.id === action.id
-            ? { ...a, status: "reading", error: undefined }
-            : a,
+          a.id === action.id ? { ...a, status: "reading", error: undefined } : a,
         ),
       };
 
@@ -423,7 +470,10 @@ export function reducer(state: StudioState, action: Action): StudioState {
             ? { ...action.context.reasoningPolicy }
             : undefined,
         },
-        audit: logAudit(state.audit, `Fanout started across ${action.candidates.length} candidate(s).`),
+        audit: logAudit(
+          state.audit,
+          `Fanout started across ${action.candidates.length} candidate(s).`,
+        ),
       };
 
     case "FANOUT_BLOCKED":
@@ -436,8 +486,17 @@ export function reducer(state: StudioState, action: Action): StudioState {
         ...state,
         candidates: state.candidates.map((c) =>
           c.id === action.id
-            ? { ...c, status: "done", segments: action.segments, summary: action.summary, streamingText: "", finishedAt: action.finishedAt, tokensIn: action.tokensIn, tokensOut: action.tokensOut }
-            : c
+            ? {
+                ...c,
+                status: "done",
+                segments: action.segments,
+                summary: action.summary,
+                streamingText: "",
+                finishedAt: action.finishedAt,
+                tokensIn: action.tokensIn,
+                tokensOut: action.tokensOut,
+              }
+            : c,
         ),
       };
 
@@ -447,9 +506,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         candidates: state.candidates.map((c) =>
-          c.id === action.id
-            ? { ...c, streamingText: (c.streamingText ?? "") + action.delta }
-            : c
+          c.id === action.id ? { ...c, streamingText: (c.streamingText ?? "") + action.delta } : c,
         ),
       };
 
@@ -457,7 +514,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         candidates: state.candidates.map((c) =>
-          c.id === action.id ? { ...c, status: "error", errorMessage: action.error, finishedAt: action.finishedAt } : c
+          c.id === action.id
+            ? { ...c, status: "error", errorMessage: action.error, finishedAt: action.finishedAt }
+            : c,
         ),
         audit: logAudit(state.audit, `Candidate ${action.id} failed: ${action.error}`),
       };
@@ -472,7 +531,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         insufficient: { done: action.done, failed: action.failed },
         audit: logAudit(
           state.audit,
-          `Stopped: only ${action.done} candidate(s) succeeded (${action.failed} failed) — need at least 2.`
+          `Stopped: only ${action.done} candidate(s) succeeded (${action.failed} failed) — need at least 2.`,
         ),
       };
 
@@ -508,7 +567,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         fusedText: null,
       };
 
-    case "JUDGE_RESULT":
+    case "JUDGE_RESULT": {
       // Terminal for RANK mode (the run ends after judging). In FUSE mode the
       // pipeline continues to fusion, so `running` stays true. The resolved
       // blind report is stored so every score traces to a structured explanation;
@@ -525,13 +584,11 @@ export function reducer(state: StudioState, action: Action): StudioState {
           const score = action.scoresById[c.id];
           const ev = evalById[c.id];
           const scores = ev ? criterionScoresToMap(ev.criterionScores) : (c.scores ?? {});
-          return score != null
-            ? { ...c, weightedScore: score, scores }
-            : c;
+          return score != null ? { ...c, weightedScore: score, scores } : c;
         }),
         audit: logAudit(state.audit, "AI judge evaluation complete."),
       };
-
+    }
     case "JUDGE_FAILED":
       // Terminal in ALL modes. Even in Fuse mode, a judge failure stops the run —
       // the pipeline does not proceed to fusion with unscored candidates, and the
@@ -601,7 +658,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
         running: false,
         aborted: true,
         candidates: state.candidates.map((c) =>
-          c.status === "pending" ? { ...c, status: "error", errorMessage: "Aborted", finishedAt: Date.now() } : c
+          c.status === "pending"
+            ? { ...c, status: "error", errorMessage: "Aborted", finishedAt: Date.now() }
+            : c,
         ),
         judgeStatus: state.judgeStatus === "running" ? "idle" : state.judgeStatus,
         fusionStatus: state.fusionStatus === "running" ? "idle" : state.fusionStatus,
@@ -624,8 +683,19 @@ export function reducer(state: StudioState, action: Action): StudioState {
         insufficient: null,
         candidates: state.candidates.map((c) =>
           c.id === action.id
-            ? { ...c, status: "pending", errorMessage: undefined, segments: [], summary: "", streamingText: "", scores: {}, weightedScore: 0, startedAt: Date.now(), finishedAt: undefined }
-            : c
+            ? {
+                ...c,
+                status: "pending",
+                errorMessage: undefined,
+                segments: [],
+                summary: "",
+                streamingText: "",
+                scores: {},
+                weightedScore: 0,
+                startedAt: Date.now(),
+                finishedAt: undefined,
+              }
+            : c,
         ),
         audit: logAudit(state.audit, `Retrying candidate ${action.id}.`),
       };
@@ -634,9 +704,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         candidates: state.candidates.map((c) =>
-          c.id === action.id
-            ? { ...c, streamingText: (c.streamingText ?? "") + action.delta }
-            : c
+          c.id === action.id ? { ...c, streamingText: (c.streamingText ?? "") + action.delta } : c,
         ),
       };
 
@@ -645,8 +713,17 @@ export function reducer(state: StudioState, action: Action): StudioState {
         ...state,
         candidates: state.candidates.map((c) =>
           c.id === action.id
-            ? { ...c, status: "done", segments: action.segments, summary: action.summary, streamingText: "", finishedAt: action.finishedAt, tokensIn: action.tokensIn, tokensOut: action.tokensOut }
-            : c
+            ? {
+                ...c,
+                status: "done",
+                segments: action.segments,
+                summary: action.summary,
+                streamingText: "",
+                finishedAt: action.finishedAt,
+                tokensIn: action.tokensIn,
+                tokensOut: action.tokensOut,
+              }
+            : c,
         ),
       };
 
@@ -655,7 +732,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
         ...state,
         running: false,
         candidates: state.candidates.map((c) =>
-          c.id === action.id ? { ...c, status: "error", errorMessage: action.error, finishedAt: action.finishedAt } : c
+          c.id === action.id
+            ? { ...c, status: "error", errorMessage: action.error, finishedAt: action.finishedAt }
+            : c,
         ),
         audit: logAudit(state.audit, `Retry of candidate ${action.id} failed: ${action.error}`),
       };

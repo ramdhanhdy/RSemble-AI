@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, afterEach, vi } from "vitest";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import type { ReactNode } from "react";
 import {
   ExperimentRecoveryDialog,
   type ExperimentRecoveryDialogProps,
@@ -40,12 +39,22 @@ const PLAN: CompoundRepairPlan = {
   taskId: "t2",
   baseRunId: "run-2",
   requestedModelKeys: ["umans:umans-kimi-k3"],
-  reusedModelKeys: ["gemini:gemini-3-pro-preview", "openrouter:anthropic/claude-4.5-sonnet", "x:1", "x:2", "x:3", "x:4", "x:5"],
+  reusedModelKeys: [
+    "gemini:gemini-3-pro-preview",
+    "openrouter:anthropic/claude-4.5-sonnet",
+    "x:1",
+    "x:2",
+    "x:3",
+    "x:4",
+    "x:5",
+  ],
   candidateCalls: 1,
   judgeCalls: 1,
 };
 
-function baseProps(overrides: Partial<ExperimentRecoveryDialogProps> = {}): ExperimentRecoveryDialogProps {
+function baseProps(
+  overrides: Partial<ExperimentRecoveryDialogProps> = {},
+): ExperimentRecoveryDialogProps {
   return {
     open: true,
     onOpenChange: vi.fn(),

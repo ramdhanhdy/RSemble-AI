@@ -93,17 +93,18 @@ export function ExperimentRecoveryDialog({
           {variant === "repair-cell" && plan ? (
             <>
               <p>
-                Repair the missing result for <span className="font-mono text-text">{modelLabel}</span>{" "}
-                in {taskTitle}. Accepted candidate outputs from the selected run are reused with
-                provenance; only the missing model runs fresh.
+                Repair the missing result for{" "}
+                <span className="font-mono text-text">{modelLabel}</span> in {taskTitle}. Accepted
+                candidate outputs from the selected run are reused with provenance; only the missing
+                model runs fresh.
               </p>
               <p
                 data-cost-preview
                 className="rounded-md border border-edge bg-panel px-3 py-2 text-text"
               >
                 {plural(plan.candidateCalls, "candidate call")} +{" "}
-                {plural(plan.judgeCalls, "Judge call")} across 1 task.{" "}
-                {plan.reusedModelKeys.length} candidate output
+                {plural(plan.judgeCalls, "Judge call")} across 1 task. {plan.reusedModelKeys.length}{" "}
+                candidate output
                 {plan.reusedModelKeys.length === 1 ? "" : "s"} will be reused.
               </p>
             </>
@@ -143,7 +144,12 @@ export function ExperimentRecoveryDialog({
           ) : null}
         </div>
         <div className="flex min-w-0 items-center justify-end gap-2">
-          <button type="button" onClick={() => onOpenChange(false)} disabled={busy} className={ACTION_CLASSES}>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+            className={ACTION_CLASSES}
+          >
             Cancel
           </button>
           <button

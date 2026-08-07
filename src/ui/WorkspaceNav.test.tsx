@@ -26,11 +26,7 @@ function renderWithRouter(node: React.ReactNode, initialEntry = "/compare"): Har
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(
-      <MemoryRouter initialEntries={[initialEntry]}>
-        {node}
-      </MemoryRouter>,
-    );
+    root.render(<MemoryRouter initialEntries={[initialEntry]}>{node}</MemoryRouter>);
   });
   return {
     container,
@@ -150,8 +146,12 @@ describe("Header responsive sacrifice order (768–1023px tablet)", () => {
     const paletteBtns = h.$$('button[aria-label="Command palette"]');
     // Two palette buttons: icon-only (md:flex lg:hidden) and keycaps (lg:flex).
     expect(paletteBtns.length).toBe(2);
-    const iconBtn = paletteBtns.find((b) => b.className.includes("md:flex") && b.className.includes("lg:hidden"));
-    const keycapBtn = paletteBtns.find((b) => b.className.includes("lg:flex") && !b.className.includes("lg:hidden"));
+    const iconBtn = paletteBtns.find(
+      (b) => b.className.includes("md:flex") && b.className.includes("lg:hidden"),
+    );
+    const keycapBtn = paletteBtns.find(
+      (b) => b.className.includes("lg:flex") && !b.className.includes("lg:hidden"),
+    );
     expect(iconBtn).toBeTruthy();
     expect(keycapBtn).toBeTruthy();
     // Both retain accessible name.

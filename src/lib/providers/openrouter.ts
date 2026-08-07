@@ -8,15 +8,19 @@ import {
   type LLMProvider,
   type ProviderReadiness,
   ProviderError,
+  REASONING_EFFORTS,
+  type ModelReasoningCapabilities,
+  type ReasoningEffort,
+  type ProviderCompletionResult,
+  type ProviderStreamEvent,
+  type UsageBreakdown,
 } from "./types";
 import { readSseChatStream, type SseMeta } from "./sse-stream";
 import { toOpenAIMessages } from "./content";
 import { setModelCapabilities } from "./capabilities";
 import { nativeReasoningPayload, setModelReasoningCapabilities } from "./reasoning";
-import { REASONING_EFFORTS, type ModelReasoningCapabilities, type ReasoningEffort } from "./types";
 import { parseOpenRouterPricing, setModelPricing } from "./pricing";
 
-import type { ProviderCompletionResult, ProviderStreamEvent, UsageBreakdown } from "./types";
 import { parseOpenAICompatibleUsage, parseProviderReportedCost } from "./usage";
 import { credentialStore } from "../credentials/credential-store";
 import { providerErrorDetail } from "./error-message";
@@ -27,7 +31,11 @@ import {
   runProviderRequest,
   wrapProviderStream,
 } from "./provider-deadline";
-import { composeAbortSignals, isExecutionTimeoutError, providerAbortError } from "../execution-deadline";
+import {
+  composeAbortSignals,
+  isExecutionTimeoutError,
+  providerAbortError,
+} from "../execution-deadline";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -35,7 +43,11 @@ function getApiKey(): string {
   return credentialStore.get("openrouter");
 }
 
-function buildReasoningPayload(model: string, effort: ChatOptions["reasoningEffort"], strict = false): Record<string, unknown> {
+function buildReasoningPayload(
+  model: string,
+  effort: ChatOptions["reasoningEffort"],
+  strict = false,
+): Record<string, unknown> {
   try {
     return nativeReasoningPayload("openrouter", model, effort, strict).payload;
   } catch (error) {
@@ -100,7 +112,7 @@ export const openrouterProvider: LLMProvider = {
     if (!key) {
       throw new ProviderError(
         "Missing VITE_OPENROUTER_KEY. Add it to a .env file at the project root and restart the dev server.",
-        "openrouter"
+        "openrouter",
       );
     }
 
@@ -126,7 +138,11 @@ export const openrouterProvider: LLMProvider = {
         onHeadersReady();
         if (!res.ok) {
           const raw = await readBoundedResponseText(res).catch(() => "");
-          throw new ProviderError(providerErrorDetail(raw, "OpenRouter", res.status), "openrouter", res.status);
+          throw new ProviderError(
+            providerErrorDetail(raw, "OpenRouter", res.status),
+            "openrouter",
+            res.status,
+          );
         }
         const data = await res.json();
         const content = data?.choices?.[0]?.message?.content;
@@ -140,7 +156,10 @@ export const openrouterProvider: LLMProvider = {
       const abort = providerAbortError(err, opts.signal);
       if (abort !== null) throw abort;
       if (err instanceof ProviderError) throw err;
-      throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
+      throw new ProviderError(
+        "Network error reaching OpenRouter. Check your connection.",
+        "openrouter",
+      );
     }
   },
 
@@ -149,7 +168,7 @@ export const openrouterProvider: LLMProvider = {
     if (!key) {
       throw new ProviderError(
         "Missing VITE_OPENROUTER_KEY. Add it to a .env file at the project root and restart the dev server.",
-        "openrouter"
+        "openrouter",
       );
     }
 
@@ -175,7 +194,11 @@ export const openrouterProvider: LLMProvider = {
         onHeadersReady();
         if (!res.ok) {
           const raw = await readBoundedResponseText(res).catch(() => "");
-          throw new ProviderError(providerErrorDetail(raw, "OpenRouter", res.status), "openrouter", res.status);
+          throw new ProviderError(
+            providerErrorDetail(raw, "OpenRouter", res.status),
+            "openrouter",
+            res.status,
+          );
         }
         const data = await res.json();
         const content = data?.choices?.[0]?.message?.content;
@@ -193,20 +216,23 @@ export const openrouterProvider: LLMProvider = {
       const abort = providerAbortError(err, opts.signal);
       if (abort !== null) throw abort;
       if (err instanceof ProviderError) throw err;
-      throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
+      throw new ProviderError(
+        "Network error reaching OpenRouter. Check your connection.",
+        "openrouter",
+      );
     }
   },
   chatCompletionStream(opts: ChatOptions): AsyncGenerator<string, void, unknown> {
     const headers = createHeadersReady();
     const streamAbort = new AbortController();
     const composed = composeAbortSignals(opts.signal, streamAbort.signal);
-    const source = (async function*(): AsyncGenerator<string, void, unknown> {
+    const source = (async function* (): AsyncGenerator<string, void, unknown> {
       const key = getApiKey();
       if (!key) {
         composed.cleanup();
         throw new ProviderError(
           "Missing VITE_OPENROUTER_KEY. Add it to a .env file at the project root and restart the dev server.",
-          "openrouter"
+          "openrouter",
         );
       }
       let reasoning: Record<string, unknown>;
@@ -237,7 +263,11 @@ export const openrouterProvider: LLMProvider = {
         headers.resolve();
         if (!res.ok || !res.body) {
           const raw = await readBoundedResponseText(res).catch(() => "");
-          throw new ProviderError(providerErrorDetail(raw, "OpenRouter", res.status), "openrouter", res.status);
+          throw new ProviderError(
+            providerErrorDetail(raw, "OpenRouter", res.status),
+            "openrouter",
+            res.status,
+          );
         }
         yield* readSseChatStream(res.body, "openrouter", "OpenRouter", composed.signal);
       } catch (err) {
@@ -246,7 +276,10 @@ export const openrouterProvider: LLMProvider = {
         const abort = providerAbortError(err, composed.signal);
         if (abort !== null) throw abort;
         if (err instanceof ProviderError) throw err;
-        throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
+        throw new ProviderError(
+          "Network error reaching OpenRouter. Check your connection.",
+          "openrouter",
+        );
       } finally {
         composed.cleanup();
       }
@@ -266,17 +299,19 @@ export const openrouterProvider: LLMProvider = {
     });
   },
 
-  chatCompletionStreamDetailed(opts: ChatOptions): AsyncGenerator<ProviderStreamEvent, void, unknown> {
+  chatCompletionStreamDetailed(
+    opts: ChatOptions,
+  ): AsyncGenerator<ProviderStreamEvent, void, unknown> {
     const headers = createHeadersReady();
     const streamAbort = new AbortController();
     const composed = composeAbortSignals(opts.signal, streamAbort.signal);
-    const source = (async function*(): AsyncGenerator<ProviderStreamEvent, void, unknown> {
+    const source = (async function* (): AsyncGenerator<ProviderStreamEvent, void, unknown> {
       const key = getApiKey();
       if (!key) {
         composed.cleanup();
         throw new ProviderError(
           "Missing VITE_OPENROUTER_KEY. Add it to a .env file at the project root and restart the dev server.",
-          "openrouter"
+          "openrouter",
         );
       }
       let reasoning: Record<string, unknown>;
@@ -307,10 +342,20 @@ export const openrouterProvider: LLMProvider = {
         headers.resolve();
         if (!res.ok || !res.body) {
           const raw = await readBoundedResponseText(res).catch(() => "");
-          throw new ProviderError(providerErrorDetail(raw, "OpenRouter", res.status), "openrouter", res.status);
+          throw new ProviderError(
+            providerErrorDetail(raw, "OpenRouter", res.status),
+            "openrouter",
+            res.status,
+          );
         }
         const meta: SseMeta = { usage: null, cost: null };
-        for await (const delta of readSseChatStream(res.body, "openrouter", "OpenRouter", composed.signal, meta)) {
+        for await (const delta of readSseChatStream(
+          res.body,
+          "openrouter",
+          "OpenRouter",
+          composed.signal,
+          meta,
+        )) {
           yield { delta };
         }
         yield { usage: meta.usage ?? undefined, cost: meta.cost ?? undefined };
@@ -320,7 +365,10 @@ export const openrouterProvider: LLMProvider = {
         const abort = providerAbortError(err, composed.signal);
         if (abort !== null) throw abort;
         if (err instanceof ProviderError) throw err;
-        throw new ProviderError("Network error reaching OpenRouter. Check your connection.", "openrouter");
+        throw new ProviderError(
+          "Network error reaching OpenRouter. Check your connection.",
+          "openrouter",
+        );
       } finally {
         composed.cleanup();
       }
@@ -350,7 +398,7 @@ export const openrouterProvider: LLMProvider = {
       throw new ProviderError(
         `Could not load model catalog (HTTP ${res.status}).`,
         "openrouter",
-        res.status
+        res.status,
       );
     }
     const data = await res.json();

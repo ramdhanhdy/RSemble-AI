@@ -47,7 +47,11 @@ afterEach(() => {
 
 // --- Helpers ------------------------------------------------------------------
 
-function makeSummary(id: string, createdAt: number, overrides: Partial<FullRunSummaryV2> = {}): FullRunSummaryV2 {
+function makeSummary(
+  id: string,
+  createdAt: number,
+  overrides: Partial<FullRunSummaryV2> = {},
+): FullRunSummaryV2 {
   return {
     kind: "full",
     schemaVersion: 2,
@@ -93,14 +97,19 @@ function makeMinimalRecord(id: string, createdAt: number): RunRecordV2 {
   };
 }
 
-async function seedRepo(repo: InMemoryRunRepository, entries: Array<[string, number, Partial<FullRunSummaryV2>?]>) {
+async function seedRepo(
+  repo: InMemoryRunRepository,
+  entries: Array<[string, number, Partial<FullRunSummaryV2>?]>,
+) {
   for (const [id, createdAt, overrides] of entries) {
     await repo.create(makeMinimalRecord(id, createdAt), makeSummary(id, createdAt, overrides));
   }
 }
 
 async function settle() {
-  await act(async () => { await flush(); });
+  await act(async () => {
+    await flush();
+  });
 }
 
 /** Type into a React controlled input by bypassing React's value tracker.
@@ -118,7 +127,9 @@ function typeInto(input: HTMLInputElement, value: string) {
 
 /** Wait for the 200ms search debounce to fire, plus one settle cycle. */
 async function settleWithDebounce() {
-  await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 300));
+  });
   await settle();
 }
 
@@ -127,7 +138,10 @@ async function settleWithDebounce() {
 describe("RunList", () => {
   it("rows are links to /runs/:runId", async () => {
     const repo = new InMemoryRunRepository();
-    await seedRepo(repo, [["run-1", 1000], ["run-2", 2000]]);
+    await seedRepo(repo, [
+      ["run-1", 1000],
+      ["run-2", 2000],
+    ]);
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
     const links = h.$$("a[href^='/runs/']");
@@ -139,7 +153,10 @@ describe("RunList", () => {
 
   it("current row has selected state without replacing aria-current route semantics", async () => {
     const repo = new InMemoryRunRepository();
-    await seedRepo(repo, [["run-1", 1000], ["run-2", 2000]]);
+    await seedRepo(repo, [
+      ["run-1", 1000],
+      ["run-2", 2000],
+    ]);
     const h = renderWithRouter(<RunList repo={repo} selectedId="run-1" />);
     await settle();
     // The selected row should have a data-selected attribute or aria-selected
@@ -160,7 +177,9 @@ describe("RunList", () => {
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
     // Type in search
-    const search = h.$("input[type='search'], input[role='searchbox'], input[aria-label*='earch' i]") as HTMLInputElement;
+    const search = h.$(
+      "input[type='search'], input[role='searchbox'], input[aria-label*='earch' i]",
+    ) as HTMLInputElement;
     expect(search).toBeTruthy();
     typeInto(search, "sort");
     await settleWithDebounce();
@@ -179,7 +198,9 @@ describe("RunList", () => {
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
     // Apply search filter
-    const search = h.$("input[type='search'], input[role='searchbox'], input[aria-label*='earch' i]") as HTMLInputElement;
+    const search = h.$(
+      "input[type='search'], input[role='searchbox'], input[aria-label*='earch' i]",
+    ) as HTMLInputElement;
     typeInto(search, "sort");
     await settleWithDebounce();
     // Open filter sheet to access Clear filters
@@ -238,14 +259,17 @@ describe("RunList", () => {
 
   it("a tie row exposes every persisted winner label rather than selecting the first", async () => {
     const repo = new InMemoryRunRepository();
-    await seedRepo(repo, [[
-      "run-1", 1000,
-      {
-        winnerKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
-        scoresByModelKey: { "openrouter:gpt-4o": 4.5, "umans:claude-opus": 4.5 },
-        modelKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
-      },
-    ]]);
+    await seedRepo(repo, [
+      [
+        "run-1",
+        1000,
+        {
+          winnerKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
+          scoresByModelKey: { "openrouter:gpt-4o": 4.5, "umans:claude-opus": 4.5 },
+          modelKeys: ["openrouter:gpt-4o", "umans:claude-opus"],
+        },
+      ],
+    ]);
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
     const rowText = h.container.textContent ?? "";
@@ -299,10 +323,7 @@ describe("RunList", () => {
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
     // Check all buttons and links have min-h-[44px]
-    const interactives = [
-      ...h.$$("button"),
-      ...h.$$("a[href^='/runs/']"),
-    ];
+    const interactives = [...h.$$("button"), ...h.$$("a[href^='/runs/']")];
     for (const el of interactives) {
       const cls = el.getAttribute("class") ?? "";
       expect(cls).toContain("min-h-[44px]");

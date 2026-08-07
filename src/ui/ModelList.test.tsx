@@ -13,7 +13,14 @@ import { RepositoryContext } from "../lib/persistence/repository-context";
 function withRepo(node: React.ReactNode) {
   return (
     <RepositoryContext.Provider
-      value={{ runRepo: new InMemoryRunRepository(), evalRepo: null, fusionRepo: null, db: null, storageState: "ready", retry: () => {} }}
+      value={{
+        runRepo: new InMemoryRunRepository(),
+        evalRepo: null,
+        fusionRepo: null,
+        db: null,
+        storageState: "ready",
+        retry: () => {},
+      }}
     >
       <ModelProbeProvider>{node}</ModelProbeProvider>
     </RepositoryContext.Provider>
@@ -212,7 +219,12 @@ describe("AddModelCombobox — complete catalog (no slice cutoff)", () => {
   it("renders every catalog entry on an empty query, not just the first eight", () => {
     const models = geminiCatalog(12);
     const h = render(
-      <AddModelCombobox models={models} takenKeys={new Set()} onCancel={() => {}} onAdd={() => {}} />,
+      <AddModelCombobox
+        models={models}
+        takenKeys={new Set()}
+        onCancel={() => {}}
+        onAdd={() => {}}
+      />,
     );
     try {
       // Switch to the Gemini provider tab (default is OpenRouter).
@@ -233,7 +245,12 @@ describe("AddModelCombobox — complete catalog (no slice cutoff)", () => {
   it("keeps the bounded-height overflow list class", () => {
     const models = geminiCatalog(12);
     const h = render(
-      <AddModelCombobox models={models} takenKeys={new Set()} onCancel={() => {}} onAdd={() => {}} />,
+      <AddModelCombobox
+        models={models}
+        takenKeys={new Set()}
+        onCancel={() => {}}
+        onAdd={() => {}}
+      />,
     );
     try {
       act(() => h.byText("Gemini")!.click());
@@ -248,7 +265,12 @@ describe("AddModelCombobox — complete catalog (no slice cutoff)", () => {
   it("a search can return every matching item, including ones near the bottom", () => {
     const models = geminiCatalog(12);
     const h = render(
-      <AddModelCombobox models={models} takenKeys={new Set()} onCancel={() => {}} onAdd={() => {}} />,
+      <AddModelCombobox
+        models={models}
+        takenKeys={new Set()}
+        onCancel={() => {}}
+        onAdd={() => {}}
+      />,
     );
     try {
       act(() => h.byText("Gemini")!.click());
@@ -280,9 +302,9 @@ describe("AddModelCombobox — complete catalog (no slice cutoff)", () => {
       act(() => h.byText("Gemini")!.click());
       const input = h.$("input#model-search") as HTMLInputElement;
       typeInto(input, "gemini-custom-fake");
-      const addSlugBtn = h.$$("button").find((b) =>
-        b.getAttribute("aria-label")?.startsWith("Add slug "),
-      ) as HTMLButtonElement;
+      const addSlugBtn = h
+        .$$("button")
+        .find((b) => b.getAttribute("aria-label")?.startsWith("Add slug ")) as HTMLButtonElement;
       expect(addSlugBtn).toBeTruthy();
       act(() => addSlugBtn.click());
       expect(added).not.toBeNull();
@@ -309,14 +331,15 @@ describe("ModelList — switch model for a slot", () => {
   };
 
   it("opens the edit combobox on the slot's CURRENT provider, not OpenRouter", () => {
-    const h = render(
-      withRepo(<ModelList slots={[slot]} models={NO_MODELS} dispatch={() => {}} />),
-    );
+    const h = render(withRepo(<ModelList slots={[slot]} models={NO_MODELS} dispatch={() => {}} />));
     try {
-      act(() => (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click());
+      act(() =>
+        (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click(),
+      );
       // The Umans tab is active in the opened combobox (aria-pressed/selected).
       const umansTab = h.byText("Umans")!;
-      const pressed = umansTab.getAttribute("aria-pressed") ?? umansTab.getAttribute("aria-selected");
+      const pressed =
+        umansTab.getAttribute("aria-pressed") ?? umansTab.getAttribute("aria-selected");
       expect(pressed).toBe("true");
     } finally {
       cleanup(h);
@@ -326,18 +349,22 @@ describe("ModelList — switch model for a slot", () => {
   it("committing a different provider dispatches SWAP_SLOT with the new providerId and the SAME slot id", () => {
     const dispatched: Action[] = [];
     const h = render(
-      withRepo(<ModelList slots={[slot]} models={NO_MODELS} dispatch={(a) => dispatched.push(a)} />),
+      withRepo(
+        <ModelList slots={[slot]} models={NO_MODELS} dispatch={(a) => dispatched.push(a)} />,
+      ),
     );
     try {
-      act(() => (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click());
+      act(() =>
+        (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click(),
+      );
       // Switch to the Gemini provider tab.
       act(() => h.byText("Gemini")!.click());
       const input = h.$("input#model-search") as HTMLInputElement;
       typeInto(input, "gemini-3.6-flash");
       // Commit the manual slug (commitLabel is "Switch to" in the edit flow).
-      const commitBtn = h.$$("button").find((b) =>
-        b.getAttribute("aria-label")?.startsWith("Switch to "),
-      ) as HTMLButtonElement;
+      const commitBtn = h
+        .$$("button")
+        .find((b) => b.getAttribute("aria-label")?.startsWith("Switch to ")) as HTMLButtonElement;
       expect(commitBtn).toBeTruthy();
       act(() => commitBtn.click());
 
@@ -357,10 +384,14 @@ describe("ModelList — switch model for a slot", () => {
   it("does not dispatch SWAP_SLOT when the edit is cancelled", () => {
     const dispatched: Action[] = [];
     const h = render(
-      withRepo(<ModelList slots={[slot]} models={NO_MODELS} dispatch={(a) => dispatched.push(a)} />),
+      withRepo(
+        <ModelList slots={[slot]} models={NO_MODELS} dispatch={(a) => dispatched.push(a)} />,
+      ),
     );
     try {
-      act(() => (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click());
+      act(() =>
+        (h.$('button[aria-label="Switch model for Kimi K3"]') as HTMLButtonElement).click(),
+      );
       const input = h.$("input#model-search") as HTMLInputElement;
       typeInto(input, "gemini-3.6-flash");
       // X with a non-empty query clears it; X again cancels.

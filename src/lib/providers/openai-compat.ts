@@ -82,17 +82,17 @@ function getKey(id: ProviderId): string {
 function explicitImageCapability(model: unknown): boolean | null {
   if (typeof model !== "object" || model === null || Array.isArray(model)) return null;
   const record = model as Record<string, unknown>;
-  const sources = [record, record.architecture, record.capabilities, record.metadata]
-    .filter((value): value is Record<string, unknown> =>
+  const sources = [record, record.architecture, record.capabilities, record.metadata].filter(
+    (value): value is Record<string, unknown> =>
       typeof value === "object" && value !== null && !Array.isArray(value),
-    );
+  );
 
   for (const source of sources) {
     const modalityFields = [source.input_modalities, source.modalities, source.inputModalities];
     for (const field of modalityFields) {
       if (!Array.isArray(field)) continue;
-      return field.some((value) =>
-        typeof value === "string" && /^(?:image|vision)$/i.test(value.trim()),
+      return field.some(
+        (value) => typeof value === "string" && /^(?:image|vision)$/i.test(value.trim()),
       );
     }
     for (const field of ["image", "vision", "supports_images"]) {
@@ -104,7 +104,13 @@ function explicitImageCapability(model: unknown): boolean | null {
 
 export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvider {
   const {
-    id, label, baseUrl, envKey, modelsPath, completionsPath, extraHeaders,
+    id,
+    label,
+    baseUrl,
+    envKey,
+    modelsPath,
+    completionsPath,
+    extraHeaders,
     apiKeyRequired = true,
     readinessProbe = "credential",
     supportsImages = false,
@@ -149,7 +155,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         if (part.type === "image" || part.type === "file") {
           throw new ProviderError(
             `${label} does not support image or file attachments (supportsImages is off for this provider). Remove the attachment or use a vision-capable provider.`,
-            id
+            id,
           );
         }
       }
@@ -162,7 +168,11 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
     // unknown JSON, plain text, and HTML bodies become a generic status error.
     // The raw body never reaches ProviderError.message (review fix 3).
     const rawBody = await readBoundedResponseText(res).catch(() => "");
-    return new ProviderError(providerErrorDetail(rawBody, label, res.status), providerId, res.status);
+    return new ProviderError(
+      providerErrorDetail(rawBody, label, res.status),
+      providerId,
+      res.status,
+    );
   }
 
   /** Shared model-catalog probe — used by testConnection, async readiness, and listModels. */
@@ -175,10 +185,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
 
   /** Serialize a request body once, enforcing the encoded bridge ceiling
    *  before any fetch when configured (Plan 002 D4 / Plan 003 E). */
-  function buildBody(
-    payload: Record<string, unknown>,
-    hasParts: boolean,
-  ): string {
+  function buildBody(payload: Record<string, unknown>, hasParts: boolean): string {
     return buildBridgeRequestBody(
       payload,
       id,
@@ -195,7 +202,10 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
     // The executor already owns a composed signal for paid runs. Preserve the
     // caller signal identity in that path (some bridge integrations inspect it)
     // while direct calls without a caller signal still get adapter deadlines.
-    const hasExplicitOverride = opts.connectMs !== undefined || opts.inactivityMs !== undefined || opts.overallMs !== undefined;
+    const hasExplicitOverride =
+      opts.connectMs !== undefined ||
+      opts.inactivityMs !== undefined ||
+      opts.overallMs !== undefined;
     if (!requestDeadlinePolicy || (opts.signal && !hasExplicitOverride && !forceDeadline)) {
       return operation(opts.signal ?? new AbortController().signal, () => {});
     }
@@ -212,7 +222,9 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
 
   function createHeadersReady(): { promise: Promise<void>; resolve: () => void } {
     let resolvePromise!: () => void;
-    const promise = new Promise<void>((resolve) => { resolvePromise = resolve; });
+    const promise = new Promise<void>((resolve) => {
+      resolvePromise = resolve;
+    });
     return { promise, resolve: resolvePromise };
   }
 
@@ -223,14 +235,18 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
 
     async testConnection(apiKey: string, signal?: AbortSignal): Promise<ProviderReadiness> {
       const candidateKey = apiKey.trim();
-      if (!candidateKey && apiKeyRequired) return { ok: false, reason: `Enter a ${label} API key first.` };
+      if (!candidateKey && apiKeyRequired)
+        return { ok: false, reason: `Enter a ${label} API key first.` };
       let res: Response;
       try {
         res = await probeModels(candidateKey, signal);
       } catch (err) {
         const abort = providerAbortError(err, signal);
         if (abort !== null) throw abort;
-        return { ok: false, reason: `Network error reaching ${label}. Check the endpoint or local bridge.` };
+        return {
+          ok: false,
+          reason: `Network error reaching ${label}. Check the endpoint or local bridge.`,
+        };
       }
       if (!res.ok) {
         const error = await parseError(res, id);
@@ -244,22 +260,30 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         return (async (): Promise<ProviderReadiness> => {
           const key = getApiKey();
           if (!key && apiKeyRequired) {
-            return { ok: false, reason: `Missing ${envKey}. Add it to a .env file or the Connections panel.` };
+            return {
+              ok: false,
+              reason: `Missing ${envKey}. Add it to a .env file or the Connections panel.`,
+            };
           }
           let res: Response;
           try {
             res = await probeModels(key);
           } catch {
-            return { ok: false, reason: `Could not reach ${label}. Check the endpoint or local bridge.` };
+            return {
+              ok: false,
+              reason: `Could not reach ${label}. Check the endpoint or local bridge.`,
+            };
           }
           if (!res.ok) {
-            if (res.status === 401) return { ok: false, reason: `${label} authentication rejected (HTTP 401).` };
+            if (res.status === 401)
+              return { ok: false, reason: `${label} authentication rejected (HTTP 401).` };
             return { ok: false, reason: `${label} returned HTTP ${res.status}.` };
           }
           try {
             const data = await res.json();
             const hasArray = Array.isArray(data?.data) || Array.isArray(data?.models);
-            if (!hasArray) return { ok: false, reason: `${label} returned a malformed catalog response.` };
+            if (!hasArray)
+              return { ok: false, reason: `${label} returned a malformed catalog response.` };
             return { ok: true };
           } catch {
             return { ok: false, reason: `${label} returned a malformed catalog response.` };
@@ -280,13 +304,18 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
       if (!key && apiKeyRequired) {
         throw new ProviderError(
           `Missing ${envKey}. Add it to a .env file or the Connections panel.`,
-          id
+          id,
         );
       }
       assertTransportable(opts.messages);
       let reasoning: Record<string, unknown>;
       try {
-        reasoning = nativeReasoningPayload(id, opts.model, opts.reasoningEffort, opts.reasoningStrict).payload;
+        reasoning = nativeReasoningPayload(
+          id,
+          opts.model,
+          opts.reasoningEffort,
+          opts.reasoningStrict,
+        ).payload;
       } catch (error) {
         throw new ProviderError(error instanceof Error ? error.message : String(error), id);
       }
@@ -332,13 +361,13 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
       const headers = createHeadersReady();
       const streamAbort = new AbortController();
       const composed = composeAbortSignals(opts.signal, streamAbort.signal);
-      const source = (async function*(): AsyncGenerator<string, void, unknown> {
+      const source = (async function* (): AsyncGenerator<string, void, unknown> {
         const key = getApiKey();
         if (!key && apiKeyRequired) {
           composed.cleanup();
           throw new ProviderError(
             `Missing ${envKey}. Add it to a .env file or the Connections panel.`,
-            id
+            id,
           );
         }
         try {
@@ -349,7 +378,12 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         }
         let reasoning: Record<string, unknown>;
         try {
-          reasoning = nativeReasoningPayload(id, opts.model, opts.reasoningEffort, opts.reasoningStrict).payload;
+          reasoning = nativeReasoningPayload(
+            id,
+            opts.model,
+            opts.reasoningEffort,
+            opts.reasoningStrict,
+          ).payload;
         } catch (error) {
           composed.cleanup();
           throw new ProviderError(error instanceof Error ? error.message : String(error), id);
@@ -417,11 +451,15 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
           throw new ProviderError(
             `Could not load ${label} model catalog (HTTP ${res.status}).`,
             id,
-            res.status
+            res.status,
           );
         }
         const data = await res.json();
-        const arr: unknown[] = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
+        const arr: unknown[] = Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data?.models)
+            ? data.models
+            : [];
         const seen = new Set<string>();
         return arr
           .map((m) => {
@@ -432,7 +470,10 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
             // declares it; guessing from a slug would send images blindly.
             const imageCapability = explicitImageCapability(m);
             if (modelId.length > 0 && imageCapability !== null) {
-              setModelCapabilities(id, modelId, { image: supportsImages && imageCapability, pdf: false });
+              setModelCapabilities(id, modelId, {
+                image: supportsImages && imageCapability,
+                pdf: false,
+              });
             }
             return {
               id: modelId,

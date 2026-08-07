@@ -39,8 +39,22 @@ function makeSuite(): EvaluationSuite {
     description: "",
     tasks: [makeTask("t1")],
     modelSlots: [
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "m1", slug: "org/m1", enabled: true },
-      { id: "s2", providerId: "openrouter", provider: "OpenRouter", model: "m2", slug: "org/m2", enabled: true },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m1",
+        slug: "org/m1",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m2",
+        slug: "org/m2",
+        enabled: true,
+      },
     ],
     defaultJudge: { providerId: "openrouter", model: "org/judge" },
     defaultEvaluation: { kind: "holistic" },
@@ -91,7 +105,9 @@ function makeRecord(overrides: Partial<ExperimentRecord> = {}): ExperimentRecord
   };
 }
 
-function makeExtension(overrides: Partial<ExperimentRosterExtension> = {}): ExperimentRosterExtension {
+function makeExtension(
+  overrides: Partial<ExperimentRosterExtension> = {},
+): ExperimentRosterExtension {
   return {
     addedModelKey: "gemini:gemini-3.6-flash",
     addedSlot: {
@@ -119,7 +135,11 @@ describe("isExperimentTaskAttempt — roster-extension provenance", () => {
     expect(
       isExperimentTaskAttempt(
         makeAttempt({
-          repair: { kind: "missing-cells", baseRunId: "run-base", requestedModelKeys: ["openrouter:org/m2"] },
+          repair: {
+            kind: "missing-cells",
+            baseRunId: "run-base",
+            requestedModelKeys: ["openrouter:org/m2"],
+          },
         }),
       ),
     ).toBe(true);
@@ -129,7 +149,11 @@ describe("isExperimentTaskAttempt — roster-extension provenance", () => {
     expect(
       isExperimentTaskAttempt(
         makeAttempt({
-          repair: { kind: "roster-extension", addedModelKey: "gemini:gemini-3.6-flash", baseRunId: "run-base" },
+          repair: {
+            kind: "roster-extension",
+            addedModelKey: "gemini:gemini-3.6-flash",
+            baseRunId: "run-base",
+          },
         }),
       ),
     ).toBe(true);
@@ -138,7 +162,9 @@ describe("isExperimentTaskAttempt — roster-extension provenance", () => {
   it("validates full-roster fallback roster-extension plans (no baseRunId)", () => {
     expect(
       isExperimentTaskAttempt(
-        makeAttempt({ repair: { kind: "roster-extension", addedModelKey: "gemini:gemini-3.6-flash" } }),
+        makeAttempt({
+          repair: { kind: "roster-extension", addedModelKey: "gemini:gemini-3.6-flash" },
+        }),
       ),
     ).toBe(true);
   });
@@ -154,7 +180,9 @@ describe("isExperimentTaskAttempt — roster-extension provenance", () => {
   it("rejects blank baseRunId", () => {
     expect(
       isExperimentTaskAttempt(
-        makeAttempt({ repair: { kind: "roster-extension", addedModelKey: "gemini:m", baseRunId: "" } }),
+        makeAttempt({
+          repair: { kind: "roster-extension", addedModelKey: "gemini:m", baseRunId: "" },
+        }),
       ),
     ).toBe(false);
   });
@@ -167,7 +195,9 @@ describe("isExperimentTaskAttempt — roster-extension provenance", () => {
     ).toBe(false);
     expect(
       isExperimentTaskAttempt(
-        makeAttempt({ repair: { kind: "roster-extension", addedModelKey: "gemini:m", baseRunId: "Bearer x" } }),
+        makeAttempt({
+          repair: { kind: "roster-extension", addedModelKey: "gemini:m", baseRunId: "Bearer x" },
+        }),
       ),
     ).toBe(false);
   });
@@ -176,7 +206,11 @@ describe("isExperimentTaskAttempt — roster-extension provenance", () => {
     expect(
       isExperimentTaskAttempt(
         makeAttempt({
-          repair: { kind: "missing-cells", baseRunId: "run-base", requestedModelKeys: ["a:b", "a:b"] },
+          repair: {
+            kind: "missing-cells",
+            baseRunId: "run-base",
+            requestedModelKeys: ["a:b", "a:b"],
+          },
         }),
       ),
     ).toBe(false);
@@ -212,17 +246,23 @@ describe("isExperimentRecord — rosterExtensions history", () => {
       priorFingerprint: "sha256:def",
       extendedAt: 3000,
     };
-    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension(), second] }))).toBe(true);
+    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension(), second] }))).toBe(
+      true,
+    );
   });
 
   it("rejects duplicate addedModelKey in history", () => {
     const dup = makeExtension({ addedSlot: { ...makeExtension().addedSlot, id: "slot-ext-2" } });
-    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension(), dup] }))).toBe(false);
+    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension(), dup] }))).toBe(
+      false,
+    );
   });
 
   it("rejects duplicate slot ids in history", () => {
     const dup = makeExtension({ addedModelKey: "deepseek:deepseek-chat" });
-    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension(), dup] }))).toBe(false);
+    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension(), dup] }))).toBe(
+      false,
+    );
   });
 
   it("rejects addedModelKey mismatching the addedSlot identity", () => {
@@ -236,22 +276,42 @@ describe("isExperimentRecord — rosterExtensions history", () => {
   });
 
   it("rejects blank priorFingerprint", () => {
-    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension({ priorFingerprint: "" })] }))).toBe(false);
+    expect(
+      isExperimentRecord(
+        makeRecord({ rosterExtensions: [makeExtension({ priorFingerprint: "" })] }),
+      ),
+    ).toBe(false);
   });
 
   it("rejects invalid extendedAt values", () => {
-    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension({ extendedAt: Number.NaN })] }))).toBe(false);
-    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension({ extendedAt: -5 })] }))).toBe(false);
-    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension({ extendedAt: Number.POSITIVE_INFINITY })] }))).toBe(false);
+    expect(
+      isExperimentRecord(
+        makeRecord({ rosterExtensions: [makeExtension({ extendedAt: Number.NaN })] }),
+      ),
+    ).toBe(false);
+    expect(
+      isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension({ extendedAt: -5 })] })),
+    ).toBe(false);
+    expect(
+      isExperimentRecord(
+        makeRecord({ rosterExtensions: [makeExtension({ extendedAt: Number.POSITIVE_INFINITY })] }),
+      ),
+    ).toBe(false);
   });
 
   it("rejects credential-shaped addedModelKey", () => {
-    expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension({ addedModelKey: "sk-live123:x" })] }))).toBe(false);
+    expect(
+      isExperimentRecord(
+        makeRecord({ rosterExtensions: [makeExtension({ addedModelKey: "sk-live123:x" })] }),
+      ),
+    ).toBe(false);
   });
 
   it("rejects non-array rosterExtensions", () => {
     expect(
-      isExperimentRecord(makeRecord({ rosterExtensions: {} as unknown as ExperimentRosterExtension[] })),
+      isExperimentRecord(
+        makeRecord({ rosterExtensions: {} as unknown as ExperimentRosterExtension[] }),
+      ),
     ).toBe(false);
   });
 });

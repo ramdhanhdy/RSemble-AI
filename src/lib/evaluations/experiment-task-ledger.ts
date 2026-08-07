@@ -18,8 +18,6 @@ import type {
   ExperimentTaskState,
 } from "./evaluation-types";
 
-
-
 export type TaskLedgerFilter = "all" | "active" | "issues" | "queued" | "complete";
 
 export interface TaskLedgerRow {
@@ -153,11 +151,7 @@ export function deriveActiveOperationScope(
       continue;
     }
     // Paused experiments keep truthful scope from queued planned work.
-    if (
-      experiment.status === "paused" &&
-      current.status === "queued" &&
-      current.repair
-    ) {
+    if (experiment.status === "paused" && current.status === "queued" && current.repair) {
       livePlans.push(current.repair);
     }
   }
@@ -210,7 +204,6 @@ export function deriveActiveOperationScope(
   };
 }
 
-
 export function buildTaskLedger(experiment: ExperimentRecord): TaskLedgerContext {
   const stateByTaskId = new Map(experiment.tasks.map((t) => [t.taskId, t]));
   const slotCount = experiment.snapshot.modelSlots.length;
@@ -221,7 +214,9 @@ export function buildTaskLedger(experiment: ExperimentRecord): TaskLedgerContext
     .map((task, index) => {
       const state = stateByTaskId.get(task.id);
       const attempts = state?.attempts ?? [];
-      const current = currentAttemptOf(state ?? { taskId: task.id, selectedAttemptId: null, attempts });
+      const current = currentAttemptOf(
+        state ?? { taskId: task.id, selectedAttemptId: null, attempts },
+      );
       return {
         taskId: task.id,
         order: index + 1,
@@ -236,8 +231,7 @@ export function buildTaskLedger(experiment: ExperimentRecord): TaskLedgerContext
 
   const runningRow = rows.find((r) => r.status === "running") ?? null;
   const currentRow =
-    runningRow ??
-    (terminal ? null : (rows.find((r) => r.status !== "completed") ?? null));
+    runningRow ?? (terminal ? null : (rows.find((r) => r.status !== "completed") ?? null));
 
   const counts: TaskLedgerCounts = { complete: 0, partial: 0, failed: 0, queued: 0 };
   for (const row of rows) {

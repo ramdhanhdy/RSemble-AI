@@ -8,7 +8,11 @@ import { SuiteEditor } from "./SuiteEditor";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import { ExecutionOwnerProvider } from "../../lib/execution-owner-context";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
-import type { EvaluationSuite, EvaluationTask, ExperimentRecord } from "../../lib/evaluations/evaluation-types";
+import type {
+  EvaluationSuite,
+  EvaluationTask,
+  ExperimentRecord,
+} from "../../lib/evaluations/evaluation-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -35,7 +39,10 @@ function renderWithRouter(node: React.ReactNode, initialPath = "/evaluations/s1"
             <Routes>
               <Route path="/evaluations/:suiteId" element={node} />
               <Route path="/evaluations/:suiteId/tasks/:taskId" element={node} />
-              <Route path="/experiments/:experimentId" element={<div data-route="experiment-progress" />} />
+              <Route
+                path="/experiments/:experimentId"
+                element={<div data-route="experiment-progress" />}
+              />
             </Routes>
           </ModelProbeProvider>
         </ExecutionOwnerProvider>
@@ -58,9 +65,10 @@ function cleanup(h: Harness) {
 /** Type into a React controlled input by bypassing React's value tracker. */
 function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   act(() => {
-    const proto = input instanceof HTMLTextAreaElement
-      ? window.HTMLTextAreaElement.prototype
-      : window.HTMLInputElement.prototype;
+    const proto =
+      input instanceof HTMLTextAreaElement
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value")!.set!;
     setter.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -147,8 +155,22 @@ function makeValidSuite(id: string): EvaluationSuite {
     version: 1,
     tasks: [makeTask("t1")],
     modelSlots: [
-      { id: "s1", providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "openai/gpt-4o", enabled: true },
-      { id: "s2", providerId: "openrouter", provider: "OpenRouter", model: "claude", slug: "anthropic/claude", enabled: true },
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "gpt-4o",
+        slug: "openai/gpt-4o",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "claude",
+        slug: "anthropic/claude",
+        enabled: true,
+      },
     ],
     defaultJudge: { providerId: "openrouter", model: "z-ai/glm-5.2" },
   });
@@ -329,7 +351,9 @@ describe("SuiteEditor — run validation", () => {
   it("Run enabled when suite passes execution validation", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedSuite(repo, makeValidSuite("s1"));
-    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} controller={makeStubController()} />);
+    const h = renderWithRouter(
+      <SuiteEditor repo={repo} models={[]} controller={makeStubController()} />,
+    );
     await settle();
     const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
     expect(runBtn.disabled).toBe(false);
@@ -355,7 +379,9 @@ describe("SuiteEditor — run execution", () => {
     await settle();
     // Preflight confirmation opens; all models untested → Run suite confirm.
     // The dialog portal renders on document.body.
-    const confirmBtn = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Run suite");
+    const confirmBtn = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Run suite",
+    );
     expect(confirmBtn).toBeTruthy();
     await act(async () => {
       confirmBtn!.click();
@@ -371,7 +397,10 @@ describe("SuiteEditor — run execution", () => {
     const repo = new InMemoryEvaluationRepository();
     await seedSuite(repo, makeValidSuite("s1"));
     const controller = makeStubController({
-      start: vi.fn(async () => ({ ok: false as const, error: "Another tab is active (lease held)" })),
+      start: vi.fn(async () => ({
+        ok: false as const,
+        error: "Another tab is active (lease held)",
+      })),
     });
     const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} controller={controller} />);
     await settle();
@@ -382,7 +411,9 @@ describe("SuiteEditor — run execution", () => {
     });
     await settle();
     // Preflight confirmation opens; confirm through it (portal on document.body).
-    const confirmBtn = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Run suite");
+    const confirmBtn = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Run suite",
+    );
     expect(confirmBtn).toBeTruthy();
     await act(async () => {
       confirmBtn!.click();
@@ -450,7 +481,9 @@ describe("SuiteEditor — run execution", () => {
   it("archived suite disables Run with an archived helper", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedSuite(repo, { ...makeValidSuite("s1"), archivedAt: Date.now() });
-    const h = renderWithRouter(<SuiteEditor repo={repo} models={[]} controller={makeStubController()} />);
+    const h = renderWithRouter(
+      <SuiteEditor repo={repo} models={[]} controller={makeStubController()} />,
+    );
     await settle();
     const runBtn = h.$("button[data-action='run-suite']") as HTMLButtonElement;
     expect(runBtn.disabled).toBe(true);
@@ -514,8 +547,22 @@ describe("SuiteEditor — Test selected models (spec §8.1)", () => {
         name: "My Suite",
         version: 1,
         modelSlots: [
-          { id: "m1", providerId: "9router", provider: "9Router", model: "A", slug: "cmc/model-a", enabled: true },
-          { id: "m2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "org/model-b", enabled: true },
+          {
+            id: "m1",
+            providerId: "9router",
+            provider: "9Router",
+            model: "A",
+            slug: "cmc/model-a",
+            enabled: true,
+          },
+          {
+            id: "m2",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "B",
+            slug: "org/model-b",
+            enabled: true,
+          },
         ],
       }),
     );
@@ -527,7 +574,9 @@ describe("SuiteEditor — Test selected models (spec §8.1)", () => {
     for (const label of ["9router:cmc/model-a", "openrouter:org/model-b"]) {
       const checkbox = h.$(`input[aria-label="Enable ${label}"]`);
       const row = checkbox?.closest("li");
-      const action = row?.querySelector<HTMLButtonElement>(`button[aria-label="Test model ${label}"]`);
+      const action = row?.querySelector<HTMLButtonElement>(
+        `button[aria-label="Test model ${label}"]`,
+      );
       expect(action).toBeTruthy();
       expect(action?.textContent?.trim()).toBe("Test");
       expect(h.$$(`button[aria-label="Test model ${label}"]`)).toHaveLength(1);
@@ -544,8 +593,22 @@ describe("SuiteEditor — Test selected models (spec §8.1)", () => {
         name: "My Suite",
         version: 1,
         modelSlots: [
-          { id: "m1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: true },
-          { id: "m2", providerId: "openrouter", provider: "OpenRouter", model: "B", slug: "model-b", enabled: true },
+          {
+            id: "m1",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "A",
+            slug: "model-a",
+            enabled: true,
+          },
+          {
+            id: "m2",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "B",
+            slug: "model-b",
+            enabled: true,
+          },
         ],
       }),
     );
@@ -569,7 +632,14 @@ describe("SuiteEditor — Test selected models (spec §8.1)", () => {
         name: "My Suite",
         version: 1,
         modelSlots: [
-          { id: "m1", providerId: "openrouter", provider: "OpenRouter", model: "A", slug: "model-a", enabled: false },
+          {
+            id: "m1",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "A",
+            slug: "model-a",
+            enabled: false,
+          },
         ],
       }),
     );

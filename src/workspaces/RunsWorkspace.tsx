@@ -55,7 +55,6 @@ export function RunsWorkspace() {
   const selectedSummary = runId ? summaries.find((s) => s.id === runId) : null;
   const isLegacy = selectedSummary?.kind === "legacy";
 
-
   // --- Mobile/tablet: route-based detail ---
   if (!isDesktop && runId) {
     return (
@@ -73,9 +72,15 @@ export function RunsWorkspace() {
           {isLegacy && selectedSummary?.kind === "legacy" ? (
             <LegacyRunDetail summary={selectedSummary} />
           ) : loading ? (
-            <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">Loading…</div>
+            <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">
+              Loading…
+            </div>
           ) : (
-            <RunDetail record={record} focusCandidateId={focusCandidateId} focusJudgeAttemptId={focusJudgeAttemptId} />
+            <RunDetail
+              record={record}
+              focusCandidateId={focusCandidateId}
+              focusJudgeAttemptId={focusJudgeAttemptId}
+            />
           )}
         </div>
       </div>
@@ -117,14 +122,22 @@ export function RunsWorkspace() {
           isLegacy && selectedSummary?.kind === "legacy" ? (
             <LegacyRunDetail summary={selectedSummary} />
           ) : loading ? (
-            <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">Loading…</div>
+            <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">
+              Loading…
+            </div>
           ) : (
-            <RunDetail record={record} focusCandidateId={focusCandidateId} focusJudgeAttemptId={focusJudgeAttemptId} />
+            <RunDetail
+              record={record}
+              focusCandidateId={focusCandidateId}
+              focusJudgeAttemptId={focusJudgeAttemptId}
+            />
           )
         ) : (
           <div className="flex min-h-full flex-col items-center justify-center gap-2 p-8 text-center">
             <p className="text-sm text-text-secondary">Select a run to inspect its evidence.</p>
-            <p className="text-sm text-text-muted">Run history is searchable with full audit trail.</p>
+            <p className="text-sm text-text-muted">
+              Run history is searchable with full audit trail.
+            </p>
           </div>
         )}
       </div>

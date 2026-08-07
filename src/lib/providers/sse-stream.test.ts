@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readSseChatStream } from "./sse-stream";
-import { ProviderError } from "./types";
-import type { ProviderId } from "./types";
-import type { SseMeta } from "./sse-stream";
+import { readSseChatStream, type SseMeta } from "./sse-stream";
+import { ProviderError, type ProviderId } from "./types";
 
 // Helper: build a ReadableStream from an array of string chunks.
 function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
@@ -94,15 +92,13 @@ describe("readSseChatStream", () => {
       for await (const _d of readSseChatStream(stream, pid, label, controller.signal)) {
         // may yield some data before EOF
       }
-    }).rejects.toSatisfy((err: unknown) =>
-      err instanceof DOMException && err.name === "AbortError"
+    }).rejects.toSatisfy(
+      (err: unknown) => err instanceof DOMException && err.name === "AbortError",
     );
   });
 
   it("throws ProviderError on upstream read failure (reader.read rejects)", async () => {
-    const stream = makeFailingStream([
-      'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
-    ]);
+    const stream = makeFailingStream(['data: {"choices":[{"delta":{"content":"partial"}}]}\n\n']);
     await expect(async () => {
       for await (const _d of readSseChatStream(stream, pid, label)) {
         // may yield partial before failure

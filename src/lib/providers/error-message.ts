@@ -14,7 +14,11 @@ import { configuredCredentialValues, redactErrorText } from "../persistence/erro
  * detail: recognized structured messages are bounded and credential-redacted;
  * unknown JSON, plain text, and HTML bodies become a generic status message.
  */
-export function providerErrorDetail(rawBody: string, providerLabel: string, status: number): string {
+export function providerErrorDetail(
+  rawBody: string,
+  providerLabel: string,
+  status: number,
+): string {
   const base = sanitizeProviderErrorMessage(rawBody, providerLabel, status);
   return redactErrorText(base, configuredCredentialValues());
 }

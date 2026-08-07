@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { listenOrReuseBridge, probeReusableBridge } from "../codex-bridge/startup";
+import { listenOrReuseBridge, probeReusableBridge } from "../codex-bridge/startup.js";
 
 const servers: http.Server[] = [];
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  await Promise.all(
+    servers
+      .splice(0)
+      .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
+  );
 });
 
 async function healthServer(payload: unknown): Promise<number> {

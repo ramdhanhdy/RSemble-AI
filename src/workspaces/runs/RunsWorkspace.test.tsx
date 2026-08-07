@@ -26,7 +26,16 @@ function renderWithRouter(initialEntry = "/runs", repo: InMemoryRunRepository): 
   const root = createRoot(container);
   act(() => {
     root.render(
-      <RepositoryContext.Provider value={{ runRepo: repo, evalRepo: null, fusionRepo: null, db: null, storageState: "ready", retry: () => {} }}>
+      <RepositoryContext.Provider
+        value={{
+          runRepo: repo,
+          evalRepo: null,
+          fusionRepo: null,
+          db: null,
+          storageState: "ready",
+          retry: () => {},
+        }}
+      >
         <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
             <Route path="/runs" element={<RunsWorkspace />} />
@@ -121,7 +130,9 @@ async function seedRepo(repo: InMemoryRunRepository, entries: Array<[string, num
 }
 
 async function settle() {
-  await act(async () => { await flush(); });
+  await act(async () => {
+    await flush();
+  });
 }
 
 // --- Tests --------------------------------------------------------------------
@@ -130,8 +141,20 @@ describe("RunsWorkspace", () => {
   it("desktop /runs shows list with select-a-run detail state", async () => {
     stubMatchMedia(true);
     const repo = new InMemoryRunRepository();
-    await seedRepo(repo, [["run-1", 1000], ["run-2", 2000]]);
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]), text: () => Promise.resolve("") })));
+    await seedRepo(repo, [
+      ["run-1", 1000],
+      ["run-2", 2000],
+    ]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
 
     const h = renderWithRouter("/runs", repo);
     await settle();
@@ -148,7 +171,16 @@ describe("RunsWorkspace", () => {
     stubMatchMedia(true);
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000]]);
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]), text: () => Promise.resolve("") })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
 
     const h = renderWithRouter("/runs/run-1", repo);
     await settle();
@@ -164,7 +196,16 @@ describe("RunsWorkspace", () => {
     stubMatchMedia(false);
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000]]);
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]), text: () => Promise.resolve("") })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
 
     const h = renderWithRouter("/runs", repo);
     await settle();
@@ -180,7 +221,16 @@ describe("RunsWorkspace", () => {
     stubMatchMedia(false);
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000]]);
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]), text: () => Promise.resolve("") })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
 
     const h = renderWithRouter("/runs/run-1", repo);
     await settle();
@@ -197,7 +247,16 @@ describe("RunsWorkspace", () => {
     stubMatchMedia(true);
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000]]);
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]), text: () => Promise.resolve("") })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
 
     const h = renderWithRouter("/runs/run-1", repo);
     await settle();

@@ -121,11 +121,12 @@ describe("RunRecorder against the real Dexie repository", () => {
       { role: "system", content: "system" },
       {
         role: "user",
-        content: [
-          '--- BEGIN ATTACHMENT 1: "literal-prompt.txt" (text/plain, extracted text) ---',
-          "KEEP_LITERAL_PROMPT_TEXT",
-          "--- END ATTACHMENT 1 ---",
-        ].join("\n") + "\n\n[attachment content omitted from persisted run record]",
+        content:
+          [
+            '--- BEGIN ATTACHMENT 1: "literal-prompt.txt" (text/plain, extracted text) ---',
+            "KEEP_LITERAL_PROMPT_TEXT",
+            "--- END ATTACHMENT 1 ---",
+          ].join("\n") + "\n\n[attachment content omitted from persisted run record]",
       },
     ]);
     expect(JSON.stringify(record)).not.toContain("SECRET_EXTRACTED_TEXT");
@@ -154,14 +155,16 @@ describe("RunRecorder against the real Dexie repository", () => {
       "SECRET_CRITIC_TEXT",
       "--- END ATTACHMENT 1 ---",
     ].join("\n");
-    const messages = [{
-      role: "user" as const,
-      content: [
-        { type: "text" as const, text: "task" },
-        { type: "text" as const, text: attachmentBlock },
-        { type: "text" as const, text: "criteria and candidates" },
-      ],
-    }];
+    const messages = [
+      {
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: "task" },
+          { type: "text" as const, text: attachmentBlock },
+          { type: "text" as const, text: "criteria and candidates" },
+        ],
+      },
+    ];
 
     await recorder.beginJudgeAttempt(runId, "judge-1", {
       providerId: "openrouter",

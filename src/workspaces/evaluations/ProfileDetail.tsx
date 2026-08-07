@@ -26,24 +26,15 @@ import {
   Pin,
 } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
-import type {
-  EvaluationProfile,
-  ProfileRecord,
-} from "../../lib/evaluations/evaluation-types";
-import {
-  suitesUsingProfile,
-  type ProfileUsage,
-} from "../../lib/evaluations/profile-usage";
+import type { EvaluationProfile, ProfileRecord } from "../../lib/evaluations/evaluation-types";
+import { suitesUsingProfile, type ProfileUsage } from "../../lib/evaluations/profile-usage";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
 import { EvaluationProfileEditor } from "../../ui/EvaluationProfileEditor";
 import { RecordRow } from "../../ui/RecordRow";
 import { KindEyebrow } from "../../ui/KindEyebrow";
 
 function genId(): string {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
   return `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -56,7 +47,10 @@ export function ProfileDetail({
   repo?: EvaluationRepository | null;
   profileId: string;
 }) {
-  const repository = repo ?? useEvaluationRepository();
+  // Hook order must be stable: read the context unconditionally, then
+  // prefer the injected repository when one is provided.
+  const contextRepository = useEvaluationRepository();
+  const repository = repo ?? contextRepository;
   const navigate = useNavigate();
   const [record, setRecord] = useState<ProfileRecord | null>(null);
   const [selectedVersion, setSelectedVersion] = useState(0);
@@ -110,9 +104,7 @@ export function ProfileDetail({
   }, [load]);
 
   const isLatest =
-    record != null &&
-    selectedVersion === record.latestVersion &&
-    selectedVersion > 0;
+    record != null && selectedVersion === record.latestVersion && selectedVersion > 0;
   const current: EvaluationProfile | null = isLatest ? draft : viewed;
 
   const handleEditorChange = useCallback(
@@ -187,7 +179,7 @@ export function ProfileDetail({
         updatedAt: now,
       };
       await repository.createProfile(newRecord, newProfile);
-      navigate(`/evaluations/profiles/${newId}`);
+      void navigate(`/evaluations/profiles/${newId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to duplicate profile.");
     } finally {
@@ -206,11 +198,7 @@ export function ProfileDetail({
         return;
       }
       const willArchive = !fresh.archivedAt;
-      await repository.setProfileArchived(
-        profileId,
-        willArchive,
-        fresh.revision,
-      );
+      await repository.setProfileArchived(profileId, willArchive, fresh.revision);
       await load(selectedVersion > 0 ? selectedVersion : "latest");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update profile.");
@@ -239,9 +227,7 @@ export function ProfileDetail({
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 p-4 text-center">
         <AlertCircle size={16} className="text-text-muted" aria-hidden="true" />
-        <p className="text-sm text-text-secondary">
-          Evaluation storage is unavailable.
-        </p>
+        <p className="text-sm text-text-secondary">Evaluation storage is unavailable.</p>
       </div>
     );
   }
@@ -272,9 +258,7 @@ export function ProfileDetail({
 
   const archived = record.archivedAt != null;
   const versions =
-    record.latestVersion > 0
-      ? Array.from({ length: record.latestVersion }, (_, i) => i + 1)
-      : [1];
+    record.latestVersion > 0 ? Array.from({ length: record.latestVersion }, (_, i) => i + 1) : [1];
 
   return (
     <div

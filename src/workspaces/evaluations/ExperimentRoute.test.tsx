@@ -114,13 +114,24 @@ function makeExperiment(status: ExperimentRecord["status"]): ExperimentRecord {
   const snapshot: ExperimentSnapshot = {
     suiteId: "suite-1",
     suiteVersion: 3,
-    tasks: [
-      makeTask("task-1", "Draft release notes", 0),
-      makeTask("task-2", "Write a haiku", 1),
-    ],
+    tasks: [makeTask("task-1", "Draft release notes", 0), makeTask("task-2", "Write a haiku", 1)],
     modelSlots: [
-      { id: "s1", providerId: "umans", provider: "Umans", model: "Model", slug: "model", enabled: true },
-      { id: "s2", providerId: "9router", provider: "9Router", model: "Route", slug: "route", enabled: true },
+      {
+        id: "s1",
+        providerId: "umans",
+        provider: "Umans",
+        model: "Model",
+        slug: "model",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "9router",
+        provider: "9Router",
+        model: "Route",
+        slug: "route",
+        enabled: true,
+      },
     ],
     defaultJudge: { providerId: "openrouter", model: "judge" },
     defaultEvaluation: { kind: "holistic" },
@@ -133,7 +144,15 @@ function makeExperiment(status: ExperimentRecord["status"]): ExperimentRecord {
       taskId: "task-1",
       selectedAttemptId: "att-1",
       attempts: [
-        { id: "att-1", runId: "run-1", trial: 1, status: "completed", startedAt: now - 60_000, finishedAt: now - 30_000, error: null },
+        {
+          id: "att-1",
+          runId: "run-1",
+          trial: 1,
+          status: "completed",
+          startedAt: now - 60_000,
+          finishedAt: now - 30_000,
+          error: null,
+        },
       ],
     },
     {
@@ -141,8 +160,24 @@ function makeExperiment(status: ExperimentRecord["status"]): ExperimentRecord {
       selectedAttemptId: null,
       attempts: [
         status === "completed"
-          ? { id: "att-2", runId: "run-2", trial: 1, status: "completed", startedAt: now - 30_000, finishedAt: now - 10_000, error: null }
-          : { id: "att-2", runId: null, trial: 1, status: "queued", startedAt: null, finishedAt: null, error: null },
+          ? {
+              id: "att-2",
+              runId: "run-2",
+              trial: 1,
+              status: "completed",
+              startedAt: now - 30_000,
+              finishedAt: now - 10_000,
+              error: null,
+            }
+          : {
+              id: "att-2",
+              runId: null,
+              trial: 1,
+              status: "queued",
+              startedAt: null,
+              finishedAt: null,
+              error: null,
+            },
       ],
     },
   ];

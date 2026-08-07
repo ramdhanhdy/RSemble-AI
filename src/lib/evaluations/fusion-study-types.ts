@@ -42,11 +42,7 @@ export const FUSION_RECIPE_FAMILIES: readonly FusionRecipeFamily[] = [
 /** What the synthesizer receives from the development judge (spec §5.2). */
 export type JudgeAnalysisMode = "none" | "qualitative" | "scores";
 
-export const JUDGE_ANALYSIS_MODES: readonly JudgeAnalysisMode[] = [
-  "none",
-  "qualitative",
-  "scores",
-];
+export const JUDGE_ANALYSIS_MODES: readonly JudgeAnalysisMode[] = ["none", "qualitative", "scores"];
 
 /**
  * The recipe family IS the ablation over judge-analysis mode (spec §7.1):
@@ -617,7 +613,10 @@ export function isFusionTrial(v: unknown): v is FusionTrial {
   // best-fixed carry neither.
   if (v.policy === "fuse" && (v.recipe === null || v.synthesizer === null)) return false;
   if (v.policy === "refine" && v.synthesizer === null) return false;
-  if ((v.policy === "rank" || v.policy === "best_fixed") && (v.recipe !== null || v.synthesizer !== null)) {
+  if (
+    (v.policy === "rank" || v.policy === "best_fixed") &&
+    (v.recipe !== null || v.synthesizer !== null)
+  ) {
     return false;
   }
   if (!isFusionStage(v.stage)) return false;
@@ -707,9 +706,7 @@ export function isStageAResult(v: unknown): v is StageAResult {
   if (!Array.isArray(v.survivors) || !v.survivors.every(isFusionRecipeFamily)) return false;
   if (
     !Array.isArray(v.eliminated) ||
-    !v.eliminated.every(
-      (e) => isRecord(e) && isFusionRecipeFamily(e.family) && isString(e.reason),
-    )
+    !v.eliminated.every((e) => isRecord(e) && isFusionRecipeFamily(e.family) && isString(e.reason))
   ) {
     return false;
   }
@@ -726,7 +723,10 @@ export function isScreenedPairRow(v: unknown): v is ScreenedPairRow {
   if (!isPair(v.pair)) return false;
   if (!isFiniteNumber(v.selectionHeadroom)) return false;
   if (!isFiniteNumber(v.synthesisHeadroom)) return false;
-  if (!Array.isArray(v.perCriterionHeadroom) || !v.perCriterionHeadroom.every(isCriterionHeadroom)) {
+  if (
+    !Array.isArray(v.perCriterionHeadroom) ||
+    !v.perCriterionHeadroom.every(isCriterionHeadroom)
+  ) {
     return false;
   }
   if (!isFiniteNumber(v.costMultiplier)) return false;
@@ -780,7 +780,9 @@ export function isStageBPolicyResult(v: unknown): v is StageBPolicyResult {
   if (!isFiniteNumber(v.costMultiplier)) return false;
   if (
     !Array.isArray(v.perTaskScores) ||
-    !v.perTaskScores.every((e) => isRecord(e) && isNonEmptyString(e.taskId) && isFiniteNumber(e.score))
+    !v.perTaskScores.every(
+      (e) => isRecord(e) && isNonEmptyString(e.taskId) && isFiniteNumber(e.score),
+    )
   ) {
     return false;
   }

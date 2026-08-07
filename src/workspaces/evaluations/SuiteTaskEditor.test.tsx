@@ -41,9 +41,10 @@ function cleanup(h: Harness) {
 /** Type into a React controlled input by bypassing React's value tracker. */
 function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   act(() => {
-    const proto = input instanceof HTMLTextAreaElement
-      ? window.HTMLTextAreaElement.prototype
-      : window.HTMLInputElement.prototype;
+    const proto =
+      input instanceof HTMLTextAreaElement
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value")!.set!;
     setter.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -227,7 +228,9 @@ describe("SuiteTaskEditor — evaluation tagged choice", () => {
     act(() => {
       pinBtn!.click();
     });
-    const select = h.$("select[aria-label='Pinned profile version for this task']") as HTMLSelectElement;
+    const select = h.$(
+      "select[aria-label='Pinned profile version for this task']",
+    ) as HTMLSelectElement;
     expect(select).toBeTruthy();
     expect(select.options.length).toBeGreaterThanOrEqual(1);
     cleanup(h);
@@ -275,12 +278,7 @@ describe("SuiteTaskEditor — judge instruction override", () => {
 describe("SuiteTaskEditor — editing", () => {
   it("title change calls onChange with title patch", () => {
     const onChange = vi.fn();
-    const h = render(
-      <StatefulTaskEditor
-        initialTask={makeTask()}
-        onChangeSpy={onChange}
-      />,
-    );
+    const h = render(<StatefulTaskEditor initialTask={makeTask()} onChangeSpy={onChange} />);
     const input = h.$("#task-title") as HTMLInputElement;
     typeInto(input, "New Title");
     expect(onChange).toHaveBeenCalledWith({ title: "New Title" });
@@ -289,12 +287,7 @@ describe("SuiteTaskEditor — editing", () => {
 
   it("prompt change calls onChange with prompt patch", () => {
     const onChange = vi.fn();
-    const h = render(
-      <StatefulTaskEditor
-        initialTask={makeTask()}
-        onChangeSpy={onChange}
-      />,
-    );
+    const h = render(<StatefulTaskEditor initialTask={makeTask()} onChangeSpy={onChange} />);
     const input = h.$("#task-prompt") as HTMLTextAreaElement;
     typeInto(input, "New prompt");
     expect(onChange).toHaveBeenCalledWith({ prompt: "New prompt" });
@@ -303,12 +296,7 @@ describe("SuiteTaskEditor — editing", () => {
 
   it("system prompt change calls onChange independently", () => {
     const onChange = vi.fn();
-    const h = render(
-      <StatefulTaskEditor
-        initialTask={makeTask()}
-        onChangeSpy={onChange}
-      />,
-    );
+    const h = render(<StatefulTaskEditor initialTask={makeTask()} onChangeSpy={onChange} />);
     const input = h.$("#task-system-prompt") as HTMLTextAreaElement;
     typeInto(input, "System prompt");
     expect(onChange).toHaveBeenCalledWith({ systemPrompt: "System prompt" });

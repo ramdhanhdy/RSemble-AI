@@ -20,8 +20,7 @@
 // repository delegates its begin/commit operations here.
 // =============================================================================
 
-import type { RSembleEvaluationDB } from "./database";
-import { StorageError } from "./database";
+import { type RSembleEvaluationDB, StorageError } from "./database";
 import { LEASE_KEY, type LeaseInfo } from "../execution-lease";
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
 import { mapRunStatusToAttemptStatus, selectAttemptId } from "../evaluations/experiment-engine";
@@ -84,7 +83,11 @@ function samePayload<T extends { revision: number }>(a: T, b: T): boolean {
   return canonicalJsonString(stripRevision(a)) === canonicalJsonString(stripRevision(b));
 }
 
-async function verifyFence(tx: ExperimentTx, fence: { ownerId: string; fence: number }, now: number): Promise<void> {
+async function verifyFence(
+  tx: ExperimentTx,
+  fence: { ownerId: string; fence: number },
+  now: number,
+): Promise<void> {
   const lease = await tx.getLease();
   if (!lease) {
     throw new StorageError("conflict", "Execution lease not held");
@@ -119,7 +122,8 @@ export async function beginExperimentTaskCore(
 
   const experiment = await tx.getExperiment(input.experimentId);
   if (!experiment) throw new StorageError("conflict", `Experiment ${input.experimentId} not found`);
-  if (!isExperimentRecord(experiment)) throw new StorageError("validation", "Invalid experiment data");
+  if (!isExperimentRecord(experiment))
+    throw new StorageError("validation", "Invalid experiment data");
 
   const existingRun = await tx.getRunDetail(input.run.id);
   if (existingRun) {
@@ -202,7 +206,8 @@ export async function commitExperimentTaskTerminalCore(
 
   const experiment = await tx.getExperiment(input.experimentId);
   if (!experiment) throw new StorageError("conflict", `Experiment ${input.experimentId} not found`);
-  if (!isExperimentRecord(experiment)) throw new StorageError("validation", "Invalid experiment data");
+  if (!isExperimentRecord(experiment))
+    throw new StorageError("validation", "Invalid experiment data");
 
   const task = findTask(experiment, input.taskId);
   const attempt = task.attempts.find((a) => a.id === input.attemptId);
@@ -343,7 +348,9 @@ export class DexieExperimentStore implements ExperimentTxStore {
               sourceProtocolFingerprint:
                 summary.source.kind === "experiment" ? summary.source.protocolFingerprint : null,
               sourceExperimentTaskAttemptId:
-                summary.source.kind === "experiment" ? summary.source.experimentTaskAttemptId : null,
+                summary.source.kind === "experiment"
+                  ? summary.source.experimentTaskAttemptId
+                  : null,
               modelKeys: summary.modelKeys,
             });
           },

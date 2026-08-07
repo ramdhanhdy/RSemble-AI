@@ -3,7 +3,11 @@ import http from "node:http";
 export const BRIDGE_SERVICE = "rsemble-codex-bridge";
 
 /** Return true only when the occupied port belongs to a marked RSemble bridge. */
-export function probeReusableBridge(host: string, port: number, timeoutMs = 1_000): Promise<boolean> {
+export function probeReusableBridge(
+  host: string,
+  port: number,
+  timeoutMs = 1_000,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.get({ host, port, path: "/health", timeout: timeoutMs }, (res) => {
       let body = "";
@@ -14,7 +18,9 @@ export function probeReusableBridge(host: string, port: number, timeoutMs = 1_00
       res.on("end", () => {
         try {
           const payload = JSON.parse(body) as { status?: string; service?: string };
-          resolve(res.statusCode === 200 && payload.status === "ok" && payload.service === BRIDGE_SERVICE);
+          resolve(
+            res.statusCode === 200 && payload.status === "ok" && payload.service === BRIDGE_SERVICE,
+          );
         } catch {
           resolve(false);
         }

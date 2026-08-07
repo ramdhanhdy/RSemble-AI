@@ -13,8 +13,10 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Action } from "../studio-engine";
-import type { AdHocEvaluationConfig } from "../lib/evaluations/evaluation-profile-adhoc";
-import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
+import {
+  type AdHocEvaluationConfig,
+  HOLISTIC_EVALUATION,
+} from "../lib/evaluations/evaluation-profile-adhoc";
 import { EvaluationProfileEditor } from "./EvaluationProfileEditor";
 import type { EvaluationProfile } from "../lib/evaluations/evaluation-types";
 
@@ -49,7 +51,11 @@ export function EvaluationDisclosure({
       </button>
 
       {open && (
-        <div id="evaluation-panel" data-geometry="evaluation-panel" className="space-y-3 border-t border-edge px-3 py-3">
+        <div
+          id="evaluation-panel"
+          data-geometry="evaluation-panel"
+          className="space-y-3 border-t border-edge px-3 py-3"
+        >
           <EvaluationModeSelector evaluation={evaluation} dispatch={dispatch} />
 
           {evaluation.kind !== "holistic" && (
@@ -67,7 +73,6 @@ export function EvaluationDisclosure({
               }}
             />
           )}
-
         </div>
       )}
     </div>
@@ -122,7 +127,15 @@ function EvaluationModeSelector({
   );
 }
 
-function ModeOption({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function ModeOption({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -132,7 +145,9 @@ function ModeOption({ label, active, onClick }: { label: string; active: boolean
         active ? "bg-accent/10 text-accent" : "text-text-secondary hover:bg-card-hover"
       }`}
     >
-      <span className={`flex h-4 w-4 items-center justify-center rounded-full border ${active ? "border-accent bg-accent" : "border-edge-bright"}`}>
+      <span
+        className={`flex h-4 w-4 items-center justify-center rounded-full border ${active ? "border-accent bg-accent" : "border-edge-bright"}`}
+      >
         {active && <span className="h-2 w-2 rounded-full bg-on-accent" />}
       </span>
       {label}

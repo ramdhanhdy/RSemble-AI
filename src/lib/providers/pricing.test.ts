@@ -37,15 +37,20 @@ afterEach(() => {
 
 describe("parseOpenRouterPricing", () => {
   it("parses exact per-token pricing components from the models catalog", () => {
-    const snapshot = parseOpenRouterPricing("openrouter", "vendor/model", {
-      prompt: "0.0000015",
-      completion: "0.000006",
-      reasoning: "0.000006",
-      input_cache_read: "0.00000015",
-      input_cache_write: "0.0000015",
-      request: "0.0005",
-      image: "0.003",
-    }, 1000);
+    const snapshot = parseOpenRouterPricing(
+      "openrouter",
+      "vendor/model",
+      {
+        prompt: "0.0000015",
+        completion: "0.000006",
+        reasoning: "0.000006",
+        input_cache_read: "0.00000015",
+        input_cache_write: "0.0000015",
+        request: "0.0005",
+        image: "0.003",
+      },
+      1000,
+    );
     expect(snapshot).toEqual({
       providerId: "openrouter",
       modelId: "vendor/model",
@@ -77,11 +82,16 @@ describe("parseOpenRouterPricing", () => {
 describe("pricing persistence across reloads", () => {
   it("persists catalog pricing so a reload keeps Estimated costs instead of Unknown", async () => {
     const store = stubStorage();
-    const snapshot = parseOpenRouterPricing("openrouter", "z-ai/glm-5.2", {
-      prompt: "0.0000006",
-      completion: "0.0000022",
-      reasoning: "0.0000006",
-    }, 42)!;
+    const snapshot = parseOpenRouterPricing(
+      "openrouter",
+      "z-ai/glm-5.2",
+      {
+        prompt: "0.0000006",
+        completion: "0.0000022",
+        reasoning: "0.0000006",
+      },
+      42,
+    )!;
     setModelPricing(snapshot);
     await flush();
     expect(store.get("rsemble.catalog.pricing.v1")).toBeDefined();
@@ -135,7 +145,12 @@ describe("pricing persistence across reloads", () => {
 
 describe("model pricing registry", () => {
   it("round-trips exact provider-scoped snapshots", () => {
-    const snapshot = parseOpenRouterPricing("openrouter", "org/model", { prompt: "0.5", completion: "1.5" }, 7)!;
+    const snapshot = parseOpenRouterPricing(
+      "openrouter",
+      "org/model",
+      { prompt: "0.5", completion: "1.5" },
+      7,
+    )!;
     expect(snapshot).toBeDefined();
     setModelPricing(snapshot);
     expect(getModelPricing("openrouter", "org/model")).toEqual(snapshot);

@@ -8,8 +8,7 @@
 // confusing transport failure.
 // =============================================================================
 
-import type { ProviderId } from "./types";
-import { ProviderError } from "./types";
+import { type ProviderId, ProviderError } from "./types";
 import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 
 /**
@@ -26,7 +25,7 @@ export function assertBridgeBodyWithinLimit(
   const limitMib = (limitBytes / (1024 * 1024)).toFixed(1);
   throw new ProviderError(
     `Encoded request body (~${mib} MiB) exceeds the ${limitMib} MiB local bridge limit. Reduce attachment sizes or use a provider that accepts them.`,
-    providerId
+    providerId,
   );
 }
 

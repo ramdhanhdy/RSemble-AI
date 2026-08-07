@@ -38,10 +38,7 @@ export function Pagination({
   const nextDisabled = current >= pageCount;
 
   return (
-    <nav
-      aria-label="Pagination"
-      className="flex min-w-0 items-center justify-between gap-2"
-    >
+    <nav aria-label="Pagination" className="flex min-w-0 items-center justify-between gap-2">
       <span className="min-w-0 text-xs tabular-nums text-text-muted">
         {start}–{end} of {totalItems}
       </span>

@@ -13,18 +13,25 @@ import { Link } from "react-router-dom";
 import { AlertCircle, FlaskConical, Play } from "lucide-react";
 import type { FusionStudyRepository } from "../../lib/persistence/fusion-study-repository";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
-import type { EvaluationSuite, EvaluationProfileSnapshot } from "../../lib/evaluations/evaluation-types";
+import {
+  type EvaluationSuite,
+  type EvaluationProfileSnapshot,
+  type EvaluationProfile,
+  type EvaluationProfileRef,
+} from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel, CriticRef } from "../../lib/providers/types";
 import type { FusionStudy, PoolManifestVersion } from "../../lib/evaluations/fusion-study-types";
 import { BUILTIN_FUSION_RECIPES } from "../../lib/evaluations/fusion-recipes";
 import { computeProtocolFingerprint } from "../../lib/evaluations/protocol-fingerprint";
-import type { EvaluationProfile, EvaluationProfileRef } from "../../lib/evaluations/evaluation-types";
 import {
   validateJudgePair,
   validatePoolManifest,
   validateStudy,
 } from "../../lib/evaluations/fusion-study-validation";
-import { createFusionStudyController, type FusionPolicyExecutor } from "../../lib/evaluations/fusion-study-controller";
+import {
+  createFusionStudyController,
+  type FusionPolicyExecutor,
+} from "../../lib/evaluations/fusion-study-controller";
 import { createLiveFusionExecutor } from "../../lib/evaluations/fusion-live-executor";
 import {
   DEFAULT_SHORTLIST_RULE,
@@ -42,7 +49,13 @@ export interface FusionStudyPanelProps {
   executor?: FusionPolicyExecutor;
 }
 
-export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor }: FusionStudyPanelProps) {
+export function FusionStudyPanel({
+  fusionRepo,
+  evalRepo,
+  suite,
+  models,
+  executor,
+}: FusionStudyPanelProps) {
   const [studies, setStudies] = useState<FusionStudy[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createErrors, setCreateErrors] = useState<string[]>([]);
@@ -51,7 +64,10 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
 
   const reload = useCallback(() => {
     if (!fusionRepo) return;
-    void fusionRepo.listStudies(suite.id).then(setStudies).catch(() => setError("Failed to load studies."));
+    void fusionRepo
+      .listStudies(suite.id)
+      .then(setStudies)
+      .catch(() => setError("Failed to load studies."));
   }, [fusionRepo, suite.id]);
 
   useEffect(() => {
@@ -81,7 +97,9 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
       const judge2Model =
         judge2Options.find((m) => `${m.providerId}:${m.id}` === judge2Key) ?? judge2Options[0];
       if (!judge2Model) {
-        setCreateErrors(["A holdout judge (Judge 2) is required — configure a second judge model."]);
+        setCreateErrors([
+          "A holdout judge (Judge 2) is required — configure a second judge model.",
+        ]);
         return;
       }
       const judge2: CriticRef = { providerId: judge2Model.providerId, model: judge2Model.id };
@@ -177,7 +195,10 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
   async function resolveProfile(): Promise<EvaluationProfileSnapshot | null> {
     if (!evalRepo) return null;
     if (suite.defaultEvaluation.kind === "profile") {
-      return evalRepo.getProfile(suite.defaultEvaluation.profile.id, suite.defaultEvaluation.profile.version);
+      return evalRepo.getProfile(
+        suite.defaultEvaluation.profile.id,
+        suite.defaultEvaluation.profile.version,
+      );
     }
     return null;
   }
@@ -200,7 +221,11 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
         id: `fusion-conf-${crypto.randomUUID()}`,
         revision: 0,
         kind: "confirmation",
-        suiteRef: { suiteId: suite.id, suiteVersion: suite.version, protocolFingerprint: fingerprint },
+        suiteRef: {
+          suiteId: suite.id,
+          suiteVersion: suite.version,
+          protocolFingerprint: fingerprint,
+        },
         poolRef: sourceStudy.poolRef,
         judge1: sourceStudy.judge1,
         judge2: sourceStudy.judge2,
@@ -307,7 +332,10 @@ export function FusionStudyPanel({ fusionRepo, evalRepo, suite, models, executor
         </label>
       )}
       {createErrors.length > 0 && (
-        <ul className="flex flex-col gap-0.5 text-xs text-red-400" data-testid="fusion-create-errors">
+        <ul
+          className="flex flex-col gap-0.5 text-xs text-red-400"
+          data-testid="fusion-create-errors"
+        >
           {createErrors.map((e) => (
             <li key={e}>{e}</li>
           ))}
