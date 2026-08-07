@@ -54,12 +54,10 @@ export class RouteErrorBoundary extends Component<
             type="button"
             className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text transition-colors duration-150 hover:border-edge-bright hover:text-text"
             onClick={() => {
-              if (this.state.error && this.state.error.name === "ChunkLoadError") {
-                // Remote modules can be re-requested once the network recovers.
-                window.location.reload();
-              } else {
-                this.dismiss();
-              }
+              // Reload re-requests the current route's lazy chunk after a
+              // transient load failure. Rolldown does not tag chunk errors with
+              // a "ChunkLoadError" name, so reload is the robust recovery.
+              window.location.reload();
             }}
           >
             Retry

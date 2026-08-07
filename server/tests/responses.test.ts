@@ -433,3 +433,89 @@ describe("handleCompletions — content parts (7.4.3)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Adapter-driven paths — Plan 008 W/D: non-streaming accumulate and streaming
+// both route event parsing through parseCodexSseEvent.
+// ---------------------------------------------------------------------------
+
+describe("handleCompletions — adapter-driven non-streaming (Plan 008 W/D)", () => {
+  it("accumulates text deltas and returns an OpenAI-style non-streaming body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"lo"}\n\n',
+          'data: {"type":"response.output_text.done","text":"Hello"}\n\n',
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, {
+      getToken: authOk,
+    });
+
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.choices[0].message.content).toBe("Hello");
+    expect(body.object).toBe("chat.completion");
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const upstream = JSON.parse(init.body as string);
+    expect(upstream.stream).toBe(true);
+    expect(upstream.model).toBe("gpt-5.6-sol");
+  });
+
+  it("prefers response.output_text.done when no delta precedes it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.done","text":"done-text"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.choices[0].message.content).toBe("done-text");
+  });
+
+  it("surfaces a compatibility classification on a protocol-rejected 400", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "invalid request: unexpected field 'foo'" } }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.error.type).toBe("codex_error");
+    expect(body.error.compatibility).toBe("protocol_shape_changed");
+  });
+});
+
+describe("handleCompletions — adapter-driven streaming (Plan 008 W/D)", () => {
+  it("routes delta events through parseCodexSseEvent into chat.completion.chunk SSE", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"hi"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+
+    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => c[0] as string,
+    );
+    const sse = writes.join("");
+    expect(sse).toContain('"delta":{"content":"hi"}');
+    expect(sse).toContain("data: [DONE]");
+  });
+});

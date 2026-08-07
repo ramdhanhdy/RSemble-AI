@@ -55,13 +55,28 @@ function buildBody(payload: Record<string, unknown>, hasParts: boolean): string 
  *  recognized structured messages are bounded and credential-redacted; unknown
  *  JSON, plain text, and HTML bodies become a generic status error. The raw
  *  body never reaches ProviderError.message. */
+/**
+ * Parse a bridge error, surfacing the Codex compatibility diagnosis distinctly
+ * when the bridge classified protocol drift (Plan 008 W/D) instead of hiding it
+ * as a generic network failure. The raw body is still bounded + credential
+ * redacted by providerErrorDetail.
+ */
 async function parseBridgeError(res: Response, label: string): Promise<ProviderError> {
   const raw = await readBoundedResponseText(res).catch(() => "");
-  return new ProviderError(
-    providerErrorDetail(raw, label, res.status),
-    "chatgpt-codex",
-    res.status,
-  );
+  // The bridge may attach an experimental-integration compatibility category
+  // (e.g. protocol_shape_changed) on its JSON error body. Read it structurally
+  // BEFORE sanitizing so the classification is preserved.
+  let compatibility: string | undefined;
+  try {
+    const parsed = JSON.parse(raw) as { error?: { compatibility?: string } };
+    const cat = parsed?.error?.compatibility;
+    if (typeof cat === "string" && cat.length > 0) compatibility = cat;
+  } catch {
+    // non-JSON body: no compatibility field to surface; fall through.
+  }
+  const detail = providerErrorDetail(raw, label, res.status);
+  const message = compatibility ? `[Codex compatibility: ${compatibility}] ${detail}` : detail;
+  return new ProviderError(message, "chatgpt-codex", res.status);
 }
 
 function deadlinePolicy(opts: ChatOptions): typeof PROVIDER_DEADLINES {
@@ -213,7 +228,18 @@ export const chatgptCodexProvider: LLMProvider = {
         if (isExecutionTimeoutError(err)) throw err;
         const abort = providerAbortError(err, composed.signal);
         if (abort !== null) throw abort;
-        if (err instanceof ProviderError) throw err;
+        if (err instanceof ProviderError) {
+          // Surf a truncated Codex stream as a distinct experimental-integration
+          // diagnosis (Plan 008 W/D), not a generic network failure.
+          if (/stream ended unexpectedly|incomplete/.test(err.message)) {
+            throw new ProviderError(
+              `[Codex compatibility: stream_terminated_unexpectedly] ${err.message}`,
+              err.providerId,
+              err.status,
+            );
+          }
+          throw err;
+        }
         throw new ProviderError(
           "Network error reaching Codex bridge on 127.0.0.1. Ensure bridge is running.",
           "chatgpt-codex",

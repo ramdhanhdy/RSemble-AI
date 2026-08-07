@@ -216,39 +216,27 @@ export async function handleCompletions(
               if (!line || !line.startsWith("data:")) continue;
 
               const payloadStr = line.slice(5).trim();
-              if (payloadStr === "[DONE]") {
+              const evt = parseCodexSseEvent(payloadStr);
+              if (evt.type === "done") {
                 await writeChunk(res, "data: [DONE]\n\n");
                 res.end();
                 return;
               }
-
-              try {
-                const parsed = JSON.parse(payloadStr) as {
-                  type?: string;
-                  delta?: string;
-                  text?: string;
+              if (evt.type === "text_delta") {
+                const sseChunk = {
+                  id: `chatcmpl-${Date.now()}`,
+                  object: "chat.completion.chunk",
+                  created: Math.floor(Date.now() / 1000),
+                  model: modelSlug,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: evt.delta },
+                      finish_reason: null,
+                    },
+                  ],
                 };
-                if (
-                  parsed.type === "response.output_text.delta" &&
-                  typeof parsed.delta === "string"
-                ) {
-                  const sseChunk = {
-                    id: `chatcmpl-${Date.now()}`,
-                    object: "chat.completion.chunk",
-                    created: Math.floor(Date.now() / 1000),
-                    model: modelSlug,
-                    choices: [
-                      {
-                        index: 0,
-                        delta: { content: parsed.delta },
-                        finish_reason: null,
-                      },
-                    ],
-                  };
-                  await writeChunk(res, `data: ${JSON.stringify(sseChunk)}\n\n`);
-                }
-              } catch {
-                // Buffer incomplete JSON payload across chunk boundaries
+                await writeChunk(res, `data: ${JSON.stringify(sseChunk)}\n\n`);
               }
             }
           }
@@ -321,14 +309,13 @@ export async function handleCompletions(
       ],
     });
   } catch (err) {
-    // A bridge-internal failure is not a diagnosable upstream protocol change;
-    // classify conservatively rather than mislabeling a generic network error.
-    const compat = classifyCodexOutcome({ httpStatus: null });
+    // A bridge-internal failure is NOT an upstream compatibility diagnosis, so
+    // it must not be mislabeled as bridge_unavailable (the bridge is reachable
+    // but threw internally). Omit the compatibility field entirely.
     sendJson(res, 500, {
       error: {
         message: `Bridge error: ${err instanceof Error ? err.message : String(err)}`,
         type: "bridge_internal_error",
-        compatibility: compat.category,
       },
     });
   } finally {

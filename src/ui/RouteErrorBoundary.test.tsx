@@ -104,4 +104,29 @@ describe("RouteErrorBoundary", () => {
     expect(h.text()).not.toContain("could not be loaded");
     h.cleanup();
   });
+
+  it("Retry triggers a reload to recover from a failed chunk load", () => {
+    const spy = suppressBoundaryConsole();
+    const h = render(
+      <RouteErrorBoundary>
+        <Bomber armedRef={{ armed: true }}>inner</Bomber>
+      </RouteErrorBoundary>,
+    );
+    spy.mockRestore();
+    expect(h.text()).toContain("could not be loaded");
+
+    const reload = vi.fn();
+    Object.defineProperty(window, "location", {
+      value: { reload },
+      writable: true,
+    });
+
+    act(() => {
+      h.$$("button")
+        .find((b) => b.textContent === "Retry")
+        ?.click();
+    });
+    expect(reload).toHaveBeenCalled();
+    h.cleanup();
+  });
 });
