@@ -11,14 +11,22 @@
 ## Environment
 
 - **Commit (baseline)**: `d1740f1` (post-Plan-007 master, PR #7 merge)
-- **Final (post-implementation)**: (filled at Workstream F)
+- **Final (post-implementation)**: `24764c4` (the commit that recorded the Workstream F
+  after-measurement; the after build ran at the implementation head `1ae1c45`)
 - **Node**: v22.22.1
 - **Build tool**: Vite 8.1.5 (Rolldown), `react` + `terminalDevLogPlugin`
 - **Vite config manual chunks**: none (`vite.config.ts`)
-- **Measurement command**: `npm run build` (reproducible; sourcemap parse used
-  for module→chunk attribution)
+- **Measurement command**: `npm run build` (package.json: `tsc -b && vite build`);
+  module→chunk attribution used a separate `npx vite build --outDir /tmp --sourcemap`
+  pass whose `.map` `sources`/`sourcesContent` arrays were parsed to attribute
+  module bytes to chunks (no attribution script is checked in; the parse is
+  reproducible with any sourcemap reader). gzip totals are the values reported
+  by Vite's build reporter for each chunk.
 - **Cold/warm**: cold build each run; chunk hash reshuffling between runs does
   not change sizes.
+- **Terminology**: "raw parse" = the sourcemap-attributed module-byte total for a
+  chunk (pre-minification), which differs from the Vite-reported minified file
+  size used elsewhere in the tables; unit is kB.
 
 ## What loads on Compare startup (initial path)
 
@@ -67,7 +75,7 @@ for images / direct text read), and Compare startup pays no parser cost.
 
 | Hypothesis | Evidence of problem | Decision |
 | --- | --- | --- |
-| Remove unused `docx` dependency | Zero imports anywhere; runtime deps only | **IMPLEMENTED** (moved to devDependencies; app never bundled it) |
+| Remove unused `docx` dependency | No application/runtime imports (src/server/shared clean); imported only by the dev-only research generator `docs/research/generate-docx.cjs` | **IMPLEMENTED** (moved to devDependencies; never bundled) |
 | Add error boundary below root providers | No error boundary anywhere; a failed lazy chunk unmounts ROOT and destroys Compare | **IMPLEMENTED** |
 | Extract `CodexProtocolAdapter` + fixtures | Protocol constants/translation scatted in responses.ts/auth.ts | **IMPLEMENTED** |
 | Lazy @base-ui Dialog / shell overlays | ~98 kB eager @base-ui | **REJECTED** — @base-ui required eagerly by the Compare run dialog (CommandPane); splitting adds a11y/focus/modal risk for marginal gzip gain |
@@ -86,24 +94,27 @@ rejected on evidence, the initial bundle is essentially unchanged.
 
 | Initial chunk | baseline raw | after raw |
 | --- | --- | --- |
-| index-*.js | 629.40 kB | 630.73 kB (614.6 raw parse) |
+| index-*.js | 629.40 kB | 630.73 kB (Vite reporter; on-disk 615.9 kB) |
 | createLucideIcon-*.js | 49.77 kB | 48.6 kB |
 | run-types-*.js | 110.45 kB | 107.9 kB |
 | rolldown-runtime + preload-helper | 2.45 kB | 2.4 kB |
-| **Initial total** | **792.07 kB** | **789.7 kB** (gzip ~same ~240 kB) |
+| **Initial total** | **792.07 kB** | **789.7 kB** (after gzip totals not re-summed; Vite reporter showed index gzip 185.22 kB vs baseline 184.93 kB) |
 
 The index chunk grew by ~1.3 kB (the RouteErrorBoundary added to the eager
-shell — the price of the chunk-failure safety fix). Module-percentage variance
-(614.6 vs 629.4) reflects Prettier/hash reshuffling between the two build runs,
-not a semantic change. No lazy chunk increased; PDF/lib/Runs/Evaluations
-unchanged.
+shell — the price of the chunk-failure safety fix). The gap between the Vite
+reporter figure (629.40/630.73 kB) and the on-disk minified file (614.62 kB at
+baseline, 615.9 kB after) is the systematic reporter-vs-disk measurement gap
+observed at every commit, not build-to-build reshuffling. No lazy chunk
+increased; PDF/lib/Runs/Evaluations unchanged.
 
 **Budget recommendation** (modest headroom, robust to harmless hash reshuffling):
-- initial JS budget: **≤ 900 kB raw** / **≤ 280 kB gzip** (headroom above the
-  recorded ~790/~240, so harmless dedup/renaming does not fail CI);
+- initial JS budget: **≤ 910 kB raw** / **≤ 275 kB gzip** — computed as +15% of
+  the authoritative baseline totals (792.07 × 1.15 = 910.88 raw; 239.52 × 1.15 =
+  275.45 gzip), rounded down to whole kB so harmless dedup/renaming does not fail CI;
 - unexpected-growth threshold: the CI should fail if the initial gzip total
-  regresses by more than **+15%** from the recorded ~240 kB on a clean build.
-  Do not gate on chunk counts or hashes (they reshuffle constantly).
+  regresses by more than **+15%** from the recorded baseline **239.52 kB** on a
+  clean build (i.e. above 275.45 kB). Do not gate on chunk counts or hashes
+  (they reshuffle constantly).
 
 These budgets are advisory in this branch (CI is owner-managed); they are
 recorded here for a future owner-owned gate.

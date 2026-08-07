@@ -42,7 +42,8 @@ upstream directly.
 | OAuth token endpoint | `CODEX_OAUTH_TOKEN_ENDPOINT` | `protocol.ts` |
 | Default model slug | `CODEX_DEFAULT_MODEL` | `protocol.ts` |
 | Bridge secret header | `X-RSemble-Bridge-Secret` (D3) | `index.ts` |
-| Bridge endpoint (web) | `127.0.0.1:8787` | `chatgpt-codex.ts` |
+| Bridge endpoint (web) | `VITE_CODEX_BRIDGE_URL`, default `http://127.0.0.1:8787` | `chatgpt-codex.ts` |
+| Bridge listen port | `RSEMBLE_CODEX_BRIDGE_PORT`, default `8787` (host fixed at `127.0.0.1`) | `index.ts` |
 
 ## Failure classification
 

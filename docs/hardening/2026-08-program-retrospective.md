@@ -16,7 +16,7 @@
 | 005 | Execution reliability and cross-tab leases | merged | — |
 | 006 | Quality gate and documentation reconciliation | merged | — |
 | 007 | Controlled maintainability extraction | **PR #7** `refactor/controlled-maintainability` → merged as `d1740f1` | `649bae3` |
-| 008 | Measured loading and protocol compatibility | **PR (this)** `perf/measured-loading-and-protocol` (draft) | `24764c4` |
+| 008 | Measured loading and protocol compatibility | **PR #9** `perf/measured-loading-and-protocol` (draft) | `97b74d3` |
 
 ## Important findings fixed across the program
 
@@ -192,6 +192,7 @@ Plans 003–007 cross-phase invariants 1–10 and decisions D1–D6 remain intac
 
 - `npm ci` clean. `format:check`, `lint`, `typecheck:web`, `typecheck:server`,
   `test`, `test:coverage`, `build`, `check` all pass; `git diff --check` clean.
-- **145 test files / 2100 tests**.
-- **Coverage**: statements **79.21** / branches **72.20** / functions **80.94** /
-  lines **83.34** — above the enforced global and targeted thresholds.
+- **145 test files / 2136 tests** (includes the 20 tests added by the adversarial-review and
+  edge-case commits plus 16 CodeRabbit-correction tests).
+- **Coverage**: statements **79.69** / branches **72.67** / functions **81.02** /
+  lines **83.82** — above the enforced global and targeted thresholds.
