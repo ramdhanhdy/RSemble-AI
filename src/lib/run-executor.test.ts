@@ -1112,17 +1112,27 @@ describe("executeTask — candidateExecution (Task 10)", () => {
 
 describe("run-executor — dev log containment", () => {
   it("never forwards raw err.stack to the terminal logger", () => {
-    const source = readFileSync(join(process.cwd(), "src/lib/run-executor.ts"), "utf8");
-    expect(source).not.toContain("stack: err.stack");
-    expect(source).not.toMatch(/devTerminalLog\([\s\S]{0,200}?stack/);
+    // Stage/fanout logging lives in execution-stages (Plan 007 Workstream B);
+    // orchestration-level logging stayed in run-executor.
+    const files = ["src/lib/run-executor.ts", "src/lib/execution-stages.ts"];
+    for (const file of files) {
+      const source = readFileSync(join(process.cwd(), file), "utf8");
+      expect(source).not.toContain("stack: err.stack");
+      expect(source).not.toMatch(/devTerminalLog\([\s\S]{0,200}?stack/);
+    }
   });
 
   it("logs only the sanitized error message for provider failures", () => {
-    const source = readFileSync(join(process.cwd(), "src/lib/run-executor.ts"), "utf8");
     // The sanitized PersistedError message is the only error payload passed to
-    // devTerminalLog; raw bodies/stacks must not cross that boundary.
-    expect(source).toContain("error: error.message");
-    expect(source).not.toContain("JSON.stringify(err)");
+    // devTerminalLog; raw bodies/stacks must not cross that boundary. In the
+    // Compare spine this lives in execution-stages; keep run-executor covered too.
+    const files = ["src/lib/run-executor.ts", "src/lib/execution-stages.ts"];
+    for (const file of files) {
+      const source = readFileSync(join(process.cwd(), file), "utf8");
+      expect(source).not.toContain("JSON.stringify(err)");
+    }
+    const stages = readFileSync(join(process.cwd(), "src/lib/execution-stages.ts"), "utf8");
+    expect(stages).toContain("error: error.message");
   });
 });
 
