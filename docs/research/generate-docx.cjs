@@ -1,5 +1,9 @@
 // LLM Fusion Research Report — professional DOCX generator
 // Uses docx-js to produce a client-facing Word document from the research.
+// The `docx` package is a devDependency: this generator is a standalone offline
+// research tool, never imported by app source or bundled into the app. Moving
+// it out of `dependencies` keeps it off the production dependency surface while
+// preserving the generator (run with node docs/research/generate-docx.cjs).
 
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,

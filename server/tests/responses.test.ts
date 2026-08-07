@@ -433,3 +433,248 @@ describe("handleCompletions — content parts (7.4.3)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Adapter-driven paths — Plan 008 W/D: non-streaming accumulate and streaming
+// both route event parsing through parseCodexSseEvent.
+// ---------------------------------------------------------------------------
+
+describe("handleCompletions — adapter-driven non-streaming (Plan 008 W/D)", () => {
+  it("accumulates text deltas and returns an OpenAI-style non-streaming body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"lo"}\n\n',
+          'data: {"type":"response.output_text.done","text":"Hello"}\n\n',
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, {
+      getToken: authOk,
+    });
+
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.choices[0].message.content).toBe("Hello");
+    expect(body.object).toBe("chat.completion");
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const upstream = JSON.parse(init.body as string);
+    expect(upstream.stream).toBe(true);
+    expect(upstream.model).toBe("gpt-5.6-sol");
+  });
+
+  it("prefers response.output_text.done when no delta precedes it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.done","text":"done-text"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.choices[0].message.content).toBe("done-text");
+  });
+
+  it("surfaces a compatibility classification on a protocol-rejected 400", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "invalid request: unexpected field 'foo'" } }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.error.type).toBe("codex_error");
+    expect(body.error.compatibility).toBe("protocol_shape_changed");
+  });
+});
+
+describe("handleCompletions — adapter-driven streaming (Plan 008 W/D)", () => {
+  it("routes delta events through parseCodexSseEvent into chat.completion.chunk SSE", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"hi"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+
+    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => c[0] as string,
+    );
+    const sse = writes.join("");
+    expect(sse).toContain('"delta":{"content":"hi"}');
+    expect(sse).toContain("data: [DONE]");
+  });
+});
+
+describe("handleCompletions — terminal detection (Plan 008 W/D)", () => {
+  it("terminates normally when the upstream [DONE] sentinel is seen", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"ok"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+    const sse = (res.write as ReturnType<typeof vi.fn>).mock.calls
+      .map((c: unknown[]) => c[0] as string)
+      .join("");
+    expect(sse).toContain("data: [DONE]");
+  });
+
+  it("does not forge a [DONE] when the stream is truncated (no terminal event)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.delta","delta":"partial"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => c[0] as string,
+    );
+    const sse = writes.join("");
+    expect(sse).toContain("partial");
+    expect(sse).not.toContain("data: [DONE]");
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it("returns a successful body after a normally terminated non-streaming stream", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"lo"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.choices[0].message.content).toBe("Hello");
+    expect(body.error).toBeUndefined();
+  });
+
+  it("drops same-chunk events after output_text.done in the non-streaming path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"A"}\n\n',
+          'data: {"type":"response.output_text.done","text":"T"}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"B"}\n\n',
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    // output_text.done is a terminal: the trailing same-chunk delta must
+    // not be appended; the earlier delta text is preserved.
+    expect(body.choices[0].message.content).toBe("A");
+  });
+  it("ignores post-terminal deltas after [DONE] in the non-streaming path (CR-20)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
+          "data: [DONE]\n\n",
+          'data: {"type":"response.output_text.delta","delta":"LEAK"}\n\n',
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    // First-terminal semantics: content after [DONE] must be excluded.
+    expect(body.choices[0].message.content).toBe("Hel");
+  });
+
+  it("returns a stream_terminated_unexpectedly error after a truncated non-streaming stream", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.delta","delta":"partial"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.error.type).toBe("codex_error");
+    expect(body.error.compatibility).toBe("stream_terminated_unexpectedly");
+    expect(body.error.message).toMatch(/stream|truncat|incomplete/i);
+  });
+
+  it("keeps output_text.done-only text usable in the non-streaming path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.done","text":"done-text"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.choices[0].message.content).toBe("done-text");
+    expect(body.error).toBeUndefined();
+  });
+
+  it("forwards output_text.done text as a delta and terminates in the streaming path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.done","text":"done-text"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+    const sse = (res.write as ReturnType<typeof vi.fn>).mock.calls
+      .map((c: unknown[]) => c[0] as string)
+      .join("");
+    expect(sse).toContain("done-text");
+    expect(sse).toContain("data: [DONE]");
+  });
+  it("ends a streaming request without [DONE] when the successful upstream response has no body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+
+    // SSE headers were sent for the streaming request...
+    expect(res.writeHead).toHaveBeenCalledWith(
+      200,
+      expect.objectContaining({ "Content-Type": "text/event-stream" }),
+    );
+    // ...but no [DONE] is forged and no JSON body is written after headers.
+    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => c[0] as string,
+    );
+    expect(writes.join("")).not.toContain("data: [DONE]");
+    // The stream ends without a JSON payload (no 502 body after SSE headers);
+    // a fallthrough into the non-streaming path would have written one.
+    const endArgs = (res.end as ReturnType<typeof vi.fn>).mock.calls;
+    expect(endArgs.length).toBeGreaterThan(0);
+    expect(endArgs.every((c: unknown[]) => typeof c[0] !== "string")).toBe(true);
+  });
+});

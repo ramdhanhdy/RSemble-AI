@@ -17,7 +17,7 @@ work completes.
 | [005](./005-execution-reliability-and-cross-tab-leases.md) | Add execution deadlines and cross-tab coordination | P1 | L | 004 | DONE — owner validation pending |
 | [006](./006-quality-gate-and-documentation-reconciliation.md) | Establish a complete quality gate and reconcile documentation | P1 | L | 005 | DONE — draft PR open; merge pending owner review |
 | [007](./007-controlled-maintainability-extraction.md) | Reduce module responsibility convergence without behavior drift | P2 | XL | 006 | DONE — draft PR open; merge pending owner review |
-| [008](./008-measured-loading-and-protocol-compatibility.md) | Optimize loading and isolate protocol-sensitive integrations | P3 | L | 007 | TODO |
+| [008](./008-measured-loading-and-protocol-compatibility.md) | Optimize loading and isolate protocol-sensitive integrations | P3 | L | 007 | DONE — draft PR open; merge pending owner review |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` (with one-line
 reason) | `REJECTED` (with one-line rationale).

@@ -89,6 +89,12 @@ full specification):
 |---|---|---|
 | OpenRouter (`openrouter`) | direct browser | `VITE_OPENROUTER_KEY` |
 | ChatGPT subscription via Codex bridge (`chatgpt-codex`) | localhost bridge | Codex CLI login |
+
+> **Codex: experimental integration.** The Codex upstream protocol is not a
+> public, stable API. It is isolated behind a `CodexProtocolAdapter` with
+> fixture-based compatibility tests; protocol drift surfaces as a distinct
+> diagnosis, not a generic network failure. See
+> [docs/hardening/codex-compatibility.md](docs/hardening/codex-compatibility.md).
 | Gemini AI Studio (`gemini`) | direct browser | `VITE_GEMINI_KEY` |
 | DeepSeek (`deepseek`) | direct browser | `VITE_DEEPSEEK_KEY` |
 | CommandCode (`commandcode`) | direct browser | `VITE_COMMANDCODE_KEY` |
@@ -238,6 +244,27 @@ the judge settings).
   one tab runs a given execution at a time, with explicit takeover and
   deadline-based recovery. See [PROVIDERS.md §20](./PROVIDERS.md) and
   [DECISIONS.md #11](./DECISIONS.md).
+
+## Loading behavior
+
+RSemble keeps the common **Compare** workflow in the initial bundle and loads
+optional heavy surfaces on demand so startup stays fast:
+
+- **Runs, Evaluations, suites, profiles, fusion study, and experiment detail**
+  are route-lazy — they load the first time you navigate to them.
+- **PDF parsing** (PDF.js) and **`.docx` text extraction** (Mammoth) load only
+  when you attach that file type, not on Compare startup. The text/image
+  attachment path loads neither parser.
+- A **route error boundary** keeps the Compare/execution state alive if a lazy
+  chunk fails to load; the view offers Retry instead of resetting the app.
+
+Expected first-use parser delay: a few hundred milliseconds for a PDF/`.docx`
+when the parser chunk is fetched for the first time (then cached).
+
+Performance measurement and budget commands are recorded in
+[docs/performance/2026-08-plan008-baseline.md](docs/performance/2026-08-plan008-baseline.md).
+CI remains owner-managed; the recorded budgets are advisory until an owner-owned
+gate is added.
 
 ## Tech stack
 

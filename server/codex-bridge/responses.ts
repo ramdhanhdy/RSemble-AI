@@ -7,6 +7,13 @@ import { once } from "node:events";
 import { getValidToken } from "./auth.js";
 import { sanitizeProviderErrorMessage } from "../../shared/error-policy.js";
 import { readBoundedResponseText } from "../../shared/http.js";
+import {
+  codexResponsesUrl,
+  translateToCodexRequestBody,
+  buildUpstreamHeaders,
+  parseCodexSseEvent,
+  classifyCodexOutcome,
+} from "./protocol.js";
 
 export interface ChatMessageInput {
   role: "system" | "user" | "assistant";
@@ -22,23 +29,6 @@ export type BridgeContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } }
   | { type: "file"; file: { filename: string; file_data: string } };
-
-/**
- * Map one OpenAI-style part to the Responses API input-item shape (spec §7):
- * `input_text` for text, `input_image` with a data URL for images. File parts
- * are rejected with 415 before translation ever runs.
- */
-function toResponseApiPart(part: BridgeContentPart): unknown {
-  switch (part.type) {
-    case "text":
-      return { type: "input_text", text: part.text };
-    case "image_url":
-      return { type: "input_image", image_url: part.image_url.url };
-    case "file":
-      // Unreachable: file parts are rejected with 415 above translation.
-      return { type: "input_file", filename: part.file.filename, file_data: part.file.file_data };
-  }
-}
 
 export interface CompletionRequestBody {
   model: string;
@@ -122,57 +112,14 @@ export async function handleCompletions(
   }
 
   const { token, accountId } = tokenData;
-  const targetUrl = "https://chatgpt.com/backend-api/codex/responses?client_version=0.144.1";
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-    "User-Agent": "Codex/0.144.1",
-    version: "0.144.1",
-    Originator: "codex_exec",
-  };
-  if (accountId) {
-    headers["ChatGPT-Account-ID"] = accountId;
-  }
+  const targetUrl = codexResponsesUrl();
+  const headers: Record<string, string> = buildUpstreamHeaders({ token, accountId });
 
   const clientWantsStream = Boolean(reqBody.stream);
 
-  // Separate system prompt from non-system messages
-  const systemMsg = reqBody.messages.find((m) => m.role === "system");
-  const nonSystemMsgs = reqBody.messages.filter((m) => m.role !== "system");
-
-  const instructions = systemMsg
-    ? typeof systemMsg.content === "string"
-      ? systemMsg.content
-      : systemMsg.content
-          .filter((p): p is Extract<BridgeContentPart, { type: "text" }> => p.type === "text")
-          .map((p) => p.text)
-          .join("\n")
-    : "You are a helpful, rigorous assistant.";
-
-  const modelSlug = reqBody.model && reqBody.model.length > 0 ? reqBody.model : "gpt-5.6-sol";
-
-  let input: unknown[];
-  if (hasParts) {
-    input = nonSystemMsgs.map((m) => ({
-      type: "message",
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: Array.isArray(m.content)
-        ? m.content.map(toResponseApiPart)
-        : [{ type: "input_text", text: m.content }],
-    }));
-    if (input.length === 0) {
-      input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }];
-    }
-  } else {
-    const inputPrompt = nonSystemMsgs
-      .map((m) => {
-        const text = typeof m.content === "string" ? m.content : "";
-        return m.role === "user" ? text : `Assistant: ${text}`;
-      })
-      .join("\n\n");
-    input = [{ role: "user", content: inputPrompt || "hello" }];
-  }
+  // Translate the bridge request into the upstream Codex Responses-API shape
+  // (Plan 008 W/D: single protocol-translation authority).
+  const { model: modelSlug, instructions, input } = translateToCodexRequestBody(reqBody);
 
   const upstreamBody = {
     model: modelSlug,
@@ -228,10 +175,22 @@ export async function handleCompletions(
       const raw = await readBoundedResponseText(upstreamRes).catch(() => "");
       const errorText = sanitizeProviderErrorMessage(raw, "Codex", upstreamRes.status);
 
+      // Plan 008 W/D: classify protocol drift separately from a generic network
+      // failure, using only the BOUNDED body text as evidence (redaction is
+      // applied to the surfaced message below; the classifier itself only
+      // extracts fixed category labels and never propagates body content). The
+      // raw body never travels; only the classification label does, and only
+      // when concrete evidence justifies a category.
+      const diagnosis = classifyCodexOutcome({
+        httpStatus: upstreamRes.status,
+        upstreamErrorBody: raw,
+      });
+
       sendJson(res, upstreamRes.status, {
         error: {
           message: errorText || `Codex request failed (HTTP ${upstreamRes.status}).`,
           type: "codex_error",
+          ...(diagnosis.category ? { compatibility: diagnosis.category } : {}),
           status: upstreamRes.status,
         },
       });
@@ -245,80 +204,108 @@ export async function handleCompletions(
         Connection: "keep-alive",
       });
 
-      if (upstreamRes.body) {
-        const reader = upstreamRes.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
+      if (!upstreamRes.body) {
+        // Successful upstream response with no stream body while the client
+        // requested streaming: treat as truncated. Headers are already sent
+        // (200 text/event-stream), so end WITHOUT forging a [DONE] and let the
+        // web-side SSE reader classify the missing terminal event as
+        // stream_terminated_unexpectedly. Never fall through into the JSON
+        // non-streaming path after SSE headers were sent.
+        res.end();
+        return;
+      }
 
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            resetUpstreamTimeout();
-            buffer += decoder.decode(value, { stream: true });
+      const reader = upstreamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      // Plan 008 W/D: a raw upstream EOF without a recognized terminal
+      // event is truncation, NOT a successful completion — do not forge a
+      // [DONE] sentinel. Track terminal state explicitly.
+      let sawAnyDelta = false;
 
-            let nl: number;
-            while ((nl = buffer.indexOf("\n")) !== -1) {
-              const line = buffer.slice(0, nl).trim();
-              buffer = buffer.slice(nl + 1);
-              if (!line || !line.startsWith("data:")) continue;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          resetUpstreamTimeout();
+          buffer += decoder.decode(value, { stream: true });
 
-              const payloadStr = line.slice(5).trim();
-              if (payloadStr === "[DONE]") {
-                await writeChunk(res, "data: [DONE]\n\n");
-                res.end();
-                return;
-              }
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line || !line.startsWith("data:")) continue;
 
-              try {
-                const parsed = JSON.parse(payloadStr) as {
-                  type?: string;
-                  delta?: string;
-                  text?: string;
+            const payloadStr = line.slice(5).trim();
+            const evt = parseCodexSseEvent(payloadStr);
+            if (evt.type === "done") {
+              // [DONE] sentinel — recognized terminal.
+              await writeChunk(res, "data: [DONE]\n\n");
+              res.end();
+              return;
+            }
+            if (evt.type === "text_done") {
+              // response.output_text.done — recognized terminal that also
+              // carries final text. Without a preceding delta, forward the
+              // text so a done-only response does not lose content.
+              if (!sawAnyDelta && typeof evt.text === "string" && evt.text.length > 0) {
+                const doneChunk = {
+                  id: `chatcmpl-${Date.now()}`,
+                  object: "chat.completion.chunk",
+                  created: Math.floor(Date.now() / 1000),
+                  model: modelSlug,
+                  choices: [{ index: 0, delta: { content: evt.text }, finish_reason: null }],
                 };
-                if (
-                  parsed.type === "response.output_text.delta" &&
-                  typeof parsed.delta === "string"
-                ) {
-                  const sseChunk = {
-                    id: `chatcmpl-${Date.now()}`,
-                    object: "chat.completion.chunk",
-                    created: Math.floor(Date.now() / 1000),
-                    model: modelSlug,
-                    choices: [
-                      {
-                        index: 0,
-                        delta: { content: parsed.delta },
-                        finish_reason: null,
-                      },
-                    ],
-                  };
-                  await writeChunk(res, `data: ${JSON.stringify(sseChunk)}\n\n`);
-                }
-              } catch {
-                // Buffer incomplete JSON payload across chunk boundaries
+                await writeChunk(res, `data: ${JSON.stringify(doneChunk)}\n\n`);
               }
+              await writeChunk(res, "data: [DONE]\n\n");
+              res.end();
+              return;
+            }
+            if (evt.type === "text_delta") {
+              sawAnyDelta = true;
+              const sseChunk = {
+                id: `chatcmpl-${Date.now()}`,
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model: modelSlug,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: evt.delta },
+                    finish_reason: null,
+                  },
+                ],
+              };
+              await writeChunk(res, `data: ${JSON.stringify(sseChunk)}\n\n`);
             }
           }
-        } catch (err) {
-          // Headers already sent: cannot switch to a JSON error. End the stream
-          // so the client's SSE reader surfaces the truncation instead of hanging.
-          if (err instanceof Error && err.name === "AbortError") {
-            // Client disconnected or timeout — nothing useful left to send.
-          }
-          res.end();
-          return;
-        } finally {
-          reader.releaseLock();
         }
+      } catch (err) {
+        // Headers already sent: cannot switch to a JSON error. End the
+        // stream without a [DONE] so the web SSE reader surfaces truncation.
+        if (err instanceof Error && err.name === "AbortError") {
+          // Client disconnected or timeout — nothing useful left to send.
+        }
+        res.end();
+        return;
+      } finally {
+        reader.releaseLock();
       }
-      await writeChunk(res, "data: [DONE]\n\n");
+
+      // Upstream EOF with NO recognized terminal event: truncation. End
+      // without a [DONE] so the web-side SSE reader surfaces it.
       res.end();
       return;
     }
-
-    // Client requested non-streaming completion: accumulate text from stream
+    // Client requested non-streaming completion: accumulate text from stream.
+    // Track whether a recognized terminal event (done sentinel or
+    // response.output_text.done) was observed. Raw EOF without one is
+    // truncation: return a sanitized stream_terminated_unexpectedly error,
+    // never a fabricated successful completion.
     let fullText = "";
+    let sawTerminal = false;
+    let sawAnyContent = false;
     if (upstreamRes.body) {
       const reader = upstreamRes.body.getReader();
       const decoder = new TextDecoder();
@@ -338,34 +325,52 @@ export async function handleCompletions(
             if (!line || !line.startsWith("data:")) continue;
 
             const payloadStr = line.slice(5).trim();
-            if (payloadStr === "[DONE]") break;
-
-            try {
-              const parsed = JSON.parse(payloadStr) as {
-                type?: string;
-                delta?: string;
-                text?: string;
-              };
-              if (
-                parsed.type === "response.output_text.delta" &&
-                typeof parsed.delta === "string"
-              ) {
-                fullText += parsed.delta;
-              } else if (
-                parsed.type === "response.output_text.done" &&
-                typeof parsed.text === "string" &&
-                fullText.length === 0
-              ) {
-                fullText = parsed.text;
+            const evt = parseCodexSseEvent(payloadStr);
+            if (evt.type === "done") {
+              sawTerminal = true;
+              break;
+            }
+            if (evt.type === "text_delta") {
+              sawAnyContent = true;
+              fullText += evt.delta;
+            } else if (evt.type === "text_done") {
+              sawTerminal = true;
+              // response.output_text.done carries final text; prefer it
+              // when no delta preceded it so a done-only response keeps it.
+              // Terminals are symmetric with the [DONE] sentinel: break the
+              // inner loop so same-chunk events after the terminal are dropped.
+              if (!sawAnyContent) {
+                fullText = evt.text ?? "";
               }
-            } catch {
-              // Ignore partial JSON
+              break;
             }
           }
+          // First recognized terminal event ends further upstream reading:
+          // discard any events after [DONE]/output_text.done instead of
+          // appending them to the accumulated text.
+          if (sawTerminal) break;
         }
       } finally {
         reader.releaseLock();
       }
+    }
+
+    if (!sawTerminal) {
+      // No recognized terminal event: the upstream stream was truncated.
+      // Surface a sanitized compatibility error, not a successful body.
+      const diagnosis = classifyCodexOutcome({
+        httpStatus: 200,
+        streamTerminatedUnexpectedly: true,
+      });
+      sendJson(res, 502, {
+        error: {
+          message: `${diagnosis.reason} The response may be incomplete.`,
+          type: "codex_error",
+          compatibility: "stream_terminated_unexpectedly",
+          status: 502,
+        },
+      });
+      return;
     }
 
     sendJson(res, 200, {
@@ -385,6 +390,9 @@ export async function handleCompletions(
       ],
     });
   } catch (err) {
+    // A bridge-internal failure is NOT an upstream compatibility diagnosis, so
+    // it must not be mislabeled as bridge_unavailable (the bridge is reachable
+    // but threw internally). Omit the compatibility field entirely.
     sendJson(res, 500, {
       error: {
         message: `Bridge error: ${err instanceof Error ? err.message : String(err)}`,

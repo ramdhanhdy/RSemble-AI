@@ -110,22 +110,27 @@ describe("refreshTokens", () => {
     await expect(refreshTokens()).resolves.toBe(false);
   });
 
-  it("returns false when the OAuth endpoint rejects", async () => {
+  it("returns false when the OAuth endpoint rejects (and clears the timeout timer)", async () => {
     writeAuth({ tokens: { refresh_token: "fake-refresh-token" } });
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
     vi.stubGlobal(
       "fetch",
       vi.fn(() => Promise.resolve(new Response("{}", { status: 401 }))),
     );
     await expect(refreshTokens()).resolves.toBe(false);
+    // The bounded-refresh timer must not stay armed after an early return.
+    expect(clearSpy).toHaveBeenCalled();
   });
 
-  it("returns false when the response carries no access token", async () => {
+  it("returns false when the response carries no access token (and clears the timeout timer)", async () => {
     writeAuth({ tokens: { refresh_token: "fake-refresh-token" } });
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
     vi.stubGlobal(
       "fetch",
       vi.fn(() => Promise.resolve(Response.json({ refresh_token: "rotated" }))),
     );
     await expect(refreshTokens()).resolves.toBe(false);
+    expect(clearSpy).toHaveBeenCalled();
   });
 
   it("returns false when the network call fails", async () => {
@@ -137,6 +142,36 @@ describe("refreshTokens", () => {
     await expect(refreshTokens()).resolves.toBe(false);
   });
 
+  it("passes a bounded AbortSignal to the OAuth refresh fetch (CR-11)", async () => {
+    writeAuth({ tokens: { refresh_token: "fake-refresh-token" } });
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(Response.json({ access_token: "fake-new-access-token" })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await refreshTokens();
+    const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("returns false when the OAuth refresh times out (CR-11)", async () => {
+    vi.useFakeTimers();
+    writeAuth({ tokens: { refresh_token: "fake-refresh-token" } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            );
+          }),
+      ),
+    );
+    const promise = refreshTokens();
+    await vi.advanceTimersByTimeAsync(11_000);
+    await expect(promise).resolves.toBe(false);
+    vi.useRealTimers();
+  });
   it("writes refreshed tokens back to the auth file", async () => {
     writeAuth({
       tokens: { refresh_token: "fake-refresh-token", id_token: "fake-id-token" },
