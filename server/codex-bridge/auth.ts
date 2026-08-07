@@ -10,6 +10,9 @@ import path from "node:path";
 import os from "node:os";
 import { CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_ENDPOINT } from "./protocol.js";
 
+/** Timeout for the OAuth token refresh request (Plan 008 CR-11). */
+export const OAUTH_REFRESH_TIMEOUT_MS = 10_000;
+
 export interface AuthStatus {
   ok: boolean;
   authMode?: string;
@@ -94,20 +97,29 @@ export async function refreshTokens(): Promise<boolean> {
   if (!data?.tokens?.refresh_token) return false;
 
   const refreshToken = data.tokens.refresh_token;
-  const clientId = CODEX_OAUTH_CLIENT_ID;
 
+  // Bound the OAuth refresh so a stalled TCP/TLS hang cannot block token
+  // refresh (and therefore the whole bridge request) indefinitely. Explicit
+  // AbortController + setTimeout mirrors the upstream-request timeout pattern
+  // in responses.ts so the deadline is deterministic and testable.
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), OAUTH_REFRESH_TIMEOUT_MS);
   try {
     const res = await fetch(CODEX_OAUTH_TOKEN_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         grant_type: "refresh_token",
-        client_id: clientId,
+        client_id: CODEX_OAUTH_CLIENT_ID,
         refresh_token: refreshToken,
       }),
+      signal: ctrl.signal,
     });
 
-    if (!res.ok) return false;
+    if (!res.ok) {
+      clearTimeout(timeout);
+      return false;
+    }
 
     const newTokens = (await res.json()) as {
       access_token?: string;
@@ -116,7 +128,10 @@ export async function refreshTokens(): Promise<boolean> {
       expires_in?: number;
     };
 
-    if (!newTokens.access_token) return false;
+    if (!newTokens.access_token) {
+      clearTimeout(timeout);
+      return false;
+    }
 
     const filePath = getAuthFilePath();
     const updatedData: CodexAuthData = {
@@ -132,8 +147,10 @@ export async function refreshTokens(): Promise<boolean> {
     };
 
     fs.writeFileSync(filePath, JSON.stringify(updatedData, null, 2), "utf-8");
+    clearTimeout(timeout);
     return true;
   } catch {
+    clearTimeout(timeout);
     return false;
   }
 }

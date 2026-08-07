@@ -8,6 +8,9 @@
 // fixtures. No live Codex auth or paid calls are used (deterministic only).
 // =============================================================================
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CODEX_PROTOCOL_VERSION,
   CODEX_USER_AGENT,
@@ -23,7 +26,21 @@ import {
   isCodexTerminalEvent,
   classifyCodexOutcome,
   CODEX_FAILURE_LABELS,
+  isCodexCompatibilityFailure,
 } from "../codex-bridge/protocol.js";
+
+const fixtureDir = path.dirname(fileURLToPath(import.meta.url));
+const codexStreamFixture = JSON.parse(
+  fs.readFileSync(path.join(fixtureDir, "__fixtures__/codex-stream-events.json"), "utf-8"),
+) as {
+  "codex-sse": {
+    done_sentinel: string;
+    delta: { type: string; delta: string };
+    done_event: { type: string; text: string };
+    created: { type: string; id: string };
+    error_shape: { error: { message: string } };
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Protocol constants — centralize so they are updated in exactly one place.
@@ -99,6 +116,20 @@ describe("CodexProtocolAdapter — request translation", () => {
     expect(body.input).toEqual([{ role: "user", content: "question?" }]);
   });
 
+  it("combines multiple system messages in order and keeps non-system messages in input (CR-08)", () => {
+    const body = translateToCodexRequestBody({
+      model: "gpt-x",
+      messages: [
+        { role: "system", content: "First." },
+        { role: "user", content: "question?" },
+        { role: "system", content: "Second." },
+      ],
+    });
+    expect(body.instructions).toBe("First.\n\nSecond.");
+    // Only the non-system message participates in input.
+    expect(body.input).toEqual([{ role: "user", content: "question?" }]);
+  });
+
   it("maps per-message parts to Responses-API input items", () => {
     const body = translateToCodexRequestBody({
       model: "gpt-x",
@@ -152,6 +183,40 @@ describe("CodexProtocolAdapter — SSE event parsing", () => {
     expect(parseCodexSseEvent("not-json").type).toBe("other");
     const unknown = parseCodexSseEvent(JSON.stringify({ type: "response.created", id: "1" }));
     expect(unknown.type).toBe("other");
+  });
+
+  it("returns 'other' for JSON primitives without throwing (CR-19)", () => {
+    // JSON null would crash the parser before the guard (reading .type on null).
+    expect(parseCodexSseEvent("null")).toEqual({ type: "other", payload: null });
+    expect(parseCodexSseEvent(JSON.stringify("plain-string")).type).toBe("other");
+    expect(parseCodexSseEvent(JSON.stringify(42)).type).toBe("other");
+    expect(parseCodexSseEvent(JSON.stringify([1, 2])).type).toBe("other");
+  });
+
+  it("exercises the fixture corpus shapes (CR-14)", () => {
+    const f = codexStreamFixture["codex-sse"];
+    // done_sentinel
+    expect(parseCodexSseEvent(f.done_sentinel)).toEqual({ type: "done" });
+    // delta
+    expect(parseCodexSseEvent(JSON.stringify(f.delta))).toEqual({
+      type: "text_delta",
+      delta: "Hello, world.",
+    });
+    // done_event
+    expect(parseCodexSseEvent(JSON.stringify(f.done_event))).toEqual({
+      type: "text_done",
+      text: "Hello, world.",
+    });
+    // created (non-terminal other)
+    const created = parseCodexSseEvent(JSON.stringify(f.created));
+    expect(created.type).toBe("other");
+    expect(isCodexTerminalEvent(created)).toBe(false);
+    // error_shape feeds the protocol-shape classifier evidence
+    const d = classifyCodexOutcome({ httpStatus: 400, upstreamErrorBody: f.error_shape });
+    expect(d.category).toBe("protocol_shape_changed");
+    // done_sentinel and done_event are terminal per the contract
+    expect(isCodexTerminalEvent(parseCodexSseEvent(f.done_sentinel))).toBe(true);
+    expect(isCodexTerminalEvent(parseCodexSseEvent(JSON.stringify(f.done_event)))).toBe(true);
   });
 
   it("recognizes the [DONE] sentinel and response.output_text.done as terminal events", () => {
@@ -239,6 +304,41 @@ describe("CodexProtocolAdapter — failure classification", () => {
       upstreamErrorBody: { error: { message: "model gpt-5.6-sol not supported" } },
     });
     expect(d.category).toBe("model_unavailable");
+  });
+
+  it("classifies uppercase 'Model not found' as model_unavailable (CR-09)", () => {
+    const d = classifyCodexOutcome({
+      httpStatus: 400,
+      upstreamErrorBody: { error: { message: "Model not found" } },
+    });
+    expect(d.category).toBe("model_unavailable");
+    expect(d.definite).toBe(true);
+  });
+
+  it("classifies a bearer-fragment body as a fixed label without leaking the fragment (CR-15)", () => {
+    const d = classifyCodexOutcome({
+      httpStatus: 401,
+      upstreamErrorBody: { error: { message: "unauthorized: bearer abc123secret" } },
+    });
+    expect(d.category).toBe("auth_unavailable");
+    expect(d.reason).not.toContain("abc123secret");
+  });
+
+  it("every emitted category is a member of the shared taxonomy (CR-18)", () => {
+    for (const key of [
+      "bridge_unavailable",
+      "auth_unavailable",
+      "model_unavailable",
+      "protocol_shape_changed",
+      "client_metadata_rejected",
+      "stream_terminated_unexpectedly",
+    ] as const) {
+      expect(isCodexCompatibilityFailure(key)).toBe(true);
+    }
+    expect(isCodexCompatibilityFailure("some_unknown_category")).toBe(false);
+    expect(isCodexCompatibilityFailure("")).toBe(false);
+    expect(isCodexCompatibilityFailure(undefined)).toBe(false);
+    expect(isCodexCompatibilityFailure(42)).toBe(false);
   });
 
   it("classifies client_metadata_rejected only with client-metadata evidence", () => {

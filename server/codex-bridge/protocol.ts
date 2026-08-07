@@ -19,6 +19,12 @@
 // fallback protocol variants.
 // =============================================================================
 
+import {
+  CODEX_COMPATIBILITY_CATEGORIES,
+  isCodexCompatibilityFailure,
+  type CodexCompatibilityFailure,
+} from "../../shared/codex-compatibility.js";
+
 // ---------------------------------------------------------------------------
 // Protocol constants — centralize so they are updated in exactly one place.
 // When the upstream Codex Responses API changes these values, bump them here
@@ -28,7 +34,7 @@
 /** Supported upstream Responses-API protocol version identifier. */
 export const CODEX_PROTOCOL_VERSION = "0.144.1";
 
-/** User-Agent presented to the upstream chtags backend. */
+/** User-Agent presented to the upstream ChatGPT backend. */
 export const CODEX_USER_AGENT = `Codex/${CODEX_PROTOCOL_VERSION}`;
 
 /** Originator header value expected by the upstream backend. */
@@ -89,17 +95,27 @@ export function translateToCodexRequestBody(body: {
   model: string;
   messages: CodexChatMessageInput[];
 }): { model: string; instructions: string; input: unknown[] } {
-  const systemMsg = body.messages.find((m) => m.role === "system");
+  // Collect ALL system messages in original order; each is converted with the
+  // same content→instruction-text rule and joined. A single system message
+  // therefore produces byte-identical instructions to the legacy behavior.
+  const systemMsgs = body.messages.filter((m) => m.role === "system");
   const nonSystemMsgs = body.messages.filter((m) => m.role !== "system");
 
-  const instructions = systemMsg
-    ? typeof systemMsg.content === "string"
-      ? systemMsg.content
-      : systemMsg.content
-          .filter((p): p is Extract<CodexContentPart, { type: "text" }> => p.type === "text")
-          .map((p) => p.text)
-          .join("\n")
-    : "You are a helpful, rigorous assistant.";
+  const instructions =
+    systemMsgs.length > 0
+      ? systemMsgs
+          .map((m) =>
+            typeof m.content === "string"
+              ? m.content
+              : m.content
+                  .filter(
+                    (p): p is Extract<CodexContentPart, { type: "text" }> => p.type === "text",
+                  )
+                  .map((p) => p.text)
+                  .join("\n"),
+          )
+          .join("\n\n")
+      : "You are a helpful, rigorous assistant.";
 
   const modelSlug = body.model && body.model.length > 0 ? body.model : CODEX_DEFAULT_MODEL;
 
@@ -172,6 +188,11 @@ export function parseCodexSseEvent(payloadStr: string): CodexUpstreamEvent {
   } catch {
     return { type: "other", payload: payloadStr };
   }
+  // JSON primitives (null, string, number) and arrays must not crash the
+  // parser: only non-null objects can carry event fields.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { type: "other", payload: parsed };
+  }
   const obj = parsed as { type?: string; delta?: string; text?: string };
   if (obj.type === "response.output_text.delta" && typeof obj.delta === "string") {
     return { type: "text_delta", delta: obj.delta };
@@ -196,13 +217,10 @@ export function isCodexTerminalEvent(evt: CodexUpstreamEvent): boolean {
 // Failure classification — Plan 008 Workstream D step 5.
 // ---------------------------------------------------------------------------
 
-export type CodexCompatibilityFailure =
-  | "bridge_unavailable"
-  | "auth_unavailable"
-  | "model_unavailable"
-  | "protocol_shape_changed"
-  | "client_metadata_rejected"
-  | "stream_terminated_unexpectedly";
+// Re-export the shared taxonomy so existing importers keep working; the
+// shared module is the single source of truth for the accepted categories.
+export type { CodexCompatibilityFailure };
+export { CODEX_COMPATIBILITY_CATEGORIES, isCodexCompatibilityFailure };
 
 export interface CodexCompatibilityDiagnosis {
   /** Present only when there is concrete evidence for a specific category. */
@@ -236,8 +254,10 @@ function extractErrorText(body: unknown): string {
  */
 export function classifyCodexOutcome(args: {
   httpStatus: number | null;
-  /** Bounded, already-redacted upstream error body text or parsed object.
-   *  Used only for evidence extraction; never sent back to a client or logged. */
+  /** Bounded upstream error body text or parsed object (not redacted here;
+   *  the classifier only extracts fixed category labels and never propagates
+   *  body content). Used only for evidence extraction; never sent back to a
+   *  client or logged. */
   upstreamErrorBody?: unknown;
   streamTerminatedUnexpectedly?: boolean;
 }): CodexCompatibilityDiagnosis {
@@ -276,7 +296,7 @@ export function classifyCodexOutcome(args: {
     };
   }
   if (
-    /model/.test(message) &&
+    /model/i.test(message) &&
     /(not found|not support|not supported|invalid|unavailable)/i.test(message)
   ) {
     return {
