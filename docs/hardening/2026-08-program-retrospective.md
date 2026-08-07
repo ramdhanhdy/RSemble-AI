@@ -16,7 +16,7 @@
 | 005 | Execution reliability and cross-tab leases | merged | — |
 | 006 | Quality gate and documentation reconciliation | merged | — |
 | 007 | Controlled maintainability extraction | **PR #7** `refactor/controlled-maintainability` → merged as `d1740f1` | `649bae3` |
-| 008 | Measured loading and protocol compatibility | **PR #9** `perf/measured-loading-and-protocol` (draft) | `97b74d3` |
+| 008 | Measured loading and protocol compatibility | **PR #9** `perf/measured-loading-and-protocol` (draft) | `268a562` (the post-CodeRabbit-correction head; `97b74d3` was the pre-correction head) |
 
 ## Important findings fixed across the program
 

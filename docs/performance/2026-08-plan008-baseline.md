@@ -11,8 +11,10 @@
 ## Environment
 
 - **Commit (baseline)**: `d1740f1` (post-Plan-007 master, PR #7 merge)
-- **Final (post-implementation)**: `24764c4` (the commit that recorded the Workstream F
-  after-measurement; the after build ran at the implementation head `1ae1c45`)
+- **Workstream F build commit**: `1ae1c45` — the branch head at which the final
+  comparison build (`npm run build`) was actually run.
+- **Workstream F measurement commit**: `24764c4` — the commit that recorded the
+  after-measurement values below (child of `1ae1c45`).
 - **Node**: v22.22.1
 - **Build tool**: Vite 8.1.5 (Rolldown), `react` + `terminalDevLogPlugin`
 - **Vite config manual chunks**: none (`vite.config.ts`)
@@ -87,10 +89,11 @@ for images / direct text read), and Compare startup pays no parser cost.
 
 ## Workstream F — after measurement
 
-Re-ran the identical procedure at the implementation head. Because the loading
-optimizations PDF/DOCX laziness and route splitting were already in place, and
-the heavy easing deferrals (Dexie, @base-ui shell overlays) were deliberately
-rejected on evidence, the initial bundle is essentially unchanged.
+Re-ran the identical procedure at the Workstream F build commit (`1ae1c45`; the
+result was recorded in `24764c4`). Because the loading optimizations PDF/DOCX
+laziness and route splitting were already in place, and the heavy easing
+deferrals (Dexie, @base-ui shell overlays) were deliberately rejected on
+evidence, the initial bundle is essentially unchanged.
 
 | Initial chunk | baseline raw | after raw |
 | --- | --- | --- |

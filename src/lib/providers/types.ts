@@ -2,6 +2,8 @@
 // Provider contracts and shared interfaces
 // =============================================================================
 
+import type { CodexCompatibilityFailure } from "../../../shared/codex-compatibility";
+
 export type ProviderId =
   | "openrouter"
   | "chatgpt-codex"
@@ -195,8 +197,9 @@ export class ProviderError extends Error {
     public readonly providerId: ProviderId,
     public readonly status?: number,
     /** Optional Codex compatibility category (Plan 008 W/D). Only set when a
-     *  recognized category is known; undefined otherwise. */
-    public readonly compatibility?: string,
+     *  recognized category is known; undefined otherwise. Typed by the shared
+     *  taxonomy so callers cannot pass an arbitrary string. */
+    public readonly compatibility?: CodexCompatibilityFailure,
   ) {
     super(message);
     this.name = "ProviderError";

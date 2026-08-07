@@ -16,7 +16,10 @@ import { bridgeAuthHeaders } from "./bridge-auth";
 import { buildBridgeRequestBody } from "./bridge-body";
 import { providerErrorDetail } from "./error-message";
 import { readBoundedResponseText } from "../../../shared/http";
-import { isCodexCompatibilityFailure } from "../../../shared/codex-compatibility";
+import {
+  isCodexCompatibilityFailure,
+  type CodexCompatibilityFailure,
+} from "../../../shared/codex-compatibility";
 import {
   PROVIDER_DEADLINES,
   createHeadersReady,
@@ -67,7 +70,7 @@ async function parseBridgeError(res: Response, label: string): Promise<ProviderE
   // The bridge may attach an experimental-integration compatibility category
   // (e.g. protocol_shape_changed) on its JSON error body. Read it structurally
   // BEFORE sanitizing so the classification is preserved.
-  let compatibility: string | undefined;
+  let compatibility: CodexCompatibilityFailure | undefined;
   try {
     const parsed = JSON.parse(raw) as { error?: { compatibility?: string } };
     const cat = parsed?.error?.compatibility;
