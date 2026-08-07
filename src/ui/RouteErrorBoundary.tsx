@@ -46,21 +46,22 @@ export class RouteErrorBoundary extends Component<
           This view could not be loaded
         </h2>
         <p className="max-w-sm text-sm text-text-secondary">
-          A workspace chunk failed to load or render. Your Compare state and any active
-          run/experiment are preserved. Try again to reload this view.
+          A workspace chunk failed to load or render. Your Compare state stays mounted while you
+          remain on this page. Reloading retries the failed chunk, but restarts the app and may
+          interrupt an active run or experiment.
         </p>
         <div className="mt-1 flex items-center gap-3">
           <button
             type="button"
             className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text transition-colors duration-150 hover:border-edge-bright hover:text-text"
             onClick={() => {
-              // Reload re-requests the current route's lazy chunk after a
-              // transient load failure. Rolldown does not tag chunk errors with
-              // a "ChunkLoadError" name, so reload is the robust recovery.
+              // Reload re-requests the failed chunk after a transient load
+              // failure, but restarts the app (and may interrupt an active
+              // run/experiment) — stated explicitly in the copy above.
               window.location.reload();
             }}
           >
-            Retry
+            Reload app
           </button>
           <button
             type="button"

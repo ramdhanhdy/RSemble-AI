@@ -77,7 +77,7 @@ describe("RouteErrorBoundary", () => {
     spy.mockRestore();
     expect(h.text()).toContain("app-chrome");
     expect(h.text()).toContain("could not be loaded");
-    expect(h.text()).toContain("Retry");
+    expect(h.text()).toContain("Reload app");
     expect(h.text()).toContain("Dismiss");
     h.cleanup();
   });
@@ -105,7 +105,7 @@ describe("RouteErrorBoundary", () => {
     h.cleanup();
   });
 
-  it("Retry triggers a reload to recover from a failed chunk load", () => {
+  it("Reload app triggers a full reload and the copy states it may interrupt execution", () => {
     const spy = suppressBoundaryConsole();
     const h = render(
       <RouteErrorBoundary>
@@ -115,6 +115,12 @@ describe("RouteErrorBoundary", () => {
     spy.mockRestore();
     expect(h.text()).toContain("could not be loaded");
 
+    // Truthful recovery copy: root state stays mounted on this page, but a
+    // reload restarts the app and may interrupt an active run/experiment.
+    expect(h.text()).toContain("Compare state stays");
+    expect(h.text()).toContain("may interrupt an active run or");
+    expect(h.text()).toContain("Reload app");
+
     const reload = vi.fn();
     Object.defineProperty(window, "location", {
       value: { reload },
@@ -123,7 +129,7 @@ describe("RouteErrorBoundary", () => {
 
     act(() => {
       h.$$("button")
-        .find((b) => b.textContent === "Retry")
+        .find((b) => b.textContent === "Reload app")
         ?.click();
     });
     expect(reload).toHaveBeenCalled();

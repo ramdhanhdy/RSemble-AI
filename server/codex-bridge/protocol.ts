@@ -182,6 +182,16 @@ export function parseCodexSseEvent(payloadStr: string): CodexUpstreamEvent {
   return { type: "other", payload: parsed };
 }
 
+/**
+ * Recognized Codex upstream terminal events (Plan 008 W/D - fixture contract):
+ * the `[DONE]` sentinel and a `response.output_text.done` event both terminate
+ * a stream. `response.output_text.done` also carries the final text and must be
+ * used (not dropped) when no delta preceded it.
+ */
+export function isCodexTerminalEvent(evt: CodexUpstreamEvent): boolean {
+  return evt.type === "done" || evt.type === "text_done";
+}
+
 // ---------------------------------------------------------------------------
 // Failure classification — Plan 008 Workstream D step 5.
 // ---------------------------------------------------------------------------
@@ -195,19 +205,39 @@ export type CodexCompatibilityFailure =
   | "stream_terminated_unexpectedly";
 
 export interface CodexCompatibilityDiagnosis {
-  category: CodexCompatibilityFailure;
+  /** Present only when there is concrete evidence for a specific category. */
+  category?: CodexCompatibilityFailure;
   /** Whether this is a definite diagnosis vs an indeterminate/unknown shape. */
   definite: boolean;
   reason: string;
 }
 
+function extractErrorText(body: unknown): string {
+  if (typeof body === "string") return body;
+  if (body === null || typeof body !== "object") return "";
+  const obj = body as Record<string, unknown>;
+  // Accept {error:{message}} (OpenAI/bridge shape) or a flat {message}.
+  const error = obj.error as Record<string, unknown> | undefined;
+  const candidate =
+    error && typeof error === "object" && typeof error.message === "string"
+      ? error.message
+      : typeof obj.message === "string"
+        ? obj.message
+        : "";
+  return candidate;
+}
+
 /**
- * Classify a bridge-side error into a Codex compatibility diagnosis. The
- * earliest, most specific match wins; upstream HTTP status is surface evidence
- * only and is combined with the sanitized upstream body shape.
+ * Evidence-based classification: do not emit a compatibility diagnosis merely
+ * because an arbitrary status code occurred. A category is only produced when
+ * the bounded upstream body carries evidence for it. Generic 429 (rate limit)
+ * and generic 5xx therefore stay indeterminate (no category), instead of being
+ * mislabelled as protocol_shape_changed / client_metadata_rejected.
  */
 export function classifyCodexOutcome(args: {
   httpStatus: number | null;
+  /** Bounded, already-redacted upstream error body text or parsed object.
+   *  Used only for evidence extraction; never sent back to a client or logged. */
   upstreamErrorBody?: unknown;
   streamTerminatedUnexpectedly?: boolean;
 }): CodexCompatibilityDiagnosis {
@@ -217,7 +247,7 @@ export function classifyCodexOutcome(args: {
     return {
       category: "stream_terminated_unexpectedly",
       definite: true,
-      reason: "Upstream stream ended before a terminal event was observed.",
+      reason: "Upstream stream ended before a recognized terminal event was observed.",
     };
   }
 
@@ -229,6 +259,46 @@ export function classifyCodexOutcome(args: {
     };
   }
 
+  const message = extractErrorText(upstreamErrorBody);
+
+  // Concrete body evidence takes precedence. Categories must be evidenced by
+  // the message, except 401/403 (auth) and 404 (model not found) which are
+  // themselves specific, non-arbitrary statuses.
+  if (
+    /invalid.*(request|input|schema)|missing.*field|unexpected.*(type|field)|bad.*request/i.test(
+      message,
+    )
+  ) {
+    return {
+      category: "protocol_shape_changed",
+      definite: true,
+      reason: "Upstream rejected the request shape; the Codex protocol may have changed.",
+    };
+  }
+  if (
+    /model/.test(message) &&
+    /(not found|not support|not supported|invalid|unavailable)/i.test(message)
+  ) {
+    return {
+      category: "model_unavailable",
+      definite: true,
+      reason: "Upstream indicated the requested model is unavailable.",
+    };
+  }
+  if (httpStatus === 404) {
+    return {
+      category: "model_unavailable",
+      definite: true,
+      reason: "The requested model could not be found upstream (HTTP 404).",
+    };
+  }
+  if (/auth|login|token|expired|permission|access|unauthorized|forbidden/i.test(message)) {
+    return {
+      category: "auth_unavailable",
+      definite: true,
+      reason: "Upstream indicated an authentication problem.",
+    };
+  }
   if (httpStatus === 401 || httpStatus === 403) {
     return {
       category: "auth_unavailable",
@@ -236,67 +306,27 @@ export function classifyCodexOutcome(args: {
       reason: `Upstream rejected the request with HTTP ${httpStatus}.`,
     };
   }
-
-  if (httpStatus === 404) {
+  // Client-metadata rejection must be evidenced by a version/User-Agent/
+  // Originator/client-metadata message — not inferred from a 5xx.
+  if (
+    /client metadata|user.agent|originator|client version|unsupported.*version|version.*not (accepted|supported)|bad.*(client|metadata)/i.test(
+      message,
+    )
+  ) {
     return {
-      category: "model_unavailable",
+      category: "client_metadata_rejected",
       definite: true,
-      reason: "The requested model could not be found upstream.",
+      reason: "Upstream rejected the presented client metadata.",
     };
   }
 
-  if (httpStatus === 400 && looksLikeProtocolShapeChange(upstreamErrorBody)) {
-    return {
-      category: "protocol_shape_changed",
-      definite: true,
-      reason: "Upstream rejected the request shape; the Codex protocol may have changed.",
-    };
-  }
-
+  // No specific evidence (e.g. generic 429 or 5xx with a non-signal body):
+  // omit the category rather than presenting a speculative diagnosis as fact.
   return {
-    category: deriveFromBody(httpStatus, upstreamErrorBody),
     definite: false,
     reason: `Upstream returned an unexpected HTTP ${httpStatus} response.`,
   };
 }
-
-function looksLikeProtocolShapeChange(body: unknown): boolean {
-  if (body === null || typeof body !== "object") return false;
-  const obj = body as Record<string, unknown>;
-  return (
-    typeof obj.error === "object" &&
-    obj.error !== null &&
-    typeof (obj.error as Record<string, unknown>).message === "string" &&
-    /(invalid.*(request|input|schema)|missing.*field|unexpected.*(type|field)|bad.*request)/i.test(
-      String((obj.error as Record<string, unknown>).message),
-    )
-  );
-}
-
-function deriveFromBody(httpStatus: number | null, body?: unknown): CodexCompatibilityFailure {
-  if (body === null || typeof body !== "object") {
-    return httpStatus !== null && httpStatus >= 500
-      ? "client_metadata_rejected"
-      : "protocol_shape_changed";
-  }
-  const obj = body as Record<string, unknown>;
-  const error = obj.error as Record<string, unknown> | undefined;
-  const raw = error && typeof error === "object" ? error : obj;
-  const message = String(raw.message ?? "").toLowerCase();
-  if (/model/.test(message) && /(not found|not support|invalid|unavailable)/.test(message)) {
-    return "model_unavailable";
-  }
-  if (/auth|login|token|expired|permission|access/.test(message)) {
-    return "auth_unavailable";
-  }
-  if (/client metadata|user.agent|version/.test(message)) {
-    return "client_metadata_rejected";
-  }
-  if (httpStatus !== null && httpStatus >= 500) return "client_metadata_rejected";
-  return "protocol_shape_changed";
-}
-
-/** A stable, human-readable label for each failure category. */
 export const CODEX_FAILURE_LABELS: Record<CodexCompatibilityFailure, string> = {
   bridge_unavailable: "Codex bridge unavailable",
   auth_unavailable: "Codex not authenticated or token expired",

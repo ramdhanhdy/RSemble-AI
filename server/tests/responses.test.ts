@@ -519,3 +519,104 @@ describe("handleCompletions — adapter-driven streaming (Plan 008 W/D)", () => 
     expect(sse).toContain("data: [DONE]");
   });
 });
+
+describe("handleCompletions — terminal detection (Plan 008 W/D)", () => {
+  it("terminates normally when the upstream [DONE] sentinel is seen", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"ok"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+    const sse = (res.write as ReturnType<typeof vi.fn>).mock.calls
+      .map((c: unknown[]) => c[0] as string)
+      .join("");
+    expect(sse).toContain("data: [DONE]");
+  });
+
+  it("does not forge a [DONE] when the stream is truncated (no terminal event)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.delta","delta":"partial"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+    const writes = (res.write as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => c[0] as string,
+    );
+    const sse = writes.join("");
+    expect(sse).toContain("partial");
+    expect(sse).not.toContain("data: [DONE]");
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it("returns a successful body after a normally terminated non-streaming stream", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream([
+          'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"lo"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.choices[0].message.content).toBe("Hello");
+    expect(body.error).toBeUndefined();
+  });
+
+  it("returns a stream_terminated_unexpectedly error after a truncated non-streaming stream", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.delta","delta":"partial"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.error.type).toBe("codex_error");
+    expect(body.error.compatibility).toBe("stream_terminated_unexpectedly");
+    expect(body.error.message).toMatch(/stream|truncat|incomplete/i);
+  });
+
+  it("keeps output_text.done-only text usable in the non-streaming path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.done","text":"done-text"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions({ ...BASE_BODY, stream: false }, res, { getToken: authOk });
+    const body = JSON.parse((res.end as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
+    expect(body.choices[0].message.content).toBe("done-text");
+    expect(body.error).toBeUndefined();
+  });
+
+  it("forwards output_text.done text as a delta and terminates in the streaming path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseUpstream(['data: {"type":"response.output_text.done","text":"done-text"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = makeRes();
+    await handleCompletions(BASE_BODY, res, { getToken: authOk });
+    const sse = (res.write as ReturnType<typeof vi.fn>).mock.calls
+      .map((c: unknown[]) => c[0] as string)
+      .join("");
+    expect(sse).toContain("done-text");
+    expect(sse).toContain("data: [DONE]");
+  });
+});

@@ -20,6 +20,7 @@ import {
   translateToCodexRequestBody,
   buildUpstreamHeaders,
   parseCodexSseEvent,
+  isCodexTerminalEvent,
   classifyCodexOutcome,
   CODEX_FAILURE_LABELS,
 } from "../codex-bridge/protocol.js";
@@ -152,6 +153,29 @@ describe("CodexProtocolAdapter — SSE event parsing", () => {
     const unknown = parseCodexSseEvent(JSON.stringify({ type: "response.created", id: "1" }));
     expect(unknown.type).toBe("other");
   });
+
+  it("recognizes the [DONE] sentinel and response.output_text.done as terminal events", () => {
+    expect(isCodexTerminalEvent(parseCodexSseEvent("[DONE]"))).toBe(true);
+    expect(
+      isCodexTerminalEvent(
+        parseCodexSseEvent(JSON.stringify({ type: "response.output_text.done", text: "x" })),
+      ),
+    ).toBe(true);
+  });
+
+  it("treats deltas, created, and malformed events as non-terminal", () => {
+    expect(
+      isCodexTerminalEvent(
+        parseCodexSseEvent(JSON.stringify({ type: "response.output_text.delta", delta: "x" })),
+      ),
+    ).toBe(false);
+    expect(
+      isCodexTerminalEvent(
+        parseCodexSseEvent(JSON.stringify({ type: "response.created", id: "1" })),
+      ),
+    ).toBe(false);
+    expect(isCodexTerminalEvent(parseCodexSseEvent("not-json"))).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -186,6 +210,50 @@ describe("CodexProtocolAdapter — failure classification", () => {
   it("classifies unexpected stream termination separately", () => {
     const d = classifyCodexOutcome({ httpStatus: 200, streamTerminatedUnexpectedly: true });
     expect(d.category).toBe("stream_terminated_unexpectedly");
+  });
+
+  it("does not classify a generic 429 as protocol_shape_changed (no evidence)", () => {
+    const d = classifyCodexOutcome({ httpStatus: 429, upstreamErrorBody: "rate limit" });
+    expect(d.category).toBeUndefined();
+    expect(d.definite).toBe(false);
+  });
+
+  it("does not classify a generic 5xx as client_metadata_rejected (no evidence)", () => {
+    const d = classifyCodexOutcome({ httpStatus: 500, upstreamErrorBody: "internal error" });
+    expect(d.category).toBeUndefined();
+    expect(d.definite).toBe(false);
+  });
+
+  it("classifies protocol_shape_changed from body evidence (not status alone)", () => {
+    const d = classifyCodexOutcome({
+      httpStatus: 500,
+      upstreamErrorBody: { error: { message: "invalid request: unexpected field" } },
+    });
+    expect(d.category).toBe("protocol_shape_changed");
+    expect(d.definite).toBe(true);
+  });
+
+  it("classifies model_unavailable from explicit body evidence", () => {
+    const d = classifyCodexOutcome({
+      httpStatus: 500,
+      upstreamErrorBody: { error: { message: "model gpt-5.6-sol not supported" } },
+    });
+    expect(d.category).toBe("model_unavailable");
+  });
+
+  it("classifies client_metadata_rejected only with client-metadata evidence", () => {
+    const d = classifyCodexOutcome({
+      httpStatus: 500,
+      upstreamErrorBody: { error: { message: "unsupported User-Agent; client version rejected" } },
+    });
+    expect(d.category).toBe("client_metadata_rejected");
+    expect(d.definite).toBe(true);
+  });
+
+  it("omits the category when the body is indeterminate", () => {
+    const d = classifyCodexOutcome({ httpStatus: 429 });
+    expect(d.category).toBeUndefined();
+    expect(d.reason.length).toBeGreaterThan(0);
   });
 
   it("distinguishes each Plan 008 category with a stable human label", () => {

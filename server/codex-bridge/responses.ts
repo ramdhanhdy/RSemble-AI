@@ -176,14 +176,19 @@ export async function handleCompletions(
       const errorText = sanitizeProviderErrorMessage(raw, "Codex", upstreamRes.status);
 
       // Plan 008 W/D: classify protocol drift separately from a generic network
-      // failure. Only the classification label travels (never the raw body).
-      const diagnosis = classifyCodexOutcome({ httpStatus: upstreamRes.status });
+      // failure, using only the bounded-redacted body text as evidence. The
+      // raw body never travels; only the classification label does, and only
+      // when concrete evidence justifies a category.
+      const diagnosis = classifyCodexOutcome({
+        httpStatus: upstreamRes.status,
+        upstreamErrorBody: raw,
+      });
 
       sendJson(res, upstreamRes.status, {
         error: {
           message: errorText || `Codex request failed (HTTP ${upstreamRes.status}).`,
           type: "codex_error",
-          compatibility: diagnosis.category,
+          ...(diagnosis.category ? { compatibility: diagnosis.category } : {}),
           status: upstreamRes.status,
         },
       });
@@ -201,6 +206,10 @@ export async function handleCompletions(
         const reader = upstreamRes.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        // Plan 008 W/D: a raw upstream EOF without a recognized terminal
+        // event is truncation, NOT a successful completion — do not forge a
+        // [DONE] sentinel. Track terminal state explicitly.
+        let sawAnyDelta = false;
 
         try {
           while (true) {
@@ -218,11 +227,31 @@ export async function handleCompletions(
               const payloadStr = line.slice(5).trim();
               const evt = parseCodexSseEvent(payloadStr);
               if (evt.type === "done") {
+                // [DONE] sentinel — recognized terminal.
+                await writeChunk(res, "data: [DONE]\n\n");
+                res.end();
+                return;
+              }
+              if (evt.type === "text_done") {
+                // response.output_text.done — recognized terminal that also
+                // carries final text. Without a preceding delta, forward the
+                // text so a done-only response does not lose content.
+                if (!sawAnyDelta && typeof evt.text === "string" && evt.text.length > 0) {
+                  const doneChunk = {
+                    id: `chatcmpl-${Date.now()}`,
+                    object: "chat.completion.chunk",
+                    created: Math.floor(Date.now() / 1000),
+                    model: modelSlug,
+                    choices: [{ index: 0, delta: { content: evt.text }, finish_reason: null }],
+                  };
+                  await writeChunk(res, `data: ${JSON.stringify(doneChunk)}\n\n`);
+                }
                 await writeChunk(res, "data: [DONE]\n\n");
                 res.end();
                 return;
               }
               if (evt.type === "text_delta") {
+                sawAnyDelta = true;
                 const sseChunk = {
                   id: `chatcmpl-${Date.now()}`,
                   object: "chat.completion.chunk",
@@ -241,8 +270,8 @@ export async function handleCompletions(
             }
           }
         } catch (err) {
-          // Headers already sent: cannot switch to a JSON error. End the stream
-          // so the client's SSE reader surfaces the truncation instead of hanging.
+          // Headers already sent: cannot switch to a JSON error. End the
+          // stream without a [DONE] so the web SSE reader surfaces truncation.
           if (err instanceof Error && err.name === "AbortError") {
             // Client disconnected or timeout — nothing useful left to send.
           }
@@ -251,14 +280,21 @@ export async function handleCompletions(
         } finally {
           reader.releaseLock();
         }
-      }
-      await writeChunk(res, "data: [DONE]\n\n");
-      res.end();
-      return;
-    }
 
-    // Client requested non-streaming completion: accumulate text from stream
+        // Upstream EOF with NO recognized terminal event: truncation. End
+        // without a [DONE] so the web-side SSE reader surfaces it.
+        res.end();
+        return;
+      }
+    }
+    // Client requested non-streaming completion: accumulate text from stream.
+    // Track whether a recognized terminal event (done sentinel or
+    // response.output_text.done) was observed. Raw EOF without one is
+    // truncation: return a sanitized stream_terminated_unexpectedly error,
+    // never a fabricated successful completion.
     let fullText = "";
+    let sawTerminal = false;
+    let sawAnyContent = false;
     if (upstreamRes.body) {
       const reader = upstreamRes.body.getReader();
       const decoder = new TextDecoder();
@@ -279,17 +315,44 @@ export async function handleCompletions(
 
             const payloadStr = line.slice(5).trim();
             const evt = parseCodexSseEvent(payloadStr);
-            if (evt.type === "done") break;
+            if (evt.type === "done") {
+              sawTerminal = true;
+              break;
+            }
             if (evt.type === "text_delta") {
+              sawAnyContent = true;
               fullText += evt.delta;
-            } else if (evt.type === "text_done" && fullText.length === 0) {
-              fullText = evt.text;
+            } else if (evt.type === "text_done") {
+              sawTerminal = true;
+              // response.output_text.done carries final text; prefer it
+              // when no delta preceded it so a done-only response keeps it.
+              if (!sawAnyContent) {
+                fullText = evt.text ?? "";
+              }
             }
           }
         }
       } finally {
         reader.releaseLock();
       }
+    }
+
+    if (!sawTerminal) {
+      // No recognized terminal event: the upstream stream was truncated.
+      // Surface a sanitized compatibility error, not a successful body.
+      const diagnosis = classifyCodexOutcome({
+        httpStatus: 200,
+        streamTerminatedUnexpectedly: true,
+      });
+      sendJson(res, 502, {
+        error: {
+          message: `${diagnosis.reason} The response may be incomplete.`,
+          type: "codex_error",
+          compatibility: "stream_terminated_unexpectedly",
+          status: 502,
+        },
+      });
+      return;
     }
 
     sendJson(res, 200, {
