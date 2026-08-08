@@ -13,6 +13,7 @@
 // =============================================================================
 
 import type { ModelAggregate } from "./experiment-aggregation";
+import { WINNER_EPSILON } from "./evaluation-profile";
 
 export interface ExperimentDisplayRanking {
   /** Complete models sorted by raw mean descending (roster order on ties). */
@@ -50,7 +51,7 @@ export function deriveDisplayRanking(
   const provisionalLeader =
     provisional.length > 0
       ? provisional[0].mean !== null &&
-        (bestEligibleMean === null || provisional[0].mean > bestEligibleMean)
+        (bestEligibleMean === null || provisional[0].mean > bestEligibleMean + WINNER_EPSILON)
         ? provisional[0]
         : null
       : null;
@@ -65,6 +66,6 @@ function compareByMeanThenOrder(
 ): number {
   const am = a.mean ?? -Infinity;
   const bm = b.mean ?? -Infinity;
-  if (am !== bm) return bm - am;
+  if (Math.abs(am - bm) >= WINNER_EPSILON) return bm - am;
   return (order.get(a.modelKey) ?? 0) - (order.get(b.modelKey) ?? 0);
 }
