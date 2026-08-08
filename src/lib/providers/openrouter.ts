@@ -33,6 +33,7 @@ import {
 } from "./provider-deadline";
 import {
   composeAbortSignals,
+  createStreamActivity,
   isExecutionTimeoutError,
   providerAbortError,
 } from "../execution-deadline";
@@ -226,6 +227,7 @@ export const openrouterProvider: LLMProvider = {
     const headers = createHeadersReady();
     const streamAbort = new AbortController();
     const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+    const activity = createStreamActivity();
     const source = (async function* (): AsyncGenerator<string, void, unknown> {
       const key = getApiKey();
       if (!key) {
@@ -269,7 +271,14 @@ export const openrouterProvider: LLMProvider = {
             res.status,
           );
         }
-        yield* readSseChatStream(res.body, "openrouter", "OpenRouter", composed.signal);
+        yield* readSseChatStream(
+          res.body,
+          "openrouter",
+          "OpenRouter",
+          composed.signal,
+          undefined,
+          activity,
+        );
       } catch (err) {
         headers.resolve();
         if (isExecutionTimeoutError(err)) throw err;
@@ -290,6 +299,7 @@ export const openrouterProvider: LLMProvider = {
       stage: "provider",
       signal: composed.signal,
       abortController: streamAbort,
+      activity,
       policy: {
         ...PROVIDER_DEADLINES,
         connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,
@@ -305,6 +315,7 @@ export const openrouterProvider: LLMProvider = {
     const headers = createHeadersReady();
     const streamAbort = new AbortController();
     const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+    const activity = createStreamActivity();
     const source = (async function* (): AsyncGenerator<ProviderStreamEvent, void, unknown> {
       const key = getApiKey();
       if (!key) {
@@ -355,6 +366,7 @@ export const openrouterProvider: LLMProvider = {
           "OpenRouter",
           composed.signal,
           meta,
+          activity,
         )) {
           yield { delta };
         }
@@ -379,6 +391,7 @@ export const openrouterProvider: LLMProvider = {
       stage: "provider",
       signal: composed.signal,
       abortController: streamAbort,
+      activity,
       policy: {
         ...PROVIDER_DEADLINES,
         connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,

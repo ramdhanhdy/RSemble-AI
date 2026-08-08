@@ -15,6 +15,53 @@ import { afterEach, beforeEach } from "vitest";
 // set before any react-dom render happens, so it lives at module scope.
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
+// Node >= 22.12 ships an experimental `globalThis.localStorage` whose getter
+// returns a non-Web-Storage object (no getItem/setItem/removeItem) and prints
+// `Warning: --localstorage-file was provided without a valid path` on access.
+// In the happy-dom test environment this built-in shadows happy-dom's
+// spec-compliant Storage, so credential-store.ts (which calls
+// `globalThis.localStorage?.getItem`) silently swallows the TypeError and
+// reports "session" instead of "remembered" — the root cause of the two
+// ConnectionsModal.behavior.test.tsx failures. Other suites stub localStorage
+// themselves (vi.stubGlobal) and must keep working, so only replace the global
+// when the existing one is NOT a spec Web Storage (lacks getItem). Test-harness
+// only; no src/ implementation changes.
+function installSpecLocalStorageIfMissing(): void {
+  const existing = (globalThis as Record<string, unknown>).localStorage as
+    { getItem?: unknown } | undefined;
+  if (existing && typeof existing.getItem === "function") {
+    return; // happy-dom or a real Web Storage is already in place.
+  }
+  const store = new Map<string, string>();
+  const storage = {
+    get length(): number {
+      return store.size;
+    },
+    clear(): void {
+      store.clear();
+    },
+    getItem(key: string): string | null {
+      return store.get(key) ?? null;
+    },
+    key(index: number): string | null {
+      return [...store.keys()][index] ?? null;
+    },
+    removeItem(key: string): void {
+      store.delete(key);
+    },
+    setItem(key: string, value: string): void {
+      store.set(key, String(value));
+    },
+  };
+  Object.defineProperty(globalThis, "localStorage", {
+    value: storage,
+    configurable: true,
+    writable: true,
+  });
+}
+
+installSpecLocalStorageIfMissing();
+
 /**
  * Narrow allowlist for known noise that is NOT a defect in first-party code.
  * Every entry must name its source and why it is safe to ignore. Adding a

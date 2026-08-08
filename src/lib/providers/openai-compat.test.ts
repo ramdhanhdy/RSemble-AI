@@ -221,6 +221,7 @@ describe("createOpenAICompatProvider — optional-key mode", () => {
       removeItem: () => {},
     });
     vi.stubEnv("VITE_UMANS_API_KEY", "");
+    vi.stubEnv("VITE_UMANS_KEY", "");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ data: [{ id: "m1" }] }), {
         status: 200,
@@ -370,6 +371,7 @@ describe("createOpenAICompatProvider — default remains key-required", () => {
       removeItem: () => {},
     });
     vi.stubEnv("VITE_UMANS_API_KEY", "");
+    vi.stubEnv("VITE_UMANS_KEY", "");
     const provider = createOpenAICompatProvider(config);
     const result = provider.readiness();
     expect(result).not.toBeInstanceOf(Promise);
@@ -384,6 +386,7 @@ describe("createOpenAICompatProvider — default remains key-required", () => {
       removeItem: () => {},
     });
     vi.stubEnv("VITE_UMANS_API_KEY", "");
+    vi.stubEnv("VITE_UMANS_KEY", "");
     const provider = createOpenAICompatProvider(config);
     await expect(provider.chatCompletion({ model: "m", messages: [] })).rejects.toBeInstanceOf(
       ProviderError,

@@ -23,6 +23,7 @@ import {
 } from "./provider-deadline";
 import {
   composeAbortSignals,
+  createStreamActivity,
   isExecutionTimeoutError,
   providerAbortError,
 } from "../execution-deadline";
@@ -283,6 +284,7 @@ export const geminiProvider: LLMProvider = {
     const headers = createHeadersReady();
     const streamAbort = new AbortController();
     const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+    const activity = createStreamActivity();
     const source = (async function* (): AsyncGenerator<string, void, unknown> {
       const key = getApiKey();
       if (!key) {
@@ -353,6 +355,7 @@ export const geminiProvider: LLMProvider = {
               );
             }
             if (done) break;
+            activity.notify();
             buffer += decoder.decode(value, { stream: true });
 
             let nl: number;
@@ -404,6 +407,7 @@ export const geminiProvider: LLMProvider = {
       stage: "provider",
       signal: composed.signal,
       abortController: streamAbort,
+      activity,
       policy: {
         ...PROVIDER_DEADLINES,
         connectMs: opts.connectMs ?? PROVIDER_DEADLINES.connectMs,

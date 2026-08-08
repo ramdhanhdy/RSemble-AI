@@ -4,12 +4,16 @@ import {
   composeAbortSignal,
   composeAbortSignals,
   createExecutionDeadline,
+  createStreamActivity,
   createStreamWatchdog,
   ExecutionTimeoutError,
   isExecutionTimeout,
   isUserAbort,
+  markStreamActivity,
+  streamWithExecutionDeadlines,
   timeoutErrorFromSignal,
   type DeadlineTimers,
+  type StreamActivity,
   runWithExecutionDeadlines,
 } from "./execution-deadline";
 
@@ -382,5 +386,137 @@ describe("provider operation boundaries", () => {
     timers.advance(60);
     expect(timeoutErrorFromSignal(overall.signal)?.kind).toBe("overall_timeout");
     overall.cleanup();
+  });
+});
+
+/** Build a controllable async iterable whose `next()` only resolves when the
+ * harness releases it. Used to simulate a provider stream that is still
+ * delivering transport bytes (via activity.notify) without yielding parser
+ * events. */
+function manualSource<T>(): {
+  source: AsyncIterable<T>;
+  release: () => void;
+} {
+  let release: () => void = () => {};
+  const source: AsyncIterable<T> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next(): Promise<IteratorResult<T, void>> {
+          return new Promise<IteratorResult<T, void>>((resolve) => {
+            release = () => resolve({ done: true, value: undefined });
+          });
+        },
+        return: async (): Promise<IteratorResult<T, void>> => ({ done: true, value: undefined }),
+      };
+    },
+  };
+  return { source, release: () => release() };
+}
+
+/** Pump the microtask queue enough to let the async-generator body of
+ * streamWithExecutionDeadlines construct its watchdog (scheduling the
+ * inactivity timer) before the test advances the manual clock. */
+async function prime(timers: ManualTimers) {
+  for (let i = 0; i < 10 && timers.pending() === 0; i += 1) {
+    await Promise.resolve();
+  }
+}
+
+describe("streamWithExecutionDeadlines activity watchdog", () => {
+  it("keeps a silent stream alive while transport activity notifies within inactivityMs", async () => {
+    const timers = new ManualTimers();
+    const activity = createStreamActivity();
+    const { source, release } = manualSource<string>();
+
+    const stream = streamWithExecutionDeadlines(source, {
+      ...metadata,
+      connectMs: 1000,
+      inactivityMs: 50,
+      now: timers.now,
+      timers,
+      activity,
+    });
+
+    const events: string[] = [];
+    const done = (async () => {
+      for await (const ev of stream) events.push(ev);
+    })();
+
+    await prime(timers);
+    expect(timers.pending()).toBeGreaterThan(0);
+
+    // Cumulative silence with zero yielded events far exceeds inactivityMs,
+    // but each transport-activity notification resets the inactivity clock.
+    for (let step = 0; step < 4; step += 1) {
+      timers.advance(40);
+      activity.notify();
+    }
+    expect(timers.pending()).toBeGreaterThan(0);
+
+    release();
+    await expect(done).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+  });
+
+  it("fires stream_inactivity_timeout when a silent stream never notifies", async () => {
+    const timers = new ManualTimers();
+    const activity = createStreamActivity();
+    const { source } = manualSource<string>();
+
+    const stream = streamWithExecutionDeadlines(source, {
+      ...metadata,
+      connectMs: 1000,
+      inactivityMs: 50,
+      now: timers.now,
+      timers,
+      activity,
+    });
+    const events: string[] = [];
+    const done = (async () => {
+      for await (const ev of stream) events.push(ev);
+    })();
+
+    await prime(timers);
+    expect(timers.pending()).toBeGreaterThan(0);
+
+    // No transport activity: a single gap longer than inactivityMs fires.
+    timers.advance(51);
+    await expect(done).rejects.toMatchObject({ kind: "stream_inactivity_timeout" });
+    expect(events).toEqual([]);
+  });
+
+  it("resets inactivity via markStreamActivity fallback when options.activity is absent", async () => {
+    const timers = new ManualTimers();
+    const activity = createStreamActivity();
+    const { source, release } = manualSource<string>();
+    // No options.activity: the watchdog must discover the activity attached
+    // to the source via markStreamActivity (execution-deadline.ts fallback).
+    const marked = markStreamActivity(source, activity as StreamActivity);
+
+    const stream = streamWithExecutionDeadlines(marked, {
+      ...metadata,
+      connectMs: 1000,
+      inactivityMs: 50,
+      now: timers.now,
+      timers,
+    });
+
+    const events: string[] = [];
+    const done = (async () => {
+      for await (const ev of stream) events.push(ev);
+    })();
+
+    await prime(timers);
+    expect(timers.pending()).toBeGreaterThan(0);
+
+    for (let step = 0; step < 4; step += 1) {
+      timers.advance(40);
+      activity.notify();
+    }
+    expect(timers.pending()).toBeGreaterThan(0);
+
+    release();
+    await expect(done).resolves.toBeUndefined();
+    expect(events).toEqual([]);
   });
 });

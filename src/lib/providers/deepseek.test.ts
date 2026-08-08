@@ -77,6 +77,7 @@ describe("DeepSeek browser-direct adapter", () => {
 
   it("readiness is a sync credential check against the stored key", async () => {
     stubLocalStorage("");
+    vi.stubEnv("VITE_DEEPSEEK_KEY", "");
     const missing = deepseekProvider.readiness();
     expect(missing).not.toBeInstanceOf(Promise);
     expect(missing).toMatchObject({
