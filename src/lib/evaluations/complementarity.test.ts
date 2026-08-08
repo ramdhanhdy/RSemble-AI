@@ -10,12 +10,14 @@
 
 import { describe, expect, it } from "vitest";
 import type { VerifierOutcome } from "./fusion-study-types";
+import type { JudgeReport } from "../../studio-data";
 import {
   assessChallengerOutcome,
   computeCoFailure,
   computeHeadroom,
   detectBimodalScores,
   gateBinaryMetrics,
+  modelTaskScoreFromReport,
   probePoolAdequacy,
   taskOverall,
   type PairedTaskScores,
@@ -380,5 +382,51 @@ describe("taskOverall", () => {
     ).toBeCloseTo(4, 10);
     expect(taskOverall({ overall: 4.2, criteria: [] }, EQUAL_WEIGHTS)).toBeCloseTo(4.2, 10);
     expect(taskOverall({ overall: null, criteria: [] }, EQUAL_WEIGHTS)).toBeNull();
+  });
+});
+
+describe("modelTaskScoreFromReport — binary criteria excluded from numeric vectors", () => {
+  it("skips binary criterion results so they never become fake 1/5 headroom scores", () => {
+    const report: JudgeReport = {
+      labelMap: [
+        { label: "A", candidateId: "c1" },
+        { label: "B", candidateId: "c2" },
+      ],
+      evaluationsById: {
+        c1: {
+          candidateId: "c1",
+          blindLabel: "A",
+          overallScore: 4.0,
+          position: "p",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [
+            { criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" },
+            { criterionId: "b1", label: "Check", kind: "binary", value: true, rationale: "r" },
+            { criterionId: "b2", label: "Check2", kind: "binary", value: false, rationale: "r" },
+          ],
+        },
+        c2: {
+          candidateId: "c2",
+          blindLabel: "B",
+          overallScore: 4.0,
+          position: "p",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [],
+        },
+      },
+      comparisons: [],
+    };
+    const score = modelTaskScoreFromReport(report, "c1");
+    expect(score).not.toBeNull();
+    // Only the graded criterion survives — binary booleans must NOT be coerced
+    // into 0/1 numeric scores in the CriterionScoreVector.
+    expect(score!.criteria).toHaveLength(1);
+    expect(score!.criteria[0]).toEqual({ criterionId: "quality", score: 4 });
   });
 });
