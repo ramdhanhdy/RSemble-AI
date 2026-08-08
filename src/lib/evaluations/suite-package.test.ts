@@ -326,6 +326,7 @@ describe("hybrid profile round-trip through suite packages", () => {
     });
     const result = normalizeSuitePackage(pkg, baseOpts());
     expect(result.ok).toBe(false);
+    if (result.ok) return;
     expect(result.errors.some((e) => e.includes("not assigned to any requirement group"))).toBe(
       true,
     );
