@@ -9,44 +9,72 @@
 > synthesis, then 3 mandatory post-convergence falsification loops against the final design.
 > **Scope:** decision only — no spec/plan/code changes yet. All simulation definitions are
 > documented in Appendix A; every randomized claim below is reproducible.
+>
+> **Decision log (final, authoritative for the pending feature):**
+> - **Decision 1 — separate authoritative ranking value from bounded display score.**
+>   `rankValue = Q − λ·(1 − C)` is the sole ranking authority (ordering, winners, ties,
+>   experiment task-level ranking). `rankScore = max(1, rankValue)` is the bounded 1–5
+>   presentation/compatibility value, never independently authoritative when the floor binds.
+>   `floored = rankValue < 1` requires explicit floor disclosure (raw value inspectable). No
+>   artificial ties from `rankScore`; experiments aggregate the authoritative `rankValue` and
+>   render any bounded aggregate separately.
+> - **Decision 2 — remove the min-cost "binary-decided" heuristic.** The proposed
+>   `δ = min_g λ·v_g/Σv` badge does not answer "could one binary verdict have changed the
+>   winner?" and no probabilistic closeness claim ships without an empirical Judge-uncertainty
+>   model. The fixed δ=0.10 band remains deferred. Per-group fail costs (`λ·v_g/Σv`) remain
+>   evidence in authoring/audit UI. The deterministic "Compliance changed the winner" signal
+>   is defined (§21) and deferred for v1.
+> - Terminology normalized throughout to `rankValue` / `rankScore` / `floored`.
 
 ---
 
 ## 1. Executive decision
 
-RSemble will standardize on **R = clamp(Q − λ(1−C), 1, 5)** as the canonical Rank Score for
-mixed profiles:
+RSemble will standardize on a two-value scoring contract for mixed profiles:
+
+```text
+rankValue = Q − λ·(1 − C)          authoritative ranking value (may be below 1; range [0,5] under v1 constraints)
+rankScore = max(1, rankValue)      bounded 1–5 presentation/compatibility value
+floored   = rankValue < 1          disclosure flag (never an artificial tie source)
+```
 
 - **Quality Q** — the existing weighted mean of graded criterion scores (1–5), unchanged.
 - **Compliance C** — the weighted pass share of **Requirement Groups** (0–1, displayed as %),
   computed from native boolean evidence; never encoded onto the 1–5 scale.
-- **λ ∈ [0,1]** — the profile-level **compliance influence** parameter ("maximum points all
-  compliance failures together may cost"), **default 1.0**, hard-bounded by validation.
+- **λ ∈ [0,1]** — the profile-level **compliance influence** parameter (`complianceInfluence`,
+  "maximum points all compliance failures together may cost"), **default 1.0**, hard-bounded by
+  validation.
 - **Requirement Groups** ship in v1: first-class containers, **ALL mode only**, group weight
   `v_g > 0` as the sole binary-channel weight, every check in exactly one group (implicit
   singleton materialized at save).
 - **Hard Gates are reserved, not shipped**: the schema boundary is documented and `kind:"gate"`
   is rejected by validation with an actionable message; every gate-coupled Fusion proposal is
   postponed (consensus judging conflicts with the single-blind-judge invariant).
-- The floor (`R_raw < 1 → R = 1.0`) is kept but made honest (post-falsification): sorting uses
-  **R_raw** (evidence order survives the plateau), the floor marker shows the raw value, the
-  ≥0.5 material-gap rule judges Q-gap first on flagged pairs, the tiebreak is **quality-first
-  (Q desc → C desc)** — the pre-falsification C-first order was proven to rank equal-R
-  candidates by *ascending* quality.
-- **Closeness band δ=0.10: deferred**; a derived display-only **"binary-decided" badge**
-  (δ = min per-check fail cost) ships instead — the authored exchange rate made visible.
-  Historical runs: authoritative-only (pure-graded runs are bit-identical — R = Q); no v2
-  recalculation, no legacy re-typing.
+- **`rankValue` is the sole ranking authority** (Decision 1): candidate ordering, winner
+  selection, tie comparison, and experiment task-level ranking all use `rankValue` — never the
+  bounded `rankScore`. When the floor binds (`floored = true`), `rankScore` displays `1.0` with
+  a floor marker and the underlying `rankValue` is inspectable; two floored candidates are
+  never treated as equal merely because both display `1.0`.
+- **Tiebreak is quality-first (Q desc → C desc)**: the pre-falsification C-first order was
+  proven to rank equal-rankValue candidates by *ascending* quality.
+- **Closeness band δ=0.10: deferred. The min-cost "binary-decided" heuristic is REMOVED**
+  (Decision 2): the minimum group fail cost does not answer "could one binary verdict have
+  changed the winner?", and no probabilistic closeness claim ships without an empirical
+  Judge-uncertainty model. Per-group fail costs (`λ·v_g/Σv`) remain evidence in
+  authoring/audit UI. The optional deterministic "Compliance changed the winner" audit signal
+  is defined (§21) and deferred.
+  Historical runs: authoritative-only (pure-graded runs are bit-identical — rankValue = Q); no
+  v2 recalculation, no legacy re-typing.
 
 The decisive reconciliation: **Prime's block blend and Fusion's capped penalty are the same
-ranking family.** With `r = W_bin/W_g` and `λ = 4r`, `(1+r)·S = R_raw + 5r` — a positive affine
-transformation, so candidate ordering, ties, and experiment-level ordering are identical on the
-unclamped region. The genuine differences are (a) the floor clamp (Fusion only), (b) distance
-scale `1/(1+r)` (S compresses every gap), and (c) parameter semantics. RSemble adopts the
-**penalty parameterization** (λ, "max points") because it is the least-misunderstood author
-control, keeps thresholds in quality units the Judge actually assigns, and never inflates a
-compliant candidate above its quality score; the floor is handled by disclosure, not by
-switching to the compressed blend.
+ranking family.** With `r = W_bin/W_g` and `λ = 4r`, `(1+r)·S = rankValue + 5r` — a positive
+affine transformation, so candidate ordering, ties, and experiment-level ordering are
+identical across the whole domain (no clamp enters the ranking path). The genuine differences
+are (a) the bounded display value `rankScore` (Fusion only; presentation, never authority),
+(b) distance scale `1/(1+r)` (S compresses every gap), and (c) parameter semantics. RSemble
+adopts the **penalty parameterization** (λ, "max points") because it is the least-misunderstood
+author control and keeps thresholds in quality units the Judge actually assigns; the floor is a
+display transform (`max(1, rankValue)`), not a ranking correction.
 
 ---
 
@@ -55,54 +83,61 @@ switching to the compressed blend.
 | Source | Core proposal | Reconciled status |
 |---|---|---|
 | Pending spec §9 | mixed weighted mean, false→1/true→5 | **Rejected** (decomposition 3.18×, dilution →5.0, graded span collapse to 0.36, 4× judge-error leverage, H_synth fabrication) |
-| Prime review (C-revised) | block blend `S = (W_g·Q + W_bin(1+4C))/(W_g+W_bin)`, parity default `W_bin = W_b/4` | **Same family** as R (`λ = 4W_bin/W_g`); rejected as the canonical representation (distance compression, inflation, drift), retained as the mathematical identity and as a "per-criterion parity" preset |
+| Prime review (C-revised) | block blend `S = (W_g·Q + W_bin(1+4C))/(W_g+W_bin)`, parity default `W_bin = W_b/4` | **Same family** as rankValue (`λ = 4W_bin/W_g`); rejected as the canonical representation (distance compression, inflation, drift), retained as the mathematical identity and as a "per-criterion parity" preset |
 | Holistic Judge | capped penalty `R = Q − λ(1−C)` first; grouping = best imported idea; λ calibration = main open question | **Adopted** as the canonical family; grouping adopted (ALL-only v1); λ = 1.0 default with quantified tradeoffs |
 | Fusion result | three-type model, Requirement Groups ALL/MEAN, hard gates with consensus judging, δ=0.10, v2 recalculation | Groups **adopted (ALL-only, minimal)**; gates **reserved** (consensus violates single-judge invariant); δ **deferred**; v2 recalculation **rejected** (authoritative-only history) |
-| Live code | `canonicalScore` weighted mean, unclamped, null-on-no-positive-weight; WINNER_EPSILON 1e-9; equal-task experiment means; complete-coverage eligibility; strict parser | R reduces to `canonicalScore` exactly for pure-graded profiles; all live invariants preserved; guard/fingerprint/render fixes enumerated in §26 |
+| Live code | `canonicalScore` weighted mean, unclamped, null-on-no-positive-weight; WINNER_EPSILON 1e-9; equal-task experiment means; complete-coverage eligibility; strict parser | rankValue reduces to `canonicalScore` exactly for pure-graded profiles; all live invariants preserved; guard/fingerprint/render fixes enumerated in §26 |
 
 ## 3. Formal equivalence proof
 
 **Theorem (affine equivalence).** Let `r = W_bin/W_g` (requires W_g > 0) and `λ = 4r`. Define
-`S = (W_g·Q + W_bin·(1+4C))/(W_g+W_bin)` and `R_raw = Q − λ(1−C)`. Then
+`S = (W_g·Q + W_bin·(1+4C))/(W_g+W_bin)` and `rankValue = Q − λ(1−C)`. Then
 
 ```
-(1+r)·S = Q + r + 4rC = Q − 4r(1−C) + 5r = R_raw + 5r.
+(1+r)·S = Q + r + 4rC = Q − 4r(1−C) + 5r = rankValue + 5r.
 ```
 
-*Proof:* `(1+r)S = (1+r)·(Q + r(1+4C))/(1+r) = Q + r + 4rC`; and `R_raw + 5r =
+*Proof:* `(1+r)S = (1+r)·(Q + r(1+4C))/(1+r) = Q + r + 4rC`; and `rankValue + 5r =
 Q − 4r(1−C) + 5r = Q + r + 4rC`. ∎
 
 **Corollaries (each verified — see Appendix A.2):**
 
-1. **Order identity (unclamped):** for a fixed profile, `R_A > R_B ⟺ S_A > S_B` and ties agree.
-   Verified: 0 ordering mismatches in 200,000 random pairs; residual ≤ 3e-14. Exhaustive
-   sweeps over all achievable (Q,C) for 6g+1b, 2g+8b, 3g+3b, 1g+1b, 4g+4b, 6g+6b agree 1.0.
-2. **Distance scaling:** `S_A − S_B = (R_A − R_B)/(1+r)` — S compresses every gap by
-   `1/(1+r) ≤ 1` (0.8 at λ=1).
-3. **Range:** S ∈ [1,5] by convexity; R needs the lower clamp. The ceiling never binds for
-   either.
+1. **Order identity (whole domain):** for a fixed profile, `rankValue_A > rankValue_B ⟺
+   S_A > S_B` and ties agree — because ranking uses the *unclamped* value (Decision 1), no
+   plateau enters the comparison. Verified: 0 ordering mismatches in 200,000 random pairs;
+   residual ≤ 3e-14. Exhaustive sweeps over all achievable (Q,C) for 6g+1b, 2g+8b, 3g+3b,
+   1g+1b, 4g+4b, 6g+6b agree 1.0.
+2. **Distance scaling:** `S_A − S_B = (rankValue_A − rankValue_B)/(1+r)` — S compresses every
+   gap by `1/(1+r) ≤ 1` (0.8 at λ=1).
+3. **Range:** rankValue ∈ [0,5] under the v1 constraints (Q ≥ 1, λ ≤ 1, C ≥ 0); S ∈ [1,5] by
+   convexity; `rankScore = max(1, rankValue) ∈ [1,5]` is the bounded presentation form.
 4. **Commutation:** the affine map commutes with means and max oracles when r is constant:
-   `mean_t(S_t) = (mean_t(R_raw,t) + 5r)/(1+r)`; `max(S_A,S_B)` likewise. Verified: 0
-   experiment-level ordering mismatches in 200 simulated 5-task candidates.
-5. **Where equivalence fails (each verified):**
-   - **The floor clamp:** `R_raw < 1` collapses distinct evidence to R = 1.0 (plateau). Binds
-     12.5% of *uniform* (Q,C) space at λ=1, 3.23% in a realistic 8%-broken mixture, 0.004% on
-     good leaderboards. S keeps such pairs distinct (1.0 vs 1.8 for Q=1.0/C=0 vs Q=1.5/C=0.5).
+   `mean_t(S_t) = (mean_t(rankValue_t) + 5r)/(1+r)`; `max(S_A,S_B)` likewise. Verified: 0
+   experiment-level ordering mismatches in 200 simulated 5-task candidates. Experiment
+   aggregation therefore uses the mean of `rankValue` (authoritative) and renders any bounded
+   aggregate separately (Decision 1).
+5. **Where the two representations differ (each verified):**
+   - **Bounded display value:** `rankScore = max(1, rankValue)` collapses distinct evidence to
+     a displayed 1.0 (plateau). Binds 12.5% of *uniform* (Q,C) space at λ=1, 3.23% in a
+     realistic 8%-broken mixture, 0.004% on good leaderboards. S keeps such pairs distinct
+     (1.0 vs 1.8 for Q=1.0/C=0 vs Q=1.5/C=0.5). Because ranking and ties use `rankValue`, the
+     plateau never creates artificial ranking ties; it only affects the bounded display, which
+     carries the `floored` marker and the raw value (§11–§12).
    - **Defaults differ:** `W_bin = W_b/4` matches `λ = 1` only when `W_b = W_g`. At the two
-     defaults, 6g+1b reverses 10.1% of candidate pairs and 2g+8b 16.6% (interior, no clamping).
-     Example: 6g+1b, A=(Q=4.5, check FAIL), B=(Q=4.0, PASS): S-default ranks A first (4.36 vs
-     4.04), R-default ranks B first (3.50 vs 4.00).
+     defaults, 6g+1b reverses 10.1% of candidate pairs and 2g+8b 16.6% (interior). Example:
+     6g+1b, A=(Q=4.5, check FAIL), B=(Q=4.0, PASS): S-default ranks A first (4.36 vs 4.04),
+     penalty-default ranks B first (3.50 vs 4.00).
    - **Expressible range:** Fusion λ ∈ [0,1] ⇔ r ∈ [0, 0.25]; Prime's parity default reaches
-     r = 1 (2g+8b) — outside R's parameter space.
+     r = 1 (2g+8b) — outside λ's parameter space.
    - **Per-task parameter differences:** means of S with per-task r_t are not affine in means
-     of R; reversals without clamping (1.7% in a 100k-trial two-task simulation).
-   - **Zero-graded profiles:** S is undefined (0/0); R-family defines compliance-only ranking
-     on C.
+     of rankValue; reversals without any floor (1.7% in a 100k-trial two-task simulation).
+   - **Zero-graded profiles:** S is undefined (0/0); the penalty family defines compliance-only
+     ranking on C.
 
 **Verdict: the reconciliation hypothesis is TRUE.** Prime and Fusion discovered the same
 ranking family under different parameterizations. The remaining differences are representational
-(distance scale, floor behavior, parameter semantics) and default-calibration — not ranking
-architecture.
+(bounded display value, distance scale, parameter semantics) and default-calibration — not
+ranking architecture.
 
 ## 4. What Prime and Fusion actually agree on
 
@@ -115,7 +150,7 @@ architecture.
    ceiling in both units).
 5. Decomposition resistance requires more than a cap: semantic grouping (Fusion) / block
    count-boundedness (Prime) — reconciled: **groups ship**.
-6. Ranking: deterministic scalar, ties within 1e-9 share; R→C→Q→id tiebreak chain.
+6. Ranking: deterministic scalar (rankValue), ties within 1e-9 share; rankValue→Q→C→id tiebreak chain.
 7. Judge contract: checks stay flat boolean results; grouping/blending is post-processing.
 8. Fusion headroom must consume the same contribution math; bimodal diagnostics must exclude
    binary criteria; verifier outcomes stay separate.
@@ -124,10 +159,10 @@ architecture.
 
 | Disagreement | Prime (S) | Fusion (R) | Resolution |
 |---|---|---|---|
-| Canonical representation | S, naturally bounded | R + clamp | **R** — quality-unit thresholds, R ≤ Q, no inflation, no distance compression (rec-math; rec-param; rec-clamp's fallback) |
+| Canonical representation | S, naturally bounded | rankValue + bounded rankScore | **rankValue** — authoritative unclamped value; rankScore is display-only; quality-unit thresholds, rankValue ≤ Q, no inflation, no distance compression (rec-math; rec-param; rec-clamp's fallback; Decision 1) |
 | Author parameter | W_bin (block weight) | λ (max penalty) | **λ** — one multiplication in points, drift-invariant, the parameter *is* the cap guarantee; W_bin's parity default is order-dependent and drifts 10× under profile edits (rec-param) |
 | Default | W_bin = W_b/4 (per-criterion parity) | λ = 1 | **λ = 1** — roundest interpretable unit; exact per-criterion parity at equal channels (6g+6b); binary-heavy profiles stay at the graded noise floor on equal-check boards; systematic-error bound 4–12× tighter than parity (rec-calib) |
-| Floor | none (convex bounds) | clamp | **Keep clamp + honest floor** (marker, component materiality, printed tiebreak) — the plateau's information is preserved via Q/C components and the flag; S's alternative costs global compression and inflation (rec-math; rec-clamp §5) |
+| Floor | none (convex bounds) | bounded rankScore | **rankScore = max(1, rankValue), display-only** (Decision 1): the plateau is excluded from ranking; `floored` marker + raw rankValue inspection preserve the evidence; S's alternative costs global compression and inflation (rec-math; rec-clamp §5; Decision 1) |
 | Groups | not in v1 (flat block) | ALL/MEAN + member weights | **ALL-only v1, singleton default, group weight only** — MEAN+member-weights recreates decomposition one level down (rec-groups) |
 | Gates | future eligibility contract | ship with consensus | **Reserve** — consensus violates single-judge/no-trials invariants; single-judged gate = worst option (rec-groups) |
 | History | authoritative-only | v2 recalculation labeled | **Authoritative-only** — no mixed history exists; pure-graded is bit-identical; recalculation contradicts snapshot immutability (§22) |
@@ -226,49 +261,59 @@ the Judge never computes C.
 
 ## 11. Ranking semantics
 
-Deterministic sort key, descending except id (single task and per-task experiment cell):
+**The authoritative ranking value is `rankValue` (Decision 1).** Deterministic sort key,
+descending except id (single task and per-task experiment cell):
 
 ```
-R_raw desc → Q desc → C desc → candidate_id asc     (R_raw = Q − λ(1−C); R = clamp(R_raw,1,5))
+rankValue desc → Q desc → C desc → candidate_id asc     (rankValue = Q − λ(1−C))
 ```
 
-- Winner = all candidates within `WINNER_EPSILON = 1e-9` of the max displayed R (existing
-  logic); a leaderboard whose max is a floor-flagged 1.0 shows no winner badge on censored
-  ties.
-- **Sorting uses R_raw, not the clamped R** (post-falsification revision): among floored
-  candidates the R column ties at 1.0 but the evidence order is preserved; the floor marker
-  shows the raw value in detail. This eliminates the contradiction found in falsification loop
-  1 (31.7% of floored pairs reordered against evidence by the old key).
+- **Winner/tie comparison uses `rankValue`** with the existing `WINNER_EPSILON = 1e-9`
+  (evaluation-profile.ts `computeWinnerKeys`): all candidates within epsilon of the max
+  `rankValue` share the win. `rankScore` never enters winner logic — no artificial ties are
+  created by the bounded display value.
+- **`floored` candidates** (`rankValue < 1`) are ordered by their `rankValue` like everyone
+  else; the UI displays `rankScore = 1.0` with the floor marker and makes the raw `rankValue`
+  inspectable (never hidden sorting). This eliminates the contradiction found in falsification
+  loop 1 (the old clamped key reordered 31.7% of floored pairs against evidence).
 - **Tiebreak is quality-first: Q desc before C desc** (post-falsification revision). At fixed
-  R_raw, Q = R_raw + λ − λC, so Q desc ⟺ C asc: the previous C-first order ranked equal-R
-  candidates by *ascending* quality (a 5.0-quality candidate below a 4.0 one at equal R). Q
-  first matches user expectation; C is then redundant but retained for explicitness.
+  rankValue, Q = rankValue + λ − λC, so Q desc ⟺ C asc: the previous C-first order ranked
+  equal-rankValue candidates by *ascending* quality (a 5.0-quality candidate below a 4.0 one at
+  equal rankValue). Q first matches user expectation; C is then redundant but retained for
+  explicitness.
 - The ≥0.5 material-gap rule (DECISIONS #8) judges **Q-gap first, then C-gap**, for
   floor-flagged pairs (a floored pair can have both gaps material in opposite directions; Q is
   the headline).
-- **Binary-decided badge (display-only):** when the top-2 margin is below the minimum per-check
-  fail cost `δ = min_g λ·v_g/Σv`, the UI badges the pair "binary-decided / too close to call"
-  — the smallest margin one wrong verdict could flip. This is the *derived* band (not the
-  deferred arbitrary 0.10), an auditability feature.
+- **No closeness band and no min-cost "binary-decided" heuristic** (Decision 2): the minimum
+  per-check fail cost does not answer "could one binary verdict have changed the winner?", and
+  the product has no empirical Judge-uncertainty model. Per-group fail costs
+  (`λ·v_g/Σv`) remain evidence in authoring/audit UI. The deterministic "Compliance changed the
+  winner" audit signal is defined in §21 and deferred.
 - Ordering is monotone: improving any graded score or flipping any check false→true never
-  lowers R (verified by construction; no Pareto violations in 2,160-vector sweep in the prior
-  review, re-checked for R).
+  lowers rankValue (verified by construction; no Pareto violations in 2,160-vector sweep in the
+  prior review, re-checked for rankValue).
 
-## 12. Canonical Rank Score formula
+## 12. Canonical Rank Score contract
 
 ```
-R_raw = Q − λ·(1 − C)
-R     = clamp(R_raw, 1, 5)          λ ∈ [0,1], profile parameter, default 1.0
-floor = R_raw < 1                   (censored; R displays 1.0 with a floor marker)
+rankValue = Q − λ·(1 − C)            authoritative ranking value; λ ∈ [0,1], default 1.0
+rankScore = max(1, rankValue)        bounded 1–5 presentation/compatibility value
+floored   = rankValue < 1            disclosure flag
 ```
 
-- R = Q when C = 1 (perfect compliance) — pure-graded profiles are bit-identical to today.
-- R ≤ Q always; compliance can only deduct, never inflate.
+- **Authority:** ordering, winner selection, tie comparison, and experiment task-level ranking
+  use `rankValue` only (Decision 1). `rankScore` is for bounded 1–5 display/compatibility
+  surfaces and is never independently authoritative when the floor binds.
+- rankValue = Q when C = 1 (perfect compliance) — pure-graded profiles are bit-identical to
+  today (`rankValue = Q`, `rankScore = Q`).
+- rankValue ≤ Q always; compliance can only deduct, never inflate.
 - The maximum total effect of ALL compliance failures is λ points — composition-invariant by
   construction (no check count, grouping choice, or weight can move it past λ).
-- The floor marker distinguishes "bottomed out" (Q/C shown alongside; raw value in detail)
-  from a genuine anchor-1 score; the ≥0.5 material-gap rule judges flagged pairs on Q/C
-  components, Q-gap first (a full-point gap cannot hide at the floor).
+- **Floor disclosure:** when `floored`, the UI shows `Rank score 1.0*` and the raw
+  `Rank value 0.72` (exact copy may be refined during implementation; the semantic disclosure
+  is required). Two floored candidates are never presented as equivalent merely because both
+  display 1.0 — their differing `rankValue` is inspectable, and no artificial ties are created
+  from `rankScore`.
 
 ## 13. Parameterization tournament (Track 3)
 
@@ -288,8 +333,8 @@ why A beat B, edit without silently changing semantics — are under λ: one mul
 ("4.40 − 1.0 × 0.17"); and the cap's meaning is invariant to adding graded criteria, adding
 checks, or regrouping, because it is defined in absolute points. **λ is hard-bounded at 1.0**
 (validation error, not silent clamp): at λ=2 one ordinary check becomes a de facto eligibility
-veto (Q=2.5 + fail → R=1.0) — a hidden gate. Authors needing more influence promote the check
-to graded (quality) or wait for gates (eligibility).
+veto (Q=2.5 + fail → rankScore=1.0) — a hidden gate. Authors needing more influence promote
+the check to graded (quality) or wait for gates (eligibility).
 
 ## 14. Selected author-facing parameter
 
@@ -402,8 +447,8 @@ the composition-invariant cap. No single default achieves per-criterion parity e
 | 3g+3b | 0.333 | ≤ 1.0 | 0.333 | symmetric shares |
 | 2g+8b | 0.125 | ≤ 1.0 | 0.500 | checks quieter than graded levels by design |
 | 1g+12b | 0.083 | ≤ 1.0 | 1.000 | graded-dominant noise |
-| all-graded | — | — | — | C:=1, R=Q, bit-identical |
-| all-binary (compliance-only) | 1/n_b | 1.0 | — | rank on C (0–100%); no R |
+| all-graded | — | — | — | C:=1, rankValue=Q, bit-identical |
+| all-binary (compliance-only) | 1/n_b | 1.0 | — | rank on C (0–100%); no rankValue |
 | 1 group with 5 subchecks | 1.000 (group fail) | ≤ 1.0 | — | stricter than singleton; judge-error-fragile |
 | λ=0 | 0 | 0 | — | evidence-only; checks-excluded marker |
 
@@ -413,76 +458,99 @@ composition (decomposition, group duplication, member count changes). Per-check 
 weight if both copies fail — the same property as any weighted design; visible weights + the
 cap are the defense.
 
-## 19. Clamp analysis
+## 19. Bounded display analysis (the floor)
 
-**Keep the clamp, made honest.** The floor is forced by the penalty parameterization:
-"penalty form ∧ 1–5 domain ∧ no floor" is unsatisfiable (the largest floor-free penalty is
-`min(λ(1−C), Q−1)`, i.e., the clamp; verified to 0.0 error over a 200k grid). The alternative
-canonical S removes the floor by construction but pays global compression (20% at λ=1),
-inflation of compliant candidates above Q, threshold drift, and the 1+4C algebra.
+**Decision 1 removes the clamp from the ranking path; `rankScore = max(1, rankValue)` is a
+bounded 1–5 presentation value.** The floor is forced by any attempt to present the penalty
+form on the 1–5 domain: "penalty form ∧ 1–5 domain ∧ no unbounded value" is unsatisfiable (the
+largest floor-free bounded penalty is `min(λ(1−C), Q−1)`, i.e., the floor; verified to 0.0
+error over a 200k grid). The alternative canonical S removes the floor by construction but pays
+global compression (20% at λ=1), inflation of compliant candidates above Q, threshold drift,
+and the 1+4C algebra — so the product keeps `rankValue` unclamped as the authority and bounds
+only the presentation value.
 
-Quantified floor behavior at λ=1 (definitions in Appendix A.4): binds 12.5% of uniform (Q,C)
-space, 3.23% in an 8%-broken realistic mixture, 0.004% on good leaderboards; among Q<2.5
-candidates 34% are flattened; pair ties 0.098% (mixture); multi-winner artifacts 0.98%;
-mean bias +0.010; suite-ranking reversal risk 2.3% (10 tasks, 3 broken); closeness-band
-mislabeling 1.33% of in-band pairs. **Mitigations adopted (the "honest floor"):**
-1. `floor` flag persisted/derived on every R (R_raw < 1); UI and exports render "1.0* floor".
-2. The ≥0.5 material-gap rule judges flagged pairs on Q/C components (a full-point gap cannot
-   hide).
-3. R→C→Q→id tiebreak is printed wherever R ties; winner badges suppressed on censored ties.
-4. Experiment means report floor-task counts; the +0.010 mean bias is disclosed in the
-   aggregation footer.
-5. The closeness band (if ever adopted) judges flagged pairs on components.
+Quantified floor behavior at λ=1 (definitions in Appendix A.4): `rankScore` binds 12.5% of
+uniform (Q,C) space, 3.23% in an 8%-broken realistic mixture, 0.004% on good leaderboards;
+among Q<2.5 candidates 34% display the floor; display-pair ties 0.098% (mixture); multi-winner
+*display* artifacts 0.98%; mean bias +0.010; suite-ranking reversal risk 2.3% (10 tasks, 3
+broken) — all of these apply to the **display value only**; none affects ranking, winners, or
+experiment ordering, which use `rankValue` (Decision 1). Disclosure requirements adopted:
+1. `floored` flag derived per candidate (`rankValue < 1`); UI and exports render `1.0*` with
+   the raw `rankValue` inspectable.
+2. The ≥0.5 material-gap rule judges flagged pairs on Q/C components, Q-gap first (a full-point
+   gap cannot hide).
+3. Winner/tie logic uses `rankValue`; the rankValue→Q→C→id order is printed wherever the
+   bounded display ties.
+4. Experiment aggregation uses the mean of per-task `rankValue` (authoritative); any bounded
+   aggregate for display is rendered separately with floor-task counts (Decision 1).
+5. No closeness band in v1 (Decision 2); if one is ever adopted with evidence, it judges
+   flagged pairs on components.
 
-These neutralizations preserve the information the plateau would otherwise flatten (Q and C
-columns always accompany R), while keeping the number in quality units. S remains the
-documented affine image (`S = (R_raw + 5r)/(1+r)`, r = λ/4) if a "blended overview" is ever
-wanted as display-only.
+These disclosures preserve the information the floor would otherwise flatten (Q and C columns
+always accompany the rank display), while keeping the ranking number in quality units. S
+remains the documented affine image (`S = (rankValue + 5r)/(1+r)`, r = λ/4) if a "blended
+overview" is ever wanted as display-only.
 
 ## 20. Score-distance vs rank-equivalence analysis
 
-R and S are rank-equivalent (fixed profile, unclamped) but **product-inequivalent**:
+rankValue and S are rank-equivalent (fixed profile, whole domain) but **product-inequivalent**:
 
-- **Distances:** R's gaps are in quality units (net quality points); S compresses by 1/(1+r).
-- **≥0.5 material-gap rule:** same-conclusion pairs under R preserve Q-gaps up to a bounded
-  compliance term (misfire 3.9%); under S the rule misfires up to 25.8% in binary-heavy
+- **Distances:** rankValue gaps are in quality units (net quality points); S compresses by
+  1/(1+r).
+- **≥0.5 material-gap rule:** same-conclusion pairs under rankValue preserve Q-gaps up to a
+  bounded compliance term (misfire 3.9%); under S the rule misfires up to 25.8% in binary-heavy
   profiles (a genuine 0.6-quality gap displays 0.48 and escapes the mandated same-conclusion
   comparison).
-- **Tier bands (≥4.0/≥3.0) and the close-call margin:** R keeps their quality meaning (R=Q at
-  C=1); S shifts them (Q=3.2, C=1 → S=4.1 at r=1 — a weak candidate displayed in the top tier).
-- **Absolute value:** R=Q at C=1, R≤Q always; S>Q at C=1 (compliance "raises quality" — reads
-  odd).
-- **Profile-edit stability:** R changes only when λ or evidence changes; S's scale drifts with
-  composition (Q=4.0, all checks pass: S = 4.04 → 4.50 as checks are added; R stays 4.000).
-- **Historical:** R keeps v1/v2 boundaries transparent (R=Q when C=1); S re-reads a 4.0-quality
-  historical run as 4.2+.
-- **Aggregation:** mean(R_raw) = Q̄ − λ(1−C̄) exactly (affine in channel means — the Fusion
+- **Tier bands (≥4.0/≥3.0) and the close-call margin:** rankValue keeps their quality meaning
+  (rankValue=Q at C=1); S shifts them (Q=3.2, C=1 → S=4.1 at r=1 — a weak candidate displayed
+  in the top tier).
+- **Absolute value:** rankValue=Q at C=1, rankValue≤Q always; S>Q at C=1 (compliance "raises
+  quality" — reads odd).
+- **Profile-edit stability:** rankValue changes only when λ or evidence changes; S's scale
+  drifts with composition (Q=4.0, all checks pass: S = 4.04 → 4.50 as checks are added;
+  rankValue stays 4.000).
+- **Historical:** rankValue keeps v1/v2 boundaries transparent (rankValue=Q when C=1); S
+  re-reads a 4.0-quality historical run as 4.2+.
+- **Aggregation:** mean(rankValue) = Q̄ − λ(1−C̄) exactly (affine in channel means — the
   channel-separate rule); mean(S) is affine only for fixed r and never decomposes into channels.
 
 **Conclusion:** RSemble's canonical is an ordinal index with interval-style product thresholds
 (order authoritative; magnitudes meaningful only within one formula + one profile generation).
 Because thresholds are defined on the canonical, the representation that keeps thresholds in
-quality units — R — is the product-correct one.
+quality units — rankValue — is the product-correct one.
 
-## 21. Closeness-band decision — the arbitrary band (δ=0.10) is DEFERRED; a derived "binary-decided" badge ships
+## 21. Closeness-band and badge decisions
 
-Fusion's δ=0.10 ("too close to call") is deferred: it is (a) not required to solve hybrid
+**The fixed δ=0.10 band is DEFERRED** (unchanged): it is (a) not required to solve hybrid
 scoring; (b) uncalibrated — the product has no uncertainty model (DECISIONS #7 excludes
-trials/CI), so 0.10 is a noise guess; (c) mislabeled at the floor (every censored pair is
-|R−R|=0, in-band regardless of true distance — 27.4% of in-band pairs in uniform populations
-have true gaps > 0.10); (d) a profile parameter for a non-scoring concern.
+trials/CI), so 0.10 is a noise guess; (c) mislabeled at the floor (every floored pair displays
+|rankScore−rankScore| = 0, in-band regardless of true distance — 27.4% of in-band pairs in
+uniform populations have true gaps > 0.10); (d) a profile parameter for a non-scoring concern.
 
-**However, falsification loop 2 supplied a principled replacement:** a display-only
-**"binary-decided" badge** with the *derived* band `δ = min_g λ·v_g/Σv` — the smallest margin
-one wrong binary verdict could flip. This is not a noise guess; it is the authored exchange
-rate made visible ("the top-2 margin is smaller than the cost of one wrong check verdict").
-It is judged on components for floor-flagged pairs. The arbitrary 0.10 remains deferred; an
-evaluation-confidence feature (with trials/CI evidence) could later generalize the badge.
+**The min-cost "binary-decided" heuristic is REMOVED (Decision 2).** The reconciliation's
+earlier proposal (badge with `δ = min_g λ·v_g/Σv`, "binary-decided / too close to call") does
+**not** ship: the minimum group fail cost does not answer the general question "could one
+binary verdict have changed the winner?" (a heavier group can flip a margin larger than the
+minimum), and no `max`-cost substitute is adopted either — the product lacks an empirical
+Judge-uncertainty model for probabilistic closeness claims. Per-group fail costs
+(`λ·v_g/Σv`) remain useful evidence and stay available in authoring/audit UI.
+
+**Optional deterministic audit signal (deferred, exact semantics):** a "Compliance changed
+the winner" badge may ship in a later release. Its meaning is deterministic, never
+probabilistic: for candidates A and B with comparable Quality and rankValue, the badge is
+appropriate when `sign(ΔQ) ≠ sign(Δrank)` for non-zero differences, or when `ΔQ = 0` and
+`Δrank ≠ 0` (Compliance resolves a Quality tie), with `ΔQ = Q_A − Q_B` and
+`Δrank = rankValue_A − rankValue_B`. Edge cases to define before shipping: the existing
+numeric epsilon (comparisons within `WINNER_EPSILON` are ties), exact ties, multiple winners
+(more than two candidates), compliance-only profiles (no Q), and floored display scores
+(compare `rankValue`, never `rankScore`). If the badge adds complexity disproportionate to v1,
+it stays deferred — what must not survive is the incorrect min-cost threshold interpretation.
 
 ## 22. Historical compatibility decision — authoritative-only
 
-1. **Pure-graded runs (all historical runs today):** C := 1 ⇒ R = Q exactly — bit-identical to
-   the current canonical. No recomputation, no drift, no migration.
+1. **Pure-graded runs (all historical runs today):** C := 1 ⇒ rankValue = Q exactly —
+   bit-identical to the current canonical (rankScore = Q as well). No recomputation, no
+   drift, no migration.
 2. **Mixed runs:** none exist (feature unimplemented) — the Fusion "v2 recalculation" scenario
    has no instances in v1; the proposal is rejected anyway: run records and snapshots are
    immutable and pinned (spec §12; PRODUCT.md), and a score computed under a policy that did
@@ -495,23 +563,29 @@ evaluation-confidence feature (with trials/CI evidence) could later generalize t
 
 ## 23. Experiment implications
 
-- Per-task score = R_t (floor-flagged). Experiment model score = equal-task arithmetic mean of
-  R_t; missing = missing; complete-coverage winner eligibility unchanged; ties within 1e-9
-  share; ranking key R̄ desc → Q̄ desc → C̄ desc → id (quality-first, matching the task key).
-- Channel aggregates Q̄ and C̄ are reported alongside (Fusion's channel-separate rule; verified:
-  mean(R_raw) = Q̄ − λ(1−C̄) exactly — the mean is recoverable from channel means).
-- Floor tasks are counted and disclosed: each candidate shows an "n floored tasks" column and
-  the raw mean in the detail view (the +0.010 floor boost is reported, not hidden; the
-  0.48–2.3% suite-reversal risk — falsification loop 1 measured 0.48% with 2-task suites,
-  2.3% with heavier mixtures — is the disclosed price of the floor, mitigated by the column and
-  by the fact that winners at the top are never floor-bound).
+- **Authoritative aggregation (Decision 1):** per-task contribution to ranking is
+  `rankValue_t` (unclamped). Experiment model score = equal-task arithmetic mean of
+  `rankValue_t`; missing = missing; complete-coverage winner eligibility unchanged; ties
+  within 1e-9 share; ranking key `mean(rankValue) desc → Q̄ desc → C̄ desc → id`
+  (quality-first, matching the task key). Aggregating the authoritative values means floor
+  censoring cannot create fake experiment ties or ranking reversals.
+- **Bounded display aggregate:** if a bounded 1–5 experiment aggregate is required for
+  display/compatibility (e.g., a legacy matrix cell), it is `max(1, mean(rankValue))` rendered
+  **separately and labeled** (e.g., "mean rankScore"), never used for ordering or winner
+  eligibility. This is a persistence/render choice, not a ranking one.
+- Channel aggregates Q̄ and C̄ are reported alongside (channel-separate rule; verified:
+  mean(rankValue) = Q̄ − λ(1−C̄) exactly — the mean is recoverable from channel means).
+- Floored tasks are counted and disclosed: each candidate shows an "n floored tasks" column
+  (the +0.010 display-mean bias and the 0.48–2.3% *display*-reversal risk — falsification loop
+  1 measured 0.48% with 2-task suites, 2.3% with heavier mixtures — apply only to the bounded
+  display aggregate, never to `mean(rankValue)` ordering; the column makes them visible).
 - Compliance-only profiles rank on C̄ (0–100%), matrix renders C-labeled cells.
 
 ## 24. Fusion Study implications
 
-- `taskOverall` and headroom math consume the **same** R formula (Q, C from stored evidence,
-  λ + groups from the profile snapshot) or the study and the matrix measure different
-  quantities; `fusion-study-stages` must thread the full profile snapshot (currently only
+- `taskOverall` and headroom math consume the **same** rankValue contract (Q, C from stored
+  evidence, λ + groups from the profile snapshot) or the study and the matrix measure
+  different quantities; `fusion-study-stages` must thread the full profile snapshot (currently only
   `CriterionWeights`).
 - Per-criterion headroom: graded criteria unchanged (5 − s_i); binary checks use pass-rate
   imbalance `1 − b_k` (labeled, min-sample gate) — never a 4-point quality gap; headroom
@@ -532,22 +606,23 @@ One candidate row (the honest label set — the only one that survives the skept
 Quality 4.40 / 5              (3 graded criteria)
 Compliance 83% · 5/6 groups   (weighted share first; count as evidence)
 Compliance influence: max 1.00 point
-Rank Score 4.23 = 4.40 − 1.00 × 0.17
+Rank Score 4.23 = 4.40 − 1.00 × 0.17     (rankValue; rankScore = max(1, rankValue))
 ```
 
 - "Why did A outrank B?" = one visible subtraction; the derivation line is mandatory (a bare
-  "Rank Score 4.34" fails the test).
-- Rejected labels: "Quality weight 80% / Compliance weight 20%" (false under R — the affine
-  transform check 0.8×4.40+0.2×4.33 = 4.39 ≠ 4.23 catches the lie); "Requirements 5/6 passed"
-  alone (contradicts the weighted score once groups are weighted); "Compliance influence: 1.00"
+  "Rank Score 4.34" fails the test). The displayed value is `rankValue` when unfloored and
+  `1.0*` with the raw `rankValue` shown when floored.
+- Rejected labels: "Quality weight 80% / Compliance weight 20%" (false — the affine transform
+  check 0.8×4.40+0.2×4.33 = 4.39 ≠ 4.23 catches the lie); "Requirements 5/6 passed" alone
+  (contradicts the weighted score once groups are weighted); "Compliance influence: 1.00"
   without "points" (rate vs cap vs weight ambiguity).
 - Editor: kind chips (Graded 1–5 / Binary True–False); per-kind fields; group container shown
   as collapsible sections with ALL-mode hint ("splitting this requirement makes it stricter");
-  per-group fail-cost line; singleton warning (≤ 2 groups); λ=0 "checks excluded" marker;
-  "per-criterion parity" preset with warnings.
-- Floor: "1.0* (floor)" marker (raw value in detail) in Rank, matrix cells, Run Detail, and
-  exports; tiebreak printed with equal R values; "binary-decided" badge when the top-2 margin
-  < min per-check fail cost.
+  per-group fail-cost line (`λ·v_g/Σv` — evidence, not a badge threshold); singleton warning
+  (≤ 2 groups); λ=0 "checks excluded" marker; "per-criterion parity" preset with warnings.
+- Floor: "1.0* (floor)" marker with the raw `rankValue` inspectable, in Rank, matrix cells,
+  Run Detail, and exports; the rankValue→Q→C→id order is printed wherever the bounded display
+  ties. No "binary-decided" badge and no closeness band (Decision 2).
 - ALL groups: subcheck count shown with a fragility note ("ALL mode, N subchecks: any single
   false verdict fails the group — false-fail rate ≈ N×p"); warn at N ≥ 4; guidance: prefer
   singleton groups; split only when atomicity demands.
@@ -579,98 +654,105 @@ Contract fixes required regardless of finalist (all enumerated with live-file re
    PASS/FAIL native cells required; `buildWhyItWon` must use score×weight contributions (never
    quote a PASS as "(5.0)"); `criterionScoresToMap` (studio-engine) must not drop booleans;
    **behavioral disclosure:** Rank currently uses the Judge's top-level `overallScore` while
-   experiments recompute from criteria (spec §10.4 unifies on derived R — a change to Rank
+   experiments recompute from criteria (spec §10.4 unifies on the derived rankValue — a change to Rank
    winner math for all profiles; release-note it).
 5. **Experiment aggregation:** `canonicalScoresFromRun` maps `cs.score` → undefined for binary
    → `canonicalScore` silently skips the weight (wrong denominator, silent corruption). Use the
-   shared R helper (Q, C, λ from the run's profile snapshot).
+   shared rankValue/rankScore helpers (Q, C, λ from the run's profile snapshot); aggregate the
+   authoritative rankValue, render any bounded aggregate separately.
 6. **Fusion Study:** `modelTaskScoreFromReport` (NaN on binary), `taskOverall` (blend formula),
    group-level oracle, bimodal exclusion, min-sample gate for binary headroom, full profile
    snapshot threading.
 7. **Exports/packages:** `export-markdown.ts`, `archive.ts`, `fusion-recipes.ts` —
-   `cs.score.toFixed(1)` TypeErrors; PASS/FAIL native + Q/C/R triple; suite-package profile
+   `cs.score.toFixed(1)` TypeErrors; PASS/FAIL native + Q/C/rankValue display (rankScore with floor marker when floored); suite-package profile
    types carry λ + groups (additive).
 8. **Editor:** `EvaluationProfileEditor.tsx` `addCriterion()` kind choice; per-kind fields;
    group container; λ control with disclosures (the component already owns the profile object).
 9. **Verifier separation:** confirmed intact in every path (Judge booleans never enter
    Jaccard/φ); PASS/FAIL rows labeled Judge evidence, never checker output.
-10. **Zero channels:** zero-binary → C:=1, R=Q (bit-identical); zero-graded → compliance-only
-    (C 0–100%, no R; matrix renders C-labeled cells).
+10. **Zero channels:** zero-binary → C:=1, rankValue=Q (bit-identical); zero-graded → compliance-only
+    (C 0–100%, no rankValue; matrix renders C-labeled cells).
 
 ## 27. Finalist decision table
 
-| Criterion | R-final (λ, groups, honest floor) | S-final (W_bin blend, groups) | Notes |
+| Criterion | rankValue-final (λ, groups, bounded rankScore) | S-final (W_bin blend, groups) | Notes |
 |---|---|---|---|
 | Monotonicity | ✓ (verified; no Pareto violations) | ✓ | tie |
-| Natural 1–5 bounds | floor + marker | by convexity | S cleaner; R acceptable with disclosure |
+| Natural 1–5 bounds | rankScore = max(1, rankValue) + floored marker | by convexity | S cleaner; rankScore acceptable with disclosure |
 | Decomposition resistance | ALL groups: influence = v_g/Σv exactly; cap ≤ λ | needs groups (flat = 1.67× inflation) | tie (both ship groups) |
 | Dilution resistance | cap ≤ λ; per-check = λ·v_g/Σv | cap 4r/(1+r) | tie |
 | Judge-noise sensitivity | equal-check boards at graded baseline; singleton 1.0 (warned) | same ordering; different scale | tie (ordering) |
-| Rank stability | ties only at floor (~0.1–1.6% pairs) | no ties | S slightly better |
-| Experiment stability | +0.010 floor bias (disclosed); 2.3% reversal risk | affine-commutes | S slightly better |
+| Rank stability | no ranking ties (rankValue authority; display ties only at floor, disclosed) | no ties | tie |
+| Experiment stability | mean(rankValue) commutes exactly; display aggregate bias disclosed | affine-commutes | tie |
 | Criterion-count invariance | total ≤ λ always | total ≤ 4r/(1+r) | tie |
 | Group-count invariance | per-check = λ·v_g/Σv (disclosed) | same structure | tie |
-| Graded resolution | full Q span preserved | compressed 1/(1+r) | **R** |
-| Weight semantics | group weights = channel shares; λ = cap in points | W_bin = block weight | **R** (one multiplication, drift-invariant) |
-| Parameter interpretability | λ "max points" — best of 4 dials tested | W_bin needs 5 disclosure patches; order-dependent parity default | **R** |
-| Score-distance interpretability | quality units; ≥0.5 rule misfires 3.9% | compressed; misfires up to 25.8% | **R** |
+| Graded resolution | full Q span preserved | compressed 1/(1+r) | **rankValue** |
+| Weight semantics | group weights = channel shares; λ = cap in points | W_bin = block weight | **rankValue** (one multiplication, drift-invariant) |
+| Parameter interpretability | λ "max points" — best of 4 dials tested | W_bin needs 5 disclosure patches; order-dependent parity default | **rankValue** |
+| Score-distance interpretability | quality units; ≥0.5 rule misfires 3.9% | compressed; misfires up to 25.8% | **rankValue** |
 | Backward compatibility | pure-graded bit-identical | pure-graded bit-identical | tie |
-| Implementation complexity | clamp flag + marker | no clamp | S slightly lower |
-| UI complexity | derivation line + floor marker + warnings | blend formula + 1+4C algebra + live share | **R** (penalty framing reads as subtraction) |
+| Implementation complexity | floored marker + raw rankValue disclosure | no floor | S slightly lower |
+| UI complexity | derivation line + floored marker + warnings | blend formula + 1+4C algebra + live share | **rankValue** (penalty framing reads as subtraction) |
 | Fingerprint implications | whitelist λ + groups | whitelist W_bin + groups | tie |
-| Fusion Study compatibility | group-level oracle, quality-unit headroom | scaled magnitudes | **R** |
+| Fusion Study compatibility | group-level oracle, quality-unit headroom | scaled magnitudes | **rankValue** |
 
-**Winner: R-final** — strictly better on the axes that touch product semantics (graded
-resolution, weight semantics, parameter interpretability, score distances, Fusion units), at
-the cost of a floor that is neutralized by disclosure (marker + component materiality +
-printed tiebreak). S-final is the documented affine image, available as a display-only
-overview if ever wanted.
+**Winner: rankValue-final** — strictly better on the axes that touch product semantics (graded
+resolution, weight semantics, parameter interpretability, score distances, Fusion units); the
+bounded rankScore is a presentation transform whose floor is neutralized by the floored
+marker + raw-value disclosure, and — with Decision 1 — never affects ranking. S-final is
+the documented affine image, available as a display-only overview if ever wanted.
 
 ## 28. Post-convergence falsification results
 
-Three mandatory loops attacked the final design (R = clamp(Q − λ(1−C), 1, 5), λ∈[0,1] default
-1.0, ALL-only groups, floor marker, Q/C tiebreak). All were completed; **no loop found a
+Three mandatory loops attacked the final design (rankValue = Q − λ(1−C), λ∈[0,1] default
+1.0, ALL-only groups, floored marker, Q/C tiebreak). All were completed; **no loop found a
 formula-level failure** — every material finding was resolved by display/validation-level
-revisions (below), none touching Q, C, R, the λ bound, or the fingerprint.
+revisions (below), none touching Q, C, rankValue, the λ bound, or the fingerprint.
 
 ### 28.1 Loop 1 — Mathematical/pathological (5 material findings → 5 revisions)
 
 1. **Tiebreak contradicted evidence order in the floored band** (31.7% of floored pairs
-   reordered against R_raw; e.g., A=(Q=1.40,C=0.55), B=(Q=1.00,C=0.80) both R=1.0, C-first
-   ranked B above A against a 0.15 raw margin). **Revision:** sort by R_raw desc; floor
-   marker shows the raw value. Also: the material-gap rule can see both gaps material in
-   opposite directions for floored pairs (5e-5) — **Q-gap precedence** adopted.
+   reordered against rankValue; e.g., A=(Q=1.40,C=0.55), B=(Q=1.00,C=0.80) both display
+   rankScore=1.0, C-first ranked B above A against a 0.15 rankValue margin). **Revision
+   (superseded by Decision 1):** rankValue is the ranking authority — the contradiction is
+   structurally impossible because the bounded rankScore never enters the sort. The floor
+   marker shows the raw value; the material-gap rule judges Q-gap first (the
+   both-gaps-material corner for floored pairs, 5e-5, is resolved by Q precedence).
 2. **ALL-mode false-fail compounding:** P(group falsely fails) = 1−(1−p_b)^k — k=14 subchecks
    at p_b=5% is a 51% coin flip; the design measures no p_b. **Revision:** validation/UX cap —
    warn at N ≥ 4, subcheck-count + fragility disclosure, authoring guidance ("prefer singleton
    groups"); quorum mode scheduled v1.1.
 3. **Count/weight conflation:** "(5/6 groups)" with a v=100 group shows 99% vs 5% weighted
    compliance under identical counts. **Revision:** weighted share first, weights visible.
-4. **Experiment floor-boost flipped a winner on a 0.225 raw margin** (0.48% of 2-task suites;
-   floor the sole cause). **Revision:** "n floored tasks" column + raw mean in detail.
+4. **Experiment display-boost** (0.48% of 2-task suites reversed when ranking the *bounded*
+   aggregate; floor the sole cause). **Revision (superseded by Decision 1):** experiments
+   aggregate the authoritative rankValue, so no censoring-induced reversal exists in ranking;
+   the bounded display aggregate is rendered separately with an "n floored tasks" column.
 5. **C-first tiebreak = ascending-quality order** (the sharpest invariant violation): at fixed
-   R_raw, Q = R_raw + λ − λC, so C desc ⟺ Q asc; the Q-desc key was dead code and 8% of
-   coarse-profile pair orderings put 4.0-quality above 5.0-quality. **Revision:** Q desc before
-   C desc (quality-first) in both single-task and experiment keys.
+   rankValue, Q = rankValue + λ − λC, so C desc ⟺ Q asc; the Q-desc key was dead code and 8%
+   of coarse-profile pair orderings put 4.0-quality above 5.0-quality. **Revision:** Q desc
+   before C desc (quality-first) in both single-task and experiment keys.
 
 Verdict: **survives with 5 one-line, formula-untouched revisions.**
 
 ### 28.2 Loop 2 — Judge-error (no formula change)
 
 Verified against the final design (p_g=0.15, p_b=0.05, integer-realizable profiles, seed
-20240613):
+20240613; reversals are rankValue comparisons — the clamp never bound in these scenarios):
 
-- **(a) 6g+1b single-bit leverage:** one wrong verdict moves R by exactly 1.0 (the authored
-  fail cost) and flips the winner for every graded margin < 1.0 (P ≈ 0.098/task at p_b=0.05).
+- **(a) 6g+1b single-bit leverage:** one wrong verdict moves rankValue by exactly 1.0 (the
+  authored fail cost) and flips the winner for every graded margin < 1.0 (P ≈ 0.098/task at p_b=0.05).
   Verdict: the disclosed exchange rate, not a defect; the residual risk is the **empirical
   p_b calibration** (revisit λ if measured p_b ≥ p_g/6 in single-check profiles — do not
-  pre-ship a change). Revision: binary-decided badge (R1).
+  pre-ship a change). The loop's proposed "binary-decided" badge (R1) was **removed by
+  Decision 2** (min-cost threshold does not answer the general question); per-group fail
+  costs remain evidence.
 - **(b) 2g+8b one-check gap, T=5:** failing candidate wins 0.205 (full noise) — dominated by
   **pre-existing graded noise** (graded-only 0.227; binary-only 0.007); the binary channel
   *lowers* reversal below the pure-graded baseline; margins ≥ 2 checks: ≤ 0.053; the 0.46–0.50
   knife-edge is a tiebreak artifact. Per-item leverage equals graded (0.125 each). Verdict:
   defensible; binary-heavy profiles are stable.
-- **(c) ALL 5-subcheck false-fail:** 0.226 vs 0.05 (4.5×); expected R error 0.0283 vs 0.0063;
+- **(c) ALL 5-subcheck false-fail:** 0.226 vs 0.05 (4.5×); expected rankValue error 0.0283 vs 0.0063;
   MEAN's expected error is composition-invariant (= singleton). Verdict: material in
   probability, bounded in magnitude; revision = authoring guidance + fragility disclosure now,
   MEAN on the roadmap (not now — it changes semantics).
@@ -679,8 +761,8 @@ Verified against the final design (p_g=0.15, p_b=0.05, integer-realizable profil
   and disclosure are the defense; judge-reliability is the real mitigation (reserved for
   gates).
 
-Verdict: **survives; no formula change; three non-formula revisions (badge, guidance,
-calibration note).**
+Verdict: **survives; no formula change; two non-formula revisions (guidance, calibration
+note); the third proposal (badge) was superseded by Decision 2 (removed).**
 
 ### 28.3 Loop 3 — Product-authoring (no formula change)
 
@@ -690,10 +772,10 @@ calibration note).**
   power; visible in the group list and fingerprint.
 - **Group-weight dilution:** capped by λ, disclosed by per-check fail-cost; zero-score-impact
   checks are the author's right.
-- **λ tie-engineering:** an author can choose λ ∈ [0,1] to force an exact R tie and win via
-  the C tiebreak (λ* = (Q_A−Q_B)/(C_A−C_B)); disclosed (tiebreak printed, λ displayed,
+- **λ tie-engineering:** an author can choose λ ∈ [0,1] to force an exact rankValue tie and
+  win via the tiebreak (λ* = (Q_A−Q_B)/(C_A−C_B)); disclosed (tiebreak printed, λ displayed,
   fingerprint-bound), bounded (≤1.0). Mitigation: the λ-stability indicator (interval of λ
-  preserving the order) — scheduled with the badge.
+  preserving the order) — scheduled for v1.1.
 - **Singleton soft gate:** 1-graded+1-check with λ=1 — a bit worth 1.0 point, but genuinely
   soft (Q=5.0/Fail ties Q=4.0/Pass); it is the only criticality mechanism while gates are
   reserved; warned and disclosed.
@@ -712,16 +794,19 @@ calibration note).**
 Verdict: **survives; three governance amendments (ALL fragility disclosure, v1.1 bimodality
 flag, tiebreak printed / Q-first).**
 
-### 28.4 Adopted revision set (all loops)
+### 28.4 Adopted revision set (all loops, as updated by Decisions 1–2)
 
-1. Sort by R_raw desc; floor marker shows raw; Q-gap precedence in the material-gap rule.
+1. rankValue is the sole ranking authority (Decision 1); floor marker shows the raw
+   rankValue; Q-gap precedence in the material-gap rule.
 2. Tiebreak Q desc → C desc → id (single-task and experiment keys).
 3. ALL-group subcheck cap guidance: warn N ≥ 4, fragility disclosure, prefer singletons;
    quorum/MEAN scheduled v1.1 (not shipped — semantics change).
 4. Compliance display: weighted share first, counts second, weights visible.
-5. "n floored tasks" column + raw mean in experiment detail.
-6. "Binary-decided" badge: display-only, δ = min_g λ·v_g/Σv, components-based at the floor;
-   λ-stability indicator scheduled with it.
+5. Experiments aggregate rankValue (authoritative); "n floored tasks" column + bounded
+   display aggregate rendered separately.
+6. "Binary-decided" min-cost badge: **REMOVED (Decision 2)**; no closeness band in v1;
+   per-group fail costs remain evidence; deterministic "Compliance changed the winner"
+   signal defined (§21) and deferred; λ-stability indicator scheduled for v1.1.
 7. v1.1 roadmap: MEAN (member-weight-free), quorum mode, graded-criterion bimodality monitor,
    duplication lint, λ-stability indicator.
 8. Empirical p_b calibration note: revisit the λ default if measured p_b ≥ p_g/6 in
@@ -738,13 +823,13 @@ multi-winner leaderboards (1% of mixture boards); and the penalty form is the on
 floor exists at all — S never leaves [1,5]. The counter (adopted): RSemble enforces its 1–5
 contract by construction elsewhere, but the product's disclosure philosophy (visible JUDGE_FAILED,
 missing = missing, coverage eligibility) supports a flagged floor; the Q and C columns always
-accompany R, so the information is preserved in the components; the marker, component
-materiality, and printed tiebreak convert the plateau from a silent distortion into a disclosed
-one. If the team values sub-anchor discrimination in the scalar over threshold purity, S
+accompany rankValue/rankScore, so the information is preserved in the components; the marker,
+component materiality, and printed tiebreak convert the plateau from a silent distortion into
+a disclosed one. If the team values sub-anchor discrimination in the scalar over threshold purity, S
 (display-only, r = λ/4) is the drop-in alternative — but S's global 20% compression and
 compliance-inflation must then be accepted. Post-falsification, the objection is weaker than
-it first appeared: the three loops confirmed the ordering information survives the floor via
-the R_raw sort, the Q/C components, and the markers — and the falsify-2 re-verification showed
+it first appeared: the three loops confirmed the ordering information survives the bounded display via
+rankValue authority, the Q/C components, and the markers — and the falsify-2 re-verification showed
 the feared binary-heavy noise is dominated by pre-existing graded noise. The strongest *new*
 objection is the encoding arbitrage (§28.3): an atomic requirement authored as graded bypasses
 the λ cap at 4× leverage, so the "≤ λ" promise is not airtight until the v1.1 bimodality
@@ -752,8 +837,8 @@ monitor ships.
 
 ## 30. Known weaknesses
 
-1. **Singleton swing (λ=1):** one check in a ≤2-group profile moves R up to 1.0 on one wrong
-   verdict — 6× a graded level in 6g profiles. Mitigated: singleton warning, per-check Δ
+1. **Singleton swing (λ=1):** one check in a ≤2-group profile moves rankValue up to 1.0 on one
+   wrong verdict — 6× a graded level in 6g profiles. Mitigated: singleton warning, per-check Δ
    disclosure, the dial itself; residual risk accepted (the Judge's flagged concern).
 2. **Binary-heavy sharp leaderboards:** 28–30% reversal on one-check boards (2g+8b, T=5) — the
    authored share is 0.125 and graded noise dominates; the true difference is small by design.
@@ -780,9 +865,9 @@ monitor ships.
 10. **ALL-mode false-fail compounding:** P(group falsely fails) ≈ k·p_b — multi-subcheck ALL
     groups are stricter AND more error-fragile; guidance + fragility disclosure ship in v1,
     quorum/MEAN on the roadmap.
-11. **λ tie-engineering:** an author can dial λ to force an exact R tie and win via the
-    tiebreak; disclosed (printed key, displayed λ), bounded (≤1.0), and mitigated by the
-    scheduled λ-stability indicator.
+11. **λ tie-engineering:** an author can dial λ to force an exact rankValue tie and win via
+    the tiebreak; disclosed (printed key, displayed λ), bounded (≤1.0), and mitigated by
+    the scheduled λ-stability indicator.
 12. **Empirical calibration gap:** λ=1 rests on the assumption p_b ≪ p_g (the atomicity rule
     keeps binary checks low-error); no judge-rejudge data exists (DECISIONS #7 excludes
     trials/CI). If measured p_b ≥ p_g/6 in single-check profiles, revisit the default — do not
@@ -803,11 +888,12 @@ monitor ships.
    rationale }`; keep legacy numeric union.
 3. **§8 (binary semantics):** atomicity rule retained; every check in exactly one group
    (implicit singleton materialized); ALL mode only; no zero-weight members/groups.
-4. **§9 (canonical scoring):** REPLACE the false→1/true→5 weighted mean with
-   `R = clamp(Q − λ(1−C), 1, 5)`; define Q, C (group formula), λ semantics ("maximum points"),
-   floor marker, R→C→Q tiebreak; delete the 5/1 mapping and its rationale; add the
-   `λ = 4·W_bin/W_g` affine identity as a compatibility note (the block blend is the
-   display-only overview form).
+4. **§9 (canonical scoring):** REPLACE the false→1/true→5 weighted mean with the
+   rankValue/rankScore contract: `rankValue = Q − λ(1−C)` (authoritative), `rankScore =
+   max(1, rankValue)` (bounded display), `floored = rankValue < 1`; define Q, C (group
+   formula), λ semantics ("maximum points"), floor disclosure, rankValue→Q→C tiebreak;
+   delete the 5/1 mapping and its rationale; add the `λ = 4·W_bin/W_g` affine identity as a
+   compatibility note (the block blend is the display-only overview form).
 5. **§9.4 (binary summary):** weighted share first ("Compliance 71% · 5/6 groups"); counts over
    positive-weight present results only.
 6. **§9.5 (no hard gate):** strengthen — gates reserved as kind "gate", rejected by validation;
@@ -816,18 +902,22 @@ monitor ships.
    tests for λ-change and group-membership-change altering the hash.
 8. **§15 (Rank UI):** PASS/FAIL native; Quality/Compliance/Rank triple with derivation line;
    floor marker; tiebreak display; per-group fail-cost; singleton warning.
-9. **§16 (experiments):** per-task R; equal-task mean of R; ranking R̄→C̄→Q̄→id; floor-task
-   counts disclosed; compliance-only profiles rank on C.
+9. **§16 (experiments):** per-task rankValue; equal-task mean of rankValue (authoritative);
+   any bounded display aggregate rendered separately and labeled; ranking
+   mean(rankValue)→Q̄→C̄→id; floored-task counts disclosed; compliance-only profiles rank
+   on C.
 10. **§17 (Fusion Study):** group-level oracle; binary per-criterion headroom = pass-rate
-    imbalance with min-sample gate; bimodal diagnostic excludes binary; taskOverall uses R with
-    λ + groups from the snapshot.
+    imbalance with min-sample gate; bimodal diagnostic excludes binary; taskOverall uses the
+    rankValue contract with λ + groups from the snapshot.
 11. **§18 (export):** PASS/FAIL native; never 5/5 or 1/5; "1.0* floor" marker.
 12. **§19 (validation):** group rules (exactly-one membership, v_g > 0, ALL mode); λ ∈ [0,1]
     enforced; kind:"gate" rejected with named message.
-13. **§22 (acceptance):** replace items 9–10 with the R-formula items; add floor-marker,
-    group-invariance, λ-bound, fingerprint-whitelist, guard-fix acceptance criteria; add
-    post-falsification acceptance: R_raw sort, Q-first tiebreak, binary-decided badge,
-    subcheck-fragility disclosure, "n floored tasks" column.
+13. **§22 (acceptance):** replace items 9–10 with the rankValue/rankScore contract items;
+    add floored-marker, group-invariance, λ-bound, fingerprint-whitelist, guard-fix
+    acceptance criteria; add
+    post-falsification acceptance: rankValue authority, Q-first tiebreak, no closeness
+    band / no min-cost badge (Decision 2), subcheck-fragility disclosure, "n floored tasks"
+    column.
 
 ## 32. Exact required changes to the implementation plan
 
@@ -837,41 +927,43 @@ monitor ships.
    rejection); groups are profile-side — parser unchanged for results.
 3. **Phase 3 (prompt):** kind-aware rendering with group IDs on checks; "(1.0–5.0 scale)"
    header conditional on profile containing graded criteria.
-4. **Phase 4 (scoring):** REPLACE `criterionContribution` (5/1) with the R helper
-   `rankScore(Q, C, λ)` + compliance aggregator; tests for: pure-graded R=Q identity; group
-   ALL semantics; λ cap; floor marker; tiebreak; zero-channel profiles.
+4. **Phase 4 (scoring):** REPLACE `criterionContribution` (5/1) with the rankValue/rankScore
+   helpers (`rankValue(Q, C, λ)`; `rankScore = max(1, rankValue)`; `floored`) + compliance
+   aggregator; tests for: pure-graded rankValue=Q identity; group
+   ALL semantics; λ cap; floored marker; tiebreak; zero-channel profiles.
 5. **Phase 6 (persistence):** `isEvaluationCriterion` union guard FIRST (data-loss fix);
    whitelist λ + groups in `semanticFingerprintInput`; suite-package profile fields; no
    historical migration.
 6. **Phase 7 (UI):** shared CriterionResultList with PASS/FAIL; Rank/Quality/Compliance triple
    + derivation; floor marker; editor kind chips + group container + λ control + disclosures;
    `buildWhyItWon` contribution-weighted.
-7. **Phase 8 (experiments/Fusion):** `canonicalScoresFromRun` via R helper; Fusion
-   `taskOverall` via R with full snapshot; group-level oracle; binary headroom labeling;
+7. **Phase 8 (experiments/Fusion):** `canonicalScoresFromRun` via the rankValue helpers;
+   Fusion `taskOverall` via rankValue with full snapshot; group-level oracle; binary headroom labeling;
    bimodal exclusion.
 8. **Phase 9 (export):** PASS/FAIL + triple + floor marker in both exporters.
 9. **Phase 10 (docs):** PRODUCT.md gains the two-channel sentence and λ disclosure; DECISIONS.md
-   entry records: R formula, λ default 1.0, ALL-only groups, gates reserved, authoritative-only
-   history, δ deferred.
+   entry records: rankValue/rankScore contract, λ default 1.0, ALL-only groups, gates
+   reserved, authoritative-only history, δ deferred.
 10. **Phase 11 (gates):** REMOVE gate implementation phases; keep only validation rejection +
     named error (extend plan Phase 1.2 test #7).
 11. **Phase 12 (report):** add — floor-marker counts, group-invariance evidence, λ-bound
     enforcement proof, guard-fix verification, statement that no historical record was
-    reinterpreted; add post-falsification items — R_raw sort + Q-first tiebreak tests,
-    subcheck-fragility cap (N ≥ 4 warning), binary-decided badge (δ = min fail cost),
-    floored-tasks column, v1.1 roadmap note (MEAN/quorum/bimodality monitor/duplication
+    reinterpreted; add post-falsification items — rankValue-authority + Q-first tiebreak
+    tests, subcheck-fragility cap (N ≥ 4 warning), no closeness band / no min-cost badge
+    (Decision 2), floored-tasks column + separate bounded display aggregate, v1.1 roadmap
+    note (MEAN/quorum/bimodality monitor/duplication
     lint/λ-stability indicator).
 
 ## 33. Confidence and evidence that would change the decision
 
 | Claim | Confidence | Would change if |
 |---|---|---|
-| Affine equivalence (S ≡ R family) | **Very high** (algebraic proof + 200k-sample verification + exhaustive sweeps) | a counterexample pair is produced (none found in 7 independent checks) |
-| R as canonical over S | **High** (semantics: thresholds, inflation, drift — quantitative) | user study shows authors read the penalty framing worse than the blend; or product decides sub-anchor scalar discrimination outweighs threshold purity |
+| Affine equivalence (S ≡ rankValue family) | **Very high** (algebraic proof + 200k-sample verification + exhaustive sweeps) | a counterexample pair is produced (none found in 7 independent checks) |
+| rankValue as authority over S | **High** (semantics: thresholds, inflation, drift — quantitative) | user study shows authors read the penalty framing worse than the blend; or product decides sub-anchor scalar discrimination outweighs threshold purity |
 | λ = 1 default | **Medium-high** (quantified tradeoffs; least-surprising among constants tested) | judge-rejudge data shows p_b ≈ 0 for well-specified checks (rehabilitates lower λ); author-behavior data shows profiles rarely exceed 2 checks (weakens the binary-heavy arguments); a user study of the singleton swing |
 | ALL-only groups in v1 | **High** (MEAN+member-weights reproduces decomposition; ALL is the atomicity reading) | observed requirements that are genuinely partial-credit in nature (then reserve MEAN without member weights) |
 | Gates reserved | **High** (consensus conflicts with single-judge invariant; single-judged gate is the worst option) | product policy changes the judging invariant (multiple judges/trials become in scope) — then revisit |
-| Floor + marker | **High** (costs quantified and neutralized by disclosure; falsification loops found the residual defects — R_raw sort, Q-first tiebreak — and they are one-line fixes) | team rejects flagged values in the 1–5 contract (then S display-only is the drop-in) |
+| Floor + marker | **High** (costs quantified and neutralized by disclosure; falsification loops found the residual defects — rankValue authority, Q-first tiebreak — and they are one-line fixes) | team rejects flagged values in the 1–5 contract (then S display-only is the drop-in) |
 | δ=0.10 deferred | High | an uncertainty model ships (trials/CI) — then recalibrate with evidence |
 
 **Convergence statement:** the reconciliation (equivalence proof) and all three
@@ -886,6 +978,13 @@ them.
 
 Every Monte Carlo / randomized claim in this document is defined below. Scripts were scratch
 code in /tmp (not committed); all used Python's `random` with fixed seeds.
+
+**Historical naming note:** sections of the investigation that predate the final contract used
+`R_raw` / `R` / `clamp(R_raw, 1, 5)` / "floor". Under the final contract these correspond
+exactly to `rankValue` / `rankScore` / `max(1, rankValue)` / `floored`. The simulation numbers
+were computed on the clamped value where stated; in every scenario reported the floor never
+bound (Q ≈ 4–5, C ≥ 0.5 ⇒ rankValue ≥ 3.5), so the reported rates are identical under the
+authoritative rankValue comparisons.
 
 ### A.1 Common conventions
 - A **trial** = one independent draw of noisy Judge evidence for one candidate on one task
