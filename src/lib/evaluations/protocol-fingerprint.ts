@@ -90,6 +90,13 @@ function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
       description: p.description,
       judgeInstruction: p.judgeInstruction,
       criteria: p.criteria,
+      // Hybrid fields: requirementGroups and complianceInfluence drive
+      // rankValue = Q - lambda*(1-C); they MUST be fingerprinted so two
+      // experiments with different groups or lambda get different fingerprints.
+      // JSON.stringify drops undefined, so legacy profiles (no these fields)
+      // produce identical hashes to before (fingerprint stability).
+      requirementGroups: p.requirementGroups,
+      complianceInfluence: p.complianceInfluence,
     })),
     aggregationPolicy: "equal-task",
     trialsPerTask: 1,

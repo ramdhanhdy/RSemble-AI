@@ -149,3 +149,160 @@ describe("computeSnapshotProtocolFingerprint", () => {
     expect(firstSlot.slug).toBe("org/m1");
   });
 });
+
+// --- Hybrid fingerprint mutation tests ----------------------------------------
+
+function makeGradedProfile(): EvaluationProfile {
+  return {
+    id: "p1",
+    version: 1,
+    name: "Hybrid Profile",
+    description: "test",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "c1",
+        kind: "graded",
+        name: "Correctness",
+        description: "d",
+        weight: 2,
+        anchors: {
+          one: "1",
+          two: "2",
+          three: "3",
+          four: "4",
+          five: "5",
+        },
+      },
+      {
+        id: "b1",
+        kind: "binary",
+        name: "Uses ITT",
+        description: "d",
+        trueWhen: "true condition",
+        falseWhen: "false condition",
+      },
+    ],
+    requirementGroups: [{ id: "g1", name: "Group 1", checkIds: ["b1"], weight: 1, mode: "ALL" }],
+    complianceInfluence: 1.0,
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
+}
+
+describe("hybrid fingerprint mutations", () => {
+  it("changes when complianceInfluence changes", () => {
+    const suite = makeSuite({
+      defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+    });
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
+    const fp2 = computeProtocolFingerprint(suite, [
+      { ...makeGradedProfile(), complianceInfluence: 0.5 },
+    ]);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it("changes when requirement group weight changes", () => {
+    const suite = makeSuite({
+      defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+    });
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
+    const profile2 = {
+      ...makeGradedProfile(),
+      requirementGroups: [
+        { id: "g1", name: "Group 1", checkIds: ["b1"], weight: 2, mode: "ALL" as const },
+      ],
+    };
+    const fp2 = computeProtocolFingerprint(suite, [profile2]);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it("changes when group membership changes", () => {
+    const suite = makeSuite({
+      defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+    });
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
+    const profile2 = {
+      ...makeGradedProfile(),
+      criteria: [
+        ...makeGradedProfile().criteria,
+        {
+          id: "b2",
+          kind: "binary" as const,
+          name: "Rejects injection",
+          description: "d",
+          trueWhen: "t",
+          falseWhen: "f",
+        },
+      ],
+      requirementGroups: [
+        { id: "g1", name: "Group 1", checkIds: ["b1", "b2"], weight: 1, mode: "ALL" as const },
+      ],
+    };
+    const fp2 = computeProtocolFingerprint(suite, [profile2]);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it("changes when Score 2 anchor changes", () => {
+    const suite = makeSuite({
+      defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+    });
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
+    const profile2 = {
+      ...makeGradedProfile(),
+      criteria: [
+        {
+          ...makeGradedProfile().criteria[0],
+          anchors: { one: "1", two: "CHANGED", three: "3", four: "4", five: "5" },
+        },
+        makeGradedProfile().criteria[1],
+      ],
+    };
+    const fp2 = computeProtocolFingerprint(suite, [profile2]);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it("changes when binary trueWhen changes", () => {
+    const suite = makeSuite({
+      defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+    });
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
+    const profile2 = {
+      ...makeGradedProfile(),
+      criteria: [
+        makeGradedProfile().criteria[0],
+        { ...makeGradedProfile().criteria[1], trueWhen: "CHANGED" },
+      ],
+    };
+    const fp2 = computeProtocolFingerprint(suite, [profile2]);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it("legacy profiles (no hybrid fields) produce stable fingerprints", () => {
+    const suite = makeSuite({
+      defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+    });
+    const legacy: EvaluationProfile = {
+      id: "p1",
+      version: 1,
+      name: "Legacy",
+      description: "test",
+      judgeInstruction: "",
+      criteria: [
+        {
+          id: "c1",
+          name: "C",
+          description: "d",
+          weight: 1,
+          anchors: { one: "1", three: "3", five: "5" },
+        },
+      ],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    // Fingerprint should be deterministic and not affected by absence of hybrid fields
+    const fp1 = computeProtocolFingerprint(suite, [legacy]);
+    const fp2 = computeProtocolFingerprint(suite, [legacy]);
+    expect(fp1).toBe(fp2);
+  });
+});
