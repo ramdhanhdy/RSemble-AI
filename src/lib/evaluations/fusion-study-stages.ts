@@ -91,7 +91,9 @@ export function activePoolSlots(pool: PoolManifestVersion): ModelSlot[] {
 
 function criterionWeights(profile: EvaluationProfileSnapshot | null): CriterionWeights {
   const map = new Map<string, number>();
-  for (const c of profile?.criteria ?? []) map.set(c.id, c.weight);
+  for (const c of profile?.criteria ?? []) {
+    if ("weight" in c) map.set(c.id, (c as { weight: number }).weight);
+  }
   return map;
 }
 

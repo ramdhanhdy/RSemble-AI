@@ -72,7 +72,11 @@ export async function pickStratifiedPairs(
   profile: EvaluationProfileSnapshot | null,
   taskSample: number,
 ): Promise<StratifiedPair[]> {
-  const weights: CriterionWeights = new Map((profile?.criteria ?? []).map((c) => [c.id, c.weight]));
+  const weights: CriterionWeights = new Map(
+    (profile?.criteria ?? [])
+      .filter((c) => "weight" in c)
+      .map((c) => [c.id, (c as { weight: number }).weight]),
+  );
   const slots = activePoolSlots(pool);
   const tasks = suite.tasks.slice(0, Math.max(1, taskSample));
   const scoresByTask = new Map<string, Map<string, ModelTaskScore>>();

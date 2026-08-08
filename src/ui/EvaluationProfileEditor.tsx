@@ -28,10 +28,12 @@ export function EvaluationProfileEditor({
   const nw = useMemo(() => normalizedWeights(profile.criteria), [profile.criteria]);
   const tw = useMemo(() => totalWeight(profile.criteria), [profile.criteria]);
 
-  function updateCriterion(id: string, patch: Partial<EvaluationCriterion>) {
+  function updateCriterion(id: string, patch: Record<string, unknown>) {
     onChange({
       ...profile,
-      criteria: profile.criteria.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      criteria: profile.criteria.map((c) =>
+        c.id === id ? ({ ...c, ...patch } as EvaluationCriterion) : c,
+      ),
       updatedAt: Date.now(),
     });
   }
@@ -44,13 +46,14 @@ export function EvaluationProfileEditor({
       id,
       name: "New criterion",
       description: "",
+      kind: undefined,
       weight: 1,
       anchors: {
         one: "1 — does not meet this criterion at all",
         three: "3 — partially meets this criterion",
         five: "5 — fully meets this criterion",
       },
-    };
+    } as EvaluationCriterion;
     onChange({ ...profile, criteria: [...profile.criteria, newCriterion], updatedAt: Date.now() });
     setOpenId(id);
   }
@@ -140,7 +143,7 @@ function CriterionAccordion({
   canMoveUp: boolean;
   canMoveDown: boolean;
   onToggle: () => void;
-  onChange: (patch: Partial<EvaluationCriterion>) => void;
+  onChange: (patch: Record<string, unknown>) => void;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -177,7 +180,8 @@ function CriterionAccordion({
             {criterion.name || "Untitled criterion"}
           </span>
           <span className="font-mono text-[11px] tabular-nums text-text-muted">
-            Weight {criterion.weight.toFixed(1)} · {normalizedShare.toFixed(0)}%
+            {"weight" in criterion ? `Weight ${criterion.weight.toFixed(1)} · ` : ""}
+            {normalizedShare.toFixed(0)}%
           </span>
         </button>
 
@@ -232,48 +236,119 @@ function CriterionAccordion({
             onChange={(v) => onChange({ description: v })}
             onBlur={() => validateField("description", criterion.description)}
           />
-          <LabeledInput
-            label="Score 1 anchor"
-            value={criterion.anchors.one}
-            error={errors.anchorOne}
-            readOnly={readOnly}
-            onChange={(v) => onChange({ anchors: { ...criterion.anchors, one: v } })}
-            onBlur={() => validateField("anchorOne", criterion.anchors.one)}
-          />
-          <LabeledInput
-            label="Score 3 anchor"
-            value={criterion.anchors.three}
-            error={errors.anchorThree}
-            readOnly={readOnly}
-            onChange={(v) => onChange({ anchors: { ...criterion.anchors, three: v } })}
-            onBlur={() => validateField("anchorThree", criterion.anchors.three)}
-          />
-          <LabeledInput
-            label="Score 5 anchor"
-            value={criterion.anchors.five}
-            error={errors.anchorFive}
-            readOnly={readOnly}
-            onChange={(v) => onChange({ anchors: { ...criterion.anchors, five: v } })}
-            onBlur={() => validateField("anchorFive", criterion.anchors.five)}
-          />
-          <div>
-            <label
-              htmlFor={`criterion-weight-${criterion.id}`}
-              className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
-            >
-              Weight
-            </label>
-            <input
-              id={`criterion-weight-${criterion.id}`}
-              type="number"
-              min={0}
-              step={0.1}
-              value={criterion.weight}
-              readOnly={readOnly}
-              onChange={(e) => onChange({ weight: parseFloat(e.target.value) || 0 })}
-              className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
+          {criterion.kind === "binary" ? (
+            <>
+              <LabeledTextarea
+                label="TRUE when"
+                value={criterion.trueWhen}
+                error={errors.trueWhen}
+                readOnly={readOnly}
+                onChange={(v) => onChange({ trueWhen: v })}
+                onBlur={() => validateField("trueWhen", criterion.trueWhen)}
+              />
+              <LabeledTextarea
+                label="FALSE when"
+                value={criterion.falseWhen}
+                error={errors.falseWhen}
+                readOnly={readOnly}
+                onChange={(v) => onChange({ falseWhen: v })}
+                onBlur={() => validateField("falseWhen", criterion.falseWhen)}
+              />
+            </>
+          ) : (
+            <>
+              {criterion.kind === "graded" && (
+                <>
+                  <LabeledInput
+                    label="Score 1 anchor"
+                    value={criterion.anchors.one}
+                    error={errors.anchorOne}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, one: v } })}
+                    onBlur={() => validateField("anchorOne", criterion.anchors.one)}
+                  />
+                  <LabeledInput
+                    label="Score 2 anchor"
+                    value={criterion.anchors.two}
+                    error={errors.anchorTwo}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, two: v } })}
+                    onBlur={() => validateField("anchorTwo", criterion.anchors.two)}
+                  />
+                  <LabeledInput
+                    label="Score 3 anchor"
+                    value={criterion.anchors.three}
+                    error={errors.anchorThree}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, three: v } })}
+                    onBlur={() => validateField("anchorThree", criterion.anchors.three)}
+                  />
+                  <LabeledInput
+                    label="Score 4 anchor"
+                    value={criterion.anchors.four}
+                    error={errors.anchorFour}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, four: v } })}
+                    onBlur={() => validateField("anchorFour", criterion.anchors.four)}
+                  />
+                  <LabeledInput
+                    label="Score 5 anchor"
+                    value={criterion.anchors.five}
+                    error={errors.anchorFive}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, five: v } })}
+                    onBlur={() => validateField("anchorFive", criterion.anchors.five)}
+                  />
+                </>
+              )}
+              {criterion.kind === undefined && (
+                <>
+                  <LabeledInput
+                    label="Score 1 anchor"
+                    value={criterion.anchors.one}
+                    error={errors.anchorOne}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, one: v } })}
+                    onBlur={() => validateField("anchorOne", criterion.anchors.one)}
+                  />
+                  <LabeledInput
+                    label="Score 3 anchor"
+                    value={criterion.anchors.three}
+                    error={errors.anchorThree}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, three: v } })}
+                    onBlur={() => validateField("anchorThree", criterion.anchors.three)}
+                  />
+                  <LabeledInput
+                    label="Score 5 anchor"
+                    value={criterion.anchors.five}
+                    error={errors.anchorFive}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, five: v } })}
+                    onBlur={() => validateField("anchorFive", criterion.anchors.five)}
+                  />
+                </>
+              )}
+              <div>
+                <label
+                  htmlFor={`criterion-weight-${criterion.id}`}
+                  className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+                >
+                  Weight
+                </label>
+                <input
+                  id={`criterion-weight-${criterion.id}`}
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={criterion.weight}
+                  readOnly={readOnly}
+                  onChange={(e) => onChange({ weight: parseFloat(e.target.value) || 0 })}
+                  className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
     </li>

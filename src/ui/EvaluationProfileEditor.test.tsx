@@ -14,8 +14,9 @@ function makeCriterion(
     description: `Description ${id}`,
     weight: 1,
     anchors: { one: "Poor", three: "OK", five: "Great" },
+    kind: undefined,
     ...overrides,
-  };
+  } as EvaluationCriterion;
 }
 
 function makeProfile(criteria: EvaluationCriterion[] = []): EvaluationProfile {

@@ -30,12 +30,53 @@ import {
 
 // --- Profiles -----------------------------------------------------------------
 
-export interface EvaluationCriterion {
+// --- Criterion domain model (hybrid: graded + binary + legacy) ----------------
+
+export interface EvaluationCriterionBase {
   id: string;
   name: string;
   description: string;
+}
+
+/** Explicit graded criterion with five authored anchors and integer 1–5 scoring. */
+export interface GradedEvaluationCriterion extends EvaluationCriterionBase {
+  kind: "graded";
+  weight: number; // > 0 for new criteria
+  anchors: {
+    one: string;
+    two: string;
+    three: string;
+    four: string;
+    five: string;
+  };
+}
+
+/** Binary check with authored true/false conditions. No criterion-level weight —
+ *  the weight lives on its RequirementGroup. */
+export interface BinaryEvaluationCriterion extends EvaluationCriterionBase {
+  kind: "binary";
+  trueWhen: string;
+  falseWhen: string;
+}
+
+/** Legacy 1/3/5 criterion (kind undefined). Must remain readable; never rewritten. */
+export interface LegacyGradedEvaluationCriterion extends EvaluationCriterionBase {
+  kind?: undefined;
   weight: number;
   anchors: { one: string; three: string; five: string };
+}
+
+export type EvaluationCriterion =
+  GradedEvaluationCriterion | BinaryEvaluationCriterion | LegacyGradedEvaluationCriterion;
+
+// --- Requirement Groups (binary-channel weighting) ---------------------------
+
+export interface RequirementGroup {
+  id: string;
+  name: string;
+  checkIds: string[]; // exactly-one membership; length >= 1; all must resolve to binary checks
+  weight: number; // v_g > 0 — the sole binary-channel weight
+  mode: "ALL"; // only mode in v1; MEAN is deferred
 }
 
 export interface EvaluationProfile {
@@ -45,6 +86,11 @@ export interface EvaluationProfile {
   description: string;
   judgeInstruction: string;
   criteria: EvaluationCriterion[];
+  /** Binary requirement groups; absent for legacy/graded-only profiles. */
+  requirementGroups?: RequirementGroup[];
+  /** Compliance influence (lambda) in [0,1], default 1.0. "Maximum number of
+   *  ranking points that failing all ordinary compliance requirements may cost." */
+  complianceInfluence?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -344,8 +390,14 @@ function hasProhibitedKeys(v: unknown): boolean {
 
 // --- Profile / criterion ------------------------------------------------------
 
-export function isEvaluationCriterion(v: unknown): v is EvaluationCriterion {
+// --- Kind-aware type guards ---------------------------------------------------
+
+/** Legacy graded criterion (kind undefined, 1/3/5 anchors, numeric weight). */
+export function isLegacyGradedEvaluationCriterion(
+  v: unknown,
+): v is LegacyGradedEvaluationCriterion {
   if (!isRecord(v)) return false;
+  if (v.kind !== undefined) return false;
   if (!isNonEmptyString(v.id)) return false;
   if (!isString(v.name)) return false;
   if (!isString(v.description)) return false;
@@ -362,6 +414,61 @@ export function isEvaluationCriterion(v: unknown): v is EvaluationCriterion {
   return true;
 }
 
+/** Explicit graded criterion (kind "graded", five anchors, positive weight). */
+export function isGradedEvaluationCriterion(v: unknown): v is GradedEvaluationCriterion {
+  if (!isRecord(v)) return false;
+  if (v.kind !== "graded") return false;
+  if (!isNonEmptyString(v.id)) return false;
+  if (!isString(v.name)) return false;
+  if (!isString(v.description)) return false;
+  if (!isNumber(v.weight) || !Number.isFinite(v.weight) || v.weight < 0) return false;
+  const anchors = v.anchors;
+  if (
+    !isRecord(anchors) ||
+    !isNonEmptyString(anchors.one) ||
+    !isNonEmptyString(anchors.two) ||
+    !isNonEmptyString(anchors.three) ||
+    !isNonEmptyString(anchors.four) ||
+    !isNonEmptyString(anchors.five)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Binary check (kind "binary", trueWhen/falseWhen, no criterion-level weight). */
+export function isBinaryEvaluationCriterion(v: unknown): v is BinaryEvaluationCriterion {
+  if (!isRecord(v)) return false;
+  if (v.kind !== "binary") return false;
+  if (!isNonEmptyString(v.id)) return false;
+  if (!isString(v.name)) return false;
+  if (!isString(v.description)) return false;
+  if (!isNonEmptyString(v.trueWhen)) return false;
+  if (!isNonEmptyString(v.falseWhen)) return false;
+  return true;
+}
+
+/** Union guard: accepts legacy, graded, and binary criteria. Rejects "gate". */
+export function isEvaluationCriterion(v: unknown): v is EvaluationCriterion {
+  return (
+    isLegacyGradedEvaluationCriterion(v) ||
+    isGradedEvaluationCriterion(v) ||
+    isBinaryEvaluationCriterion(v)
+  );
+}
+
+/** Guard for RequirementGroup (v_g > 0, mode "ALL", non-empty checkIds). */
+export function isRequirementGroup(v: unknown): v is RequirementGroup {
+  if (!isRecord(v)) return false;
+  if (!isNonEmptyString(v.id)) return false;
+  if (!isString(v.name)) return false;
+  if (!Array.isArray(v.checkIds) || v.checkIds.length === 0) return false;
+  if (!v.checkIds.every((id: unknown): id is string => isNonEmptyString(id))) return false;
+  if (!isNumber(v.weight) || !Number.isFinite(v.weight) || v.weight <= 0) return false;
+  if (v.mode !== "ALL") return false;
+  return true;
+}
+
 export function isEvaluationProfile(v: unknown): v is EvaluationProfile {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
@@ -372,12 +479,40 @@ export function isEvaluationProfile(v: unknown): v is EvaluationProfile {
   if (!Array.isArray(v.criteria) || !v.criteria.every(isEvaluationCriterion)) {
     return false;
   }
-  // A criterion-based (non-holistic) profile must carry at least one positive
-  // weight — otherwise it scores nothing.
+  // Reject reserved "gate" kind with an actionable message is handled at
+  // validateProfile (authoring boundary). Here we simply reject unknown kinds.
   if (v.criteria.length === 0) return false;
-  if (!v.criteria.some((c) => isRecord(c) && isNumber(c.weight) && c.weight > 0)) {
-    return false;
+  // At least one positive-weight graded/legacy criterion OR at least one
+  // requirement group — otherwise the profile scores nothing.
+  const hasPositiveGraded = v.criteria.some(
+    (c) =>
+      isRecord(c) &&
+      isNumber(c.weight) &&
+      c.weight > 0 &&
+      (c.kind === "graded" || c.kind === undefined),
+  );
+  const hasGroups = Array.isArray(v.requirementGroups) && v.requirementGroups.length > 0;
+  if (!hasPositiveGraded && !hasGroups) return false;
+
+  // Validate requirement groups if present.
+  if (v.requirementGroups !== undefined) {
+    if (!Array.isArray(v.requirementGroups) || !v.requirementGroups.every(isRequirementGroup)) {
+      return false;
+    }
   }
+
+  // Validate complianceInfluence if present (lambda in [0,1]).
+  if (v.complianceInfluence !== undefined) {
+    if (
+      !isNumber(v.complianceInfluence) ||
+      !Number.isFinite(v.complianceInfluence) ||
+      v.complianceInfluence < 0 ||
+      v.complianceInfluence > 1
+    ) {
+      return false;
+    }
+  }
+
   if (!isNumber(v.createdAt)) return false;
   if (!isNumber(v.updatedAt)) return false;
   if (hasProhibitedKeys(v)) return false;
