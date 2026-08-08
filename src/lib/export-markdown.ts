@@ -6,6 +6,7 @@ import { candidateFullText } from "./pipeline";
 import type { StudioState } from "../studio-engine";
 import { formatBytes } from "./attachments/limits";
 import { resolveReasoningEffort } from "./providers/reasoning";
+import { formatRankScoreDisplay } from "./evaluations/evaluation-profile";
 
 /**
  * Sanitize judge-provided or model-provided free text for safe Markdown export.
@@ -162,7 +163,7 @@ export function buildExportMarkdown(s: StudioState): string | null {
     lines.push(`## Ranked Candidates`, ``);
     ranked.forEach((c, i) => {
       lines.push(
-        `### ${i + 1}. ${c.model} — ${c.weightedScore.toFixed(1)}/5`,
+        `### ${i + 1}. ${c.model} — ${formatRankScoreDisplay(c.weightedScore)}/5`,
         ``,
         candidateFullText(c),
         ``,

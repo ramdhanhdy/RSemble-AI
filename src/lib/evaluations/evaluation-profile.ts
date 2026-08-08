@@ -200,6 +200,15 @@ export function isFloored(rv: number | null): boolean {
   return rv !== null && rv < 1;
 }
 
+/** Format a rank value for bounded display: `rankScore` with a `*` floor
+ *  marker when the raw rank value is below 1 (presentation only — ordering
+ *  must always use the raw `rankValue`). */
+export function formatRankScoreDisplay(rv: number | null): string {
+  if (rv === null) return "—";
+  const floored = isFloored(rv);
+  return `${rankScoreOf(rv)!.toFixed(1)}${floored ? "*" : ""}`;
+}
+
 // --- Full rank computation from JudgeCriterionScore[] -------------------------
 
 /** Compute the authoritative rank value from a candidate's criterion results
