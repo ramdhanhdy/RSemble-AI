@@ -39,7 +39,15 @@ import {
   type ProfileRecord,
 } from "../evaluations/evaluation-types";
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
-import { rankValueFromResults, formatRankScoreDisplay } from "../evaluations/evaluation-profile";
+import {
+  rankValueFromResults,
+  formatRankScoreDisplay,
+  qualityScore,
+  complianceScore,
+  getComplianceInfluence,
+  rankScoreOf,
+  isFloored,
+} from "../evaluations/evaluation-profile";
 import { REDACTED } from "./error-redaction";
 import { inputUsageLabel } from "../cost";
 
@@ -669,6 +677,59 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       lines.push(`### ${name} (Candidate ${label}) — ${headline}/5`, ``);
       lines.push(`Position: ${mdSafe(evaluation.position)}`, ``);
       lines.push(`Why this score: ${mdSafe(evaluation.rationale)}`, ``);
+
+      // Scoring derivation (spec §18): Q, C, λ, rankValue, rankScore, floor marker.
+      if (profile && rv !== null) {
+        const numericScores: Record<string, number> = {};
+        const booleanResults: Record<string, boolean> = {};
+        for (const cs of evaluation.criterionScores) {
+          if (cs.kind === "binary" && cs.value !== undefined) {
+            booleanResults[cs.criterionId] = cs.value;
+          } else if (cs.score !== undefined) {
+            numericScores[cs.criterionId] = cs.score;
+          }
+        }
+        const Q = qualityScore(numericScores, profile);
+        const comp = complianceScore(booleanResults, profile);
+        const lambda = getComplianceInfluence(profile);
+        const C = comp?.C ?? null;
+        const rs = rankScoreOf(rv);
+        const floored = isFloored(rv);
+
+        const qStr = Q !== null ? Q.toFixed(3) : "—";
+        const cStr =
+          C !== null
+            ? `${C.toFixed(3)}${comp && comp.groupsPresent > 0 ? ` (${comp.groupsPresent} group${comp.groupsPresent > 1 ? "s" : ""})` : ""}`
+            : "1.000 (no binary checks)";
+        const derivParts: string[] = [];
+        if (Q !== null && C !== null) {
+          derivParts.push(
+            `rankValue = Q − λ·(1 − C) = ${Q.toFixed(3)} − ${lambda.toFixed(2)}·(1 − ${C.toFixed(3)}) = ${rv.toFixed(3)}`,
+          );
+        } else if (Q !== null) {
+          derivParts.push(`rankValue = Q = ${Q.toFixed(3)} (no binary checks, C := 1)`);
+        } else if (C !== null) {
+          derivParts.push(`rankValue = C̄ = ${C.toFixed(3)} (compliance-only, §16.3)`);
+        }
+        derivParts.push(`rankScore = max(1, rankValue) = ${rs !== null ? rs.toFixed(3) : "—"}`);
+        if (floored) {
+          derivParts.push(
+            `⏶ Floor applied: raw rankValue ${rv.toFixed(3)} < 1 → rankScore ${rs!.toFixed(1)}*`,
+          );
+        }
+
+        lines.push(
+          `**Scoring:**`,
+          `- Quality (Q): ${qStr}`,
+          `- Compliance (C): ${cStr}`,
+          `- Compliance influence (λ): ${lambda.toFixed(2)}`,
+          `- Rank Value: ${rv.toFixed(3)}${floored ? " (floored)" : ""}`,
+          `- Rank Score: ${rs !== null ? rs.toFixed(1) : "—"}${floored ? "*" : ""}`,
+          ...derivParts.map((d) => `- ${d}`),
+          ``,
+        );
+      }
+
       if (evaluation.strengths.length > 0) {
         lines.push(`Strengths:`, ...evaluation.strengths.map((s) => `- ${mdSafe(s)}`), ``);
       }
@@ -689,11 +750,20 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
         );
       }
       if (evaluation.criterionScores.length > 0) {
+        // Build a lookup of group membership for binary criteria context.
+        const groupLookup = new Map<string, string>();
+        if (profile?.requirementGroups) {
+          for (const g of profile.requirementGroups) {
+            for (const checkId of g.checkIds) {
+              groupLookup.set(checkId, g.name);
+            }
+          }
+        }
         lines.push(
           `Criterion scores:`,
           ...evaluation.criterionScores.map((cs) =>
             cs.kind === "binary"
-              ? `- ${mdSafe(cs.label)}: ${cs.value ? "PASS" : "FAIL"} — ${mdSafe(cs.rationale)}`
+              ? `- ${mdSafe(cs.label)}: ${cs.value ? "PASS" : "FAIL"}${groupLookup.has(cs.criterionId) ? ` (Group: ${mdSafe(groupLookup.get(cs.criterionId)!)})` : ""} — ${mdSafe(cs.rationale)}`
               : `- ${mdSafe(cs.label)}: ${cs.score?.toFixed(1) ?? "N/A"}/5 — ${mdSafe(cs.rationale)}`,
           ),
           ``,
