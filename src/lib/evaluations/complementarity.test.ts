@@ -428,5 +428,306 @@ describe("modelTaskScoreFromReport — binary criteria excluded from numeric vec
     // into 0/1 numeric scores in the CriterionScoreVector.
     expect(score!.criteria).toHaveLength(1);
     expect(score!.criteria[0]).toEqual({ criterionId: "quality", score: 4 });
+    // Binary results are carried as native booleans, not 1/5.
+    expect(score!.binaryResults).toEqual({ b1: true, b2: false });
+  });
+});
+
+// --- §17 group-level binary oracle (spec acceptance criterion 21) -------------
+
+import { computeBinaryPassRateImbalance, computeBinaryOracleHeadroom } from "./complementarity";
+import type { EvaluationProfileSnapshot } from "./evaluation-types";
+
+describe("group-level binary oracle (spec §17/§21)", () => {
+  /** A two-check ALL group: both must pass for the group to be satisfied. */
+  const profile: EvaluationProfileSnapshot = {
+    id: "p-bin",
+    version: 1,
+    name: "Binary",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "quality",
+        kind: "graded",
+        name: "Q",
+        description: "d",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+      {
+        id: "check-a",
+        kind: "binary",
+        name: "A",
+        description: "d",
+        trueWhen: "yes",
+        falseWhen: "no",
+      },
+      {
+        id: "check-b",
+        kind: "binary",
+        name: "B",
+        description: "d",
+        trueWhen: "yes",
+        falseWhen: "no",
+      },
+    ],
+    requirementGroups: [
+      { id: "g1", name: "Group1", checkIds: ["check-a", "check-b"], weight: 1, mode: "ALL" },
+    ],
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+
+  function pair(aChecks: [boolean, boolean], bChecks: [boolean, boolean]): PairedTaskScores {
+    return {
+      taskId: "t0",
+      a: {
+        overall: null,
+        criteria: [],
+        binaryResults: { "check-a": aChecks[0], "check-b": aChecks[1] },
+      },
+      b: {
+        overall: null,
+        criteria: [],
+        binaryResults: { "check-a": bChecks[0], "check-b": bChecks[1] },
+      },
+    };
+  }
+
+  it("complementary failures inside a group do not fabricate headroom", () => {
+    // A passes check-a but fails check-b; B fails check-a but passes check-b.
+    // Neither model satisfies the ALL group. The oracle is also unsatisfied
+    // (no model satisfies the group), so headroom is 0.
+    const tasks = [pair([true, false], [false, true])];
+    const h = computeBinaryOracleHeadroom(tasks, profile);
+    expect(h).toBe(0);
+  });
+
+  it("one model fully satisfies → oracle = best, headroom 0", () => {
+    // A passes both (group satisfied); B passes neither.
+    // Oracle = satisfied (via A); best model = satisfied (A). Surplus = 0.
+    const tasks = [pair([true, true], [false, false])];
+    const h = computeBinaryOracleHeadroom(tasks, profile);
+    expect(h).toBe(0);
+  });
+
+  it("both models fail → oracle unsatisfied, headroom 0", () => {
+    const tasks = [pair([false, false], [false, false])];
+    const h = computeBinaryOracleHeadroom(tasks, profile);
+    expect(h).toBe(0);
+  });
+
+  it("each model satisfies a different single-check group → oracle > 0", () => {
+    // Two singleton groups: g1 = {check-a}, g2 = {check-b}.
+    // A passes g1 but not g2; B passes g2 but not g1. Neither model satisfies
+    // both groups, but the oracle (pick best per group) satisfies both.
+    const profile2: EvaluationProfileSnapshot = {
+      ...profile,
+      requirementGroups: [
+        { id: "g1", name: "GA", checkIds: ["check-a"], weight: 1, mode: "ALL" },
+        { id: "g2", name: "GB", checkIds: ["check-b"], weight: 1, mode: "ALL" },
+      ],
+    };
+    const tasks = [pair([true, false], [false, true])];
+    const h = computeBinaryOracleHeadroom(tasks, profile2);
+    // Oracle: g1 satisfied (A), g2 satisfied (B) → 2.
+    // Best model: A = 1 (g1), B = 1 (g2) → max(1,1) = 1.
+    // Surplus = 2 - 1 = 1 per task.
+    expect(h).toBe(1);
+  });
+
+  it("returns null when profile has no requirement groups", () => {
+    const profileNoGroups: EvaluationProfileSnapshot = {
+      ...profile,
+      requirementGroups: undefined,
+    };
+    const h = computeBinaryOracleHeadroom([pair([true, false], [false, true])], profileNoGroups);
+    expect(h).toBeNull();
+  });
+
+  it("mean oracle surplus over multiple tasks", () => {
+    // Task 1: both satisfy → surplus 0. Task 2: complementary singletons → surplus 1.
+    // Mean = 0.5.
+    const profile2: EvaluationProfileSnapshot = {
+      ...profile,
+      requirementGroups: [
+        { id: "g1", name: "GA", checkIds: ["check-a"], weight: 1, mode: "ALL" },
+        { id: "g2", name: "GB", checkIds: ["check-b"], weight: 1, mode: "ALL" },
+      ],
+    };
+    const tasks = [
+      pair([true, true], [true, true]), // both satisfy both → surplus 0
+      pair([true, false], [false, true]), // complementary → surplus 1
+    ];
+    const h = computeBinaryOracleHeadroom(tasks, profile2);
+    expect(h).toBeCloseTo(0.5, 10);
+  });
+});
+
+describe("binary pass-rate imbalance (spec §17)", () => {
+  it("computes 1 - pass_rate for each paired check", () => {
+    // 4 tasks: both pass check-a in 3, both pass check-b in 1.
+    const tasks: PairedTaskScores[] = [
+      {
+        taskId: "t0",
+        a: { overall: null, criteria: [], binaryResults: { "check-a": true, "check-b": true } },
+        b: { overall: null, criteria: [], binaryResults: { "check-a": true, "check-b": true } },
+      },
+      {
+        taskId: "t1",
+        a: { overall: null, criteria: [], binaryResults: { "check-a": true, "check-b": false } },
+        b: { overall: null, criteria: [], binaryResults: { "check-a": true, "check-b": true } },
+      },
+      {
+        taskId: "t2",
+        a: { overall: null, criteria: [], binaryResults: { "check-a": true, "check-b": false } },
+        b: { overall: null, criteria: [], binaryResults: { "check-a": false, "check-b": false } },
+      },
+      {
+        taskId: "t3",
+        a: { overall: null, criteria: [], binaryResults: { "check-a": false, "check-b": false } },
+        b: { overall: null, criteria: [], binaryResults: { "check-a": false, "check-b": false } },
+      },
+    ];
+    const result = computeBinaryPassRateImbalance(tasks);
+    // check-a: both-pass in t0,t1 → 2/4 pass rate → imbalance 0.5
+    // check-b: both-pass in t0 → 1/4 pass rate → imbalance 0.75
+    const a = result.find((r) => r.checkId === "check-a")!;
+    const b = result.find((r) => r.checkId === "check-b")!;
+    expect(a.passRateImbalance).toBeCloseTo(0.5, 10);
+    expect(a.samples).toBe(4);
+    expect(b.passRateImbalance).toBeCloseTo(0.75, 10);
+    expect(b.samples).toBe(4);
+  });
+
+  it("skips checks not present in both models", () => {
+    const tasks: PairedTaskScores[] = [
+      {
+        taskId: "t0",
+        a: { overall: null, criteria: [], binaryResults: { "check-a": true } },
+        b: { overall: null, criteria: [], binaryResults: {} },
+      },
+    ];
+    const result = computeBinaryPassRateImbalance(tasks);
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty when no binary results", () => {
+    const tasks: PairedTaskScores[] = [
+      {
+        taskId: "t0",
+        a: { overall: 4, criteria: [{ criterionId: "q", score: 4 }] },
+        b: { overall: 4, criteria: [{ criterionId: "q", score: 4 }] },
+      },
+    ];
+    const result = computeBinaryPassRateImbalance(tasks);
+    expect(result).toEqual([]);
+  });
+});
+
+describe("computeHeadroom with binary channel", () => {
+  const profile: EvaluationProfileSnapshot = {
+    id: "p-mix",
+    version: 1,
+    name: "Mixed",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "quality",
+        kind: "graded",
+        name: "Q",
+        description: "d",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+      {
+        id: "check-a",
+        kind: "binary",
+        name: "A",
+        description: "d",
+        trueWhen: "yes",
+        falseWhen: "no",
+      },
+    ],
+    requirementGroups: [{ id: "g1", name: "G1", checkIds: ["check-a"], weight: 1, mode: "ALL" }],
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+  const weights = new Map([["quality", 1]]);
+
+  it("populates binaryPerCriterion and binaryOracleHeadroom when profile has groups", () => {
+    const tasks: PairedTaskScores[] = [
+      {
+        taskId: "t0",
+        a: {
+          overall: null,
+          criteria: [{ criterionId: "quality", score: 4 }],
+          binaryResults: { "check-a": true },
+        },
+        b: {
+          overall: null,
+          criteria: [{ criterionId: "quality", score: 3 }],
+          binaryResults: { "check-a": false },
+        },
+      },
+    ];
+    const m = computeHeadroom(tasks, weights, profile);
+    expect(m.binaryPerCriterion).toHaveLength(1);
+    expect(m.binaryPerCriterion[0].checkId).toBe("check-a");
+    // Both pass: pass rate = 1 → imbalance = 0. Wait: A passes, B fails → not both-pass.
+    // Pass is counted only when BOTH models pass: 0/1 → imbalance = 1.
+    expect(m.binaryPerCriterion[0].passRateImbalance).toBe(1);
+    // Group g1: A passes, B fails → oracle = satisfied (via A), best = satisfied (A).
+    // Surplus = 0.
+    expect(m.binaryOracleHeadroom).toBe(0);
+  });
+
+  it("binaryOracleHeadroom is null without profile", () => {
+    const tasks: PairedTaskScores[] = [
+      {
+        taskId: "t0",
+        a: {
+          overall: null,
+          criteria: [{ criterionId: "quality", score: 4 }],
+          binaryResults: { "check-a": true },
+        },
+        b: {
+          overall: null,
+          criteria: [{ criterionId: "quality", score: 3 }],
+          binaryResults: { "check-a": false },
+        },
+      },
+    ];
+    const m = computeHeadroom(tasks, weights);
+    expect(m.binaryOracleHeadroom).toBeNull();
+    // binaryPerCriterion is always computed (no profile needed).
+    expect(m.binaryPerCriterion).toHaveLength(1);
+  });
+
+  it("graded headroom is unchanged by the binary channel", () => {
+    const tasks: PairedTaskScores[] = [
+      {
+        taskId: "t0",
+        a: {
+          overall: null,
+          criteria: [{ criterionId: "quality", score: 5 }],
+          binaryResults: { "check-a": true },
+        },
+        b: {
+          overall: null,
+          criteria: [{ criterionId: "quality", score: 3 }],
+          binaryResults: { "check-a": false },
+        },
+      },
+    ];
+    const mWithProfile = computeHeadroom(tasks, weights, profile);
+    const mWithoutProfile = computeHeadroom(tasks, weights);
+    expect(mWithProfile.selectionHeadroom).toBeCloseTo(mWithoutProfile.selectionHeadroom, 10);
+    expect(mWithProfile.synthesisHeadroom).toBeCloseTo(mWithoutProfile.synthesisHeadroom ?? 0, 10);
+    expect(mWithProfile.perCriterion).toEqual(mWithoutProfile.perCriterion);
   });
 });

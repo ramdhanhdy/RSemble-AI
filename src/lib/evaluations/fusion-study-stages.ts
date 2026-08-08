@@ -531,7 +531,7 @@ export async function runStageB(
         const b = scores.get(pair[1]);
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights);
+      const metrics = computeHeadroom(paired, weights, input.profile);
       screenedPairs.push({
         pair,
         selectionHeadroom: metrics.selectionHeadroom,
@@ -540,6 +540,8 @@ export async function runStageB(
         // Fuse over a pair ≈ 2 generations + judge + synthesizer vs 1 generation.
         costMultiplier: 4,
         shortlisted: false,
+        binaryPerCriterionHeadroom: metrics.binaryPerCriterion,
+        binaryOracleHeadroom: metrics.binaryOracleHeadroom,
       });
     }
   }
@@ -756,7 +758,7 @@ async function runPoolAdequacyProbe(
         const b = scoresByTask.get(task.id)?.get(poolKey);
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights);
+      const metrics = computeHeadroom(paired, weights, input.profile);
       maxHeadroom = Math.max(
         maxHeadroom,
         metrics.selectionHeadroom,

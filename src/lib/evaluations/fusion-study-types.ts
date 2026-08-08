@@ -278,6 +278,17 @@ export interface CriterionHeadroom {
   headroom: number;
 }
 
+/** Per-binary-check pass-rate imbalance (1 - b_k), labeled — never a 4-point
+ *  quality gap (spec §17). */
+export interface BinaryCriterionHeadroom {
+  checkId: string;
+  label: string;
+  /** 1 - pass rate over paired tasks where both models have the check. */
+  passRateImbalance: number;
+  /** Number of paired tasks used. */
+  samples: number;
+}
+
 /** One row of the full screened-pair table — losers included (spec §7.2.3). */
 export interface ScreenedPairRow {
   pair: [string, string];
@@ -287,6 +298,11 @@ export interface ScreenedPairRow {
   /** Estimated policy cost multiplier relative to best-fixed. */
   costMultiplier: number;
   shortlisted: boolean;
+  /** Binary channel pass-rate imbalances (spec §17); absent when no binary checks. */
+  binaryPerCriterionHeadroom?: BinaryCriterionHeadroom[];
+  /** Group-level binary oracle contribution to H_synth (spec §17/§21);
+   *  null/absent when the profile has no requirement groups. */
+  binaryOracleHeadroom?: number | null;
 }
 
 export interface PoolAdequacyOutcome {

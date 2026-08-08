@@ -100,7 +100,7 @@ export async function pickStratifiedPairs(
         const b = scoresByTask.get(task.id)?.get(modelKeyOf(slots[j]));
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights);
+      const metrics = computeHeadroom(paired, weights, profile);
       rows.push({
         slots: [slots[i], slots[j]],
         headroom: Math.max(metrics.selectionHeadroom, metrics.synthesisHeadroom ?? 0),
