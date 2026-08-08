@@ -355,7 +355,7 @@ export function ConnectionsModal({
                           testingProvider !== null ||
                           (stored[d.id]?.hasValue === true && stored[d.id]?.persistence === null)
                         }
-                        className="pressable flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded border border-edge-bright bg-card px-3 font-mono text-xs text-text hover:bg-card-hover disabled:cursor-wait disabled:opacity-60 sm:flex-none"
+                        className="pressable flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded border border-edge-bright bg-card px-3 font-mono text-xs text-text hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
                       >
                         {testingProvider === d.id ? (
                           <Loader2 size={12} className="animate-spin-ease" />
@@ -372,7 +372,7 @@ export function ConnectionsModal({
                           keys[d.id].trim().length === 0 ||
                           (stored[d.id]?.hasValue === true && stored[d.id]?.persistence === null)
                         }
-                        className="pressable min-h-[44px] flex-1 rounded border border-accent/40 bg-accent/10 px-3 font-mono text-xs text-accent hover:bg-accent/20 disabled:cursor-wait disabled:opacity-60 sm:flex-none"
+                        className="pressable min-h-[44px] flex-1 rounded border border-accent/40 bg-accent/10 px-3 font-mono text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
                       >
                         Save
                       </button>
