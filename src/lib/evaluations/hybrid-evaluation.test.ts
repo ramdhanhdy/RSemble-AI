@@ -408,8 +408,11 @@ describe("rankValueOf", () => {
   it("C defaults to 1 when null (no binary checks)", () => {
     expect(rankValueOf(4, null, 1)).toBe(4);
   });
-  it("returns null when Q is absent (compliance-only ranks on C, not rankValue)", () => {
-    expect(rankValueOf(null, 0.5, 1)).toBeNull();
+  it("compliance-only (no graded) ranks on the weighted compliance share C", () => {
+    // Spec §16.3: a compliance-only profile ranks on C̄ (0–100%).
+    expect(rankValueOf(null, 0.5, 1)).toBe(0.5);
+    expect(rankValueOf(null, 0.8, 1)).toBe(0.8);
+    // Nothing to rank when both channels are absent.
     expect(rankValueOf(null, null, 1)).toBeNull();
   });
 });

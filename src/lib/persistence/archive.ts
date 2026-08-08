@@ -39,6 +39,7 @@ import {
   type ProfileRecord,
 } from "../evaluations/evaluation-types";
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
+import { rankValueFromResults, formatRankScoreDisplay } from "../evaluations/evaluation-profile";
 import { REDACTED } from "./error-redaction";
 import { inputUsageLabel } from "../cost";
 
@@ -661,7 +662,11 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       if (!evaluation) continue;
       const candidate = record.candidates.find((c) => c.candidateId === candidateId);
       const name = candidate ? mdSafe(candidate.model) : candidateId;
-      lines.push(`### ${name} (Candidate ${label}) — ${evaluation.overallScore.toFixed(1)}/5`, ``);
+      const profile = record.evaluation.profile;
+      const rv = profile ? rankValueFromResults(evaluation.criterionScores, profile) : null;
+      const headline =
+        rv !== null ? formatRankScoreDisplay(rv) : evaluation.overallScore.toFixed(1);
+      lines.push(`### ${name} (Candidate ${label}) — ${headline}/5`, ``);
       lines.push(`Position: ${mdSafe(evaluation.position)}`, ``);
       lines.push(`Why this score: ${mdSafe(evaluation.rationale)}`, ``);
       if (evaluation.strengths.length > 0) {

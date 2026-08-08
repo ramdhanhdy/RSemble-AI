@@ -306,3 +306,52 @@ describe("hybrid fingerprint mutations", () => {
     expect(fp1).toBe(fp2);
   });
 });
+
+describe("legacy/pure-graded fingerprint stability (plan J.1)", () => {
+  function pureGraded(): EvaluationProfile {
+    return {
+      id: "p1",
+      version: 1,
+      name: "Pure",
+      description: "test",
+      judgeInstruction: "",
+      criteria: [
+        {
+          id: "c1",
+          name: "C",
+          description: "d",
+          weight: 1,
+          anchors: { one: "1", three: "3", five: "5" },
+        },
+      ],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+  }
+
+  it("pure-graded profile hash is unchanged by an irrelevant complianceInfluence field", () => {
+    // complianceInfluence is irrelevant for a profile with no binary channel
+    // (C := 1 → rankValue = Q). It must NOT alter the fingerprint.
+    const suite = makeSuite({
+      defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+    });
+    const plain = computeProtocolFingerprint(suite, [pureGraded()]);
+    const withLambda = computeProtocolFingerprint(suite, [
+      { ...pureGraded(), complianceInfluence: 0.5 },
+    ]);
+    expect(plain).toBe(withLambda);
+  });
+
+  it("a mixed profile's complianceInfluence DOES change the fingerprint", () => {
+    const suite = makeSuite({
+      defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
+    });
+    const mixed = (lambda: number | undefined): EvaluationProfile => ({
+      ...makeGradedProfile(),
+      complianceInfluence: lambda,
+    });
+    const fpAbsent = computeProtocolFingerprint(suite, [mixed(undefined)]);
+    const fp05 = computeProtocolFingerprint(suite, [mixed(0.5)]);
+    expect(fpAbsent).not.toBe(fp05);
+  });
+});

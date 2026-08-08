@@ -181,10 +181,15 @@ export function getComplianceInfluence(profile: EvaluationProfileSnapshot): numb
 }
 
 /** Compute the authoritative rank value: Q − λ·(1 − C).
- *  Returns null when Q is absent (compliance-only profile — such profiles rank
- *  on C, not rankValue, per spec §16.3) or when both channels are absent. */
+ *  - Mixed/graded: Q − λ·(1 − C) (C := 1 when no binary checks → rankValue = Q).
+ *  - Compliance-only (no graded criteria): rank on the weighted compliance share
+ *    C (0–1) per spec §16.3.
+ *  - Returns null only when BOTH channels are absent (nothing to rank). */
 export function rankValueOf(Q: number | null, C: number | null, lambda: number): number | null {
-  if (Q === null) return null;
+  if (Q === null) {
+    // Compliance-only: the weighted compliance share C is the ranking quantity.
+    return C;
+  }
   const c = C ?? 1; // no binary checks → C := 1
   return Q - lambda * (1 - c);
 }

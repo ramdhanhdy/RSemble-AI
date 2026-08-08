@@ -84,20 +84,27 @@ function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
     defaultEvaluation: pieces.defaultEvaluation,
     reasoningPolicy: pieces.reasoningPolicy,
     profiles: pieces.profiles.map((p) => {
-      // Canonicalize default-valued hybrid fields so semantically identical
-      // protocols hash identically: absent complianceInfluence == 1.0, and
-      // absent requirementGroups == []. (JSON.stringify drops undefined, so
-      // legacy profiles still hash identically to pre-hybrid.)
-      const lambda = p.complianceInfluence ?? 1.0;
-      const groups =
-        Array.isArray(p.requirementGroups) && p.requirementGroups.length > 0
-          ? p.requirementGroups.map((g) => ({
-              name: g.name,
-              checkIds: g.checkIds,
-              weight: g.weight,
-              mode: g.mode,
-            }))
-          : undefined;
+      // Hybrid fields (requirementGroups, complianceInfluence) are only
+      // fingerprinted when the profile actually carries binary checks; they
+      // drive rankValue = Q - lambda*(1-C) and MUST distinguish experiments.
+      // For a pure-graded/legacy profile (no binary channel) compliance is
+      // irrelevant (C := 1), so both fields are emitted as undefined and
+      // dropped by JSON.stringify — keeping the profile's hash identical to
+      // its pre-hybrid value (plan J.1: pure-graded bit-identical; legacy
+      // fingerprints stay reproducible after upgrade).
+      const groupsPresent = Array.isArray(p.requirementGroups) && p.requirementGroups.length > 0;
+      const hasBinary = p.criteria.some((c) => c.kind === "binary");
+      const groups = groupsPresent
+        ? p.requirementGroups!.map((g) => ({
+            name: g.name,
+            checkIds: g.checkIds,
+            weight: g.weight,
+            mode: g.mode,
+          }))
+        : undefined;
+      // Only emit lambda when a binary channel exists; absent == 1.0 is the
+      // default and is semantically identical, so canonicalize on presence.
+      const lambda = groupsPresent || hasBinary ? (p.complianceInfluence ?? 1.0) : undefined;
       return {
         id: p.id,
         version: p.version,
@@ -105,12 +112,6 @@ function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
         description: p.description,
         judgeInstruction: p.judgeInstruction,
         criteria: p.criteria,
-        // Hybrid fields: requirementGroups and complianceInfluence drive
-        // rankValue = Q - lambda*(1-C); they MUST be fingerprinted so two
-        // experiments with different groups or lambda get different
-        // fingerprints. Group ids are presentation/identity, not semantic —
-        // they are excluded so re-minting an id (delete + re-add) does not
-        // change the protocol hash.
         requirementGroups: groups,
         complianceInfluence: lambda,
       };
