@@ -299,7 +299,7 @@ export async function runStageA(
         stratified.slots,
         input.study.judge1,
       );
-      const winner = deriveRankWinner(evidence.blindCandidates, evidence.report);
+      const winner = deriveRankWinner(evidence.blindCandidates, evidence.report, input.profile);
       const winnerContent =
         evidence.blindCandidates.find((c) => c.candidateId === winner.winnerCandidateId)?.content ??
         "";
@@ -818,7 +818,7 @@ export async function evaluatePairBlocked(
       slots,
       input.study.judge1,
     );
-    const winner = deriveRankWinner(evidence.blindCandidates, evidence.report);
+    const winner = deriveRankWinner(evidence.blindCandidates, evidence.report, input.profile);
     const winnerContent =
       evidence.blindCandidates.find((c) => c.candidateId === winner.winnerCandidateId)?.content ??
       "";

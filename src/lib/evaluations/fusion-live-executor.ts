@@ -26,6 +26,7 @@ import {
   splitSegments,
 } from "../pipeline";
 import type { EvaluationProfileSnapshot, EvaluationTask } from "./evaluation-types";
+import { rankValueFromResults } from "./evaluation-profile";
 import type {
   BlockedRunResult,
   FusionPolicyExecutor,
@@ -175,7 +176,13 @@ export function createLiveFusionExecutor(deps?: {
       const { report } = parseJudge(content, blindSet, profile, candidates);
       const scoresByKey: Record<string, number> = {};
       for (const artifact of artifacts) {
-        scoresByKey[artifact.key] = report.evaluationsById[artifact.key]?.overallScore ?? 0;
+        const ev = report.evaluationsById[artifact.key];
+        if (!ev) continue;
+        // With a pinned profile, use the authoritative rankValue (Q − λ(1−C))
+        // so compliance checks enter the holdout score; otherwise the Judge's
+        // holistic overallScore.
+        const rv = profile ? rankValueFromResults(ev.criterionScores, profile) : null;
+        scoresByKey[artifact.key] = rv ?? ev.overallScore;
       }
       return {
         scoresByKey,
