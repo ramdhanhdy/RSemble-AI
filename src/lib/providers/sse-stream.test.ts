@@ -131,6 +131,36 @@ describe("readSseChatStream", () => {
     expect(deltas).toEqual(["split"]);
   });
 
+  it("notifies activity on raw transport chunks, including SSE comment keep-alives", async () => {
+    // OpenRouter keeps slow upstream queues warm with comment lines such as
+    // ": OPENROUTER PROCESSING". These never yield content, but the bytes
+    // arriving are proof the connection is alive — the inactivity watchdog
+    // must treat them as progress (regression for stream_inactivity_timeout).
+    let rawNotifyCount = 0;
+    const activity = {
+      subscribe(): () => void {
+        return () => undefined;
+      },
+      notify(): void {
+        rawNotifyCount += 1;
+      },
+    };
+    const stream = makeStream([
+      ": OPENROUTER PROCESSING\n\n",
+      ": OPENROUTER PROCESSING\n\n",
+      'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
+      ": OPENROUTER PROCESSING\n\n",
+      "data: [DONE]\n\n",
+    ]);
+    const deltas: string[] = [];
+    for await (const d of readSseChatStream(stream, pid, label, undefined, undefined, activity)) {
+      deltas.push(d);
+    }
+    expect(deltas).toEqual(["hi"]);
+    // One notify per raw chunk read: 5 enqueued chunks above.
+    expect(rawNotifyCount).toBe(5);
+  });
+
   it("captures final usage and reported cost from the accounting chunk", async () => {
     const stream = makeStream([
       'data: {"choices":[{"delta":{"content":"hel"}}]}\n\n',

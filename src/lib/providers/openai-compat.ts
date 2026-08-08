@@ -27,6 +27,7 @@ import { BRIDGE_MAX_BODY_BYTES } from "../../../shared/limits";
 import {
   DEFAULT_PROVIDER_DEADLINE_POLICY,
   composeAbortSignals,
+  createStreamActivity,
   isExecutionTimeoutError,
   markStreamHeadersReady,
   providerAbortError,
@@ -361,6 +362,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
       const headers = createHeadersReady();
       const streamAbort = new AbortController();
       const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+      const activity = createStreamActivity();
       const source = (async function* (): AsyncGenerator<string, void, unknown> {
         const key = getApiKey();
         if (!key && apiKeyRequired) {
@@ -413,7 +415,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
           headers.resolve();
           const res = response;
           if (!res.ok || !res.body) throw await parseError(res, id);
-          yield* readSseChatStream(res.body, id, label, composed.signal);
+          yield* readSseChatStream(res.body, id, label, composed.signal, undefined, activity);
         } catch (err) {
           headers.resolve();
           if (isExecutionTimeoutError(err)) throw err;
@@ -438,6 +440,7 @@ export function createOpenAICompatProvider(config: OpenAICompatConfig): LLMProvi
         signal: composed.signal,
         abortController: streamAbort,
         headersReady: headers.promise,
+        activity,
       });
     },
 

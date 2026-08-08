@@ -6,6 +6,7 @@ import {
   runWithExecutionDeadlines,
   streamWithExecutionDeadlines,
   type ProviderDeadlinePolicy,
+  type StreamActivity,
 } from "../execution-deadline";
 
 /** Shared production policy and adapter seams for paid provider requests. */
@@ -49,6 +50,7 @@ export function wrapProviderStream<T>(
     signal?: AbortSignal;
     abortController?: AbortController;
     policy?: ProviderDeadlinePolicy;
+    activity?: StreamActivity;
   },
 ): AsyncGenerator<T, void, unknown> {
   const marked = markStreamHeadersReady(source, headersReady);
@@ -60,6 +62,7 @@ export function wrapProviderStream<T>(
     signal: context.signal,
     abortController: context.abortController,
     headersReady,
+    activity: context.activity,
   });
 }
 

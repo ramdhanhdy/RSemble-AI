@@ -704,6 +704,11 @@ export interface ExecutionStreamOptions extends DeadlineDependencies, ExecutionT
   abortController?: AbortController;
   /** Provider adapters resolve this as soon as response headers arrive. */
   headersReady?: PromiseLike<void>;
+  /** Transport-level progress signal (e.g. raw SSE bytes/keep-alives). Each
+   * notification resets inactivity exactly like a yielded parser event, so a
+   * stream that is still delivering bytes is never killed while the parser is
+   * merely waiting for the next content event. */
+  activity?: StreamActivity;
 }
 
 const STREAM_HEADERS_READY = Symbol("rsemble.streamHeadersReady");
@@ -724,17 +729,69 @@ function streamHeadersReadyOf<T>(source: AsyncIterable<T>): PromiseLike<void> | 
   return (source as AsyncIterable<T> & HeadersReadyStream)[STREAM_HEADERS_READY];
 }
 
+/** A repeating transport-progress signal. Providers notify it whenever the
+ * upstream connection delivers bytes — including SSE keep-alive comment lines
+ * such as OpenRouter's `: OPENROUTER PROCESSING` frames — and the inactivity
+ * watchdog treats each notification as accepted progress. */
+export interface StreamActivity {
+  /** Register a progress listener; returns the unsubscribe function. */
+  subscribe(onProgress: () => void): () => void;
+}
+
+/** Concrete notifier handed to stream readers: call `notify()` on every
+ * received transport chunk. */
+export interface StreamActivityNotifier extends StreamActivity {
+  notify(): void;
+}
+
+export function createStreamActivity(): StreamActivityNotifier {
+  const listeners = new Set<() => void>();
+  return {
+    subscribe(onProgress: () => void): () => void {
+      listeners.add(onProgress);
+      return () => {
+        listeners.delete(onProgress);
+      };
+    },
+    notify(): void {
+      for (const listener of [...listeners]) listener();
+    },
+  };
+}
+
+const STREAM_ACTIVITY = Symbol("rsemble.streamActivity");
+type ActivityStream = { [STREAM_ACTIVITY]?: StreamActivity };
+
+/** Attach a transport-activity signal to a provider stream. Like the
+ * headers-ready marker this is symbol metadata and does not affect the
+ * yielded protocol. */
+export function markStreamActivity<T>(
+  source: AsyncIterable<T>,
+  activity: StreamActivity,
+): AsyncIterable<T> {
+  (source as AsyncIterable<T> & ActivityStream)[STREAM_ACTIVITY] = activity;
+  return source;
+}
+
+function streamActivityOf<T>(source: AsyncIterable<T>): StreamActivity | undefined {
+  return (source as AsyncIterable<T> & ActivityStream)[STREAM_ACTIVITY];
+}
+
 /**
  * Consume an async provider stream with independent connect, inactivity, and
  * optional overall clocks. Each yielded item is an accepted parser event; it
- * resets inactivity, while the overall ceiling never resets. The iterator is
- * returned/cancelled on every terminal path.
+ * resets inactivity, while the overall ceiling never resets. Transport-level
+ * activity (options.activity or a stream marked via markStreamActivity) also
+ * resets inactivity without yielding, so provider keep-alive traffic keeps a
+ * slow-but-healthy stream alive. The iterator is returned/cancelled on every
+ * terminal path.
  */
 export function streamWithExecutionDeadlines<T>(
   source: AsyncIterable<T>,
   options: ExecutionStreamOptions,
 ): AsyncGenerator<T, void, unknown> {
   const headersReady = options.headersReady ?? streamHeadersReadyOf(source);
+  const activity = options.activity ?? streamActivityOf(source);
   const output = (async function* (): AsyncGenerator<T, void, unknown> {
     const connect = createExecutionDeadline({
       ...options,
@@ -748,6 +805,10 @@ export function streamWithExecutionDeadlines<T>(
       inactivityMs: options.inactivityMs,
       overallMs: options.overallMs,
     });
+    // Transport-level activity (raw bytes, SSE keep-alive comments) counts as
+    // progress exactly like a yielded parser event, so a slow upstream model
+    // whose connection stays chatty is never killed mid-queue.
+    const stopActivity = activity?.subscribe(() => watchdog.markProgress());
     const iterator = source[Symbol.asyncIterator]();
     const onHeadersReady = () => connect.cleanup();
     if (headersReady !== undefined) void headersReady.then(onHeadersReady, () => undefined);
@@ -778,6 +839,7 @@ export function streamWithExecutionDeadlines<T>(
         await iterator.return?.();
       } finally {
         watchdog.signal.removeEventListener("abort", forwardAbort);
+        stopActivity?.();
         connect.cleanup();
         watchdog.cleanup();
       }

@@ -19,7 +19,7 @@
 
 import { type CostRecord, type UsageBreakdown, ProviderError, type ProviderId } from "./types";
 import { parseOpenAICompatibleUsage, parseProviderReportedCost } from "./usage";
-import { providerAbortError } from "../execution-deadline";
+import { providerAbortError, type StreamActivityNotifier } from "../execution-deadline";
 
 export interface SseChunk {
   choices?: { delta?: { content?: string } }[];
@@ -45,6 +45,7 @@ export async function* readSseChatStream(
   label: string,
   signal?: AbortSignal,
   meta?: SseMeta,
+  activity?: StreamActivityNotifier,
 ): AsyncGenerator<string, void, unknown> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -73,6 +74,13 @@ export async function* readSseChatStream(
       }
 
       if (done) break;
+
+      // Transport-level activity: any raw bytes (including SSE comment
+      // keep-alive lines such as OpenRouter's `: OPENROUTER PROCESSING`)
+      // count as accepted progress for the inactivity watchdog, so a slow
+      // upstream model that keeps the connection chatty is never killed
+      // while it is still alive.
+      activity?.notify();
 
       buffer += decoder.decode(value, { stream: true });
 

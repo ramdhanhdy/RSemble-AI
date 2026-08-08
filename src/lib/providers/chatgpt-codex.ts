@@ -28,6 +28,7 @@ import {
 } from "./provider-deadline";
 import {
   composeAbortSignals,
+  createStreamActivity,
   isExecutionTimeoutError,
   providerAbortError,
 } from "../execution-deadline";
@@ -207,6 +208,7 @@ export const chatgptCodexProvider: LLMProvider = {
     const headers = createHeadersReady();
     const streamAbort = new AbortController();
     const composed = composeAbortSignals(opts.signal, streamAbort.signal);
+    const activity = createStreamActivity();
     const streamOpts = { ...opts, signal: composed.signal };
     const source = (async function* (): AsyncGenerator<string, void, unknown> {
       try {
@@ -229,7 +231,14 @@ export const chatgptCodexProvider: LLMProvider = {
         });
         headers.resolve();
         if (!res.ok || !res.body) throw await parseBridgeError(res, "ChatGPT (Codex)");
-        yield* readSseChatStream(res.body, "chatgpt-codex", "ChatGPT (Codex)", composed.signal);
+        yield* readSseChatStream(
+          res.body,
+          "chatgpt-codex",
+          "ChatGPT (Codex)",
+          composed.signal,
+          undefined,
+          activity,
+        );
       } catch (err) {
         headers.resolve();
         if (isExecutionTimeoutError(err)) throw err;
@@ -267,6 +276,7 @@ export const chatgptCodexProvider: LLMProvider = {
       stage: "provider",
       signal: composed.signal,
       abortController: streamAbort,
+      activity,
       policy: deadlinePolicy(streamOpts),
     });
   },
