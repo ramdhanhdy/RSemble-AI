@@ -199,6 +199,36 @@ export function isFloored(rv: number | null): boolean {
   return rv !== null && rv < 1;
 }
 
+// --- Full rank computation from JudgeCriterionScore[] -------------------------
+
+/** Compute the authoritative rank value from a candidate's criterion results
+ *  and a profile snapshot. Handles graded (numeric score) and binary (boolean
+ *  value) criterion results. Returns null when no scoring data is available. */
+export function rankValueFromResults(
+  criterionScores: Array<{
+    criterionId: string;
+    score?: number;
+    value?: boolean;
+    kind?: "graded" | "binary" | undefined;
+  }>,
+  profile: EvaluationProfileSnapshot,
+): number | null {
+  const numericScores: Record<string, number> = {};
+  const booleanResults: Record<string, boolean> = {};
+  for (const cs of criterionScores) {
+    if (cs.kind === "binary" && cs.value !== undefined) {
+      booleanResults[cs.criterionId] = cs.value;
+    } else if (cs.score !== undefined) {
+      numericScores[cs.criterionId] = cs.score;
+    }
+  }
+  const Q = qualityScore(numericScores, profile);
+  const comp = complianceScore(booleanResults, profile);
+  const lambda = getComplianceInfluence(profile);
+  const C = comp?.C ?? null;
+  return rankValueOf(Q, C, lambda);
+}
+
 // --- Legacy compatibility: canonicalScore (pure-graded → Q) -------------------
 
 /**

@@ -11,6 +11,7 @@ import {
   checkAttachmentEligibility,
 } from "./pipeline";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
+import { rankValueFromResults } from "./evaluations/evaluation-profile";
 import { evaluateComparePreflight, type ComparePreflight } from "./compare-preflight";
 import type { RunRecorder } from "./persistence/run-recorder";
 import type { ExecutionFence } from "./persistence/run-types";
@@ -434,10 +435,16 @@ export function createRunController(deps: RunControllerDeps) {
             mode: frozenContext?.mode ?? capturedMode,
             consensus: input.consensus!,
             scoresById: Object.fromEntries(
-              Object.entries(input.report.evaluationsById).map(([cid, ev]) => [
-                cid,
-                ev.overallScore,
-              ]),
+              Object.entries(input.report.evaluationsById).map(([cid, ev]) => {
+                const profile = frozenContext
+                  ? resolveEvaluationProfile(frozenContext.evaluation)
+                  : null;
+                if (profile) {
+                  const rv = rankValueFromResults(ev.criterionScores, profile);
+                  if (rv !== null) return [cid, rv];
+                }
+                return [cid, ev.overallScore];
+              }),
             ),
             report: input.report,
           });
