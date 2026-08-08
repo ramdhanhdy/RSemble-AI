@@ -10,10 +10,14 @@ function model(
   mean: number | null,
   complete: boolean,
   _index: number,
+  opts: { q?: number | null; c?: number | null; floored?: number } = {},
 ): ModelAggregate {
   return {
     modelKey,
     mean,
+    qMean: opts.q ?? null,
+    cMean: opts.c ?? null,
+    flooredTaskCount: opts.floored ?? 0,
     scoredTasks: complete ? 15 : 14,
     totalTasks: 15,
     complete,
@@ -106,5 +110,48 @@ describe("deriveDisplayRanking", () => {
     );
 
     expect(result.provisional.map((m) => m.modelKey)).toEqual(["9router:scored", "9router:none"]);
+  });
+});
+
+describe("deriveDisplayRanking — spec §16.1 tie-break key", () => {
+  it("equal mean(rankValue) breaks by higher Q̄", () => {
+    // Same rankValue mean, different Q̄ → higher Q̄ ranks first.
+    const a = model("a", 4.0, true, 0, { q: 4.5 });
+    const b = model("b", 4.0, true, 1, { q: 3.5 });
+    const result = deriveDisplayRanking([a, b], order("a", "b"));
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b"]);
+  });
+
+  it("equal mean(rankValue) and Q̄ breaks by higher C̄", () => {
+    // Same rankValue + Q̄, different C̄ → higher C̄ ranks first.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0, true, 1, { q: 4.0, c: 0.5 });
+    const result = deriveDisplayRanking([a, b], order("a", "b"));
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b"]);
+  });
+
+  it("equality through Q̄ and C̄ resolves by candidate_id ascending", () => {
+    // Fully equal mean + Q̄ + C̄ → candidate_id asc (not roster order).
+    const z = model("z", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const a = model("a", 4.0, true, 1, { q: 4.0, c: 0.9 });
+    const result = deriveDisplayRanking([z, a], order("z", "a"));
+    // roster order says z first, but candidate_id asc says a first.
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "z"]);
+  });
+
+  it("epsilon-equivalent mean/Q̄/C̄ values share the same ordering step", () => {
+    // Values within WINNER_EPSILON are equivalent, so the id tiebreak applies.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 1e-12, true, 1, { q: 4.0 + 1e-12, c: 0.9 });
+    const result = deriveDisplayRanking([b, a], order("b", "a"));
+    // Roster order says b first, but id asc says a first (values are epsilon-equal).
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b"]);
+  });
+
+  it("provisional models use the same tie-break key", () => {
+    const a = model("a", 3.0, false, 0, { q: 4.0, c: 0.8 });
+    const b = model("b", 3.0, false, 1, { q: 2.0, c: 0.8 });
+    const result = deriveDisplayRanking([a, b], order("a", "b"));
+    expect(result.provisional.map((m) => m.modelKey)).toEqual(["a", "b"]);
   });
 });

@@ -33,6 +33,7 @@ import {
   type ProfileRecord,
 } from "./evaluation-types";
 import { validateSuiteForExecution } from "./suite-validation";
+import { validateProfile } from "./evaluation-profile";
 import type { CriticRef, ProviderId } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
 
@@ -77,6 +78,8 @@ export interface SuitePackageProfile {
   description?: string;
   judgeInstruction?: string;
   criteria: EvaluationProfile["criteria"];
+  requirementGroups?: EvaluationProfile["requirementGroups"];
+  complianceInfluence?: EvaluationProfile["complianceInfluence"];
 }
 
 export interface SuitePackageV1 {
@@ -326,13 +329,23 @@ export function normalizeSuitePackage(
       description: pkgProfile.description ?? "",
       judgeInstruction: pkgProfile.judgeInstruction ?? "",
       criteria: pkgProfile.criteria,
+      requirementGroups: pkgProfile.requirementGroups,
+      complianceInfluence: pkgProfile.complianceInfluence,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
     if (!isEvaluationProfile(profile)) {
       errors.push(
-        `Profile "${pkgProfile.name}" fails the record guard — check criteria anchors and weights.`,
+        `Profile "${pkgProfile.name}" fails the record guard — check criteria anchors and weights (a kind:"gate" criterion is not supported in this version; author it as a binary check or wait for gate support).`,
       );
+      continue;
+    }
+    // Authoring-boundary validation: enforces group membership invariants
+    // (every checkId resolves to a binary check, exactly-one membership, no
+    // ungrouped binary checks) that the structural guard does not.
+    const profileErrors = validateProfile(profile);
+    if (profileErrors.length > 0) {
+      errors.push(`Profile "${pkgProfile.name}" is invalid: ${profileErrors.join("; ")}`);
       continue;
     }
     profiles.push({

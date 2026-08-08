@@ -83,14 +83,39 @@ function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
     },
     defaultEvaluation: pieces.defaultEvaluation,
     reasoningPolicy: pieces.reasoningPolicy,
-    profiles: pieces.profiles.map((p) => ({
-      id: p.id,
-      version: p.version,
-      name: p.name,
-      description: p.description,
-      judgeInstruction: p.judgeInstruction,
-      criteria: p.criteria,
-    })),
+    profiles: pieces.profiles.map((p) => {
+      // Hybrid fields (requirementGroups, complianceInfluence) are only
+      // fingerprinted when the profile actually carries binary checks; they
+      // drive rankValue = Q - lambda*(1-C) and MUST distinguish experiments.
+      // For a pure-graded/legacy profile (no binary channel) compliance is
+      // irrelevant (C := 1), so both fields are emitted as undefined and
+      // dropped by JSON.stringify — keeping the profile's hash identical to
+      // its pre-hybrid value (plan J.1: pure-graded bit-identical; legacy
+      // fingerprints stay reproducible after upgrade).
+      const groupsPresent = Array.isArray(p.requirementGroups) && p.requirementGroups.length > 0;
+      const hasBinary = p.criteria.some((c) => c.kind === "binary");
+      const groups = groupsPresent
+        ? p.requirementGroups!.map((g) => ({
+            name: g.name,
+            checkIds: g.checkIds,
+            weight: g.weight,
+            mode: g.mode,
+          }))
+        : undefined;
+      // Only emit lambda when a binary channel exists; absent == 1.0 is the
+      // default and is semantically identical, so canonicalize on presence.
+      const lambda = groupsPresent || hasBinary ? (p.complianceInfluence ?? 1.0) : undefined;
+      return {
+        id: p.id,
+        version: p.version,
+        name: p.name,
+        description: p.description,
+        judgeInstruction: p.judgeInstruction,
+        criteria: p.criteria,
+        requirementGroups: groups,
+        complianceInfluence: lambda,
+      };
+    }),
     aggregationPolicy: "equal-task",
     trialsPerTask: 1,
   };

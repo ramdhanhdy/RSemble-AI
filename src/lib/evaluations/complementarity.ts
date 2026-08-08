@@ -24,8 +24,12 @@
 // =============================================================================
 
 import type { JudgeReport } from "../../studio-data";
-import type { TaskVerification } from "./evaluation-types";
-import type { CriterionHeadroom, VerifierOutcome } from "./fusion-study-types";
+import type { EvaluationProfileSnapshot, TaskVerification } from "./evaluation-types";
+import type {
+  BinaryCriterionHeadroom,
+  CriterionHeadroom,
+  VerifierOutcome,
+} from "./fusion-study-types";
 
 // --- Inputs ---------------------------------------------------------------------
 
@@ -39,6 +43,9 @@ export interface ModelTaskScore {
   /** Stored holistic overall — used only when criterion scores are absent. */
   overall: number | null;
   criteria: CriterionScoreVector[];
+  /** Native binary check results (checkId → boolean). Binary evidence stays
+   *  boolean — it never enters the numeric criterion vector (spec §17). */
+  binaryResults?: Record<string, boolean>;
 }
 
 export interface PairedTaskScores {
@@ -62,9 +69,18 @@ export function modelTaskScoreFromReport(
 ): ModelTaskScore | null {
   const ev = report.evaluationsById[candidateId];
   if (!ev) return null;
+  const binaryResults: Record<string, boolean> = {};
+  for (const cs of ev.criterionScores) {
+    if (cs.kind === "binary" && cs.value !== undefined) {
+      binaryResults[cs.criterionId] = cs.value;
+    }
+  }
   return {
     overall: ev.overallScore,
-    criteria: ev.criterionScores.map((cs) => ({ criterionId: cs.criterionId, score: cs.score })),
+    criteria: ev.criterionScores
+      .filter((cs) => cs.score !== undefined)
+      .map((cs) => ({ criterionId: cs.criterionId, score: cs.score! })),
+    binaryResults,
   };
 }
 
@@ -75,6 +91,11 @@ export interface HeadroomMetrics {
   /** Null when no task carries criterion scores for both models. */
   synthesisHeadroom: number | null;
   perCriterion: CriterionHeadroom[];
+  /** Binary channel pass-rate imbalances (spec §17); empty when none. */
+  binaryPerCriterion: BinaryCriterionHeadroom[];
+  /** Group-level binary oracle contribution to H_synth (spec §17/§21);
+   *  null when the profile has no requirement groups. */
+  binaryOracleHeadroom: number | null;
   tasksUsed: number;
   tasksWithCriteria: number;
 }
@@ -111,6 +132,7 @@ export function taskOverall(score: ModelTaskScore, weights: CriterionWeights): n
 export function computeHeadroom(
   tasks: PairedTaskScores[],
   weights: CriterionWeights,
+  profile?: EvaluationProfileSnapshot | null,
 ): HeadroomMetrics {
   const usable: Array<{ taskId: string; sa: number; sb: number }> = [];
   for (const t of tasks) {
@@ -141,10 +163,15 @@ export function computeHeadroom(
     synthesisHeadroom = mean(gaps);
   }
 
+  const binaryPerCriterion = computeBinaryPassRateImbalance(tasks);
+  const binaryOracleHeadroom = profile ? computeBinaryOracleHeadroom(tasks, profile) : null;
+
   return {
     selectionHeadroom,
     synthesisHeadroom,
     perCriterion: computePerCriterionHeadroom(tasks, weights),
+    binaryPerCriterion,
+    binaryOracleHeadroom,
     tasksUsed: usable.length,
     tasksWithCriteria: criteriaTasks.length,
   };
@@ -443,4 +470,93 @@ export function assessChallengerOutcome(
   return challengerResults.some((r) => r.maxPairHeadroomWithPool >= epsilon)
     ? "unconfirmed"
     : "confirmed";
+}
+
+// --- Binary channel (spec §17): pass-rate imbalance + group-level oracle ------
+
+/** Minimum paired-task samples required for a pass-rate imbalance to be
+ *  actionable (spec §17: "with a minimum sample gate"). Checks with fewer
+ *  paired samples are excluded — their imbalance is not statistically reliable. */
+export const MIN_BINARY_SAMPLES = 3;
+
+/** Pass-rate imbalance per binary check: 1 - b_k over paired tasks where both
+ *  models carry the check. Labeled as imbalance — never a 4-point quality gap.
+ *  Checks below MIN_BINARY_SAMPLES are gated out (spec §17). */
+export function computeBinaryPassRateImbalance(
+  tasks: PairedTaskScores[],
+): BinaryCriterionHeadroom[] {
+  const byCheck = new Map<string, { label: string; pass: number; samples: number }>();
+  for (const t of tasks) {
+    const bById = t.b.binaryResults ?? {};
+    for (const [checkId, value] of Object.entries(t.a.binaryResults ?? {})) {
+      if (!(checkId in bById)) continue; // both models must have the check
+      const entry = byCheck.get(checkId) ?? { label: checkId, pass: 0, samples: 0 };
+      entry.pass += value && bById[checkId] ? 1 : 0;
+      entry.samples += 1;
+      byCheck.set(checkId, entry);
+    }
+  }
+  const result: BinaryCriterionHeadroom[] = [];
+  for (const [checkId, e] of byCheck) {
+    if (e.samples < MIN_BINARY_SAMPLES) continue; // minimum sample gate (§17)
+    result.push({
+      checkId,
+      label: e.label,
+      passRateImbalance: 1 - e.pass / e.samples,
+      samples: e.samples,
+    });
+  }
+  result.sort((x, y) => x.checkId.localeCompare(y.checkId));
+  return result;
+}
+
+/** Group satisfaction for one model on one task under ALL mode (spec §11.4). */
+function modelGroupSatisfied(
+  binaryResults: Record<string, boolean> | undefined,
+  checkIds: string[],
+): boolean {
+  if (!binaryResults) return false;
+  for (const id of checkIds) {
+    if (binaryResults[id] !== true) return false; // missing member = unsatisfied
+  }
+  return true;
+}
+
+/** H_synth binary oracle contribution at Requirement Group level (spec §17/§21).
+ *  A group is oracle-satisfied if EITHER model's group passes; complementary
+ *  failures inside a group (each model fails a different subcheck) therefore
+ *  cannot fabricate headroom. Returns mean over tasks of the group-level
+ *  oracle surplus; null when the profile has no requirement groups.
+ *
+ *  Design note: the oracle surplus counts groups equally (unweighted). The
+ *  spec §17 oracle bullet is count-based ("a group is satisfied if either
+ *  model's group passes"), not weight-normalized. The weighted compliance C
+ *  (spec §9.2) is a separate quantity computed by complianceScore, not the
+ *  oracle headroom. Group weights v_g are consumed by the rankValue contract
+ *  via complianceScore; the oracle measures complementary binary opportunity
+ *  at the group level. */
+export function computeBinaryOracleHeadroom(
+  tasks: PairedTaskScores[],
+  profile: EvaluationProfileSnapshot,
+): number | null {
+  const groups = profile.requirementGroups ?? [];
+  if (groups.length === 0) return null;
+  let surplusSum = 0;
+  let used = 0;
+  for (const t of tasks) {
+    let oracleCount = 0;
+    let aCount = 0;
+    let bCount = 0;
+    for (const g of groups) {
+      const sa = modelGroupSatisfied(t.a.binaryResults, g.checkIds);
+      const sb = modelGroupSatisfied(t.b.binaryResults, g.checkIds);
+      if (sa || sb) oracleCount += 1;
+      if (sa) aCount += 1;
+      if (sb) bCount += 1;
+    }
+    // Oracle surplus = oracle groups - best single model's total groups.
+    surplusSum += oracleCount - Math.max(aCount, bCount);
+    used += 1;
+  }
+  return used > 0 ? surplusSum / used : 0;
 }

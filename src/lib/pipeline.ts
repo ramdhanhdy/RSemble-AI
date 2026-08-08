@@ -401,7 +401,7 @@ export function judgeMessages(
     `- deductions: weaknesses that materially lowered the score, each tagged "minor" or "major" (empty array when none).\n` +
     `- missedRequirements: task or evaluation requirements the candidate failed to address (empty array when none).\n` +
     (hasCriteria
-      ? `- criterionScores: exactly one entry per evaluation criterion listed below, keyed by its criterion ID, each scored 1.0–5.0 with a concise rationale.\n`
+      ? `- criterionScores: exactly one entry per evaluation criterion listed below, keyed by its criterion ID. Graded criteria use "score" (integer 1–5) with a concise rationale; binary criteria use "value" (true or false) with a concise rationale.\n`
       : `- criterionScores: an empty array — no explicit criteria are provided, so do not invent scoring dimensions.\n`) +
     `When two candidates reach materially similar conclusions or recommendations but their overall scores differ by at least 0.5, ` +
     `return one comparison per such pair explaining what created the difference (for example quantification, evidence quality, ` +
@@ -412,7 +412,7 @@ export function judgeMessages(
     `{"consensus": string[], "contradictions": string[], "uniqueInsights": [{"source": "A", "insight": "..."}], ` +
     `"evaluations": [{"label": "A", "score": 4.5, "position": "...", "rationale": "...", "strengths": ["..."], ` +
     `"deductions": [{"severity": "minor", "reason": "..."}], "missedRequirements": [], ` +
-    `"criterionScores": [{"criterionId": "...", "score": 4.5, "rationale": "..."}]}], ` +
+    `"criterionScores": [{"criterionId": "...", "score": 4, "rationale": "..."}, {"criterionId": "...", "value": true, "rationale": "..."}]}], ` +
     `"comparisons": [{"labels": ["A", "B"], "reason": "..."}]}\n` +
     `Use the candidate blind labels (A, B, C, ...) for "source", "label", and comparison "labels". ` +
     `Output JSON and nothing else — no prose, no code fences, no commentary.`;
@@ -542,7 +542,7 @@ function optionalStringArray(value: unknown, field: string): string[] {
 }
 
 /** A score must be a finite number within the documented 1.0–5.0 range. Never clamped. */
-function requireScore(value: unknown, where: string): number {
+function requireScore(value: unknown, where: string, integerOnly = false): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(
       `Judge output invalid: ${where} is missing a finite numeric score (got ${JSON.stringify(value)}).`,
@@ -551,6 +551,20 @@ function requireScore(value: unknown, where: string): number {
   if (value < 1.0 || value > 5.0) {
     throw new Error(
       `Judge output invalid: ${where} score ${value} is outside the documented 1.0–5.0 range.`,
+    );
+  }
+  if (integerOnly && !Number.isInteger(value)) {
+    throw new Error(
+      `Judge output invalid: ${where} score ${value} must be an integer 1–5 for a graded criterion.`,
+    );
+  }
+  return value;
+}
+
+function requireBoolean(value: unknown, where: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(
+      `Judge output invalid: ${where} is missing a JSON boolean (got ${JSON.stringify(value)}).`,
     );
   }
   return value;
@@ -626,14 +640,60 @@ function parseCriterionScores(
     if (cs == null || typeof cs !== "object") {
       throw new Error(`Judge output invalid: ${where}.criterionScores[${i}] must be an object.`);
     }
-    const entry = cs as { criterionId?: unknown; score?: unknown; rationale?: unknown };
+    const entry = cs as {
+      criterionId?: unknown;
+      score?: unknown;
+      value?: unknown;
+      rationale?: unknown;
+    };
     const criterionId = requireNonEmptyString(
       entry.criterionId,
       `${where}.criterionScores[${i}].criterionId`,
     );
+    // Look up the criterion to determine expected result kind.
+    const criterion = profileCriteria.find((c) => c.id === criterionId);
+    const isBinary = criterion?.kind === "binary";
+    if (isBinary) {
+      // Binary criteria must return a JSON boolean, not a numeric score.
+      if (entry.score !== undefined && entry.value === undefined) {
+        throw new Error(
+          `Judge output invalid: ${where}.criterionScores[${i}] is a binary criterion — return "value" (boolean), not "score".`,
+        );
+      }
+      if (entry.score !== undefined && entry.value !== undefined) {
+        throw new Error(
+          `Judge output invalid: ${where}.criterionScores[${i}] returned both "score" and "value" for a binary criterion — return only "value".`,
+        );
+      }
+      return {
+        criterionId,
+        value: requireBoolean(entry.value, `${where}.criterionScores[${i}].value`),
+        rationale: requireNonEmptyString(
+          entry.rationale,
+          `${where}.criterionScores[${i}].rationale`,
+        ),
+      };
+    }
+    // Graded/legacy criteria: numeric score.
+    if (entry.value !== undefined && entry.score === undefined) {
+      throw new Error(
+        `Judge output invalid: ${where}.criterionScores[${i}] is a graded criterion — return "score" (number), not "value".`,
+      );
+    }
+    if (entry.score !== undefined && entry.value !== undefined) {
+      throw new Error(
+        `Judge output invalid: ${where}.criterionScores[${i}] returned both "score" and "value" for a graded criterion — return only "score".`,
+      );
+    }
     return {
       criterionId,
-      score: requireScore(entry.score, `${where}.criterionScores[${i}]`),
+      score: requireScore(
+        entry.score,
+        `${where}.criterionScores[${i}]`,
+        // Explicit graded criteria must return an integer 1–5; legacy (kind
+        // undefined) retains historical float tolerance in the 1–5 range.
+        criterion?.kind === "graded",
+      ),
       rationale: requireNonEmptyString(entry.rationale, `${where}.criterionScores[${i}].rationale`),
     };
   });
@@ -664,10 +724,12 @@ function parseCriterionScores(
       );
     }
     seen.add(cs.criterionId);
+    const isBinary = criterion.kind === "binary";
     resolved.push({
       criterionId: criterion.id,
       label: criterion.name,
-      score: cs.score,
+      kind: criterion.kind,
+      ...(isBinary ? { value: cs.value as boolean } : { score: cs.score as number }),
       rationale: cs.rationale,
     });
   }

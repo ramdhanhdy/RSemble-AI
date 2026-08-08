@@ -17,6 +17,7 @@
 import type { ChatMessage } from "../providers/types";
 import type { BlindCandidate, ConsensusBreakdown, JudgeReport } from "../../studio-data";
 import type { EvaluationProfileSnapshot } from "./evaluation-types";
+import { rankValueFromResults } from "./evaluation-profile";
 import type { FusionRecipeRef, FusionRecipeVersion } from "./fusion-study-types";
 import {
   findBlindnessViolations,
@@ -87,13 +88,18 @@ export interface BlockedPolicyPlan {
 export function deriveRankWinner(
   blindCandidates: BlindCandidate[],
   judgeReport: JudgeReport,
+  profile?: EvaluationProfileSnapshot | null,
 ): { winnerCandidateId: string; winnerBlindLabel: string; winnerScore: number } {
   let best: { candidateId: string; label: string; score: number } | null = null;
   for (const candidate of blindCandidates) {
     const ev = judgeReport.evaluationsById[candidate.candidateId];
     if (!ev) continue;
-    if (best === null || ev.overallScore > best.score) {
-      best = { candidateId: candidate.candidateId, label: candidate.label, score: ev.overallScore };
+    // With a pinned profile, the authoritative ranking value is the derived
+    // rankValue (Q − λ(1−C)); otherwise the Judge's holistic overallScore.
+    const rv = profile ? rankValueFromResults(ev.criterionScores, profile) : null;
+    const score = rv ?? ev.overallScore;
+    if (best === null || score > best.score) {
+      best = { candidateId: candidate.candidateId, label: candidate.label, score };
     }
   }
   if (best === null) {

@@ -432,3 +432,53 @@ describe("buildExportMarkdown — attachments section (7.7.3)", () => {
     expect(md).not.toContain("## Attachments");
   });
 });
+
+describe("buildExportMarkdown — hybrid floor disclosure & binary evidence", () => {
+  it("renders a floored rankValue with the '*' floor marker", () => {
+    const s: StudioState = {
+      ...baseState,
+      candidates: [
+        {
+          id: "c1",
+          model: "M1",
+          provider: "P1",
+          providerId: "openrouter",
+          slug: "a/b",
+          accent: "indigo",
+          strategy: "s",
+          summary: "sum",
+          scores: {},
+          weightedScore: 0.8, // floored: rankScore 1.0, rankValue 0.8
+          segments: [{ id: "s1", text: "answer one" }],
+          status: "done",
+        },
+      ],
+    };
+    const md = buildExportMarkdown(s)!;
+    expect(md).toContain("M1 — 1.0*/5");
+  });
+
+  it("renders the non-floored rankValue normally", () => {
+    const s: StudioState = {
+      ...baseState,
+      candidates: [
+        {
+          id: "c1",
+          model: "M1",
+          provider: "P1",
+          providerId: "openrouter",
+          slug: "a/b",
+          accent: "indigo",
+          strategy: "s",
+          summary: "sum",
+          scores: {},
+          weightedScore: 4.5,
+          segments: [{ id: "s1", text: "answer one" }],
+          status: "done",
+        },
+      ],
+    };
+    const md = buildExportMarkdown(s)!;
+    expect(md).toContain("M1 — 4.5/5");
+  });
+});

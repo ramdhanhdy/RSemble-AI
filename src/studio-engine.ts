@@ -245,7 +245,7 @@ const logAudit = (audit: AuditEntry[], message: string): AuditEntry[] => {
  * Returns an empty map when no criterion scores exist — never invents dimensions.
  */
 function criterionScoresToMap(
-  criterionScores: { criterionId: string; label: string; score: number }[],
+  criterionScores: { criterionId: string; label: string; score?: number; kind?: string }[],
 ): Record<string, number> {
   const labelCounts = new Map<string, number>();
   for (const cs of criterionScores) {
@@ -253,6 +253,7 @@ function criterionScoresToMap(
   }
   const out: Record<string, number> = {};
   for (const cs of criterionScores) {
+    if (cs.score === undefined) continue; // skip binary criteria (no numeric score)
     const key = (labelCounts.get(cs.label) ?? 0) > 1 ? `${cs.label} (${cs.criterionId})` : cs.label;
     out[key] = cs.score;
   }

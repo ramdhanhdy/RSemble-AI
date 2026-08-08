@@ -18,6 +18,7 @@ import type {
   JudgeComparison,
 } from "../studio-data";
 import { isUsableCandidate } from "../lib/pipeline";
+import { formatRankScoreDisplay } from "../lib/evaluations/evaluation-profile";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
 import { BrandAvatar } from "./brand-icons";
@@ -166,7 +167,7 @@ function Recommendation({
         Use <span className="font-semibold">{winner.model}</span> for this kind of task —{" "}
         <span className="text-text-secondary">{whyLine}</span>{" "}
         <span className={`font-mono ${tier(winner.weightedScore).text}`}>
-          {winner.weightedScore.toFixed(1)}/5
+          {formatRankScoreDisplay(winner.weightedScore)}/5
         </span>
       </p>
     </div>
@@ -296,15 +297,24 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
                 )}
               </div>
               <span className={`w-9 text-right font-mono text-sm ${t.text}`}>
-                {c.weightedScore.toFixed(1)}
+                {formatRankScoreDisplay(c.weightedScore)}
               </span>
             </div>
           );
         })}
       </div>
       <p className="mt-1 font-mono text-sm text-text-muted">
-        bars scaled to 5.0 · top score this run: {top.toFixed(1)}
+        bars scaled to 5.0 · top score this run: {formatRankScoreDisplay(top)}
       </p>
+      {ranked.some((c) => c.weightedScore != null && c.weightedScore < 1) && (
+        <p className="mt-1 font-mono text-[11px] text-text-muted">
+          * bounded at the 1.0 display floor — ordering uses the raw rank value:{" "}
+          {ranked
+            .filter((c) => c.weightedScore != null && c.weightedScore < 1)
+            .map((c) => `${c.model}: ${c.weightedScore.toFixed(2)}`)
+            .join(" · ")}
+        </p>
+      )}
     </div>
   );
 }
@@ -600,8 +610,18 @@ function ExplanationCard({
               <ul className="space-y-1">
                 {evaluation.criterionScores.map((cs) => (
                   <li key={cs.criterionId} className="text-sm leading-relaxed text-text">
-                    <span className={`font-mono ${tier(cs.score).text}`}>
-                      {cs.label}: {cs.score.toFixed(1)}/5
+                    <span
+                      className={`font-mono ${
+                        cs.kind === "binary"
+                          ? cs.value
+                            ? "text-success"
+                            : "text-error"
+                          : tier(cs.score ?? 0).text
+                      }`}
+                    >
+                      {cs.kind === "binary"
+                        ? `${cs.label}: ${cs.value ? "PASS" : "FAIL"}`
+                        : `${cs.label}: ${cs.score?.toFixed(1) ?? "N/A"}/5`}
                     </span>
                     <span className="text-text-secondary"> — {cs.rationale}</span>
                   </li>

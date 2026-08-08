@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Check, ChevronRight, Copy } from "lucide-react";
 import type { Candidate } from "../studio-data";
 import { Markdown } from "./Markdown";
+import { formatRankScoreDisplay } from "../lib/evaluations/evaluation-profile";
 
 function tierColor(score: number): string {
   if (score >= 4.0) return "text-success";
@@ -85,9 +86,9 @@ export function CandidateAnswer({
           <span className="flex-1 truncate font-mono text-sm text-text" title={candidate.provider}>
             {candidate.model}
           </span>
-          {candidate.weightedScore > 0 && (
+          {candidate.weightedScore != null && (
             <span className={`shrink-0 font-mono text-sm ${tierColor(candidate.weightedScore)}`}>
-              {candidate.weightedScore.toFixed(1)}
+              {formatRankScoreDisplay(candidate.weightedScore)}
             </span>
           )}
         </button>

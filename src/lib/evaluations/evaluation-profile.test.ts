@@ -25,8 +25,9 @@ function makeCriterion(
     description: `Description for ${id}`,
     weight: 1,
     anchors: { one: "Poor", three: "Adequate", five: "Excellent" },
+    kind: undefined,
     ...overrides,
-  };
+  } as EvaluationCriterion;
 }
 
 function makeProfile(overrides: Partial<EvaluationProfile> = {}): EvaluationProfile {

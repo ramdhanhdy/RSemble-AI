@@ -96,11 +96,18 @@ export interface JudgeDeduction {
   reason: string;
 }
 
-/** Per-criterion judge result, resolved to the rubric's display label after parsing. */
+/** Per-criterion judge result, resolved to the rubric's display label after parsing.
+ *  Graded/legacy criteria have a numeric `score` (1–5); binary criteria have a
+ *  boolean `value` with `score` omitted. The `kind` field discriminates. */
 export interface JudgeCriterionScore {
   criterionId: string;
   label: string;
-  score: number;
+  /** Numeric score for graded/legacy criteria (1–5). Undefined for binary. */
+  score?: number;
+  /** Boolean value for binary criteria. Undefined for graded/legacy. */
+  value?: boolean;
+  /** Criterion kind: "graded", "binary", or undefined (legacy). */
+  kind?: "graded" | "binary" | undefined;
   rationale: string;
 }
 

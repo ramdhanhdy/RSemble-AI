@@ -178,9 +178,11 @@ function CellContent({
       cell.runId ? runRecords.get(cell.runId) : undefined,
     );
     const score = formatTaskScore(cell.score);
+    const floored = cell.score < 1; // rankValue below the 1.0 display floor (spec §16.2)
     const content = (
       <>
         {score}
+        {floored ? <span title="rankValue below the 1.0 display floor">*</span> : null}
         {rowBest ? (
           <span
             aria-label="best in row"
