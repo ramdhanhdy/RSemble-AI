@@ -513,3 +513,130 @@ describe("aggregateExperiment — winner vs provisional ranking", () => {
     expect(complete!.scoredTasks).toBe(15);
   });
 });
+
+// --- Hybrid floored-task aggregation ------------------------------------------
+
+/** A mixed profile with graded criterion + one binary group (lambda default 1). */
+function makeHybridProfile(failCost: number): { profile: EvaluationProfile; checkIds: string[] } {
+  const checkId = "b1";
+  const profile: EvaluationProfile = {
+    id: "p-hybrid",
+    version: 1,
+    name: "Hybrid",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "quality",
+        kind: "graded",
+        name: "Quality",
+        description: "d",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+      {
+        id: checkId,
+        kind: "binary",
+        name: "Check",
+        description: "d",
+        trueWhen: "t",
+        falseWhen: "f",
+      },
+    ],
+    requirementGroups: [{ id: "g1", name: "G1", checkIds: [checkId], weight: 1, mode: "ALL" }],
+    complianceInfluence: failCost,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+  return { profile, checkIds: [checkId] };
+}
+
+/** Make a run with graded score + binary pass/fail; both floored rates driven by failCost. */
+function makeHybridRun(
+  runId: string,
+  gradedScore: number,
+  binaryPass: boolean,
+  failCost: number,
+): RunRecordV2 {
+  const { profile, checkIds } = makeHybridProfile(failCost);
+  const evaluationsById: Record<string, CandidateEvaluation> = {
+    [MK1]: makeEvaluation(MK1, 5, [
+      { criterionId: "quality", score: gradedScore },
+      { criterionId: checkIds[0], score: binaryPass ? 1 : 0 },
+    ]),
+  };
+  // Override the criterion kind so the parser treats b1 as boolean.
+  evaluationsById[MK1].criterionScores = [
+    {
+      criterionId: "quality",
+      label: "Quality",
+      kind: "graded",
+      score: gradedScore,
+      rationale: "r",
+    },
+    { criterionId: checkIds[0], label: "Check", kind: "binary", value: binaryPass, rationale: "r" },
+  ];
+  return {
+    schemaVersion: 2,
+    id: runId,
+    revision: 1,
+    execution: { ownerId: "tab-1", fence: 1 },
+    createdAt: 1000,
+    updatedAt: 1000,
+    completedAt: 1100,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
+    evaluation: { profile, candidateMessages: [] },
+    candidates: [
+      {
+        candidateId: MK1,
+        slotId: "s1",
+        modelKey: MK1,
+        providerId: "openrouter",
+        model: MK1,
+        slug: "m1",
+        acceptedAttemptId: "att-cand",
+        attempts: [],
+      },
+    ],
+    judge: {
+      status: "done",
+      acceptedAttemptId: "judge-att-1",
+      report: { labelMap: [], evaluationsById, comparisons: [] },
+      consensus: null,
+      attempts: [],
+    },
+    fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    winnerKeys: [],
+  };
+}
+
+describe("hybrid floored-task aggregation (rankValue authority)", () => {
+  it("aggregates authoritative rankValue across tasks, not bounded rankScore", () => {
+    // Two tasks, single model.
+    // Task t1: graded 0.8, binary true → C=1 → rankValue=0.8 (floored, rankScore=1)
+    // Task t2: graded 1.2, binary false → C=0 → rankValue=1.2-1=0.2 (floored, rankScore=1)
+    const failCost = 1.0;
+    const run1 = makeHybridRun("r1", 0.8, true, failCost);
+    const run2 = makeHybridRun("r2", 1.2, false, failCost);
+    const snapshot = makeSnapshot(["t1", "t2"]);
+    const aggregation = aggregateExperiment({
+      snapshot,
+      taskStates: [
+        makeTaskState("t1", [{ id: "a1", runId: "r1", status: "completed" }], "a1"),
+        makeTaskState("t2", [{ id: "a1", runId: "r2", status: "completed" }], "a1"),
+      ],
+      resolveRunRecord: (runId) => (runId === "r1" ? run1 : run2),
+    });
+    const model = aggregation.models[0];
+    // rankValue t1 = 0.8, t2 = 0.2 → mean = 0.5 (authoritative, both floored).
+    expect(model.mean).toBeCloseTo(0.5, 10);
+    // The bounded mean would be 1.0 (both rankScore=1) — a false tie that the
+    // authoritative aggregation avoids.
+    expect(model.mean).not.toBeCloseTo(1.0, 10);
+    expect(model.complete).toBe(true);
+    expect(aggregation.winnerKeys).toEqual([MK1]);
+  });
+});
