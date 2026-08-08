@@ -53,6 +53,7 @@ export interface RunRowViewModel {
   modelCount: number;
   winnerKeys: string[];
   topScore: number | null;
+  scoreDomain?: "rank" | "compliance";
   sourceLabel: string;
   isLegacy: boolean;
   detailAvailable: boolean;
@@ -82,6 +83,7 @@ function formatFullRow(s: FullRunSummaryV2): RunRowViewModel {
     modelCount: s.modelKeys.length,
     winnerKeys,
     topScore,
+    scoreDomain: s.scoreDomain,
     sourceLabel: isExperiment ? "experiment" : "ad hoc",
     isLegacy: false,
     detailAvailable: true,

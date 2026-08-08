@@ -644,6 +644,7 @@ function parseCriterionScores(
       criterionId?: unknown;
       score?: unknown;
       value?: unknown;
+      kind?: unknown;
       rationale?: unknown;
     };
     const criterionId = requireNonEmptyString(
@@ -653,6 +654,23 @@ function parseCriterionScores(
     // Look up the criterion to determine expected result kind.
     const criterion = profileCriteria.find((c) => c.id === criterionId);
     const isBinary = criterion?.kind === "binary";
+    // Strict kind discriminator (spec §10.4/§10.5): when the Judge supplies an
+    // explicit kind, it must match the resolved criterion kind. Omission is
+    // tolerated for legacy criteria (kind undefined) and for older Judge
+    // outputs that predate the discriminator contract.
+    if (entry.kind !== undefined) {
+      if (entry.kind !== "graded" && entry.kind !== "binary") {
+        throw new Error(
+          `Judge output invalid: ${where}.criterionScores[${i}].kind must be "graded" or "binary" (got ${JSON.stringify(entry.kind)}).`,
+        );
+      }
+      const expectedKind = isBinary ? "binary" : "graded";
+      if (entry.kind !== expectedKind) {
+        throw new Error(
+          `Judge output invalid: ${where}.criterionScores[${i}].kind "${String(entry.kind)}" does not match criterion "${criterionId}" (expected "${expectedKind}").`,
+        );
+      }
+    }
     if (isBinary) {
       // Binary criteria must return a JSON boolean, not a numeric score.
       if (entry.score !== undefined && entry.value === undefined) {

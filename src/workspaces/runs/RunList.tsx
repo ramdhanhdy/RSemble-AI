@@ -11,7 +11,7 @@ import { Link } from "react-router-dom";
 import { GitCompare, AlertCircle, Loader2 } from "lucide-react";
 import type { RunRepository } from "../../lib/persistence/run-repository";
 import type { RunStatus } from "../../lib/persistence/run-types";
-import { formatRankScoreDisplay } from "../../lib/evaluations/evaluation-profile";
+import { formatCandidateScoreDisplay } from "../../lib/evaluations/evaluation-profile";
 import { useRunList } from "./useRunList";
 import { formatRunRow } from "./run-view-model";
 import { RecordRow } from "../../ui/RecordRow";
@@ -134,7 +134,9 @@ export function RunList({
                   summary={
                     [
                       vm.winnerKeys.length > 0 ? `Winner: ${vm.winnerKeys.join(", ")}` : null,
-                      vm.topScore != null ? `Score: ${formatRankScoreDisplay(vm.topScore)}` : null,
+                      vm.topScore != null
+                        ? `Score: ${formatCandidateScoreDisplay(vm.topScore, vm.scoreDomain)}`
+                        : null,
                     ]
                       .filter(Boolean)
                       .join(" · ") || undefined

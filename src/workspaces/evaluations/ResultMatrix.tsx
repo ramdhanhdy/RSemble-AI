@@ -178,10 +178,14 @@ function CellContent({
       cell.runId ? runRecords.get(cell.runId) : undefined,
     );
     const score = formatTaskScore(cell.score);
-    const floored = cell.score < 1; // rankValue below the 1.0 display floor (spec §16.2)
+    // Compliance-only cells (no graded criteria, spec §16.3): cell.score is the
+    // raw compliance share C in [0,1]. Render it as a C-labeled percentage —
+    // never as a floored 1.0* rankScore.
+    const complianceOnly = cell.q == null && cell.c != null;
+    const floored = !complianceOnly && cell.score < 1; // rankValue below the 1.0 display floor (spec §16.2)
     const content = (
       <>
-        {score}
+        {complianceOnly ? `${(cell.c! * 100).toFixed(0)}%` : score}
         {floored ? <span title="rankValue below the 1.0 display floor">*</span> : null}
         {rowBest ? (
           <span

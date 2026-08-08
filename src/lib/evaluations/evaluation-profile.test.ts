@@ -12,6 +12,8 @@ import {
   normalizedWeights,
   totalWeight,
   WINNER_EPSILON,
+  formatRankValueDisplay,
+  isComplianceOnlyProfile,
 } from "./evaluation-profile";
 import type { EvaluationProfile, EvaluationCriterion } from "./evaluation-types";
 
@@ -201,5 +203,71 @@ describe("totalWeight", () => {
 describe("WINNER_EPSILON", () => {
   it("is 1e-9", () => {
     expect(WINNER_EPSILON).toBe(1e-9);
+  });
+});
+
+describe("formatRankValueDisplay — compliance-only domain (spec §16.3)", () => {
+  const gradedProfile: EvaluationProfile = {
+    id: "p-g",
+    version: 1,
+    name: "Graded",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "q",
+        kind: "graded" as const,
+        name: "Q",
+        description: "d",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+    ],
+    requirementGroups: [],
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+  const complianceProfile: EvaluationProfile = {
+    id: "p-c",
+    version: 1,
+    name: "Compliance only",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "b1",
+        kind: "binary" as const,
+        name: "B1",
+        description: "d",
+        trueWhen: "t",
+        falseWhen: "f",
+      },
+    ],
+    requirementGroups: [{ id: "g1", name: "G1", checkIds: ["b1"], weight: 1, mode: "ALL" }],
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+
+  it("renders compliance-only C as a percentage, never a floored 1.0*/5", () => {
+    // Regression (CodeRabbit 3741038006): C = 0.5 must display as 50%, NOT 1.0*/5.
+    expect(formatRankValueDisplay(0.5, complianceProfile)).toBe("50%");
+    expect(formatRankValueDisplay(0.5, complianceProfile)).not.toContain("*");
+    expect(formatRankValueDisplay(0.5, complianceProfile)).not.toContain("/5");
+    expect(formatRankValueDisplay(1.0, complianceProfile)).toBe("100%");
+  });
+
+  it("keeps the 1–5 /5 representation for graded and holistic values", () => {
+    expect(formatRankValueDisplay(4.5, gradedProfile)).toBe("4.5/5");
+    expect(formatRankValueDisplay(4.5, null)).toBe("4.5/5");
+    expect(formatRankValueDisplay(0.5, gradedProfile)).toBe("1.0*/5"); // floored but graded domain
+  });
+
+  it("detects compliance-only profiles only when no graded criteria exist", () => {
+    expect(isComplianceOnlyProfile(complianceProfile)).toBe(true);
+    expect(isComplianceOnlyProfile(gradedProfile)).toBe(false);
+    expect(isComplianceOnlyProfile(null)).toBe(false);
+    expect(isComplianceOnlyProfile(undefined)).toBe(false);
   });
 });

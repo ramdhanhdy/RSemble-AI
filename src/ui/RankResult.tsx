@@ -18,7 +18,7 @@ import type {
   JudgeComparison,
 } from "../studio-data";
 import { isUsableCandidate } from "../lib/pipeline";
-import { formatRankScoreDisplay } from "../lib/evaluations/evaluation-profile";
+import { formatCandidateScoreDisplay } from "../lib/evaluations/evaluation-profile";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
 import { BrandAvatar } from "./brand-icons";
@@ -167,7 +167,7 @@ function Recommendation({
         Use <span className="font-semibold">{winner.model}</span> for this kind of task —{" "}
         <span className="text-text-secondary">{whyLine}</span>{" "}
         <span className={`font-mono ${tier(winner.weightedScore).text}`}>
-          {formatRankScoreDisplay(winner.weightedScore)}/5
+          {formatCandidateScoreDisplay(winner.weightedScore, winner.scoreDomain)}
         </span>
       </p>
     </div>
@@ -297,20 +297,26 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
                 )}
               </div>
               <span className={`w-9 text-right font-mono text-sm ${t.text}`}>
-                {formatRankScoreDisplay(c.weightedScore)}
+                {formatCandidateScoreDisplay(c.weightedScore, c.scoreDomain)}
               </span>
             </div>
           );
         })}
       </div>
       <p className="mt-1 font-mono text-sm text-text-muted">
-        bars scaled to 5.0 · top score this run: {formatRankScoreDisplay(top)}
+        bars scaled to 5.0 · top score this run:{" "}
+        {formatCandidateScoreDisplay(top, ranked[0]?.scoreDomain)}
       </p>
-      {ranked.some((c) => c.weightedScore != null && c.weightedScore < 1) && (
+      {ranked.some(
+        (c) => c.weightedScore != null && c.weightedScore < 1 && c.scoreDomain !== "compliance",
+      ) && (
         <p className="mt-1 font-mono text-[11px] text-text-muted">
           * bounded at the 1.0 display floor — ordering uses the raw rank value:{" "}
           {ranked
-            .filter((c) => c.weightedScore != null && c.weightedScore < 1)
+            .filter(
+              (c) =>
+                c.weightedScore != null && c.weightedScore < 1 && c.scoreDomain !== "compliance",
+            )
             .map((c) => `${c.model}: ${c.weightedScore.toFixed(2)}`)
             .join(" · ")}
         </p>
@@ -613,14 +619,16 @@ function ExplanationCard({
                     <span
                       className={`font-mono ${
                         cs.kind === "binary"
-                          ? cs.value
-                            ? "text-success"
-                            : "text-error"
+                          ? cs.value === undefined
+                            ? "text-text-muted"
+                            : cs.value
+                              ? "text-success"
+                              : "text-error"
                           : tier(cs.score ?? 0).text
                       }`}
                     >
                       {cs.kind === "binary"
-                        ? `${cs.label}: ${cs.value ? "PASS" : "FAIL"}`
+                        ? `${cs.label}: ${cs.value === undefined ? "UNKNOWN" : cs.value ? "PASS" : "FAIL"}`
                         : `${cs.label}: ${cs.score?.toFixed(1) ?? "N/A"}/5`}
                     </span>
                     <span className="text-text-secondary"> — {cs.rationale}</span>

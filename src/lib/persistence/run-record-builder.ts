@@ -34,7 +34,11 @@ import type {
   ExecutionFence,
 } from "./run-types";
 import type { EvaluationProfileSnapshot } from "../evaluations/evaluation-types";
-import { rankValueFromResults, WINNER_EPSILON } from "../evaluations/evaluation-profile";
+import {
+  rankValueFromResults,
+  WINNER_EPSILON,
+  isComplianceOnlyProfile,
+} from "../evaluations/evaluation-profile";
 import { candidateIdForSlot } from "../pipeline";
 import { resolveReasoningEffort } from "../providers/reasoning";
 
@@ -805,6 +809,9 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       judgeModelKey,
       evaluationProfileId: record.evaluation.profile?.id ?? null,
       evaluationProfileVersion: record.evaluation.profile?.version ?? null,
+      scoreDomain: isComplianceOnlyProfile(record.evaluation.profile ?? null)
+        ? "compliance"
+        : "rank",
       detailAvailable: true,
       searchText,
     };

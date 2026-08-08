@@ -181,17 +181,15 @@ export function EvaluationProfileEditor({
             Compliance influence (λ)
           </label>
           <div className="mt-1 flex items-center gap-2">
-            <input
+            <NumericDraftField
               id="compliance-influence"
-              type="number"
+              value={getComplianceInfluence(profile)}
               min={0}
               max={1}
               step={0.1}
-              value={getComplianceInfluence(profile)}
               readOnly={readOnly}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                if (!isNaN(v) && v >= 0 && v <= 1) updateComplianceInfluence(v);
+              onCommit={(v) => {
+                if (v >= 0 && v <= 1) updateComplianceInfluence(v);
               }}
               className="w-20 rounded-sm border border-edge bg-card px-2 py-1 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
@@ -503,14 +501,13 @@ function CriterionAccordion({
                 >
                   Weight
                 </label>
-                <input
+                <NumericDraftField
                   id={`criterion-weight-${criterion.id}`}
-                  type="number"
+                  value={criterion.weight}
                   min={0}
                   step={0.1}
-                  value={criterion.weight}
                   readOnly={readOnly}
-                  onChange={(e) => onChange({ weight: parseFloat(e.target.value) || 0 })}
+                  onCommit={(v) => onChange({ weight: v })}
                   className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 />
               </div>
@@ -519,6 +516,72 @@ function CriterionAccordion({
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Numeric input that preserves partial keyboard drafts (trailing ".", empty
+ * field) in local state and commits only on blur or Enter. Prevents React
+ * controlled-input rewrites from discarding "0." or other in-progress values,
+ * and stops an empty field from committing 0 (spec §10.5: never erase draft).
+ */
+function NumericDraftField({
+  id,
+  value,
+  min,
+  max,
+  step,
+  readOnly,
+  onCommit,
+  className,
+}: {
+  id: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  readOnly: boolean;
+  onCommit: (v: number) => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  // Sync the visible text from the committed value whenever the field is not
+  // mid-edit (draft === null), so external profile updates still render.
+  const display = draft !== null ? draft : String(value);
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = Number(draft);
+    if (draft.trim() !== "" && Number.isFinite(parsed)) {
+      onCommit(parsed);
+    }
+    setDraft(null);
+  };
+
+  return (
+    <input
+      id={id}
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      value={display}
+      readOnly={readOnly}
+      onChange={(e) => {
+        if (readOnly) return;
+        setDraft(e.target.value);
+      }}
+      onBlur={() => {
+        if (readOnly) return;
+        commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        }
+      }}
+      className={className}
+    />
   );
 }
 

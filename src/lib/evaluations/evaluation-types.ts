@@ -484,23 +484,43 @@ export function isEvaluationProfile(v: unknown): v is EvaluationProfile {
   }
   // Reject reserved "gate" kind with an actionable message is handled at
   // validateProfile (authoring boundary). Here we simply reject unknown kinds.
-  if (v.criteria.length === 0) return false;
-  // At least one positive-weight graded/legacy criterion OR at least one
-  // requirement group — otherwise the profile scores nothing.
-  const hasPositiveGraded = v.criteria.some(
-    (c) =>
-      isRecord(c) &&
-      isNumber(c.weight) &&
-      c.weight > 0 &&
-      (c.kind === "graded" || c.kind === undefined),
-  );
-  const hasGroups = Array.isArray(v.requirementGroups) && v.requirementGroups.length > 0;
-  if (!hasPositiveGraded && !hasGroups) return false;
+  // Empty criteria denotes holistic mode (valid — see validateProfile and
+  // judgeEvaluationBlock); non-empty profiles must score something.
+  const isHolistic = v.criteria.length === 0;
+  if (!isHolistic) {
+    // At least one positive-weight graded/legacy criterion OR at least one
+    // requirement group — otherwise the profile scores nothing.
+    const hasPositiveGraded = v.criteria.some(
+      (c) =>
+        isRecord(c) &&
+        isNumber(c.weight) &&
+        c.weight > 0 &&
+        (c.kind === "graded" || c.kind === undefined),
+    );
+    const hasGroups = Array.isArray(v.requirementGroups) && v.requirementGroups.length > 0;
+    if (!hasPositiveGraded && !hasGroups) return false;
+  }
 
   // Validate requirement groups if present.
   if (v.requirementGroups !== undefined) {
     if (!Array.isArray(v.requirementGroups) || !v.requirementGroups.every(isRequirementGroup)) {
       return false;
+    }
+    // Semantic membership (spec §19): every checkId resolves to a binary check,
+    // no check appears in two groups, and every binary check is assigned to
+    // exactly one group. An imported profile violating these invariants could
+    // silently drop compliance deductions, so the runtime guard must reject it.
+    const binaryIds = new Set(v.criteria.filter(isBinaryEvaluationCriterion).map((c) => c.id));
+    const assigned = new Set<string>();
+    for (const g of v.requirementGroups) {
+      for (const checkId of g.checkIds) {
+        if (!binaryIds.has(checkId)) return false; // missing or non-binary reference
+        if (assigned.has(checkId)) return false; // same check in multiple groups
+        assigned.add(checkId);
+      }
+    }
+    for (const c of v.criteria) {
+      if (c.kind === "binary" && !assigned.has(c.id)) return false; // ungrouped binary
     }
   }
 

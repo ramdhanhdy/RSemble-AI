@@ -3,7 +3,7 @@ import { Lock, Unlock, X, Columns2 } from "lucide-react";
 import type { Candidate } from "../studio-data";
 import type { EvaluationCriterion } from "../lib/evaluations/evaluation-types";
 import { isUsableCandidate } from "../lib/pipeline";
-import { formatRankScoreDisplay } from "../lib/evaluations/evaluation-profile";
+import { formatCandidateScoreDisplay } from "../lib/evaluations/evaluation-profile";
 import { Markdown } from "./Markdown";
 import { BrandAvatar } from "./brand-icons";
 
@@ -148,7 +148,7 @@ export function CompareView({
                     {c.model}
                   </span>
                   <span className={`font-mono text-sm ${tierColor(c.weightedScore)}`}>
-                    {formatRankScoreDisplay(c.weightedScore)}
+                    {formatCandidateScoreDisplay(c.weightedScore, c.scoreDomain)}
                   </span>
                   <button
                     type="button"

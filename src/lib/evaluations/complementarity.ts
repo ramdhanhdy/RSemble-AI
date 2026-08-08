@@ -163,7 +163,7 @@ export function computeHeadroom(
     synthesisHeadroom = mean(gaps);
   }
 
-  const binaryPerCriterion = computeBinaryPassRateImbalance(tasks);
+  const binaryPerCriterion = computeBinaryPassRateImbalance(tasks, profile);
   const binaryOracleHeadroom = profile ? computeBinaryOracleHeadroom(tasks, profile) : null;
 
   return {
@@ -484,13 +484,26 @@ export const MIN_BINARY_SAMPLES = 3;
  *  Checks below MIN_BINARY_SAMPLES are gated out (spec §17). */
 export function computeBinaryPassRateImbalance(
   tasks: PairedTaskScores[],
+  profile?: EvaluationProfileSnapshot | null,
 ): BinaryCriterionHeadroom[] {
+  // Resolve human-readable check names from the profile snapshot when
+  // available; fall back to the check ID so rows are never labeled with raw IDs.
+  const nameById = new Map<string, string>();
+  if (profile) {
+    for (const c of profile.criteria) {
+      if (c.kind === "binary") nameById.set(c.id, c.name || c.id);
+    }
+  }
   const byCheck = new Map<string, { label: string; pass: number; samples: number }>();
   for (const t of tasks) {
     const bById = t.b.binaryResults ?? {};
     for (const [checkId, value] of Object.entries(t.a.binaryResults ?? {})) {
       if (!(checkId in bById)) continue; // both models must have the check
-      const entry = byCheck.get(checkId) ?? { label: checkId, pass: 0, samples: 0 };
+      const entry = byCheck.get(checkId) ?? {
+        label: nameById.get(checkId) ?? checkId,
+        pass: 0,
+        samples: 0,
+      };
       entry.pass += value && bById[checkId] ? 1 : 0;
       entry.samples += 1;
       byCheck.set(checkId, entry);

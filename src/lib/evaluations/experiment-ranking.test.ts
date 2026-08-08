@@ -154,4 +154,70 @@ describe("deriveDisplayRanking — spec §16.1 tie-break key", () => {
     const result = deriveDisplayRanking([a, b], order("a", "b"));
     expect(result.provisional.map((m) => m.modelKey)).toEqual(["a", "b"]);
   });
+
+  it("epsilon-chain values are transitive: permutation-invariant standings", () => {
+    // Regression (CodeRabbit 3741038014 / Executive decision 2026-08-08):
+    // values 4.0, 4.0+5e-10, 4.0+1e-9 are pairwise-within-ε chained, so the
+    // comparator must treat them as epsilon-equal (id asc tie-break) and the
+    // sort output must NOT depend on input order.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 5e-10, true, 1, { q: 4.0 + 5e-10, c: 0.9 });
+    const c = model("c", 4.0 + 1e-9, true, 2, { q: 4.0 + 1e-9, c: 0.9 });
+    const expected = ["a", "b", "c"];
+    // All six input permutations must produce the same standings.
+    const permutations: ModelAggregate[][] = [
+      [a, b, c],
+      [a, c, b],
+      [b, a, c],
+      [b, c, a],
+      [c, a, b],
+      [c, b, a],
+    ];
+    for (const p of permutations) {
+      const result = deriveDisplayRanking(p, order("a", "b", "c"));
+      expect(result.eligible.map((m) => m.modelKey)).toEqual(expected);
+    }
+  });
+
+  it("values beyond an epsilon chain still order by raw mean", () => {
+    // 4.0 and 4.0+3e-9 differ by 3ε: no chain connects them, so the higher
+    // mean strictly outranks regardless of the id tie-break.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 3e-9, true, 1, { q: 4.0 + 3e-9, c: 0.9 });
+    const result = deriveDisplayRanking([a, b], order("a", "b"));
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["b", "a"]);
+  });
+
+  it("long epsilon chains close transitively (independent review finding 1)", () => {
+    // Regression for the reviewer's counterexample: 0, 0.9ε, 1.8ε, 2.7ε are
+    // chain-connected (each adjacent pair within ε) even though the endpoints
+    // differ by 2.7ε > 2ε. A fixed 2ε band (the earlier midpoint heuristic)
+    // failed to merge the endpoints; the union-find closure must.
+    const a = model("a", 0, true, 0, { q: 0, c: 0.9 });
+    const b = model("b", 0.9e-9, true, 1, { q: 0.9e-9, c: 0.9 });
+    const c = model("c", 1.8e-9, true, 2, { q: 1.8e-9, c: 0.9 });
+    const d = model("d", 2.7e-9, true, 3, { q: 2.7e-9, c: 0.9 });
+    const expected = ["a", "b", "c", "d"];
+    const permutations: ModelAggregate[][] = [
+      [a, b, c, d],
+      [d, c, b, a],
+      [b, d, a, c],
+      [c, a, d, b],
+    ];
+    for (const p of permutations) {
+      const result = deriveDisplayRanking(p, order("a", "b", "c", "d"));
+      expect(result.eligible.map((m) => m.modelKey)).toEqual(expected);
+    }
+  });
+
+  it("straddle values at exactly ε apart stay epsilon-equal through a bridge", () => {
+    // 4.0 and 4.0+1e-9 differ by exactly ε (not < ε, so not directly equal),
+    // but a bridge value 4.0+5e-10 connects them: the closure must merge them
+    // into one class and the id tie-break applies.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 5e-10, true, 1, { q: 4.0 + 5e-10, c: 0.9 });
+    const c = model("c", 4.0 + 1e-9, true, 2, { q: 4.0 + 1e-9, c: 0.9 });
+    const result = deriveDisplayRanking([c, a, b], order("a", "b", "c"));
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b", "c"]);
+  });
 });

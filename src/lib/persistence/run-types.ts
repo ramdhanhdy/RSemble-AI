@@ -147,6 +147,9 @@ export interface FullRunSummaryV2 {
   judgeModelKey: string | null;
   evaluationProfileId: string | null;
   evaluationProfileVersion: number | null;
+  /** Score domain for display (spec §16.3): "compliance" when the run used a
+   *  compliance-only profile (winner score = C in [0,1]). */
+  scoreDomain?: "rank" | "compliance";
   detailAvailable: true;
   searchText: string;
 }

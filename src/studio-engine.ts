@@ -198,6 +198,9 @@ export type Action =
       consensus: ConsensusBreakdown;
       scoresById: Record<string, number>;
       report: JudgeReport;
+      /** Score domain for display (spec §16.3): "compliance" for runs with a
+       *  compliance-only profile (weightedScore = C in [0,1]). */
+      scoreDomain?: "rank" | "compliance";
     }
   | { type: "JUDGE_FAILED"; error: string }
   | { type: "FUSION_START" }
@@ -585,7 +588,14 @@ export function reducer(state: StudioState, action: Action): StudioState {
           const score = action.scoresById[c.id];
           const ev = evalById[c.id];
           const scores = ev ? criterionScoresToMap(ev.criterionScores) : (c.scores ?? {});
-          return score != null ? { ...c, weightedScore: score, scores } : c;
+          return score != null
+            ? {
+                ...c,
+                weightedScore: score,
+                scores,
+                scoreDomain: action.scoreDomain ?? c.scoreDomain,
+              }
+            : c;
         }),
         audit: logAudit(state.audit, "AI judge evaluation complete."),
       };

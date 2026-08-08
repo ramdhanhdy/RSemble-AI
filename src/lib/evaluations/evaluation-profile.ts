@@ -214,6 +214,49 @@ export function formatRankScoreDisplay(rv: number | null): string {
   return `${rankScoreOf(rv)!.toFixed(1)}${floored ? "*" : ""}`;
 }
 
+/** A profile with no graded criteria is compliance-only (spec §16.3): its
+ *  ranking quantity is the weighted compliance share C in the 0–1 domain and
+ *  must never be displayed as a 1–5 rankScore or floored `1.0*` value. */
+export function isComplianceOnlyProfile(
+  profile: EvaluationProfileSnapshot | null | undefined,
+): boolean {
+  return (
+    !!profile && profile.criteria.length > 0 && !profile.criteria.some((c) => c.kind !== "binary")
+  );
+}
+
+/** Format a compliance-domain value (0–1) as a C-labeled percentage.
+ *  Only valid for compliance-only profiles; never used for graded rankValues. */
+export function formatComplianceDisplay(c: number): string {
+  return `${(c * 100).toFixed(0)}%`;
+}
+
+/** Domain-aware display formatter: compliance-only profiles render the raw
+ *  compliance share as a percentage (no /5, no floor); everything else keeps
+ *  the bounded 1–5 rankScore representation with its /5 domain suffix.
+ *  Callers with a profile snapshot should use this instead of hardcoding `/5`
+ *  suffixes. */
+export function formatRankValueDisplay(
+  rv: number | null,
+  profile?: EvaluationProfileSnapshot | null,
+): string {
+  if (rv === null) return "—";
+  if (isComplianceOnlyProfile(profile)) return formatComplianceDisplay(rv);
+  return `${formatRankScoreDisplay(rv)}/5`;
+}
+
+/** Domain-aware display formatter for a candidate whose score domain is known
+ *  from the run (spec §16.3): compliance-domain values render as C-labeled
+ *  percentages; everything else uses the bounded 1–5 representation. */
+export function formatCandidateScoreDisplay(
+  weightedScore: number | null,
+  scoreDomain?: "rank" | "compliance",
+): string {
+  if (weightedScore === null) return "—";
+  if (scoreDomain === "compliance") return formatComplianceDisplay(weightedScore);
+  return formatRankScoreDisplay(weightedScore);
+}
+
 // --- Full rank computation from JudgeCriterionScore[] -------------------------
 
 /** Compute the authoritative rank value from a candidate's criterion results

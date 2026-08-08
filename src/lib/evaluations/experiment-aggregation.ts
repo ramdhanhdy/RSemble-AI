@@ -235,9 +235,9 @@ export function aggregateExperiment(input: AggregateExperimentInput): Experiment
     let sum = 0;
     let scoredTasks = 0;
     let qSum = 0;
+    let qTasks = 0;
     let cSum = 0;
-    let hasQ = false;
-    let hasC = false;
+    let cTasks = 0;
     let flooredTaskCount = 0;
     for (let taskIdx = 0; taskIdx < totalTasks; taskIdx++) {
       const cell = cells[taskIdx][modelIdx];
@@ -246,20 +246,22 @@ export function aggregateExperiment(input: AggregateExperimentInput): Experiment
       scoredTasks += 1;
       if (cell.score < 1) flooredTaskCount += 1;
       // Channel data for the §16.1 tie-break (Q̄ → C̄) and §16.2 floored audit.
+      // Channel means divide by the number of tasks that actually carry the
+      // channel, so a task without Q must not dilute Q̄ (and vice versa for C̄).
       if (cell.q != null) {
         qSum += cell.q;
-        hasQ = true;
+        qTasks += 1;
       }
       if (cell.c != null) {
         cSum += cell.c;
-        hasC = true;
+        cTasks += 1;
       }
     }
     return {
       modelKey,
       mean: scoredTasks > 0 ? sum / scoredTasks : null,
-      qMean: hasQ ? qSum / scoredTasks : null,
-      cMean: hasC ? cSum / scoredTasks : null,
+      qMean: qTasks > 0 ? qSum / qTasks : null,
+      cMean: cTasks > 0 ? cSum / cTasks : null,
       flooredTaskCount,
       scoredTasks,
       totalTasks,

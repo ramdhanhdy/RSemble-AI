@@ -31,6 +31,11 @@ export interface Candidate {
   summary: string;
   scores: Record<string, number>;
   weightedScore: number;
+  /** Score domain for display (spec §16.3): "compliance" when the run used a
+   *  compliance-only profile (weightedScore = C in [0,1], render as a C-labeled
+   *  percentage, never a floored rankScore). Absent/undefined = the regular
+   *  1-5 rank domain. */
+  scoreDomain?: "rank" | "compliance";
   segments: CandidateSegment[];
   status: CandidateStatus;
   errorMessage?: string;

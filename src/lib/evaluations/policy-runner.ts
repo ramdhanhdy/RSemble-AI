@@ -123,7 +123,11 @@ export function planBlockedPolicies(
   input: BlockedPolicyInput,
   recipe: FusionRecipeVersion,
 ): BlockedPolicyPlan {
-  const winner = deriveRankWinner(input.blindCandidates, input.judgeReport);
+  // Forward the pinned profile so the blocked Rank baseline uses the same
+  // authoritative rankValue contract (Q − λ(1−C)) as fuse/refine and the
+  // experiment matrix — otherwise Rank measures the Judge's holistic
+  // overallScore while the compared baselines use rankValue.
+  const winner = deriveRankWinner(input.blindCandidates, input.judgeReport, input.profile);
   const winnerContent =
     input.blindCandidates.find((c) => c.candidateId === winner.winnerCandidateId)?.content ?? "";
 

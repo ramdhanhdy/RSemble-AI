@@ -928,6 +928,72 @@ describe("parseJudge — criterion scores", () => {
       /criterion/i,
     );
   });
+
+  it("rejects an explicit kind that contradicts the criterion kind (spec §10.4/§10.5)", () => {
+    // Regression (CodeRabbit pipeline.ts outside-diff): when the Judge supplies
+    // an explicit "kind" discriminator it must match the resolved criterion
+    // kind. A graded criterion receiving kind:"binary" must be rejected, not
+    // silently accepted via the score path.
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          {
+            criterionId: "commercial-reasoning",
+            kind: "binary",
+            score: 4.7,
+            rationale: "uses evidence",
+          },
+          critA[1],
+        ],
+      }),
+      evalEntry("B", 3.2, { criterionScores: critA }),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates),
+    ).toThrow(/kind/i);
+  });
+
+  it("rejects an explicit kind on a binary criterion when the profile expects graded", () => {
+    // The reverse direction: a binary profile criterion receiving kind:"graded"
+    // with a boolean value must be rejected.
+    const candidates = two();
+    const binaryCriteria = [
+      {
+        id: "uses-itt",
+        name: "Uses ITT denominator",
+        description: "d",
+        kind: "binary" as const,
+        trueWhen: "t",
+        falseWhen: "f",
+      },
+    ];
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [{ criterionId: "uses-itt", kind: "graded", value: true, rationale: "x" }],
+      }),
+      evalEntry("B", 3.2),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(binaryCriteria), candidates),
+    ).toThrow(/kind/i);
+  });
+
+  it("accepts a matching explicit kind discriminator", () => {
+    // Explicit kind matching the profile criterion kind is accepted.
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          { criterionId: "commercial-reasoning", kind: "graded", score: 4.7, rationale: "r" },
+          critA[1],
+        ],
+      }),
+      evalEntry("B", 3.2, { criterionScores: critA }),
+    ]);
+    const result = parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates);
+    expect(result.report.evaluationsById["c1"].criterionScores[0].score).toBe(4.7);
+  });
 });
 
 // ---------------------------------------------------------------------------

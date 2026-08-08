@@ -41,7 +41,7 @@ import {
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
 import {
   rankValueFromResults,
-  formatRankScoreDisplay,
+  formatRankValueDisplay,
   qualityScore,
   complianceScore,
   getComplianceInfluence,
@@ -672,9 +672,13 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       const name = candidate ? mdSafe(candidate.model) : candidateId;
       const profile = record.evaluation.profile;
       const rv = profile ? rankValueFromResults(evaluation.criterionScores, profile) : null;
+      // Domain-aware headline: compliance-only profiles render C as a percentage
+      // (no /5, no floor); graded/legacy/holistic keep the 1–5 /5 suffix.
       const headline =
-        rv !== null ? formatRankScoreDisplay(rv) : evaluation.overallScore.toFixed(1);
-      lines.push(`### ${name} (Candidate ${label}) — ${headline}/5`, ``);
+        rv !== null
+          ? formatRankValueDisplay(rv, profile)
+          : `${evaluation.overallScore.toFixed(1)}/5`;
+      lines.push(`### ${name} (Candidate ${label}) — ${headline}`, ``);
       lines.push(`Position: ${mdSafe(evaluation.position)}`, ``);
       lines.push(`Why this score: ${mdSafe(evaluation.rationale)}`, ``);
 
@@ -711,11 +715,17 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
         } else if (C !== null) {
           derivParts.push(`rankValue = C̄ = ${C.toFixed(3)} (compliance-only, §16.3)`);
         }
-        derivParts.push(`rankScore = max(1, rankValue) = ${rs !== null ? rs.toFixed(3) : "—"}`);
-        if (floored) {
-          derivParts.push(
-            `⏶ Floor applied: raw rankValue ${rv.toFixed(3)} < 1 → rankScore ${rs!.toFixed(1)}*`,
-          );
+        // Compliance-only profiles (no graded criteria) have no rankScore and no
+        // 1–5 display floor (spec §16.3): C is the ranking quantity in the
+        // 0–1 domain and must never be presented as a floored 1.0* rank score.
+        const complianceOnly = Q === null && C !== null;
+        if (!complianceOnly) {
+          derivParts.push(`rankScore = max(1, rankValue) = ${rs !== null ? rs.toFixed(3) : "—"}`);
+          if (floored) {
+            derivParts.push(
+              `⏶ Floor applied: raw rankValue ${rv.toFixed(3)} < 1 → rankScore ${rs!.toFixed(1)}*`,
+            );
+          }
         }
 
         lines.push(
@@ -723,8 +733,12 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
           `- Quality (Q): ${qStr}`,
           `- Compliance (C): ${cStr}`,
           `- Compliance influence (λ): ${lambda.toFixed(2)}`,
-          `- Rank Value: ${rv.toFixed(3)}${floored ? " (floored)" : ""}`,
-          `- Rank Score: ${rs !== null ? rs.toFixed(1) : "—"}${floored ? "*" : ""}`,
+          ...(complianceOnly
+            ? [`- Compliance: ${(C! * 100).toFixed(0)}% (compliance-only profile, §16.3)`]
+            : [
+                `- Rank Value: ${rv.toFixed(3)}${floored ? " (floored)" : ""}`,
+                `- Rank Score: ${rs !== null ? rs.toFixed(1) : "—"}${floored ? "*" : ""}`,
+              ]),
           ...derivParts.map((d) => `- ${d}`),
           ``,
         );
@@ -763,7 +777,9 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
           `Criterion scores:`,
           ...evaluation.criterionScores.map((cs) =>
             cs.kind === "binary"
-              ? `- ${mdSafe(cs.label)}: ${cs.value ? "PASS" : "FAIL"}${groupLookup.has(cs.criterionId) ? ` (Group: ${mdSafe(groupLookup.get(cs.criterionId)!)})` : ""} — ${mdSafe(cs.rationale)}`
+              ? `- ${mdSafe(cs.label)}: ${
+                  cs.value === undefined ? "UNKNOWN" : cs.value ? "PASS" : "FAIL"
+                }${groupLookup.has(cs.criterionId) ? ` (Group: ${mdSafe(groupLookup.get(cs.criterionId)!)})` : ""} — ${mdSafe(cs.rationale)}`
               : `- ${mdSafe(cs.label)}: ${cs.score?.toFixed(1) ?? "N/A"}/5 — ${mdSafe(cs.rationale)}`,
           ),
           ``,
