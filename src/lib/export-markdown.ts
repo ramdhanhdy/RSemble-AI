@@ -106,7 +106,7 @@ export function buildExportMarkdown(s: StudioState): string | null {
       const ev = report.evaluationsById[c.id];
       if (!ev) continue;
       lines.push(
-        `### ${mdSafe(c.model)} (Candidate ${ev.blindLabel}) — ${ev.overallScore.toFixed(1)}/5`,
+        `### ${mdSafe(c.model)} (Candidate ${ev.blindLabel}) — ${formatRankScoreDisplay(c.weightedScore)}/5`,
         ``,
       );
       lines.push(`Position: ${mdSafe(ev.position)}`, ``);

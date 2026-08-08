@@ -18,6 +18,7 @@ import type {
   JudgeComparison,
 } from "../studio-data";
 import { isUsableCandidate } from "../lib/pipeline";
+import { formatRankScoreDisplay } from "../lib/evaluations/evaluation-profile";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
 import { BrandAvatar } from "./brand-icons";
@@ -166,7 +167,7 @@ function Recommendation({
         Use <span className="font-semibold">{winner.model}</span> for this kind of task —{" "}
         <span className="text-text-secondary">{whyLine}</span>{" "}
         <span className={`font-mono ${tier(winner.weightedScore).text}`}>
-          {winner.weightedScore.toFixed(1)}/5
+          {formatRankScoreDisplay(winner.weightedScore)}/5
         </span>
       </p>
     </div>
@@ -296,7 +297,7 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
                 )}
               </div>
               <span className={`w-9 text-right font-mono text-sm ${t.text}`}>
-                {c.weightedScore.toFixed(1)}
+                {formatRankScoreDisplay(c.weightedScore)}
               </span>
             </div>
           );

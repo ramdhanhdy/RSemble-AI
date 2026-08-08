@@ -312,10 +312,9 @@ describe("hybrid profile round-trip through suite packages", () => {
     expect(profile.complianceInfluence).toBe(0.5);
   });
 
-  it("accepts an ungrouped binary check via materialization is not forced at package level, but validateProfile flags it", () => {
-    // A package profile with an ungrouped binary check still passes the record
-    // guard (isEvaluationProfile accepts groups only iff present); validateProfile
-    // (run-time) requires exactly-one membership. We assert the guard pass here.
+  it("rejects an ungrouped binary check at import (exactly-one membership)", () => {
+    // validateProfile (now run inside normalizeSuitePackage) requires every
+    // binary check to belong to exactly one requirement group.
     const pkg = makePkg({
       profiles: [
         {
@@ -326,7 +325,10 @@ describe("hybrid profile round-trip through suite packages", () => {
       ],
     });
     const result = normalizeSuitePackage(pkg, baseOpts());
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.includes("not assigned to any requirement group"))).toBe(
+      true,
+    );
   });
 
   it("rejects a package profile carrying kind:'gate' (structural guard drops it)", () => {
