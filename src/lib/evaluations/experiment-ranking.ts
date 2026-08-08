@@ -38,14 +38,12 @@ export interface ExperimentDisplayRanking {
  */
 export function deriveDisplayRanking(
   models: ModelAggregate[],
-  snapshotOrder: ReadonlyMap<string, number>,
+  _snapshotOrder: ReadonlyMap<string, number>,
 ): ExperimentDisplayRanking {
-  const eligible = models
-    .filter((m) => m.complete)
-    .sort((a, b) => compareByMeanThenOrder(a, b, snapshotOrder));
+  const eligible = models.filter((m) => m.complete).sort((a, b) => compareByMeanThenOrder(a, b));
   const provisional = models
     .filter((m) => !m.complete)
-    .sort((a, b) => compareByMeanThenOrder(a, b, snapshotOrder));
+    .sort((a, b) => compareByMeanThenOrder(a, b));
 
   const bestEligibleMean = eligible.length > 0 ? eligible[0].mean : null;
   const provisionalLeader =
@@ -59,13 +57,21 @@ export function deriveDisplayRanking(
   return { eligible, provisional, provisionalLeader };
 }
 
-function compareByMeanThenOrder(
-  a: ModelAggregate,
-  b: ModelAggregate,
-  order: ReadonlyMap<string, number>,
-): number {
+function compareByMeanThenOrder(a: ModelAggregate, b: ModelAggregate): number {
+  // Spec §16.1 ranking key: mean(rankValue) desc → Q̄ desc → C̄ desc → candidate_id asc.
+  // Epsilon-equiv values share a step; winners/ties still resolve on rankValue.
   const am = a.mean ?? -Infinity;
   const bm = b.mean ?? -Infinity;
   if (Math.abs(am - bm) >= WINNER_EPSILON) return bm - am;
-  return (order.get(a.modelKey) ?? 0) - (order.get(b.modelKey) ?? 0);
+  // Equal mean(rankValue): higher Q̄ ranks above.
+  const aq = a.qMean ?? -Infinity;
+  const bq = b.qMean ?? -Infinity;
+  if (Math.abs(aq - bq) >= WINNER_EPSILON) return bq - aq;
+  // Equal mean + Q̄: higher C̄ ranks above.
+  const ac = a.cMean ?? -Infinity;
+  const bc = b.cMean ?? -Infinity;
+  if (Math.abs(ac - bc) >= WINNER_EPSILON) return bc - ac;
+  // Final deterministic tie-break (spec §16.1): candidate_id ascending.
+  // (Snapshot roster order is NOT part of the ranking key.)
+  return a.modelKey < b.modelKey ? -1 : a.modelKey > b.modelKey ? 1 : 0;
 }

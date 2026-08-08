@@ -26,6 +26,7 @@ import {
   rankValueOf,
   getComplianceInfluence,
 } from "./evaluation-profile";
+import type { EvaluationProfileSnapshot } from "./evaluation-types";
 
 // --- Canonical per-model scores from one accepted run ---------------------------
 
@@ -66,6 +67,43 @@ export function canonicalScoresFromRun(record: RunRecordV2): Record<string, numb
   return scores;
 }
 
+/** Per-task channel decomposition: authoritative rankValue plus the Q/C channels
+ *  needed for the spec §16.1 tie-break (Q̄ → C̄) and §16.2 floored-task counts.
+ *  Returns null for a model with no present results. */
+export function decomposeTaskScore(
+  _candidate: { modelKey: string; candidateId: string },
+  evaluation: {
+    criterionScores: Array<{
+      kind?: "graded" | "binary" | undefined;
+      score?: number;
+      value?: boolean;
+      criterionId: string;
+    }>;
+  },
+  profile: EvaluationProfileSnapshot | null,
+  fallbackOverall: number,
+): { rankValue: number; Q: number | null; C: number | null } | null {
+  if (!profile) {
+    return { rankValue: fallbackOverall, Q: null, C: null };
+  }
+  const numericScores: Record<string, number> = {};
+  const booleanResults: Record<string, boolean> = {};
+  for (const cs of evaluation.criterionScores) {
+    if (cs.kind === "binary" && cs.value !== undefined) {
+      booleanResults[cs.criterionId] = cs.value;
+    } else if (cs.score !== undefined) {
+      numericScores[cs.criterionId] = cs.score;
+    }
+  }
+  const Q = qualityScore(numericScores, profile);
+  const comp = complianceScore(booleanResults, profile);
+  const lambda = getComplianceInfluence(profile);
+  const C = comp?.C ?? null;
+  const rv = rankValueOf(Q, C, lambda);
+  if (rv === null) return null;
+  return { rankValue: rv, Q, C };
+}
+
 // --- Aggregation result types -------------------------------------------------------
 
 export type MissingReason =
@@ -79,13 +117,26 @@ export type MissingReason =
   | "no-score";
 
 export type CellState =
-  | { kind: "scored"; score: number; runId: string; attemptId: string }
+  | {
+      kind: "scored";
+      score: number;
+      runId: string;
+      attemptId: string;
+      q?: number | null;
+      c?: number | null;
+    }
   | { kind: "missing"; reason: MissingReason; runId: string | null; attemptId: string | null };
 
 export interface ModelAggregate {
   modelKey: string;
-  /** Raw unrounded mean of available task scores; null when nothing scored. */
+  /** Raw unrounded mean of available task rankValues; null when nothing scored. */
   mean: number | null;
+  /** Mean of per-task Quality (Q̄) over scored tasks; null when none. */
+  qMean?: number | null;
+  /** Mean of per-task Compliance (C̄) over scored tasks; null when none. */
+  cMean?: number | null;
+  /** Number of scored tasks whose rankValue < 1 (floored) — §16.2 audit. */
+  flooredTaskCount?: number;
   scoredTasks: number;
   totalTasks: number;
   /** scoredTasks === totalTasks (and at least one task exists). */
@@ -147,29 +198,66 @@ export function aggregateExperiment(input: AggregateExperimentInput): Experiment
       }));
     }
 
-    const scores = canonicalScoresFromRun(record);
+    const profile = record.evaluation.profile;
+    const report = record.judge.report;
     return modelKeys.map((modelKey): CellState => {
-      const score = scores[modelKey];
+      const candidate = record.candidates.find(
+        (c) => `${c.providerId}:${c.slug}` === modelKey || c.modelKey === modelKey,
+      );
+      const evaluation = report?.evaluationsById[candidate?.candidateId ?? ""];
+      if (profile && candidate && evaluation) {
+        const dec = decomposeTaskScore(candidate, evaluation, profile, evaluation.overallScore);
+        if (dec === null) {
+          return { kind: "missing", reason: "no-score", runId, attemptId: selected.id };
+        }
+        return {
+          kind: "scored",
+          score: dec.rankValue,
+          q: dec.Q,
+          c: dec.C,
+          runId: runId!,
+          attemptId: selected.id,
+        };
+      }
+      // No profile (holistic): use the persisted canonical score.
+      const score = canonicalScoresFromRun(record)[modelKey];
       if (score === undefined) {
         return { kind: "missing", reason: "no-score", runId, attemptId: selected.id };
       }
-      return { kind: "scored", score, runId: runId!, attemptId: selected.id };
+      return { kind: "scored", score, q: null, c: null, runId: runId!, attemptId: selected.id };
     });
   });
 
   const models: ModelAggregate[] = modelKeys.map((modelKey, modelIdx) => {
     let sum = 0;
     let scoredTasks = 0;
+    let qSum = 0;
+    let cSum = 0;
+    let hasQ = false;
+    let hasC = false;
+    let flooredTaskCount = 0;
     for (let taskIdx = 0; taskIdx < totalTasks; taskIdx++) {
       const cell = cells[taskIdx][modelIdx];
-      if (cell.kind === "scored") {
-        sum += cell.score;
-        scoredTasks += 1;
+      if (cell.kind !== "scored") continue;
+      sum += cell.score;
+      scoredTasks += 1;
+      if (cell.score < 1) flooredTaskCount += 1;
+      // Channel data for the §16.1 tie-break (Q̄ → C̄) and §16.2 floored audit.
+      if (cell.q != null) {
+        qSum += cell.q;
+        hasQ = true;
+      }
+      if (cell.c != null) {
+        cSum += cell.c;
+        hasC = true;
       }
     }
     return {
       modelKey,
       mean: scoredTasks > 0 ? sum / scoredTasks : null,
+      qMean: hasQ ? qSum / scoredTasks : null,
+      cMean: hasC ? cSum / scoredTasks : null,
+      flooredTaskCount,
       scoredTasks,
       totalTasks,
       complete: totalTasks > 0 && scoredTasks === totalTasks,
@@ -198,4 +286,10 @@ export function formatTaskScore(score: number): string {
 /** Aggregate means display two decimals. Ranking never uses this string. */
 export function formatAggregateMean(mean: number): string {
   return mean.toFixed(2);
+}
+
+/** Bounded display aggregate (spec §16.2): max(1, mean) — presentation only,
+ *  never used for ordering or winner eligibility. Returns the bounded value. */
+export function boundedAggregateMean(mean: number): number {
+  return Math.max(1, mean);
 }

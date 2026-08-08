@@ -98,6 +98,17 @@ export function EvaluationProfileEditor({
     onChange({ ...profile, complianceInfluence: value, updatedAt: Date.now() });
   }
 
+  function updateGroupWeight(groupId: string, value: number) {
+    if (!isFinite(value) || value <= 0) return; // positive-weight only
+    onChange({
+      ...profile,
+      requirementGroups: (profile.requirementGroups ?? []).map((g) =>
+        g.id === groupId ? { ...g, weight: value } : g,
+      ),
+      updatedAt: Date.now(),
+    });
+  }
+
   function removeCriterion(id: string) {
     const isBinary = profile.criteria.find((c) => c.id === id)?.kind === "binary";
     let nextGroups = profile.requirementGroups;
@@ -194,19 +205,66 @@ export function EvaluationProfileEditor({
         </div>
       )}
 
-      {/* Requirement groups summary */}
+      {/* Requirement Group editor — v1 (spec §11.4) */}
       {(profile.requirementGroups?.length ?? 0) > 0 && (
         <div className="rounded-sm border border-edge px-2 py-1.5">
           <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
             Requirement groups ({profile.requirementGroups!.length})
           </span>
-          <ul className="mt-1 space-y-0.5">
-            {profile.requirementGroups!.map((g) => (
-              <li key={g.id} className="text-xs text-text-secondary">
-                {g.name}: {g.checkIds.length} check(s) · weight {g.weight.toFixed(1)} · ALL
-              </li>
-            ))}
-          </ul>
+          {(() => {
+            const groups = profile.requirementGroups!;
+            const sumV = groups.reduce((s, g) => s + g.weight, 0);
+            const lambda = getComplianceInfluence(profile);
+            return (
+              <ul className="mt-1 space-y-1.5">
+                {groups.map((g) => {
+                  const failCost = sumV > 0 ? (lambda * g.weight) / sumV : 0;
+                  const fragile = g.checkIds.length >= 4;
+                  return (
+                    <li key={g.id} className="text-xs text-text-secondary">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-text">{g.name}</span>
+                        <span className="text-text-muted">
+                          {g.checkIds.length} check{g.checkIds.length === 1 ? "" : "s"} · ALL
+                        </span>
+                        {!readOnly && (
+                          <label htmlFor={`group-weight-${g.id}`} className="text-text-muted">
+                            w
+                          </label>
+                        )}
+                        {!readOnly ? (
+                          <input
+                            id={`group-weight-${g.id}`}
+                            type="number"
+                            min={0}
+                            step={0.1}
+                            defaultValue={g.weight}
+                            aria-label={`${g.name} group weight`}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value);
+                              if (!isNaN(v)) updateGroupWeight(g.id, v);
+                            }}
+                            className="w-16 rounded-sm border border-edge bg-card px-1 py-0.5 font-mono text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          />
+                        ) : (
+                          <span className="font-mono text-text">w {g.weight.toFixed(1)}</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-text-muted">
+                        fail cost {failCost.toFixed(2)} pts ({lambda.toFixed(1)} ×{" "}
+                        {g.weight.toFixed(2)}/{sumV.toFixed(2)})
+                        {fragile && (
+                          <span className="ml-1 text-warning">
+                            · N={g.checkIds.length} ALL: any single false verdict fails the group
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            );
+          })()}
         </div>
       )}
 

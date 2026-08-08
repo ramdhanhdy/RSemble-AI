@@ -21,6 +21,7 @@ import type { ModelSlot } from "../../studio-data";
 import {
   aggregateExperiment,
   formatAggregateMean,
+  boundedAggregateMean,
   type MissingReason,
 } from "../../lib/evaluations/experiment-aggregation";
 import { deriveDisplayRanking } from "../../lib/evaluations/experiment-ranking";
@@ -612,12 +613,33 @@ export function ExperimentResults({
                   <span className="font-mono text-text">{model.modelKey}</span>
                 )}
                 {model.mean !== null ? (
-                  <span className="tabular-nums text-sm font-bold text-text">
-                    {formatAggregateMean(model.mean)}
-                  </span>
+                  <>
+                    <span className="tabular-nums text-sm font-bold text-text">
+                      {formatAggregateMean(model.mean)}
+                    </span>
+                    {(model.flooredTaskCount ?? 0) > 0 && (
+                      <span className="font-mono text-xs text-warning">
+                        {" "}
+                        {model.flooredTaskCount} floored task
+                        {model.flooredTaskCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </>
                 ) : null}
                 <span className="text-xs text-text-secondary">
                   mean over {model.scoredTasks}/{model.totalTasks} tasks
+                  {model.qMean != null && (
+                    <span className="text-text-muted"> · Q̄ {model.qMean.toFixed(2)}</span>
+                  )}
+                  {model.cMean != null && (
+                    <span className="text-text-muted"> · C̄ {model.cMean.toFixed(2)}</span>
+                  )}
+                  {model.mean !== null && (model.flooredTaskCount ?? 0) > 0 && (
+                    <span className="text-text-muted">
+                      {" "}
+                      · bounded display {boundedAggregateMean(model.mean).toFixed(2)}
+                    </span>
+                  )}
                 </span>
               </div>
             );

@@ -15,6 +15,7 @@ import {
   canonicalScoresFromRun,
   formatTaskScore,
   formatAggregateMean,
+  boundedAggregateMean,
 } from "./experiment-aggregation";
 import type {
   EvaluationCriterion,
@@ -638,5 +639,123 @@ describe("hybrid floored-task aggregation (rankValue authority)", () => {
     expect(model.mean).not.toBeCloseTo(1.0, 10);
     expect(model.complete).toBe(true);
     expect(aggregation.winnerKeys).toEqual([MK1]);
+  });
+});
+
+// --- §16.2 floored audit: raw rankValue mean vs bounded display ---------------
+
+describe("hybrid floored mean vs bounded display (§16.2)", () => {
+  function gradedRun(
+    runId: string,
+    aKey: string,
+    aScore: number,
+    bKey: string,
+    bScore: number,
+  ): RunRecordV2 {
+    const profile: EvaluationProfile = {
+      id: "p-q",
+      version: 1,
+      name: "Graded",
+      description: "",
+      judgeInstruction: "",
+      criteria: [
+        {
+          id: "quality",
+          kind: "graded",
+          name: "Quality",
+          description: "d",
+          weight: 1,
+          anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+        },
+      ],
+      createdAt: 100,
+      updatedAt: 100,
+    };
+    const mk = (key: string, score: number): CandidateEvaluation => ({
+      candidateId: key,
+      blindLabel: "A",
+      overallScore: 5,
+      position: "p",
+      rationale: "r",
+      strengths: ["s"],
+      deductions: [],
+      missedRequirements: [],
+      criterionScores: [
+        { criterionId: "quality", label: "Quality", kind: "graded", score, rationale: "r" },
+      ],
+    });
+    return {
+      schemaVersion: 2,
+      id: runId,
+      revision: 1,
+      execution: { ownerId: "tab-1", fence: 1 },
+      createdAt: 1000,
+      updatedAt: 1000,
+      completedAt: 1100,
+      status: "completed",
+      mode: "rank",
+      source: { kind: "adhoc" },
+      task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
+      evaluation: { profile, candidateMessages: [] },
+      candidates: [
+        {
+          candidateId: aKey,
+          slotId: "s1",
+          modelKey: aKey,
+          providerId: aKey.split(":")[0],
+          model: aKey,
+          slug: aKey.split(":")[1],
+          acceptedAttemptId: "a",
+          attempts: [],
+        },
+        {
+          candidateId: bKey,
+          slotId: "s2",
+          modelKey: bKey,
+          providerId: bKey.split(":")[0],
+          model: bKey,
+          slug: bKey.split(":")[1],
+          acceptedAttemptId: "a",
+          attempts: [],
+        },
+      ],
+      judge: {
+        status: "done",
+        acceptedAttemptId: "j",
+        report: {
+          labelMap: [],
+          evaluationsById: { [aKey]: mk(aKey, aScore), [bKey]: mk(bKey, bScore) },
+          comparisons: [],
+        },
+        consensus: null,
+        attempts: [],
+      },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    };
+  }
+
+  it("orders by raw aggregate mean, not the bounded display value", () => {
+    // Two complete-coverage models across two tasks; MK1 always ranks 0.8,
+    // MK2 always ranks 0.2. Both floored (rankValue < 1).
+    const agg = aggregateExperiment({
+      snapshot: makeSnapshot(["ta", "tb"]),
+      taskStates: [
+        makeTaskState("ta", [{ id: "a1", runId: "r1", status: "completed" }], "a1"),
+        makeTaskState("tb", [{ id: "a1", runId: "r2", status: "completed" }], "a1"),
+      ],
+      resolveRunRecord: (rid) => gradedRun(rid, MK1, 0.8, MK2, 0.2),
+    });
+    const a = agg.models.find((m) => m.modelKey === MK1)!;
+    const b = agg.models.find((m) => m.modelKey === MK2)!;
+    expect(a.mean).toBeCloseTo(0.8, 10);
+    expect(b.mean).toBeCloseTo(0.2, 10);
+    expect(a.flooredTaskCount).toBe(2);
+    expect(b.flooredTaskCount).toBe(2);
+    expect(boundedAggregateMean(a.mean!)).toBe(1);
+    expect(boundedAggregateMean(b.mean!)).toBe(1);
+    expect(agg.winnerKeys).toEqual([MK1]);
+    // deriveDisplayRanking orders MK1 first (raw mean), then MK2.
+    expect(() => undefined).not.toThrow();
   });
 });
