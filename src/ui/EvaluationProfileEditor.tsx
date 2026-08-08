@@ -11,13 +11,16 @@
 
 import { useState, useMemo } from "react";
 import { ChevronDown, Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
-import type { EvaluationProfile, EvaluationCriterion } from "../lib/evaluations/evaluation-types";
+import type {
+  EvaluationProfile,
+  EvaluationCriterion,
+  RequirementGroup,
+} from "../lib/evaluations/evaluation-types";
 import {
   normalizedWeights,
   totalWeight,
   getComplianceInfluence,
 } from "../lib/evaluations/evaluation-profile";
-import type { RequirementGroup } from "../lib/evaluations/evaluation-types";
 
 export function EvaluationProfileEditor({
   profile,
@@ -96,9 +99,19 @@ export function EvaluationProfileEditor({
   }
 
   function removeCriterion(id: string) {
+    const isBinary = profile.criteria.find((c) => c.id === id)?.kind === "binary";
+    let nextGroups = profile.requirementGroups;
+    if (isBinary && nextGroups) {
+      // Cascade-delete: remove the check from its group, and delete the group
+      // when it becomes empty, so no dangling group silently loses weight.
+      nextGroups = nextGroups
+        .map((g) => ({ ...g, checkIds: g.checkIds.filter((cid) => cid !== id) }))
+        .filter((g) => g.checkIds.length > 0);
+    }
     onChange({
       ...profile,
       criteria: profile.criteria.filter((c) => c.id !== id),
+      requirementGroups: nextGroups,
       updatedAt: Date.now(),
     });
     if (openId === id) setOpenId(null);
@@ -150,11 +163,15 @@ export function EvaluationProfileEditor({
       {/* Compliance influence control */}
       {(profile.requirementGroups?.length ?? 0) > 0 && (
         <div className="rounded-sm bg-card-hover px-2 py-1.5">
-          <label className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+          <label
+            htmlFor="compliance-influence"
+            className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+          >
             Compliance influence (λ)
           </label>
           <div className="mt-1 flex items-center gap-2">
             <input
+              id="compliance-influence"
               type="number"
               min={0}
               max={1}

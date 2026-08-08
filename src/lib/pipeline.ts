@@ -542,7 +542,7 @@ function optionalStringArray(value: unknown, field: string): string[] {
 }
 
 /** A score must be a finite number within the documented 1.0–5.0 range. Never clamped. */
-function requireScore(value: unknown, where: string): number {
+function requireScore(value: unknown, where: string, integerOnly = false): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(
       `Judge output invalid: ${where} is missing a finite numeric score (got ${JSON.stringify(value)}).`,
@@ -551,6 +551,11 @@ function requireScore(value: unknown, where: string): number {
   if (value < 1.0 || value > 5.0) {
     throw new Error(
       `Judge output invalid: ${where} score ${value} is outside the documented 1.0–5.0 range.`,
+    );
+  }
+  if (integerOnly && !Number.isInteger(value)) {
+    throw new Error(
+      `Judge output invalid: ${where} score ${value} must be an integer 1–5 for a graded criterion.`,
     );
   }
   return value;
@@ -655,6 +660,11 @@ function parseCriterionScores(
           `Judge output invalid: ${where}.criterionScores[${i}] is a binary criterion — return "value" (boolean), not "score".`,
         );
       }
+      if (entry.score !== undefined && entry.value !== undefined) {
+        throw new Error(
+          `Judge output invalid: ${where}.criterionScores[${i}] returned both "score" and "value" for a binary criterion — return only "value".`,
+        );
+      }
       return {
         criterionId,
         value: requireBoolean(entry.value, `${where}.criterionScores[${i}].value`),
@@ -670,9 +680,20 @@ function parseCriterionScores(
         `Judge output invalid: ${where}.criterionScores[${i}] is a graded criterion — return "score" (number), not "value".`,
       );
     }
+    if (entry.score !== undefined && entry.value !== undefined) {
+      throw new Error(
+        `Judge output invalid: ${where}.criterionScores[${i}] returned both "score" and "value" for a graded criterion — return only "score".`,
+      );
+    }
     return {
       criterionId,
-      score: requireScore(entry.score, `${where}.criterionScores[${i}]`),
+      score: requireScore(
+        entry.score,
+        `${where}.criterionScores[${i}]`,
+        // Explicit graded criteria must return an integer 1–5; legacy (kind
+        // undefined) retains historical float tolerance in the 1–5 range.
+        criterion?.kind === "graded",
+      ),
       rationale: requireNonEmptyString(entry.rationale, `${where}.criterionScores[${i}].rationale`),
     };
   });

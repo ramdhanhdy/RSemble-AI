@@ -408,8 +408,9 @@ describe("rankValueOf", () => {
   it("C defaults to 1 when null (no binary checks)", () => {
     expect(rankValueOf(4, null, 1)).toBe(4);
   });
-  it("Q defaults to 0 when null (compliance-only)", () => {
-    expect(rankValueOf(null, 0.5, 1)).toBeCloseTo(-0.5, 10);
+  it("returns null when Q is absent (compliance-only ranks on C, not rankValue)", () => {
+    expect(rankValueOf(null, 0.5, 1)).toBeNull();
+    expect(rankValueOf(null, null, 1)).toBeNull();
   });
 });
 

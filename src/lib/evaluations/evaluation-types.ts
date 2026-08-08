@@ -445,6 +445,9 @@ export function isBinaryEvaluationCriterion(v: unknown): v is BinaryEvaluationCr
   if (!isString(v.description)) return false;
   if (!isNonEmptyString(v.trueWhen)) return false;
   if (!isNonEmptyString(v.falseWhen)) return false;
+  // Criterion-level weight is forbidden on binary checks in v1 — the weight
+  // lives on the RequirementGroup only.
+  if (v.weight !== undefined) return false;
   return true;
 }
 

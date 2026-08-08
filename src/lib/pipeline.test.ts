@@ -1304,3 +1304,205 @@ describe("checkAttachmentEligibility — §5.1 matrix (7.6.5)", () => {
     });
   });
 });
+
+describe("parseJudge — hybrid graded/binary criterion contract", () => {
+  const two = () => [
+    makeCandidate("c1", "ModelA", "openrouter", "model-a"),
+    makeCandidate("c2", "ModelB", "umans", "model-b"),
+  ];
+  const mixedCriteria: EvaluationCriterion[] = [
+    {
+      id: "quality",
+      kind: "graded",
+      name: "Quality",
+      description: "d",
+      weight: 1,
+      anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+    },
+    {
+      id: "uses-itt",
+      kind: "binary",
+      name: "Uses ITT denominator",
+      description: "d",
+      trueWhen: "Uses all randomized users",
+      falseWhen: "Conditions on post-randomization subset",
+    },
+  ];
+
+  it("parses graded (integer score) and binary (boolean value) results", () => {
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          { criterionId: "quality", score: 4, rationale: "strong" },
+          { criterionId: "uses-itt", value: true, rationale: "uses ITT" },
+        ],
+      }),
+      evalEntry("B", 3.2, {
+        criterionScores: [
+          { criterionId: "quality", score: 3, rationale: "ok" },
+          { criterionId: "uses-itt", value: false, rationale: "not ITT" },
+        ],
+      }),
+    ]);
+    const result = parseJudge(
+      judgeText,
+      blindOf(candidates),
+      makeProfile(mixedCriteria),
+      candidates,
+    );
+    const a = result.report.evaluationsById["c1"].criterionScores;
+    expect(a).toHaveLength(2);
+    expect(a.find((cs) => cs.criterionId === "quality")).toMatchObject({
+      kind: "graded",
+      score: 4,
+    });
+    expect(a.find((cs) => cs.criterionId === "uses-itt")).toMatchObject({
+      kind: "binary",
+      value: true,
+    });
+  });
+
+  it("rejects a binary criterion returning a numeric score instead of value", () => {
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          { criterionId: "quality", score: 4, rationale: "s" },
+          { criterionId: "uses-itt", score: 5, rationale: "wrong type" },
+        ],
+      }),
+      evalEntry("B", 3.2, {
+        criterionScores: [
+          { criterionId: "quality", score: 3, rationale: "s" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+    ).toThrow(/binary|value|score/i);
+  });
+
+  it("rejects a graded criterion returning a boolean value instead of score", () => {
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          { criterionId: "quality", value: true, rationale: "wrong type" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+      evalEntry("B", 3.2, {
+        criterionScores: [
+          { criterionId: "quality", score: 3, rationale: "s" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+    ).toThrow(/graded|score|value/i);
+  });
+
+  it("rejects a binary value that is not a JSON boolean", () => {
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          { criterionId: "quality", score: 4, rationale: "s" },
+          { criterionId: "uses-itt", value: "true", rationale: "string not boolean" },
+        ],
+      }),
+      evalEntry("B", 3.2, {
+        criterionScores: [
+          { criterionId: "quality", score: 3, rationale: "s" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+    ).toThrow(/boolean|true|false/i);
+  });
+
+  it("rejects binary criteria missing a result (required presence)", () => {
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [{ criterionId: "quality", score: 4, rationale: "s" }],
+      }),
+      evalEntry("B", 3.2, {
+        criterionScores: [
+          { criterionId: "quality", score: 3, rationale: "s" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+    ).toThrow(/missing|uses-itt/i);
+  });
+  it("rejects a fractional score for an explicit graded criterion (integer 1-5)", () => {
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          { criterionId: "quality", score: 4.5, rationale: "fractional" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+      evalEntry("B", 3.2, {
+        criterionScores: [
+          { criterionId: "quality", score: 4, rationale: "ok" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+    ).toThrow(/integer/i);
+  });
+
+  it("rejects a binary entry carrying BOTH score and value", () => {
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          { criterionId: "quality", score: 4, rationale: "s" },
+          { criterionId: "uses-itt", score: 5, value: true, rationale: "both" },
+        ],
+      }),
+      evalEntry("B", 3.2, {
+        criterionScores: [
+          { criterionId: "quality", score: 4, rationale: "s" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+    ).toThrow(/both|value|score/i);
+  });
+
+  it("rejects a graded entry carrying BOTH score and value", () => {
+    const candidates = two();
+    const judgeText = judgeJson([
+      evalEntry("A", 4.5, {
+        criterionScores: [
+          { criterionId: "quality", score: 4, value: true, rationale: "both" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+      evalEntry("B", 3.2, {
+        criterionScores: [
+          { criterionId: "quality", score: 4, rationale: "s" },
+          { criterionId: "uses-itt", value: true, rationale: "ok" },
+        ],
+      }),
+    ]);
+    expect(() =>
+      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+    ).toThrow(/both|score|value/i);
+  });
+});

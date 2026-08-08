@@ -180,12 +180,13 @@ export function getComplianceInfluence(profile: EvaluationProfileSnapshot): numb
   return profile.complianceInfluence ?? DEFAULT_COMPLIANCE_INFLUENCE;
 }
 
-/** Compute the authoritative rank value: Q − λ·(1 − C). */
+/** Compute the authoritative rank value: Q − λ·(1 − C).
+ *  Returns null when Q is absent (compliance-only profile — such profiles rank
+ *  on C, not rankValue, per spec §16.3) or when both channels are absent. */
 export function rankValueOf(Q: number | null, C: number | null, lambda: number): number | null {
-  if (Q === null && C === null) return null;
-  const q = Q ?? 0;
+  if (Q === null) return null;
   const c = C ?? 1; // no binary checks → C := 1
-  return q - lambda * (1 - c);
+  return Q - lambda * (1 - c);
 }
 
 /** Compute the bounded presentation score: max(1, rankValue). */

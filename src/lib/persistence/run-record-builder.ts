@@ -34,7 +34,7 @@ import type {
   ExecutionFence,
 } from "./run-types";
 import type { EvaluationProfileSnapshot } from "../evaluations/evaluation-types";
-import { rankValueFromResults } from "../evaluations/evaluation-profile";
+import { rankValueFromResults, WINNER_EPSILON } from "../evaluations/evaluation-profile";
 import { candidateIdForSlot } from "../pipeline";
 import { resolveReasoningEffort } from "../providers/reasoning";
 
@@ -747,7 +747,9 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     }
     if (scores.length === 0) return [];
     const maxScore = Math.max(...scores.map((s) => s.score));
-    return scores.filter((s) => Math.abs(s.score - maxScore) < 1e-9).map((s) => s.modelKey);
+    return scores
+      .filter((s) => Math.abs(s.score - maxScore) < WINNER_EPSILON)
+      .map((s) => s.modelKey);
   }
 
   // --- Summary derivation -----------------------------------------------------

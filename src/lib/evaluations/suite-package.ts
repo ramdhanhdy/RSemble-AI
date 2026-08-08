@@ -77,6 +77,8 @@ export interface SuitePackageProfile {
   description?: string;
   judgeInstruction?: string;
   criteria: EvaluationProfile["criteria"];
+  requirementGroups?: EvaluationProfile["requirementGroups"];
+  complianceInfluence?: EvaluationProfile["complianceInfluence"];
 }
 
 export interface SuitePackageV1 {
@@ -326,6 +328,8 @@ export function normalizeSuitePackage(
       description: pkgProfile.description ?? "",
       judgeInstruction: pkgProfile.judgeInstruction ?? "",
       criteria: pkgProfile.criteria,
+      requirementGroups: pkgProfile.requirementGroups,
+      complianceInfluence: pkgProfile.complianceInfluence,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
