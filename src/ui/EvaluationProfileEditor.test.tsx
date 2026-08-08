@@ -79,7 +79,8 @@ describe("EvaluationProfileEditor — structure", () => {
     const html = renderToStaticMarkup(
       <EvaluationProfileEditor profile={makeProfile()} onChange={() => {}} />,
     );
-    expect(html).toContain("Add criterion");
+    expect(html).toContain("Add graded");
+    expect(html).toContain("Add binary");
   });
 
   it("renders Move up/down buttons", () => {

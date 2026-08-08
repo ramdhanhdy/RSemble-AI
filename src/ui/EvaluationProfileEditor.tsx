@@ -12,7 +12,12 @@
 import { useState, useMemo } from "react";
 import { ChevronDown, Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import type { EvaluationProfile, EvaluationCriterion } from "../lib/evaluations/evaluation-types";
-import { normalizedWeights, totalWeight } from "../lib/evaluations/evaluation-profile";
+import {
+  normalizedWeights,
+  totalWeight,
+  getComplianceInfluence,
+} from "../lib/evaluations/evaluation-profile";
+import type { RequirementGroup } from "../lib/evaluations/evaluation-types";
 
 export function EvaluationProfileEditor({
   profile,
@@ -38,24 +43,56 @@ export function EvaluationProfileEditor({
     });
   }
 
-  function addCriterion() {
+  function addGradedCriterion() {
     const id = `c-${Date.now()}`;
-    // The persisted-profile guard requires non-empty 1/3/5 anchors — seed
-    // placeholders the user rewrites, or saving the profile is rejected.
     const newCriterion: EvaluationCriterion = {
       id,
-      name: "New criterion",
+      kind: "graded",
+      name: "New graded criterion",
       description: "",
-      kind: undefined,
       weight: 1,
       anchors: {
         one: "1 — does not meet this criterion at all",
+        two: "2 — weak; material weakness remains",
         three: "3 — partially meets this criterion",
+        four: "4 — strong, explicit, reproducible execution",
         five: "5 — fully meets this criterion",
       },
     } as EvaluationCriterion;
     onChange({ ...profile, criteria: [...profile.criteria, newCriterion], updatedAt: Date.now() });
     setOpenId(id);
+  }
+
+  function addBinaryCriterion() {
+    const id = `b-${Date.now()}`;
+    const newCriterion: EvaluationCriterion = {
+      id,
+      kind: "binary",
+      name: "New binary check",
+      description: "",
+      trueWhen: "Describe when this check passes",
+      falseWhen: "Describe when this check fails",
+    } as EvaluationCriterion;
+    // Materialize a singleton requirement group for the new binary check.
+    const groupId = `g-${Date.now()}`;
+    const group: RequirementGroup = {
+      id: groupId,
+      name: newCriterion.name,
+      checkIds: [id],
+      weight: 1,
+      mode: "ALL",
+    };
+    onChange({
+      ...profile,
+      criteria: [...profile.criteria, newCriterion],
+      requirementGroups: [...(profile.requirementGroups ?? []), group],
+      updatedAt: Date.now(),
+    });
+    setOpenId(id);
+  }
+
+  function updateComplianceInfluence(value: number) {
+    onChange({ ...profile, complianceInfluence: value, updatedAt: Date.now() });
   }
 
   function removeCriterion(id: string) {
@@ -110,14 +147,69 @@ export function EvaluationProfileEditor({
         ))}
       </ul>
 
+      {/* Compliance influence control */}
+      {(profile.requirementGroups?.length ?? 0) > 0 && (
+        <div className="rounded-sm bg-card-hover px-2 py-1.5">
+          <label className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+            Compliance influence (λ)
+          </label>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.1}
+              value={getComplianceInfluence(profile)}
+              readOnly={readOnly}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (!isNaN(v) && v >= 0 && v <= 1) updateComplianceInfluence(v);
+              }}
+              className="w-20 rounded-sm border border-edge bg-card px-2 py-1 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            <span className="text-xs text-text-muted">
+              Max points failing all checks may cost ({getComplianceInfluence(profile).toFixed(1)})
+            </span>
+            {getComplianceInfluence(profile) === 0 && (
+              <span className="text-xs text-warning">· checks excluded from ranking</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Requirement groups summary */}
+      {(profile.requirementGroups?.length ?? 0) > 0 && (
+        <div className="rounded-sm border border-edge px-2 py-1.5">
+          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+            Requirement groups ({profile.requirementGroups!.length})
+          </span>
+          <ul className="mt-1 space-y-0.5">
+            {profile.requirementGroups!.map((g) => (
+              <li key={g.id} className="text-xs text-text-secondary">
+                {g.name}: {g.checkIds.length} check(s) · weight {g.weight.toFixed(1)} · ALL
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {!readOnly && (
-        <button
-          type="button"
-          onClick={addCriterion}
-          className="flex min-h-[44px] w-full items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <Plus size={13} /> Add criterion
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={addGradedCriterion}
+            className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Plus size={13} /> Add graded
+          </button>
+          <button
+            type="button"
+            onClick={addBinaryCriterion}
+            className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Plus size={13} /> Add binary
+          </button>
+        </div>
       )}
     </div>
   );
