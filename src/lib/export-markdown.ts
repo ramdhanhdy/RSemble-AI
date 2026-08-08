@@ -132,8 +132,10 @@ export function buildExportMarkdown(s: StudioState): string | null {
       if (ev.criterionScores.length > 0) {
         lines.push(
           `Criterion scores:`,
-          ...ev.criterionScores.map(
-            (cs) => `- ${mdSafe(cs.label)}: ${cs.score.toFixed(1)}/5 — ${mdSafe(cs.rationale)}`,
+          ...ev.criterionScores.map((cs) =>
+            cs.kind === "binary"
+              ? `- ${mdSafe(cs.label)}: ${cs.value ? "PASS" : "FAIL"} — ${mdSafe(cs.rationale)}`
+              : `- ${mdSafe(cs.label)}: ${cs.score?.toFixed(1) ?? "N/A"}/5 — ${mdSafe(cs.rationale)}`,
           ),
           ``,
         );

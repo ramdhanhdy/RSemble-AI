@@ -686,8 +686,10 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       if (evaluation.criterionScores.length > 0) {
         lines.push(
           `Criterion scores:`,
-          ...evaluation.criterionScores.map(
-            (cs) => `- ${mdSafe(cs.label)}: ${cs.score.toFixed(1)}/5 — ${mdSafe(cs.rationale)}`,
+          ...evaluation.criterionScores.map((cs) =>
+            cs.kind === "binary"
+              ? `- ${mdSafe(cs.label)}: ${cs.value ? "PASS" : "FAIL"} — ${mdSafe(cs.rationale)}`
+              : `- ${mdSafe(cs.label)}: ${cs.score?.toFixed(1) ?? "N/A"}/5 — ${mdSafe(cs.rationale)}`,
           ),
           ``,
         );

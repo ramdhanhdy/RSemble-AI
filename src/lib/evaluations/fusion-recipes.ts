@@ -257,7 +257,11 @@ export function criterionScoresSection(
     const ev = judgeReport.evaluationsById[candidate.candidateId];
     if (!ev) continue;
     const criteria = ev.criterionScores
-      .map((cs) => `${cs.label} ${cs.score.toFixed(1)}`)
+      .map((cs) =>
+        cs.kind === "binary"
+          ? `${cs.label} ${cs.value ? "PASS" : "FAIL"}`
+          : `${cs.label} ${cs.score?.toFixed(1) ?? "N/A"}`,
+      )
       .join(", ");
     lines.push(
       `- Candidate ${candidate.label}: overall ${ev.overallScore.toFixed(1)}` +

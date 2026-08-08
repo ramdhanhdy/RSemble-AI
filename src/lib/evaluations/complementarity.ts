@@ -64,7 +64,9 @@ export function modelTaskScoreFromReport(
   if (!ev) return null;
   return {
     overall: ev.overallScore,
-    criteria: ev.criterionScores.map((cs) => ({ criterionId: cs.criterionId, score: cs.score })),
+    criteria: ev.criterionScores
+      .filter((cs) => cs.score !== undefined)
+      .map((cs) => ({ criterionId: cs.criterionId, score: cs.score! })),
   };
 }
 

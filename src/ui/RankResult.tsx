@@ -600,8 +600,18 @@ function ExplanationCard({
               <ul className="space-y-1">
                 {evaluation.criterionScores.map((cs) => (
                   <li key={cs.criterionId} className="text-sm leading-relaxed text-text">
-                    <span className={`font-mono ${tier(cs.score).text}`}>
-                      {cs.label}: {cs.score.toFixed(1)}/5
+                    <span
+                      className={`font-mono ${
+                        cs.kind === "binary"
+                          ? cs.value
+                            ? "text-success"
+                            : "text-error"
+                          : tier(cs.score ?? 0).text
+                      }`}
+                    >
+                      {cs.kind === "binary"
+                        ? `${cs.label}: ${cs.value ? "PASS" : "FAIL"}`
+                        : `${cs.label}: ${cs.score?.toFixed(1) ?? "N/A"}/5`}
                     </span>
                     <span className="text-text-secondary"> — {cs.rationale}</span>
                   </li>

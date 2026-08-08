@@ -19,7 +19,13 @@
 
 import type { ExperimentSnapshot, ExperimentTaskState } from "./evaluation-types";
 import type { RunRecordV2 } from "../persistence/run-types";
-import { canonicalScore, computeWinnerKeys } from "./evaluation-profile";
+import {
+  computeWinnerKeys,
+  qualityScore,
+  complianceScore,
+  rankValueOf,
+  getComplianceInfluence,
+} from "./evaluation-profile";
 
 // --- Canonical per-model scores from one accepted run ---------------------------
 
@@ -38,12 +44,21 @@ export function canonicalScoresFromRun(record: RunRecordV2): Record<string, numb
     const evaluation = report.evaluationsById[candidate.candidateId];
     if (!evaluation) continue;
     if (profile) {
-      const criterionScores: Record<string, number> = {};
+      const numericScores: Record<string, number> = {};
+      const booleanResults: Record<string, boolean> = {};
       for (const cs of evaluation.criterionScores) {
-        criterionScores[cs.criterionId] = cs.score;
+        if (cs.kind === "binary" && cs.value !== undefined) {
+          booleanResults[cs.criterionId] = cs.value;
+        } else if (cs.score !== undefined) {
+          numericScores[cs.criterionId] = cs.score;
+        }
       }
-      const canonical = canonicalScore(criterionScores, profile);
-      if (canonical !== null) scores[candidate.modelKey] = canonical;
+      const Q = qualityScore(numericScores, profile);
+      const comp = complianceScore(booleanResults, profile);
+      const lambda = getComplianceInfluence(profile);
+      const C = comp?.C ?? null;
+      const rv = rankValueOf(Q, C, lambda);
+      if (rv !== null) scores[candidate.modelKey] = rv;
     } else {
       scores[candidate.modelKey] = evaluation.overallScore;
     }
