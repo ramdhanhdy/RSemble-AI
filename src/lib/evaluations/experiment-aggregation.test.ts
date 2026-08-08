@@ -519,12 +519,15 @@ describe("aggregateExperiment — winner vs provisional ranking", () => {
 // --- Hybrid floored-task aggregation ------------------------------------------
 
 /** A mixed profile with graded criterion + one binary group (lambda default 1). */
-function makeHybridProfile(failCost: number): { profile: EvaluationProfile; checkIds: string[] } {
-  const checkId = "b1";
+/** 5 singleton binary groups + 1 graded criterion (Q=1, λ=1).
+ *  C = passCount / 5, so rankValue = 1 - (1 - C) = C.
+ *  Valid graded score 1 (integer) + native binary booleans. */
+function makeFlooredHybridProfile(): { profile: EvaluationProfile; checkIds: string[] } {
+  const checkIds = ["b1", "b2", "b3", "b4", "b5"];
   const profile: EvaluationProfile = {
-    id: "p-hybrid",
+    id: "p-floored",
     version: 1,
-    name: "Hybrid",
+    name: "Floored",
     description: "",
     judgeInstruction: "",
     criteria: [
@@ -536,48 +539,56 @@ function makeHybridProfile(failCost: number): { profile: EvaluationProfile; chec
         weight: 1,
         anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
       },
-      {
-        id: checkId,
-        kind: "binary",
-        name: "Check",
+      ...checkIds.map((id) => ({
+        id,
+        kind: "binary" as const,
+        name: `Check ${id}`,
         description: "d",
         trueWhen: "t",
         falseWhen: "f",
-      },
+      })),
     ],
-    requirementGroups: [{ id: "g1", name: "G1", checkIds: [checkId], weight: 1, mode: "ALL" }],
-    complianceInfluence: failCost,
+    requirementGroups: checkIds.map((id, i) => ({
+      id: `g${i + 1}`,
+      name: `Group ${i + 1}`,
+      checkIds: [id],
+      weight: 1,
+      mode: "ALL" as const,
+    })),
+    complianceInfluence: 1.0,
     createdAt: 100,
     updatedAt: 100,
   };
-  return { profile, checkIds: [checkId] };
+  return { profile, checkIds };
 }
 
-/** Make a run with graded score + binary pass/fail; both floored rates driven by failCost. */
-function makeHybridRun(
-  runId: string,
-  gradedScore: number,
-  binaryPass: boolean,
-  failCost: number,
-): RunRecordV2 {
-  const { profile, checkIds } = makeHybridProfile(failCost);
-  const evaluationsById: Record<string, CandidateEvaluation> = {
-    [MK1]: makeEvaluation(MK1, 5, [
-      { criterionId: "quality", score: gradedScore },
-      { criterionId: checkIds[0], score: binaryPass ? 1 : 0 },
-    ]),
-  };
-  // Override the criterion kind so the parser treats b1 as boolean.
-  evaluationsById[MK1].criterionScores = [
-    {
-      criterionId: "quality",
-      label: "Quality",
-      kind: "graded",
-      score: gradedScore,
+/** Make a run with valid Q=1 (graded score 1) and `passCount` of 5 binary
+ *  checks passing. rankValue = 1 - 1*(1 - passCount/5) = passCount/5. */
+function makeFlooredHybridRun(runId: string, passCount: number): RunRecordV2 {
+  const { profile, checkIds } = makeFlooredHybridProfile();
+  const criterionScores: CandidateEvaluation["criterionScores"] = [
+    { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
+    ...checkIds.map((id, i) => ({
+      criterionId: id,
+      label: `Check ${id}`,
+      kind: "binary" as const,
+      value: i < passCount,
       rationale: "r",
-    },
-    { criterionId: checkIds[0], label: "Check", kind: "binary", value: binaryPass, rationale: "r" },
+    })),
   ];
+  const evaluationsById: Record<string, CandidateEvaluation> = {
+    [MK1]: {
+      candidateId: MK1,
+      blindLabel: "A",
+      overallScore: 1,
+      position: "p",
+      rationale: "r",
+      strengths: [],
+      deductions: [],
+      missedRequirements: [],
+      criterionScores,
+    },
+  };
   return {
     schemaVersion: 2,
     id: runId,
@@ -617,12 +628,12 @@ function makeHybridRun(
 
 describe("hybrid floored-task aggregation (rankValue authority)", () => {
   it("aggregates authoritative rankValue across tasks, not bounded rankScore", () => {
-    // Two tasks, single model.
-    // Task t1: graded 0.8, binary true → C=1 → rankValue=0.8 (floored, rankScore=1)
-    // Task t2: graded 1.2, binary false → C=0 → rankValue=1.2-1=0.2 (floored, rankScore=1)
-    const failCost = 1.0;
-    const run1 = makeHybridRun("r1", 0.8, true, failCost);
-    const run2 = makeHybridRun("r2", 1.2, false, failCost);
+    // Two tasks, single model. Q=1 (valid graded score 1), λ=1, 5 singleton
+    // binary groups → C = passCount/5, rankValue = passCount/5.
+    // Task t1: 4/5 pass → C=0.8 → rankValue=0.8 (floored, rankScore=1)
+    // Task t2: 1/5 pass → C=0.2 → rankValue=0.2 (floored, rankScore=1)
+    const run1 = makeFlooredHybridRun("r1", 4);
+    const run2 = makeFlooredHybridRun("r2", 1);
     const snapshot = makeSnapshot(["t1", "t2"]);
     const aggregation = aggregateExperiment({
       snapshot,
@@ -649,14 +660,17 @@ describe("hybrid floored mean vs bounded display (§16.2)", () => {
   function gradedRun(
     runId: string,
     aKey: string,
-    aScore: number,
+    aPassCount: number,
     bKey: string,
-    bScore: number,
+    bPassCount: number,
   ): RunRecordV2 {
+    // Valid hybrid profile: Q=1 (graded score 1), λ=1, 5 singleton binary
+    // groups. C = passCount/5, rankValue = 1 - 1*(1-C) = C = passCount/5.
+    const checkIds = ["b1", "b2", "b3", "b4", "b5"];
     const profile: EvaluationProfile = {
       id: "p-q",
       version: 1,
-      name: "Graded",
+      name: "Floored",
       description: "",
       judgeInstruction: "",
       criteria: [
@@ -668,21 +682,44 @@ describe("hybrid floored mean vs bounded display (§16.2)", () => {
           weight: 1,
           anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
         },
+        ...checkIds.map((id) => ({
+          id,
+          kind: "binary" as const,
+          name: `Check ${id}`,
+          description: "d",
+          trueWhen: "t",
+          falseWhen: "f",
+        })),
       ],
+      requirementGroups: checkIds.map((id, i) => ({
+        id: `g${i + 1}`,
+        name: `Group ${i + 1}`,
+        checkIds: [id],
+        weight: 1,
+        mode: "ALL" as const,
+      })),
+      complianceInfluence: 1.0,
       createdAt: 100,
       updatedAt: 100,
     };
-    const mk = (key: string, score: number): CandidateEvaluation => ({
+    const mk = (key: string, passCount: number): CandidateEvaluation => ({
       candidateId: key,
       blindLabel: "A",
-      overallScore: 5,
+      overallScore: 1,
       position: "p",
       rationale: "r",
       strengths: ["s"],
       deductions: [],
       missedRequirements: [],
       criterionScores: [
-        { criterionId: "quality", label: "Quality", kind: "graded", score, rationale: "r" },
+        { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
+        ...checkIds.map((id, i) => ({
+          criterionId: id,
+          label: `Check ${id}`,
+          kind: "binary" as const,
+          value: i < passCount,
+          rationale: "r",
+        })),
       ],
     });
     return {
@@ -725,7 +762,7 @@ describe("hybrid floored mean vs bounded display (§16.2)", () => {
         acceptedAttemptId: "j",
         report: {
           labelMap: [],
-          evaluationsById: { [aKey]: mk(aKey, aScore), [bKey]: mk(bKey, bScore) },
+          evaluationsById: { [aKey]: mk(aKey, aPassCount), [bKey]: mk(bKey, bPassCount) },
           comparisons: [],
         },
         consensus: null,
@@ -737,15 +774,16 @@ describe("hybrid floored mean vs bounded display (§16.2)", () => {
   }
 
   it("orders by raw aggregate mean, not the bounded display value", () => {
-    // Two complete-coverage models across two tasks; MK1 always ranks 0.8,
-    // MK2 always ranks 0.2. Both floored (rankValue < 1).
+    // Two complete-coverage models across two tasks; MK1 always passes 4/5
+    // binary groups (C=0.8, rankValue=0.8), MK2 always passes 1/5
+    // (C=0.2, rankValue=0.2). Both floored (rankValue < 1).
     const agg = aggregateExperiment({
       snapshot: makeSnapshot(["ta", "tb"]),
       taskStates: [
         makeTaskState("ta", [{ id: "a1", runId: "r1", status: "completed" }], "a1"),
         makeTaskState("tb", [{ id: "a1", runId: "r2", status: "completed" }], "a1"),
       ],
-      resolveRunRecord: (rid) => gradedRun(rid, MK1, 0.8, MK2, 0.2),
+      resolveRunRecord: (rid) => gradedRun(rid, MK1, 4, MK2, 1),
     });
     const a = agg.models.find((m) => m.modelKey === MK1)!;
     const b = agg.models.find((m) => m.modelKey === MK2)!;

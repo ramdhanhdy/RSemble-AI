@@ -907,7 +907,8 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
   });
 
   it("floored candidate: floor marker and raw rankValue shown", () => {
-    // Q = 0.5, C = 0 (group fails), λ = 1 → rv = 0.5 - 1*(1-0) = -0.5 < 1 → floored.
+    // Q = 1 (valid graded score 1), C = 0 (group fails), λ = 1
+    // → rv = 1 - 1*(1-0) = 0 < 1 → floored.
     const profile: EvaluationProfile = {
       ...mixedProfile,
       complianceInfluence: 1.0,
@@ -915,17 +916,17 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
     const record = makeHybridRun(
       profile,
       [
-        { criterionId: "quality", label: "Quality", kind: "graded", score: 0.5, rationale: "r" },
+        { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
         { criterionId: "check-a", label: "Check A", kind: "binary", value: false, rationale: "r" },
         { criterionId: "check-b", label: "Check B", kind: "binary", value: false, rationale: "r" },
       ],
-      0.5,
+      1,
     );
     const md = buildRunExportMarkdown(record);
     expect(md).toContain("(floored)");
     expect(md).toContain("Floor applied");
     expect(md).toContain("raw rankValue");
-    // rankScore = max(1, -0.5) = 1.0, with floor marker.
+    // rankScore = max(1, 0) = 1.0, with floor marker.
     expect(md).toContain("1.0*");
   });
 
