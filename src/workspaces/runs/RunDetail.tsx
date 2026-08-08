@@ -16,7 +16,11 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
-import { rankValueFromResults, rankScoreOf, isFloored } from "../../lib/evaluations/evaluation-profile";
+import {
+  rankValueFromResults,
+  rankScoreOf,
+  isFloored,
+} from "../../lib/evaluations/evaluation-profile";
 import { inputUsageLabel } from "../../lib/cost";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
