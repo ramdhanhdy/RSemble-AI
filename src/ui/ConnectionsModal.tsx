@@ -251,7 +251,12 @@ export function ConnectionsModal({
     const ctrl = new AbortController();
     const timeout = window.setTimeout(() => ctrl.abort(), TEST_CONNECTION_TIMEOUT_MS);
     try {
-      const result = await provider.testConnection(keys[providerId], ctrl.signal);
+      // Test the typed draft when present; otherwise fall back to the stored
+      // credential (env / session / remembered) so a provider that reports
+      // "live" through its stored key can actually be verified without
+      // re-typing the key.
+      const candidate = keys[providerId].trim() || (credentialStore.get(providerId) ?? "");
+      const result = await provider.testConnection(candidate, ctrl.signal);
       setTestResults((prev) => ({ ...prev, [providerId]: result }));
       if (result.ok) setSavedMessage(`${label} connection verified. Save the key to use it.`);
     } catch (err) {
