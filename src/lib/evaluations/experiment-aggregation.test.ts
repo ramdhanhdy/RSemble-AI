@@ -17,6 +17,7 @@ import {
   formatAggregateMean,
   boundedAggregateMean,
 } from "./experiment-aggregation";
+import { deriveDisplayRanking } from "./experiment-ranking";
 import type {
   EvaluationCriterion,
   EvaluationProfile,
@@ -756,6 +757,7 @@ describe("hybrid floored mean vs bounded display (§16.2)", () => {
     expect(boundedAggregateMean(b.mean!)).toBe(1);
     expect(agg.winnerKeys).toEqual([MK1]);
     // deriveDisplayRanking orders MK1 first (raw mean), then MK2.
-    expect(() => undefined).not.toThrow();
+    const ranking = deriveDisplayRanking(agg.models, new Map());
+    expect(ranking.eligible.map((m) => m.modelKey)).toEqual([MK1, MK2]);
   });
 });

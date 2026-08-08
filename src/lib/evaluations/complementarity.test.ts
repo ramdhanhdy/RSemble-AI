@@ -21,6 +21,9 @@ import {
   probePoolAdequacy,
   taskOverall,
   type PairedTaskScores,
+  computeBinaryPassRateImbalance,
+  computeBinaryOracleHeadroom,
+  MIN_BINARY_SAMPLES,
 } from "./complementarity";
 
 const EQUAL_WEIGHTS = new Map([
@@ -435,7 +438,6 @@ describe("modelTaskScoreFromReport — binary criteria excluded from numeric vec
 
 // --- §17 group-level binary oracle (spec acceptance criterion 21) -------------
 
-import { computeBinaryPassRateImbalance, computeBinaryOracleHeadroom } from "./complementarity";
 import type { EvaluationProfileSnapshot } from "./evaluation-types";
 
 describe("group-level binary oracle (spec §17/§21)", () => {
@@ -625,6 +627,26 @@ describe("binary pass-rate imbalance (spec §17)", () => {
     const result = computeBinaryPassRateImbalance(tasks);
     expect(result).toEqual([]);
   });
+
+  it("minimum-sample gate excludes checks below threshold (spec §17)", () => {
+    // 2 tasks - below MIN_BINARY_SAMPLES (3). Check should be gated out.
+    const tasks: PairedTaskScores[] = [
+      {
+        taskId: "t0",
+        a: { overall: null, criteria: [], binaryResults: { "check-a": true } },
+        b: { overall: null, criteria: [], binaryResults: { "check-a": true } },
+      },
+      {
+        taskId: "t1",
+        a: { overall: null, criteria: [], binaryResults: { "check-a": false } },
+        b: { overall: null, criteria: [], binaryResults: { "check-a": false } },
+      },
+    ];
+    const result = computeBinaryPassRateImbalance(tasks);
+    // samples=2 < MIN_BINARY_SAMPLES(3) -> gated out
+    expect(result).toHaveLength(0);
+    expect(MIN_BINARY_SAMPLES).toBe(3);
+  });
 });
 
 describe("computeHeadroom with binary channel", () => {
@@ -660,26 +682,25 @@ describe("computeHeadroom with binary channel", () => {
   const weights = new Map([["quality", 1]]);
 
   it("populates binaryPerCriterion and binaryOracleHeadroom when profile has groups", () => {
-    const tasks: PairedTaskScores[] = [
-      {
-        taskId: "t0",
-        a: {
-          overall: null,
-          criteria: [{ criterionId: "quality", score: 4 }],
-          binaryResults: { "check-a": true },
-        },
-        b: {
-          overall: null,
-          criteria: [{ criterionId: "quality", score: 3 }],
-          binaryResults: { "check-a": false },
-        },
+    // 3 tasks (meets MIN_BINARY_SAMPLES); A always passes check-a, B never does.
+    const mk = (ta: boolean, tb: boolean): PairedTaskScores => ({
+      taskId: `t-${ta}-${tb}`,
+      a: {
+        overall: null,
+        criteria: [{ criterionId: "quality", score: 4 }],
+        binaryResults: { "check-a": ta },
       },
-    ];
+      b: {
+        overall: null,
+        criteria: [{ criterionId: "quality", score: 3 }],
+        binaryResults: { "check-a": tb },
+      },
+    });
+    const tasks = [mk(true, false), mk(true, false), mk(true, false)];
     const m = computeHeadroom(tasks, weights, profile);
     expect(m.binaryPerCriterion).toHaveLength(1);
     expect(m.binaryPerCriterion[0].checkId).toBe("check-a");
-    // Both pass: pass rate = 1 → imbalance = 0. Wait: A passes, B fails → not both-pass.
-    // Pass is counted only when BOTH models pass: 0/1 → imbalance = 1.
+    // Both-pass: 0/3 → imbalance = 1.
     expect(m.binaryPerCriterion[0].passRateImbalance).toBe(1);
     // Group g1: A passes, B fails → oracle = satisfied (via A), best = satisfied (A).
     // Surplus = 0.
@@ -687,21 +708,20 @@ describe("computeHeadroom with binary channel", () => {
   });
 
   it("binaryOracleHeadroom is null without profile", () => {
-    const tasks: PairedTaskScores[] = [
-      {
-        taskId: "t0",
-        a: {
-          overall: null,
-          criteria: [{ criterionId: "quality", score: 4 }],
-          binaryResults: { "check-a": true },
-        },
-        b: {
-          overall: null,
-          criteria: [{ criterionId: "quality", score: 3 }],
-          binaryResults: { "check-a": false },
-        },
+    const mk = (ta: boolean, tb: boolean): PairedTaskScores => ({
+      taskId: `t-${ta}-${tb}`,
+      a: {
+        overall: null,
+        criteria: [{ criterionId: "quality", score: 4 }],
+        binaryResults: { "check-a": ta },
       },
-    ];
+      b: {
+        overall: null,
+        criteria: [{ criterionId: "quality", score: 3 }],
+        binaryResults: { "check-a": tb },
+      },
+    });
+    const tasks = [mk(true, false), mk(true, false), mk(true, false)];
     const m = computeHeadroom(tasks, weights);
     expect(m.binaryOracleHeadroom).toBeNull();
     // binaryPerCriterion is always computed (no profile needed).

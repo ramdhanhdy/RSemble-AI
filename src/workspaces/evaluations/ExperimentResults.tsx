@@ -687,6 +687,9 @@ export function ExperimentResults({
                     </span>
                     <span className="text-xs text-text-secondary">
                       mean · {model.scoredTasks}/{model.totalTasks} tasks
+                      {(model.flooredTaskCount ?? 0) > 0
+                        ? ` · ${model.flooredTaskCount} floored`
+                        : ""}
                     </span>
                   </>
                 ) : (

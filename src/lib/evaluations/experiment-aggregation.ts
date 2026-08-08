@@ -17,7 +17,11 @@
 //    is never spliced across retries.
 // =============================================================================
 
-import type { ExperimentSnapshot, ExperimentTaskState } from "./evaluation-types";
+import type {
+  EvaluationProfileSnapshot,
+  ExperimentSnapshot,
+  ExperimentTaskState,
+} from "./evaluation-types";
 import type { RunRecordV2 } from "../persistence/run-types";
 import {
   computeWinnerKeys,
@@ -26,7 +30,6 @@ import {
   rankValueOf,
   getComplianceInfluence,
 } from "./evaluation-profile";
-import type { EvaluationProfileSnapshot } from "./evaluation-types";
 
 // --- Canonical per-model scores from one accepted run ---------------------------
 

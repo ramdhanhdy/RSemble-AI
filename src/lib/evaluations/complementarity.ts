@@ -24,13 +24,12 @@
 // =============================================================================
 
 import type { JudgeReport } from "../../studio-data";
-import type { TaskVerification } from "./evaluation-types";
+import type { EvaluationProfileSnapshot, TaskVerification } from "./evaluation-types";
 import type {
   BinaryCriterionHeadroom,
   CriterionHeadroom,
   VerifierOutcome,
 } from "./fusion-study-types";
-import type { EvaluationProfileSnapshot } from "./evaluation-types";
 
 // --- Inputs ---------------------------------------------------------------------
 
@@ -475,8 +474,14 @@ export function assessChallengerOutcome(
 
 // --- Binary channel (spec §17): pass-rate imbalance + group-level oracle ------
 
+/** Minimum paired-task samples required for a pass-rate imbalance to be
+ *  actionable (spec §17: "with a minimum sample gate"). Checks with fewer
+ *  paired samples are excluded — their imbalance is not statistically reliable. */
+export const MIN_BINARY_SAMPLES = 3;
+
 /** Pass-rate imbalance per binary check: 1 - b_k over paired tasks where both
- *  models carry the check. Labeled as imbalance — never a 4-point quality gap. */
+ *  models carry the check. Labeled as imbalance — never a 4-point quality gap.
+ *  Checks below MIN_BINARY_SAMPLES are gated out (spec §17). */
 export function computeBinaryPassRateImbalance(
   tasks: PairedTaskScores[],
 ): BinaryCriterionHeadroom[] {
@@ -493,7 +498,7 @@ export function computeBinaryPassRateImbalance(
   }
   const result: BinaryCriterionHeadroom[] = [];
   for (const [checkId, e] of byCheck) {
-    if (e.samples === 0) continue;
+    if (e.samples < MIN_BINARY_SAMPLES) continue; // minimum sample gate (§17)
     result.push({
       checkId,
       label: e.label,
@@ -521,7 +526,15 @@ function modelGroupSatisfied(
  *  A group is oracle-satisfied if EITHER model's group passes; complementary
  *  failures inside a group (each model fails a different subcheck) therefore
  *  cannot fabricate headroom. Returns mean over tasks of the group-level
- *  oracle surplus; null when the profile has no requirement groups. */
+ *  oracle surplus; null when the profile has no requirement groups.
+ *
+ *  Design note: the oracle surplus counts groups equally (unweighted). The
+ *  spec §17 oracle bullet is count-based ("a group is satisfied if either
+ *  model's group passes"), not weight-normalized. The weighted compliance C
+ *  (spec §9.2) is a separate quantity computed by complianceScore, not the
+ *  oracle headroom. Group weights v_g are consumed by the rankValue contract
+ *  via complianceScore; the oracle measures complementary binary opportunity
+ *  at the group level. */
 export function computeBinaryOracleHeadroom(
   tasks: PairedTaskScores[],
   profile: EvaluationProfileSnapshot,
