@@ -304,8 +304,17 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
         })}
       </div>
       <p className="mt-1 font-mono text-sm text-text-muted">
-        bars scaled to 5.0 · top score this run: {top.toFixed(1)}
+        bars scaled to 5.0 · top score this run: {formatRankScoreDisplay(top)}
       </p>
+      {ranked.some((c) => c.weightedScore != null && c.weightedScore < 1) && (
+        <p className="mt-1 font-mono text-[11px] text-text-muted">
+          * bounded at the 1.0 display floor — ordering uses the raw rank value:{" "}
+          {ranked
+            .filter((c) => c.weightedScore != null && c.weightedScore < 1)
+            .map((c) => `${c.model}: ${c.weightedScore.toFixed(2)}`)
+            .join(" · ")}
+        </p>
+      )}
     </div>
   );
 }
