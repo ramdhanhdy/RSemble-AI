@@ -503,7 +503,7 @@ function CandidatesSection({
                 tabIndex={-1}
                 onClick={() => setSelectedId(c.candidateId)}
                 aria-pressed={isSelected}
-                className={`flex min-h-[44px] w-full items-center gap-2 rounded-md border bg-panel px-3 py-2 text-left text-sm transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                className={`flex min-h-[44px] w-full flex-wrap items-center gap-2 rounded-md border bg-panel px-3 py-2 text-left text-sm transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                   isSelected
                     ? "border-accent/60 bg-raised ring-1 ring-inset ring-accent/30 hover:border-accent/60"
                     : "border-edge hover:border-edge-bright"

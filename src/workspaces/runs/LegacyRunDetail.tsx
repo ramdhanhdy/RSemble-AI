@@ -17,7 +17,7 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
     <div data-run-detail="" className="flex flex-1 flex-col gap-4 p-4 text-sm">
       <header data-section="header" className="flex flex-col gap-1">
         <h2 className="text-base font-semibold text-text">{summary.taskExcerpt}</h2>
-        <div className="flex items-center gap-3 text-text-muted">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-text-muted">
           <span className="rounded-md border border-edge px-2 py-0.5 text-xs uppercase">
             Legacy summary
           </span>
