@@ -421,4 +421,28 @@ describe("isEvaluationProfile — hybrid guard regressions", () => {
       ),
     ).toBe(false);
   });
+
+  it("rejects binary criteria when requirementGroups is undefined (CodeRabbit 4890236254)", () => {
+    // Spec §19: every binary check belongs to exactly one ALL-mode group.
+    // A profile with binary checks but no requirementGroups field must be
+    // rejected by the runtime guard, not silently accepted by skipping
+    // membership validation.
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [binaryCheck("b1"), binaryCheck("b2")],
+          requirementGroups: undefined,
+        }),
+      ),
+    ).toBe(false);
+    // Graded-only profiles legitimately omit requirementGroups.
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [gradedCriterion("g1")],
+          requirementGroups: undefined,
+        }),
+      ),
+    ).toBe(true);
+  });
 });

@@ -220,4 +220,24 @@ describe("deriveDisplayRanking — spec §16.1 tie-break key", () => {
     const result = deriveDisplayRanking([c, a, b], order("a", "b", "c"));
     expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b", "c"]);
   });
+
+  it("provisional leader compares against the max raw eligible mean (CodeRabbit 4890236254)", () => {
+    // Regression: eligible[0] is the bucket leader (id tie-break may pick the
+    // LOWER raw mean 4.0 over 4.0+0.9ε). A provisional mean of 4.0+1.5ε is only
+    // 0.6ε above the true best eligible mean (4.0+0.9ε), so it must NOT qualify
+    // as provisional leader — the check must use the max raw mean, not
+    // eligible[0].mean.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 0.9e-9, true, 1, { q: 4.0 + 0.9e-9, c: 0.9 });
+    const p = model("p", 4.0 + 1.5e-9, false, 2, { q: 4.0 + 1.5e-9, c: 0.9 });
+    const result = deriveDisplayRanking([a, b, p], order("a", "b", "p"));
+    // Both eligible models are epsilon-equal; id asc picks a first, but the
+    // provisional mean must be compared to 4.0+0.9e-9 (max raw mean).
+    expect(result.provisionalLeader).toBeNull();
+    // Sanity: a provisional mean more than ε above the max eligible raw mean
+    // still qualifies.
+    const p2 = model("p2", 4.0 + 2.5e-9, false, 3, { q: 4.0 + 2.5e-9, c: 0.9 });
+    const result2 = deriveDisplayRanking([a, b, p2], order("a", "b", "p2"));
+    expect(result2.provisionalLeader?.modelKey).toBe("p2");
+  });
 });

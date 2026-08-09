@@ -501,7 +501,12 @@ export function isEvaluationProfile(v: unknown): v is EvaluationProfile {
     if (!hasPositiveGraded && !hasGroups) return false;
   }
 
-  // Validate requirement groups if present.
+  // Validate requirement groups if present. A profile carrying binary checks
+  // but NO requirementGroups field is invalid (spec §19: every binary check
+  // belongs to exactly one ALL-mode group) — validation must not be skipped
+  // just because the field is undefined (CodeRabbit 4890236254).
+  const hasBinaryCriteria = v.criteria.some((c) => c.kind === "binary");
+  if (v.requirementGroups === undefined && hasBinaryCriteria) return false;
   if (v.requirementGroups !== undefined) {
     if (!Array.isArray(v.requirementGroups) || !v.requirementGroups.every(isRequirementGroup)) {
       return false;

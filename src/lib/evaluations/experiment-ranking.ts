@@ -59,7 +59,15 @@ export function deriveDisplayRanking(
     .filter((m) => !m.complete)
     .sort((a, b) => compareByMeanThenOrder(a, b, buckets));
 
-  const bestEligibleMean = eligible.length > 0 ? eligible[0].mean : null;
+  // The best eligible mean is the MAXIMUM raw mean, not eligible[0].mean:
+  // eligible[0] is selected by epsilon bucket + candidate_id tie-break, so it
+  // is not necessarily the raw-mean leader. Using the bucket leader here would
+  // let a provisional model qualify by clearing epsilon above a lower bucket
+  // representative (CodeRabbit 4890236254).
+  const bestEligibleMean = eligible.reduce<number | null>(
+    (best, m) => (m.mean !== null && (best === null || m.mean > best) ? m.mean : best),
+    null,
+  );
   const provisionalLeader =
     provisional.length > 0
       ? provisional[0].mean !== null &&

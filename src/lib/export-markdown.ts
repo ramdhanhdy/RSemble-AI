@@ -145,7 +145,9 @@ export function buildExportMarkdown(s: StudioState): string | null {
               ? `- ${mdSafe(cs.label)}: ${
                   cs.value === undefined ? "UNKNOWN" : cs.value ? "PASS" : "FAIL"
                 } — ${mdSafe(cs.rationale)}`
-              : `- ${mdSafe(cs.label)}: ${cs.score?.toFixed(1) ?? "N/A"}/5 — ${mdSafe(cs.rationale)}`,
+              : `- ${mdSafe(cs.label)}: ${
+                  cs.score === undefined ? "N/A" : `${cs.score.toFixed(1)}/5`
+                } — ${mdSafe(cs.rationale)}`,
           ),
           ``,
         );

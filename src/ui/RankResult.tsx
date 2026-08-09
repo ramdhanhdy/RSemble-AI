@@ -245,7 +245,12 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
       <div className="overflow-hidden rounded-lg border border-edge divide-y divide-edge">
         {ranked.map((c, i) => {
           const t = tier(c.weightedScore);
-          const widthPct = Math.max(8, (c.weightedScore / 5) * 100);
+          // Compliance-domain values (spec §16.3) are C in [0,1] and must scale
+          // against 1.0 (100%), not the 1–5 rank scale (CodeRabbit 4890236254).
+          const widthPct =
+            c.scoreDomain === "compliance"
+              ? Math.max(8, (c.weightedScore / 1) * 100)
+              : Math.max(8, (c.weightedScore / 5) * 100);
           const isWinner = i === 0;
           const scores = c.scores ?? {};
           const hasMicro = allCriteria.length > 0;
@@ -304,7 +309,9 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
         })}
       </div>
       <p className="mt-1 font-mono text-sm text-text-muted">
-        bars scaled to 5.0 · top score this run:{" "}
+        {ranked[0]?.scoreDomain === "compliance"
+          ? "bars scaled to 100% compliance · top score this run: "
+          : "bars scaled to 5.0 · top score this run: "}
         {formatCandidateScoreDisplay(top, ranked[0]?.scoreDomain)}
       </p>
       {ranked.some(
