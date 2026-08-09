@@ -300,18 +300,28 @@ truncation (out of Runs-UI scope, see O1).
 ## Behavioral Success Criteria
 
 After implementation, these must NOT regress:
-- [ ] Compare execution (Rank, Fuse, candidate retries, Judge retry)
-- [ ] Run persistence
-- [ ] Run search/filtering (all 5 filters)
-- [ ] Pagination (load more)
-- [ ] Runs deep links (`/runs/:runId`)
-- [ ] Candidate deep links (`?candidate=`)
-- [ ] Judge-attempt deep links (`?attempt=`)
-- [ ] Experiment provenance
-- [ ] Evaluation evidence links
-- [ ] Legacy run handling
-- [ ] Accessibility/focus
-- [ ] Responsive navigation (desktop split, mobile route-based)
+- [x] Compare execution (Rank, Fuse, candidate retries, Judge retry)
+- [x] Run persistence
+- [x] Run search/filtering (all 5 filters)
+- [x] Pagination (load more)
+- [x] Runs deep links (`/runs/:runId`)
+- [x] Candidate deep links (`?candidate=`)
+- [x] Judge-attempt deep links (`?attempt=`)
+- [x] Experiment provenance
+- [x] Evaluation evidence links
+- [x] Legacy run handling
+- [x] Accessibility/focus
+- [x] Responsive navigation (desktop split, mobile route-based)
+
+Verification evidence (2026-08-09, final behavioral regression gate on
+feat/runs-fairness-baseline): `npm run check` PASS - 149 test files /
+2324 tests, eslint, typecheck web + server, production build. Live CDP
+suites with zero console errors: accessibility 15/15
+(docs/qa/runs-accessibility), edge 32/32 (docs/qa/runs-edge), responsive
+18/18 (docs/qa/runs-responsive), visual parity 18/18
+(docs/qa/runs-visual-parity). Gate debt closed: prettier format of
+scripts/cdp-runs-visual-parity.mjs (commit 379ba7f); untracked debug
+scratch scripts/_debug-lease.mjs removed.
 
 ---
 
