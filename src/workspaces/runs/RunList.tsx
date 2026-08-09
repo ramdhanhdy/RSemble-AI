@@ -20,6 +20,28 @@ import { RunFilters, EMPTY_FILTERS, type RunFiltersValue } from "./RunFilters";
 const DEBOUNCE_MS = 200;
 const PAGE_SIZE = 50;
 
+/** Per-source tint classes for the identity chip (transplant map §D3).
+ *  Matches the prototype's source-label treatment: ad hoc = accent cyan,
+ *  experiment = warning amber, legacy = muted gray. Rendered via RecordRow's
+ *  `kind` slot so RecordRow's shared signature and other consumers are
+ *  untouched. Slice 2. */
+const SOURCE_CHIP_CLASSES: Record<string, string> = {
+  "ad hoc": "bg-accent/10 text-accent",
+  experiment: "bg-warning/10 text-warning",
+  legacy: "bg-white/[0.06] text-text-muted",
+};
+
+function SourceChip({ label }: { label: string }) {
+  const cls = SOURCE_CHIP_CLASSES[label] ?? "bg-white/[0.06] text-text-muted";
+  return (
+    <span
+      className={`shrink-0 rounded-sm px-1.5 py-px font-mono text-[10px] font-semibold uppercase leading-4 tracking-[0.05em] ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 export function RunList({
   repo,
   selectedId,
@@ -117,13 +139,24 @@ export function RunList({
         <p className="py-4 text-center text-sm text-text-muted">No matching runs.</p>
       )}
 
-      <ul className="flex flex-col gap-1.5" role="list">
+      <ul className="flex flex-col" role="list">
         {visible.map((summary) => {
           const vm = formatRunRow(summary);
           const isSelected = vm.id === selectedId;
           return (
             <li key={vm.id}>
-              <div data-selected={isSelected}>
+              {/* Runs-scoped selected treatment: prototype's raised bg + 2px
+                  left accent (Slice 2 / §D1). RecordRow inside is unchanged;
+                  the accent sits on the wrapper via box-shadow so it does not
+                  disturb RecordRow's own border/box geometry. */}
+              <div
+                data-selected={isSelected}
+                className={`px-2 py-0.5 ${
+                  isSelected
+                    ? "bg-raised shadow-[inset_2px_0_0_0_#00e5ff]"
+                    : ""
+                }`}
+              >
                 <RecordRow
                   variant="list"
                   id={vm.id}
@@ -131,6 +164,7 @@ export function RunList({
                   status={vm.status ?? "completed"}
                   timestamp={vm.timestampMs}
                   modelCount={vm.modelCount}
+                  kind={<SourceChip label={vm.sourceLabel} />}
                   summary={
                     [
                       vm.winnerKeys.length > 0 ? `Winner: ${vm.winnerKeys.join(", ")}` : null,
@@ -141,7 +175,6 @@ export function RunList({
                       .filter(Boolean)
                       .join(" · ") || undefined
                   }
-                  source={vm.sourceLabel}
                   href={`/runs/${vm.id}`}
                 >
                   {isSelected && <span className="sr-only">Selected</span>}
