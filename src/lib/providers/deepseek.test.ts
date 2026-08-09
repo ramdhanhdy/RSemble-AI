@@ -32,6 +32,7 @@ describe("DeepSeek provider registration", () => {
 describe("DeepSeek browser-direct adapter", () => {
   it("posts chat completions to api.deepseek.com with a Bearer key — no bridge", async () => {
     stubLocalStorage("test-key");
+    vi.stubEnv("VITE_DEEPSEEK_KEY", "");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
         status: 200,

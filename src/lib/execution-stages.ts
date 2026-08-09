@@ -477,10 +477,19 @@ export async function runJudge(
       usage = detailed.usage;
       cost = detailed.cost;
     } else {
+      // Non-streaming calls (judge/fusion) get no headers until the server
+      // finishes generating. The 30s connect budget covers the entire
+      // generation — too short for long fusion prompts. Use a longer
+      // connect budget for these stages.
+      const judgeDeadlineOpts = {
+        ...judgeOpts,
+        connectMs: Math.max(judgeOpts.connectMs ?? 30_000, 120_000),
+      };
       content = provider.executionDeadlines
-        ? await provider.chatCompletion(judgeOpts)
+        ? await provider.chatCompletion(judgeDeadlineOpts)
         : await runWithExecutionDeadlines(
-            (deadlineSignal) => provider.chatCompletion({ ...judgeOpts, signal: deadlineSignal }),
+            (deadlineSignal) =>
+              provider.chatCompletion({ ...judgeDeadlineOpts, signal: deadlineSignal }),
             operationOptions,
           );
     }
@@ -732,10 +741,19 @@ export async function runFusion(
       usage = detailed.usage;
       cost = detailed.cost;
     } else {
+      // Non-streaming calls (judge/fusion) get no headers until the server
+      // finishes generating. The 30s connect budget covers the entire
+      // generation — too short for long fusion prompts. Use a longer
+      // connect budget for these stages.
+      const fusionDeadlineOpts = {
+        ...fusionOpts,
+        connectMs: Math.max(fusionOpts.connectMs ?? 30_000, 120_000),
+      };
       content = provider.executionDeadlines
-        ? await provider.chatCompletion(fusionOpts)
+        ? await provider.chatCompletion(fusionDeadlineOpts)
         : await runWithExecutionDeadlines(
-            (deadlineSignal) => provider.chatCompletion({ ...fusionOpts, signal: deadlineSignal }),
+            (deadlineSignal) =>
+              provider.chatCompletion({ ...fusionDeadlineOpts, signal: deadlineSignal }),
             operationOptions,
           );
     }
