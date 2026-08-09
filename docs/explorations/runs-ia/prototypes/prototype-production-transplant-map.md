@@ -282,15 +282,20 @@ The following prototype features from `first-class-runs.html` are **IA-specific*
 ## Visual Success Criteria
 
 After implementation, the Runs workspace should feel:
-- [ ] Less "cards floating inside cards"
-- [ ] Clearer pane hierarchy (border-driven, not gap-driven)
-- [ ] Denser but still readable run scanning
-- [ ] Source and status understood at a glance
-- [ ] Stronger selected-record state (left-edge accent)
-- [ ] Cleaner detail header with deliberate metadata hierarchy
-- [ ] More polished spacing rhythm in detail
-- [ ] Stronger continuity between list and detail
-- [ ] Cyan accent used selectively, not everywhere
+- [x] Less "cards floating inside cards" (verified 2026-08-09, final visual parity review)
+- [x] Clearer pane hierarchy (border-driven, not gap-driven) (verified 2026-08-09)
+- [x] Denser but still readable run scanning (verified 2026-08-09)
+- [x] Source and status understood at a glance (verified 2026-08-09)
+- [x] Stronger selected-record state (left-edge accent) (verified 2026-08-09)
+- [x] Cleaner detail header with deliberate metadata hierarchy (verified 2026-08-09)
+- [x] More polished spacing rhythm in detail (verified 2026-08-09)
+- [x] Stronger continuity between list and detail (verified 2026-08-09)
+- [x] Cyan accent used selectively, not everywhere (verified 2026-08-09)
+
+Verification evidence: docs/qa/runs-visual-parity/REPORT.md (18/18 numeric
+probes, screenshots, vision pass). Residuals: per-row RecordRow card outline
+(deliberate shared-component scope, see O2 in report); tab-lease banner
+truncation (out of Runs-UI scope, see O1).
 
 ## Behavioral Success Criteria
 
