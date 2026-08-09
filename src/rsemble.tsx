@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { RotateCcw } from "lucide-react";
+import { FileText, RotateCcw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
@@ -46,6 +46,7 @@ import { evaluateComparePreflight } from "./lib/compare-preflight";
 import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
+import type { RunConfigPreload } from "./lib/runs/run-config-preload";
 import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts";
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
@@ -56,6 +57,16 @@ import {
 } from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 import { CloseIcon, SplitDivider, FocusStrip, PaneLabel, NoKeyBanner } from "./ui/CompareShell";
+
+// Compare → View record gate (Slice 5). The link is shown only when a
+// recorder-backed persisted record exists for the last run (never for
+// in-memory-only runs) and no run is in flight. Pure and exported for tests.
+export function canViewCompareRecord(
+  state: Pick<StudioState, "running" | "runId">,
+  recorderAvailable: boolean,
+): boolean {
+  return recorderAvailable && state.runId !== null && !state.running;
+}
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -104,6 +115,11 @@ export default function RSemble() {
     max,
   } = useResizableSplit();
   const [focusMode, setFocusMode] = useState(false);
+  // Slice 5 (Open in Compare): id of the run whose frozen config was last
+  // loaded into the command pane. Drives the "config loaded" notice on the
+  // Compare toolbar; cleared automatically when a new run starts (runId
+  // changes) or the session resets (runId → null).
+  const [preloadRunId, setPreloadRunId] = useState<string | null>(null);
 
   // Focus mode only applies to the horizontal lg split. At md (stacked) and
   // mobile (drawer) the command pane is already compact, so collapsing to a
@@ -381,6 +397,24 @@ export default function RSemble() {
   }, [handleModeChange]);
 
   // ---------------------------------------------------------------------------
+  // Run Detail → Open in Compare (Slice 5)
+  // ---------------------------------------------------------------------------
+  // Honest S-class preload: dispatch the record's frozen command-pane config
+  // (never results, never the record itself), record which run it came from for
+  // the toolbar notice, then navigate to Compare. The user reviews the loaded
+  // inputs and explicitly starts a NEW run — no lineage is fabricated.
+  const handleOpenInCompare = useCallback(
+    (runId: string, config: RunConfigPreload) => {
+      dispatch({ type: "LOAD_RUN_CONFIG", config });
+      setPreloadRunId(runId);
+      // Navigation return is intentionally ignored — the dispatch above is the
+      // source of truth and the route change is fire-and-forget.
+      void navigate("/compare");
+    },
+    [dispatch, navigate],
+  );
+
+  // ---------------------------------------------------------------------------
   // Action shortcuts (extracted)
   // ---------------------------------------------------------------------------
   useActionShortcuts({
@@ -474,11 +508,38 @@ export default function RSemble() {
                     <div className="flex min-h-0 flex-1 flex-col">
                       <div
                         data-compare-toolbar=""
-                        className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
+                        className="flex min-h-[52px] shrink-0 items-center justify-between gap-3 border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
                       >
-                        <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
-                          Finish
-                        </span>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                            Finish
+                          </span>
+                          {/* Compare → View record (Slice 5): links the
+                            persisted run of the last finished Compare run into
+                            the Runs workspace. Only when a recorder-backed
+                            record exists (never for in-memory-only runs) and
+                            the run is not in flight. */}
+                          {canViewCompareRecord(state, recorder !== null) && (
+                            <button
+                              type="button"
+                              data-action="view-record"
+                              onClick={() => state.runId && navigate(`/runs/${state.runId}`)}
+                              className="pressable flex min-h-[32px] items-center gap-1.5 rounded-md border border-edge px-2.5 text-xs text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+                            >
+                              <FileText size={13} aria-hidden="true" />
+                              View record
+                            </button>
+                          )}
+                          {preloadRunId !== null && state.runId === preloadRunId && (
+                            <span
+                              data-preload-notice=""
+                              className="hidden truncate text-xs text-text-muted sm:inline"
+                            >
+                              Config loaded from run {preloadRunId.slice(0, 12)}… — results not
+                              copied; run Compare to execute.
+                            </span>
+                          )}
+                        </div>
                         <ModeToggle
                           mode={state.mode}
                           onChange={handleModeChange}
@@ -546,6 +607,7 @@ export default function RSemble() {
                   }
                   models={state.models}
                   availableProviderIds={availableProviderIds}
+                  onOpenInCompare={handleOpenInCompare}
                 />
               </RouteErrorBoundary>
             </div>

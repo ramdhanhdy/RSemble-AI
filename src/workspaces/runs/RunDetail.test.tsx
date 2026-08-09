@@ -681,6 +681,16 @@ describe("LegacyRunDetail", () => {
     expect(link).toBeTruthy();
     cleanup(h);
   });
+
+  it("offers Copy link but never Open in Compare (no frozen config in v1)", () => {
+    const h = renderWithRouter(<LegacyRunDetail summary={makeLegacySummary()} />);
+    expect(h.$('[data-action="copy-link"]')).toBeTruthy();
+    // v1 summaries have no frozen config to preload — the action must not
+    // exist, not even as a disabled stub with fabricated data.
+    expect(h.$('[data-action="open-in-compare"]')).toBeNull();
+    expect(h.container.textContent).not.toContain("Open in Compare");
+    cleanup(h);
+  });
 });
 
 describe("RunDetail accessibility (Plan 006 workstream B)", () => {
@@ -715,6 +725,53 @@ describe("RunDetail accessibility (Plan 006 workstream B)", () => {
     expect(row).toBeTruthy();
     expect(row!.getAttribute("type")).toBe("button");
     expect(row!.getAttribute("aria-pressed")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("RunDetail contextual continuity (Slice 5)", () => {
+  it("header shows Open in Compare only when the handler is wired", () => {
+    const wired = renderWithRouter(
+      <RunDetail record={makeFullRecord()} onOpenInCompare={() => undefined} />,
+    );
+    expect(wired.$('[data-action="open-in-compare"]')).toBeTruthy();
+    cleanup(wired);
+
+    // Route-only renders (tests, non-shell embedding) get the honest
+    // degradation: no action button without a handler.
+    const plain = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    expect(plain.$('[data-action="open-in-compare"]')).toBeNull();
+    cleanup(plain);
+  });
+
+  it("Open in Compare passes the record id and its frozen config, never results", () => {
+    const onOpenInCompare = vi.fn();
+    const record = makeFullRecord();
+    const h = renderWithRouter(<RunDetail record={record} onOpenInCompare={onOpenInCompare} />);
+    const button = h.$('[data-action="open-in-compare"]')!;
+    act(() => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onOpenInCompare).toHaveBeenCalledTimes(1);
+    const [runId, config] = onOpenInCompare.mock.calls[0] as [string, { prompt: string }];
+    expect(runId).toBe(record.id);
+    // Frozen task restored from the record.
+    expect(config.prompt).toBe(record.task.prompt);
+    // The preload carries command-pane inputs only — never results: no
+    // candidate attempts, scores, winner keys, or judge report fields.
+    const serialized = JSON.stringify(config);
+    expect(serialized).not.toContain("winnerKeys");
+    expect(serialized).not.toContain("acceptedAttemptId");
+    expect(serialized).not.toContain("rationale");
+    cleanup(h);
+  });
+
+  it("header always offers Copy link for v2 records", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    const header = h.$("[data-section='header']")!;
+    const copy = header.querySelector('[data-action="copy-link"]');
+    expect(copy).toBeTruthy();
+    expect(copy?.textContent).toContain("Copy link");
     cleanup(h);
   });
 });

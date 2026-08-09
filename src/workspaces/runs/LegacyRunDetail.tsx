@@ -10,6 +10,7 @@ import { Link } from "react-router-dom";
 import { AlertCircle } from "lucide-react";
 import type { LegacyRunSummary } from "../../lib/persistence/run-types";
 import { formatRelativeTime } from "./run-view-model";
+import { CopyLinkButton } from "./CopyLinkButton";
 
 export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
   return (
@@ -23,6 +24,12 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
           <span className="tabular-nums">{new Date(summary.createdAt).toLocaleString()}</span>
           <span className="text-text-muted">·</span>
           <span>{formatRelativeTime(summary.createdAt)}</span>
+        </div>
+        {/* No "Open in Compare" for legacy runs: the v1 format has no frozen
+          config to preload. Copy link still works (the deep link resolves via
+          the legacy summary). */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <CopyLinkButton />
         </div>
       </header>
 

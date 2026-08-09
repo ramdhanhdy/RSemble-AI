@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import {
   rankValueFromResults,
@@ -29,11 +29,14 @@ import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import { formatRunDetail, formatRelativeTime, type DetailSection } from "./run-view-model";
 import { Markdown } from "../../ui/Markdown";
+import { runConfigFromRecord, type RunConfigPreload } from "../../lib/runs/run-config-preload";
+import { CopyLinkButton } from "./CopyLinkButton";
 
 export function RunDetail({
   record,
   focusCandidateId,
   focusJudgeAttemptId,
+  onOpenInCompare,
 }: {
   record: RunRecordV2 | null;
   /** Deep-linked immutable candidate id (`?candidate=`). When present and
@@ -42,6 +45,9 @@ export function RunDetail({
   /** Deep-linked judge attempt id (`?attempt=`). When present and valid, the
    *  matching judge attempt is highlighted and labeled. */
   focusJudgeAttemptId?: string | null;
+  /** Run Detail → Open in Compare (Slice 5). Optional; wired by the root
+   *  shell, omitted in route-only test renders. */
+  onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
 }) {
   const vm = formatRunDetail(record);
 
@@ -86,7 +92,14 @@ export function RunDetail({
         {vm.sections.map((section) => {
           switch (section.id) {
             case "header":
-              return <HeaderSection key="header" section={section} record={record} />;
+              return (
+                <HeaderSection
+                  key="header"
+                  section={section}
+                  record={record}
+                  onOpenInCompare={onOpenInCompare}
+                />
+              );
             case "timeline":
               return <TimelineSection key="timeline" record={record} />;
             case "provenance":
@@ -132,6 +145,7 @@ export function RunDetail({
 function HeaderSection({
   section,
   record,
+  onOpenInCompare,
 }: {
   section: {
     title?: string;
@@ -149,6 +163,7 @@ function HeaderSection({
     source?: string;
   };
   record: RunRecordV2;
+  onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
 }) {
   const startedAt = section.startedAt ?? record.createdAt;
   const hasCompletion = section.completedAt !== null && section.completedAt !== undefined;
@@ -212,6 +227,23 @@ function HeaderSection({
             <span>{section.timeZone}</span>
           </>
         ) : null}
+      </div>
+      {/* Contextual continuity actions (Slice 5): open the run's frozen
+        config in Compare (honest S-class preload — never copies results or
+        fabricates lineage) and copy the deep link. */}
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        {onOpenInCompare && (
+          <button
+            type="button"
+            data-action="open-in-compare"
+            onClick={() => onOpenInCompare(record.id, runConfigFromRecord(record))}
+            className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+          >
+            <ExternalLink size={14} aria-hidden="true" />
+            Open in Compare
+          </button>
+        )}
+        <CopyLinkButton />
       </div>
     </header>
   );

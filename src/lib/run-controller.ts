@@ -321,6 +321,10 @@ export function createRunController(deps: RunControllerDeps) {
         dispatch({
           type: "FANOUT_START",
           candidates: placeholders,
+          // Surface the persisted run id so the UI can link Compare → Runs
+          // record (Slice 5). This is the SAME id the recorder began above;
+          // retries and re-fuse reuse it via runIdRef without re-dispatching.
+          runId,
           context: {
             mode: context.mode ?? capturedMode,
             task: context.task

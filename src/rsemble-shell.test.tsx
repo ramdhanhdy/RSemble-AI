@@ -3,7 +3,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import RSemble from "./rsemble";
+import RSemble, { canViewCompareRecord } from "./rsemble";
 import { Header } from "./ui/Header";
 import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
 
@@ -263,6 +263,30 @@ describe("RSemble workspace shell", () => {
     // behavior is superseded — primary navigation is now approved scope.
     const h = await renderAtRoute(["/compare"]);
     expect(h.$('nav[aria-label="Primary"]')).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("Compare → View record gate (Slice 5 G1)", () => {
+  it("canViewCompareRecord requires recorder-backed persistence, a run id, and no in-flight run", () => {
+    // No recorder-backed storage → never linkable, even after a run.
+    expect(canViewCompareRecord({ running: false, runId: "run-1" }, false)).toBe(false);
+    expect(canViewCompareRecord({ running: true, runId: "run-1" }, false)).toBe(false);
+    expect(canViewCompareRecord({ running: false, runId: null }, false)).toBe(false);
+    // Recorder available but no run yet / run in flight → not linkable.
+    expect(canViewCompareRecord({ running: false, runId: null }, true)).toBe(false);
+    expect(canViewCompareRecord({ running: true, runId: "run-1" }, true)).toBe(false);
+    // The only linkable state: recorder-backed, finished run with a persisted id.
+    expect(canViewCompareRecord({ running: false, runId: "run-1" }, true)).toBe(true);
+  });
+
+  it("shell without storage renders no View record action on Compare", async () => {
+    // The shell test harness renders RSemble with no RepositoryProvider, so
+    // the recorder is unavailable — the honest degradation is NO view-record
+    // action, never a broken link.
+    const h = await renderAtRoute(["/compare"]);
+    expect(h.$('[data-action="view-record"]')).toBeNull();
+    expect(h.container.textContent).not.toContain("View record");
     cleanup(h);
   });
 });

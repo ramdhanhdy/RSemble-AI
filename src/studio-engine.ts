@@ -128,6 +128,11 @@ export interface StudioState {
    *  Enables Judge-only retry against the exact generation context the retained
    *  candidates answered. Null before the first run and after RESET_SESSION. */
   runContext: RunEvaluationContext | null;
+  /** Persisted id of the current/last Compare run, minted by the run
+   *  controller and surfaced at FANOUT_START (Slice 5, Compare → View record).
+   *  Retries and re-fuse reuse the same id; null before the first run and
+   *  after RESET_SESSION. */
+  runId: string | null;
   // --- background learning loop (RANK-mode only, optional surface) ---
   qualityRating: number;
   audit: AuditEntry[];
@@ -176,7 +181,7 @@ export type Action =
   | { type: "CLEAR_ATTACHMENTS" }
   | { type: "SET_ATTACHMENTS_TO_JUDGE"; value: boolean }
   // --- pipeline ---
-  | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext }
+  | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext; runId: string }
   | { type: "FANOUT_BLOCKED"; reason: string }
   | {
       type: "CANDIDATE_RESULT";
@@ -211,6 +216,26 @@ export type Action =
   | { type: "RESET_SESSION" }
   | { type: "ABORT_RUN" }
   | { type: "LEASE_LOST"; message: string }
+  // --- Compare config preload (Slice 5, Run Detail → Open in Compare) ---
+  // Loads a run record's frozen configuration into the command pane WITHOUT
+  // touching current results, running state, or the record itself (S-class:
+  // honest preload, no lineage fabrication, no record mutation).
+  | {
+      type: "LOAD_RUN_CONFIG";
+      config: {
+        mode: Mode;
+        prompt: string;
+        systemPrompt: string;
+        temperature: number;
+        evaluation: AdHocEvaluationConfig;
+        slots: ModelSlot[];
+        /** Judge target restored from the run's accepted judge attempt.
+         *  Absent when the record has no judge attempt (aborted pre-judge). */
+        critic?: CriticRef;
+        judgeInstruction?: string;
+        reasoningPolicy?: ReasoningPolicy;
+      };
+    }
   // --- single-candidate retry ---
   | { type: "RETRY_CANDIDATE_START"; id: string }
   | { type: "RETRY_CANDIDATE_DELTA"; id: string; delta: string }
@@ -446,6 +471,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         running: true,
+        runId: action.runId,
         candidates: action.candidates,
         consensus: null,
         judgeStatus: "idle",
@@ -643,6 +669,29 @@ export function reducer(state: StudioState, action: Action): StudioState {
     case "SET_RATING":
       return { ...state, qualityRating: action.value };
 
+    case "LOAD_RUN_CONFIG": {
+      // Honest preload (Slice 5): overwrite command-pane inputs from a run
+      // record's frozen config. Never touches running state, candidates,
+      // results, attachments, or the record itself. Optional fields (critic,
+      // judgeInstruction, reasoningPolicy) are kept as-is when the record
+      // cannot restore them. Deep-copied so later command-pane edits cannot
+      // mutate the loaded snapshot.
+      const cfg = action.config;
+      return {
+        ...state,
+        mode: cfg.mode,
+        prompt: cfg.prompt,
+        systemPrompt: cfg.systemPrompt,
+        temperature: cfg.temperature,
+        evaluation: deepCopyEvaluationConfig(cfg.evaluation),
+        slots: cfg.slots.map((slot) => ({ ...slot })),
+        critic: cfg.critic ? { ...cfg.critic } : state.critic,
+        judgeInstruction: cfg.judgeInstruction ?? state.judgeInstruction,
+        reasoningPolicy: cfg.reasoningPolicy ? { ...cfg.reasoningPolicy } : state.reasoningPolicy,
+        audit: logAudit(state.audit, "Run configuration loaded from record."),
+      };
+    }
+
     case "RESET_SESSION":
       // Keep mode, catalog, and the user's model roster/judge — reset only clears
       // the current run/output, not command configuration the user chose.
@@ -779,6 +828,7 @@ export const initialState: StudioState = {
   aborted: false,
   executionConflict: null,
   runContext: null,
+  runId: null,
   qualityRating: 0,
   fusionStatus: "idle",
   fusionError: null,

@@ -294,4 +294,37 @@ describe("run-history integration: one stable run ID lifecycle", () => {
     // No recorder → no addRun fallback, evidence stays in memory only
     expect(addRunMock).not.toHaveBeenCalled();
   });
+
+  it("surfaces the persisted run id into state at FANOUT_START (Slice 5 G1 — Compare → View record)", async () => {
+    const repo = new InMemoryRunRepository();
+    const recorder = createRunRecorder(repo, { now: () => Date.now() });
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    const { deps, stateRef } = makeDeps(state, recorder);
+    const controller = createRunController(deps);
+
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
+    await controller.runFanout();
+
+    // The id surfaced into state is the SAME id the recorder persisted —
+    // never a fabricated/alternate id.
+    const summaries = await repo.list({ limit: 100 });
+    expect(summaries).toHaveLength(1);
+    expect(stateRef.current.runId).toBe(summaries[0]!.id);
+    expect(stateRef.current.runId).toMatch(/^run-/);
+    expect(stateRef.current.running).toBe(false);
+
+    // Re-fuse reuses the same surfaced id (no re-dispatch, no drift).
+    stateRef.current = { ...stateRef.current, mode: "fuse", fusionStatus: "idle" };
+    chatCompletionMock.mockResolvedValueOnce("fused answer");
+    controller.triggerFusion(true);
+    await delay(50);
+    expect(stateRef.current.runId).toBe(summaries[0]!.id);
+    expect(await repo.list({ limit: 100 })).toHaveLength(1);
+  });
 });

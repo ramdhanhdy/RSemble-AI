@@ -16,6 +16,7 @@ import { RunList } from "./runs/RunList";
 import { RunDetail } from "./runs/RunDetail";
 import { LegacyRunDetail } from "./runs/LegacyRunDetail";
 import { DataArchiveActions } from "../ui/DataArchiveActions";
+import type { RunConfigPreload } from "../lib/runs/run-config-preload";
 
 /** Inline media query — matches the pattern in rsemble.tsx. */
 function useMediaQuery(query: string): boolean {
@@ -36,7 +37,13 @@ function useMediaQuery(query: string): boolean {
 const DESKTOP_QUERY = "(min-width: 1024px)";
 const LIST_WIDTH = 380;
 
-export function RunsWorkspace() {
+export function RunsWorkspace({
+  onOpenInCompare,
+}: {
+  /** Run Detail → Open in Compare (Slice 5). Optional; wired by the root
+   *  shell, omitted in route-only test renders. */
+  onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+}) {
   const repo = useRunRepository();
   const { runId } = useParams<{ runId: string }>();
   const [searchParams] = useSearchParams();
@@ -80,6 +87,7 @@ export function RunsWorkspace() {
               record={record}
               focusCandidateId={focusCandidateId}
               focusJudgeAttemptId={focusJudgeAttemptId}
+              onOpenInCompare={onOpenInCompare}
             />
           )}
         </div>
@@ -132,6 +140,7 @@ export function RunsWorkspace() {
               record={record}
               focusCandidateId={focusCandidateId}
               focusJudgeAttemptId={focusJudgeAttemptId}
+              onOpenInCompare={onOpenInCompare}
             />
           )
         ) : (
