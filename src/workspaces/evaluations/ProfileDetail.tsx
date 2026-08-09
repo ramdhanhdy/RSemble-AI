@@ -28,6 +28,7 @@ import {
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { EvaluationProfile, ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import { suitesUsingProfile, type ProfileUsage } from "../../lib/evaluations/profile-usage";
+import { validateProfile } from "../../lib/evaluations/evaluation-profile";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
 import { EvaluationProfileEditor } from "../../ui/EvaluationProfileEditor";
 import { RecordRow } from "../../ui/RecordRow";
@@ -120,6 +121,13 @@ export function ProfileDetail({
 
   async function save() {
     if (!repository || !draft) return;
+    // Authoring-boundary validation: actionable errors for gate rejection,
+    // ungrouped binary checks, invalid groups, and out-of-range lambda.
+    const validationErrors = validateProfile(draft);
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join(" "));
+      return;
+    }
     setSaving(true);
     setError(null);
     try {

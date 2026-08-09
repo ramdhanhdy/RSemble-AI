@@ -341,6 +341,42 @@ describe("ResultMatrix — cell content (plan 7.2 #3, #10)", () => {
     expect(scoredLink!.className).not.toContain("text-error");
     cleanup(h);
   });
+
+  it("bounded floor regression: raw 0.7 displays as 1.0*, compliance-only stays percent", () => {
+    // CodeRabbit 3741038024 (ranked-cell portion): a normal ranked cell with
+    // raw rankValue 0.7 must display the BOUNDED presentation value 1.0* —
+    // not the raw 0.7* — while raw 0.7 remains the ranking authority. The
+    // compliance-only branch (q null, c present) still renders C-labeled %.
+    const floorAgg: ExperimentAggregation = {
+      ...BASE,
+      cells: [
+        [scored(0.7, "run-f1"), scored(0.7, "run-f1"), scored(0.7, "run-f1")],
+        [
+          { kind: "scored", score: 0.5, runId: "run-f2", attemptId: "att-run-f2", q: null, c: 0.5 },
+          { kind: "scored", score: 0.5, runId: "run-f2", attemptId: "att-run-f2", q: null, c: 0.5 },
+          { kind: "scored", score: 0.5, runId: "run-f2", attemptId: "att-run-f2", q: null, c: 0.5 },
+        ],
+        BASE.cells[2],
+      ],
+      models: BASE.models.map((m) => ({ ...m })),
+    };
+    const h = renderMatrix(floorAgg);
+    const rows = h.$$("tbody tr");
+    const rankCell = tdCells(rows[0])[0];
+    // Display shows the bounded 1.0 with the floor marker, never raw 0.7.
+    expect(rankCell.textContent).toContain("1.0");
+    expect(rankCell.textContent).toContain("*");
+    expect(rankCell.textContent).not.toContain("0.7");
+    // Floor marker carries accessible text, not just a title tooltip.
+    const marker = rankCell.querySelector('[role="img"]');
+    expect(marker).not.toBeNull();
+    expect(marker!.getAttribute("aria-label")).toContain("1.0 floor");
+    // Compliance-only cell stays a C-labeled percentage without a floor marker.
+    const compCell = tdCells(rows[1])[0];
+    expect(compCell.textContent).toContain("50%");
+    expect(compCell.textContent).not.toContain("*");
+    cleanup(h);
+  });
 });
 
 // --- 4. Evidence links --------------------------------------------------------------

@@ -10,10 +10,14 @@ function model(
   mean: number | null,
   complete: boolean,
   _index: number,
+  opts: { q?: number | null; c?: number | null; floored?: number } = {},
 ): ModelAggregate {
   return {
     modelKey,
     mean,
+    qMean: opts.q ?? null,
+    cMean: opts.c ?? null,
+    flooredTaskCount: opts.floored ?? 0,
     scoredTasks: complete ? 15 : 14,
     totalTasks: 15,
     complete,
@@ -106,5 +110,134 @@ describe("deriveDisplayRanking", () => {
     );
 
     expect(result.provisional.map((m) => m.modelKey)).toEqual(["9router:scored", "9router:none"]);
+  });
+});
+
+describe("deriveDisplayRanking — spec §16.1 tie-break key", () => {
+  it("equal mean(rankValue) breaks by higher Q̄", () => {
+    // Same rankValue mean, different Q̄ → higher Q̄ ranks first.
+    const a = model("a", 4.0, true, 0, { q: 4.5 });
+    const b = model("b", 4.0, true, 1, { q: 3.5 });
+    const result = deriveDisplayRanking([a, b], order("a", "b"));
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b"]);
+  });
+
+  it("equal mean(rankValue) and Q̄ breaks by higher C̄", () => {
+    // Same rankValue + Q̄, different C̄ → higher C̄ ranks first.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0, true, 1, { q: 4.0, c: 0.5 });
+    const result = deriveDisplayRanking([a, b], order("a", "b"));
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b"]);
+  });
+
+  it("equality through Q̄ and C̄ resolves by candidate_id ascending", () => {
+    // Fully equal mean + Q̄ + C̄ → candidate_id asc (not roster order).
+    const z = model("z", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const a = model("a", 4.0, true, 1, { q: 4.0, c: 0.9 });
+    const result = deriveDisplayRanking([z, a], order("z", "a"));
+    // roster order says z first, but candidate_id asc says a first.
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "z"]);
+  });
+
+  it("epsilon-equivalent mean/Q̄/C̄ values share the same ordering step", () => {
+    // Values within WINNER_EPSILON are equivalent, so the id tiebreak applies.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 1e-12, true, 1, { q: 4.0 + 1e-12, c: 0.9 });
+    const result = deriveDisplayRanking([b, a], order("b", "a"));
+    // Roster order says b first, but id asc says a first (values are epsilon-equal).
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b"]);
+  });
+
+  it("provisional models use the same tie-break key", () => {
+    const a = model("a", 3.0, false, 0, { q: 4.0, c: 0.8 });
+    const b = model("b", 3.0, false, 1, { q: 2.0, c: 0.8 });
+    const result = deriveDisplayRanking([a, b], order("a", "b"));
+    expect(result.provisional.map((m) => m.modelKey)).toEqual(["a", "b"]);
+  });
+
+  it("epsilon-chain values are transitive: permutation-invariant standings", () => {
+    // Regression (CodeRabbit 3741038014 / Executive decision 2026-08-08):
+    // values 4.0, 4.0+5e-10, 4.0+1e-9 are pairwise-within-ε chained, so the
+    // comparator must treat them as epsilon-equal (id asc tie-break) and the
+    // sort output must NOT depend on input order.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 5e-10, true, 1, { q: 4.0 + 5e-10, c: 0.9 });
+    const c = model("c", 4.0 + 1e-9, true, 2, { q: 4.0 + 1e-9, c: 0.9 });
+    const expected = ["a", "b", "c"];
+    // All six input permutations must produce the same standings.
+    const permutations: ModelAggregate[][] = [
+      [a, b, c],
+      [a, c, b],
+      [b, a, c],
+      [b, c, a],
+      [c, a, b],
+      [c, b, a],
+    ];
+    for (const p of permutations) {
+      const result = deriveDisplayRanking(p, order("a", "b", "c"));
+      expect(result.eligible.map((m) => m.modelKey)).toEqual(expected);
+    }
+  });
+
+  it("values beyond an epsilon chain still order by raw mean", () => {
+    // 4.0 and 4.0+3e-9 differ by 3ε: no chain connects them, so the higher
+    // mean strictly outranks regardless of the id tie-break.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 3e-9, true, 1, { q: 4.0 + 3e-9, c: 0.9 });
+    const result = deriveDisplayRanking([a, b], order("a", "b"));
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["b", "a"]);
+  });
+
+  it("long epsilon chains close transitively (independent review finding 1)", () => {
+    // Regression for the reviewer's counterexample: 0, 0.9ε, 1.8ε, 2.7ε are
+    // chain-connected (each adjacent pair within ε) even though the endpoints
+    // differ by 2.7ε > 2ε. A fixed 2ε band (the earlier midpoint heuristic)
+    // failed to merge the endpoints; the union-find closure must.
+    const a = model("a", 0, true, 0, { q: 0, c: 0.9 });
+    const b = model("b", 0.9e-9, true, 1, { q: 0.9e-9, c: 0.9 });
+    const c = model("c", 1.8e-9, true, 2, { q: 1.8e-9, c: 0.9 });
+    const d = model("d", 2.7e-9, true, 3, { q: 2.7e-9, c: 0.9 });
+    const expected = ["a", "b", "c", "d"];
+    const permutations: ModelAggregate[][] = [
+      [a, b, c, d],
+      [d, c, b, a],
+      [b, d, a, c],
+      [c, a, d, b],
+    ];
+    for (const p of permutations) {
+      const result = deriveDisplayRanking(p, order("a", "b", "c", "d"));
+      expect(result.eligible.map((m) => m.modelKey)).toEqual(expected);
+    }
+  });
+
+  it("straddle values at exactly ε apart stay epsilon-equal through a bridge", () => {
+    // 4.0 and 4.0+1e-9 differ by exactly ε (not < ε, so not directly equal),
+    // but a bridge value 4.0+5e-10 connects them: the closure must merge them
+    // into one class and the id tie-break applies.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 5e-10, true, 1, { q: 4.0 + 5e-10, c: 0.9 });
+    const c = model("c", 4.0 + 1e-9, true, 2, { q: 4.0 + 1e-9, c: 0.9 });
+    const result = deriveDisplayRanking([c, a, b], order("a", "b", "c"));
+    expect(result.eligible.map((m) => m.modelKey)).toEqual(["a", "b", "c"]);
+  });
+
+  it("provisional leader compares against the max raw eligible mean (CodeRabbit 4890236254)", () => {
+    // Regression: eligible[0] is the bucket leader (id tie-break may pick the
+    // LOWER raw mean 4.0 over 4.0+0.9ε). A provisional mean of 4.0+1.5ε is only
+    // 0.6ε above the true best eligible mean (4.0+0.9ε), so it must NOT qualify
+    // as provisional leader — the check must use the max raw mean, not
+    // eligible[0].mean.
+    const a = model("a", 4.0, true, 0, { q: 4.0, c: 0.9 });
+    const b = model("b", 4.0 + 0.9e-9, true, 1, { q: 4.0 + 0.9e-9, c: 0.9 });
+    const p = model("p", 4.0 + 1.5e-9, false, 2, { q: 4.0 + 1.5e-9, c: 0.9 });
+    const result = deriveDisplayRanking([a, b, p], order("a", "b", "p"));
+    // Both eligible models are epsilon-equal; id asc picks a first, but the
+    // provisional mean must be compared to 4.0+0.9e-9 (max raw mean).
+    expect(result.provisionalLeader).toBeNull();
+    // Sanity: a provisional mean more than ε above the max eligible raw mean
+    // still qualifies.
+    const p2 = model("p2", 4.0 + 2.5e-9, false, 3, { q: 4.0 + 2.5e-9, c: 0.9 });
+    const result2 = deriveDisplayRanking([a, b, p2], order("a", "b", "p2"));
+    expect(result2.provisionalLeader?.modelKey).toBe("p2");
   });
 });

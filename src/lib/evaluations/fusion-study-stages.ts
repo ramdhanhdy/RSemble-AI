@@ -91,7 +91,9 @@ export function activePoolSlots(pool: PoolManifestVersion): ModelSlot[] {
 
 function criterionWeights(profile: EvaluationProfileSnapshot | null): CriterionWeights {
   const map = new Map<string, number>();
-  for (const c of profile?.criteria ?? []) map.set(c.id, c.weight);
+  for (const c of profile?.criteria ?? []) {
+    if ("weight" in c) map.set(c.id, (c as { weight: number }).weight);
+  }
   return map;
 }
 
@@ -297,7 +299,7 @@ export async function runStageA(
         stratified.slots,
         input.study.judge1,
       );
-      const winner = deriveRankWinner(evidence.blindCandidates, evidence.report);
+      const winner = deriveRankWinner(evidence.blindCandidates, evidence.report, input.profile);
       const winnerContent =
         evidence.blindCandidates.find((c) => c.candidateId === winner.winnerCandidateId)?.content ??
         "";
@@ -529,7 +531,7 @@ export async function runStageB(
         const b = scores.get(pair[1]);
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights);
+      const metrics = computeHeadroom(paired, weights, input.profile);
       screenedPairs.push({
         pair,
         selectionHeadroom: metrics.selectionHeadroom,
@@ -538,6 +540,8 @@ export async function runStageB(
         // Fuse over a pair ≈ 2 generations + judge + synthesizer vs 1 generation.
         costMultiplier: 4,
         shortlisted: false,
+        binaryPerCriterionHeadroom: metrics.binaryPerCriterion,
+        binaryOracleHeadroom: metrics.binaryOracleHeadroom,
       });
     }
   }
@@ -754,7 +758,7 @@ async function runPoolAdequacyProbe(
         const b = scoresByTask.get(task.id)?.get(poolKey);
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights);
+      const metrics = computeHeadroom(paired, weights, input.profile);
       maxHeadroom = Math.max(
         maxHeadroom,
         metrics.selectionHeadroom,
@@ -816,7 +820,7 @@ export async function evaluatePairBlocked(
       slots,
       input.study.judge1,
     );
-    const winner = deriveRankWinner(evidence.blindCandidates, evidence.report);
+    const winner = deriveRankWinner(evidence.blindCandidates, evidence.report, input.profile);
     const winnerContent =
       evidence.blindCandidates.find((c) => c.candidateId === winner.winnerCandidateId)?.content ??
       "";

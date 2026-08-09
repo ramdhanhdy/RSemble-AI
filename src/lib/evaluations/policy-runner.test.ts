@@ -7,9 +7,15 @@
 // =============================================================================
 
 import { describe, expect, it } from "vitest";
-import type { BlindCandidate, ConsensusBreakdown, JudgeReport } from "../../studio-data";
+import type {
+  BlindCandidate,
+  CandidateEvaluation,
+  ConsensusBreakdown,
+  JudgeReport,
+} from "../../studio-data";
 import { FUSION_RECIPE_ANALYSIS_SCORES_V1, type CandidateIdentity } from "./fusion-recipes";
 import { deriveRankWinner, planBlockedPolicies, type BlockedPolicyInput } from "./policy-runner";
+import type { EvaluationProfile } from "./evaluation-types";
 
 const BLIND: BlindCandidate[] = [
   { label: "A", candidateId: "cand-1", content: "Answer A text" },
@@ -98,6 +104,94 @@ describe("deriveRankWinner", () => {
 
   it("breaks ties deterministically by blind-label order", () => {
     expect(deriveRankWinner(BLIND, report(4.0, 4.0)).winnerCandidateId).toBe("cand-1");
+  });
+});
+
+describe("planBlockedPolicies — profile forwarding (CodeRabbit 3741038015)", () => {
+  // A pinned profile must drive the blocked Rank winner through the same
+  // authoritative rankValue contract (Q − λ(1−C)) used by fuse/refine and the
+  // experiment matrix. Regression: planBlockedPolicies previously called
+  // deriveRankWinner without input.profile, silently using the Judge's
+  // holistic overallScore as the Rank baseline.
+  const profile: EvaluationProfile = {
+    id: "p1",
+    version: 1,
+    name: "Pinned",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "quality",
+        kind: "graded",
+        name: "Quality",
+        description: "d",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+      {
+        id: "b1",
+        kind: "binary",
+        name: "Check",
+        description: "d",
+        trueWhen: "t",
+        falseWhen: "f",
+      },
+    ],
+    requirementGroups: [{ id: "g1", name: "G1", checkIds: ["b1"], weight: 1, mode: "ALL" }],
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+
+  it("ranks by rankValue from the pinned profile, not holistic overallScore", () => {
+    // Judge overallScores say cand-1 (3.5) loses to cand-2 (4.5), but the
+    // profile-derived rankValues invert it: cand-1 has Q=4 (score 4, check
+    // passes → C=1, rankValue=4), cand-2 has Q=1 (score 1, check passes →
+    // C=1, rankValue=1). The Rank baseline must use rankValue ⇒ cand-1 wins.
+    const evals: Record<string, CandidateEvaluation> = {
+      "cand-1": {
+        candidateId: "cand-1",
+        blindLabel: "A",
+        overallScore: 3.5,
+        position: "p",
+        rationale: "r",
+        strengths: [],
+        deductions: [],
+        missedRequirements: [],
+        criterionScores: [
+          { criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" },
+          { criterionId: "b1", label: "Check", kind: "binary", value: true, rationale: "r" },
+        ],
+      },
+      "cand-2": {
+        candidateId: "cand-2",
+        blindLabel: "B",
+        overallScore: 4.5,
+        position: "p",
+        rationale: "r",
+        strengths: [],
+        deductions: [],
+        missedRequirements: [],
+        criterionScores: [
+          { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
+          { criterionId: "b1", label: "Check", kind: "binary", value: true, rationale: "r" },
+        ],
+      },
+    };
+    const judgeReport: JudgeReport = {
+      labelMap: [
+        { candidateId: "cand-1", label: "A" },
+        { candidateId: "cand-2", label: "B" },
+      ],
+      evaluationsById: evals,
+      comparisons: [],
+    };
+    const plan = planBlockedPolicies(
+      input({ profile, judgeReport }),
+      FUSION_RECIPE_ANALYSIS_SCORES_V1,
+    );
+    expect(plan.rank.winnerCandidateId).toBe("cand-1");
+    expect(plan.refine.winnerCandidateId).toBe("cand-1");
   });
 });
 

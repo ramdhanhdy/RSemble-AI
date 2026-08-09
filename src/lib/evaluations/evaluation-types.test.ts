@@ -7,8 +7,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  isEvaluationProfile,
   isExperimentRecord,
   isExperimentTaskAttempt,
+  type EvaluationProfile,
   type EvaluationSuite,
   type EvaluationTask,
   type ExperimentRecord,
@@ -313,5 +315,134 @@ describe("isExperimentRecord — rosterExtensions history", () => {
         makeRecord({ rosterExtensions: {} as unknown as ExperimentRosterExtension[] }),
       ),
     ).toBe(false);
+  });
+});
+
+// --- Hybrid evaluation profile guard regressions (CodeRabbit 3741038007/3741038010) ---
+
+function baseProfile(overrides: Partial<EvaluationProfile> = {}): EvaluationProfile {
+  return {
+    id: "p1",
+    version: 1,
+    name: "P",
+    description: "",
+    judgeInstruction: "",
+    criteria: [],
+    requirementGroups: [],
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+    ...overrides,
+  };
+}
+
+function gradedCriterion(id: string): EvaluationProfile["criteria"][number] {
+  return {
+    id,
+    kind: "graded",
+    name: `G ${id}`,
+    description: "d",
+    weight: 1,
+    anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+  };
+}
+
+function binaryCheck(id: string): EvaluationProfile["criteria"][number] {
+  return {
+    id,
+    kind: "binary",
+    name: `B ${id}`,
+    description: "d",
+    trueWhen: "t",
+    falseWhen: "f",
+  };
+}
+
+describe("isEvaluationProfile — hybrid guard regressions", () => {
+  it("accepts an empty criteria list as holistic mode", () => {
+    // Aligned with validateProfile / judgeEvaluationBlock (CodeRabbit
+    // 3741038007): empty criteria = valid holistic, no positive-score demand.
+    expect(isEvaluationProfile(baseProfile())).toBe(true);
+  });
+
+  it("accepts a valid compliance-only profile (binary checks in groups)", () => {
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [binaryCheck("b1"), binaryCheck("b2")],
+          requirementGroups: [
+            { id: "g1", name: "G1", checkIds: ["b1", "b2"], weight: 1, mode: "ALL" },
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a group referencing a missing or non-binary check", () => {
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [gradedCriterion("g1")],
+          requirementGroups: [{ id: "x", name: "X", checkIds: ["g1"], weight: 1, mode: "ALL" }],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [binaryCheck("b1")],
+          requirementGroups: [{ id: "x", name: "X", checkIds: ["nope"], weight: 1, mode: "ALL" }],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects the same check in two groups", () => {
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [binaryCheck("b1"), binaryCheck("b2")],
+          requirementGroups: [
+            { id: "g1", name: "G1", checkIds: ["b1"], weight: 1, mode: "ALL" },
+            { id: "g2", name: "G2", checkIds: ["b1", "b2"], weight: 1, mode: "ALL" },
+          ],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects an ungrouped binary check", () => {
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [binaryCheck("b1"), binaryCheck("b2")],
+          requirementGroups: [{ id: "g1", name: "G1", checkIds: ["b1"], weight: 1, mode: "ALL" }],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects binary criteria when requirementGroups is undefined (CodeRabbit 4890236254)", () => {
+    // Spec §19: every binary check belongs to exactly one ALL-mode group.
+    // A profile with binary checks but no requirementGroups field must be
+    // rejected by the runtime guard, not silently accepted by skipping
+    // membership validation.
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [binaryCheck("b1"), binaryCheck("b2")],
+          requirementGroups: undefined,
+        }),
+      ),
+    ).toBe(false);
+    // Graded-only profiles legitimately omit requirementGroups.
+    expect(
+      isEvaluationProfile(
+        baseProfile({
+          criteria: [gradedCriterion("g1")],
+          requirementGroups: undefined,
+        }),
+      ),
+    ).toBe(true);
   });
 });

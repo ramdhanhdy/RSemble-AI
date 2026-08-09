@@ -11,8 +11,16 @@
 
 import { useState, useMemo } from "react";
 import { ChevronDown, Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
-import type { EvaluationProfile, EvaluationCriterion } from "../lib/evaluations/evaluation-types";
-import { normalizedWeights, totalWeight } from "../lib/evaluations/evaluation-profile";
+import type {
+  EvaluationProfile,
+  EvaluationCriterion,
+  RequirementGroup,
+} from "../lib/evaluations/evaluation-types";
+import {
+  normalizedWeights,
+  totalWeight,
+  getComplianceInfluence,
+} from "../lib/evaluations/evaluation-profile";
 
 export function EvaluationProfileEditor({
   profile,
@@ -28,37 +36,93 @@ export function EvaluationProfileEditor({
   const nw = useMemo(() => normalizedWeights(profile.criteria), [profile.criteria]);
   const tw = useMemo(() => totalWeight(profile.criteria), [profile.criteria]);
 
-  function updateCriterion(id: string, patch: Partial<EvaluationCriterion>) {
+  function updateCriterion(id: string, patch: Record<string, unknown>) {
     onChange({
       ...profile,
-      criteria: profile.criteria.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      criteria: profile.criteria.map((c) =>
+        c.id === id ? ({ ...c, ...patch } as EvaluationCriterion) : c,
+      ),
       updatedAt: Date.now(),
     });
   }
 
-  function addCriterion() {
+  function addGradedCriterion() {
     const id = `c-${Date.now()}`;
-    // The persisted-profile guard requires non-empty 1/3/5 anchors — seed
-    // placeholders the user rewrites, or saving the profile is rejected.
     const newCriterion: EvaluationCriterion = {
       id,
-      name: "New criterion",
+      kind: "graded",
+      name: "New graded criterion",
       description: "",
       weight: 1,
       anchors: {
         one: "1 — does not meet this criterion at all",
+        two: "2 — weak; material weakness remains",
         three: "3 — partially meets this criterion",
+        four: "4 — strong, explicit, reproducible execution",
         five: "5 — fully meets this criterion",
       },
-    };
+    } as EvaluationCriterion;
     onChange({ ...profile, criteria: [...profile.criteria, newCriterion], updatedAt: Date.now() });
     setOpenId(id);
   }
 
+  function addBinaryCriterion() {
+    const id = `b-${Date.now()}`;
+    const newCriterion: EvaluationCriterion = {
+      id,
+      kind: "binary",
+      name: "New binary check",
+      description: "",
+      trueWhen: "Describe when this check passes",
+      falseWhen: "Describe when this check fails",
+    } as EvaluationCriterion;
+    // Materialize a singleton requirement group for the new binary check.
+    const groupId = `g-${Date.now()}`;
+    const group: RequirementGroup = {
+      id: groupId,
+      name: newCriterion.name,
+      checkIds: [id],
+      weight: 1,
+      mode: "ALL",
+    };
+    onChange({
+      ...profile,
+      criteria: [...profile.criteria, newCriterion],
+      requirementGroups: [...(profile.requirementGroups ?? []), group],
+      updatedAt: Date.now(),
+    });
+    setOpenId(id);
+  }
+
+  function updateComplianceInfluence(value: number) {
+    onChange({ ...profile, complianceInfluence: value, updatedAt: Date.now() });
+  }
+
+  function updateGroupWeight(groupId: string, value: number) {
+    if (!isFinite(value) || value <= 0) return; // positive-weight only
+    onChange({
+      ...profile,
+      requirementGroups: (profile.requirementGroups ?? []).map((g) =>
+        g.id === groupId ? { ...g, weight: value } : g,
+      ),
+      updatedAt: Date.now(),
+    });
+  }
+
   function removeCriterion(id: string) {
+    const isBinary = profile.criteria.find((c) => c.id === id)?.kind === "binary";
+    let nextGroups = profile.requirementGroups;
+    if (isBinary && nextGroups) {
+      // Cascade-delete: remove the check from its group, and delete the group
+      // when it becomes empty, so no dangling group silently loses weight.
+      nextGroups = nextGroups
+        .map((g) => ({ ...g, checkIds: g.checkIds.filter((cid) => cid !== id) }))
+        .filter((g) => g.checkIds.length > 0);
+    }
     onChange({
       ...profile,
       criteria: profile.criteria.filter((c) => c.id !== id),
+      requirementGroups: nextGroups,
       updatedAt: Date.now(),
     });
     if (openId === id) setOpenId(null);
@@ -107,14 +171,118 @@ export function EvaluationProfileEditor({
         ))}
       </ul>
 
+      {/* Compliance influence control */}
+      {(profile.requirementGroups?.length ?? 0) > 0 && (
+        <div className="rounded-sm bg-card-hover px-2 py-1.5">
+          <label
+            htmlFor="compliance-influence"
+            className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+          >
+            Compliance influence (λ)
+          </label>
+          <div className="mt-1 flex items-center gap-2">
+            <NumericDraftField
+              id="compliance-influence"
+              value={getComplianceInfluence(profile)}
+              min={0}
+              max={1}
+              step={0.1}
+              readOnly={readOnly}
+              onCommit={(v) => {
+                if (v >= 0 && v <= 1) updateComplianceInfluence(v);
+              }}
+              className="w-20 rounded-sm border border-edge bg-card px-2 py-1 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            <span className="text-xs text-text-muted">
+              Max points failing all checks may cost ({getComplianceInfluence(profile).toFixed(1)})
+            </span>
+            {getComplianceInfluence(profile) === 0 && (
+              <span className="text-xs text-warning">· checks excluded from ranking</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Requirement Group editor — v1 (spec §11.4) */}
+      {(profile.requirementGroups?.length ?? 0) > 0 && (
+        <div className="rounded-sm border border-edge px-2 py-1.5">
+          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+            Requirement groups ({profile.requirementGroups!.length})
+          </span>
+          {(() => {
+            const groups = profile.requirementGroups!;
+            const sumV = groups.reduce((s, g) => s + g.weight, 0);
+            const lambda = getComplianceInfluence(profile);
+            return (
+              <ul className="mt-1 space-y-1.5">
+                {groups.map((g) => {
+                  const failCost = sumV > 0 ? (lambda * g.weight) / sumV : 0;
+                  const fragile = g.checkIds.length >= 4;
+                  return (
+                    <li key={g.id} className="text-xs text-text-secondary">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-text">{g.name}</span>
+                        <span className="text-text-muted">
+                          {g.checkIds.length} check{g.checkIds.length === 1 ? "" : "s"} · ALL
+                        </span>
+                        {!readOnly && (
+                          <label htmlFor={`group-weight-${g.id}`} className="text-text-muted">
+                            w
+                          </label>
+                        )}
+                        {!readOnly ? (
+                          <input
+                            id={`group-weight-${g.id}`}
+                            type="number"
+                            min={0}
+                            step={0.1}
+                            defaultValue={g.weight}
+                            aria-label={`${g.name} group weight`}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value);
+                              if (!isNaN(v)) updateGroupWeight(g.id, v);
+                            }}
+                            className="w-16 rounded-sm border border-edge bg-card px-1 py-0.5 font-mono text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          />
+                        ) : (
+                          <span className="font-mono text-text">w {g.weight.toFixed(1)}</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-text-muted">
+                        fail cost {failCost.toFixed(2)} pts ({lambda.toFixed(1)} ×{" "}
+                        {g.weight.toFixed(2)}/{sumV.toFixed(2)})
+                        {fragile && (
+                          <span className="ml-1 text-warning">
+                            · N={g.checkIds.length} ALL: any single false verdict fails the group
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            );
+          })()}
+        </div>
+      )}
+
       {!readOnly && (
-        <button
-          type="button"
-          onClick={addCriterion}
-          className="flex min-h-[44px] w-full items-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <Plus size={13} /> Add criterion
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={addGradedCriterion}
+            className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Plus size={13} /> Add graded
+          </button>
+          <button
+            type="button"
+            onClick={addBinaryCriterion}
+            className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-sm border border-dashed border-edge px-3 font-mono text-xs text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Plus size={13} /> Add binary
+          </button>
+        </div>
       )}
     </div>
   );
@@ -140,7 +308,7 @@ function CriterionAccordion({
   canMoveUp: boolean;
   canMoveDown: boolean;
   onToggle: () => void;
-  onChange: (patch: Partial<EvaluationCriterion>) => void;
+  onChange: (patch: Record<string, unknown>) => void;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -177,7 +345,8 @@ function CriterionAccordion({
             {criterion.name || "Untitled criterion"}
           </span>
           <span className="font-mono text-[11px] tabular-nums text-text-muted">
-            Weight {criterion.weight.toFixed(1)} · {normalizedShare.toFixed(0)}%
+            {"weight" in criterion ? `Weight ${criterion.weight.toFixed(1)} · ` : ""}
+            {normalizedShare.toFixed(0)}%
           </span>
         </button>
 
@@ -232,51 +401,187 @@ function CriterionAccordion({
             onChange={(v) => onChange({ description: v })}
             onBlur={() => validateField("description", criterion.description)}
           />
-          <LabeledInput
-            label="Score 1 anchor"
-            value={criterion.anchors.one}
-            error={errors.anchorOne}
-            readOnly={readOnly}
-            onChange={(v) => onChange({ anchors: { ...criterion.anchors, one: v } })}
-            onBlur={() => validateField("anchorOne", criterion.anchors.one)}
-          />
-          <LabeledInput
-            label="Score 3 anchor"
-            value={criterion.anchors.three}
-            error={errors.anchorThree}
-            readOnly={readOnly}
-            onChange={(v) => onChange({ anchors: { ...criterion.anchors, three: v } })}
-            onBlur={() => validateField("anchorThree", criterion.anchors.three)}
-          />
-          <LabeledInput
-            label="Score 5 anchor"
-            value={criterion.anchors.five}
-            error={errors.anchorFive}
-            readOnly={readOnly}
-            onChange={(v) => onChange({ anchors: { ...criterion.anchors, five: v } })}
-            onBlur={() => validateField("anchorFive", criterion.anchors.five)}
-          />
-          <div>
-            <label
-              htmlFor={`criterion-weight-${criterion.id}`}
-              className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
-            >
-              Weight
-            </label>
-            <input
-              id={`criterion-weight-${criterion.id}`}
-              type="number"
-              min={0}
-              step={0.1}
-              value={criterion.weight}
-              readOnly={readOnly}
-              onChange={(e) => onChange({ weight: parseFloat(e.target.value) || 0 })}
-              className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
+          {criterion.kind === "binary" ? (
+            <>
+              <LabeledTextarea
+                label="TRUE when"
+                value={criterion.trueWhen}
+                error={errors.trueWhen}
+                readOnly={readOnly}
+                onChange={(v) => onChange({ trueWhen: v })}
+                onBlur={() => validateField("trueWhen", criterion.trueWhen)}
+              />
+              <LabeledTextarea
+                label="FALSE when"
+                value={criterion.falseWhen}
+                error={errors.falseWhen}
+                readOnly={readOnly}
+                onChange={(v) => onChange({ falseWhen: v })}
+                onBlur={() => validateField("falseWhen", criterion.falseWhen)}
+              />
+            </>
+          ) : (
+            <>
+              {criterion.kind === "graded" && (
+                <>
+                  <LabeledInput
+                    label="Score 1 anchor"
+                    value={criterion.anchors.one}
+                    error={errors.anchorOne}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, one: v } })}
+                    onBlur={() => validateField("anchorOne", criterion.anchors.one)}
+                  />
+                  <LabeledInput
+                    label="Score 2 anchor"
+                    value={criterion.anchors.two}
+                    error={errors.anchorTwo}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, two: v } })}
+                    onBlur={() => validateField("anchorTwo", criterion.anchors.two)}
+                  />
+                  <LabeledInput
+                    label="Score 3 anchor"
+                    value={criterion.anchors.three}
+                    error={errors.anchorThree}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, three: v } })}
+                    onBlur={() => validateField("anchorThree", criterion.anchors.three)}
+                  />
+                  <LabeledInput
+                    label="Score 4 anchor"
+                    value={criterion.anchors.four}
+                    error={errors.anchorFour}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, four: v } })}
+                    onBlur={() => validateField("anchorFour", criterion.anchors.four)}
+                  />
+                  <LabeledInput
+                    label="Score 5 anchor"
+                    value={criterion.anchors.five}
+                    error={errors.anchorFive}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, five: v } })}
+                    onBlur={() => validateField("anchorFive", criterion.anchors.five)}
+                  />
+                </>
+              )}
+              {criterion.kind === undefined && (
+                <>
+                  <LabeledInput
+                    label="Score 1 anchor"
+                    value={criterion.anchors.one}
+                    error={errors.anchorOne}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, one: v } })}
+                    onBlur={() => validateField("anchorOne", criterion.anchors.one)}
+                  />
+                  <LabeledInput
+                    label="Score 3 anchor"
+                    value={criterion.anchors.three}
+                    error={errors.anchorThree}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, three: v } })}
+                    onBlur={() => validateField("anchorThree", criterion.anchors.three)}
+                  />
+                  <LabeledInput
+                    label="Score 5 anchor"
+                    value={criterion.anchors.five}
+                    error={errors.anchorFive}
+                    readOnly={readOnly}
+                    onChange={(v) => onChange({ anchors: { ...criterion.anchors, five: v } })}
+                    onBlur={() => validateField("anchorFive", criterion.anchors.five)}
+                  />
+                </>
+              )}
+              <div>
+                <label
+                  htmlFor={`criterion-weight-${criterion.id}`}
+                  className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+                >
+                  Weight
+                </label>
+                <NumericDraftField
+                  id={`criterion-weight-${criterion.id}`}
+                  value={criterion.weight}
+                  min={0}
+                  step={0.1}
+                  readOnly={readOnly}
+                  onCommit={(v) => onChange({ weight: v })}
+                  className="mt-1 w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Numeric input that preserves partial keyboard drafts (trailing ".", empty
+ * field) in local state and commits only on blur or Enter. Prevents React
+ * controlled-input rewrites from discarding "0." or other in-progress values,
+ * and stops an empty field from committing 0 (spec §10.5: never erase draft).
+ */
+function NumericDraftField({
+  id,
+  value,
+  min,
+  max,
+  step,
+  readOnly,
+  onCommit,
+  className,
+}: {
+  id: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  readOnly: boolean;
+  onCommit: (v: number) => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  // Sync the visible text from the committed value whenever the field is not
+  // mid-edit (draft === null), so external profile updates still render.
+  const display = draft !== null ? draft : String(value);
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = Number(draft);
+    if (draft.trim() !== "" && Number.isFinite(parsed)) {
+      onCommit(parsed);
+    }
+    setDraft(null);
+  };
+
+  return (
+    <input
+      id={id}
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      value={display}
+      readOnly={readOnly}
+      onChange={(e) => {
+        if (readOnly) return;
+        setDraft(e.target.value);
+      }}
+      onBlur={() => {
+        if (readOnly) return;
+        commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        }
+      }}
+      className={className}
+    />
   );
 }
 

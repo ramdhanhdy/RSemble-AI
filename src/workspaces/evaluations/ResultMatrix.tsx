@@ -25,8 +25,8 @@ import {
   type ExperimentAggregation,
   type MissingReason,
   formatAggregateMean,
-  formatTaskScore,
 } from "../../lib/evaluations/experiment-aggregation";
+import { rankScoreOf } from "../../lib/evaluations/evaluation-profile";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
@@ -177,10 +177,30 @@ function CellContent({
       modelKey,
       cell.runId ? runRecords.get(cell.runId) : undefined,
     );
-    const score = formatTaskScore(cell.score);
+    // Compliance-only cells (no graded criteria, spec §16.3): cell.score is the
+    // raw compliance share C in [0,1]. Render it as a C-labeled percentage —
+    // never as a floored 1.0* rankScore.
+    const complianceOnly = cell.q == null && cell.c != null;
+    // Normal ranked cells display the BOUNDED presentation value rankScore =
+    // max(1, rankValue) (spec §16.2); raw cell.score stays the ranking
+    // authority. The floor marker is derived from the raw rankValue, and is
+    // announced to assistive tech, not just a title tooltip.
+    const floored = !complianceOnly && cell.score < 1; // rankValue below the 1.0 display floor
+    const displayScore = complianceOnly
+      ? `${(cell.c! * 100).toFixed(0)}%`
+      : `${rankScoreOf(cell.score)!.toFixed(1)}`;
     const content = (
       <>
-        {score}
+        {displayScore}
+        {floored ? (
+          <span
+            role="img"
+            aria-label="display value bounded at the 1.0 floor; raw rank value is lower"
+            title="rankValue below the 1.0 display floor"
+          >
+            *
+          </span>
+        ) : null}
         {rowBest ? (
           <span
             aria-label="best in row"

@@ -15,7 +15,9 @@ import {
   canonicalScoresFromRun,
   formatTaskScore,
   formatAggregateMean,
+  boundedAggregateMean,
 } from "./experiment-aggregation";
+import { deriveDisplayRanking } from "./experiment-ranking";
 import type {
   EvaluationCriterion,
   EvaluationProfile,
@@ -513,3 +515,431 @@ describe("aggregateExperiment — winner vs provisional ranking", () => {
     expect(complete!.scoredTasks).toBe(15);
   });
 });
+
+// --- Hybrid floored-task aggregation ------------------------------------------
+
+/** A mixed profile with graded criterion + one binary group (lambda default 1). */
+/** 5 singleton binary groups + 1 graded criterion (Q=1, λ=1).
+ *  C = passCount / 5, so rankValue = 1 - (1 - C) = C.
+ *  Valid graded score 1 (integer) + native binary booleans. */
+function makeFlooredHybridProfile(): { profile: EvaluationProfile; checkIds: string[] } {
+  const checkIds = ["b1", "b2", "b3", "b4", "b5"];
+  const profile: EvaluationProfile = {
+    id: "p-floored",
+    version: 1,
+    name: "Floored",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "quality",
+        kind: "graded",
+        name: "Quality",
+        description: "d",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+      ...checkIds.map((id) => ({
+        id,
+        kind: "binary" as const,
+        name: `Check ${id}`,
+        description: "d",
+        trueWhen: "t",
+        falseWhen: "f",
+      })),
+    ],
+    requirementGroups: checkIds.map((id, i) => ({
+      id: `g${i + 1}`,
+      name: `Group ${i + 1}`,
+      checkIds: [id],
+      weight: 1,
+      mode: "ALL" as const,
+    })),
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+  return { profile, checkIds };
+}
+
+/** Make a run with valid Q=1 (graded score 1) and `passCount` of 5 binary
+ *  checks passing. rankValue = 1 - 1*(1 - passCount/5) = passCount/5. */
+function makeFlooredHybridRun(runId: string, passCount: number): RunRecordV2 {
+  const { profile, checkIds } = makeFlooredHybridProfile();
+  const criterionScores: CandidateEvaluation["criterionScores"] = [
+    { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
+    ...checkIds.map((id, i) => ({
+      criterionId: id,
+      label: `Check ${id}`,
+      kind: "binary" as const,
+      value: i < passCount,
+      rationale: "r",
+    })),
+  ];
+  const evaluationsById: Record<string, CandidateEvaluation> = {
+    [MK1]: {
+      candidateId: MK1,
+      blindLabel: "A",
+      overallScore: 1,
+      position: "p",
+      rationale: "r",
+      strengths: [],
+      deductions: [],
+      missedRequirements: [],
+      criterionScores,
+    },
+  };
+  return {
+    schemaVersion: 2,
+    id: runId,
+    revision: 1,
+    execution: { ownerId: "tab-1", fence: 1 },
+    createdAt: 1000,
+    updatedAt: 1000,
+    completedAt: 1100,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
+    evaluation: { profile, candidateMessages: [] },
+    candidates: [
+      {
+        candidateId: MK1,
+        slotId: "s1",
+        modelKey: MK1,
+        providerId: "openrouter",
+        model: MK1,
+        slug: "m1",
+        acceptedAttemptId: "att-cand",
+        attempts: [],
+      },
+    ],
+    judge: {
+      status: "done",
+      acceptedAttemptId: "judge-att-1",
+      report: { labelMap: [], evaluationsById, comparisons: [] },
+      consensus: null,
+      attempts: [],
+    },
+    fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    winnerKeys: [],
+  };
+}
+
+describe("hybrid floored-task aggregation (rankValue authority)", () => {
+  it("aggregates authoritative rankValue across tasks, not bounded rankScore", () => {
+    // Two tasks, single model. Q=1 (valid graded score 1), λ=1, 5 singleton
+    // binary groups → C = passCount/5, rankValue = passCount/5.
+    // Task t1: 4/5 pass → C=0.8 → rankValue=0.8 (floored, rankScore=1)
+    // Task t2: 1/5 pass → C=0.2 → rankValue=0.2 (floored, rankScore=1)
+    const run1 = makeFlooredHybridRun("r1", 4);
+    const run2 = makeFlooredHybridRun("r2", 1);
+    const snapshot = makeSnapshot(["t1", "t2"]);
+    const aggregation = aggregateExperiment({
+      snapshot,
+      taskStates: [
+        makeTaskState("t1", [{ id: "a1", runId: "r1", status: "completed" }], "a1"),
+        makeTaskState("t2", [{ id: "a1", runId: "r2", status: "completed" }], "a1"),
+      ],
+      resolveRunRecord: (runId) => (runId === "r1" ? run1 : run2),
+    });
+    const model = aggregation.models[0];
+    // rankValue t1 = 0.8, t2 = 0.2 → mean = 0.5 (authoritative, both floored).
+    expect(model.mean).toBeCloseTo(0.5, 10);
+    // The bounded mean would be 1.0 (both rankScore=1) — a false tie that the
+    // authoritative aggregation avoids.
+    expect(model.mean).not.toBeCloseTo(1.0, 10);
+    expect(model.complete).toBe(true);
+    expect(aggregation.winnerKeys).toEqual([MK1]);
+  });
+});
+
+// --- §16.2 floored audit: raw rankValue mean vs bounded display ---------------
+
+describe("hybrid floored mean vs bounded display (§16.2)", () => {
+  function gradedRun(
+    runId: string,
+    aKey: string,
+    aPassCount: number,
+    bKey: string,
+    bPassCount: number,
+  ): RunRecordV2 {
+    // Valid hybrid profile: Q=1 (graded score 1), λ=1, 5 singleton binary
+    // groups. C = passCount/5, rankValue = 1 - 1*(1-C) = C = passCount/5.
+    const checkIds = ["b1", "b2", "b3", "b4", "b5"];
+    const profile: EvaluationProfile = {
+      id: "p-q",
+      version: 1,
+      name: "Floored",
+      description: "",
+      judgeInstruction: "",
+      criteria: [
+        {
+          id: "quality",
+          kind: "graded",
+          name: "Quality",
+          description: "d",
+          weight: 1,
+          anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+        },
+        ...checkIds.map((id) => ({
+          id,
+          kind: "binary" as const,
+          name: `Check ${id}`,
+          description: "d",
+          trueWhen: "t",
+          falseWhen: "f",
+        })),
+      ],
+      requirementGroups: checkIds.map((id, i) => ({
+        id: `g${i + 1}`,
+        name: `Group ${i + 1}`,
+        checkIds: [id],
+        weight: 1,
+        mode: "ALL" as const,
+      })),
+      complianceInfluence: 1.0,
+      createdAt: 100,
+      updatedAt: 100,
+    };
+    const mk = (key: string, passCount: number): CandidateEvaluation => ({
+      candidateId: key,
+      blindLabel: "A",
+      overallScore: 1,
+      position: "p",
+      rationale: "r",
+      strengths: ["s"],
+      deductions: [],
+      missedRequirements: [],
+      criterionScores: [
+        { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
+        ...checkIds.map((id, i) => ({
+          criterionId: id,
+          label: `Check ${id}`,
+          kind: "binary" as const,
+          value: i < passCount,
+          rationale: "r",
+        })),
+      ],
+    });
+    return {
+      schemaVersion: 2,
+      id: runId,
+      revision: 1,
+      execution: { ownerId: "tab-1", fence: 1 },
+      createdAt: 1000,
+      updatedAt: 1000,
+      completedAt: 1100,
+      status: "completed",
+      mode: "rank",
+      source: { kind: "adhoc" },
+      task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
+      evaluation: { profile, candidateMessages: [] },
+      candidates: [
+        {
+          candidateId: aKey,
+          slotId: "s1",
+          modelKey: aKey,
+          providerId: aKey.split(":")[0],
+          model: aKey,
+          slug: aKey.split(":")[1],
+          acceptedAttemptId: "a",
+          attempts: [],
+        },
+        {
+          candidateId: bKey,
+          slotId: "s2",
+          modelKey: bKey,
+          providerId: bKey.split(":")[0],
+          model: bKey,
+          slug: bKey.split(":")[1],
+          acceptedAttemptId: "a",
+          attempts: [],
+        },
+      ],
+      judge: {
+        status: "done",
+        acceptedAttemptId: "j",
+        report: {
+          labelMap: [],
+          evaluationsById: { [aKey]: mk(aKey, aPassCount), [bKey]: mk(bKey, bPassCount) },
+          comparisons: [],
+        },
+        consensus: null,
+        attempts: [],
+      },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    };
+  }
+
+  it("orders by raw aggregate mean, not the bounded display value", () => {
+    // Two complete-coverage models across two tasks; MK1 always passes 4/5
+    // binary groups (C=0.8, rankValue=0.8), MK2 always passes 1/5
+    // (C=0.2, rankValue=0.2). Both floored (rankValue < 1).
+    const agg = aggregateExperiment({
+      snapshot: makeSnapshot(["ta", "tb"]),
+      taskStates: [
+        makeTaskState("ta", [{ id: "a1", runId: "r1", status: "completed" }], "a1"),
+        makeTaskState("tb", [{ id: "a1", runId: "r2", status: "completed" }], "a1"),
+      ],
+      resolveRunRecord: (rid) => gradedRun(rid, MK1, 4, MK2, 1),
+    });
+    const a = agg.models.find((m) => m.modelKey === MK1)!;
+    const b = agg.models.find((m) => m.modelKey === MK2)!;
+    expect(a.mean).toBeCloseTo(0.8, 10);
+    expect(b.mean).toBeCloseTo(0.2, 10);
+    expect(a.flooredTaskCount).toBe(2);
+    expect(b.flooredTaskCount).toBe(2);
+    expect(boundedAggregateMean(a.mean!)).toBe(1);
+    expect(boundedAggregateMean(b.mean!)).toBe(1);
+    expect(agg.winnerKeys).toEqual([MK1]);
+    // deriveDisplayRanking orders MK1 first (raw mean), then MK2.
+    const ranking = deriveDisplayRanking(agg.models, new Map());
+    expect(ranking.eligible.map((m) => m.modelKey)).toEqual([MK1, MK2]);
+  });
+
+  it("Q̄ and C̄ use channel-specific divisors across mixed-channel tasks", () => {
+    // Regression (CodeRabbit 3741038012): a task without Q must not dilute Q̄,
+    // and a task without C must not dilute C̄. Task ta is graded-only
+    // (Q present, C null), task tb is binary-only (Q null, C present).
+    const taRun = mixedChannelRun("r-a", MK1, MK2, { mode: "graded" });
+    const tbRun = mixedChannelRun("r-b", MK1, MK2, { mode: "binary" });
+    const agg = aggregateExperiment({
+      snapshot: makeSnapshot(["ta", "tb"]),
+      taskStates: [
+        makeTaskState("ta", [{ id: "a1", runId: "r-a", status: "completed" }], "a1"),
+        makeTaskState("tb", [{ id: "a1", runId: "r-b", status: "completed" }], "a1"),
+      ],
+      resolveRunRecord: (rid) => (rid === "r-a" ? taRun : tbRun),
+    });
+    const a = agg.models.find((m) => m.modelKey === MK1)!;
+    const b = agg.models.find((m) => m.modelKey === MK2)!;
+    // Q̄ over the ONE Q-bearing task (ta): MK1 Q=5 → 5; MK2 Q=3 → 3.
+    expect(a.qMean).toBeCloseTo(5, 10);
+    expect(b.qMean).toBeCloseTo(3, 10);
+    // C̄ over the ONE C-bearing task (tb): MK1 C=1.0 → 1; MK2 C=0.0 → 0.
+    expect(a.cMean).toBeCloseTo(1, 10);
+    expect(b.cMean).toBeCloseTo(0, 10);
+  });
+});
+
+/** Build a run whose criterion scores exercise only one channel.
+ *  mode "graded": single graded criterion, no binary checks (C = null).
+ *  mode "binary": single binary check in one group (Q = null). */
+function mixedChannelRun(
+  runId: string,
+  aKey: string,
+  bKey: string,
+  { mode }: { mode: "graded" | "binary" },
+): RunRecordV2 {
+  const gradedProfile: EvaluationProfile = {
+    id: "p-g",
+    version: 1,
+    name: "Graded only",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "quality",
+        kind: "graded",
+        name: "Quality",
+        description: "d",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+    ],
+    requirementGroups: [],
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+  const binaryProfile: EvaluationProfile = {
+    id: "p-b",
+    version: 1,
+    name: "Binary only",
+    description: "",
+    judgeInstruction: "",
+    criteria: [
+      {
+        id: "b1",
+        kind: "binary",
+        name: "Check b1",
+        description: "d",
+        trueWhen: "t",
+        falseWhen: "f",
+      },
+    ],
+    requirementGroups: [{ id: "g1", name: "Group 1", checkIds: ["b1"], weight: 1, mode: "ALL" }],
+    complianceInfluence: 1.0,
+    createdAt: 100,
+    updatedAt: 100,
+  };
+  const profile = mode === "graded" ? gradedProfile : binaryProfile;
+  const mk = (key: string, score: number, pass: boolean): CandidateEvaluation => ({
+    candidateId: key,
+    blindLabel: "A",
+    overallScore: mode === "graded" ? score : pass ? 5 : 1,
+    position: "p",
+    rationale: "r",
+    strengths: ["s"],
+    deductions: [],
+    missedRequirements: [],
+    criterionScores:
+      mode === "graded"
+        ? [{ criterionId: "quality", label: "Quality", kind: "graded", score, rationale: "r" }]
+        : [{ criterionId: "b1", label: "Check b1", kind: "binary", value: pass, rationale: "r" }],
+  });
+  return {
+    schemaVersion: 2,
+    id: runId,
+    revision: 1,
+    execution: { ownerId: "tab-1", fence: 1 },
+    createdAt: 1000,
+    updatedAt: 1000,
+    completedAt: 1100,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
+    evaluation: { profile, candidateMessages: [] },
+    candidates: [
+      {
+        candidateId: aKey,
+        slotId: "s1",
+        modelKey: aKey,
+        providerId: aKey.split(":")[0],
+        model: aKey,
+        slug: aKey.split(":")[1],
+        acceptedAttemptId: "a",
+        attempts: [],
+      },
+      {
+        candidateId: bKey,
+        slotId: "s2",
+        modelKey: bKey,
+        providerId: bKey.split(":")[0],
+        model: bKey,
+        slug: bKey.split(":")[1],
+        acceptedAttemptId: "a",
+        attempts: [],
+      },
+    ],
+    judge: {
+      status: "done",
+      acceptedAttemptId: "j",
+      report: {
+        labelMap: [],
+        evaluationsById: {
+          [aKey]: mk(aKey, 5, true),
+          [bKey]: mk(bKey, 3, false),
+        },
+        comparisons: [],
+      },
+      consensus: null,
+      attempts: [],
+    },
+    fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    winnerKeys: [],
+  };
+}

@@ -13,12 +13,12 @@ import { Pagination, PAGE_SIZE } from "../../ui/Pagination";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
+import { rankScoreOf } from "../../lib/evaluations/evaluation-profile";
 import {
   type CellState,
-  type ExperimentAggregation,
   type MissingReason,
+  type ExperimentAggregation,
   formatAggregateMean,
-  formatTaskScore,
 } from "../../lib/evaluations/experiment-aggregation";
 import { StatusMark } from "../../ui/StatusMark";
 import { cellEvidenceLink, MISSING_CELL_DISPLAY, type RepairableCellPlans } from "./ResultMatrix";
@@ -129,8 +129,25 @@ function TaskRow({
     modelKey,
     cell.runId ? runRecords.get(cell.runId) : undefined,
   );
+  // Display contract (spec §16.2/16.3): compliance-only cells render the raw
+  // compliance share C as a percentage; normal ranked cells display the BOUNDED
+  // rankScore = max(1, rankValue) with a floor marker when raw rankValue < 1.
+  // Raw cell.score remains the ranking authority in both cases.
+  const complianceOnly = cell.q == null && cell.c != null;
+  const floored = !complianceOnly && cell.score < 1;
   const value = (
-    <span className="tabular-nums text-sm text-text">{formatTaskScore(cell.score)}</span>
+    <span className="tabular-nums text-sm text-text">
+      {complianceOnly ? `${(cell.c! * 100).toFixed(0)}%` : `${rankScoreOf(cell.score)!.toFixed(1)}`}
+      {floored ? (
+        <span
+          role="img"
+          aria-label="display value bounded at the 1.0 floor; raw rank value is lower"
+          title="rankValue below the 1.0 display floor"
+        >
+          *
+        </span>
+      ) : null}
+    </span>
   );
   const body = (
     <>

@@ -31,6 +31,11 @@ export interface Candidate {
   summary: string;
   scores: Record<string, number>;
   weightedScore: number;
+  /** Score domain for display (spec §16.3): "compliance" when the run used a
+   *  compliance-only profile (weightedScore = C in [0,1], render as a C-labeled
+   *  percentage, never a floored rankScore). Absent/undefined = the regular
+   *  1-5 rank domain. */
+  scoreDomain?: "rank" | "compliance";
   segments: CandidateSegment[];
   status: CandidateStatus;
   errorMessage?: string;
@@ -96,11 +101,18 @@ export interface JudgeDeduction {
   reason: string;
 }
 
-/** Per-criterion judge result, resolved to the rubric's display label after parsing. */
+/** Per-criterion judge result, resolved to the rubric's display label after parsing.
+ *  Graded/legacy criteria have a numeric `score` (1–5); binary criteria have a
+ *  boolean `value` with `score` omitted. The `kind` field discriminates. */
 export interface JudgeCriterionScore {
   criterionId: string;
   label: string;
-  score: number;
+  /** Numeric score for graded/legacy criteria (1–5). Undefined for binary. */
+  score?: number;
+  /** Boolean value for binary criteria. Undefined for graded/legacy. */
+  value?: boolean;
+  /** Criterion kind: "graded", "binary", or undefined (legacy). */
+  kind?: "graded" | "binary" | undefined;
   rationale: string;
 }
 

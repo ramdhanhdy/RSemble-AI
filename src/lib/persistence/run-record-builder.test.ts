@@ -23,6 +23,7 @@ import {
 } from "../../studio-data";
 import type { ChatMessage, ProviderId } from "../providers/types";
 import { type RunSource, type ExecutionFence, type RunRecordV2, isRunRecordV2 } from "./run-types";
+import type { EvaluationProfile } from "../evaluations/evaluation-types";
 import {
   createRunRecordBuilder,
   type RunRecordBuilderState,
@@ -1207,5 +1208,218 @@ describe("run record builder — attachment metadata (7.7.2)", () => {
     expect("attachments" in record).toBe(false);
     // Old records without the field still validate.
     expect(isRunRecordV2(record)).toBe(true);
+  });
+});
+
+describe("RunRecordBuilder — hybrid rankValue winner authority", () => {
+  function hybridProfile(): EvaluationProfile {
+    return {
+      id: "p1",
+      version: 1,
+      name: "Hybrid",
+      description: "",
+      judgeInstruction: "",
+      criteria: [
+        {
+          id: "quality",
+          kind: "graded" as const,
+          name: "Quality",
+          description: "d",
+          weight: 1,
+          anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+        },
+      ],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+  }
+
+  it("floored candidates with different rankValue do NOT tie (rankValue authority)", () => {
+    const builder = createRunRecordBuilder(makeDeps());
+    const state = builder.createInitialState();
+    const record = startFanout(state, builder);
+    completeAllCandidates(builder, state, record);
+    builder.applyFanoutTerminal(state, record, []);
+    builder.applyJudgeStart(state, record, "judge-att-1", {
+      providerId: "openrouter",
+      model: "judge-model",
+      instruction: "",
+      messages: makeMessages(),
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" },
+      startedAt: 3000,
+    });
+    // Set a pinned profile so deriveWinnerKeys uses rankValue rather than
+    // the Judge's holistic overallScore.
+    record.evaluation.profile = hybridProfile();
+    // Candidate A: graded quality 0.8 (ranks higher). Candidate B: quality 0.4.
+    // Both rankScore = 1.0 (floored) but rankValue 0.8 > 0.4 — A must win alone.
+    const report: JudgeReport = {
+      labelMap: [
+        { label: "A", candidateId: CANDIDATE_S1 },
+        { label: "B", candidateId: CANDIDATE_S2 },
+      ],
+      evaluationsById: {
+        [CANDIDATE_S1]: {
+          candidateId: CANDIDATE_S1,
+          blindLabel: "A",
+          overallScore: 1.0,
+          position: "P",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [
+            {
+              criterionId: "quality",
+              label: "Quality",
+              kind: "graded",
+              score: 0.8,
+              rationale: "low",
+            },
+          ],
+        },
+        [CANDIDATE_S2]: {
+          candidateId: CANDIDATE_S2,
+          blindLabel: "B",
+          overallScore: 1.0,
+          position: "P",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [
+            {
+              criterionId: "quality",
+              label: "Quality",
+              kind: "graded",
+              score: 0.4,
+              rationale: "lower",
+            },
+          ],
+        },
+      },
+      comparisons: [],
+    };
+    builder.applyJudgeTerminal(state, record, "judge-att-1", {
+      status: "completed",
+      report,
+      consensus: null,
+      error: null,
+      finishedAt: 4000,
+    });
+    const summary = builder.deriveSummary(record);
+    // rankValue authority: A (0.8) ranks above B (0.4) — single winner.
+    expect(summary.winnerKeys).toEqual(["openrouter:model-a"]);
+    // scoresByModelKey reflects rankValue, not bounded rankScore.
+    expect(summary.scoresByModelKey["openrouter:model-a"]).toBeCloseTo(0.8, 10);
+    expect(summary.scoresByModelKey["umans:model-b"]).toBeCloseTo(0.4, 10);
+  });
+});
+
+describe("RunRecordBuilder — compliance-only winner ranks on C (spec §16.3)", () => {
+  function complianceOnlyProfile() {
+    return {
+      id: "p-comp",
+      version: 1,
+      name: "Compliance only",
+      description: "",
+      judgeInstruction: "",
+      criteria: [
+        {
+          id: "b1",
+          kind: "binary" as const,
+          name: "Check",
+          description: "d",
+          trueWhen: "t",
+          falseWhen: "f",
+        },
+        {
+          id: "b2",
+          kind: "binary" as const,
+          name: "Check2",
+          description: "d",
+          trueWhen: "t",
+          falseWhen: "f",
+        },
+      ],
+      requirementGroups: [
+        { id: "g1", name: "G1", checkIds: ["b1"], weight: 1, mode: "ALL" as const },
+        { id: "g2", name: "G2", checkIds: ["b2"], weight: 1, mode: "ALL" as const },
+      ],
+      complianceInfluence: 1.0,
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+  }
+
+  it("winner ranks by weighted compliance C, not the Judge's holistic overallScore", () => {
+    const builder = createRunRecordBuilder(makeDeps());
+    const state = builder.createInitialState();
+    const record = startFanout(state, builder);
+    completeAllCandidates(builder, state, record);
+    builder.applyFanoutTerminal(state, record, []);
+    builder.applyJudgeStart(state, record, "judge-att-1", {
+      providerId: "openrouter",
+      model: "judge-model",
+      instruction: "",
+      messages: makeMessages(),
+      blindLabelToCandidateId: { A: CANDIDATE_S1, B: CANDIDATE_S2 },
+      candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" },
+      startedAt: 3000,
+    });
+    // Compliance-only profile → rank on C, never the holistic overallScore.
+    record.evaluation.profile = complianceOnlyProfile();
+    // Candidate A: both checks pass → C = 1.0. Candidate B: b2 fails → C = 0.5.
+    // Judge's holistic overallScore is 4.0 for both (must NOT win by that).
+    const report: JudgeReport = {
+      labelMap: [
+        { label: "A", candidateId: CANDIDATE_S1 },
+        { label: "B", candidateId: CANDIDATE_S2 },
+      ],
+      evaluationsById: {
+        [CANDIDATE_S1]: {
+          candidateId: CANDIDATE_S1,
+          blindLabel: "A",
+          overallScore: 4.0,
+          position: "P",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [
+            { criterionId: "b1", label: "Check", kind: "binary", value: true, rationale: "p" },
+            { criterionId: "b2", label: "Check2", kind: "binary", value: true, rationale: "p" },
+          ],
+        },
+        [CANDIDATE_S2]: {
+          candidateId: CANDIDATE_S2,
+          blindLabel: "B",
+          overallScore: 4.0,
+          position: "P",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [
+            { criterionId: "b1", label: "Check", kind: "binary", value: true, rationale: "p" },
+            { criterionId: "b2", label: "Check2", kind: "binary", value: false, rationale: "f" },
+          ],
+        },
+      },
+      comparisons: [],
+    };
+    builder.applyJudgeTerminal(state, record, "judge-att-1", {
+      status: "completed",
+      report,
+      consensus: null,
+      error: null,
+      finishedAt: 4000,
+    });
+    const summary = builder.deriveSummary(record);
+    // A ranks on C=1.0 (single winner); B's C=0.5 does not tie.
+    expect(summary.winnerKeys).toEqual(["openrouter:model-a"]);
+    expect(summary.scoresByModelKey["openrouter:model-a"]).toBeCloseTo(1.0, 10);
+    expect(summary.scoresByModelKey["umans:model-b"]).toBeCloseTo(0.5, 10);
   });
 });

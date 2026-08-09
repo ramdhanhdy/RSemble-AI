@@ -18,6 +18,7 @@ import type {
   JudgeComparison,
 } from "../studio-data";
 import { isUsableCandidate } from "../lib/pipeline";
+import { formatCandidateScoreDisplay } from "../lib/evaluations/evaluation-profile";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
 import { BrandAvatar } from "./brand-icons";
@@ -166,7 +167,7 @@ function Recommendation({
         Use <span className="font-semibold">{winner.model}</span> for this kind of task —{" "}
         <span className="text-text-secondary">{whyLine}</span>{" "}
         <span className={`font-mono ${tier(winner.weightedScore).text}`}>
-          {winner.weightedScore.toFixed(1)}/5
+          {formatCandidateScoreDisplay(winner.weightedScore, winner.scoreDomain)}
         </span>
       </p>
     </div>
@@ -244,7 +245,12 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
       <div className="overflow-hidden rounded-lg border border-edge divide-y divide-edge">
         {ranked.map((c, i) => {
           const t = tier(c.weightedScore);
-          const widthPct = Math.max(8, (c.weightedScore / 5) * 100);
+          // Compliance-domain values (spec §16.3) are C in [0,1] and must scale
+          // against 1.0 (100%), not the 1–5 rank scale (CodeRabbit 4890236254).
+          const widthPct =
+            c.scoreDomain === "compliance"
+              ? Math.max(8, (c.weightedScore / 1) * 100)
+              : Math.max(8, (c.weightedScore / 5) * 100);
           const isWinner = i === 0;
           const scores = c.scores ?? {};
           const hasMicro = allCriteria.length > 0;
@@ -296,15 +302,32 @@ function Leaderboard({ ranked }: { ranked: Candidate[] }) {
                 )}
               </div>
               <span className={`w-9 text-right font-mono text-sm ${t.text}`}>
-                {c.weightedScore.toFixed(1)}
+                {formatCandidateScoreDisplay(c.weightedScore, c.scoreDomain)}
               </span>
             </div>
           );
         })}
       </div>
       <p className="mt-1 font-mono text-sm text-text-muted">
-        bars scaled to 5.0 · top score this run: {top.toFixed(1)}
+        {ranked[0]?.scoreDomain === "compliance"
+          ? "bars scaled to 100% compliance · top score this run: "
+          : "bars scaled to 5.0 · top score this run: "}
+        {formatCandidateScoreDisplay(top, ranked[0]?.scoreDomain)}
       </p>
+      {ranked.some(
+        (c) => c.weightedScore != null && c.weightedScore < 1 && c.scoreDomain !== "compliance",
+      ) && (
+        <p className="mt-1 font-mono text-[11px] text-text-muted">
+          * bounded at the 1.0 display floor — ordering uses the raw rank value:{" "}
+          {ranked
+            .filter(
+              (c) =>
+                c.weightedScore != null && c.weightedScore < 1 && c.scoreDomain !== "compliance",
+            )
+            .map((c) => `${c.model}: ${c.weightedScore.toFixed(2)}`)
+            .join(" · ")}
+        </p>
+      )}
     </div>
   );
 }
@@ -600,8 +623,20 @@ function ExplanationCard({
               <ul className="space-y-1">
                 {evaluation.criterionScores.map((cs) => (
                   <li key={cs.criterionId} className="text-sm leading-relaxed text-text">
-                    <span className={`font-mono ${tier(cs.score).text}`}>
-                      {cs.label}: {cs.score.toFixed(1)}/5
+                    <span
+                      className={`font-mono ${
+                        cs.kind === "binary"
+                          ? cs.value === undefined
+                            ? "text-text-muted"
+                            : cs.value
+                              ? "text-success"
+                              : "text-error"
+                          : tier(cs.score ?? 0).text
+                      }`}
+                    >
+                      {cs.kind === "binary"
+                        ? `${cs.label}: ${cs.value === undefined ? "UNKNOWN" : cs.value ? "PASS" : "FAIL"}`
+                        : `${cs.label}: ${cs.score?.toFixed(1) ?? "N/A"}/5`}
                     </span>
                     <span className="text-text-secondary"> — {cs.rationale}</span>
                   </li>

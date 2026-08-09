@@ -777,3 +777,184 @@ describe("archiveFailureGuidance", () => {
     expect(archiveFailureGuidance("weird")).toBe("Import failed — nothing was imported.");
   });
 });
+
+// --- §18 export completeness: hybrid scoring derivation ------------------------
+
+function makeHybridRun(
+  profile: EvaluationProfile | null,
+  criterionScores: Array<{
+    criterionId: string;
+    label: string;
+    kind: "graded" | "binary";
+    score?: number;
+    value?: boolean;
+    rationale: string;
+  }>,
+  overallScore = 4,
+  id = "run-hybrid",
+): RunRecordV2 {
+  const record = makeRun(id);
+  record.evaluation.profile = profile;
+  record.judge = {
+    status: "done",
+    acceptedAttemptId: null,
+    report: {
+      labelMap: [{ label: "A", candidateId: "c-1" }],
+      evaluationsById: {
+        "c-1": {
+          candidateId: "c-1",
+          blindLabel: "A",
+          overallScore,
+          position: "p",
+          rationale: "r",
+          strengths: [],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores,
+        },
+      },
+      comparisons: [],
+    },
+    consensus: null,
+    attempts: [],
+  };
+  return record;
+}
+
+const gradedCriterion = {
+  id: "quality",
+  kind: "graded" as const,
+  name: "Quality",
+  description: "d",
+  weight: 1,
+  anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+};
+const binaryA = {
+  id: "check-a",
+  kind: "binary" as const,
+  name: "Check A",
+  description: "d",
+  trueWhen: "yes",
+  falseWhen: "no",
+};
+const binaryB = {
+  id: "check-b",
+  kind: "binary" as const,
+  name: "Check B",
+  description: "d",
+  trueWhen: "yes",
+  falseWhen: "no",
+};
+const mixedProfile: EvaluationProfile = {
+  id: "p-mix",
+  version: 1,
+  name: "Mixed",
+  description: "",
+  judgeInstruction: "",
+  criteria: [gradedCriterion, binaryA, binaryB],
+  requirementGroups: [
+    { id: "g1", name: "Core", checkIds: ["check-a", "check-b"], weight: 1, mode: "ALL" },
+  ],
+  complianceInfluence: 0.5,
+  createdAt: 100,
+  updatedAt: 100,
+};
+
+describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () => {
+  it("ordinary mixed profile: Q, C, λ, rankValue, rankScore, derivation, binary PASS/FAIL", () => {
+    const record = makeHybridRun(mixedProfile, [
+      { criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" },
+      { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
+      { criterionId: "check-b", label: "Check B", kind: "binary", value: true, rationale: "r" },
+    ]);
+    const md = buildRunExportMarkdown(record);
+    // Scoring fields present.
+    expect(md).toContain("Quality (Q):");
+    expect(md).toContain("Compliance (C):");
+    expect(md).toContain("Compliance influence (λ):");
+    expect(md).toContain("Rank Value:");
+    expect(md).toContain("Rank Score:");
+    // Derivation formula.
+    expect(md).toContain("rankValue = Q − λ·(1 − C)");
+    // Binary results as PASS/FAIL, never 1/5.
+    expect(md).toContain("Check A: PASS");
+    expect(md).toContain("Check B: PASS");
+    expect(md).not.toMatch(/Check A: [0-5]\/5/);
+    // Group context on binary rows.
+    expect(md).toContain("(Group: Core)");
+  });
+
+  it("uneven group weights: derivation reflects weighted compliance", () => {
+    const profile: EvaluationProfile = {
+      ...mixedProfile,
+      requirementGroups: [
+        { id: "g1", name: "Core", checkIds: ["check-a"], weight: 2, mode: "ALL" },
+        { id: "g2", name: "Extra", checkIds: ["check-b"], weight: 1, mode: "ALL" },
+      ],
+    };
+    const record = makeHybridRun(profile, [
+      { criterionId: "quality", label: "Quality", kind: "graded", score: 3, rationale: "r" },
+      { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
+      { criterionId: "check-b", label: "Check B", kind: "binary", value: false, rationale: "r" },
+    ]);
+    const md = buildRunExportMarkdown(record);
+    // C = (2*1 + 1*0) / 3 = 0.667
+    expect(md).toContain("rankValue = Q − λ·(1 − C)");
+    expect(md).toContain("Check A: PASS");
+    expect(md).toContain("Check B: FAIL");
+    expect(md).toContain("(Group: Core)");
+    expect(md).toContain("(Group: Extra)");
+  });
+
+  it("floored candidate: floor marker and raw rankValue shown", () => {
+    // Q = 1 (valid graded score 1), C = 0 (group fails), λ = 1
+    // → rv = 1 - 1*(1-0) = 0 < 1 → floored.
+    const profile: EvaluationProfile = {
+      ...mixedProfile,
+      complianceInfluence: 1.0,
+    };
+    const record = makeHybridRun(
+      profile,
+      [
+        { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
+        { criterionId: "check-a", label: "Check A", kind: "binary", value: false, rationale: "r" },
+        { criterionId: "check-b", label: "Check B", kind: "binary", value: false, rationale: "r" },
+      ],
+      1,
+    );
+    const md = buildRunExportMarkdown(record);
+    expect(md).toContain("(floored)");
+    expect(md).toContain("Floor applied");
+    expect(md).toContain("raw rankValue");
+    // rankScore = max(1, 0) = 1.0, with floor marker.
+    expect(md).toContain("1.0*");
+  });
+
+  it("binary group labels shown on binary criterion rows", () => {
+    const record = makeHybridRun(mixedProfile, [
+      { criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" },
+      { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
+      { criterionId: "check-b", label: "Check B", kind: "binary", value: false, rationale: "r" },
+    ]);
+    const md = buildRunExportMarkdown(record);
+    expect(md).toContain("(Group: Core)");
+    expect(md).toContain("Check A: PASS");
+    expect(md).toContain("Check B: FAIL");
+  });
+
+  it("legacy profile (null): falls back to overallScore headline, no derivation", () => {
+    const record = makeHybridRun(
+      null,
+      [{ criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" }],
+      3.5,
+    );
+    const md = buildRunExportMarkdown(record);
+    // No profile → no scoring derivation section.
+    expect(md).not.toContain("rankValue = Q");
+    expect(md).not.toContain("Compliance influence (λ)");
+    // Headline uses overallScore.
+    expect(md).toContain("3.5/5");
+    // Graded criterion still shown.
+    expect(md).toContain("Quality: 4.0/5");
+  });
+});

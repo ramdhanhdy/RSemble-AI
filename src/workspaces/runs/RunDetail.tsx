@@ -16,6 +16,11 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
+import {
+  rankValueFromResults,
+  rankScoreOf,
+  isFloored,
+} from "../../lib/evaluations/evaluation-profile";
 import { inputUsageLabel } from "../../lib/cost";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
@@ -487,7 +492,20 @@ function JudgeSection({
                       Label: {ev.blindLabel}
                     </span>
                     <span className="ml-auto font-mono text-text tabular-nums">
-                      {ev.overallScore.toFixed(1)}
+                      {(() => {
+                        const profile = record.evaluation.profile;
+                        if (profile) {
+                          const rv = rankValueFromResults(ev.criterionScores, profile);
+                          if (rv !== null) {
+                            const rs = rankScoreOf(rv);
+                            const floored = isFloored(rv);
+                            return floored
+                              ? `${rs?.toFixed(1)}* (${rv.toFixed(2)})`
+                              : `${rs?.toFixed(1)}`;
+                          }
+                        }
+                        return ev.overallScore.toFixed(1);
+                      })()}
                     </span>
                   </div>
                   <p className="mt-1 text-text-secondary">{ev.rationale}</p>

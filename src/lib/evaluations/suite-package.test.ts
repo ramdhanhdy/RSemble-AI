@@ -6,6 +6,7 @@
 // =============================================================================
 
 import "fake-indexeddb/auto";
+import type { EvaluationProfile } from "./evaluation-types";
 import { afterEach, describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "../persistence/database";
 import { importSuitePackage } from "../persistence/suite-package-import";
@@ -15,6 +16,7 @@ import {
   parseSuitePackage,
   validateSuitePackageBytes,
   type SuitePackageV1,
+  type SuitePackageProfile,
 } from "./suite-package";
 
 function criterion(id: string) {
@@ -257,5 +259,91 @@ describe("importSuitePackage", () => {
     expect(await repo.getProfile(result.profileIds[0], 1)).not.toBeNull();
     // Conflict is an error, not a silent skip.
     await expect(repo.importSuitePackage(normalized.result)).rejects.toThrow(/already exists/);
+  });
+});
+
+describe("hybrid profile round-trip through suite packages", () => {
+  const baseOpts = () => ({ takenIds: new Set<string>(), existingProfileIds: new Set<string>() });
+
+  function hybridProfile(): SuitePackageProfile {
+    return {
+      id: "pkg-hybrid",
+      name: "Hybrid P",
+      description: "test",
+      judgeInstruction: "",
+      criteria: [
+        {
+          id: "quality",
+          kind: "graded",
+          name: "Quality",
+          description: "d",
+          weight: 2,
+          anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+        },
+        {
+          id: "uses-itt",
+          kind: "binary",
+          name: "Uses ITT",
+          description: "d",
+          trueWhen: "Uses all assigned",
+          falseWhen: "Conditions on subset",
+        },
+      ],
+      requirementGroups: [
+        { id: "g1", name: "ITT", checkIds: ["uses-itt"], weight: 1, mode: "ALL" as const },
+      ],
+      complianceInfluence: 0.5,
+    };
+  }
+
+  it("preserves requirementGroups and complianceInfluence through import", () => {
+    const pkg = makePkg({ profiles: [hybridProfile()] });
+    const result = normalizeSuitePackage(pkg, baseOpts());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const profile = result.result.profiles[0].profile;
+    expect(profile.requirementGroups).toHaveLength(1);
+    expect(profile.requirementGroups?.[0]).toMatchObject({
+      id: "g1",
+      checkIds: ["uses-itt"],
+      weight: 1,
+      mode: "ALL",
+    });
+    expect(profile.complianceInfluence).toBe(0.5);
+  });
+
+  it("rejects an ungrouped binary check at import (exactly-one membership)", () => {
+    // validateProfile (now run inside normalizeSuitePackage) requires every
+    // binary check to belong to exactly one requirement group.
+    const pkg = makePkg({
+      profiles: [
+        {
+          ...hybridProfile(),
+          requirementGroups: undefined,
+          complianceInfluence: 0.5,
+        },
+      ],
+    });
+    const result = normalizeSuitePackage(pkg, baseOpts());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.includes("not assigned to any requirement group"))).toBe(
+      true,
+    );
+  });
+
+  it("rejects a package profile carrying kind:'gate' (structural guard drops it)", () => {
+    const pkg = makePkg({
+      profiles: [
+        {
+          name: "GateP",
+          criteria: [
+            { id: "g1", kind: "gate", name: "Gate", description: "d" },
+          ] as unknown as EvaluationProfile["criteria"],
+        },
+      ],
+    });
+    const result = normalizeSuitePackage(pkg, baseOpts());
+    expect(result.ok).toBe(false);
   });
 });

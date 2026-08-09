@@ -34,6 +34,11 @@ import type {
   ExecutionFence,
 } from "./run-types";
 import type { EvaluationProfileSnapshot } from "../evaluations/evaluation-types";
+import {
+  rankValueFromResults,
+  WINNER_EPSILON,
+  isComplianceOnlyProfile,
+} from "../evaluations/evaluation-profile";
 import { candidateIdForSlot } from "../pipeline";
 import { resolveReasoningEffort } from "../providers/reasoning";
 
@@ -733,16 +738,22 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
   function deriveWinnerKeys(record: RunRecordV2): string[] {
     if (!record.judge.report) return [];
     const { evaluationsById } = record.judge.report;
+    const profile = record.evaluation.profile;
     const scores: Array<{ modelKey: string; score: number }> = [];
     for (const c of record.candidates) {
       const ev = evaluationsById[c.candidateId];
       if (ev) {
-        scores.push({ modelKey: c.modelKey, score: ev.overallScore });
+        // When a profile is pinned, rankValue is the authoritative ranking
+        // quantity. Otherwise, fall back to the Judge's holistic overallScore.
+        const rv = profile ? rankValueFromResults(ev.criterionScores, profile) : null;
+        scores.push({ modelKey: c.modelKey, score: rv ?? ev.overallScore });
       }
     }
     if (scores.length === 0) return [];
     const maxScore = Math.max(...scores.map((s) => s.score));
-    return scores.filter((s) => Math.abs(s.score - maxScore) < 1e-9).map((s) => s.modelKey);
+    return scores
+      .filter((s) => Math.abs(s.score - maxScore) < WINNER_EPSILON)
+      .map((s) => s.modelKey);
   }
 
   // --- Summary derivation -----------------------------------------------------
@@ -752,13 +763,17 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     const modelKeys = record.candidates.map((c) => c.modelKey);
     const winnerKeys = deriveWinnerKeys(record);
 
-    // scoresByModelKey from accepted Judge report
+    // scoresByModelKey from accepted Judge report.
+    // When a profile is pinned, use the authoritative rankValue; otherwise
+    // fall back to the Judge's holistic overallScore.
     const scoresByModelKey: Record<string, number> = {};
     if (record.judge.report) {
+      const profile = record.evaluation.profile;
       for (const c of record.candidates) {
         const ev = record.judge.report.evaluationsById[c.candidateId];
         if (ev) {
-          scoresByModelKey[c.modelKey] = ev.overallScore;
+          const rv = profile ? rankValueFromResults(ev.criterionScores, profile) : null;
+          scoresByModelKey[c.modelKey] = rv ?? ev.overallScore;
         }
       }
     }
@@ -794,6 +809,9 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       judgeModelKey,
       evaluationProfileId: record.evaluation.profile?.id ?? null,
       evaluationProfileVersion: record.evaluation.profile?.version ?? null,
+      scoreDomain: isComplianceOnlyProfile(record.evaluation.profile ?? null)
+        ? "compliance"
+        : "rank",
       detailAvailable: true,
       searchText,
     };

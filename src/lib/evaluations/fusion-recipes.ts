@@ -252,12 +252,16 @@ export function criterionScoresSection(
   blindCandidates: BlindCandidate[],
   judgeReport: JudgeReport,
 ): string {
-  const lines: string[] = ["Per-candidate scores (1.0–5.0):"];
+  const lines: string[] = ["Per-candidate scores (graded 1.0–5.0; binary PASS/FAIL):"];
   for (const candidate of blindCandidates) {
     const ev = judgeReport.evaluationsById[candidate.candidateId];
     if (!ev) continue;
     const criteria = ev.criterionScores
-      .map((cs) => `${cs.label} ${cs.score.toFixed(1)}`)
+      .map((cs) =>
+        cs.kind === "binary"
+          ? `${cs.label} ${cs.value === undefined ? "UNKNOWN" : cs.value ? "PASS" : "FAIL"}`
+          : `${cs.label} ${cs.score?.toFixed(1) ?? "N/A"}`,
+      )
       .join(", ");
     lines.push(
       `- Candidate ${candidate.label}: overall ${ev.overallScore.toFixed(1)}` +

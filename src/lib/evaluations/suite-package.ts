@@ -33,6 +33,7 @@ import {
   type ProfileRecord,
 } from "./evaluation-types";
 import { validateSuiteForExecution } from "./suite-validation";
+import { validateProfile } from "./evaluation-profile";
 import type { CriticRef, ProviderId } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
 
@@ -77,6 +78,8 @@ export interface SuitePackageProfile {
   description?: string;
   judgeInstruction?: string;
   criteria: EvaluationProfile["criteria"];
+  requirementGroups?: EvaluationProfile["requirementGroups"];
+  complianceInfluence?: EvaluationProfile["complianceInfluence"];
 }
 
 export interface SuitePackageV1 {
@@ -326,12 +329,25 @@ export function normalizeSuitePackage(
       description: pkgProfile.description ?? "",
       judgeInstruction: pkgProfile.judgeInstruction ?? "",
       criteria: pkgProfile.criteria,
+      requirementGroups: pkgProfile.requirementGroups,
+      complianceInfluence: pkgProfile.complianceInfluence,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
+    // Authoring-boundary validation FIRST: enforces group membership invariants
+    // (every checkId resolves to a binary check, exactly-one membership, no
+    // ungrouped binary checks) and yields detailed, actionable errors. The
+    // structural guard below runs as the final shape check; because the guard
+    // also rejects binary criteria with undefined requirementGroups (spec §19),
+    // it must not preempt the detailed authoring message.
+    const profileErrors = validateProfile(profile);
+    if (profileErrors.length > 0) {
+      errors.push(`Profile "${pkgProfile.name}" is invalid: ${profileErrors.join("; ")}`);
+      continue;
+    }
     if (!isEvaluationProfile(profile)) {
       errors.push(
-        `Profile "${pkgProfile.name}" fails the record guard — check criteria anchors and weights.`,
+        `Profile "${pkgProfile.name}" fails the record guard — check criteria anchors and weights (a kind:"gate" criterion is not supported in this version; author it as a binary check or wait for gate support).`,
       );
       continue;
     }

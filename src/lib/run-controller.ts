@@ -11,6 +11,7 @@ import {
   checkAttachmentEligibility,
 } from "./pipeline";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
+import { rankValueFromResults, isComplianceOnlyProfile } from "./evaluations/evaluation-profile";
 import { evaluateComparePreflight, type ComparePreflight } from "./compare-preflight";
 import type { RunRecorder } from "./persistence/run-recorder";
 import type { ExecutionFence } from "./persistence/run-types";
@@ -433,12 +434,30 @@ export function createRunController(deps: RunControllerDeps) {
             // the mutable command-pane mode after execution begins.
             mode: frozenContext?.mode ?? capturedMode,
             consensus: input.consensus!,
-            scoresById: Object.fromEntries(
-              Object.entries(input.report.evaluationsById).map(([cid, ev]) => [
-                cid,
-                ev.overallScore,
-              ]),
-            ),
+            // Resolve the frozen profile once per Judge result, not once per
+            // candidate (spec §16.3 domain consistency; avoids redundant work).
+            scoresById: (() => {
+              const profile = frozenContext
+                ? resolveEvaluationProfile(frozenContext.evaluation)
+                : null;
+              return Object.fromEntries(
+                Object.entries(input.report.evaluationsById).map(([cid, ev]) => {
+                  if (profile) {
+                    const rv = rankValueFromResults(ev.criterionScores, profile);
+                    if (rv !== null) return [cid, rv];
+                  }
+                  return [cid, ev.overallScore];
+                }),
+              );
+            })(),
+            // Compliance-only runs carry C in [0,1]; live surfaces must render
+            // it as a C-labeled percentage, never a floored rankScore (§16.3).
+            scoreDomain: (() => {
+              const profile = frozenContext
+                ? resolveEvaluationProfile(frozenContext.evaluation)
+                : null;
+              return isComplianceOnlyProfile(profile) ? "compliance" : "rank";
+            })(),
             report: input.report,
           });
         } else if (input.status === "failed") {

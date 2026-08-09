@@ -72,7 +72,11 @@ export async function pickStratifiedPairs(
   profile: EvaluationProfileSnapshot | null,
   taskSample: number,
 ): Promise<StratifiedPair[]> {
-  const weights: CriterionWeights = new Map((profile?.criteria ?? []).map((c) => [c.id, c.weight]));
+  const weights: CriterionWeights = new Map(
+    (profile?.criteria ?? [])
+      .filter((c) => "weight" in c)
+      .map((c) => [c.id, (c as { weight: number }).weight]),
+  );
   const slots = activePoolSlots(pool);
   const tasks = suite.tasks.slice(0, Math.max(1, taskSample));
   const scoresByTask = new Map<string, Map<string, ModelTaskScore>>();
@@ -96,7 +100,7 @@ export async function pickStratifiedPairs(
         const b = scoresByTask.get(task.id)?.get(modelKeyOf(slots[j]));
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights);
+      const metrics = computeHeadroom(paired, weights, profile);
       rows.push({
         slots: [slots[i], slots[j]],
         headroom: Math.max(metrics.selectionHeadroom, metrics.synthesisHeadroom ?? 0),

@@ -6,6 +6,9 @@ import { candidateFullText } from "./pipeline";
 import type { StudioState } from "../studio-engine";
 import { formatBytes } from "./attachments/limits";
 import { resolveReasoningEffort } from "./providers/reasoning";
+import { formatRankValueDisplay } from "./evaluations/evaluation-profile";
+import type { EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
+import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
 
 /**
  * Sanitize judge-provided or model-provided free text for safe Markdown export.
@@ -29,6 +32,11 @@ export function buildExportMarkdown(s: StudioState): string | null {
   const exportAttachments = s.runContext?.attachments ?? s.attachments;
   const exportMode = s.runContext?.mode ?? s.mode;
   const exportJudgeInstruction = s.runContext?.judgeInstruction ?? s.judgeInstruction;
+  // Frozen evaluation profile (resolved once): compliance-only profiles must
+  // render C as a percentage, never as a floored 1.0*/5 rank score (spec §16.3).
+  const frozenProfile: EvaluationProfileSnapshot | null = s.runContext
+    ? resolveEvaluationProfile(s.runContext.evaluation)
+    : null;
   const lines: string[] = [`# RSemble AI — Export`, ``, `## Task`, ``, exportPrompt, ``];
 
   // Use the frozen run policy, not the mutable command pane. Effective levels
@@ -105,7 +113,7 @@ export function buildExportMarkdown(s: StudioState): string | null {
       const ev = report.evaluationsById[c.id];
       if (!ev) continue;
       lines.push(
-        `### ${mdSafe(c.model)} (Candidate ${ev.blindLabel}) — ${ev.overallScore.toFixed(1)}/5`,
+        `### ${mdSafe(c.model)} (Candidate ${ev.blindLabel}) — ${formatRankValueDisplay(c.weightedScore, frozenProfile)}`,
         ``,
       );
       lines.push(`Position: ${mdSafe(ev.position)}`, ``);
@@ -132,8 +140,14 @@ export function buildExportMarkdown(s: StudioState): string | null {
       if (ev.criterionScores.length > 0) {
         lines.push(
           `Criterion scores:`,
-          ...ev.criterionScores.map(
-            (cs) => `- ${mdSafe(cs.label)}: ${cs.score.toFixed(1)}/5 — ${mdSafe(cs.rationale)}`,
+          ...ev.criterionScores.map((cs) =>
+            cs.kind === "binary"
+              ? `- ${mdSafe(cs.label)}: ${
+                  cs.value === undefined ? "UNKNOWN" : cs.value ? "PASS" : "FAIL"
+                } — ${mdSafe(cs.rationale)}`
+              : `- ${mdSafe(cs.label)}: ${
+                  cs.score === undefined ? "N/A" : `${cs.score.toFixed(1)}/5`
+                } — ${mdSafe(cs.rationale)}`,
           ),
           ``,
         );
@@ -160,7 +174,7 @@ export function buildExportMarkdown(s: StudioState): string | null {
     lines.push(`## Ranked Candidates`, ``);
     ranked.forEach((c, i) => {
       lines.push(
-        `### ${i + 1}. ${c.model} — ${c.weightedScore.toFixed(1)}/5`,
+        `### ${i + 1}. ${c.model} — ${formatRankValueDisplay(c.weightedScore, frozenProfile)}`,
         ``,
         candidateFullText(c),
         ``,
