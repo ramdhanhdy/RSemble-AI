@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSemble AI — Runs IA Prototypes</title>
+<style>
+/* RSemble AI — Prototype Design System
+   Extracted from tailwind.config.js + index.css + Header/WorkspaceNav/RunList source.
+   Dark theme, cyan accent, Geist font stack. */
+
+:root {
+  /* Colors */
+  --canvas: #0a0a0a;
+  --shell: #0a0a0a;
+  --panel: #121212;
+  --card: #121212;
+  --card-hover: #1a1a1a;
+  --raised: #181818;
+  --edge: #262626;
+  --edge-bright: #3a3a3a;
+  --accent: #00e5ff;
+  --accent-deep: #00a9bd;
+  --on-accent: #001719;
+  --text: #ededed;
+  --text-secondary: #a1a1a1;
+  --text-muted: #777777;
+  --success: #00ff9d;
+  --warning: #ffb300;
+  --error: #ff4d4d;
+
+  /* Typography */
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Shadows */
+  --shadow-glow: 0 0 0 1px rgba(0,229,255,.45), 0 0 24px rgba(0,229,255,.18);
+  --shadow-cta: 0 4px 20px rgba(0,229,255,.25);
+  --shadow-popover: 0 16px 48px -12px rgba(0,0,0,.7);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  background-color: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background-color: var(--edge-bright); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background-color: #4a4a4a; }
+::-webkit-scrollbar-track { background-color: transparent; }
+
+/* ===== Layout ===== */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+  align-items: center;
+  gap: var(--space-2);
+  height: 56px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--shell);
+  padding: 0 var(--space-4);
+  flex-shrink: 0;
+}
+
+.header-left { display: flex; align-items: center; gap: 10px; }
+.header-center { justify-self: center; }
+.header-right { display: flex; align-items: center; gap: var(--space-2); justify-self: end; }
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.logo-mark {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+
+/* ===== Navigation ===== */
+
+.nav-primary {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 150ms, background-color 150ms;
+  background: none;
+  border: none;
+  font-family: inherit;
+}
+.nav-item:hover { background: var(--panel); color: var(--text); }
+.nav-item.active { color: var(--accent); }
+
+.nav-item svg { width: 15px; height: 15px; }
+
+/* Connection pill */
+.conn-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  border-radius: 9999px;
+  padding: 0 var(--space-3);
+  height: 36px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; }
+.conn-dot.connected { background: var(--success); }
+.conn-dot.disconnected { background: var(--error); }
+
+/* ===== Workspace ===== */
+
+.workspace {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+.workspace-split {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+.list-pane {
+  border-right: 1px solid var(--edge);
+  background: var(--shell);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-pane {
+  overflow: auto;
+  background: var(--canvas);
+}
+
+.workspace-full {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-6);
+}
+
+/* ===== Compare ===== */
+
+.compare-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel);
+}
+
+.mode-toggle {
+  display: inline-flex;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  overflow: hidden;
+}
+.mode-toggle button {
+  padding: 6px var(--space-4);
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 150ms, color 150ms;
+}
+.mode-toggle button.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ===== Cards / Surfaces ===== */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+.card-hover:hover { background: var(--card-hover); }
+
+/* ===== Run List ===== */
+
+.run-list { list-style: none; overflow: auto; flex: 1; }
+
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--edge);
+  cursor: pointer;
+  transition: background 100ms;
+  text-decoration: none;
+  color: inherit;
+}
+.run-row:hover { background: var(--card-hover); }
+.run-row.selected { background: var(--raised); border-left: 2px solid var(--accent); }
+
+.run-row-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.source-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+.source-adhoc { background: rgba(0,229,255,0.1); color: var(--accent); }
+.source-experiment { background: rgba(255,179,0,0.1); color: var(--warning); }
+.source-legacy { background: rgba(119,119,119,0.15); color: var(--text-muted); }
+
+/* ===== Status ===== */
+
+.status-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+.status-dot { width: 6px; height: 6px; border-radius: 50%; }
+.status-completed .status-dot { background: var(--success); }
+.status-failed .status-dot { background: var(--error); }
+.status-partial .status-dot { background: var(--warning); }
+.status-running .status-dot { background: var(--accent); animation: pulse 1.5s infinite; }
+.status-interrupted .status-dot { background: var(--text-muted); }
+.status-aborted .status-dot { background: var(--text-muted); }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ===== Filters ===== */
+
+.filters-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--edge);
+  flex-wrap: wrap;
+}
+
+.filter-select, .filter-input {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 6px var(--space-3);
+  cursor: pointer;
+}
+.filter-select:focus, .filter-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.filter-input {
+  flex: 1;
+  min-width: 150px;
+  cursor: text;
+}
+
+/* ===== Buttons ===== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  transition: background 150ms, border-color 150ms;
+}
+.btn:hover { background: var(--card-hover); border-color: var(--edge-bright); }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.btn-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+.btn-ghost:hover { background: var(--panel); color: var(--text); }
+
+.btn-sm { padding: 4px var(--space-3); font-size: 12px; }
+
+/* ===== Run Detail ===== */
+
+.detail-header {
+  padding: var(--space-6);
+  border-bottom: 1px solid var(--edge);
+}
+.detail-title { font-size: 18px; font-weight: 600; margin-bottom: var(--space-2); }
+.detail-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.detail-section {
+  padding: var(--space-6);
+  border-bottom: 1px solid var(--edge);
+}
+.detail-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-4);
+}
+
+/* ===== Candidate cards ===== */
+
+.candidate-card {
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 200ms, background 200ms;
+  display: block;
+}
+.candidate-card:hover {
+  border-color: var(--accent);
+  background: var(--card-hover);
+}
+.candidate-card-title { font-size: 18px; font-weight: 600; margin-bottom: var(--space-2); }
+.candidate-card-desc { color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+
+/* ===== Group headers ===== */
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--shell);
+  border-bottom: 1px solid var(--edge);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.group-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--raised);
+  padding: 1px 6px;
+  border-radius: 9999px;
+}
+
+/* ===== Badge ===== */
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--error);
+  color: var(--canvas);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
+/* ===== Evaluation ===== */
+
+.eval-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.eval-matrix th, .eval-matrix td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--edge);
+  text-align: left;
+}
+.eval-matrix th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+.eval-matrix td a { color: var(--accent); text-decoration: none; }
+.eval-matrix td a:hover { text-decoration: underline; }
+
+.matrix-score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.matrix-score.high { color: var(--success); }
+.matrix-score.mid { color: var(--warning); }
+.matrix-score.low { color: var(--error); }
+.matrix-cell-na { color: var(--text-muted); font-style: italic; }
+
+/* ===== Misc ===== */
+
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--text-muted); }
+.secondary { color: var(--text-secondary); }
+.accent { color: var(--accent); }
+.success { color: var(--success); }
+.warning { color: var(--warning); }
+.error { color: var(--error); }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-state-title { font-size: 16px; font-weight: 500; color: var(--text-secondary); margin-bottom: var(--space-2); }
+
+.divider { height: 1px; background: var(--edge); margin: var(--space-4) 0; }
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--raised);
+  color: var(--text-secondary);
+}
+
+.provenance-trail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+.provenance-link { color: var(--accent); text-decoration: none; cursor: pointer; }
+.provenance-link:hover { text-decoration: underline; }
+
+</style>
+<style>
+  .launcher-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 48px 24px;
+  }
+  .launcher-header {
+    text-align: center;
+    padding: 48px 24px 24px;
+  }
+  .launcher-title {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+  .launcher-subtitle {
+    color: var(--text-secondary);
+    font-size: 15px;
+    max-width: 600px;
+    margin: 0 auto 8px;
+    line-height: 1.6;
+  }
+  .launcher-question {
+    color: var(--accent);
+    font-size: 14px;
+    font-style: italic;
+  }
+  .scenario-list {
+    list-style: none;
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--panel);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--edge);
+  }
+  .scenario-list li {
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .scenario-list li::before {
+    content: "";
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 7px;
+    flex-shrink: 0;
+  }
+  .status-banner {
+    text-align: center;
+    padding: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--edge);
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="app-header">
+    <div class="header-left">
+      <svg class="logo-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <span style="font-size:16px;font-weight:600;letter-spacing:-0.01em">RSemble AI</span>
+    </div>
+    <div class="header-center">
+      <span style="color:var(--text-muted);font-size:13px">Runs IA — Prototype Explorer</span>
+    </div>
+    <div class="header-right">
+      <div class="conn-pill"><span class="conn-dot connected"></span><span>Exploratory</span></div>
+    </div>
+  </header>
+
+  <div style="flex:1;overflow:auto">
+    <div class="launcher-header">
+      <div class="launcher-title">Runs IA Prototype Explorer</div>
+      <div class="launcher-subtitle">
+        Four clickable prototypes explore competing information-architecture models for RSemble's Runs surface.
+        Open each one, try the canonical scenarios, and compare the experiences directly.
+      </div>
+      <div class="launcher-question">No candidate is pre-selected as the winner. The Product Owner decides after using the prototypes.</div>
+    </div>
+
+    <div class="launcher-grid">
+      <a href="baseline-standalone.html" class="candidate-card">
+        <div class="candidate-card-title">Fair Baseline</div>
+        <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:12px">Compare | Runs | Evaluations</div>
+        <div class="candidate-card-desc">
+          The current three-destination model with contextual connections repaired.
+          Compare links to its persisted record, Run Detail opens in Compare, copy-link works.
+          Runs stays flat — no destination redesign.
+        </div>
+        <div style="margin-top:12px;font-size:13px;color:var(--accent)">Can better connections make the current model work? →</div>
+      </a>
+
+      <a href="first-class-runs-standalone.html" class="candidate-card">
+        <div class="candidate-card-title">First-Class Runs</div>
+        <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:12px">Compare | Runs | Evaluations</div>
+        <div class="candidate-card-desc">
+          Runs as an intentional first-class corpus workspace.
+          Grouped-by-source with counts, experiment containers, attention indicators,
+          richer Run Detail with status timeline and cost. URL-persistent filters.
+        </div>
+        <div style="margin-top:12px;font-size:13px;color:var(--accent)">What if corpus browsing deserves a dedicated workspace? →</div>
+      </a>
+
+      <a href="secondary-records-standalone.html" class="candidate-card">
+        <div class="candidate-card-title">Secondary Records</div>
+        <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:12px">Compare | Evaluations + Records drawer</div>
+        <div class="candidate-card-desc">
+          Compare and Evaluations are primary. Records accessed via a slide-over drawer
+          with search, filters, and attention chips. Run Detail opens as a full page.
+          No proactive badge — secondary access is deliberate, not buried.
+        </div>
+        <div style="margin-top:12px;font-size:13px;color:var(--accent)">What if records are globally available but secondary? →</div>
+      </a>
+
+      <a href="corpus-views-standalone.html" class="candidate-card">
+        <div class="candidate-card-title">Corpus Views</div>
+        <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:12px">Compare | Runs | Evaluations</div>
+        <div class="candidate-card-desc">
+          Runs stays top-level but gets internal segmented views: Recent, From Compare,
+          From Evaluations, Needs Attention. Views are query filters, not partitions —
+          a run can appear in multiple views. Tests if flatness is the real problem.
+        </div>
+        <div style="margin-top:12px;font-size:13px;color:var(--accent)">What if the problem is presentation, not placement? →</div>
+      </a>
+    </div>
+
+    <div style="max-width:800px;margin:0 auto;padding:0 24px 48px">
+      <div class="detail-section-title" style="margin-bottom:12px">Canonical Scenarios to Try</div>
+      <ul class="scenario-list">
+        <li>Compare a task, then inspect the persisted record (Compare → View record)</li>
+        <li>Open a previous run's configuration in Compare (Run Detail → Open in Compare)</li>
+        <li>From an Evaluation result, reach the exact underlying Judge evidence</li>
+        <li>Find a specific older ad-hoc run with only partial memory of the task</li>
+        <li>Inspect a failed run and understand what went wrong</li>
+        <li>Browse several records because the corpus itself is the object of attention</li>
+        <li>Return to the app and locate recent or unfinished work</li>
+      </ul>
+    </div>
+
+    <div class="status-banner">
+      Status: Exploratory — non-authoritative. Does not authorize application changes or modify current product authority.
+    </div>
+  </div>
+</div>
+</body>
+</html>

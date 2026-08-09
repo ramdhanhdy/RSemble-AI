@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSemble AI — Candidate D · Corpus Views</title>
+<style>
+/* RSemble AI — Prototype Design System
+   Extracted from tailwind.config.js + index.css + Header/WorkspaceNav/RunList source.
+   Dark theme, cyan accent, Geist font stack. */
+
+:root {
+  /* Colors */
+  --canvas: #0a0a0a;
+  --shell: #0a0a0a;
+  --panel: #121212;
+  --card: #121212;
+  --card-hover: #1a1a1a;
+  --raised: #181818;
+  --edge: #262626;
+  --edge-bright: #3a3a3a;
+  --accent: #00e5ff;
+  --accent-deep: #00a9bd;
+  --on-accent: #001719;
+  --text: #ededed;
+  --text-secondary: #a1a1a1;
+  --text-muted: #777777;
+  --success: #00ff9d;
+  --warning: #ffb300;
+  --error: #ff4d4d;
+
+  /* Typography */
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Shadows */
+  --shadow-glow: 0 0 0 1px rgba(0,229,255,.45), 0 0 24px rgba(0,229,255,.18);
+  --shadow-cta: 0 4px 20px rgba(0,229,255,.25);
+  --shadow-popover: 0 16px 48px -12px rgba(0,0,0,.7);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  background-color: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background-color: var(--edge-bright); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background-color: #4a4a4a; }
+::-webkit-scrollbar-track { background-color: transparent; }
+
+/* ===== Layout ===== */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+  align-items: center;
+  gap: var(--space-2);
+  height: 56px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--shell);
+  padding: 0 var(--space-4);
+  flex-shrink: 0;
+}
+
+.header-left { display: flex; align-items: center; gap: 10px; }
+.header-center { justify-self: center; }
+.header-right { display: flex; align-items: center; gap: var(--space-2); justify-self: end; }
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.logo-mark {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+
+/* ===== Navigation ===== */
+
+.nav-primary {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 150ms, background-color 150ms;
+  background: none;
+  border: none;
+  font-family: inherit;
+}
+.nav-item:hover { background: var(--panel); color: var(--text); }
+.nav-item.active { color: var(--accent); }
+
+.nav-item svg { width: 15px; height: 15px; }
+
+/* Connection pill */
+.conn-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  border-radius: 9999px;
+  padding: 0 var(--space-3);
+  height: 36px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; }
+.conn-dot.connected { background: var(--success); }
+.conn-dot.disconnected { background: var(--error); }
+
+/* ===== Workspace ===== */
+
+.workspace {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+.workspace-split {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+.list-pane {
+  border-right: 1px solid var(--edge);
+  background: var(--shell);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-pane {
+  overflow: auto;
+  background: var(--canvas);
+}
+
+.workspace-full {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-6);
+}
+
+/* ===== Compare ===== */
+
+.compare-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel);
+}
+
+.mode-toggle {
+  display: inline-flex;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  overflow: hidden;
+}
+.mode-toggle button {
+  padding: 6px var(--space-4);
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 150ms, color 150ms;
+}
+.mode-toggle button.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ===== Cards / Surfaces ===== */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+.card-hover:hover { background: var(--card-hover); }
+
+/* ===== Run List ===== */
+
+.run-list { list-style: none; overflow: auto; flex: 1; }
+
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--edge);
+  cursor: pointer;
+  transition: background 100ms;
+  text-decoration: none;
+  color: inherit;
+}
+.run-row:hover { background: var(--card-hover); }
+.run-row.selected { background: var(--raised); border-left: 2px solid var(--accent); }
+
+.run-row-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.source-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+.source-adhoc { background: rgba(0,229,255,0.1); color: var(--accent); }
+.source-experiment { background: rgba(255,179,0,0.1); color: var(--warning); }
+.source-legacy { background: rgba(119,119,119,0.15); color: var(--text-muted); }
+
+/* ===== Status ===== */
+
+.status-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+.status-dot { width: 6px; height: 6px; border-radius: 50%; }
+.status-completed .status-dot { background: var(--success); }
+.status-failed .status-dot { background: var(--error); }
+.status-partial .status-dot { background: var(--warning); }
+.status-running .status-dot { background: var(--accent); animation: pulse 1.5s infinite; }
+.status-interrupted .status-dot { background: var(--text-muted); }
+.status-aborted .status-dot { background: var(--text-muted); }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ===== Filters ===== */
+
+.filters-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--edge);
+  flex-wrap: wrap;
+}
+
+.filter-select, .filter-input {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 6px var(--space-3);
+  cursor: pointer;
+}
+.filter-select:focus, .filter-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.filter-input {
+  flex: 1;
+  min-width: 150px;
+  cursor: text;
+}
+
+/* ===== Buttons ===== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  transition: background 150ms, border-color 150ms;
+}
+.btn:hover { background: var(--card-hover); border-color: var(--edge-bright); }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.btn-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+.btn-ghost:hover { background: var(--panel); color: var(--text); }
+
+.btn-sm { padding: 4px var(--space-3); font-size: 12px; }
+
+/* ===== Run Detail ===== */
+
+.detail-header {
+  padding: var(--space-6);
+  border-bottom: 1px solid var(--edge);
+}
+.detail-title { font-size: 18px; font-weight: 600; margin-bottom: var(--space-2); }
+.detail-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.detail-section {
+  padding: var(--space-6);
+  border-bottom: 1px solid var(--edge);
+}
+.detail-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-4);
+}
+
+/* ===== Candidate cards ===== */
+
+.candidate-card {
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 200ms, background 200ms;
+  display: block;
+}
+.candidate-card:hover {
+  border-color: var(--accent);
+  background: var(--card-hover);
+}
+.candidate-card-title { font-size: 18px; font-weight: 600; margin-bottom: var(--space-2); }
+.candidate-card-desc { color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+
+/* ===== Group headers ===== */
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--shell);
+  border-bottom: 1px solid var(--edge);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.group-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--raised);
+  padding: 1px 6px;
+  border-radius: 9999px;
+}
+
+/* ===== Badge ===== */
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--error);
+  color: var(--canvas);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
+/* ===== Evaluation ===== */
+
+.eval-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.eval-matrix th, .eval-matrix td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--edge);
+  text-align: left;
+}
+.eval-matrix th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+.eval-matrix td a { color: var(--accent); text-decoration: none; }
+.eval-matrix td a:hover { text-decoration: underline; }
+
+.matrix-score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.matrix-score.high { color: var(--success); }
+.matrix-score.mid { color: var(--warning); }
+.matrix-score.low { color: var(--error); }
+.matrix-cell-na { color: var(--text-muted); font-style: italic; }
+
+/* ===== Misc ===== */
+
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--text-muted); }
+.secondary { color: var(--text-secondary); }
+.accent { color: var(--accent); }
+.success { color: var(--success); }
+.warning { color: var(--warning); }
+.error { color: var(--error); }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-state-title { font-size: 16px; font-weight: 500; color: var(--text-secondary); margin-bottom: var(--space-2); }
+
+.divider { height: 1px; background: var(--edge); margin: var(--space-4) 0; }
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--raised);
+  color: var(--text-secondary);
+}
+
+.provenance-trail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+.provenance-link { color: var(--accent); text-decoration: none; cursor: pointer; }
+.provenance-link:hover { text-decoration: underline; }
+
+</style>
+<style>
+/* ===== Candidate D additions ===== */
+
+/* Segmented views within the Runs workspace */
+.segment-bar {
+  display: flex;
+  gap: 2px;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.segment {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 150ms, color 150ms, border-color 150ms;
+}
+.segment:hover { background: var(--card-hover); color: var(--text); }
+.segment.active { background: var(--raised); color: var(--accent); border-color: var(--edge); }
+.segment .group-count { background: var(--edge); color: var(--text-muted); }
+.segment.active .group-count { background: rgba(0,229,255,0.12); color: var(--accent); }
+
+/* Needs-attention rows */
+.needs-attention { background: rgba(255,179,0,0.045); }
+.needs-attention:hover { background: rgba(255,179,0,0.09); }
+.run-row.selected.needs-attention { border-left-color: var(--warning); }
+.attention-chip {
+  display: inline-flex; align-items: center;
+  font-size: 10px; font-family: var(--font-mono); font-weight: 600;
+  color: var(--warning);
+  border: 1px solid rgba(255,179,0,0.4);
+  background: rgba(255,179,0,0.08);
+  padding: 1px 6px; border-radius: 9999px;
+  white-space: nowrap;
+}
+
+/* Experiment grouping inside the From-Evaluations segment */
+.exp-group-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: var(--panel);
+  border-bottom: 1px solid var(--edge);
+}
+.run-row-child { padding-left: 52px; position: relative; }
+.run-row-child::before {
+  content: ""; position: absolute; left: 22px; top: 0; bottom: 0;
+  width: 1px; background: var(--edge);
+}
+</style>
+</head>
+<body>
+<div class="app-shell" id="app">
+  <header class="app-header">
+    <div class="header-left">
+      <svg class="logo-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <span style="font-size:16px;font-weight:600;letter-spacing:-0.01em">RSemble AI</span>
+    </div>
+    <div class="header-center">
+      <nav class="nav-primary" id="nav"></nav>
+    </div>
+    <div class="header-right">
+      <div class="conn-pill"><span class="conn-dot connected"></span><span>Connected</span></div>
+    </div>
+  </header>
+
+  <div class="workspace" id="workspace"></div>
+</div>
+
+<script>
+/* RSemble shared data - wrapped in IIFE to avoid global scope collisions with page scripts */
+(function () {
+/* RSemble AI — Shared Prototype Data + JS
+   Synthetic dataset exposing the real IA problem: mixed grains, multiple sources,
+   failed/completed/partial states, old/recent records, several model combinations.
+   No real user data. */
+
+// ===== Synthetic Run Dataset =====
+
+const RUNS = [
+  // Recent ad-hoc runs
+  {
+    id: "run-20260809-001",
+    source: "adhoc",
+    status: "completed",
+    mode: "rank",
+    taskTitle: "Explain transformer attention mechanism",
+    taskPrompt: "Write a clear explanation of how multi-head self-attention works in transformers, including the mathematical formulation and intuitive explanation...",
+    taskPromptFull: "Write a clear explanation of how multi-head self-attention works in transformers, including the mathematical formulation and intuitive explanation. Cover: (1) Query/Key/Value projections, (2) Scaled dot-product attention, (3) Multi-head mechanism, (4) Positional encoding interaction. Target audience: ML practitioners who know basic neural networks.",
+    systemPrompt: "You are a technical writer specializing in ML.",
+    temperature: 0.7,
+    createdAt: "2026-08-09T08:15:00Z",
+    completedAt: "2026-08-09T08:02:34Z",
+    duration: "47s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: 8.5, rank: 1 },
+      { id: "cand-slot-1", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "done", score: 7.2, rank: 2 },
+      { id: "cand-slot-2", modelKey: "umans-qwen3.6-35b", providerId: "umans", model: "Qwen 3.6 35B", slug: "qwen-3.6-35b", status: "done", score: 6.8, rank: 3 },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Rank by clarity, accuracy, and completeness", consensus: { clarity: 0.85, accuracy: 0.90, completeness: 0.78 } },
+    rankResult: "cand-slot-0",
+    cost: { tokensIn: 1240, tokensOut: 3850, totalUsd: 0.014 },
+  },
+  {
+    id: "run-20260809-002",
+    source: "adhoc",
+    status: "partial",
+    mode: "fuse",
+    taskTitle: "Design a REST API for a todo app",
+    taskPrompt: "Design a RESTful API for a todo application with support for lists, items, tags, and due dates...",
+    taskPromptFull: "Design a RESTful API for a todo application with support for lists, items, tags, and due dates. Include endpoint definitions, request/response schemas, error handling, pagination, and authentication strategy. Consider rate limiting and versioning.",
+    systemPrompt: "",
+    temperature: 0.3,
+    createdAt: "2026-08-09T07:42:00Z",
+    completedAt: "2026-08-09T07:39:12Z",
+    duration: "2m 48s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: null, rank: null },
+      { id: "cand-slot-1", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "error", score: null, rank: null, error: "Provider timeout after 45s" },
+      { id: "cand-slot-2", modelKey: "umans-kimi-k3", providerId: "umans", model: "Kimi K3", slug: "kimi-k3", status: "done", score: null, rank: null },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Evaluate API design quality", consensus: null },
+    fusionStatus: "no_accept",
+    cost: { tokensIn: 980, tokensOut: 2100, totalUsd: 0.009 },
+  },
+  {
+    id: "run-20260808-014",
+    source: "adhoc",
+    status: "failed",
+    mode: "rank",
+    taskTitle: "Compare sorting algorithm implementations",
+    taskPrompt: "Compare bubble sort, quicksort, and merge sort in terms of time complexity, space complexity, and stability...",
+    taskPromptFull: "Compare bubble sort, quicksort, and merge sort in terms of time complexity, space complexity, and stability. Include code examples in Python and discuss when to use each algorithm.",
+    systemPrompt: "You are a computer science educator.",
+    temperature: 0.5,
+    createdAt: "2026-08-08T16:30:00Z",
+    completedAt: "2026-08-08T16:28:45Z",
+    duration: "1m 15s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: null, rank: null },
+      { id: "cand-slot-1", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "done", score: null, rank: null },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Rank by accuracy and clarity", consensus: null, error: "Judge request failed: 429 Too Many Requests" },
+    cost: { tokensIn: 850, tokensOut: 1900, totalUsd: 0.007 },
+  },
+  {
+    id: "run-20260808-009",
+    source: "adhoc",
+    status: "completed",
+    mode: "fuse",
+    taskTitle: "Write a product launch announcement",
+    taskPrompt: "Write a product launch announcement for a new open-source local-first LLM comparison tool called RSemble AI...",
+    taskPromptFull: "Write a product launch announcement for a new open-source local-first LLM comparison tool called RSemble AI. Highlight: local-first privacy, multi-model comparison, blind judging, rank/fuse modes, evaluation suites. Target: developers and AI practitioners on Hacker News.",
+    systemPrompt: "You are a technical marketing writer.",
+    temperature: 0.8,
+    createdAt: "2026-08-08T11:20:00Z",
+    completedAt: "2026-08-08T11:18:02Z",
+    duration: "1m 58s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: 8.8, rank: 1 },
+      { id: "cand-slot-1", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "done", score: 8.2, rank: 2 },
+      { id: "cand-slot-2", modelKey: "umans-kimi-k3", providerId: "umans", model: "Kimi K3", slug: "kimi-k3", status: "done", score: 7.5, rank: 3 },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Rank by persuasiveness and technical accuracy", consensus: { persuasiveness: 0.88, accuracy: 0.92 } },
+    fusionResult: "Combined: DeepSeek's technical precision + GLM-5.2's narrative flow...",
+    cost: { tokensIn: 1450, tokensOut: 4200, totalUsd: 0.016 },
+  },
+  // Older ad-hoc runs
+  {
+    id: "run-20260805-003",
+    source: "adhoc",
+    status: "completed",
+    mode: "rank",
+    taskTitle: "Implement binary search tree in TypeScript",
+    taskPrompt: "Implement a generic binary search tree in TypeScript with insert, delete, search, and traversal methods...",
+    taskPromptFull: "Implement a generic binary search tree in TypeScript with insert, delete, search, and traversal methods (in-order, pre-order, post-order). Include type safety, edge case handling, and JSDoc comments.",
+    systemPrompt: "",
+    temperature: 0.2,
+    createdAt: "2026-08-05T09:15:00Z",
+    completedAt: "2026-08-05T09:12:44Z",
+    duration: "2m 16s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "done", score: 9.1, rank: 1 },
+      { id: "cand-slot-1", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: 8.4, rank: 2 },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Rank by type safety, correctness, and completeness", consensus: { typeSafety: 0.91, correctness: 0.95, completeness: 0.88 } },
+    rankResult: "cand-slot-0",
+    cost: { tokensIn: 920, tokensOut: 2800, totalUsd: 0.011 },
+  },
+  {
+    id: "run-20260801-007",
+    source: "adhoc",
+    status: "completed",
+    mode: "rank",
+    taskTitle: "Explain database normalization",
+    taskPrompt: "Explain the first three normal forms of database design with examples...",
+    taskPromptFull: "Explain the first three normal forms of database design with examples. Include: 1NF (atomic values), 2NF (no partial dependencies), 3NF (no transitive dependencies). Show a before/after example for each form.",
+    systemPrompt: "You are a database instructor.",
+    temperature: 0.6,
+    createdAt: "2026-08-01T14:30:00Z",
+    completedAt: "2026-08-01T14:27:18Z",
+    duration: "2m 42s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "umans-qwen3.6-35b", providerId: "umans", model: "Qwen 3.6 35B", slug: "qwen-3.6-35b", status: "done", score: 7.9, rank: 1 },
+      { id: "cand-slot-1", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: 7.1, rank: 2 },
+      { id: "cand-slot-2", modelKey: "umans-kimi-k3", providerId: "umans", model: "Kimi K3", slug: "kimi-k3", status: "done", score: 6.5, rank: 3 },
+    ],
+    judge: { providerId: "deepseek", model: "DeepSeek V4 Flash", instruction: "Rank by pedagogical clarity and example quality", consensus: { clarity: 0.82, examples: 0.76 } },
+    rankResult: "cand-slot-0",
+    cost: { tokensIn: 1100, tokensOut: 3400, totalUsd: 0.013 },
+  },
+  // Experiment child runs
+  {
+    id: "run-20260807-exp1-t1",
+    source: "experiment",
+    experimentId: "exp-20260807-001",
+    suiteId: "suite-coding-v2",
+    suiteName: "Coding Tasks Benchmark v2",
+    taskId: "task-01",
+    taskName: "Binary Search Implementation",
+    trial: 1,
+    status: "completed",
+    mode: "rank",
+    taskTitle: "Binary Search Implementation",
+    taskPrompt: "Implement binary search with proper edge case handling...",
+    taskPromptFull: "Implement binary search with proper edge case handling. Must handle: empty array, single element, not found, duplicates (return first occurrence). Include comprehensive tests.",
+    systemPrompt: "",
+    temperature: 0.1,
+    createdAt: "2026-08-07T10:05:00Z",
+    completedAt: "2026-08-07T10:03:22Z",
+    duration: "1m 38s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "done", score: 9.2, rank: 1 },
+      { id: "cand-slot-1", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: 8.7, rank: 2 },
+      { id: "cand-slot-2", modelKey: "umans-kimi-k3", providerId: "umans", model: "Kimi K3", slug: "kimi-k3", status: "done", score: 7.8, rank: 3 },
+      { id: "cand-slot-3", modelKey: "umans-coder", providerId: "umans", model: "Umans Coder", slug: "umans-coder", status: "done", score: 8.9, rank: 2 },
+      { id: "cand-slot-4", modelKey: "umans-qwen3.6-35b", providerId: "umans", model: "Qwen 3.6 35B", slug: "qwen-3.6-35b", status: "done", score: 7.0, rank: 4 },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Rank by correctness, edge case coverage, and code quality", consensus: { correctness: 0.95, edgeCases: 0.88, codeQuality: 0.90 } },
+    rankResult: "cand-slot-0",
+    cost: { tokensIn: 1600, tokensOut: 4800, totalUsd: 0.019 },
+  },
+  {
+    id: "run-20260807-exp1-t2",
+    source: "experiment",
+    experimentId: "exp-20260807-001",
+    suiteId: "suite-coding-v2",
+    suiteName: "Coding Tasks Benchmark v2",
+    taskId: "task-02",
+    taskName: "Linked List Reversal",
+    trial: 1,
+    status: "completed",
+    mode: "rank",
+    taskTitle: "Linked List Reversal",
+    taskPrompt: "Reverse a singly linked list both iteratively and recursively...",
+    taskPromptFull: "Reverse a singly linked list both iteratively and recursively. Include time/space analysis and handle: empty list, single node, and cycles (detect before reversing).",
+    systemPrompt: "",
+    temperature: 0.1,
+    createdAt: "2026-08-07T10:12:00Z",
+    completedAt: "2026-08-07T10:10:08Z",
+    duration: "1m 52s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "done", score: 8.8, rank: 1 },
+      { id: "cand-slot-1", modelKey: "umans-coder", providerId: "umans", model: "Umans Coder", slug: "umans-coder", status: "done", score: 8.5, rank: 2 },
+      { id: "cand-slot-2", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: 8.0, rank: 3 },
+      { id: "cand-slot-3", modelKey: "umans-kimi-k3", providerId: "umans", model: "Kimi K3", slug: "kimi-k3", status: "done", score: 7.2, rank: 4 },
+      { id: "cand-slot-4", modelKey: "umans-qwen3.6-35b", providerId: "umans", model: "Qwen 3.6 35B", slug: "qwen-3.6-35b", status: "done", score: 6.8, rank: 5 },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Rank by correctness, clarity, and cycle detection", consensus: { correctness: 0.92, clarity: 0.85, cycleDetection: 0.78 } },
+    rankResult: "cand-slot-0",
+    cost: { tokensIn: 1400, tokensOut: 4200, totalUsd: 0.017 },
+  },
+  {
+    id: "run-20260807-exp1-t3",
+    source: "experiment",
+    experimentId: "exp-20260807-001",
+    suiteId: "suite-coding-v2",
+    suiteName: "Coding Tasks Benchmark v2",
+    taskId: "task-03",
+    taskName: "Merge K Sorted Lists",
+    trial: 1,
+    status: "interrupted",
+    mode: "rank",
+    taskTitle: "Merge K Sorted Lists",
+    taskPrompt: "Merge K sorted linked lists into one sorted list...",
+    taskPromptFull: "Merge K sorted linked lists into one sorted list. Analyze time complexity for different approaches: brute force, heap-based, divide-and-conquer.",
+    systemPrompt: "",
+    temperature: 0.1,
+    createdAt: "2026-08-07T10:18:00Z",
+    completedAt: null,
+    duration: null,
+    candidates: [
+      { id: "cand-slot-0", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "done", score: null, rank: null },
+      { id: "cand-slot-1", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: null, rank: null },
+      { id: "cand-slot-2", modelKey: "umans-coder", providerId: "umans", model: "Umans Coder", slug: "umans-coder", status: "done", score: null, rank: null },
+      { id: "cand-slot-3", modelKey: "umans-kimi-k3", providerId: "umans", model: "Kimi K3", slug: "kimi-k3", status: "pending", score: null, rank: null },
+      { id: "cand-slot-4", modelKey: "umans-qwen3.6-35b", providerId: "umans", model: "Qwen 3.6 35B", slug: "qwen-3.6-35b", status: "pending", score: null, rank: null },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Rank by correctness and complexity analysis", consensus: null },
+    cost: { tokensIn: 800, tokensOut: 1800, totalUsd: 0.007 },
+  },
+  {
+    id: "run-20260807-exp1-t3-r2",
+    source: "experiment",
+    experimentId: "exp-20260807-001",
+    suiteId: "suite-coding-v2",
+    suiteName: "Coding Tasks Benchmark v2",
+    taskId: "task-03",
+    taskName: "Merge K Sorted Lists",
+    trial: 2,
+    status: "completed",
+    mode: "rank",
+    taskTitle: "Merge K Sorted Lists (retry)",
+    taskPrompt: "Merge K sorted linked lists into one sorted list...",
+    taskPromptFull: "Merge K sorted linked lists into one sorted list. Analyze time complexity for different approaches: brute force, heap-based, divide-and-conquer.",
+    systemPrompt: "",
+    temperature: 0.1,
+    createdAt: "2026-08-07T10:25:00Z",
+    completedAt: "2026-08-07T10:23:15Z",
+    duration: "1m 45s",
+    candidates: [
+      { id: "cand-slot-0", modelKey: "umans-glm-5.2", providerId: "umans", model: "GLM-5.2", slug: "glm-5.2", status: "done", score: 9.0, rank: 1 },
+      { id: "cand-slot-1", modelKey: "umans-coder", providerId: "umans", model: "Umans Coder", slug: "umans-coder", status: "done", score: 8.8, rank: 2 },
+      { id: "cand-slot-2", modelKey: "deepseek-chat", providerId: "deepseek", model: "DeepSeek V4 Flash", slug: "deepseek-v4-flash", status: "done", score: 8.2, rank: 3 },
+      { id: "cand-slot-3", modelKey: "umans-kimi-k3", providerId: "umans", model: "Kimi K3", slug: "kimi-k3", status: "done", score: 7.5, rank: 4 },
+      { id: "cand-slot-4", modelKey: "umans-qwen3.6-35b", providerId: "umans", model: "Qwen 3.6 35B", slug: "qwen-3.6-35b", status: "done", score: 6.9, rank: 5 },
+    ],
+    judge: { providerId: "umans", model: "Qwen 3.6 35B", instruction: "Rank by correctness and complexity analysis", consensus: { correctness: 0.93, complexity: 0.88 } },
+    rankResult: "cand-slot-0",
+    reusedFrom: { sourceRunId: "run-20260807-exp1-t3", sourceCandidateId: "cand-slot-0", sourceAttemptId: "att-001" },
+    cost: { tokensIn: 1500, tokensOut: 4500, totalUsd: 0.018 },
+  },
+  // Legacy run
+  {
+    id: "run-20260715-legacy-001",
+    source: "legacy",
+    status: "completed",
+    mode: "rank",
+    taskTitle: "SQL JOIN types explanation",
+    taskPrompt: "Explain different types of SQL JOINs with examples...",
+    taskPromptFull: null,
+    systemPrompt: null,
+    temperature: 0.5,
+    createdAt: "2026-07-15T12:00:00Z",
+    completedAt: "2026-07-15T11:58:00Z",
+    duration: "2m 00s",
+    candidates: [],
+    judge: null,
+    cost: null,
+  },
+];
+
+// ===== Dataset normalization =====
+// Timestamp hygiene (CC-2): completedAt must follow createdAt. Where the dataset
+// has completedAt earlier than createdAt, recompute completedAt = createdAt + duration.
+function durationToMs(d) {
+  if (!d) return 0;
+  const h = /(\d+)h/.exec(d);
+  const m = /(\d+)m/.exec(d);
+  const s = /(\d+)s/.exec(d);
+  return ((h ? parseInt(h[1], 10) : 0) * 3600 + (m ? parseInt(m[1], 10) : 0) * 60 + (s ? parseInt(s[1], 10) : 0)) * 1000;
+}
+RUNS.forEach(r => {
+  if (r.completedAt && r.createdAt && r.duration) {
+    const created = new Date(r.createdAt).getTime();
+    if (new Date(r.completedAt).getTime() <= created) {
+      r.completedAt = new Date(created + durationToMs(r.duration)).toISOString();
+    }
+  }
+});
+
+// ===== Experiments =====
+
+const EXPERIMENTS = [
+  {
+    id: "exp-20260807-001",
+    suiteId: "suite-coding-v2",
+    suiteName: "Coding Tasks Benchmark v2",
+    status: "completed_with_failures",
+    createdAt: "2026-08-07T10:00:00Z",
+    tasks: [
+      { taskId: "task-01", name: "Binary Search Implementation", runId: "run-20260807-exp1-t1", status: "completed", bestModel: "GLM-5.2", score: 9.2 },
+      { taskId: "task-02", name: "Linked List Reversal", runId: "run-20260807-exp1-t2", status: "completed", bestModel: "GLM-5.2", score: 8.8 },
+      { taskId: "task-03", name: "Merge K Sorted Lists", runId: "run-20260807-exp1-t3-r2", status: "completed", bestModel: "GLM-5.2", score: 9.0, retryOf: "run-20260807-exp1-t3" },
+    ],
+    models: ["GLM-5.2", "DeepSeek V4 Flash", "Umans Coder", "Kimi K3", "Qwen 3.6 35B"],
+  },
+];
+
+// ===== Helper functions =====
+
+function getStatusLabel(status) {
+  const labels = { completed: "Completed", failed: "Failed", partial: "Partial", running: "Running", interrupted: "Interrupted", aborted: "Aborted" };
+  return labels[status] || status;
+}
+
+function getSourceLabel(source) {
+  const labels = { adhoc: "Ad hoc", experiment: "Experiment", legacy: "Legacy" };
+  return labels[source] || source;
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+}
+
+function timeAgo(iso) {
+  if (!iso) return "—";
+  const now = new Date("2026-08-09T09:00:00Z");
+  const then = new Date(iso);
+  const diffH = Math.floor((now - then) / 3600000);
+  if (diffH < 1) return "just now";
+  if (diffH < 24) return diffH + "h ago";
+  const diffD = Math.floor(diffH / 24);
+  if (diffD === 1) return "yesterday";
+  if (diffD < 7) return diffD + "d ago";
+  return Math.floor(diffD / 7) + "w ago";
+}
+
+function getRunById(id) { return RUNS.find(r => r.id === id); }
+
+// A run is superseded when a later run reused its candidate output (retry child).
+function isSuperseded(run) { return RUNS.some(x => x.reusedFrom && x.reusedFrom.sourceRunId === run.id); }
+
+function groupRunsBySource(runs) {
+  const groups = { adhoc: [], experiment: [], legacy: [] };
+  runs.forEach(r => { if (groups[r.source]) groups[r.source].push(r); });
+  return groups;
+}
+
+function groupRunsByStatus(runs) {
+  const groups = {};
+  runs.forEach(r => { if (!groups[r.status]) groups[r.status] = []; groups[r.status].push(r); });
+  return groups;
+}
+
+// Expose globally
+if (typeof window !== "undefined") {
+  window.RSEMBLE_DATA = { RUNS, EXPERIMENTS, getStatusLabel, getSourceLabel, formatDate, timeAgo, getRunById, isSuperseded, groupRunsBySource, groupRunsByStatus };
+}
+
+})();
+
+</script>
+<script>
+const { RUNS, EXPERIMENTS, getStatusLabel, getSourceLabel, formatDate, timeAgo, getRunById, isSuperseded } = window.RSEMBLE_DATA;
+
+const NAV_ITEMS = [
+  { to: "compare", label: "Compare", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 9l4-4 4 4M21 15l-4 4-4-4"/></svg>' },
+  { to: "runs", label: "Runs", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5M3.05 13A9 9 0 1 0 6 5.3L3 8M12 7v5l4 2"/></svg>' },
+  { to: "evaluations", label: "Evaluations", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>' },
+];
+
+const ATTENTION_STATUSES = ["failed", "partial", "interrupted"];
+
+const SEGMENTS = [
+  { id: "recent", label: "Recent" },
+  { id: "compare", label: "From Compare" },
+  { id: "evaluations", label: "From Evaluations" },
+  { id: "attention", label: "Needs Attention" },
+];
+
+// Chronological feed used by Recent / From Compare / Needs Attention
+const SORTED = [...RUNS].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+let currentView = "runs";
+let selectedRunId = null;
+let activeSegment = "recent";
+let compareState = { completed: false, runId: null, preloaded: false };
+let activeFilters = { search: "", status: "" };
+
+function isAttention(status) { return ATTENTION_STATUSES.includes(status); }
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ===== URL state (D-1: #/runs, #/runs/<id>) =====
+function parseHash() {
+  const raw = location.hash || "#/runs";
+  const qIndex = raw.indexOf("?");
+  const pathPart = qIndex >= 0 ? raw.slice(1, qIndex) : raw.slice(1);
+  const parts = pathPart.split("/").filter(Boolean);
+  currentView = ["compare", "runs", "evaluations"].includes(parts[0]) ? parts[0] : "runs";
+  selectedRunId = parts[1] || null;
+}
+
+function updateHash() {
+  let hash = "#/" + currentView;
+  if (currentView === "runs" && selectedRunId) hash += "/" + selectedRunId;
+  if (location.hash !== hash) location.hash = hash;
+}
+
+window.addEventListener("hashchange", () => { parseHash(); renderNav(); renderWorkspace(); });
+
+// ===== Segments are query views — a run can appear in several =====
+function segmentRuns(id) {
+  let runs;
+  if (id === "recent") runs = SORTED;
+  else if (id === "compare") runs = SORTED.filter(r => r.source === "adhoc");
+  else if (id === "evaluations") runs = SORTED.filter(r => r.source === "experiment");
+  else runs = SORTED.filter(r => isAttention(r.status) && !isSuperseded(r));
+  return runs;
+}
+function segmentCount(id) { return segmentRuns(id).length; }
+
+// ===== Navigation =====
+function renderNav() {
+  const nav = document.getElementById("nav");
+  nav.innerHTML = NAV_ITEMS.map(item => `
+    <button class="nav-item ${currentView === item.to ? "active" : ""}" onclick="navigate('${item.to}')">
+      ${item.icon}
+      ${item.label}
+    </button>
+  `).join("");
+}
+
+function navigate(view, runId, keepCompareState) {
+  if (view === "compare" && !keepCompareState) {
+    compareState = { completed: false, runId: null, preloaded: false };
+  }
+  currentView = view;
+  if (runId) selectedRunId = runId;
+  else if (view !== "runs") selectedRunId = null;
+  renderNav();
+  renderWorkspace();
+  updateHash();
+}
+
+// ===== Runs View — one destination, four segments =====
+function renderRunsView() {
+  const ws = document.getElementById("workspace");
+  ws.innerHTML = `
+    <div class="workspace-split">
+      <div class="list-pane">
+        <div class="segment-bar">
+          ${SEGMENTS.map(s => `
+            <button class="segment ${activeSegment === s.id ? "active" : ""}" onclick="setSegment('${s.id}')">
+              ${s.label}
+              <span class="group-count">${segmentCount(s.id)}</span>
+            </button>
+          `).join("")}
+        </div>
+        <div class="filters-bar">
+          <input class="filter-input" style="min-width:100px;flex:1 1 100px" placeholder="Search task, model, or id…" oninput="filterRuns(this.value)">
+          <select class="filter-select" style="flex-shrink:0;width:124px" onchange="filterStatus(this.value)">
+            <option value="">All statuses</option>
+            <option value="completed">Completed</option>
+            <option value="partial">Partial</option>
+            <option value="failed">Failed</option>
+            <option value="interrupted">Interrupted</option>
+          </select>
+        </div>
+        <div class="run-list" id="runList"></div>
+      </div>
+      <div class="detail-pane" id="detailPane">
+        <div class="empty-state">
+          <div class="empty-state-title">Select a run to inspect</div>
+          <p>Run Detail shows task inputs, candidate outputs, Judge evidence, scores, and configuration.</p>
+        </div>
+      </div>
+    </div>
+  `;
+  renderRunList();
+  if (selectedRunId && getRunById(selectedRunId)) renderRunDetail(selectedRunId);
+}
+
+function setSegment(id) {
+  activeSegment = id;
+  renderRunList();
+}
+
+function filterRuns(val) { activeFilters.search = val.toLowerCase(); renderRunList(); }
+function filterStatus(val) { activeFilters.status = val; renderRunList(); }
+
+function getFilteredRuns() {
+  return segmentRuns(activeSegment).filter(r => {
+    if (activeFilters.status && r.status !== activeFilters.status) return false;
+    if (activeFilters.search) {
+      const text = (r.taskTitle + " " + (r.taskPrompt || "") + " " + r.id + " " + (r.candidates || []).map(c => c.model).join(" ")).toLowerCase();
+      if (!text.includes(activeFilters.search)) return false;
+    }
+    return true;
+  });
+}
+
+function renderRunList() {
+  const list = document.getElementById("runList");
+  if (!list) return;
+  const runs = getFilteredRuns();
+  let html = "";
+
+  if (activeSegment === "evaluations") {
+    // Experiment child runs, grouped by experiment container
+    const groups = {};
+    runs.forEach(r => { (groups[r.experimentId] = groups[r.experimentId] || []).push(r); });
+    Object.entries(groups).forEach(([expId, expRuns]) => {
+      const exp = EXPERIMENTS.find(e => e.id === expId);
+      html += `<div class="group-header">${exp ? exp.suiteName : expId} <span class="group-count">${expRuns.length} runs</span></div>`;
+      html += `<div class="exp-group-sub">${expId}${exp ? " · " + exp.status + " · " + exp.models.length + " models" : ""}</div>`;
+      html += expRuns.map(runRowHtml).join("");
+    });
+  } else {
+    html += runs.map(runRowHtml).join("");
+  }
+
+  if (!html) {
+    html = `<div class="empty-state"><div class="empty-state-title">No runs in this view</div><p>Try another segment or clear the filters.</p></div>`;
+  }
+  list.innerHTML = html;
+}
+
+function runRowHtml(r) {
+  const attn = isAttention(r.status);
+  const trialBadge = r.trial ? `<span class="tag">trial ${r.trial}</span>` : "";
+  const retryBadge = r.reusedFrom ? `<span class="tag">↺ retry</span>` : "";
+  const costText = r.cost ? " · $" + r.cost.totalUsd.toFixed(4) : "";
+  return `
+    <div class="run-row ${selectedRunId === r.id ? "selected" : ""} ${attn ? "needs-attention" : ""} ${r.source === "experiment" ? "run-row-child" : ""}" onclick="selectRun('${r.id}')">
+      <div class="run-row-icon source-${r.source}">${r.source === "adhoc" ? "AH" : r.source === "experiment" ? "EX" : "LG"}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;flex-wrap:wrap">
+          <span class="source-label source-${r.source}">${getSourceLabel(r.source)}</span>
+          ${r.source === "experiment" ? `<span class="muted" style="font-size:11px;font-family:var(--font-mono)">${r.taskName || r.taskId}</span>` : ""}
+          <span class="status-mark status-${r.status}"><span class="status-dot"></span>${getStatusLabel(r.status)}</span>
+          ${attn ? '<span class="attention-chip">Needs attention</span>' : ""}
+          ${trialBadge}${retryBadge}
+        </div>
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.taskTitle}</div>
+        <div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);margin-top:2px">
+          ${timeAgo(r.createdAt)} · ${(r.candidates || []).length} models · ${r.mode}${costText}
+        </div>
+      </div>
+    </div>`;
+}
+
+function selectRun(id) {
+  selectedRunId = id;
+  renderRunList();
+  renderRunDetail(id);
+  updateHash();
+}
+
+// ===== Run Detail (baseline parity) =====
+function renderRunDetail(id) {
+  const r = getRunById(id);
+  if (!r) return;
+  const pane = document.getElementById("detailPane");
+  if (!pane) return;
+  const provenanceHtml = r.source === "experiment" ? `
+    <div class="provenance-trail" style="margin-top:8px">
+      ← <a class="provenance-link" onclick="navigate('evaluations')">Experiment: ${r.suiteName || r.experimentId}</a>
+      · Task: ${r.taskName || r.taskId}
+      ${r.trial > 1 ? " · Trial " + r.trial : ""}
+    </div>
+  ` : "";
+  const reusedFromHtml = r.reusedFrom ? `
+    <div class="provenance-trail" style="margin-top:4px">
+      ↺ Retry of <a class="provenance-link" onclick="selectRun('${r.reusedFrom.sourceRunId}')">${r.reusedFrom.sourceRunId}</a>
+    </div>
+  ` : "";
+  const legacyNote = r.source === "legacy" ? `
+    <div class="card" style="margin-bottom:16px;border-color:var(--warning);background:rgba(255,179,0,0.05)">
+      <strong style="color:var(--warning)">Summary only</strong> — this is a legacy imported record with no detailed evidence.
+    </div>
+  ` : "";
+
+  pane.innerHTML = `
+    <div class="detail-header">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <span class="source-label source-${r.source}">${getSourceLabel(r.source)}</span>
+        <span class="status-mark status-${r.status}"><span class="status-dot"></span>${getStatusLabel(r.status)}</span>
+        <span class="tag">${r.mode}</span>
+      </div>
+      <div class="detail-title">${r.taskTitle}</div>
+      <div class="detail-meta">
+        <span>${formatDate(r.createdAt)}</span>
+        <span>· ${r.duration || "—"}</span>
+        <span>· ${(r.candidates || []).length} candidates</span>
+        ${r.cost ? '<span>· $' + r.cost.totalUsd.toFixed(4) + '</span>' : ""}
+      </div>
+      ${provenanceHtml}
+      ${reusedFromHtml}
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+        ${r.source === "legacy"
+          ? '<button class="btn btn-sm" disabled title="Legacy run has no config to load">Open in Compare</button>'
+          : `<button class="btn btn-sm" onclick="openInCompare('${r.id}')">Open in Compare</button>`}
+        <button class="btn btn-sm" onclick="copyLink('${r.id}', this)">Copy link — this device</button>
+      </div>
+    </div>
+    ${legacyNote}
+    ${r.source !== "legacy" ? renderDetailSections(r) : ""}
+  `;
+}
+
+function renderDetailSections(r) {
+  const candidatesHtml = (r.candidates || []).map((c, i) => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="run-row-icon" style="background:var(--raised);color:var(--text-secondary)">${i+1}</span>
+          <strong>${c.model}</strong>
+          ${c.rank ? '<span class="tag">Rank #' + c.rank + '</span>' : ""}
+        </div>
+        <span class="status-mark status-${c.status === "done" ? "completed" : c.status === "error" ? "failed" : c.status === "pending" ? "interrupted" : "running"}">
+          <span class="status-dot"></span>${c.status}
+          ${c.score ? " · " + c.score : ""}
+        </span>
+      </div>
+      ${c.error ? '<div style="color:var(--error);font-size:12px;font-family:var(--font-mono)">Error: ' + c.error + "</div>" : ""}
+      <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">${c.providerId}/${c.slug}</div>
+    </div>
+  `).join("");
+
+  const judgeHtml = r.judge ? `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <strong>${r.judge.model}</strong>
+        ${r.judge.error
+          ? '<span class="error" style="font-size:12px">' + r.judge.error + "</span>"
+          : r.fusionStatus === "no_accept"
+            ? '<span class="status-mark status-partial"><span class="status-dot"></span>No consensus — fusion not accepted</span>'
+            : '<span class="status-mark status-completed"><span class="status-dot"></span>Accepted</span>'}
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">${r.judge.providerId} · ${r.judge.instruction}</div>
+      ${r.judge.consensus ? '<div style="margin-top:8px;font-size:12px;color:var(--text-secondary)">' + Object.entries(r.judge.consensus).map(([k,v]) => k + ": " + (v*100).toFixed(0) + "%").join(" · ") + "</div>" : ""}
+    </div>
+  ` : "";
+
+  return `
+    <div class="detail-section">
+      <div class="detail-section-title">Task</div>
+      <div style="font-size:14px;margin-bottom:8px">${r.taskPrompt || "—"}</div>
+      ${r.systemPrompt ? '<div style="font-size:12px;color:var(--text-muted)">System: ' + r.systemPrompt + "</div>" : ""}
+      <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-top:4px">Temperature: ${r.temperature}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">Candidates (${(r.candidates || []).length})</div>
+      ${candidatesHtml}
+    </div>
+    ${r.judge ? '<div class="detail-section"><div class="detail-section-title">Judge Evidence</div>' + judgeHtml + "</div>" : ""}
+    ${r.rankResult ? '<div class="detail-section"><div class="detail-section-title">Result</div><div class="card" style="border-color:var(--accent)"><strong style="color:var(--accent)">Rank Winner: ' + (r.candidates.find(c => c.id === r.rankResult)?.model || "?") + "</strong></div></div>" : ""}
+    ${r.fusionResult ? '<div class="detail-section"><div class="detail-section-title">Fusion Result</div><div class="card"><div style="font-size:14px;line-height:1.6">' + r.fusionResult + "</div></div></div>" : ""}
+  `;
+}
+
+// ===== Compare View =====
+function renderCompareView() {
+  const ws = document.getElementById("workspace");
+
+  // Simulated completed run — only reachable via explicit "Run comparison".
+  if (compareState.completed) {
+    const run = getRunById(compareState.runId);
+    const winnerModel = run
+      ? (run.rankResult
+          ? (run.candidates.find(c => c.id === run.rankResult)?.model || run.candidates[0]?.model)
+          : run.candidates[0]?.model)
+      : "DeepSeek V4 Flash";
+    const resultLabel = run && run.mode === "fuse" ? "Fused" : "Rank Winner";
+    const modelsLine = run ? run.candidates.map(c => c.model).join(", ") : "DeepSeek V4 Flash, GLM-5.2, Qwen 3.6 35B";
+    const bodyText = run
+      ? esc((run.taskPromptFull || run.taskPrompt || "")).slice(0, 240) + "…"
+      : "The multi-head self-attention mechanism projects the input into Query, Key, and Value matrices, computes scaled dot-product attention, and concatenates multiple heads to capture different representation subspaces…";
+    ws.innerHTML = `
+      <div class="workspace-full">
+        <div class="compare-toolbar" style="margin:-24px -24px 24px;border-radius:0">
+          <div class="mode-toggle"><button class="${run && run.mode === "fuse" ? "" : "active"}">Rank</button><button class="${run && run.mode === "fuse" ? "active" : ""}">Fuse</button></div>
+          <span class="muted" style="font-size:12px">${run ? run.candidates.length : 3} candidates · ${modelsLine}</span>
+        </div>
+        <div class="card" style="border-color:var(--success);margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+            <span class="status-mark status-completed"><span class="status-dot"></span>Completed</span>
+            <strong>${resultLabel}: ${winnerModel}</strong>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:8px">${run ? "Simulated from run " + run.id : ""}</div>
+          <div style="font-size:14px;line-height:1.6;color:var(--text-secondary)">${bodyText}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="viewRecord('${run?.id}')">View record →</button>
+          <button class="btn" onclick="resetCompare()">New Compare</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // Configuration loaded from a run record (Open in Compare) — ready to run, no fabricated result.
+  if (compareState.preloaded && compareState.runId) {
+    const run = getRunById(compareState.runId);
+    if (!run) {
+      compareState = { completed: false, runId: null, preloaded: false };
+    } else {
+      const candidates = run.candidates || [];
+      ws.innerHTML = `
+        <div class="workspace-full">
+          <div class="compare-toolbar" style="margin:-24px -24px 24px;border-radius:0">
+            <div class="mode-toggle"><button class="${run.mode === "fuse" ? "" : "active"}">Rank</button><button class="${run.mode === "fuse" ? "active" : ""}">Fuse</button></div>
+            <span class="muted" style="font-size:12px">${candidates.length} model slots · ${run.id}</span>
+          </div>
+          <div class="card" style="border-color:var(--accent);margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+              <span class="status-mark status-partial"><span class="status-dot"></span>Configuration loaded</span>
+              <strong style="font-size:15px">${esc(run.taskTitle)}</strong>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:12px">
+              Configuration loaded from run ${run.id}. Run comparison to execute.
+            </div>
+            <div style="font-size:14px;line-height:1.6;color:var(--text-secondary);margin-bottom:16px">${esc(run.taskPromptFull || run.taskPrompt || "—")}</div>
+            <div class="detail-section-title" style="margin-bottom:8px">Model slots (${candidates.length})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">${candidates.map(c => `<span class="tag">${esc(c.model)}</span>`).join("")}</div>
+            ${run.systemPrompt ? '<div style="font-size:12px;color:var(--text-muted);margin-top:12px">System: ' + esc(run.systemPrompt) + "</div>" : ""}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="runCompare()">Run comparison</button>
+            <button class="btn" onclick="resetCompare()">New Compare</button>
+          </div>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  ws.innerHTML = `
+    <div class="workspace-full">
+      <div class="compare-toolbar" style="margin:-24px -24px 24px;border-radius:0">
+        <div class="mode-toggle"><button class="active">Rank</button><button>Fuse</button></div>
+      </div>
+      <div class="empty-state">
+        <div class="empty-state-title">Configure your comparison</div>
+        <p style="margin-bottom:16px">Set up a task, choose models, and run a blind comparison.</p>
+        <button class="btn btn-primary" onclick="runCompare()">Run comparison</button>
+      </div>
+      <div style="margin-top:32px">
+        <div class="detail-section-title" style="margin-bottom:12px">Recent runs</div>
+        ${RUNS.slice(0, 3).map(r => `
+          <div class="card card-hover" style="margin-bottom:8px;cursor:pointer" onclick="selectRunFromCompare('${r.id}')">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span class="source-label source-${r.source}">${getSourceLabel(r.source)}</span>
+              <span style="font-weight:500">${r.taskTitle}</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">${timeAgo(r.createdAt)} · ${getStatusLabel(r.status)}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function resetCompare() {
+  compareState = { completed: false, runId: null, preloaded: false };
+  renderCompareView();
+}
+
+function runCompare() {
+  compareState = { completed: true, runId: compareState.runId || "run-20260809-001" };
+  renderCompareView();
+}
+
+function viewRecord(id) { navigate("runs", id); }
+function selectRunFromCompare(id) { navigate("runs", id); }
+
+function openInCompare(id) {
+  const r = getRunById(id);
+  if (!r || r.source === "legacy") return; // legacy runs have no config to load
+  compareState = { completed: false, runId: id, preloaded: true };
+  navigate("compare", null, true);
+}
+
+function copyLink(id, btn) {
+  const url = window.location.origin + window.location.pathname + "#/runs/" + id;
+  const done = () => {
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = "Copied!";
+      btn.disabled = true;
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+    }
+  };
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = url;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+    done();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+// ===== Evaluations View =====
+function renderEvaluationsView() {
+  const ws = document.getElementById("workspace");
+  const exp = EXPERIMENTS[0];
+  ws.innerHTML = `
+    <div class="workspace-full">
+      <div class="detail-section-title" style="margin-bottom:16px">Experiments</div>
+      <div class="card" style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <strong style="font-size:16px">${exp.suiteName}</strong>
+            <span class="tag" style="margin-left:8px">${exp.status}</span>
+          </div>
+          <span class="muted" style="font-size:12px;font-family:var(--font-mono)">${formatDate(exp.createdAt)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${exp.models.length} models · ${exp.tasks.length} tasks</div>
+        <table class="eval-matrix">
+          <thead>
+            <tr>
+              <th>Task</th>
+              ${exp.models.map(m => "<th>" + m + "</th>").join("")}
+              <th>Best</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${exp.tasks.map(t => `
+              <tr>
+                <td><a onclick="viewRunFromEval('${t.runId}')">${t.name}</a></td>
+                ${exp.models.map(m => {
+                  const run = getRunById(t.runId);
+                  const cand = run?.candidates.find(c => c.model === m);
+                  if (!cand || cand.score == null) return '<td class="matrix-cell-na">—</td>';
+                  const cls = cand.score >= 8.5 ? "high" : cand.score >= 7.5 ? "mid" : "low";
+                  return '<td><span class="matrix-score ' + cls + '">' + cand.score.toFixed(1) + "</span></td>";
+                }).join("")}
+                <td><span class="matrix-score high">${t.score.toFixed(1)}</span> · ${t.bestModel}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="detail-section-title" style="margin-bottom:12px">Task Evidence</div>
+      ${exp.tasks.map(t => `
+        <div class="card card-hover" style="margin-bottom:8px;cursor:pointer" onclick="viewRunFromEval('${t.runId}')">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <strong>${t.name}</strong>
+              ${t.retryOf ? '<span class="tag" style="margin-left:8px">retry</span>' : ""}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="status-mark status-${t.status}"><span class="status-dot"></span>${getStatusLabel(t.status)}</span>
+              <span class="muted" style="font-size:12px">View run →</span>
+            </div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function viewRunFromEval(id) { navigate("runs", id); }
+
+// ===== Render workspace =====
+function renderWorkspace() {
+  if (currentView === "runs") renderRunsView();
+  else if (currentView === "compare") renderCompareView();
+  else if (currentView === "evaluations") renderEvaluationsView();
+}
+
+// ===== Init =====
+parseHash();
+renderNav();
+renderWorkspace();
+updateHash();
+if (document.getElementById('nav').children.length === 0) {
+  setTimeout(() => { parseHash(); renderNav(); renderWorkspace(); updateHash(); }, 0);
+}
+</script>
+</body>
+</html>

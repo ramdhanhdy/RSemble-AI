@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSemble AI — Fair Baseline</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="app-shell" id="app">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <svg class="logo-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <span class="hidden sm:inline" style="font-size:16px;font-weight:600;letter-spacing:-0.01em">RSemble AI</span>
+    </div>
+    <div class="header-center">
+      <nav class="nav-primary" id="nav"></nav>
+    </div>
+    <div class="header-right">
+      <div class="conn-pill"><span class="conn-dot connected"></span><span class="hidden lg:inline">Connected</span></div>
+    </div>
+  </header>
+
+  <!-- Workspace -->
+  <div class="workspace" id="workspace"></div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+const { RUNS, EXPERIMENTS, getStatusLabel, getSourceLabel, formatDate, timeAgo, getRunById, groupRunsBySource } = window.RSEMBLE_DATA;
+
+// ===== Navigation =====
+const NAV_ITEMS = [
+  { to: "compare", label: "Compare", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 9l4-4 4 4M21 15l-4 4-4-4"/></svg>' },
+  { to: "runs", label: "Runs", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5M3.05 13A9 9 0 1 0 6 5.3L3 8M12 7v5l4 2"/></svg>' },
+  { to: "evaluations", label: "Evaluations", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>' },
+];
+
+let currentView = "runs";
+let selectedRunId = null;
+let compareState = { completed: false, runId: null, preloaded: false };
+
+function renderNav() {
+  const nav = document.getElementById("nav");
+  nav.innerHTML = NAV_ITEMS.map(item => `
+    <button class="nav-item ${currentView === item.to ? "active" : ""}" onclick="navigate('${item.to}')">
+      ${item.icon}
+      ${item.label}
+    </button>
+  `).join("");
+}
+
+function navigate(view, runId, keepCompareState) {
+  if (view === "compare" && !keepCompareState) {
+    compareState = { completed: false, runId: null, preloaded: false };
+  }
+  currentView = view;
+  if (runId) selectedRunId = runId;
+  else if (view !== "runs") selectedRunId = null;
+  renderNav();
+  renderWorkspace();
+  updateHash();
+}
+
+// ===== Runs View =====
+function renderRunsView() {
+  const ws = document.getElementById("workspace");
+  ws.innerHTML = `
+    <div class="workspace-split">
+      <div class="list-pane">
+        <div class="filters-bar">
+          <input class="filter-input" style="min-width:100px;flex:1 1 100px" placeholder="Search task or model…" value="${esc(activeFilters.search)}" oninput="filterRuns(this.value)">
+          <select class="filter-select" style="flex-shrink:0;width:124px" onchange="filterStatus(this.value)">
+            <option value="" ${activeFilters.status === "" ? "selected" : ""}>All statuses</option>
+            <option value="completed" ${activeFilters.status === "completed" ? "selected" : ""}>Completed</option>
+            <option value="partial" ${activeFilters.status === "partial" ? "selected" : ""}>Partial</option>
+            <option value="failed" ${activeFilters.status === "failed" ? "selected" : ""}>Failed</option>
+            <option value="interrupted" ${activeFilters.status === "interrupted" ? "selected" : ""}>Interrupted</option>
+          </select>
+          <select class="filter-select" style="flex-shrink:0;width:112px" onchange="filterSource(this.value)">
+            <option value="" ${activeFilters.source === "" ? "selected" : ""}>All sources</option>
+            <option value="adhoc" ${activeFilters.source === "adhoc" ? "selected" : ""}>Ad hoc</option>
+            <option value="experiment" ${activeFilters.source === "experiment" ? "selected" : ""}>Experiment</option>
+            <option value="legacy" ${activeFilters.source === "legacy" ? "selected" : ""}>Legacy</option>
+          </select>
+        </div>
+        <ul class="run-list" id="runList"></ul>
+      </div>
+      <div class="detail-pane" id="detailPane">
+        <div class="empty-state">
+          <div class="empty-state-title">Select a run to inspect</div>
+          <p>Run Detail shows task inputs, candidate outputs, Judge evidence, scores, and configuration.</p>
+        </div>
+      </div>
+    </div>
+  `;
+  renderRunList(getFilteredRuns());
+  if (selectedRunId && getRunById(selectedRunId)) renderRunDetail(selectedRunId);
+}
+
+let activeFilters = { search: "", status: "", source: "" };
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ===== URL-persistent state (BL-1/BL-2: #/runs?q=…&status=…&source=…, #/runs/<id>) =====
+function parseHash() {
+  const raw = location.hash || "#/runs";
+  const qIndex = raw.indexOf("?");
+  const pathPart = qIndex >= 0 ? raw.slice(1, qIndex) : raw.slice(1);
+  const queryPart = qIndex >= 0 ? raw.slice(qIndex + 1) : "";
+  const parts = pathPart.split("/").filter(Boolean);
+  currentView = ["compare", "runs", "evaluations"].includes(parts[0]) ? parts[0] : "runs";
+  selectedRunId = parts[1] || null;
+  const params = new URLSearchParams(queryPart);
+  activeFilters.search = params.get("q") || "";
+  activeFilters.status = params.get("status") || "";
+  activeFilters.source = params.get("source") || "";
+}
+
+function updateHash() {
+  const params = new URLSearchParams();
+  if (activeFilters.search) params.set("q", activeFilters.search);
+  if (activeFilters.status) params.set("status", activeFilters.status);
+  if (activeFilters.source) params.set("source", activeFilters.source);
+  let hash = "#/" + currentView;
+  if (currentView === "runs" && selectedRunId) hash += "/" + selectedRunId;
+  const qs = params.toString();
+  if (qs) hash += "?" + qs;
+  if (location.hash !== hash) location.hash = hash;
+}
+
+window.addEventListener("hashchange", () => { parseHash(); renderNav(); renderWorkspace(); });
+
+function filterRuns(val) { activeFilters.search = val.toLowerCase(); renderRunList(getFilteredRuns()); updateHash(); }
+function filterStatus(val) { activeFilters.status = val; renderRunList(getFilteredRuns()); updateHash(); }
+function filterSource(val) { activeFilters.source = val; renderRunList(getFilteredRuns()); updateHash(); }
+
+function clearFilters() {
+  activeFilters = { search: "", status: "", source: "" };
+  renderRunsView();
+  updateHash();
+}
+
+function getFilteredRuns() {
+  return RUNS.filter(r => {
+    if (activeFilters.status && r.status !== activeFilters.status) return false;
+    if (activeFilters.source && r.source !== activeFilters.source) return false;
+    if (activeFilters.search) {
+      const text = (r.taskTitle + " " + (r.taskPrompt || "") + " " + (r.candidates || []).map(c => c.model).join(" ")).toLowerCase();
+      if (!text.includes(activeFilters.search)) return false;
+    }
+    return true;
+  });
+}
+
+function renderRunList(runs) {
+  const list = document.getElementById("runList");
+  if (!list) return;
+  if (!runs.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-title">No runs match</div>
+        <p>No runs match the current filters.</p>
+        <button class="btn btn-sm" style="margin-top:12px" onclick="clearFilters()">Clear filters</button>
+      </div>
+    `;
+    return;
+  }
+  const groups = groupRunsBySource(runs);
+  let html = "";
+  [["adhoc", "Ad hoc"], ["experiment", "Experiment"], ["legacy", "Legacy"]].forEach(([key, label]) => {
+    const g = groups[key] || [];
+    if (!g.length) return;
+    html += `<div class="group-header">${label} <span class="group-count">${g.length} run${g.length === 1 ? "" : "s"}</span></div>`;
+    html += g.map(runRowHtml).join("");
+  });
+  list.innerHTML = html;
+}
+
+function runRowHtml(r) {
+  return `
+    <li class="run-row ${selectedRunId === r.id ? "selected" : ""}" onclick="selectRun('${r.id}')">
+      <div class="run-row-icon source-${r.source}">
+        ${r.source === "adhoc" ? "AH" : r.source === "experiment" ? "EX" : "LG"}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+          <span class="source-label source-${r.source}">${getSourceLabel(r.source)}</span>
+          <span class="status-mark status-${r.status}"><span class="status-dot"></span>${getStatusLabel(r.status)}</span>
+        </div>
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.taskTitle}</div>
+        <div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);margin-top:2px">
+          ${timeAgo(r.createdAt)} · ${(r.candidates || []).length} models · ${r.mode}
+        </div>
+      </div>
+    </li>
+  `;
+}
+
+function selectRun(id) {
+  selectedRunId = id;
+  renderRunList(getFilteredRuns());
+  renderRunDetail(id);
+  updateHash();
+}
+
+function renderRunDetail(id) {
+  const r = getRunById(id);
+  if (!r) return;
+  const pane = document.getElementById("detailPane");
+  const provenanceHtml = r.source === "experiment" ? `
+    <div class="provenance-trail" style="margin-top:8px">
+      ← <a class="provenance-link" onclick="navigate('evaluations')">Experiment: ${r.suiteName || r.experimentId}</a>
+      · Task: ${r.taskName || r.taskId}
+      ${r.trial > 1 ? " · Trial " + r.trial : ""}
+    </div>
+  ` : "";
+  const reusedFromHtml = r.reusedFrom ? `
+    <div class="provenance-trail" style="margin-top:4px">
+      ↺ Retry of <a class="provenance-link" onclick="selectRun('${r.reusedFrom.sourceRunId}')">${r.reusedFrom.sourceRunId}</a>
+    </div>
+  ` : "";
+  const legacyNote = r.source === "legacy" ? `
+    <div class="card" style="margin-bottom:16px;border-color:var(--warning);background:rgba(255,179,0,0.05)">
+      <strong style="color:var(--warning)">Summary only</strong> — this is a legacy imported record with no detailed evidence.
+    </div>
+  ` : "";
+
+  pane.innerHTML = `
+    <div class="detail-header">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <span class="source-label source-${r.source}">${getSourceLabel(r.source)}</span>
+        <span class="status-mark status-${r.status}"><span class="status-dot"></span>${getStatusLabel(r.status)}</span>
+        <span class="tag">${r.mode}</span>
+      </div>
+      <div class="detail-title">${r.taskTitle}</div>
+      <div class="detail-meta">
+        <span>${formatDate(r.createdAt)}</span>
+        <span>· ${r.duration || "—"}</span>
+        <span>· ${(r.candidates || []).length} candidates</span>
+        ${r.cost ? '<span>· $' + r.cost.totalUsd.toFixed(4) + '</span>' : ""}
+      </div>
+      ${provenanceHtml}
+      ${reusedFromHtml}
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+        ${r.source === "legacy"
+          ? '<button class="btn btn-sm" disabled title="Legacy run has no config to load">Open in Compare</button>'
+          : `<button class="btn btn-sm" onclick="openInCompare('${r.id}')">Open in Compare</button>`}
+        <button class="btn btn-sm" onclick="copyLink('${r.id}', this)">Copy link — this device</button>
+      </div>
+    </div>
+    ${legacyNote}
+    ${r.source !== "legacy" ? renderDetailSections(r) : ""}
+  `;
+}
+
+function renderDetailSections(r) {
+  const candidatesHtml = (r.candidates || []).map((c, i) => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="run-row-icon" style="background:var(--raised);color:var(--text-secondary)">${i+1}</span>
+          <strong>${c.model}</strong>
+          ${c.rank ? '<span class="tag">Rank #' + c.rank + '</span>' : ""}
+        </div>
+        <span class="status-mark status-${c.status === "done" ? "completed" : c.status === "error" ? "failed" : c.status === "pending" ? "interrupted" : "running"}">
+          <span class="status-dot"></span>${c.status}
+          ${c.score ? " · " + c.score : ""}
+        </span>
+      </div>
+      ${c.error ? '<div style="color:var(--error);font-size:12px;font-family:var(--font-mono)">Error: ' + c.error + "</div>" : ""}
+      <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">${c.providerId}/${c.slug}</div>
+    </div>
+  `).join("");
+
+  const judgeHtml = r.judge ? `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <strong>${r.judge.model}</strong>
+        ${r.judge.error
+          ? '<span class="error" style="font-size:12px">' + r.judge.error + "</span>"
+          : r.fusionStatus === "no_accept"
+            ? '<span class="status-mark status-partial"><span class="status-dot"></span>No consensus — fusion not accepted</span>'
+            : '<span class="status-mark status-completed"><span class="status-dot"></span>Accepted</span>'}
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">${r.judge.providerId} · ${r.judge.instruction}</div>
+      ${r.judge.consensus ? '<div style="margin-top:8px;font-size:12px;color:var(--text-secondary)">' + Object.entries(r.judge.consensus).map(([k,v]) => k + ": " + (v*100).toFixed(0) + "%").join(" · ") + "</div>" : ""}
+    </div>
+  ` : "";
+
+  return `
+    <div class="detail-section">
+      <div class="detail-section-title">Task</div>
+      <div style="font-size:14px;margin-bottom:8px">${r.taskPrompt || "—"}</div>
+      ${r.systemPrompt ? '<div style="font-size:12px;color:var(--text-muted)">System: ' + r.systemPrompt + "</div>" : ""}
+      <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-top:4px">Temperature: ${r.temperature}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">Candidates (${(r.candidates || []).length})</div>
+      ${candidatesHtml}
+    </div>
+    ${r.judge ? '<div class="detail-section"><div class="detail-section-title">Judge Evidence</div>' + judgeHtml + "</div>" : ""}
+    ${r.rankResult ? '<div class="detail-section"><div class="detail-section-title">Result</div><div class="card" style="border-color:var(--accent)"><strong style="color:var(--accent)">Rank Winner: ' + (r.candidates.find(c => c.id === r.rankResult)?.model || "?") + "</strong></div></div>" : ""}
+    ${r.fusionResult ? '<div class="detail-section"><div class="detail-section-title">Fusion Result</div><div class="card"><div style="font-size:14px;line-height:1.6">' + r.fusionResult + "</div></div></div>" : ""}
+  `;
+}
+
+// ===== Compare View =====
+function renderCompareView() {
+  const ws = document.getElementById("workspace");
+
+  // Simulated completed run — only reachable via explicit "Run comparison".
+  if (compareState.completed) {
+    const run = getRunById(compareState.runId);
+    const winnerModel = run
+      ? (run.rankResult
+          ? (run.candidates.find(c => c.id === run.rankResult)?.model || run.candidates[0]?.model)
+          : run.candidates[0]?.model)
+      : "DeepSeek V4 Flash";
+    const resultLabel = run && run.mode === "fuse" ? "Fused" : "Rank Winner";
+    const modelsLine = run ? run.candidates.map(c => c.model).join(", ") : "DeepSeek V4 Flash, GLM-5.2, Qwen 3.6 35B";
+    const bodyText = run
+      ? esc((run.taskPromptFull || run.taskPrompt || "")).slice(0, 240) + "…"
+      : "The multi-head self-attention mechanism projects the input into Query, Key, and Value matrices, computes scaled dot-product attention, and concatenates multiple heads to capture different representation subspaces…";
+    ws.innerHTML = `
+      <div class="workspace-full">
+        <div class="compare-toolbar" style="margin:-24px -24px 24px;border-radius:0">
+          <div class="mode-toggle"><button class="${run && run.mode === "fuse" ? "" : "active"}">Rank</button><button class="${run && run.mode === "fuse" ? "active" : ""}">Fuse</button></div>
+          <span class="muted" style="font-size:12px">${run ? run.candidates.length : 3} candidates · ${modelsLine}</span>
+        </div>
+        <div class="card" style="border-color:var(--success);margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+            <span class="status-mark status-completed"><span class="status-dot"></span>Completed</span>
+            <strong>${resultLabel}: ${winnerModel}</strong>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:8px">${run ? "Simulated from run " + run.id : ""}</div>
+          <div style="font-size:14px;line-height:1.6;color:var(--text-secondary)">${bodyText}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="viewRecord('${run?.id}')">View record →</button>
+          <button class="btn" onclick="resetCompare()">New Compare</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // Configuration loaded from a run record (Open in Compare) — ready to run, no fabricated result.
+  if (compareState.preloaded && compareState.runId) {
+    const run = getRunById(compareState.runId);
+    if (!run) {
+      compareState = { completed: false, runId: null, preloaded: false };
+    } else {
+      const candidates = run.candidates || [];
+      ws.innerHTML = `
+        <div class="workspace-full">
+          <div class="compare-toolbar" style="margin:-24px -24px 24px;border-radius:0">
+            <div class="mode-toggle"><button class="${run.mode === "fuse" ? "" : "active"}">Rank</button><button class="${run.mode === "fuse" ? "active" : ""}">Fuse</button></div>
+            <span class="muted" style="font-size:12px">${candidates.length} model slots · ${run.id}</span>
+          </div>
+          <div class="card" style="border-color:var(--accent);margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+              <span class="status-mark status-partial"><span class="status-dot"></span>Configuration loaded</span>
+              <strong style="font-size:15px">${esc(run.taskTitle)}</strong>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:12px">
+              Configuration loaded from run ${run.id}. Run comparison to execute.
+            </div>
+            <div style="font-size:14px;line-height:1.6;color:var(--text-secondary);margin-bottom:16px">${esc(run.taskPromptFull || run.taskPrompt || "—")}</div>
+            <div class="detail-section-title" style="margin-bottom:8px">Model slots (${candidates.length})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">${candidates.map(c => `<span class="tag">${esc(c.model)}</span>`).join("")}</div>
+            ${run.systemPrompt ? '<div style="font-size:12px;color:var(--text-muted);margin-top:12px">System: ' + esc(run.systemPrompt) + "</div>" : ""}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="runCompare()">Run comparison</button>
+            <button class="btn" onclick="resetCompare()">New Compare</button>
+          </div>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  ws.innerHTML = `
+    <div class="workspace-full">
+      <div class="compare-toolbar" style="margin:-24px -24px 24px;border-radius:0">
+        <div class="mode-toggle"><button class="active">Rank</button><button>Fuse</button></div>
+      </div>
+      <div class="empty-state">
+        <div class="empty-state-title">Configure your comparison</div>
+        <p style="margin-bottom:16px">Set up a task, choose models, and run a blind comparison.</p>
+        <button class="btn btn-primary" onclick="runCompare()">Run comparison</button>
+      </div>
+      <div style="margin-top:32px">
+        <div class="detail-section-title" style="margin-bottom:12px">Recent runs</div>
+        ${RUNS.slice(0, 3).map(r => `
+          <div class="card card-hover" style="margin-bottom:8px;cursor:pointer" onclick="selectRunFromCompare('${r.id}')">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span class="source-label source-${r.source}">${getSourceLabel(r.source)}</span>
+              <span style="font-weight:500">${r.taskTitle}</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">${timeAgo(r.createdAt)} · ${getStatusLabel(r.status)}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function resetCompare() {
+  compareState = { completed: false, runId: null, preloaded: false };
+  renderCompareView();
+}
+
+function runCompare() {
+  compareState = { completed: true, runId: compareState.runId || "run-20260809-001" };
+  renderCompareView();
+}
+
+function viewRecord(id) { navigate("runs", id); }
+function selectRunFromCompare(id) { navigate("runs", id); }
+
+function openInCompare(id) {
+  const r = getRunById(id);
+  if (!r || r.source === "legacy") return; // legacy runs have no config to load
+  compareState = { completed: false, runId: id, preloaded: true };
+  navigate("compare", null, true);
+}
+
+function copyLink(id, btn) {
+  const url = window.location.origin + window.location.pathname + "#/runs/" + id;
+  const done = () => {
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = "Copied!";
+      btn.disabled = true;
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+    }
+  };
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = url;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+    done();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+// ===== Evaluations View =====
+function renderEvaluationsView() {
+  const ws = document.getElementById("workspace");
+  const exp = EXPERIMENTS[0];
+  ws.innerHTML = `
+    <div class="workspace-full">
+      <div class="detail-section-title" style="margin-bottom:16px">Experiments</div>
+      <div class="card" style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <strong style="font-size:16px">${exp.suiteName}</strong>
+            <span class="tag" style="margin-left:8px">${exp.status}</span>
+          </div>
+          <span class="muted" style="font-size:12px;font-family:var(--font-mono)">${formatDate(exp.createdAt)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${exp.models.length} models · ${exp.tasks.length} tasks</div>
+        <table class="eval-matrix">
+          <thead>
+            <tr>
+              <th>Task</th>
+              ${exp.models.map(m => "<th>" + m + "</th>").join("")}
+              <th>Best</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${exp.tasks.map(t => `
+              <tr>
+                <td><a onclick="viewRunFromEval('${t.runId}')">${t.name}</a></td>
+                ${exp.models.map(m => {
+                  const run = getRunById(t.runId);
+                  const cand = run?.candidates.find(c => c.model === m);
+                  if (!cand || cand.score == null) return '<td class="matrix-cell-na">—</td>';
+                  const cls = cand.score >= 8.5 ? "high" : cand.score >= 7.5 ? "mid" : "low";
+                  return '<td><span class="matrix-score ' + cls + '">' + cand.score.toFixed(1) + "</span></td>";
+                }).join("")}
+                <td><span class="matrix-score high">${t.score.toFixed(1)}</span> · ${t.bestModel}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="detail-section-title" style="margin-bottom:12px">Task Evidence</div>
+      ${exp.tasks.map(t => `
+        <div class="card card-hover" style="margin-bottom:8px;cursor:pointer" onclick="viewRunFromEval('${t.runId}')">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <strong>${t.name}</strong>
+              ${t.retryOf ? '<span class="tag" style="margin-left:8px">retry</span>' : ""}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="status-mark status-${t.status}"><span class="status-dot"></span>${getStatusLabel(t.status)}</span>
+              <span class="muted" style="font-size:12px">View run →</span>
+            </div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function viewRunFromEval(id) { navigate("runs", id); }
+
+// ===== Render workspace =====
+function renderWorkspace() {
+  if (currentView === "runs") renderRunsView();
+  else if (currentView === "compare") renderCompareView();
+  else if (currentView === "evaluations") renderEvaluationsView();
+}
+
+// ===== Init =====
+parseHash();
+renderNav();
+renderWorkspace();
+updateHash();
+// Fallback: if DOM wasn't ready, retry
+if (document.getElementById('nav').children.length === 0) {
+  setTimeout(() => { parseHash(); renderNav(); renderWorkspace(); updateHash(); }, 0);
+}
+</script>
+</body>
+</html>
