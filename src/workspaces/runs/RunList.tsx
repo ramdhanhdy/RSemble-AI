@@ -152,9 +152,7 @@ export function RunList({
               <div
                 data-selected={isSelected}
                 className={`px-2 py-0.5 ${
-                  isSelected
-                    ? "bg-raised shadow-[inset_2px_0_0_0_#00e5ff]"
-                    : ""
+                  isSelected ? "bg-raised shadow-[inset_2px_0_0_0_#00e5ff]" : ""
                 }`}
               >
                 <RecordRow
