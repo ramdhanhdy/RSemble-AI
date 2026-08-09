@@ -32,6 +32,9 @@ export interface RecordRowProps {
   afterSummary?: ReactNode;
   /** When provided, the list variant renders as a link. */
   href?: string;
+  /** Optional aria-current value for the row link (e.g. "true" for the
+   *  selected row in a list). Defaults to undefined (attribute omitted). */
+  ariaCurrent?: React.AriaAttributes["aria-current"];
   /** Trailing action slot (buttons, menus, etc.). */
   children?: ReactNode;
 }
@@ -96,7 +99,7 @@ function Inner({
 }
 
 export function RecordRow(props: RecordRowProps) {
-  const { variant, id: _id, href, children, ...rest } = props;
+  const { variant, id: _id, href, ariaCurrent, children, ...rest } = props;
 
   if (variant === "table-cell") {
     return (
@@ -138,6 +141,7 @@ export function RecordRow(props: RecordRowProps) {
           data-record-row-surface=""
           className={className}
           aria-label={`Run: ${rest.title}`}
+          aria-current={ariaCurrent}
         >
           {inner}
         </Link>

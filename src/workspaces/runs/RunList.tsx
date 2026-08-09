@@ -163,6 +163,7 @@ export function RunList({
                   timestamp={vm.timestampMs}
                   modelCount={vm.modelCount}
                   kind={<SourceChip label={vm.sourceLabel} />}
+                  ariaCurrent={isSelected ? "true" : undefined}
                   summary={
                     [
                       vm.winnerKeys.length > 0 ? `Winner: ${vm.winnerKeys.join(", ")}` : null,

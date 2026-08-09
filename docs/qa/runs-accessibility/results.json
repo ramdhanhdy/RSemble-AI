@@ -1,0 +1,1122 @@
+{
+  "generatedAt": "2026-08-09T19:50:50.285Z",
+  "baseUrl": "http://localhost:5173/",
+  "probes": [
+    {
+      "name": "a11y-01-list-tab-order",
+      "pass": true,
+      "stops": [
+        {
+          "tag": "a",
+          "name": "Compare",
+          "text": "Compare",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Runs",
+          "text": "Runs",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Evaluations",
+          "text": "Evaluations",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Connection status: Live. Manage connections.",
+          "text": "Live",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Command palette",
+          "text": "⌘K",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Keyboard shortcuts",
+          "text": "",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "input",
+          "name": "Search runs",
+          "text": "",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Toggle filters",
+          "text": "Filters",
+          "dataAction": "toggle-filters",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 45",
+          "text": "ad hocCompletedFiller run 45Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 44",
+          "text": "ad hocCompletedFiller run 44Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 43",
+          "text": "ad hocCompletedFiller run 43Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 42",
+          "text": "ad hocCompletedFiller run 42Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 41",
+          "text": "ad hocCompletedFiller run 41Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 40",
+          "text": "ad hocCompletedFiller run 40Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 39",
+          "text": "ad hocCompletedFiller run 39Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 38",
+          "text": "ad hocCompletedFiller run 38Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 37",
+          "text": "ad hocCompletedFiller run 37Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 36",
+          "text": "ad hocCompletedFiller run 36Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 35",
+          "text": "ad hocCompletedFiller run 35Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 34",
+          "text": "ad hocCompletedFiller run 34Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        }
+      ]
+    },
+    {
+      "name": "a11y-02-load-more-target",
+      "pass": true,
+      "height": 44,
+      "text": "Load more (5 remaining)"
+    },
+    {
+      "name": "a11y-03-detail-tab-order",
+      "pass": true,
+      "candidateRowsReachable": 2,
+      "foundActions": [
+        "open-in-compare",
+        "copy-link",
+        "toggle-filters",
+        "load-more"
+      ],
+      "stops": [
+        {
+          "tag": "a",
+          "name": "Compare",
+          "text": "Compare",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Runs",
+          "text": "Runs",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Evaluations",
+          "text": "Evaluations",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Connection status: Live. Manage connections.",
+          "text": "Live",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Command palette",
+          "text": "⌘K",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Keyboard shortcuts",
+          "text": "",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "input",
+          "name": "Search runs",
+          "text": "",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Toggle filters",
+          "text": "Filters",
+          "dataAction": "toggle-filters",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 45",
+          "text": "ad hocCompletedFiller run 45Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 44",
+          "text": "ad hocCompletedFiller run 44Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 43",
+          "text": "ad hocCompletedFiller run 43Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 42",
+          "text": "ad hocCompletedFiller run 42Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 41",
+          "text": "ad hocCompletedFiller run 41Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 40",
+          "text": "ad hocCompletedFiller run 40Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 39",
+          "text": "ad hocCompletedFiller run 39Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 38",
+          "text": "ad hocCompletedFiller run 38Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 37",
+          "text": "ad hocCompletedFiller run 37Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 36",
+          "text": "ad hocCompletedFiller run 36Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 35",
+          "text": "ad hocCompletedFiller run 35Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 34",
+          "text": "ad hocCompletedFiller run 34Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 33",
+          "text": "ad hocCompletedFiller run 33Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 32",
+          "text": "ad hocCompletedFiller run 32Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 31",
+          "text": "ad hocCompletedFiller run 31Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 30",
+          "text": "ad hocCompletedFiller run 30Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 29",
+          "text": "ad hocCompletedFiller run 29Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 28",
+          "text": "ad hocCompletedFiller run 28Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 27",
+          "text": "ad hocCompletedFiller run 27Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 26",
+          "text": "ad hocCompletedFiller run 26Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 25",
+          "text": "ad hocCompletedFiller run 25Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 24",
+          "text": "ad hocCompletedFiller run 24Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 23",
+          "text": "ad hocCompletedFiller run 23Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 22",
+          "text": "ad hocCompletedFiller run 22Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 21",
+          "text": "ad hocCompletedFiller run 21Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 20",
+          "text": "ad hocCompletedFiller run 20Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 19",
+          "text": "ad hocCompletedFiller run 19Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 18",
+          "text": "ad hocCompletedFiller run 18Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 17",
+          "text": "ad hocCompletedFiller run 17Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 16",
+          "text": "ad hocCompletedFiller run 16Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 15",
+          "text": "ad hocCompletedFiller run 15Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 14",
+          "text": "ad hocCompletedFiller run 14Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 13",
+          "text": "ad hocCompletedFiller run 13Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 12",
+          "text": "ad hocCompletedFiller run 12Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 11",
+          "text": "ad hocCompletedFiller run 11Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 10",
+          "text": "ad hocCompletedFiller run 10Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 9",
+          "text": "ad hocCompletedFiller run 9Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 8",
+          "text": "ad hocCompletedFiller run 8Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 7",
+          "text": "ad hocCompletedFiller run 7Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 6",
+          "text": "ad hocCompletedFiller run 6Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 5",
+          "text": "ad hocCompletedFiller run 5Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 4",
+          "text": "ad hocCompletedFiller run 4Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 3",
+          "text": "ad hocCompletedFiller run 3Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 2",
+          "text": "ad hocCompletedFiller run 2Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 1",
+          "text": "ad hocCompletedFiller run 1Winner: openrouter:z-ai/glm-5.22 ",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Experiment partial coverage",
+          "text": "experimentPartialExperiment partial coverageWinner: openrout",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Experiment suite winner",
+          "text": "experimentCompletedExperiment suite winnerWinner: openrouter",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Ad hoc interrupted retry",
+          "text": "ad hocInterruptedAd hoc interrupted retry2 models999d ago",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 60,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Ad hoc aborted cleanup",
+          "text": "ad hocAbortedAd hoc aborted cleanup2 models999d ago",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 60,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Ad hoc fused verdict",
+          "text": "ad hocCompletedAd hoc fused verdictWinner: openrouter:z-ai/g",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Load more (5 remaining)",
+          "text": "Load more (5 remaining)",
+          "dataAction": "load-more",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Export data",
+          "text": "Export data",
+          "dataAction": "export",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Import data",
+          "text": "Import data",
+          "dataAction": "import",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "input",
+          "name": "Import data file",
+          "text": "",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 1,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Open in Compare",
+          "text": "Open in Compare",
+          "dataAction": "open-in-compare",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Copy link to this run",
+          "text": "Copy link",
+          "dataAction": "copy-link",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Experiment",
+          "text": "Experiment",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Suite v1",
+          "text": "Suite v1",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Back to experiment",
+          "text": "Back to experiment",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.21 attempt",
+          "text": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.21 attempt",
+          "dataAction": null,
+          "dataCandidateId": "cand-s1",
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/deepseek-v4-flash1 atte",
+          "text": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/dee",
+          "dataAction": null,
+          "dataCandidateId": "cand-s2",
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Task & Configuration",
+          "text": "Task & Configuration",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        }
+      ]
+    },
+    {
+      "name": "a11y-04-focus-indicators",
+      "pass": true,
+      "violations": []
+    },
+    {
+      "name": "a11y-05-accessible-names",
+      "pass": true,
+      "violations": []
+    },
+    {
+      "name": "a11y-06-targets-44px",
+      "pass": true,
+      "runsUnder44": [],
+      "shellUnder44": [
+        {
+          "tag": "input",
+          "name": "Import data file",
+          "height": 1
+        }
+      ]
+    },
+    {
+      "name": "a11y-07-deeplink-focus",
+      "pass": true,
+      "focusedCandidateId": "cand-s2",
+      "ariaPressed": "true",
+      "inViewport": true,
+      "rectTop": 616,
+      "ringVisible": true,
+      "judgePanelPresent": true,
+      "judgeHighlighted": true,
+      "selectedAttemptText": true,
+      "labelB": true,
+      "selectedCandidateRow": true
+    },
+    {
+      "name": "a11y-08-deeplink-degraded",
+      "pass": true,
+      "notice": true,
+      "overviewStillRendered": true,
+      "activeElementDesc": {
+        "tag": "BUTTON",
+        "name": "OpenRouter·deepseek/deepseek-v4-flashope"
+      },
+      "focusSafe": false
+    },
+    {
+      "name": "a11y-09-selected-row-sr",
+      "pass": true,
+      "linkFound": true,
+      "ariaCurrent": "true",
+      "srOnlyTexts": [
+        "Selected",
+        "openrouter:z-ai/glm-5.2",
+        "openrouter:deepseek/deepseek-v4-flash"
+      ]
+    },
+    {
+      "name": "a11y-10-heading-order",
+      "pass": true,
+      "levels": [
+        2,
+        3,
+        3,
+        3,
+        3,
+        4
+      ],
+      "skips": [],
+      "count": 6
+    },
+    {
+      "name": "a11y-11-legacy-detail",
+      "pass": true,
+      "unmarkedSeparators": 0,
+      "backLinkHeight": 44,
+      "copyLink": true
+    },
+    {
+      "name": "a11y-12-phone-detail-tab-order",
+      "pass": true,
+      "backStopIndex": 1,
+      "candidateRowsReachable": 2,
+      "stops": [
+        {
+          "tag": "button",
+          "name": "Connection status: Live. Manage connections.",
+          "text": "Live",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Back to Runs",
+          "text": "Back to Runs",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Open in Compare",
+          "text": "Open in Compare",
+          "dataAction": "open-in-compare",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Copy link to this run",
+          "text": "Copy link",
+          "dataAction": "copy-link",
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Experiment",
+          "text": "Experiment",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Suite v1",
+          "text": "Suite v1",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Back to experiment",
+          "text": "Back to experiment",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.21 attempt",
+          "text": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.21 attempt",
+          "dataAction": null,
+          "dataCandidateId": "cand-s1",
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/deepseek-v4-flash1 atte",
+          "text": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/dee",
+          "dataAction": null,
+          "dataCandidateId": "cand-s2",
+          "height": 66,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Task & Configuration",
+          "text": "Task & Configuration",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Compare",
+          "text": "Compare",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Runs",
+          "text": "Runs",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Evaluations",
+          "text": "Evaluations",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        }
+      ]
+    },
+    {
+      "name": "a11y-13-phone-filter-keyboard",
+      "pass": true,
+      "openedWithKeyboard": true
+    },
+    {
+      "name": "a11y-14-phone-filter-sheet-tab",
+      "pass": true,
+      "controls": [
+        {
+          "name": "All modelsopenrouter:deepseek/deepseek-v4-flashopenrouter:z-ai/glm-5.2",
+          "dataFilter": "model",
+          "dataAction": null,
+          "height": 44
+        },
+        {
+          "name": "All statusesRunningCompletedPartialFailedAbortedInterrupted",
+          "dataFilter": "status",
+          "dataAction": null,
+          "height": 44
+        },
+        {
+          "name": "All modesRankFuse",
+          "dataFilter": "mode",
+          "dataAction": null,
+          "height": 44
+        },
+        {
+          "name": "All sourcesAd hocExperimentLegacy",
+          "dataFilter": "source",
+          "dataAction": null,
+          "height": 44
+        },
+        {
+          "name": "Clear filters",
+          "dataFilter": null,
+          "dataAction": "clear-filters",
+          "height": 44
+        },
+        {
+          "name": "Run: Filler run 45",
+          "dataFilter": null,
+          "dataAction": null,
+          "height": 82
+        },
+        {
+          "name": "Run: Filler run 44",
+          "dataFilter": null,
+          "dataAction": null,
+          "height": 82
+        },
+        {
+          "name": "Run: Filler run 43",
+          "dataFilter": null,
+          "dataAction": null,
+          "height": 82
+        }
+      ]
+    },
+    {
+      "name": "a11y-15-no-uncaught-exceptions",
+      "pass": true,
+      "errors": []
+    }
+  ],
+  "screenshots": [
+    "01-desktop-runs-list.png",
+    "02-desktop-deeplink-focused.png",
+    "03-desktop-detail.png",
+    "04-desktop-legacy-detail.png",
+    "05-phone-detail.png",
+    "06-phone-filter-sheet-keyboard.png"
+  ],
+  "consoleErrors": [],
+  "seeded": {
+    "runCount": 53,
+    "legacyCount": 2
+  }
+}

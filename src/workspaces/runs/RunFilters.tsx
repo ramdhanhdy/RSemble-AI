@@ -60,7 +60,7 @@ export function RunFilters({
           placeholder="Search task or model…"
           value={value.text}
           onChange={(e: ChangeEvent<HTMLInputElement>) => update({ text: e.target.value })}
-          className="min-h-[44px] flex-1 rounded-md border border-edge bg-panel px-3 text-sm text-text placeholder:text-text-muted focus:border-accent/50 focus:outline-none"
+          className="min-h-[44px] flex-1 rounded-md border border-edge bg-panel px-3 text-sm text-text placeholder:text-text-muted focus:border-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         {/* Filters sheet toggle — visible on all sizes, essential on mobile */}
         <button

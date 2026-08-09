@@ -168,6 +168,21 @@ describe("RunList", () => {
     cleanup(h);
   });
 
+  it("selected row link exposes aria-current=true (screen reader selected state)", async () => {
+    const repo = new InMemoryRunRepository();
+    await seedRepo(repo, [
+      ["run-1", 1000],
+      ["run-2", 2000],
+    ]);
+    const h = renderWithRouter(<RunList repo={repo} selectedId="run-1" />);
+    await settle();
+    const selectedLink = h.$("a[href='/runs/run-1']");
+    const otherLink = h.$("a[href='/runs/run-2']");
+    expect(selectedLink?.getAttribute("aria-current")).toBe("true");
+    expect(otherLink?.getAttribute("aria-current")).toBeNull();
+    cleanup(h);
+  });
+
   it("search filters results", async () => {
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [

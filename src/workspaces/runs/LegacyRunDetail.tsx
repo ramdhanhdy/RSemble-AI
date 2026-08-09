@@ -22,7 +22,9 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
             Legacy summary
           </span>
           <span className="tabular-nums">{new Date(summary.createdAt).toLocaleString()}</span>
-          <span className="text-text-muted">·</span>
+          <span className="text-text-muted" aria-hidden="true">
+            ·
+          </span>
           <span>{formatRelativeTime(summary.createdAt)}</span>
         </div>
         {/* No "Open in Compare" for legacy runs: the v1 format has no frozen
