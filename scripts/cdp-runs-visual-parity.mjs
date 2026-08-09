@@ -68,7 +68,12 @@ const results = {
 fs.mkdirSync(outDir, { recursive: true });
 
 // --- Mini static server for the prototype -----------------------------------
-const mime = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml" };
+const mime = {
+  ".html": "text/html",
+  ".css": "text/css",
+  ".js": "text/javascript",
+  ".svg": "image/svg+xml",
+};
 protoServerHandle = http.createServer((req, res) => {
   const urlPath = decodeURIComponent((req.url ?? "/").split("?")[0]);
   const file = path.join(protoDir, urlPath === "/" ? "index.html" : urlPath);
@@ -228,7 +233,8 @@ const edgeDriver = fs.readFileSync(path.join(repoRoot, "scripts/cdp-runs-edge-qa
 const seedStartMarker = "const SEED_SOURCE = `";
 const seedStart = edgeDriver.indexOf(seedStartMarker);
 const seedEnd = edgeDriver.indexOf("))`;\n", seedStart);
-if (seedStart < 0 || seedEnd < 0) throw new Error("Could not locate SEED_SOURCE in cdp-runs-edge-qa.mjs");
+if (seedStart < 0 || seedEnd < 0)
+  throw new Error("Could not locate SEED_SOURCE in cdp-runs-edge-qa.mjs");
 const SEED_SOURCE = edgeDriver.slice(seedStart + seedStartMarker.length, seedEnd + 2);
 
 // Drop stale execution-lease/fence keys so a leftover compare lease from a
@@ -355,7 +361,9 @@ const protoRows = await evaluate(rowMeasureProbe(".run-row", ".run-list"));
 const protoCyanList = await evaluate(CYAN_COUNT_PROBE);
 await screenshot("01-proto-list");
 record("proto.list.surface", {
-  pass: protoList.paneBg === "rgb(10, 10, 10)" && protoList.paneBorderRight?.includes("rgb(38, 38, 38)"),
+  pass:
+    protoList.paneBg === "rgb(10, 10, 10)" &&
+    protoList.paneBorderRight?.includes("rgb(38, 38, 38)"),
   evidence: protoList,
   note: "prototype pane = shell bg + 1px edge border-right (border-driven split)",
 });
@@ -373,7 +381,14 @@ record("proto.list.cyanSelective", {
 // 1b. Selected row + detail (split view)
 await navigate(`${protoBaseUrl}baseline-standalone.html#/runs/run-20260809-001`);
 await waitFor("document.querySelector('.run-row.selected')", "prototype selected row");
-const protoSelected = await evaluate(styleProbe({ row: ".run-row.selected", detail: ".detail-pane", detailTitle: ".detail-title", detailSection: ".detail-section" }));
+const protoSelected = await evaluate(
+  styleProbe({
+    row: ".run-row.selected",
+    detail: ".detail-pane",
+    detailTitle: ".detail-title",
+    detailSection: ".detail-section",
+  }),
+);
 const protoDetailMeta = await evaluate(
   `(() => ({
     sectionCount: document.querySelectorAll(".detail-section").length,
@@ -389,7 +404,10 @@ record("proto.detail.selectedRow", {
   evidence: protoSelected.row,
   note: "prototype selected = raised bg + 2px accent left border",
 });
-record("proto.detail.hierarchy", { pass: protoDetailMeta.sectionCount >= 4, evidence: protoDetailMeta });
+record("proto.detail.hierarchy", {
+  pass: protoDetailMeta.sectionCount >= 4,
+  evidence: protoDetailMeta,
+});
 record("proto.detail.cyanSelective", {
   pass: (protoCyanDetail.count ?? 99) <= 50,
   evidence: protoCyanDetail,
@@ -467,8 +485,7 @@ record("prod.list.filtersVisible", {
   note: "search control visible on desktop (transplant map E1)",
 });
 record("prod.list.cyanSelective", {
-  pass:
-    (prodCyanList.count ?? 99) <= Math.max(40, Math.round((protoCyanList.count ?? 19) * 1.75)),
+  pass: (prodCyanList.count ?? 99) <= Math.max(40, Math.round((protoCyanList.count ?? 19) * 1.75)),
   evidence: { ...prodCyanList, protoCount: protoCyanList.count },
   note: "cyan usage within 1.75x of prototype's own list count; selective use (chips/status/selection only)",
 });
@@ -482,8 +499,10 @@ await evaluate(
     return Boolean(link);
   })()`,
 );
-await waitFor('Boolean(document.querySelector(\'[data-selected="true"]\'))', "selected row");
-const prodSelected = await evaluate(styleProbe({ wrapper: '[data-selected="true"]', detailHeader: '[data-section="header"]' }));
+await waitFor("Boolean(document.querySelector('[data-selected=\"true\"]'))", "selected row");
+const prodSelected = await evaluate(
+  styleProbe({ wrapper: '[data-selected="true"]', detailHeader: '[data-section="header"]' }),
+);
 await screenshot("04-prod-list-selected");
 record("prod.detail.selectedRow", {
   pass:
@@ -514,14 +533,19 @@ record("prod.detail.sections", {
   evidence: completedDetail,
 });
 record("prod.detail.toolbar", {
-  pass: completedDetail.toolbarButtons.some((b) => /copy/i.test(b)) && completedDetail.toolbarButtons.some((b) => /compare/i.test(b)),
+  pass:
+    completedDetail.toolbarButtons.some((b) => /copy/i.test(b)) &&
+    completedDetail.toolbarButtons.some((b) => /compare/i.test(b)),
   evidence: completedDetail,
   note: "Slice 5 contextual continuity: Copy link + Open in Compare present in detail header",
 });
 
 // 2d. Fuse + cost breakdown detail (richest evidence view)
 await navigate(`${prodBaseUrl}#/runs/run-fuse`);
-await waitFor('Boolean(document.querySelector(\'[data-section="cost-breakdown"]\'))', "cost breakdown");
+await waitFor(
+  "Boolean(document.querySelector('[data-section=\"cost-breakdown\"]'))",
+  "cost breakdown",
+);
 const fuseDetail = await evaluate(
   `(() => {
     const t = (sel) => (document.querySelector(sel)?.textContent ?? "").replace(/\\s+/g, " ").trim();
