@@ -301,7 +301,12 @@ function buildTimeline(record: RunRecordV2): TimelineStep[] {
           ? "failed"
           : judgeStatus === "running"
             ? "running"
-            : "pending",
+            : // "pending" implies the judge may still run; on a terminal run
+              // an idle judge never ran at all (transplant map §F1 — derived
+              // strictly from persisted fields, never fabricated).
+              record.status === "running"
+              ? "pending"
+              : "not run",
     state: judgeState,
   });
   let result: TimelineStep;
@@ -315,6 +320,8 @@ function buildTimeline(record: RunRecordV2): TimelineStep[] {
     result = { label: "Result", detail: "no result - candidate error", state: "warn" };
   } else if (record.status === "interrupted") {
     result = { label: "Result", detail: "stopped mid-run", state: "warn" };
+  } else if (record.status === "aborted") {
+    result = { label: "Result", detail: "aborted by user", state: "warn" };
   } else if (record.status === "running") {
     result = { label: "Result", detail: "pending", state: "running" };
   } else {

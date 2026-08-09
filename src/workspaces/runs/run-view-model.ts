@@ -194,7 +194,12 @@ export function formatRunDetail(record: RunRecordV2 | null): RunDetailViewModel 
     source: record.source.kind === "experiment" ? "experiment" : "ad hoc",
   });
 
-  // 2. Provenance — only for experiment-sourced runs
+  // 2. Status timeline — derived lifecycle summary from persisted record
+  // fields only, never fabricated (transplant map §F1, prototype "Status
+  // timeline"). TimelineSection in RunDetail.tsx consumes the record itself.
+  sections.push({ id: "timeline" });
+
+  // 3. Provenance — only for experiment-sourced runs
   if (record.source.kind === "experiment") {
     sections.push({
       id: "provenance",

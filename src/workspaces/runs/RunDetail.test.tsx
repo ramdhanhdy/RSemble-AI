@@ -184,6 +184,65 @@ describe("RunDetail", () => {
     cleanup(h);
   });
 
+  it("renders the status timeline section after header and before outcome", () => {
+    const record = makeFullRecord();
+    const h = renderWithRouter(<RunDetail record={record} />);
+    const timeline = h.$("[data-section='timeline']");
+    expect(timeline).toBeTruthy();
+    expect(timeline?.textContent).toContain("Status timeline");
+    const ids = h.$$("[data-section]").map((s) => s.getAttribute("data-section"));
+    expect(ids.indexOf("header")).toBeLessThan(ids.indexOf("timeline"));
+    expect(ids.indexOf("timeline")).toBeLessThan(ids.indexOf("outcome"));
+    cleanup(h);
+  });
+
+  it("aborted run timeline labels the result aborted, never pending", () => {
+    const h = renderWithRouter(
+      <RunDetail
+        record={makeFullRecord({
+          status: "aborted",
+          winnerKeys: [],
+          judge: {
+            status: "idle",
+            acceptedAttemptId: null,
+            report: null,
+            consensus: null,
+            attempts: [],
+          },
+          completedAt: 1716048060000,
+        })}
+      />,
+    );
+    const text = h.$("[data-section='timeline']")?.textContent ?? "";
+    expect(text).toContain("aborted by user");
+    expect(text).not.toContain("pending");
+    // An idle judge on a terminal run never ran — "not run", not "pending".
+    expect(text).toContain("not run");
+    cleanup(h);
+  });
+
+  it("running run timeline keeps pending labels for the judge and result", () => {
+    const h = renderWithRouter(
+      <RunDetail
+        record={makeFullRecord({
+          status: "running",
+          winnerKeys: [],
+          judge: {
+            status: "idle",
+            acceptedAttemptId: null,
+            report: null,
+            consensus: null,
+            attempts: [],
+          },
+        })}
+      />,
+    );
+    const text = h.$("[data-section='timeline']")?.textContent ?? "";
+    expect(text).toContain("pending");
+    expect(text).not.toContain("not run");
+    cleanup(h);
+  });
+
   it("fusion section renders only when present", () => {
     // No fusion attempts → no fusion section
     const h1 = renderWithRouter(<RunDetail record={makeFullRecord()} />);

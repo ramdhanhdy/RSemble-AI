@@ -300,9 +300,10 @@ describe("run-view-model", () => {
       );
       expect(vm).not.toBeNull();
       expect(vm!.sections).toBeDefined();
-      // Exact section order: header → outcome → cost-breakdown → candidates → selected → judge → fusion → task/config
+      // Exact section order: header → timeline → outcome → cost-breakdown → candidates → selected → judge → fusion → task/config
       expect(vm!.sections.map((s) => s.id)).toEqual([
         "header",
+        "timeline",
         "outcome",
         "cost-breakdown",
         "candidates",

@@ -76,6 +76,15 @@ export function RunList({
     [debouncedText, filters.modelKey, filters.status, filters.mode, filters.source],
   );
 
+  // True only when search text or a filter is active. Distinguishes the
+  // no-match state from a genuinely empty database (exploration notes:
+  // "empty state must offer one-click reset, not a dead end"; final report
+  // BL-3). Without this, a zero-match query collapses into the no-history
+  // empty state and misleads the user into thinking the database is empty.
+  const hasActiveQuery = Boolean(
+    debouncedText || filters.modelKey || filters.status || filters.mode || filters.source,
+  );
+
   const { summaries, loading, error } = useRunList(repo, query);
 
   // Collect all model keys for the filter dropdown
@@ -112,7 +121,7 @@ export function RunList({
     );
   }
 
-  if (summaries.length === 0) {
+  if (summaries.length === 0 && !hasActiveQuery) {
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 p-4 text-center">
         <p className="text-sm text-text-secondary">No run history yet.</p>
@@ -130,59 +139,84 @@ export function RunList({
     );
   }
 
+  // Zero-match state: the database has runs but nothing matches the active
+  // search/filters. Rendered below the filter bar, which stays interactive so
+  // the user can refine rather than only reset (applied-count badge remains
+  // visible). One-click reset so this is never a dead end (exploration notes:
+  // "URL filter state with zero matches: empty state must offer one-click
+  // reset, not a dead end"; final report BL-3).
+  const noMatchState = (
+    <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 p-4 text-center">
+      <p className="text-sm text-text-secondary">No matching runs.</p>
+      <p className="text-sm text-text-muted">No runs match the current search or filters.</p>
+      <button
+        type="button"
+        data-action="clear-empty-filters"
+        onClick={() => {
+          setFilters(EMPTY_FILTERS);
+          setDebouncedText("");
+          setVisibleCount(PAGE_SIZE);
+        }}
+        className="mt-2 flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+      >
+        Clear search and filters
+      </button>
+    </div>
+  );
+
   // --- List ---
   return (
     <div className="flex flex-col gap-2">
       <RunFilters value={filters} onChange={setFilters} modelKeys={modelKeys} />
 
-      {visible.length === 0 && debouncedText && (
-        <p className="py-4 text-center text-sm text-text-muted">No matching runs.</p>
-      )}
-
-      <ul className="flex flex-col" role="list">
-        {visible.map((summary) => {
-          const vm = formatRunRow(summary);
-          const isSelected = vm.id === selectedId;
-          return (
-            <li key={vm.id}>
-              {/* Runs-scoped selected treatment: prototype's raised bg + 2px
+      {summaries.length === 0 ? (
+        noMatchState
+      ) : (
+        <ul className="flex flex-col" role="list">
+          {visible.map((summary) => {
+            const vm = formatRunRow(summary);
+            const isSelected = vm.id === selectedId;
+            return (
+              <li key={vm.id}>
+                {/* Runs-scoped selected treatment: prototype's raised bg + 2px
                   left accent (Slice 2 / §D1). RecordRow inside is unchanged;
                   the accent sits on the wrapper via box-shadow so it does not
                   disturb RecordRow's own border/box geometry. */}
-              <div
-                data-selected={isSelected}
-                className={`px-2 py-0.5 ${
-                  isSelected ? "bg-raised shadow-[inset_2px_0_0_0_#00e5ff]" : ""
-                }`}
-              >
-                <RecordRow
-                  variant="list"
-                  id={vm.id}
-                  title={vm.taskTitle}
-                  status={vm.status ?? "completed"}
-                  timestamp={vm.timestampMs}
-                  modelCount={vm.modelCount}
-                  kind={<SourceChip label={vm.sourceLabel} />}
-                  ariaCurrent={isSelected ? "true" : undefined}
-                  summary={
-                    [
-                      vm.winnerKeys.length > 0 ? `Winner: ${vm.winnerKeys.join(", ")}` : null,
-                      vm.topScore != null
-                        ? `Score: ${formatCandidateScoreDisplay(vm.topScore, vm.scoreDomain)}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || undefined
-                  }
-                  href={`/runs/${vm.id}`}
+                <div
+                  data-selected={isSelected}
+                  className={`px-2 py-0.5 ${
+                    isSelected ? "bg-raised shadow-[inset_2px_0_0_0_#00e5ff]" : ""
+                  }`}
                 >
-                  {isSelected && <span className="sr-only">Selected</span>}
-                </RecordRow>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+                  <RecordRow
+                    variant="list"
+                    id={vm.id}
+                    title={vm.taskTitle}
+                    status={vm.status ?? "completed"}
+                    timestamp={vm.timestampMs}
+                    modelCount={vm.modelCount}
+                    kind={<SourceChip label={vm.sourceLabel} />}
+                    ariaCurrent={isSelected ? "true" : undefined}
+                    summary={
+                      [
+                        vm.winnerKeys.length > 0 ? `Winner: ${vm.winnerKeys.join(", ")}` : null,
+                        vm.topScore != null
+                          ? `Score: ${formatCandidateScoreDisplay(vm.topScore, vm.scoreDomain)}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || undefined
+                    }
+                    href={`/runs/${vm.id}`}
+                  >
+                    {isSelected && <span className="sr-only">Selected</span>}
+                  </RecordRow>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {hasMore && (
         <button
