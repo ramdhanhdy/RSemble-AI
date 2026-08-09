@@ -160,6 +160,27 @@ export default tseslint.config(
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   {
+    // Standalone HTML-prototype browser scripts (exploration artifacts, not
+    // app code) execute directly in the browser and reference window/document;
+    // they sit outside the app's tsconfig projects on purpose, so type-aware
+    // rules are off and browser globals are declared - same shape as the
+    // scripts/ block above.
+    files: ["docs/explorations/**/prototypes/**/*.js"],
+    languageOptions: {
+      globals: { ...globals.browser },
+      parserOptions: {
+        projectService: false,
+        project: null,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "off",
+      "@typescript-eslint/no-misused-promises": "off",
+      "@typescript-eslint/await-thenable": "off",
+      "@typescript-eslint/switch-exhaustiveness-check": "off",
+    },
+  },
+  {
     // Plan 007 Workstream G — import-boundary rules.
     // pipeline.ts is the provider-neutral prompt/parse domain module (the "one
     // pipeline" spine). It must stay free of React and persistence so it can be
