@@ -2,9 +2,9 @@
 // Slice 5 — CopyLinkButton behavior (G3, Copy link).
 //
 // Verifies: the button copies the real browser URL (HashRouter deep link) via
-// the clipboard API, shows transient "Copied!" feedback, and degrades
-// silently when the clipboard is unavailable (copying is a convenience, never
-// a gate).
+// the clipboard API, labels the local-device scope honestly, shows transient
+// "Copied!" feedback, and degrades silently when the clipboard is unavailable
+// (copying is a convenience, never a gate).
 // =============================================================================
 
 // @vitest-environment happy-dom
@@ -19,7 +19,7 @@ import { CopyLinkButton } from "./CopyLinkButton";
 interface Harness {
   container: HTMLDivElement;
   root: { render: (n: React.ReactNode) => void; unmount: () => void };
-  $: (s: string) => HTMLElement | null;
+  $: (s: string) => container.querySelector<HTMLElement>(s),
 }
 
 function renderButton(): Harness {
@@ -52,7 +52,7 @@ afterEach(() => {
 });
 
 describe("CopyLinkButton (Slice 5 G3)", () => {
-  it("renders a copy-link action with the current browser URL", async () => {
+  it("renders a device-scoped copy-link action with the current browser URL", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
     Object.defineProperty(window, "location", {
@@ -63,7 +63,8 @@ describe("CopyLinkButton (Slice 5 G3)", () => {
     const h = renderButton();
     const button = h.$('[data-action="copy-link"]');
     expect(button).toBeTruthy();
-    expect(button?.textContent).toContain("Copy link");
+    expect(button?.textContent).toContain("Copy link — this device");
+    expect(button?.getAttribute("aria-label")).toContain("this device");
     await act(async () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
@@ -90,7 +91,7 @@ describe("CopyLinkButton (Slice 5 G3)", () => {
     await act(async () => {
       vi.advanceTimersByTime(1600);
     });
-    expect(button.textContent).toContain("Copy link");
+    expect(button.textContent).toContain("Copy link — this device");
     cleanup(h);
   });
 
@@ -104,7 +105,7 @@ describe("CopyLinkButton (Slice 5 G3)", () => {
       await Promise.resolve();
     });
     // No crash, no fabricated success state.
-    expect(button.textContent).toContain("Copy link");
+    expect(button.textContent).toContain("Copy link — this device");
     cleanup(h);
   });
 
@@ -120,7 +121,7 @@ describe("CopyLinkButton (Slice 5 G3)", () => {
       button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
     });
-    expect(button.textContent).toContain("Copy link");
+    expect(button.textContent).toContain("Copy link — this device");
     expect(button.textContent).not.toContain("Copied!");
     cleanup(h);
   });
