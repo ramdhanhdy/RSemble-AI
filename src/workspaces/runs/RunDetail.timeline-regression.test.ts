@@ -18,7 +18,13 @@ function baseRecord(overrides: Partial<RunRecordV2> = {}): RunRecordV2 {
     task: { title: "Timeline", prompt: "p", systemPrompt: "", temperature: 0.4 },
     evaluation: { profile: null, candidateMessages: [] },
     candidates: [],
-    judge: { status: "idle", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+    judge: {
+      status: "idle",
+      acceptedAttemptId: null,
+      report: null,
+      consensus: null,
+      attempts: [],
+    },
     fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
     winnerKeys: [],
     ...overrides,
@@ -92,7 +98,13 @@ describe("RunDetail status timeline regressions", () => {
       mode: "fuse",
       winnerKeys: ["openrouter:done"],
       candidates: [candidate("done", "completed", true)],
-      judge: { status: "done", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
+      judge: {
+        status: "done",
+        acceptedAttemptId: null,
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
       fusion: { status: "done", acceptedAttemptId: null, attempts: [] },
     });
 
