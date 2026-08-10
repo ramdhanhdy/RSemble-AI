@@ -31,6 +31,12 @@ function archiveTimestamp(): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
+/** Human-readable archive serialization. Pretty-printing is intentionally a
+ * presentation-only change: import still parses the exact same JSON data model. */
+export function serializeWorkbenchArchive(archive: unknown): string {
+  return `${JSON.stringify(archive, null, 2)}\n`;
+}
+
 export function DataArchiveActions(): ReactElement | null {
   const { db, storageState } = useContext(RepositoryContext);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -57,7 +63,7 @@ export function DataArchiveActions(): ReactElement | null {
     resetFeedback();
     try {
       const archive = await exportWorkbenchArchive(db);
-      const blob = new Blob([JSON.stringify(archive)], { type: "application/json" });
+      const blob = new Blob([serializeWorkbenchArchive(archive)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
