@@ -181,7 +181,15 @@ export type Action =
   | { type: "CLEAR_ATTACHMENTS" }
   | { type: "SET_ATTACHMENTS_TO_JUDGE"; value: boolean }
   // --- pipeline ---
-  | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext; runId: string }
+  | {
+      type: "FANOUT_START";
+      candidates: Candidate[];
+      context: RunEvaluationContext;
+      /** Production controllers always supply the persisted id. Optional only
+       *  so older in-memory/test callers degrade honestly to a non-linkable
+       *  current run instead of fabricating an id. */
+      runId?: string;
+    }
   | { type: "FANOUT_BLOCKED"; reason: string }
   | {
       type: "CANDIDATE_RESULT";
@@ -472,7 +480,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         running: true,
-        runId: action.runId,
+        runId: action.runId ?? null,
         candidates: action.candidates,
         consensus: null,
         judgeStatus: "idle",
