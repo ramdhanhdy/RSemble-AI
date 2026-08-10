@@ -217,9 +217,10 @@ export type Action =
   | { type: "ABORT_RUN" }
   | { type: "LEASE_LOST"; message: string }
   // --- Compare config preload (Slice 5, Run Detail → Open in Compare) ---
-  // Loads a run record's frozen configuration into the command pane WITHOUT
-  // touching current results, running state, or the record itself (S-class:
-  // honest preload, no lineage fabrication, no record mutation).
+  // Opens the persisted configuration as a FRESH Compare draft: historical
+  // results, run identity/context, attachments, and non-restorable judge
+  // instruction must not leak into the new draft. Active Compare execution is
+  // immutable, so the reducer ignores this action while `running` is true.
   | {
       type: "LOAD_RUN_CONFIG";
       config: {
@@ -670,25 +671,33 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return { ...state, qualityRating: action.value };
 
     case "LOAD_RUN_CONFIG": {
-      // Honest preload (Slice 5): overwrite command-pane inputs from a run
-      // record's frozen config. Never touches running state, candidates,
-      // results, attachments, or the record itself. Optional fields (critic,
-      // judgeInstruction, reasoningPolicy) are kept as-is when the record
-      // cannot restore them. Deep-copied so later command-pane edits cannot
-      // mutate the loaded snapshot.
+      // Opening a persisted run is a NEW Compare draft, not a mutation of the
+      // current/previous execution. Never overwrite a live run. When idle,
+      // reset all execution/output identity plus in-memory attachments before
+      // applying the fields the persisted record can honestly restore.
+      if (state.running) return state;
       const cfg = action.config;
       return {
-        ...state,
+        ...initialState,
+        models: state.models,
         mode: cfg.mode,
         prompt: cfg.prompt,
+        exampleIndex: -1,
         systemPrompt: cfg.systemPrompt,
         temperature: cfg.temperature,
         evaluation: deepCopyEvaluationConfig(cfg.evaluation),
         slots: cfg.slots.map((slot) => ({ ...slot })),
         critic: cfg.critic ? { ...cfg.critic } : state.critic,
-        judgeInstruction: cfg.judgeInstruction ?? state.judgeInstruction,
+        // The record does not persist the user's ad-hoc custom judge
+        // instruction. Empty it instead of silently carrying unrelated text
+        // from the current Compare session into the historical draft.
+        judgeInstruction: cfg.judgeInstruction ?? "",
         reasoningPolicy: cfg.reasoningPolicy ? { ...cfg.reasoningPolicy } : state.reasoningPolicy,
-        audit: logAudit(state.audit, "Run configuration loaded from record."),
+        // Attachments are intentionally memory-only and cannot be reconstructed
+        // from persisted metadata. A historical draft therefore starts clean.
+        attachments: [],
+        attachmentsToJudge: computeAttachmentsToJudgeDefault([]),
+        audit: logAudit(state.audit, "Run configuration loaded as a fresh Compare draft."),
       };
     }
 
