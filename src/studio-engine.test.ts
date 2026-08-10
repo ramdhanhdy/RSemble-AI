@@ -456,7 +456,6 @@ describe("reducer — stale reports are cleared correctly", () => {
     };
     const next = reducer(state, {
       type: "FANOUT_START",
-      runId: "run-test-1",
       candidates: [{ ...c1, status: "pending" }],
       context: {
         prompt: state.prompt,
@@ -541,7 +540,6 @@ describe("reducer — FANOUT_START clears fusion state (regression)", () => {
     };
     const next = reducer(state, {
       type: "FANOUT_START",
-      runId: "run-test-1",
       candidates: [{ ...c1, status: "pending" }],
       context: {
         prompt: state.prompt,
@@ -594,7 +592,6 @@ describe("reducer — retained run evaluation context", () => {
     const evaluation = testEvaluation();
     const next = reducer(initialState, {
       type: "FANOUT_START",
-      runId: "run-test-1",
       candidates: [{ ...c1, status: "pending" }],
       context: { prompt: "original task", evaluation, attachments: [], attachmentsToJudge: true },
     });
@@ -612,7 +609,6 @@ describe("reducer — retained run evaluation context", () => {
       { ...initialState, evaluation: testEvaluation() },
       {
         type: "FANOUT_START",
-        runId: "run-test-1",
         candidates: [{ ...c1, status: "pending" }],
         context: {
           prompt: "original task",
@@ -633,7 +629,6 @@ describe("reducer — retained run evaluation context", () => {
     const policy: ReasoningPolicy = { candidates: "medium", judge: "high" };
     const next = reducer(initialState, {
       type: "FANOUT_START",
-      runId: "run-test-1",
       candidates: [{ ...c1, status: "pending" }],
       context: {
         mode: "rank",
@@ -664,7 +659,6 @@ describe("reducer — retained run evaluation context", () => {
     const c1 = makeCandidate("c1", "openrouter", "model-a");
     const started = reducer(initialState, {
       type: "FANOUT_START",
-      runId: "run-test-1",
       candidates: [{ ...c1, status: "pending" }],
       context: {
         prompt: "original task",
@@ -682,7 +676,6 @@ describe("reducer — retained run evaluation context", () => {
     const c1 = makeCandidate("c1", "openrouter", "model-a");
     const first = reducer(initialState, {
       type: "FANOUT_START",
-      runId: "run-test-1",
       candidates: [{ ...c1, status: "pending" }],
       context: {
         prompt: "task one",
@@ -693,7 +686,6 @@ describe("reducer — retained run evaluation context", () => {
     });
     const second = reducer(first, {
       type: "FANOUT_START",
-      runId: "run-test-1",
       candidates: [{ ...c1, status: "pending" }],
       context: {
         prompt: "task two",
@@ -1037,198 +1029,5 @@ describe("reducer — attachmentsToJudge auto-default (spec §6.2)", () => {
       ],
     });
     expect(next.attachmentsToJudge).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Slice 5 — contextual continuity: runId surfacing + Compare config preload.
-// ---------------------------------------------------------------------------
-
-describe("reducer — runId lifecycle (Compare → View record)", () => {
-  it("FANOUT_START stores the persisted run id", () => {
-    const c1 = makeCandidate("c1", "openrouter", "model-a");
-    const next = reducer(initialState, {
-      type: "FANOUT_START",
-      runId: "run-123-abc",
-      candidates: [{ ...c1, status: "pending" }],
-      context: {
-        prompt: "task",
-        evaluation: HOLISTIC_EVALUATION,
-        attachments: [],
-        attachmentsToJudge: true,
-      },
-    });
-    expect(next.runId).toBe("run-123-abc");
-  });
-
-  it("a new fanout replaces the previous run id", () => {
-    const c1 = makeCandidate("c1", "openrouter", "model-a");
-    const first = reducer(initialState, {
-      type: "FANOUT_START",
-      runId: "run-one",
-      candidates: [{ ...c1, status: "pending" }],
-      context: {
-        prompt: "task",
-        evaluation: HOLISTIC_EVALUATION,
-        attachments: [],
-        attachmentsToJudge: true,
-      },
-    });
-    const second = reducer(first, {
-      type: "FANOUT_START",
-      runId: "run-two",
-      candidates: [{ ...c1, status: "pending" }],
-      context: {
-        prompt: "task",
-        evaluation: HOLISTIC_EVALUATION,
-        attachments: [],
-        attachmentsToJudge: true,
-      },
-    });
-    expect(second.runId).toBe("run-two");
-  });
-
-  it("RESET_SESSION clears the run id", () => {
-    const c1 = makeCandidate("c1", "openrouter", "model-a");
-    const started = reducer(initialState, {
-      type: "FANOUT_START",
-      runId: "run-123-abc",
-      candidates: [{ ...c1, status: "pending" }],
-      context: {
-        prompt: "task",
-        evaluation: HOLISTIC_EVALUATION,
-        attachments: [],
-        attachmentsToJudge: true,
-      },
-    });
-    expect(started.runId).toBe("run-123-abc");
-    expect(reducer(started, { type: "RESET_SESSION" }).runId).toBeNull();
-  });
-});
-
-describe("reducer — LOAD_RUN_CONFIG (Run Detail → Open in Compare)", () => {
-  const profile = (): EvaluationProfileSnapshot => ({
-    id: "p1",
-    version: 3,
-    name: "Loadable",
-    description: "",
-    judgeInstruction: "",
-    criteria: [],
-    createdAt: 1,
-    updatedAt: 1,
-  });
-
-  it("overwrites command-pane inputs from the frozen config and keeps results untouched", () => {
-    const c1 = makeCandidate("c1", "openrouter", "model-a");
-    const started = reducer(initialState, {
-      type: "FANOUT_START",
-      runId: "run-1",
-      candidates: [{ ...c1, status: "done" }],
-      context: {
-        prompt: "live prompt",
-        evaluation: HOLISTIC_EVALUATION,
-        attachments: [],
-        attachmentsToJudge: true,
-      },
-    });
-    const next = reducer(started, {
-      type: "LOAD_RUN_CONFIG",
-      config: {
-        mode: "fuse",
-        prompt: "record prompt",
-        systemPrompt: "record system",
-        temperature: 0.7,
-        evaluation: { kind: "profile", ref: { id: "p1", version: 3 }, profile: profile() },
-        slots: [
-          {
-            id: "s9",
-            providerId: "openrouter",
-            provider: "openrouter",
-            model: "m",
-            slug: "m",
-            enabled: true,
-          },
-        ],
-        critic: { providerId: "openrouter", model: "judge" },
-        reasoningPolicy: { candidates: "medium", judge: "high" },
-      },
-    });
-    expect(next.mode).toBe("fuse");
-    expect(next.prompt).toBe("record prompt");
-    expect(next.systemPrompt).toBe("record system");
-    expect(next.temperature).toBe(0.7);
-    expect(next.evaluation).toEqual({
-      kind: "profile",
-      ref: { id: "p1", version: 3 },
-      profile: profile(),
-    });
-    expect(next.slots).toHaveLength(1);
-    expect(next.slots[0]?.slug).toBe("m");
-    expect(next.critic).toEqual({ providerId: "openrouter", model: "judge" });
-    expect(next.judgeInstruction).toBe(initialState.judgeInstruction);
-    expect(next.reasoningPolicy).toEqual({ candidates: "medium", judge: "high" });
-    // Results and execution state are never touched by a config preload —
-    // running stays exactly as it was (true, from the FANOUT_START above).
-    expect(next.candidates).toEqual(started.candidates);
-    expect(next.running).toBe(true);
-    expect(next.runId).toBe("run-1");
-  });
-
-  it("keeps the current critic/judgeInstruction/reasoningPolicy when the record cannot restore them", () => {
-    const base = {
-      ...initialState,
-      critic: { providerId: "umans", model: "current-judge" } as StudioState["critic"],
-      judgeInstruction: "keep me",
-      reasoningPolicy: { candidates: "high", judge: "high" } as StudioState["reasoningPolicy"],
-    };
-    const next = reducer(base, {
-      type: "LOAD_RUN_CONFIG",
-      config: {
-        mode: "rank",
-        prompt: "p",
-        systemPrompt: "",
-        temperature: 0.4,
-        evaluation: HOLISTIC_EVALUATION,
-        slots: [],
-      },
-    });
-    expect(next.critic).toEqual({ providerId: "umans", model: "current-judge" });
-    expect(next.judgeInstruction).toBe("keep me");
-    expect(next.reasoningPolicy).toEqual({ candidates: "high", judge: "high" });
-  });
-
-  it("deep-copies the loaded evaluation profile so later edits cannot alias the payload", () => {
-    const payload = { kind: "custom" as const, profile: profile() };
-    const next = reducer(initialState, {
-      type: "LOAD_RUN_CONFIG",
-      config: {
-        mode: "rank",
-        prompt: "p",
-        systemPrompt: "",
-        temperature: 0.4,
-        evaluation: payload,
-        slots: [],
-      },
-    });
-    expect(next.evaluation).toEqual(payload);
-    expect(next.evaluation).not.toBe(payload);
-    if (next.evaluation.kind !== "holistic") {
-      expect(next.evaluation.profile).not.toBe(payload.profile);
-    }
-  });
-
-  it("logs an audit entry so the preload is traceable", () => {
-    const next = reducer(initialState, {
-      type: "LOAD_RUN_CONFIG",
-      config: {
-        mode: "rank",
-        prompt: "p",
-        systemPrompt: "",
-        temperature: 0.4,
-        evaluation: HOLISTIC_EVALUATION,
-        slots: [],
-      },
-    });
-    expect(next.audit.some((a) => a.message.includes("Run configuration loaded"))).toBe(true);
   });
 });
