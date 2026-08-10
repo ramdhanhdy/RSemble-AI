@@ -695,12 +695,18 @@ export function reducer(state: StudioState, action: Action): StudioState {
         temperature: cfg.temperature,
         evaluation: deepCopyEvaluationConfig(cfg.evaluation),
         slots: cfg.slots.map((slot) => ({ ...slot })),
-        critic: cfg.critic ? { ...cfg.critic } : state.critic,
+        critic: cfg.critic ? { ...cfg.critic } : { ...initialState.critic },
         // The record does not persist the user's ad-hoc custom judge
         // instruction. Empty it instead of silently carrying unrelated text
         // from the current Compare session into the historical draft.
         judgeInstruction: cfg.judgeInstruction ?? "",
-        reasoningPolicy: cfg.reasoningPolicy ? { ...cfg.reasoningPolicy } : state.reasoningPolicy,
+        // A record that lacks a reconstructible reasoning policy (e.g.
+        // aborted pre-judge) must NOT inherit the mutable current Compare
+        // session policy — start the fresh draft from the clean initialState
+        // baseline so no session configuration leaks across historical loads.
+        reasoningPolicy: cfg.reasoningPolicy
+          ? { ...cfg.reasoningPolicy }
+          : { ...initialState.reasoningPolicy },
         // Attachments are intentionally memory-only and cannot be reconstructed
         // from persisted metadata. A historical draft therefore starts clean.
         attachments: [],

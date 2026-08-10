@@ -20,6 +20,7 @@
 // =============================================================================
 
 import type { RSembleEvaluationDB, StorageMetaRow } from "./persistence/database";
+import { createRunRecordBuilder } from "./persistence/run-record-builder";
 import type { RunRepository } from "./persistence/run-repository";
 import type { RunRecordV2 } from "./persistence/run-types";
 
@@ -90,8 +91,20 @@ export interface ExecutionLease {
   getCurrent(): Promise<LeaseInfo | null>;
   /** Subscribe to lease state changes. Returns unsubscribe. */
   subscribe(listener: (state: LeaseState) => void): () => void;
-  /** Recover stale "running" runs whose owner is no longer active. */
+  /** Recover stale "running" runs whose owner is no longer active. If a live
+   *  lease is currently contested by another tab, arm exactly one safe retry
+   *  that fires after that lease becomes free/expired. Never acquires or
+   *  interrupts a live owner, and never re-arms after the single retry. */
   recoverInterruptedRuns(runRepo: RunRepository): Promise<number>;
+  /** Acquire the lease for recovery, arming exactly one safe retry if it is
+   *  initially contested. Resolves with the acquired lease, or null if the
+   *  single retry also found the lease contested (no unbounded loop). Used by
+   *  experiment startup recovery so it shares the same post-contest retry as
+   *  ad-hoc recovery. The caller must release the returned lease. */
+  acquireForRecovery(options?: {
+    kind?: LeaseKind;
+    executionId?: string;
+  }): Promise<LeaseInfo | null>;
   /** Best-effort idempotent cleanup for route teardown/tests. */
   dispose?: () => Promise<void> | void;
 }
@@ -218,22 +231,27 @@ async function sweepInterrupted(
     if (ownedByCurrent && exactCurrentFence) continue;
 
     const timestamp = now();
-    const interrupted: RunRecordV2 = {
-      ...record,
-      status: "interrupted",
-      updatedAt: timestamp,
-      completedAt: timestamp,
-    };
-    const summaryUpdate = {
-      ...summary,
-      status: "interrupted" as const,
-      completedAt: timestamp,
-    };
+    // Capture the pre-mutation revision: applyInterrupted mutates `record` in
+    // place and bumps record.revision, so the CAS expectedRevision must be the
+    // value before the builder touched it (same rule as the recorder's
+    // loadAndMutate and recoverOnStartup in experiment-controller.ts).
+    const expectedRunRevision = record.revision;
+    // Terminate every stale running candidate/judge/fusion attempt
+    // consistently with the top-level interrupted status, using the same
+    // builder the recorder uses for in-flight interruptions. The builder
+    // mutates a working copy in place; we then derive the summary from it so
+    // the persisted row stays internally consistent (no orphaned "running"
+    // nested attempts under an "interrupted" run).
+    const builder = createRunRecordBuilder({ now: () => timestamp });
+    const state: { record: RunRecordV2 } = { record };
+    builder.applyInterrupted(state, record);
+    const interrupted = state.record;
+    const interruptedSummary = builder.deriveSummary(interrupted);
     try {
       // The lease may be reclaimed while the sweep is in progress. Pass the
       // current fence into the repository so the state transition itself is
       // rejected transactionally if this recovery controller went stale.
-      await runRepo.update(interrupted, summaryUpdate, record.revision, {
+      await runRepo.update(interrupted, interruptedSummary, expectedRunRevision, {
         ownerId: lease.ownerId,
         fence: lease.fence,
         ...(lease.leaseId ? { leaseId: lease.leaseId } : {}),
@@ -246,6 +264,50 @@ async function sweepInterrupted(
     }
   }
   return recovered;
+}
+
+/**
+ * Wait until the lease becomes free (no live owner), then resolve. Used by
+ * post-contested recovery to arm exactly one retry after a live contested
+ * lease is released or expires. Resolves immediately if the lease is already
+ * free; never acquires or interrupts a live owner. A deadline guards against
+ * waiting forever when no state change is observed (e.g. the contested owner
+ * never releases and the clock does not advance): the single retry attempt
+ * then runs against the current state and either wins or gives up.
+ */
+function waitForLeaseFree(
+  lease: ExecutionLease,
+  deadline: number,
+  clock: () => number,
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    // Declare timer/unsub before finish: the InMemory lease's subscribe
+    // invokes the listener synchronously (notify() → emitCurrent()), so if
+    // the lease is already free at subscribe time, finish() runs before
+    // these would otherwise be initialized — hitting the temporal dead zone.
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let unsub: (() => void) | null = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) clearInterval(timer);
+      unsub?.();
+      resolve();
+    };
+    unsub = lease.subscribe((state) => {
+      if (state.status === "free") finish();
+    });
+    // Poll the clock as a fallback: subscribe relies on broadcast/poll
+    // notifications, but a quiet channel plus a non-advancing test clock
+    // would never fire. Check the deadline on a short interval.
+    timer = setInterval(() => {
+      if (clock() >= deadline) finish();
+    }, 50);
+    if (typeof timer.unref === "function") timer.unref();
+    // If already free at subscription time (subscribe emits current state),
+    // the listener above will have resolved; otherwise arm the deadline.
+  });
 }
 
 // --- Dexie-backed implementation ---------------------------------------------
@@ -451,14 +513,41 @@ export function createExecutionLease(
     };
   }
 
+  async function acquireForRecovery(
+    acquireOptions: { kind?: LeaseKind; executionId?: string } = {},
+  ): Promise<LeaseInfo | null> {
+    // First attempt: try to acquire immediately.
+    try {
+      return await acquire(acquireOptions);
+    } catch (err) {
+      if (!(err instanceof LeaseError) || err.kind !== "contested") {
+        // Expired/unavailable — not a contest we can wait out.
+        return null;
+      }
+    }
+    // Contested by a live owner: arm exactly one safe retry after the lease
+    // becomes free or its TTL elapses. We never interrupt the live owner; we
+    // only retry acquisition once the contest clears.
+    const contested = await getCurrent();
+    const deadline = contested ? contested.expiresAt + 1 : now() + ttl;
+    await waitForLeaseFree(leaseApi, deadline, now);
+    try {
+      return await acquire(acquireOptions);
+    } catch {
+      // The single retry also found the lease contested (e.g. a third tab
+      // grabbed it) — give up rather than loop.
+      return null;
+    }
+  }
+
   async function recoverInterruptedRuns(runRepo: RunRepository): Promise<number> {
     let acquiredForRecovery = false;
     if (!(await verify())) {
-      try {
-        await acquire();
+      const acquired = await acquireForRecovery();
+      if (acquired) {
         acquiredForRecovery = true;
-      } catch {
-        // Another tab owns execution; defer recovery to it.
+      } else {
+        // Another tab still owns execution after the single retry; defer.
         return 0;
       }
     }
@@ -480,7 +569,7 @@ export function createExecutionLease(
     listeners.clear();
   }
 
-  return {
+  const leaseApi: ExecutionLease = {
     acquire,
     renew,
     release,
@@ -488,9 +577,11 @@ export function createExecutionLease(
     isOwner,
     getCurrent,
     subscribe,
+    acquireForRecovery,
     recoverInterruptedRuns,
     dispose,
   };
+  return leaseApi;
 }
 
 // =============================================================================
@@ -663,13 +754,33 @@ export class InMemoryExecutionLease implements ExecutionLease {
     };
   }
 
+  async acquireForRecovery(
+    acquireOptions: { kind?: LeaseKind; executionId?: string } = {},
+  ): Promise<LeaseInfo | null> {
+    try {
+      return await this.acquire(acquireOptions);
+    } catch (err) {
+      if (!(err instanceof LeaseError) || err.kind !== "contested") return null;
+    }
+    // Contended by a live owner: arm exactly one safe retry after the lease
+    // becomes free or its TTL elapses.
+    const contested = await this.getCurrent();
+    const deadline = contested ? contested.expiresAt + 1 : this.now() + this.ttl;
+    await waitForLeaseFree(this, deadline, this.now);
+    try {
+      return await this.acquire(acquireOptions);
+    } catch {
+      return null;
+    }
+  }
+
   async recoverInterruptedRuns(runRepo: RunRepository): Promise<number> {
     let acquiredForRecovery = false;
     if (!(await this.verify())) {
-      try {
-        await this.acquire();
+      const acquired = await this.acquireForRecovery();
+      if (acquired) {
         acquiredForRecovery = true;
-      } catch {
+      } else {
         return 0;
       }
     }

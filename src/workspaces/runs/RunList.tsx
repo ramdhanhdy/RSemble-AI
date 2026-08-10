@@ -52,16 +52,39 @@ export function RunList({
   const [filters, setFilters] = useState<RunFiltersValue>(EMPTY_FILTERS);
   const [debouncedText, setDebouncedText] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const committedTextRef = useRef("");
   const debounceRef = useRef<number | undefined>(undefined);
-  // Debounce search text
+  // Debounce search text. Only reset pagination when the committed text
+  // actually changes — the initial mount (filters.text === debouncedText
+  // === "") must not schedule a reset that races with rapid Load More
+  // clicks during the debounce window.
   useEffect(() => {
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
+      if (committedTextRef.current === filters.text) return;
+      committedTextRef.current = filters.text;
       setDebouncedText(filters.text);
-      setVisibleCount(PAGE_SIZE); // reset pagination on new search
+      setVisibleCount(PAGE_SIZE);
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(debounceRef.current);
   }, [filters.text]);
+
+  // Reset visible pagination to the first page in the same render as a
+  // committed filter change, so useRunList fires a single query with the
+  // new (shrunk) limit rather than a wasted grown-limit fetch that the
+  // request-id guard then discards. Text is debounced above (and resets
+  // there); model/status/mode/source apply immediately here.
+  function handleFiltersChange(next: RunFiltersValue) {
+    if (
+      next.modelKey !== filters.modelKey ||
+      next.status !== filters.status ||
+      next.mode !== filters.mode ||
+      next.source !== filters.source
+    ) {
+      setVisibleCount(PAGE_SIZE);
+    }
+    setFilters(next);
+  }
 
   const query = useMemo(
     () => ({
@@ -70,10 +93,13 @@ export function RunList({
       status: (filters.status || undefined) as RunStatus | undefined,
       mode: (filters.mode || undefined) as "rank" | "fuse" | undefined,
       source: (filters.source || undefined) as "adhoc" | "experiment" | "legacy" | undefined,
-      limit: PAGE_SIZE * 4, // fetch enough for pagination + filter preview
+      // Floor at PAGE_SIZE*4 so the initial fetch (and any filter change)
+      // loads enough summaries for modelKeys discovery on DBs with >100
+      // runs; grows past 200 once the user pages beyond 150 visible rows.
+      limit: Math.max(PAGE_SIZE * 4, visibleCount + PAGE_SIZE),
       offset: 0,
     }),
-    [debouncedText, filters.modelKey, filters.status, filters.mode, filters.source],
+    [debouncedText, filters.modelKey, filters.status, filters.mode, filters.source, visibleCount],
   );
 
   // True only when search text or a filter is active. Distinguishes the
@@ -167,7 +193,7 @@ export function RunList({
   // --- List ---
   return (
     <div className="flex flex-col gap-2">
-      <RunFilters value={filters} onChange={setFilters} modelKeys={modelKeys} />
+      <RunFilters value={filters} onChange={handleFiltersChange} modelKeys={modelKeys} />
 
       {summaries.length === 0 ? (
         noMatchState

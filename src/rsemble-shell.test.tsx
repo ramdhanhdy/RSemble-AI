@@ -3,7 +3,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import RSemble, { canViewCompareRecord } from "./rsemble";
+import RSemble, { canViewCompareRecord, isPreloadNoticeVisible } from "./rsemble";
 import { Header } from "./ui/Header";
 import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
 
@@ -288,5 +288,40 @@ describe("Compare → View record gate (Slice 5 G1)", () => {
     expect(h.$('[data-action="view-record"]')).toBeNull();
     expect(h.container.textContent).not.toContain("View record");
     cleanup(h);
+  });
+});
+
+describe("Compare → historical preload notice lifecycle (Slice 5)", () => {
+  // The notice visibility predicate pins the exact contract the component
+  // relies on: after a successful historical preload the fresh draft has no
+  // run id of its own (LOAD_RUN_CONFIG resets execution identity, so runId is
+  // null), so the honest "config loaded from run …" notice shows. It is
+  // retired (preloadRunId → null) once a new Compare run obtains its own id
+  // (the runId effect) or the session resets (handleResetSession), so a later
+  // reset can never resurrect an old notice. Visibility is exact: only while
+  // the preloaded draft still has no runId.
+
+  it("is visible only while the preloaded draft has no run id", () => {
+    // LOAD_RUN_CONFIG resets execution identity, so runId is null right after
+    // a preload — the notice must be visible.
+    expect(isPreloadNoticeVisible("run-hist-123", null)).toBe(true);
+  });
+
+  it("is hidden once the draft has any run id (new run, prior run, or the preloaded run)", () => {
+    // A new Compare run mints its own cmp-… id → the runId effect clears
+    // preloadRunId → null; a lingering prior finished run id; or the
+    // defensive case where runId coincides with the preloaded run. In every
+    // case the notice must stay hidden — visibility is exact to runId === null.
+    expect(isPreloadNoticeVisible("run-hist-123", "cmp-new")).toBe(false);
+    expect(isPreloadNoticeVisible("run-hist-123", "cmp-prior")).toBe(false);
+    expect(isPreloadNoticeVisible("run-hist-123", "run-hist-123")).toBe(false);
+  });
+
+  it("is hidden once the preload is retired (cleared on new run or reset)", () => {
+    // After the runId effect or handleResetSession clears preloadRunId → null,
+    // the notice must stay hidden regardless of runId.
+    expect(isPreloadNoticeVisible(null, null)).toBe(false);
+    expect(isPreloadNoticeVisible(null, "cmp-new")).toBe(false);
+    expect(isPreloadNoticeVisible(null, "run-hist-123")).toBe(false);
   });
 });

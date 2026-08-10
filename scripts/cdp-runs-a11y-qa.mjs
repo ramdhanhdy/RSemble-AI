@@ -233,7 +233,6 @@ const SEED_SOURCE = `(async () => {
     const status = opts.status ?? "completed";
     const mode = opts.mode ?? "rank";
     const scoredKeys = opts.scoredKeys ?? [MK1];
-    const judgeAttempts = opts.judgeAttempts ?? [];
     const candidates = SLOTS.map((slot, i) => {
       const key = slot.providerId + ":" + slot.slug;
       const accepted = scoredKeys.includes(key);
@@ -258,20 +257,61 @@ const SEED_SOURCE = `(async () => {
         }] : [],
       };
     });
+    // Build accepted candidate-id -> attempt-id map, blind labels, and
+    // judge report evaluations from the actual accepted candidates so the
+    // accepted Judge attempt's candidateAttemptIdsByCandidateId exactly
+    // matches currentAcceptedCandidateMap (cross-ref validation).
+    const candidateAttemptIdsByCandidateId = {};
+    const blindLabelToCandidateId = {};
+    const labelMap = [];
     const evaluationsById = {};
-    scoredKeys.forEach((key, i) => {
-      evaluationsById["cand-" + SLOTS[i].id] = {
-        candidateId: "cand-" + SLOTS[i].id,
-        blindLabel: "A",
-        overallScore: 4.4,
-        position: "p",
-        rationale: "r",
-        strengths: ["s"],
-        deductions: [],
-        missedRequirements: [],
-        criterionScores: [],
-      };
+    const BLIND_LABELS = ["A", "B", "C", "D"];
+    candidates.forEach((c, i) => {
+      if (c.acceptedAttemptId !== null) {
+        candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+        const label = BLIND_LABELS[i] ?? ("C" + i);
+        blindLabelToCandidateId[label] = c.candidateId;
+        labelMap.push({ label, candidateId: c.candidateId });
+        evaluationsById[c.candidateId] = {
+          candidateId: c.candidateId,
+          blindLabel: label,
+          overallScore: 4.4,
+          position: "p",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [],
+        };
+      }
     });
+    const hasAccepted = Object.keys(candidateAttemptIdsByCandidateId).length > 0;
+    const defaultJudgeAttemptId = "judge-att-1";
+    // Default accepted judge attempt: only when there is accepted evidence
+    // and the caller did not supply explicit judge attempts.
+    const explicitJudgeAttempts = opts.judgeAttempts ?? null;
+    const judgeAttempts = explicitJudgeAttempts ?? (
+      hasAccepted
+        ? [{
+            attemptId: defaultJudgeAttemptId,
+            providerId: "openrouter",
+            model: "GLM 5.2",
+            instruction: "Evaluate the candidates blind.",
+            messages: [],
+            blindLabelToCandidateId,
+            candidateAttemptIdsByCandidateId,
+            startedAt: 1700000001000,
+            finishedAt: 1700000002000,
+            status: "completed",
+            error: null,
+            report: { labelMap, evaluationsById, comparisons: [] },
+            consensus: null,
+          }]
+        : []
+    );
+    const judgeAccepted = hasAccepted
+      ? (explicitJudgeAttempts ? explicitJudgeAttempts[0].attemptId : defaultJudgeAttemptId)
+      : null;
     return {
       schemaVersion: 2,
       id: runId,
@@ -286,15 +326,23 @@ const SEED_SOURCE = `(async () => {
       task: { title: opts.title ?? runId, prompt: "Write a short poem about persistence.", systemPrompt: "", temperature: 0.7 },
       evaluation: { profile: null, candidateMessages: [] },
       candidates,
-      judge: {
-        status: "done",
-        acceptedAttemptId: judgeAttempts.length ? judgeAttempts[0].attemptId : "judge-att-1",
-        report: { labelMap: [], evaluationsById, comparisons: [] },
-        consensus: null,
-        attempts: judgeAttempts,
-      },
+      judge: hasAccepted
+        ? {
+            status: "done",
+            acceptedAttemptId: judgeAccepted,
+            report: { labelMap, evaluationsById, comparisons: [] },
+            consensus: null,
+            attempts: judgeAttempts,
+          }
+        : {
+            status: "idle",
+            acceptedAttemptId: null,
+            report: null,
+            consensus: null,
+            attempts: [],
+          },
       fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
-      winnerKeys: scoredKeys.includes(MK1) ? [MK1] : [],
+      winnerKeys: hasAccepted ? [scoredKeys[0]] : [],
     };
   }
 
@@ -441,7 +489,7 @@ const SEED_SOURCE = `(async () => {
         model: "GLM 5.2",
         instruction: "Pick the better output.",
         messages: [],
-        blindLabelToCandidateId: { A: "cand-s1", B: "cand-s2" },
+        blindLabelToCandidateId: { A: "cand-s1" },
         candidateAttemptIdsByCandidateId: { "cand-s1": "att-cand-0" },
         startedAt: 1700000008500,
         finishedAt: 1700000008900,

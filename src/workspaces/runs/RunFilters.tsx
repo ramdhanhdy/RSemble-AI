@@ -253,13 +253,15 @@ export function RunFilters({
       {sheetOpen && (
         <div
           data-filter-sheet
-          className="flex flex-wrap items-end gap-2 rounded-md border border-edge bg-panel p-3 lg:hidden"
+          className="flex flex-wrap items-end gap-2 rounded-md border border-edge bg-panel p-3 overflow-x-hidden min-w-0 lg:hidden"
         >
           <FilterSelect
             label="Model"
             dataFilter="model"
             value={value.modelKey}
             onChange={(e) => update({ modelKey: e.target.value })}
+            wrapperClassName="w-full min-w-0"
+            selectClassName="w-full min-w-0 max-w-full"
           >
             {modelOptions(modelKeys)}
           </FilterSelect>
@@ -269,6 +271,8 @@ export function RunFilters({
             dataFilter="status"
             value={value.status}
             onChange={(e) => update({ status: e.target.value as RunStatus | "" })}
+            wrapperClassName="min-w-0 flex-1 basis-[calc(50%-0.25rem)]"
+            selectClassName="w-full min-w-0 max-w-full"
           >
             {statusOptions}
           </FilterSelect>
@@ -278,6 +282,8 @@ export function RunFilters({
             dataFilter="mode"
             value={value.mode}
             onChange={(e) => update({ mode: e.target.value as "rank" | "fuse" | "" })}
+            wrapperClassName="min-w-0 flex-1 basis-[calc(50%-0.25rem)]"
+            selectClassName="w-full min-w-0 max-w-full"
           >
             {modeOptions}
           </FilterSelect>
@@ -289,6 +295,8 @@ export function RunFilters({
             onChange={(e) =>
               update({ source: e.target.value as "adhoc" | "experiment" | "legacy" | "" })
             }
+            wrapperClassName="w-full min-w-0"
+            selectClassName="w-full min-w-0 max-w-full"
           >
             {sourceOptions}
           </FilterSelect>

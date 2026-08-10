@@ -29,6 +29,7 @@ import {
   LEASE_KEY,
   LEASE_TTL,
   LeaseError,
+  type LeaseInfo,
 } from "./execution-lease";
 
 // ---------------------------------------------------------------------------
@@ -600,5 +601,364 @@ describe("ExecutionLease metadata and fencing (Plan 005)", () => {
     await expect(a.renew()).rejects.toMatchObject({ kind: "expired" });
     expect(store.lease?.executionId).toBe("new");
     expect(old.leaseId).not.toBe(fresh.leaseId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round B: recovered attempt terminalization & exactly-once post-contested retry
+// ---------------------------------------------------------------------------
+
+/** A run with running candidate, judge, and fusion attempts — the shape
+ * sweepInterrupted must terminate consistently with the top-level status. */
+function makeRunningRunWithNestedAttempts(
+  id: string,
+  ownerId: string,
+  fence: number,
+  now = 1_000_000,
+): { record: RunRecordV2; summary: FullRunSummaryV2 } {
+  const record: RunRecordV2 = {
+    schemaVersion: 2,
+    id,
+    revision: 0,
+    execution: { ownerId, fence },
+    createdAt: now - 1000,
+    updatedAt: now - 500,
+    completedAt: null,
+    status: "running",
+    mode: "fuse",
+    source: { kind: "adhoc" },
+    task: { title: "Nested " + id, prompt: "p", systemPrompt: "s", temperature: 0 },
+    evaluation: {
+      profile: null,
+      candidateMessages: [{ role: "user", content: "hi" }],
+    },
+    candidates: [
+      {
+        candidateId: "cand-1",
+        slotId: "slot-1",
+        modelKey: "openrouter:foo",
+        providerId: "openrouter",
+        model: "Foo",
+        slug: "foo",
+        acceptedAttemptId: null,
+        attempts: [
+          {
+            attemptId: "cand-attempt-running",
+            messages: [{ role: "user", content: "hi" }],
+            startedAt: now - 400,
+            finishedAt: null,
+            status: "running",
+            output: null,
+            tokensIn: null,
+            tokensOut: null,
+            error: null,
+          },
+        ],
+      },
+    ],
+    judge: {
+      status: "running",
+      acceptedAttemptId: null,
+      report: null,
+      consensus: null,
+      attempts: [
+        {
+          attemptId: "judge-attempt-running",
+          providerId: "openrouter",
+          model: "Judge",
+          instruction: "rank",
+          messages: [{ role: "user", content: "rank" }],
+          blindLabelToCandidateId: { A: "cand-1" },
+          candidateAttemptIdsByCandidateId: { "cand-1": "cand-attempt-running" },
+          startedAt: now - 300,
+          finishedAt: null,
+          status: "running",
+          error: null,
+          report: null,
+          consensus: null,
+        },
+      ],
+    },
+    fusion: {
+      status: "running",
+      acceptedAttemptId: null,
+      attempts: [
+        {
+          attemptId: "fusion-attempt-running",
+          providerId: "openrouter",
+          model: "Fuse",
+          messages: [{ role: "user", content: "fuse" }],
+          sourceJudgeAttemptId: "judge-attempt-running",
+          candidateAttemptIdsByCandidateId: { "cand-1": "cand-attempt-running" },
+          startedAt: now - 200,
+          finishedAt: null,
+          status: "running",
+          error: null,
+          result: null,
+        },
+      ],
+    },
+    winnerKeys: [],
+  };
+  const summary: FullRunSummaryV2 = {
+    kind: "full",
+    schemaVersion: 2,
+    id,
+    revision: 0,
+    createdAt: now - 1000,
+    completedAt: null,
+    status: "running",
+    mode: "fuse",
+    source: { kind: "adhoc" },
+    taskTitle: "Nested " + id,
+    taskExcerpt: "p",
+    modelKeys: ["openrouter:foo"],
+    winnerKeys: [],
+    scoresByModelKey: {},
+    judgeModelKey: "openrouter:foo",
+    evaluationProfileId: null,
+    evaluationProfileVersion: null,
+    detailAvailable: true,
+    searchText: "nested " + id,
+  };
+  return { record, summary };
+}
+
+/** Assert every nested attempt on a recovered run is terminal. */
+function assertAllNestedTerminal(record: RunRecordV2): void {
+  expect(record.status).toBe("interrupted");
+  expect(record.completedAt).not.toBeNull();
+  for (const c of record.candidates) {
+    for (const a of c.attempts) {
+      if (a.status === "running") {
+        throw new Error(`candidate attempt ${a.attemptId} still running after recovery`);
+      }
+      expect(a.finishedAt).not.toBeNull();
+    }
+  }
+  for (const a of record.judge.attempts) {
+    expect(a.status).not.toBe("running");
+    expect(a.finishedAt).not.toBeNull();
+  }
+  for (const a of record.fusion.attempts) {
+    expect(a.status).not.toBe("running");
+    expect(a.finishedAt).not.toBeNull();
+  }
+}
+
+describe("sweepInterrupted — nested attempt terminalization (Round B)", () => {
+  it("terminates every stale running candidate/judge/fusion attempt with finishedAt, consistent with the top-level interrupted status (Dexie)", async () => {
+    const db = new RSembleEvaluationDB("test-lease-nested-" + Date.now() + "-" + Math.random());
+    await db.open();
+    try {
+      const clock = makeClock();
+      const repo = createRunRepository(db);
+      const lease = createExecutionLease(db, { now: clock.now });
+      const acquired = await lease.acquire();
+
+      const { record, summary } = makeRunningRunWithNestedAttempts(
+        "run-nested",
+        "old-tab",
+        acquired.fence - 1,
+        clock.now(),
+      );
+      await repo.create(record, summary);
+
+      const count = await lease.recoverInterruptedRuns(repo);
+      expect(count).toBe(1);
+
+      const recovered = await repo.get("run-nested");
+      assertAllNestedTerminal(recovered as RunRecordV2);
+      // The summary row matches so the Runs list stops showing "running".
+      const stillRunning = await repo.list({ status: "running", limit: 10 });
+      expect(stillRunning.find((s) => s.id === "run-nested")).toBeUndefined();
+    } finally {
+      db.close();
+      await db.delete();
+    }
+  });
+
+  it("terminates nested attempts in the InMemory repository", async () => {
+    const store = {
+      lease: null as null | LeaseInfo,
+      fence: 0,
+    };
+    const lease = new InMemoryExecutionLease(store);
+    const repo = new InMemoryRunRepository();
+    const acquired = await lease.acquire();
+
+    const { record, summary } = makeRunningRunWithNestedAttempts(
+      "run-nested-mem",
+      "other-tab",
+      acquired.fence - 1,
+    );
+    await repo.create(record, summary);
+
+    expect(await lease.recoverInterruptedRuns(repo)).toBe(1);
+    const recovered = await repo.get("run-nested-mem");
+    assertAllNestedTerminal(recovered as RunRecordV2);
+  });
+
+  it("preserves fencing/CAS: a sweep against a stale lease fence is rejected", async () => {
+    const store = {
+      lease: null as null | LeaseInfo,
+      fence: 0,
+    };
+    const repo = new InMemoryRunRepository();
+    // Seed a run written by an old owner under fence 0.
+    const { record, summary } = makeRunningRunWithNestedAttempts("run-fenced", "old-tab", 0);
+    await repo.create(record, summary);
+
+    // Tab A acquires (fence 1) and recovers — should terminate the run.
+    const leaseA = new InMemoryExecutionLease(store);
+    await leaseA.acquire();
+    expect(await leaseA.recoverInterruptedRuns(repo)).toBe(1);
+    const after = await repo.get("run-fenced");
+    expect(after?.status).toBe("interrupted");
+  });
+});
+
+describe("post-contested recovery retry (Round B)", () => {
+  it("arms exactly one safe retry after a contested lease becomes free and recovers (ad-hoc, InMemory)", async () => {
+    const store = {
+      lease: null as null | LeaseInfo,
+      fence: 0,
+    };
+    const repo = new InMemoryRunRepository();
+
+    // Seed a stale run that needs recovery.
+    await seedRunningRun(repo, "run-stale", "old-tab", 0);
+
+    // Controllable clock so the test does not depend on real wall-clock TTL.
+    let now = 1_000_000;
+    const clock = () => now;
+    const tabA = new InMemoryExecutionLease(store, null, { now: clock, ttl: 100 });
+    const tabB = new InMemoryExecutionLease(store, null, { now: clock, ttl: 100 });
+    await tabA.acquire();
+
+    // tabB's recovery initially finds the lease contested. The retry must
+    // wait until tabA's lease is free, then acquire and sweep exactly once.
+    // waitForLeaseFree polls the clock on a setInterval; advance the clock
+    // past tabA's TTL so the deadline fires and the retry acquires.
+    vi.useFakeTimers();
+    const recoveryPromise = tabB.recoverInterruptedRuns(repo);
+    // Flush microtasks so the contested path settles, getCurrent resolves,
+    // and waitForLeaseFree arms its setInterval before we advance the clock.
+    await vi.advanceTimersByTimeAsync(0);
+    // Advance the clock past tabA's TTL and tick the wait interval.
+    now = 1_000_000 + 200;
+    await vi.advanceTimersByTimeAsync(100);
+    const count = await recoveryPromise;
+    vi.useRealTimers();
+
+    expect(count).toBe(1);
+    expect((await repo.get("run-stale"))?.status).toBe("interrupted");
+    // tabB acquired for recovery and released afterwards.
+    expect(await tabB.getCurrent()).toBeNull();
+  });
+
+  it("does not interrupt a live owner and gives up after the single retry if the lease stays contested (ad-hoc, InMemory)", async () => {
+    const store = {
+      lease: null as null | LeaseInfo,
+      fence: 0,
+    };
+    const repo = new InMemoryRunRepository();
+    await seedRunningRun(repo, "run-stale", "old-tab", 0);
+
+    // tabA holds a long-lived lease. tabB's single retry must not interrupt
+    // tabA and must not loop.
+    let now = 1_000_000;
+    const clock = () => now;
+    const tabA = new InMemoryExecutionLease(store, null, { now: clock, ttl: 10_000 });
+    const tabB = new InMemoryExecutionLease(store, null, { now: clock, ttl: 10_000 });
+    await tabA.acquire();
+    // tabB does not own the contested lease.
+    expect(await tabB.isOwner()).toBe(false);
+
+    vi.useFakeTimers();
+    // tabA's lease expires at 1_010_000; the retry deadline is 1_010_001.
+    // To keep tabA live past the deadline, renew it just before expiry,
+    // then advance past the deadline. The single retry fires, acquire throws
+    // contested (tabA still owns), and recovery gives up — no loop, no
+    // interruption of the live owner.
+    const recoveryPromise = tabB.recoverInterruptedRuns(repo);
+    await vi.advanceTimersByTimeAsync(0);
+    // Renew tabA while it is still live, extending its expiry to 1_019_999.
+    now = 1_009_999;
+    await tabA.renew();
+    // Advance past the original retry deadline; tabA is still live.
+    now = 1_010_001;
+    expect(await tabA.isOwner()).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    const count = await recoveryPromise;
+    vi.useRealTimers();
+
+    // Single retry attempted, contested, gave up — no recovery, no loop.
+    expect(count).toBe(0);
+    expect((await repo.get("run-stale"))?.status).toBe("running");
+    // tabA still owns its lease, uninterrupted.
+    expect(await tabA.isOwner()).toBe(true);
+  });
+
+  it("acquireForRecovery arms exactly one retry for experiment recovery and does not loop (InMemory)", async () => {
+    const store = {
+      lease: null as null | LeaseInfo,
+      fence: 0,
+    };
+    let now = 1_000_000;
+    const clock = () => now;
+    // tabA holds a short-lived lease; tabB calls acquireForRecovery.
+    const tabA = new InMemoryExecutionLease(store, null, { now: clock, ttl: 100 });
+    const tabB = new InMemoryExecutionLease(store, null, { now: clock, ttl: 100 });
+    await tabA.acquire();
+
+    vi.useFakeTimers();
+    const acquirePromise = tabB.acquireForRecovery({
+      kind: "experiment",
+      executionId: "startup-recovery",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    now = 1_000_000 + 200;
+    await vi.advanceTimersByTimeAsync(100);
+    const acquired = await acquirePromise;
+    vi.useRealTimers();
+
+    // The single retry won the lease after tabA's expired.
+    expect(acquired).not.toBeNull();
+    expect(acquired?.kind).toBe("experiment");
+    expect(acquired?.executionId).toBe("startup-recovery");
+    // tabB now owns; release to clean up.
+    await tabB.release();
+  });
+
+  it("acquireForRecovery returns null without looping when the lease stays contested (InMemory)", async () => {
+    const store = {
+      lease: null as null | LeaseInfo,
+      fence: 0,
+    };
+    let now = 1_000_000;
+    const clock = () => now;
+    const tabA = new InMemoryExecutionLease(store, null, { now: clock, ttl: 10_000 });
+    const tabB = new InMemoryExecutionLease(store, null, { now: clock, ttl: 10_000 });
+    await tabA.acquire();
+
+    vi.useFakeTimers();
+    // Keep tabA live by renewing before the deadline, then advance past it.
+    const acquirePromise = tabB.acquireForRecovery({
+      kind: "experiment",
+      executionId: "startup-recovery",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    now = 1_009_999;
+    await tabA.renew();
+    now = 1_010_001;
+    expect(await tabA.isOwner()).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    const acquired = await acquirePromise;
+    vi.useRealTimers();
+
+    expect(acquired).toBeNull();
+    // tabA uninterrupted.
+    expect(await tabA.isOwner()).toBe(true);
   });
 });

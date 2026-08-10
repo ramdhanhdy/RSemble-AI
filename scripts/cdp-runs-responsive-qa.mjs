@@ -228,7 +228,8 @@ const SEED_SOURCE = `(async () => {
     const status = opts.status ?? "completed";
     const mode = opts.mode ?? "rank";
     const scoredKeys = opts.scoredKeys ?? [MK1];
-    const candidates = SLOTS.map((slot, i) => {
+    const slots = opts.slots ?? SLOTS;
+    const candidates = slots.map((slot, i) => {
       const key = slot.providerId + ":" + slot.slug;
       const accepted = scoredKeys.includes(key);
       return {
@@ -252,20 +253,54 @@ const SEED_SOURCE = `(async () => {
         }] : [],
       };
     });
+    // Build the accepted candidate-id -> attempt-id map, blind labels, and
+    // judge report evaluations so the Judge attempt's
+    // candidateAttemptIdsByCandidateId exactly matches the current accepted
+    // candidate set (cross-ref validation). evaluationsById keys must match
+    // the accepted candidate IDs.
+    const candidateAttemptIdsByCandidateId = {};
+    const blindLabelToCandidateId = {};
+    const labelMap = [];
     const evaluationsById = {};
-    scoredKeys.forEach((key, i) => {
-      evaluationsById["cand-" + SLOTS[i].id] = {
-        candidateId: "cand-" + SLOTS[i].id,
-        blindLabel: "A",
-        overallScore: 4.4,
-        position: "p",
-        rationale: "r",
-        strengths: ["s"],
-        deductions: [],
-        missedRequirements: [],
-        criterionScores: [],
-      };
+    const BLIND_LABELS = ["A", "B", "C", "D"];
+    candidates.forEach((c, i) => {
+      if (c.acceptedAttemptId !== null) {
+        candidateAttemptIdsByCandidateId[c.candidateId] = c.acceptedAttemptId;
+        const label = BLIND_LABELS[i] ?? ("C" + i);
+        blindLabelToCandidateId[label] = c.candidateId;
+        labelMap.push({ label, candidateId: c.candidateId });
+        evaluationsById[c.candidateId] = {
+          candidateId: c.candidateId,
+          blindLabel: label,
+          overallScore: 4.4,
+          position: "p",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [],
+        };
+      }
     });
+    const hasAccepted = Object.keys(candidateAttemptIdsByCandidateId).length > 0;
+    const judgeAttemptId = "judge-att-1";
+    const judgeAttempts = hasAccepted
+      ? [{
+          attemptId: judgeAttemptId,
+          providerId: "openrouter",
+          model: "Judge Model",
+          instruction: "Judge the candidates.",
+          messages: [],
+          blindLabelToCandidateId,
+          candidateAttemptIdsByCandidateId,
+          startedAt: 1700000000000,
+          finishedAt: 1700000001000,
+          status: "completed",
+          error: null,
+          report: { labelMap, evaluationsById, comparisons: [] },
+          consensus: null,
+        }]
+      : [];
     return {
       schemaVersion: 2,
       id: runId,
@@ -280,15 +315,23 @@ const SEED_SOURCE = `(async () => {
       task: { title: opts.title ?? runId, prompt: "Write a short poem about persistence.", systemPrompt: "", temperature: 0.7 },
       evaluation: { profile: null, candidateMessages: [] },
       candidates,
-      judge: {
-        status: "done",
-        acceptedAttemptId: "judge-att-1",
-        report: { labelMap: [], evaluationsById, comparisons: [] },
-        consensus: null,
-        attempts: [],
-      },
+      judge: hasAccepted
+        ? {
+            status: "done",
+            acceptedAttemptId: judgeAttemptId,
+            report: { labelMap, evaluationsById, comparisons: [] },
+            consensus: null,
+            attempts: judgeAttempts,
+          }
+        : {
+            status: "idle",
+            acceptedAttemptId: null,
+            report: null,
+            consensus: null,
+            attempts: [],
+          },
       fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
-      winnerKeys: scoredKeys.includes(MK1) ? [MK1] : [],
+      winnerKeys: hasAccepted ? [scoredKeys[0]] : [],
     };
   }
 
@@ -428,6 +471,31 @@ const SEED_SOURCE = `(async () => {
     },
   });
 
+  // Long model key run — regression probe for filter-sheet overflow on
+  // narrow viewports (390px phone, 768px tablet). The key is deliberately
+  // far longer than any realistic provider:slug to stress the select's
+  // max-width bounding.
+  const LONG_SLUG =
+    "very-long-provider-namespace/extraordinarily-long-model-identifier-with-many-hyphenated-segments-that-exceeds-normal-width-constraints-for-overflow-regression-testing-v2";
+  const LONG_MK = "openrouter:" + LONG_SLUG;
+  const longKeySlots = [
+    {
+      id: "ls1",
+      providerId: "openrouter",
+      model: "Long Key Overflow Probe",
+      slug: LONG_SLUG,
+      enabled: true,
+    },
+  ];
+  const longKeyRun = makeRun("run-long-key", {
+    title: "Long model key overflow probe",
+    scoredKeys: [LONG_MK],
+    status: "completed",
+    mode: "rank",
+    createdAt: 1700000009000,
+    slots: longKeySlots,
+  });
+
   const runs = [
     adhocCompleted,
     adhocRunning,
@@ -437,6 +505,7 @@ const SEED_SOURCE = `(async () => {
     adhocInterrupted,
     expCompleted,
     expPartial,
+    longKeyRun,
   ];
   for (const run of runs) {
     await put(db, "runDetails", runDetailRow(run));
@@ -864,6 +933,60 @@ try {
           : undefined,
   });
   await screenshot("08-phone-390-filter-sheet-open");
+
+  // Long model key must not widen/overflow the 390px filter sheet.
+  // The seeded run-long-key carries a ~180-char model key; the select's
+  // max-width bounding must keep it within the sheet and viewport.
+  const longKeyOverflow = await evaluate(`(() => {
+    const sheet = document.querySelector("[data-filter-sheet]");
+    if (!sheet) return { sheetFound: false };
+    const modelSelect = sheet.querySelector('[data-filter="model"]');
+    if (!modelSelect) return { sheetFound: true, modelSelectFound: false };
+    const selRect = modelSelect.getBoundingClientRect();
+    const sheetRect = sheet.getBoundingClientRect();
+    const docWidth = document.documentElement.clientWidth;
+    const hasLongOption = [...modelSelect.options].some(
+      (o) => (o.value ?? "").length > 100,
+    );
+    return {
+      sheetFound: true,
+      modelSelectFound: true,
+      hasLongOption,
+      selectWidth: Math.round(selRect.width),
+      selectRight: Math.round(selRect.right),
+      sheetWidth: Math.round(sheetRect.width),
+      sheetRight: Math.round(sheetRect.right),
+      sheetScrollWidth: sheet.scrollWidth,
+      sheetClientWidth: sheet.clientWidth,
+      docClientWidth: docWidth,
+      selectOverflowViewport: selRect.right > docWidth + 1,
+      sheetOverflowViewport: sheetRect.right > docWidth + 1,
+      sheetInternalOverflow: sheet.scrollWidth > sheet.clientWidth + 1,
+    };
+  })()`);
+  record("phone-390-long-model-key-no-overflow", {
+    pass:
+      longKeyOverflow.sheetFound &&
+      longKeyOverflow.modelSelectFound &&
+      longKeyOverflow.hasLongOption &&
+      !longKeyOverflow.selectOverflowViewport &&
+      !longKeyOverflow.sheetOverflowViewport &&
+      !longKeyOverflow.sheetInternalOverflow,
+    ...longKeyOverflow,
+    reason: !longKeyOverflow.sheetFound
+      ? "filter sheet not open for long-model-key probe"
+      : !longKeyOverflow.modelSelectFound
+        ? "model select not found in sheet"
+        : !longKeyOverflow.hasLongOption
+          ? "long model key option not present in dropdown"
+          : longKeyOverflow.selectOverflowViewport
+            ? "model select overflows viewport at 390px"
+            : longKeyOverflow.sheetOverflowViewport
+              ? "filter sheet overflows viewport at 390px"
+              : longKeyOverflow.sheetInternalOverflow
+                ? "filter sheet has internal horizontal overflow from long model key"
+                : undefined,
+  });
 
   // Apply filters -> applied-count badge.
   await evaluate(`(() => {

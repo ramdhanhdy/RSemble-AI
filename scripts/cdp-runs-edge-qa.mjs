@@ -298,7 +298,7 @@ const SEED_SOURCE = `(async () => {
       instruction: opts.instruction ?? "Evaluate the candidates blind.",
       messages: [],
       blindLabelToCandidateId: opts.blindMap ?? { A: "cand-s1", B: "cand-s2" },
-      candidateAttemptIdsByCandidateId: opts.candidateMap ?? { "cand-s1": "att-cand-s1", "cand-s2": "att-cand-s2" },
+      candidateAttemptIdsByCandidateId: opts.candidateMap ?? { "cand-s1": "att-s1", "cand-s2": "att-s2" },
       startedAt: 1700000001000,
       finishedAt: opts.finishedAt ?? 1700000002000,
       status: opts.status ?? "completed",
@@ -342,6 +342,20 @@ const SEED_SOURCE = `(async () => {
       }
       return candidate(slot, false);
     });
+    // Build the accepted candidate-id -> attempt-id map and blind labels
+    // from the actual accepted candidates, so judge/fusion cross-reference
+    // validation (candidateAttemptIdsByCandidateId must exactly match
+    // currentAcceptedCandidateMap) passes. Candidate attempt IDs are
+    // "att-" + slot.id (e.g. "att-s1"), not "att-cand-" + slot.id.
+    const acceptedCandidateMap = {};
+    const blindMap = {};
+    const BLIND_LABELS = ["A", "B", "C", "D"];
+    candidates.forEach((c, i) => {
+      if (c.acceptedAttemptId !== null) {
+        acceptedCandidateMap[c.candidateId] = c.acceptedAttemptId;
+        blindMap[BLIND_LABELS[i] ?? ("C" + i)] = c.candidateId;
+      }
+    });
     const evaluationsById = {};
     (opts.scoredKeys ?? []).forEach((key, i) => {
       const slot = SLOTS[i];
@@ -349,7 +363,7 @@ const SEED_SOURCE = `(async () => {
     });
     const judgeAttempts = opts.judgeAttempts ?? (
       judgeStatus === "done"
-        ? [judgeAttempt("judge-att-1", { report: { labelMap: [], evaluationsById, comparisons: [] } })]
+        ? [judgeAttempt("judge-att-1", { report: { labelMap: [], evaluationsById, comparisons: [] }, candidateMap: acceptedCandidateMap, blindMap })]
         : judgeStatus === "error"
           ? [judgeAttempt("judge-att-1", { status: "failed", error: { message: "judge failed" }, report: null })]
           : []
@@ -517,7 +531,7 @@ const SEED_SOURCE = `(async () => {
         model: "Qwen 3.8 Max",
         messages: [],
         sourceJudgeAttemptId: "judge-att-1",
-        candidateAttemptIdsByCandidateId: { "cand-s1": "att-cand-s1", "cand-s2": "att-cand-s2" },
+        candidateAttemptIdsByCandidateId: { "cand-s1": "att-s1", "cand-s2": "att-s2" },
         startedAt: 1700000007500,
         finishedAt: 1700000008000,
         status: "completed",
@@ -559,7 +573,7 @@ const SEED_SOURCE = `(async () => {
       winnerKeys: [MK2],
       candidateOpts: {
         [MK2]: {
-          reusedFrom: { sourceRunId: "run-completed", sourceCandidateId: "cand-s2", sourceAttemptId: "att-cand-s2" },
+          reusedFrom: { sourceRunId: "run-completed", sourceCandidateId: "cand-s2", sourceAttemptId: "att-s2" },
         },
       },
     }),

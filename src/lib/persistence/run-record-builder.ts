@@ -443,7 +443,27 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     attempt.error = input.error;
     attempt.finishedAt = input.finishedAt;
     if (input.status === "completed") {
+      const prevAccepted = candidate.acceptedAttemptId;
       candidate.acceptedAttemptId = attemptId;
+      // A successful candidate retry that replaces the previously accepted
+      // attempt invalidates the current accepted Judge/Fusion evidence —
+      // those results referred to a different candidate attempt set, and
+      // combining them with the new candidate output would be stale-evidence
+      // (spec §5.6, §11.3). The automatic retry pipeline re-judges/re-fuses
+      // immediately, setting fresh accepted pointers. Historical attempts
+      // remain persisted in the judge/fusion attempts arrays; only the
+      // current accepted pointers, report, consensus, and derived
+      // winnerKeys are cleared. The record's terminal status is preserved
+      // by deriveStatus's acceptedTerminal rule (no running regression).
+      if (prevAccepted !== null && prevAccepted !== attemptId) {
+        record.judge.acceptedAttemptId = null;
+        record.judge.report = null;
+        record.judge.consensus = null;
+        record.judge.status = "idle";
+        record.fusion.acceptedAttemptId = null;
+        record.fusion.status = "idle";
+        record.winnerKeys = [];
+      }
     }
     record.revision += 1;
     record.status = deriveStatus(record);

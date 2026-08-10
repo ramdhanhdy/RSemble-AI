@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-10T06:43:15.727Z",
-  "baseUrl": "http://localhost:5173/",
+  "generatedAt": "2026-08-10T13:11:44.667Z",
+  "baseUrl": "http://127.0.0.1:5173/",
   "probes": [
     {
       "name": "empty-db-no-history-state",
@@ -75,7 +75,7 @@
     {
       "name": "row-winner-score-summary",
       "pass": true,
-      "text": "ad hocCompletedAd hoc completed evidence walkWinner: openrouter:z-ai/glm-5.2 · Score: 4.42 models999d ago",
+      "text": "ad hocCompletedAd hoc completed evidence walkWinner: openrouter:z-ai/glm-5.2 · Score: 4.42 models1000d ago",
       "hasWinner": true,
       "hasScore": true
     },
@@ -107,8 +107,8 @@
         "judge",
         "task-config"
       ],
-      "header": "ad hocCompletedrankAd hoc completed evidence walkStarted 11/14/2023, 10:13:20 PM (999d ago)·Completed 11/14/2023, 10:13:21 PM (999d ago)·Duration 1s·UTCOpen in CompareCopy link",
-      "timeline": "Status timelineCreated999d agoCandidates2/2 doneJudgeacceptedResultranked - winner set",
+      "header": "ad hocCompletedrankAd hoc completed evidence walkStarted 11/15/2023, 5:13:20 AM (1000d ago)·Completed 11/15/2023, 5:13:21 AM (1000d ago)·Duration 1s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates2/2 doneJudgeacceptedResultranked - winner set",
       "outcome": "OutcomeWinners:openrouter:z-ai/glm-5.22 candidates",
       "costCards": 3,
       "costTotal": "Incremental total: $0.002400",
@@ -132,14 +132,14 @@
     {
       "name": "detail-running-state",
       "pass": true,
-      "header": "ad hocRunningrankAd hoc streaming summarizationStarted 11/14/2023, 10:13:22 PM (999d ago)·Running for 23984h 29m 57s·UTCOpen in CompareCopy link",
-      "timeline": "Status timelineCreated999d agoCandidates1/2 done · 1 errorJudgerunningResultpending"
+      "header": "ad hocRunningrankAd hoc streaming summarizationStarted 11/15/2023, 5:13:22 AM (1000d ago)·Running for 23990h 58m 29s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates1/2 done · 1 pendingJudgerunningResultpending"
     },
     {
       "name": "detail-failed-state",
       "pass": true,
-      "header": "ad hocFailedrankAd hoc failed extractionStarted 11/14/2023, 10:13:23 PM (999d ago)·Ended 11/14/2023, 10:13:23 PM (999d ago)·Duration 1s·UTCOpen in CompareCopy link",
-      "timeline": "Status timelineCreated999d agoCandidates0/2 done · 2 errorsJudgefailedResultno result - judge failed",
+      "header": "ad hocFailedrankAd hoc failed extractionStarted 11/15/2023, 5:13:23 AM (1000d ago)·Ended 11/15/2023, 5:13:23 AM (1000d ago)·Duration 1s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates0/2 done · 2 errorsJudgefailedResultno result - judge failed",
       "outcome": "OutcomeNo winners recorded.2 candidates",
       "judge": "Judge EvidenceNo accepted Judge attempt.",
       "cost": "CostNo cost data for this run."
@@ -147,26 +147,26 @@
     {
       "name": "detail-partial-state",
       "pass": true,
-      "header": "ad hocPartialrankAd hoc partial coverageStarted 11/14/2023, 10:13:24 PM (999d ago)·Ended 11/14/2023, 10:13:24 PM (999d ago)·Duration 1s·UTCOpen in CompareCopy link",
-      "timeline": "Status timelineCreated999d agoCandidates1/2 done · 1 errorJudgeacceptedResultno result - candidate error"
+      "header": "ad hocPartialrankAd hoc partial coverageStarted 11/15/2023, 5:13:24 AM (1000d ago)·Ended 11/15/2023, 5:13:24 AM (1000d ago)·Duration 1s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates1/2 done · 1 errorJudgeacceptedResultno result - candidate error"
     },
     {
       "name": "detail-aborted-state",
       "pass": true,
-      "header": "ad hocAbortedrankAd hoc aborted cleanupStarted 11/14/2023, 10:13:25 PM (999d ago)·Ended 11/14/2023, 10:13:25 PM (999d ago)·Duration 0s·UTCOpen in CompareCopy link",
-      "timeline": "Status timelineCreated999d agoCandidates1/2 done · 1 errorJudgenot runResultaborted by user"
+      "header": "ad hocAbortedrankAd hoc aborted cleanupStarted 11/15/2023, 5:13:25 AM (1000d ago)·Ended 11/15/2023, 5:13:25 AM (1000d ago)·Duration 0s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates1/2 done · 1 not completedJudgenot runResultaborted by user"
     },
     {
       "name": "detail-interrupted-state",
       "pass": true,
-      "header": "ad hocInterruptedrankAd hoc interrupted retryStarted 11/14/2023, 10:13:26 PM (999d ago)·Ended 11/14/2023, 10:13:26 PM (999d ago)·Duration 0s·UTCOpen in CompareCopy link",
-      "timeline": "Status timelineCreated999d agoCandidates1/2 done · 1 errorJudgerunningResultstopped mid-run"
+      "header": "ad hocInterruptedrankAd hoc interrupted retryStarted 11/15/2023, 5:13:26 AM (1000d ago)·Ended 11/15/2023, 5:13:26 AM (1000d ago)·Duration 0s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates1/2 done · 1 not completedJudgeinterruptedResultstopped mid-run"
     },
     {
       "name": "detail-fuse-state",
       "pass": true,
-      "header": "ad hocCompletedfuseAd hoc fused verdictStarted 11/14/2023, 10:13:27 PM (999d ago)·Completed 11/14/2023, 10:13:28 PM (999d ago)·Duration 1s·UTCOpen in CompareCopy link",
-      "timeline": "Status timelineCreated999d agoCandidates2/2 doneJudgeacceptedResultfused",
+      "header": "ad hocCompletedfuseAd hoc fused verdictStarted 11/15/2023, 5:13:27 AM (1000d ago)·Completed 11/15/2023, 5:13:28 AM (1000d ago)·Duration 1s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates2/2 doneJudgeacceptedResultfused",
       "fusion": "Fusion ResultOpenRouter·Qwen 3.8 Maxopenrouter:Qwen 3.8 MaxInput: 400 tokens — provider reportedFused verdict: persistence wins with nuance on tone."
     },
     {

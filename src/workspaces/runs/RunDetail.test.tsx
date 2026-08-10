@@ -423,11 +423,11 @@ describe("RunDetail", () => {
     const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
     const taskConfig = h.$("[data-section='task-config']");
     expect(taskConfig).toBeTruthy();
-    // Collapsed — has a disclosure with aria-expanded=false
+    // Collapsed — a disclosure must exist and report aria-expanded=false. A
+    // missing disclosure must not silently pass (absence is a regression).
     const disclosure = taskConfig?.querySelector("[aria-expanded]");
-    if (disclosure) {
-      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-    }
+    expect(disclosure).toBeTruthy();
+    expect(disclosure?.getAttribute("aria-expanded")).toBe("false");
     cleanup(h);
   });
 

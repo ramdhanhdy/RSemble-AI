@@ -267,6 +267,21 @@ interface TimelineStep {
   state: TimelineState;
 }
 
+/** A fusion stage has a valid accepted result only when an accepted attempt
+ * pointer exists AND the referenced attempt actually completed with a
+ * non-null result. `fusion.status === "done"` alone is not sufficient — a
+ * re-fuse that fails after a prior success sets `fusion.status = "error"`
+ * but leaves the prior accepted pointer intact, and a corrupted/inconsistent
+ * `done` without an accepted result must not claim fusion succeeded
+ * (transplant map §F1, evidence-based). */
+function hasValidAcceptedFusion(record: RunRecordV2): boolean {
+  if (!record.fusion.acceptedAttemptId) return false;
+  const attempt = record.fusion.attempts.find(
+    (a) => a.attemptId === record.fusion.acceptedAttemptId,
+  );
+  return attempt !== undefined && attempt.status === "completed" && attempt.result !== null;
+}
+
 /** Lifecycle summary derived strictly from persisted record fields — never
  * fabricated (transplant map §F1, prototype "Status timeline"). Accepted
  * attempts are done; only explicit terminal attempt failures count as errors.
@@ -275,20 +290,29 @@ interface TimelineStep {
 export function buildTimeline(record: RunRecordV2): TimelineStep[] {
   const total = record.candidates.length;
   const done = record.candidates.filter((c) => c.acceptedAttemptId != null).length;
-  const errors = record.candidates.filter((candidate) => {
+  // Only an explicit terminal `failed` attempt is a candidate error. Aborted
+  // / interrupted attempts are stoppages, not failures — counted separately so
+  // the timeline never blames a candidate for a global abort/interrupt.
+  const failed = record.candidates.filter((candidate) => {
     if (candidate.acceptedAttemptId != null) return false;
     const latest = candidate.attempts[candidate.attempts.length - 1];
-    return (
-      latest?.status === "failed" ||
-      latest?.status === "aborted" ||
-      latest?.status === "interrupted"
-    );
+    return latest?.status === "failed";
   }).length;
-  const pending = Math.max(0, total - done - errors);
+  const stopped = record.candidates.filter((candidate) => {
+    if (candidate.acceptedAttemptId != null) return false;
+    const latest = candidate.attempts[candidate.attempts.length - 1];
+    return latest?.status === "aborted" || latest?.status === "interrupted";
+  }).length;
+  const unsettled = Math.max(0, total - done - failed - stopped);
+  // On a terminal aborted/interrupted record, candidates that never settled
+  // are `not completed` (the run will not resume); on an active run they
+  // remain `pending`. An absent accepted attempt is never itself a failure.
+  const globalStopped = record.status === "aborted" || record.status === "interrupted";
   const candidateDetail = [
     `${done}/${total} done`,
-    errors > 0 ? `${errors} error${errors === 1 ? "" : "s"}` : null,
-    pending > 0 ? `${pending} pending` : null,
+    failed > 0 ? `${failed} error${failed === 1 ? "" : "s"}` : null,
+    stopped > 0 ? `${stopped} stopped` : null,
+    unsettled > 0 ? (globalStopped ? `${unsettled} not completed` : `${unsettled} pending`) : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -297,25 +321,27 @@ export function buildTimeline(record: RunRecordV2): TimelineStep[] {
     {
       label: "Candidates",
       detail: candidateDetail,
-      state: record.status === "running" ? "running" : errors > 0 || pending > 0 ? "warn" : "done",
+      state:
+        record.status === "running"
+          ? "running"
+          : failed > 0 || stopped > 0 || unsettled > 0
+            ? "warn"
+            : "done",
     },
   ];
   const judgeStatus = record.judge.status;
-  const judgeState: TimelineState =
+  // A stage left `running` by applyAborted/applyInterrupted is not actually
+  // running on a terminal record — render the global stop wording instead.
+  const judgeRunningStopped = judgeStatus === "running" && globalStopped;
+  const judgeDetail =
     judgeStatus === "done"
-      ? "done"
+      ? "accepted"
       : judgeStatus === "error"
-        ? "error"
-        : judgeStatus === "running"
-          ? "running"
-          : "muted";
-  steps.push({
-    label: "Judge",
-    detail:
-      judgeStatus === "done"
-        ? "accepted"
-        : judgeStatus === "error"
-          ? "failed"
+        ? "failed"
+        : judgeRunningStopped
+          ? record.status === "aborted"
+            ? "aborted"
+            : "interrupted"
           : judgeStatus === "running"
             ? "running"
             : // "pending" implies the judge may still run; on a terminal run
@@ -323,26 +349,71 @@ export function buildTimeline(record: RunRecordV2): TimelineStep[] {
               // strictly from persisted fields, never fabricated).
               record.status === "running"
               ? "pending"
-              : "not run",
-    state: judgeState,
-  });
+              : "not run";
+  const judgeState: TimelineState = judgeRunningStopped
+    ? "warn"
+    : judgeStatus === "done"
+      ? "done"
+      : judgeStatus === "error"
+        ? "error"
+        : judgeStatus === "running"
+          ? "running"
+          : "muted";
+  steps.push({ label: "Judge", detail: judgeDetail, state: judgeState });
   let result: TimelineStep;
-  if (record.mode === "fuse" && record.fusion.status === "done") {
+  // Global aborted/interrupted is terminal and takes precedence over any
+  // stage-running Result wording (a stopped run is not pending or fusing).
+  if (record.status === "aborted") {
+    result = { label: "Result", detail: "aborted by user", state: "warn" };
+  } else if (record.status === "interrupted") {
+    result = { label: "Result", detail: "stopped mid-run", state: "warn" };
+  } else if (record.mode === "fuse" && record.fusion.status === "running") {
+    // A post-run Re-fuse keeps the run's accepted terminal status
+    // (completed/partial) per deriveStatus, but the fusion stage is actively
+    // running — surface the live stage before any terminal Result wording
+    // (transplant map §F1, evidence-based).
+    result = { label: "Result", detail: "fusion running", state: "running" };
+  } else if (record.mode === "fuse" && hasValidAcceptedFusion(record)) {
+    // A valid previously accepted fusion result exists — truthfully show
+    // "fused" even if the latest re-fuse failed (fusion.status === "error").
+    // The accepted attempt is the evidence; fusion.status alone is not
+    // authoritative when a re-fuse has errored after a prior success
+    // (transplant map §F1, evidence-based).
     result = { label: "Result", detail: "fused", state: "done" };
   } else if (record.mode === "fuse" && record.fusion.status === "error") {
+    // No valid accepted fusion result and the latest fusion attempt errored.
     result = { label: "Result", detail: "no result - fusion failed", state: "error" };
   } else if (record.mode === "rank" && record.winnerKeys.length > 0) {
     result = { label: "Result", detail: "ranked - winner set", state: "done" };
   } else if (record.status === "failed") {
-    result = { label: "Result", detail: "no result - judge failed", state: "error" };
+    // Only an errored Judge actually "failed". An idle Judge never ran, so the
+    // run failed before judging (insufficient candidates / fanout); never
+    // invent a Judge failure the persisted record does not support.
+    result =
+      record.judge.status === "error"
+        ? { label: "Result", detail: "no result - judge failed", state: "error" }
+        : { label: "Result", detail: "no result - failed before judging", state: "error" };
   } else if (record.status === "partial") {
-    result = { label: "Result", detail: "no result - candidate error", state: "warn" };
-  } else if (record.status === "interrupted") {
-    result = { label: "Result", detail: "stopped mid-run", state: "warn" };
-  } else if (record.status === "aborted") {
-    result = { label: "Result", detail: "aborted by user", state: "warn" };
+    // A partial Fuse run whose fusion is neither done nor errored has an
+    // incomplete fusion stage — do not blame candidates for that. The explicit
+    // fusion-error wording is retained by the fusion.status === "error" branch
+    // above.
+    if (
+      record.mode === "fuse" &&
+      record.fusion.status !== "done" &&
+      record.fusion.status !== "error"
+    ) {
+      result = { label: "Result", detail: "no result - fusion incomplete", state: "warn" };
+    } else {
+      result = { label: "Result", detail: "no result - candidate error", state: "warn" };
+    }
   } else if (record.status === "running") {
     result = { label: "Result", detail: "pending", state: "running" };
+  } else if (record.status === "completed") {
+    // Terminal completed Rank run without a winner set — completed, not
+    // pending. Wording reflects persisted completion and the absence of a
+    // winner; no failure source is invented.
+    result = { label: "Result", detail: "completed - no winner", state: "warn" };
   } else {
     result = { label: "Result", detail: "pending", state: "muted" };
   }

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-10T06:43:09.743Z",
-  "baseUrl": "http://localhost:5173/",
+  "generatedAt": "2026-08-10T13:14:51.412Z",
+  "baseUrl": "http://127.0.0.1:5173/",
   "probes": [
     {
       "name": "a11y-01-list-tab-order",
@@ -106,15 +106,6 @@
           "indicator": true
         },
         {
-          "tag": "button",
-          "name": "Clear filters",
-          "text": "Clear filters",
-          "dataAction": "clear-filters",
-          "dataCandidateId": null,
-          "height": 64,
-          "indicator": true
-        },
-        {
           "tag": "a",
           "name": "Run: Filler run 45",
           "text": "ad hocCompletedFiller run 45Winner: openrouter:z-ai/glm-5.22",
@@ -181,6 +172,15 @@
           "tag": "a",
           "name": "Run: Filler run 38",
           "text": "ad hocCompletedFiller run 38Winner: openrouter:z-ai/glm-5.22",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 82,
+          "indicator": true
+        },
+        {
+          "tag": "a",
+          "name": "Run: Filler run 37",
+          "text": "ad hocCompletedFiller run 37Winner: openrouter:z-ai/glm-5.22",
           "dataAction": null,
           "dataCandidateId": null,
           "height": 82,
@@ -313,15 +313,6 @@
           "dataAction": null,
           "dataCandidateId": null,
           "height": 44,
-          "indicator": true
-        },
-        {
-          "tag": "button",
-          "name": "Clear filters",
-          "text": "Clear filters",
-          "dataAction": "clear-filters",
-          "dataCandidateId": null,
-          "height": 64,
           "indicator": true
         },
         {
@@ -750,7 +741,7 @@
         {
           "tag": "a",
           "name": "Run: Ad hoc interrupted retry",
-          "text": "ad hocInterruptedAd hoc interrupted retry2 models999d ago",
+          "text": "ad hocInterruptedAd hoc interrupted retry2 models1000d ago",
           "dataAction": null,
           "dataCandidateId": null,
           "height": 60,
@@ -759,7 +750,7 @@
         {
           "tag": "a",
           "name": "Run: Ad hoc aborted cleanup",
-          "text": "ad hocAbortedAd hoc aborted cleanup2 models999d ago",
+          "text": "ad hocAbortedAd hoc aborted cleanup2 models1000d ago",
           "dataAction": null,
           "dataCandidateId": null,
           "height": 60,
@@ -821,8 +812,8 @@
         },
         {
           "tag": "button",
-          "name": "Copy link to this run",
-          "text": "Copy link",
+          "name": "Copy link to this run on this device",
+          "text": "Copy link — this device",
           "dataAction": "copy-link",
           "dataCandidateId": null,
           "height": 44,
@@ -857,8 +848,8 @@
         },
         {
           "tag": "button",
-          "name": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.21 attempt",
-          "text": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.21 attempt",
+          "name": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.2Label: A1 attempt",
+          "text": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.2Label: A1 atte",
           "dataAction": null,
           "dataCandidateId": "cand-s1",
           "height": 44,
@@ -866,10 +857,19 @@
         },
         {
           "tag": "button",
-          "name": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/deepseek-v4-flash1 atte",
+          "name": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/deepseek-v4-flashLabel:",
           "text": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/dee",
           "dataAction": null,
           "dataCandidateId": "cand-s2",
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Full model identity: openrouter:GLM 5.2",
+          "text": "",
+          "dataAction": null,
+          "dataCandidateId": null,
           "height": 44,
           "indicator": true
         },
@@ -912,12 +912,12 @@
       "focusedCandidateId": "cand-s2",
       "ariaPressed": "true",
       "inViewport": true,
-      "rectTop": 496,
+      "rectTop": 717,
       "ringVisible": true,
       "judgePanelPresent": true,
       "judgeHighlighted": true,
       "selectedAttemptText": true,
-      "labelB": true,
+      "labelB": false,
       "selectedCandidateRow": true
     },
     {
@@ -999,8 +999,8 @@
         },
         {
           "tag": "button",
-          "name": "Copy link to this run",
-          "text": "Copy link",
+          "name": "Copy link to this run on this device",
+          "text": "Copy link — this device",
           "dataAction": "copy-link",
           "dataCandidateId": null,
           "height": 44,
@@ -1035,20 +1035,29 @@
         },
         {
           "tag": "button",
-          "name": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.21 attempt",
-          "text": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.21 attempt",
+          "name": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.2Label: A1 attempt",
+          "text": "OpenRouter·z-ai/glm-5.2openrouter:z-ai/glm-5.2Label: A1 atte",
           "dataAction": null,
           "dataCandidateId": "cand-s1",
-          "height": 44,
+          "height": 68,
           "indicator": true
         },
         {
           "tag": "button",
-          "name": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/deepseek-v4-flash1 atte",
+          "name": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/deepseek-v4-flashLabel:",
           "text": "OpenRouter·deepseek/deepseek-v4-flashopenrouter:deepseek/dee",
           "dataAction": null,
           "dataCandidateId": "cand-s2",
-          "height": 66,
+          "height": 88,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Full model identity: openrouter:GLM 5.2",
+          "text": "",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
           "indicator": true
         },
         {

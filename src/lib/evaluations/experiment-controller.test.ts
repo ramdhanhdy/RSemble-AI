@@ -15,7 +15,7 @@
 //    tab cannot start, resume, retry, recover, or commit.
 // =============================================================================
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createExperimentController,
   type ExperimentControllerEvent,
@@ -26,7 +26,7 @@ import {
 } from "../persistence/experiment-unit-of-work";
 import { InMemoryEvaluationRepository } from "../persistence/evaluation-repository";
 import { InMemoryRunRepository } from "../persistence/run-repository";
-import { InMemoryExecutionLease, type LeaseInfo } from "../execution-lease";
+import { InMemoryExecutionLease, LEASE_TTL, type LeaseInfo } from "../execution-lease";
 import { ExecutionOwnerRegistry } from "../execution-owner";
 import type { ExperimentRecord, EvaluationSuite, EvaluationTask } from "./evaluation-types";
 import type { FullRunSummaryV2, RunRecordV2, RunSummary } from "../persistence/run-types";
@@ -818,8 +818,28 @@ describe("experiment-controller — execution ownership", () => {
     if (!started.ok) expect(started.error).toMatch(/another tab/i);
     expect(h.executor.calls).toHaveLength(0);
 
-    const recovered = await controllerB.recoverOnStartup();
+    // recoverOnStartup now arms exactly one safe retry after the contested
+    // lease becomes free/expired. Keep tabA live across the retry deadline so
+    // the single retry is contested and gives up — no recovery, no loop, and
+    // tabA is never interrupted.
+    vi.useFakeTimers();
+    const recoveredPromise = controllerB.recoverOnStartup();
+    // Flush microtasks so the contested path settles and waitForLeaseFree
+    // arms its setInterval before we advance the clock.
+    await vi.advanceTimersByTimeAsync(0);
+    // Renew tabA just before its expiry to keep it live, then advance past
+    // the retry deadline. The single retry fires, acquire throws contested
+    // (tabA still owns), and recovery gives up — no loop, no interruption.
+    h.setNow(h.now() + LEASE_TTL - 1);
+    await leaseA.renew();
+    h.setNow(h.now() + 2); // past the original deadline; tabA still live.
+    expect(await leaseA.isOwner()).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    const recovered = await recoveredPromise;
+    vi.useRealTimers();
     expect(recovered).toBe(0);
+    // tabA still owns, uninterrupted.
+    expect(await leaseA.isOwner()).toBe(true);
   });
 });
 
@@ -980,6 +1000,129 @@ describe("experiment-controller — reload and recovery", () => {
     const continued = await h.evalRepo.getExperiment("exp-crash");
     expect(continued!.status).toBe("completed");
     expect(continued!.tasks[0].attempts).toHaveLength(2);
+  });
+
+  it("recoverOnStartup arms exactly one retry after a contested lease frees and then recovers (Round B)", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+    const suite = makeSuite(["t1"]);
+
+    // Craft a crashed experiment with a running attempt + running run, exactly
+    // like the expired-owner takeover test, but the lease is initially held by
+    // a live contested tab (not yet expired).
+    const crashedRun: RunRecordV2 = {
+      schemaVersion: 2,
+      id: "run-contested-1",
+      revision: 0,
+      execution: { ownerId: "dead-tab", fence: 1 },
+      createdAt: h.now(),
+      updatedAt: h.now(),
+      completedAt: null,
+      status: "running",
+      mode: "rank",
+      source: {
+        kind: "experiment",
+        experimentId: "exp-contested",
+        suiteId: suite.id,
+        suiteVersion: 1,
+        protocolFingerprint: "sha256:abc",
+        taskId: "t1",
+        experimentTaskAttemptId: "att-contested-1",
+        trial: 0,
+      },
+      task: { title: "Task t1", prompt: "Prompt for t1", systemPrompt: "", temperature: 0 },
+      evaluation: { profile: null, candidateMessages: [] },
+      candidates: [],
+      judge: {
+        status: "idle",
+        acceptedAttemptId: null,
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    };
+    const crashedSummary: FullRunSummaryV2 = {
+      kind: "full",
+      schemaVersion: 2,
+      id: "run-contested-1",
+      revision: 0,
+      createdAt: h.now(),
+      completedAt: null,
+      status: "running",
+      mode: "rank",
+      source: crashedRun.source,
+      taskTitle: "Task t1",
+      taskExcerpt: "Prompt for t1",
+      modelKeys: [],
+      winnerKeys: [],
+      scoresByModelKey: {},
+      judgeModelKey: null,
+      evaluationProfileId: null,
+      evaluationProfileVersion: null,
+      detailAvailable: true,
+      searchText: "task t1",
+    };
+    h.store.runDetails.set("run-contested-1", crashedRun);
+    h.store.runSummaries.set("run-contested-1", crashedSummary);
+    const record = createExperimentRecord({
+      id: "exp-contested",
+      suite,
+      profiles: [],
+      now: h.now(),
+    });
+    const crashed: ExperimentRecord = {
+      ...record,
+      status: "running",
+      execution: { ownerId: "dead-tab", fence: 1 },
+      tasks: [
+        {
+          taskId: "t1",
+          selectedAttemptId: null,
+          attempts: [
+            {
+              id: "att-contested-1",
+              runId: "run-contested-1",
+              trial: 0,
+              status: "running",
+              startedAt: h.now(),
+              finishedAt: null,
+              error: null,
+            },
+          ],
+        },
+      ],
+    };
+    await h.evalRepo.createExperiment(crashed);
+
+    // A live tab holds the lease (contested). recoverOnStartup's first
+    // acquire fails; it arms exactly one retry after the lease frees.
+    const leaseA = new InMemoryExecutionLease(h.leaseStore, null, { now: h.now });
+    await leaseA.acquire();
+    expect(await leaseA.isOwner()).toBe(true);
+
+    vi.useFakeTimers();
+    const recoveredPromise = h.controller.recoverOnStartup();
+    // Flush microtasks so the contested path settles and waitForLeaseFree
+    // arms its setInterval before we advance the clock.
+    await vi.advanceTimersByTimeAsync(0);
+    // Advance past leaseA's TTL so it expires and the retry deadline fires.
+    h.setNow(h.now() + LEASE_TTL + 1);
+    await vi.advanceTimersByTimeAsync(100);
+    const recovered = await recoveredPromise;
+    vi.useRealTimers();
+
+    // The single retry acquired the freed lease and recovered the experiment.
+    expect(recovered).toBeGreaterThan(0);
+    const after = await h.evalRepo.getExperiment("exp-contested");
+    expect(after!.status).toBe("interrupted");
+    expect(after!.tasks[0].attempts[0].status).toBe("interrupted");
+    expect(after!.tasks[0].attempts[0].finishedAt).not.toBeNull();
+    const run = await h.runRepo.get("run-contested-1");
+    expect(run!.status).toBe("interrupted");
+    // Recovery released the lease it acquired.
+    expect(h.leaseStore.lease).toBeNull();
   });
 
   it("recovery finds a committed terminal run by experimentTaskAttemptId and never repays", async () => {

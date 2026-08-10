@@ -378,7 +378,7 @@ function summaryRowFor(summary: RunSummary): RunSummaryRow {
     kind: summary.kind,
     summary,
     id: summary.id,
-    revision: 1,
+    revision: full ? full.revision : 0,
     createdAt: summary.createdAt,
     completedAt: full ? full.completedAt : null,
     status: full ? full.status : null,
@@ -396,7 +396,7 @@ function detailRowFor(record: RunRecordV2): RunDetailRow {
   return {
     id: record.id,
     record,
-    revision: 1,
+    revision: record.revision,
     createdAt: record.createdAt,
     status: record.status,
   };
@@ -409,7 +409,8 @@ function canon(value: unknown): string {
 /**
  * Import a validated archive in ONE Dexie transaction. Canonically identical
  * records are skipped, same-ID different content is conflicting (never
- * written), absent records are created with row revision 1. Any thrown error
+ * written), absent records are created preserving the domain record/summary
+ * revision so subsequent repository CAS updates succeed. Any thrown error
  * aborts the transaction — nothing is written.
  */
 export async function importWorkbenchArchive(
@@ -632,9 +633,9 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
 
   lines.push(`## Candidates`, ``);
   for (const candidate of record.candidates) {
-    const attempt =
-      candidate.attempts.find((a) => a.attemptId === candidate.acceptedAttemptId) ??
-      candidate.attempts[candidate.attempts.length - 1];
+    const attempt = candidate.acceptedAttemptId
+      ? candidate.attempts.find((a) => a.attemptId === candidate.acceptedAttemptId)
+      : undefined;
     lines.push(
       `### ${mdSafe(candidate.model)} (${mdSafe(candidate.providerId)}:${mdSafe(candidate.slug)})`,
       ``,
@@ -811,10 +812,9 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       );
     }
   }
-
-  const fusionAttempt =
-    record.fusion.attempts.find((a) => a.attemptId === record.fusion.acceptedAttemptId) ??
-    record.fusion.attempts[record.fusion.attempts.length - 1];
+  const fusionAttempt = record.fusion.acceptedAttemptId
+    ? record.fusion.attempts.find((a) => a.attemptId === record.fusion.acceptedAttemptId)
+    : undefined;
   if (fusionAttempt && typeof fusionAttempt.result === "string") {
     lines.push(
       `## Fusion Usage`,

@@ -125,4 +125,48 @@ describe("CopyLinkButton (Slice 5 G3)", () => {
     expect(button.textContent).not.toContain("Copied!");
     cleanup(h);
   });
+
+  it("announces a successful copy via a polite live region", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, href: "http://localhost/#/runs/run-1?candidate=c1" },
+      writable: true,
+    });
+
+    const h = renderButton();
+    const button = h.$('[data-action="copy-link"]')!;
+    const status = h.$('[data-action="copy-link-status"]');
+    expect(status).toBeTruthy();
+    // Before a successful copy, the live region is silent.
+    expect(status?.getAttribute("aria-live")).toBe("polite");
+    expect(status?.textContent?.trim()).toBe("");
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    // After the clipboard write resolves, the polite region announces the copy.
+    expect(writeText).toHaveBeenCalled();
+    const announced = h.$('[data-action="copy-link-status"]');
+    expect(announced?.textContent).toContain("Link copied");
+    expect(announced?.textContent).toContain("this device");
+    cleanup(h);
+  });
+
+  it("does not announce when the clipboard write rejects", async () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+
+    const h = renderButton();
+    const button = h.$('[data-action="copy-link"]')!;
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    const status = h.$('[data-action="copy-link-status"]');
+    expect(status?.textContent?.trim()).toBe("");
+    cleanup(h);
+  });
 });

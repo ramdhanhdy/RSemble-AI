@@ -169,7 +169,12 @@ describe("LOAD_RUN_CONFIG fresh-draft boundary", () => {
     expect(next.reasoningPolicy).toEqual({ candidates: "medium", judge: "high" });
   });
 
-  it("keeps current critic/reasoning when absent but clears unpersisted judge instruction", () => {
+  it("uses clean initialState defaults for critic/reasoning when absent and clears unpersisted judge instruction", () => {
+    // A historical record that lacks a reconstructible critic or reasoning
+    // policy (e.g. aborted pre-judge) must NOT leak the mutable current
+    // Compare session's critic/reasoning into the fresh draft. The fresh
+    // draft starts from the clean initialState baseline (copied defensively)
+    // so no session configuration crosses the historical load boundary.
     const base: StudioState = {
       ...initialState,
       critic: { providerId: "umans", model: "current-judge" },
@@ -188,8 +193,44 @@ describe("LOAD_RUN_CONFIG fresh-draft boundary", () => {
       },
     });
 
-    expect(next.critic).toEqual({ providerId: "umans", model: "current-judge" });
-    expect(next.reasoningPolicy).toEqual({ candidates: "high", judge: "high" });
+    expect(next.critic).toEqual(initialState.critic);
+    // Defensive copies — never the mutable session ref or the shared
+    // initialState ref, so later edits cannot mutate either source.
+    expect(next.critic).not.toBe(base.critic);
+    expect(next.critic).not.toBe(initialState.critic);
+    expect(next.reasoningPolicy).toEqual(initialState.reasoningPolicy);
+    expect(next.reasoningPolicy).not.toBe(base.reasoningPolicy);
+    expect(next.reasoningPolicy).not.toBe(initialState.reasoningPolicy);
+    // The user's ad-hoc judge instruction is never persisted on the record;
+    // the fresh draft starts blank regardless of the session's current text.
+    expect(next.judgeInstruction).toBe("");
+  });
+
+  it("retains historical critic/reasoning when present and still clears unpersisted judge instruction", () => {
+    const base: StudioState = {
+      ...initialState,
+      critic: { providerId: "umans", model: "current-judge" },
+      judgeInstruction: "do not leak me",
+      reasoningPolicy: { candidates: "high", judge: "high" },
+    };
+    const next = reducer(base, {
+      type: "LOAD_RUN_CONFIG",
+      config: {
+        mode: "rank",
+        prompt: "p",
+        systemPrompt: "",
+        temperature: 0.4,
+        evaluation: HOLISTIC_EVALUATION,
+        slots: [],
+        critic: { providerId: "openrouter", model: "historical-judge" },
+        reasoningPolicy: { candidates: "low", judge: "medium" },
+      },
+    });
+
+    expect(next.critic).toEqual({ providerId: "openrouter", model: "historical-judge" });
+    expect(next.critic).not.toBe(base.critic);
+    expect(next.reasoningPolicy).toEqual({ candidates: "low", judge: "medium" });
+    expect(next.reasoningPolicy).not.toBe(base.reasoningPolicy);
     expect(next.judgeInstruction).toBe("");
   });
 

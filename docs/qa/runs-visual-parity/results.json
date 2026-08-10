@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-10T06:43:30.526Z",
+  "generatedAt": "2026-08-10T13:15:08.806Z",
   "prodBaseUrl": "http://localhost:5173/",
   "protoBaseUrl": "http://127.0.0.1:4181/",
   "probes": [
@@ -10,7 +10,7 @@
         "paneBg": "rgb(10, 10, 10)",
         "paneBorderRight": "1px solid rgb(38, 38, 38)",
         "filtersVisible": true,
-        "splitWidth": 1089
+        "splitWidth": 1007
       },
       "note": "prototype pane = shell bg + 1px edge border-right (border-driven split)"
     },
@@ -73,7 +73,7 @@
         "font": "14px/21px Geist",
         "width": 371,
         "height": 84,
-        "top": 193
+        "top": 197
       },
       "note": "prototype selected = raised bg + 2px accent left border"
     },
@@ -82,7 +82,7 @@
       "pass": true,
       "evidence": {
         "sectionCount": 4,
-        "headerText": "Ad hoc Completed rank Explain transformer attention mechanism Aug 9 08:15 AM · 47s · 3 candidates · $0.0140 Open in Compare Copy link — this device"
+        "headerText": "Ad hoc Completed rank Explain transformer attention mechanism Aug 9 03:15 PM · 47s · 3 candidates · $0.0140 Open in Compare Copy link — this device"
       }
     },
     {
@@ -197,7 +197,7 @@
         "font": "16px/24px Geist",
         "width": 347,
         "height": 86,
-        "top": 1047
+        "top": 1023
       },
       "note": "production selected = raised bg + 2px inset cyan accent via box-shadow"
     },
@@ -220,7 +220,7 @@
         "timelineSteps": 4,
         "toolbarButtons": [
           "Open in Compare",
-          "Copy link"
+          "Copy link — this device"
         ]
       }
     },
@@ -243,7 +243,7 @@
         "timelineSteps": 4,
         "toolbarButtons": [
           "Open in Compare",
-          "Copy link"
+          "Copy link — this device"
         ]
       },
       "note": "Slice 5 contextual continuity: Copy link + Open in Compare present in detail header"
@@ -349,7 +349,7 @@
       "paneBg": "rgb(10, 10, 10)",
       "paneBorderRight": "1px solid rgb(38, 38, 38)",
       "filtersVisible": true,
-      "splitWidth": 1089
+      "splitWidth": 1007
     },
     "protoRows": {
       "rowCount": 11,
@@ -408,43 +408,43 @@
     "prodRowSample": [
       {
         "href": "#/runs/run-judge-multi",
-        "text": "ad hocCompletedAd hoc judge retry historyWinner: openrouter:z-ai/glm-5.22 models999d ago"
+        "text": "ad hocCompletedAd hoc judge retry historyWinner: openrouter:z-ai/glm-5.22 models1000d ago"
       },
       {
         "href": "#/runs/run-reused",
-        "text": "ad hocCompletedAd hoc reused evidenceWinner: openrouter:deepseek/deepseek-v4-flash · Score: 4.32 models999d ago"
+        "text": "ad hocCompletedAd hoc reused evidenceWinner: openrouter:deepseek/deepseek-v4-flash · Score: 4.32 models1000d ago"
       },
       {
         "href": "#/runs/run-exp",
-        "text": "experimentCompletedExperiment suite pricingWinner: openrouter:z-ai/glm-5.22 models999d ago"
+        "text": "experimentCompletedExperiment suite pricingWinner: openrouter:z-ai/glm-5.22 models1000d ago"
       },
       {
         "href": "#/runs/run-fuse",
-        "text": "ad hocCompletedAd hoc fused verdict2 models999d ago"
+        "text": "ad hocCompletedAd hoc fused verdict2 models1000d ago"
       },
       {
         "href": "#/runs/run-interrupted",
-        "text": "ad hocInterruptedAd hoc interrupted retry2 models999d ago"
+        "text": "ad hocInterruptedAd hoc interrupted retry2 models1000d ago"
       },
       {
         "href": "#/runs/run-aborted",
-        "text": "ad hocAbortedAd hoc aborted cleanup2 models999d ago"
+        "text": "ad hocAbortedAd hoc aborted cleanup2 models1000d ago"
       },
       {
         "href": "#/runs/run-partial",
-        "text": "ad hocPartialAd hoc partial coverage2 models999d ago"
+        "text": "ad hocPartialAd hoc partial coverage2 models1000d ago"
       },
       {
         "href": "#/runs/run-failed",
-        "text": "ad hocFailedAd hoc failed extraction2 models999d ago"
+        "text": "ad hocFailedAd hoc failed extraction2 models1000d ago"
       },
       {
         "href": "#/runs/run-running",
-        "text": "ad hocRunningAd hoc streaming summarization2 models999d ago"
+        "text": "ad hocRunningAd hoc streaming summarization2 models1000d ago"
       },
       {
         "href": "#/runs/run-completed",
-        "text": "ad hocCompletedAd hoc completed evidence walkWinner: openrouter:z-ai/glm-5.2 · Score: 4.42 models999d ago"
+        "text": "ad hocCompletedAd hoc completed evidence walkWinner: openrouter:z-ai/glm-5.2 · Score: 4.42 models1000d ago"
       },
       {
         "href": "#/runs/legacy-1",
@@ -467,7 +467,7 @@
       "timelineSteps": 4,
       "toolbarButtons": [
         "Open in Compare",
-        "Copy link"
+        "Copy link — this device"
       ]
     },
     "fuseDetail": {
