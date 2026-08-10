@@ -19,7 +19,7 @@ import { CopyLinkButton } from "./CopyLinkButton";
 interface Harness {
   container: HTMLDivElement;
   root: { render: (n: React.ReactNode) => void; unmount: () => void };
-  $: (s: string) => container.querySelector<HTMLElement>(s),
+  $: (s: string) => HTMLElement | null;
 }
 
 function renderButton(): Harness {
