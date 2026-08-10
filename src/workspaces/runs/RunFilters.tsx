@@ -3,9 +3,9 @@
 //
 // Desktop (lg/1024+, where the Runs workspace split begins): search stays
 // visible and model/status/mode/source render always-visible in a compact
-// 2-column grid sized for the 380px list pane, with the applied-count badge
-// and Clear filters beside them (transplant map §E1: RESTYLE — desktop
-// filters compact and always visible).
+// 2-column grid sized for the 380px list pane. A quiet reset action sits with
+// search only when something is active; there is no redundant "Filters"
+// heading competing with the real field labels.
 //
 // Below lg: search stays visible; model/status/mode/source collapse into a
 // single Filters sheet behind the toggle, with the applied-count badge on the
@@ -138,14 +138,20 @@ export function RunFilters({
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const applied = countApplied(value);
+  const hasAny = value.text.trim().length > 0 || applied > 0;
 
   function update(patch: Partial<RunFiltersValue>) {
     onChange({ ...value, ...patch });
   }
 
+  function clearAll() {
+    onChange({ ...EMPTY_FILTERS });
+  }
+
   return (
     <div className="flex flex-col gap-2">
-      {/* Search — always visible at every width */}
+      {/* Search — always visible at every width. Desktop reset stays visually
+          quiet and only appears when there is something to clear. */}
       <div className="flex items-center gap-2">
         <input
           type="search"
@@ -155,6 +161,18 @@ export function RunFilters({
           onChange={(e: ChangeEvent<HTMLInputElement>) => update({ text: e.target.value })}
           className="min-h-[44px] flex-1 rounded-md border border-edge bg-panel px-3 text-sm text-text placeholder:text-text-muted focus:border-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
+        {hasAny && (
+          <button
+            type="button"
+            data-action="clear-filters"
+            aria-label="Clear search and filters"
+            onClick={clearAll}
+            className="hidden min-h-[44px] shrink-0 items-center gap-1 rounded-md px-2 text-xs text-text-muted transition-colors duration-150 hover:bg-raised hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:flex"
+          >
+            <X size={13} aria-hidden="true" />
+            Clear
+          </button>
+        )}
         {/* Filters sheet toggle — mobile/tablet only (below lg). On desktop the
             composition below is always visible, so the toggle is redundant
             there and hidden via lg:hidden (KEEP: mobile collapsed sheet). */}
@@ -177,20 +195,9 @@ export function RunFilters({
       </div>
 
       {/* Desktop composition — always rendered at lg+ (transplant map §E1
-          RESTYLE): all four selects in a compact 2-col grid that fits the
-          380px list pane; Model spans the full width because model keys are
-          long. The header mirrors the mobile toggle's label + applied-count
-          badge so the count semantic survives at every width. */}
+          RESTYLE): the real field labels provide the hierarchy; no orphaned
+          generic heading. Model spans full width because model keys are long. */}
       <div data-desktop-filters className="hidden grid-cols-2 gap-2 lg:grid">
-        <div className="col-span-2 flex items-center gap-1.5">
-          <span className="text-xs text-text-muted">Filters</span>
-          {applied > 0 && (
-            <span className="flex min-w-[20px] items-center justify-center rounded-full bg-accent/20 px-1.5 text-xs text-accent tabular-nums">
-              {applied}
-            </span>
-          )}
-        </div>
-
         <FilterSelect
           label="Model"
           dataFilter="model"
@@ -232,21 +239,12 @@ export function RunFilters({
           onChange={(e) =>
             update({ source: e.target.value as "adhoc" | "experiment" | "legacy" | "" })
           }
+          wrapperClassName="col-span-2"
           labelClassName="text-xs text-text-muted"
           selectClassName="w-full min-w-0"
         >
           {sourceOptions}
         </FilterSelect>
-
-        <button
-          type="button"
-          data-action="clear-filters"
-          onClick={() => onChange({ ...EMPTY_FILTERS })}
-          className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X size={14} aria-hidden="true" />
-          Clear filters
-        </button>
       </div>
 
       {/* Mobile/tablet sheet — below lg only, opened via the toggle (KEEP).
@@ -298,7 +296,7 @@ export function RunFilters({
           <button
             type="button"
             data-action="clear-filters"
-            onClick={() => onChange({ ...EMPTY_FILTERS })}
+            onClick={clearAll}
             className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:ring-2 focus-visible:ring-accent"
           >
             <X size={14} aria-hidden="true" />
