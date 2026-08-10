@@ -159,10 +159,8 @@ describe("RunList", () => {
     ]);
     const h = renderWithRouter(<RunList repo={repo} selectedId="run-1" />);
     await settle();
-    // The selected row should have a data-selected attribute or aria-selected
     const selectedRow = h.$("[data-selected='true']");
     expect(selectedRow).toBeTruthy();
-    // aria-current="page" is NOT on the row — it belongs to route-level nav
     const ariaCurrent = h.$("[aria-current='page']");
     expect(ariaCurrent).toBeNull();
     cleanup(h);
@@ -191,7 +189,6 @@ describe("RunList", () => {
     ]);
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
-    // Type in search
     const search = h.$(
       "input[type='search'], input[role='searchbox'], input[aria-label*='earch' i]",
     ) as HTMLInputElement;
@@ -212,18 +209,15 @@ describe("RunList", () => {
     ]);
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
-    // Apply search filter
     const search = h.$(
       "input[type='search'], input[role='searchbox'], input[aria-label*='earch' i]",
     ) as HTMLInputElement;
     typeInto(search, "sort");
     await settleWithDebounce();
-    // Open filter sheet to access Clear filters
     const toggleBtn = h.$("button[data-action='toggle-filters']");
     act(() => toggleBtn!.click());
     await settle();
     expect(h.$$("a[href^='/runs/']")).toHaveLength(1);
-    // Click Clear filters
     const clearBtn = h.$("button[data-action='clear-filters']");
     expect(clearBtn).toBeTruthy();
     act(() => clearBtn!.click());
@@ -234,7 +228,7 @@ describe("RunList", () => {
 
   it("loading state shows distinct copy", async () => {
     const slowRepo = {
-      list: vi.fn(() => new Promise(() => {})), // never resolves
+      list: vi.fn(() => new Promise(() => {})),
       subscribe: vi.fn().mockReturnValue(() => {}),
     } as unknown as InMemoryRunRepository;
     const h = renderWithRouter(<RunList repo={slowRepo} selectedId={null} />);
@@ -247,13 +241,10 @@ describe("RunList", () => {
     const repo = new InMemoryRunRepository();
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
-    // Empty state
     const links = h.$$("a[href^='/runs/']");
     expect(links).toHaveLength(0);
-    // Go to Compare link
     const compareLink = h.$("a[href='/compare']");
     expect(compareLink).toBeTruthy();
-    // No fake local Run action
     const runButtons = h.$$("button[data-action='run']");
     expect(runButtons).toHaveLength(0);
     cleanup(h);
@@ -267,7 +258,6 @@ describe("RunList", () => {
     const h = renderWithRouter(<RunList repo={failingRepo} selectedId={null} />);
     await settle();
     expect(h.container.textContent).toMatch(/error|failed|unavailable/i);
-    // No rows rendered
     expect(h.$$("a[href^='/runs/']")).toHaveLength(0);
     cleanup(h);
   });
@@ -288,7 +278,6 @@ describe("RunList", () => {
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
     const rowText = h.container.textContent ?? "";
-    // Both winners must be visible
     expect(rowText).toContain("openrouter:gpt-4o");
     expect(rowText).toContain("umans:claude-opus");
     cleanup(h);
@@ -297,7 +286,6 @@ describe("RunList", () => {
   it("status filter excludes legacy summaries", async () => {
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000, { status: "completed" }]]);
-    // Add a legacy summary
     await repo.importLegacySummary({
       kind: "legacy",
       schemaVersion: "1-import",
@@ -312,14 +300,11 @@ describe("RunList", () => {
     });
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
-    // Without filters, both visible
     expect(h.$$("a[href^='/runs/']")).toHaveLength(2);
-    // Open the Filters sheet to reveal the selects
     const toggleBtn = h.$("button[data-action='toggle-filters']");
     expect(toggleBtn).toBeTruthy();
     act(() => toggleBtn!.click());
     await settle();
-    // Apply status=completed filter — legacy excluded
     const statusSelect = h.$("select[data-filter='status']") as HTMLSelectElement;
     expect(statusSelect).toBeTruthy();
     act(() => {
@@ -332,32 +317,49 @@ describe("RunList", () => {
     cleanup(h);
   });
 
-  it("desktop filter composition renders without opening the sheet", async () => {
+  it("desktop filter composition renders without a redundant heading", async () => {
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000]]);
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
-    // happy-dom does not apply CSS media queries, so assert the responsive
-    // class/DOM contract: the desktop block is `hidden` below lg and becomes
-    // a grid at lg, while the sheet is not rendered until toggled.
     const desktopBlock = h.$("[data-desktop-filters]");
     expect(desktopBlock).toBeTruthy();
     expect(desktopBlock!.className).toContain("hidden");
     expect(desktopBlock!.className).toContain("lg:grid");
-    // All four filter semantics are always rendered inside the desktop block.
     for (const name of ["model", "status", "mode", "source"]) {
       expect(h.$(`[data-desktop-filters] select[data-filter='${name}']`)).toBeTruthy();
     }
-    // Clear filters is available on desktop without opening the sheet.
-    const clear = h.$("[data-desktop-filters] button[data-action='clear-filters']");
-    expect(clear).toBeTruthy();
-    expect(clear!.className).toContain("min-h-[44px]");
-    // The mobile sheet is NOT rendered until toggled.
+    // The individual field labels provide hierarchy; there is no orphaned
+    // standalone "Filters" label above Model.
+    expect(
+      [...desktopBlock!.children].some((child) => child.textContent?.trim() === "Filters"),
+    ).toBe(false);
+    // Reset is contextual: nothing to clear means no desktop Clear action yet.
+    expect(h.$("button[data-action='clear-filters']")).toBeNull();
     expect(h.$("[data-filter-sheet]")).toBeNull();
-    // The toggle is a mobile-only affordance: hidden at lg.
     const toggle = h.$("button[data-action='toggle-filters']");
     expect(toggle).toBeTruthy();
     expect(toggle!.className).toContain("lg:hidden");
+    cleanup(h);
+  });
+
+  it("desktop Clear appears beside search only when something is active", async () => {
+    const repo = new InMemoryRunRepository();
+    await seedRepo(repo, [["run-1", 1000]]);
+    const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
+    await settle();
+    const search = h.$("input[type='search']") as HTMLInputElement;
+    typeInto(search, "Task");
+    await settle();
+    const clear = h.$("button[data-action='clear-filters']");
+    expect(clear).toBeTruthy();
+    expect(clear!.textContent).toContain("Clear");
+    expect(clear!.className).toContain("lg:flex");
+    expect(clear!.className).toContain("min-h-[44px]");
+    act(() => clear!.click());
+    await settle();
+    expect((h.$("input[type='search']") as HTMLInputElement).value).toBe("");
+    expect(h.$("button[data-action='clear-filters']")).toBeNull();
     cleanup(h);
   });
 
@@ -369,7 +371,6 @@ describe("RunList", () => {
     const toggle = h.$("button[data-action='toggle-filters']")!;
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(h.$("[data-filter-sheet]")).toBeNull();
-    // Open the sheet: all four filters + clear appear inside it.
     act(() => toggle.click());
     await settle();
     const sheet = h.$("[data-filter-sheet]");
@@ -380,7 +381,6 @@ describe("RunList", () => {
       expect(h.$(`[data-filter-sheet] select[data-filter='${name}']`)).toBeTruthy();
     }
     expect(h.$("[data-filter-sheet] button[data-action='clear-filters']")).toBeTruthy();
-    // Toggling again collapses the sheet.
     act(() => toggle.click());
     await settle();
     expect(h.$("[data-filter-sheet]")).toBeNull();
@@ -388,15 +388,13 @@ describe("RunList", () => {
     cleanup(h);
   });
 
-  it("applied-count badge shows on desktop composition and mobile toggle; desktop clear resets", async () => {
+  it("applied-count badge stays on the mobile toggle; contextual desktop Clear resets", async () => {
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000]]);
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
-    // No filters applied: no badge anywhere.
-    expect(h.$("[data-desktop-filters] .rounded-full")).toBeNull();
     expect(h.$("button[data-action='toggle-filters'] .rounded-full")).toBeNull();
-    // Apply status via the always-visible desktop select (sheet stays closed).
+    expect(h.$("button[data-action='clear-filters']")).toBeNull();
     const statusSelect = h.$(
       "[data-desktop-filters] select[data-filter='status']",
     ) as HTMLSelectElement;
@@ -405,17 +403,16 @@ describe("RunList", () => {
       statusSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await settle();
-    // Count badge reads 1 in both the desktop header and the mobile toggle.
-    expect(h.$("[data-desktop-filters] .rounded-full")?.textContent).toBe("1");
     expect(h.$("button[data-action='toggle-filters'] .rounded-full")?.textContent).toBe("1");
-    // Desktop Clear filters resets every field without opening the sheet.
-    act(() => h.$("[data-desktop-filters] button[data-action='clear-filters']")!.click());
+    const clear = h.$("button[data-action='clear-filters']");
+    expect(clear).toBeTruthy();
+    act(() => clear!.click());
     await settle();
-    expect(h.$("[data-desktop-filters] .rounded-full")).toBeNull();
     expect(
       (h.$("[data-desktop-filters] select[data-filter='status']") as HTMLSelectElement).value,
     ).toBe("");
     expect(h.$("button[data-action='toggle-filters'] .rounded-full")).toBeNull();
+    expect(h.$("button[data-action='clear-filters']")).toBeNull();
     cleanup(h);
   });
 
@@ -424,7 +421,6 @@ describe("RunList", () => {
     await seedRepo(repo, [["run-1", 1000]]);
     const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
     await settle();
-    // Check all buttons and links have min-h-[44px]
     const interactives = [...h.$$("button"), ...h.$$("a[href^='/runs/']")];
     for (const el of interactives) {
       const cls = el.getAttribute("class") ?? "";
