@@ -268,19 +268,36 @@ interface TimelineStep {
 }
 
 /** Lifecycle summary derived strictly from persisted record fields — never
- *  fabricated (transplant map §F1, prototype "Status timeline"). A candidate
- *  counts as done when it has an accepted attempt; error states come from the
- *  record status and stage statuses only. */
-function buildTimeline(record: RunRecordV2): TimelineStep[] {
+ * fabricated (transplant map §F1, prototype "Status timeline"). Accepted
+ * attempts are done; only explicit terminal attempt failures count as errors.
+ * Candidates that have not settled yet remain pending instead of being
+ * mislabeled as failures while a run is active. */
+export function buildTimeline(record: RunRecordV2): TimelineStep[] {
   const total = record.candidates.length;
   const done = record.candidates.filter((c) => c.acceptedAttemptId != null).length;
-  const errors = total - done;
+  const errors = record.candidates.filter((candidate) => {
+    if (candidate.acceptedAttemptId != null) return false;
+    const latest = candidate.attempts[candidate.attempts.length - 1];
+    return (
+      latest?.status === "failed" ||
+      latest?.status === "aborted" ||
+      latest?.status === "interrupted"
+    );
+  }).length;
+  const pending = Math.max(0, total - done - errors);
+  const candidateDetail = [
+    `${done}/${total} done`,
+    errors > 0 ? `${errors} error${errors === 1 ? "" : "s"}` : null,
+    pending > 0 ? `${pending} pending` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const steps: TimelineStep[] = [
     { label: "Created", detail: formatRelativeTime(record.createdAt), state: "done" },
     {
       label: "Candidates",
-      detail: `${done}/${total} done${errors > 0 ? ` · ${errors} error${errors === 1 ? "" : "s"}` : ""}`,
-      state: record.status === "running" ? "running" : errors > 0 ? "warn" : "done",
+      detail: candidateDetail,
+      state: record.status === "running" ? "running" : errors > 0 || pending > 0 ? "warn" : "done",
     },
   ];
   const judgeStatus = record.judge.status;
@@ -310,10 +327,12 @@ function buildTimeline(record: RunRecordV2): TimelineStep[] {
     state: judgeState,
   });
   let result: TimelineStep;
-  if (record.winnerKeys.length > 0) {
-    result = { label: "Result", detail: "ranked - winner set", state: "done" };
-  } else if (record.fusion.status === "done") {
+  if (record.mode === "fuse" && record.fusion.status === "done") {
     result = { label: "Result", detail: "fused", state: "done" };
+  } else if (record.mode === "fuse" && record.fusion.status === "error") {
+    result = { label: "Result", detail: "no result - fusion failed", state: "error" };
+  } else if (record.mode === "rank" && record.winnerKeys.length > 0) {
+    result = { label: "Result", detail: "ranked - winner set", state: "done" };
   } else if (record.status === "failed") {
     result = { label: "Result", detail: "no result - judge failed", state: "error" };
   } else if (record.status === "partial") {
