@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09T21:03:32.964Z",
+  "generatedAt": "2026-08-10T06:43:30.526Z",
   "prodBaseUrl": "http://localhost:5173/",
   "protoBaseUrl": "http://127.0.0.1:4181/",
   "probes": [
@@ -109,6 +109,12 @@
         "paneBg": "rgb(18, 18, 18)",
         "paneBorderRight": "1px solid rgb(38, 38, 38)",
         "filtersVisible": true,
+        "visibleFilterNames": [
+          "model",
+          "status",
+          "mode",
+          "source"
+        ],
         "paneWidth": 380
       },
       "note": "production pane = panel bg + 1px edge border-right; solid surface, not floating cards"
@@ -147,9 +153,15 @@
         "paneBg": "rgb(18, 18, 18)",
         "paneBorderRight": "1px solid rgb(38, 38, 38)",
         "filtersVisible": true,
+        "visibleFilterNames": [
+          "model",
+          "status",
+          "mode",
+          "source"
+        ],
         "paneWidth": 380
       },
-      "note": "search control visible on desktop (transplant map E1)"
+      "note": "search plus Model/Status/Mode/Source controls visibly rendered on desktop (transplant map E1)"
     },
     {
       "name": "prod.list.cyanSelective",
@@ -185,7 +197,7 @@
         "font": "16px/24px Geist",
         "width": 347,
         "height": 86,
-        "top": 807
+        "top": 1047
       },
       "note": "production selected = raised bg + 2px inset cyan accent via box-shadow"
     },
@@ -364,6 +376,12 @@
       "paneBg": "rgb(18, 18, 18)",
       "paneBorderRight": "1px solid rgb(38, 38, 38)",
       "filtersVisible": true,
+      "visibleFilterNames": [
+        "model",
+        "status",
+        "mode",
+        "source"
+      ],
       "paneWidth": 380
     },
     "prodRows": {

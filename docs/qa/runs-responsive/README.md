@@ -1,6 +1,7 @@
 # Runs Workspace - Responsive / Mobile Review
 
-Generated: 2026-08-09. Task: t_3b2cc789 (Responsive/mobile review).
+Generated: 2026-08-09; refreshed 2026-08-10 after Slice 3. Task:
+t_3b2cc789 (Responsive/mobile review).
 Driver: `scripts/cdp-runs-responsive-qa.mjs` (Chrome headless over CDP, fixtures seeded
 directly into IndexedDB; no provider calls). Full probe data in `results.json`,
 screenshots `01`-`11` in this directory.
@@ -26,6 +27,9 @@ PASS with two small fixes applied during review (both verified after fix).
 
 - Desktop split: list pane is exactly 380px; selecting a run renders detail in the
   right pane; no Back button; no horizontal overflow.
+- At 1440px and the exact 1024px desktop boundary, search plus Model, Status,
+  Mode, and Source are visibly rendered in the list pane; the mobile filter
+  toggle is hidden.
 - 1024px is the desktop side of the transition (split layout intact at exactly
   1024px; no overflow).
 - Tablet/phone list-only route: no detail pane, no placeholder leak, no Back button.
@@ -37,6 +41,8 @@ PASS with two small fixes applied during review (both verified after fix).
   shows Model/Status/Mode/Source selects + Clear filters; applied-count badge
   increments (1 then 2); combined filters return the expected row; Clear restores
   all rows and clears the badge; second toggle closes the sheet.
+- At 768px and 390px, the desktop controls remain visually hidden until the
+  filter sheet opens.
 - No horizontal overflow at any viewport (list and detail).
 - No uncaught exceptions or console errors during any scenario.
 - All interactive controls meet the 36px+ tap-target floor (0 small targets found).
@@ -64,9 +70,8 @@ PASS with two small fixes applied during review (both verified after fix).
 ## Validation after fix
 
 - QA script: 18/18 probes PASS (includes the new no-clip regression probe).
-- `npm test`: 149 files / 2320 tests PASS (includes RunDetail 34, RunList 10,
-  RunsWorkspace 5).
-- `npm run lint`: clean. `npx prettier --check`: clean. `npm run typecheck:web`: clean.
+- Post-Slice-3 `npm run check`: PASS, including 149 test files / 2327 tests,
+  formatting, lint, web/server typechecks, and production build.
 
 ## Artifacts
 

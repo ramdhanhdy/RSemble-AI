@@ -486,6 +486,20 @@ const LAYOUT_PROBE = `(() => {
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
     overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    visibleFilterNames: [...document.querySelectorAll("select[data-filter]")]
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
+      })
+      .map((el) => el.getAttribute("data-filter")),
+    filterToggleVisible: (() => {
+      const el = document.querySelector('[data-action="toggle-filters"]');
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
+    })(),
     smallTapTargets: [...document.querySelectorAll("a,button")].filter((el) => {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && r.height < 36 && r.top < window.innerHeight;
@@ -532,7 +546,13 @@ try {
   );
   let probe = await evaluate(LAYOUT_PROBE);
   record("desktop-1440-split", {
-    pass: probe.listPaneWidth === 380 && probe.hasPlaceholder && !probe.hasBack && !probe.overflowX,
+    pass:
+      probe.listPaneWidth === 380 &&
+      probe.hasPlaceholder &&
+      !probe.hasBack &&
+      !probe.overflowX &&
+      probe.visibleFilterNames.length === 4 &&
+      !probe.filterToggleVisible,
     ...probe,
     reason:
       probe.listPaneWidth !== 380
@@ -541,9 +561,13 @@ try {
           ? "detail pane placeholder missing"
           : probe.hasBack
             ? "unexpected Back button on desktop"
-            : probe.overflowX
-              ? "horizontal overflow at 1440"
-              : undefined,
+            : probe.visibleFilterNames.length !== 4
+              ? `expected 4 always-visible desktop filters, found ${probe.visibleFilterNames.length}`
+              : probe.filterToggleVisible
+                ? "mobile filter toggle is visible on desktop"
+                : probe.overflowX
+                  ? "horizontal overflow at 1440"
+                  : undefined,
   });
   await screenshot("01-desktop-1440-runs-list");
 
@@ -590,7 +614,13 @@ try {
   );
   probe = await evaluate(LAYOUT_PROBE);
   record("boundary-1024-split", {
-    pass: probe.listPaneWidth === 380 && probe.hasPlaceholder && !probe.hasBack && !probe.overflowX,
+    pass:
+      probe.listPaneWidth === 380 &&
+      probe.hasPlaceholder &&
+      !probe.hasBack &&
+      !probe.overflowX &&
+      probe.visibleFilterNames.length === 4 &&
+      !probe.filterToggleVisible,
     ...probe,
     reason:
       probe.listPaneWidth !== 380
@@ -599,9 +629,13 @@ try {
           ? "detail pane placeholder missing at 1024"
           : probe.hasBack
             ? "unexpected Back button at 1024"
-            : probe.overflowX
-              ? "horizontal overflow at 1024"
-              : undefined,
+            : probe.visibleFilterNames.length !== 4
+              ? `expected 4 always-visible filters at 1024, found ${probe.visibleFilterNames.length}`
+              : probe.filterToggleVisible
+                ? "mobile filter toggle is visible at desktop breakpoint"
+                : probe.overflowX
+                  ? "horizontal overflow at 1024"
+                  : undefined,
   });
   await screenshot("03-boundary-1024-runs-list");
 
@@ -617,7 +651,12 @@ try {
   probe = await evaluate(LAYOUT_PROBE);
   record("tablet-768-list-only", {
     pass:
-      probe.listPaneWidth === null && !probe.hasPlaceholder && !probe.hasBack && !probe.overflowX,
+      probe.listPaneWidth === null &&
+      !probe.hasPlaceholder &&
+      !probe.hasBack &&
+      !probe.overflowX &&
+      probe.visibleFilterNames.length === 0 &&
+      probe.filterToggleVisible,
     ...probe,
     reason:
       probe.listPaneWidth !== null
@@ -626,9 +665,13 @@ try {
           ? "detail placeholder leaked into tablet list"
           : probe.hasBack
             ? "Back button on tablet list route"
-            : probe.overflowX
-              ? "horizontal overflow at 768"
-              : undefined,
+            : probe.visibleFilterNames.length !== 0
+              ? "desktop filters are visible before opening the tablet sheet"
+              : !probe.filterToggleVisible
+                ? "filter toggle missing on tablet"
+                : probe.overflowX
+                  ? "horizontal overflow at 768"
+                  : undefined,
   });
   await screenshot("04-tablet-768-runs-list");
 
@@ -726,7 +769,12 @@ try {
   probe = await evaluate(LAYOUT_PROBE);
   record("phone-390-list-only", {
     pass:
-      probe.listPaneWidth === null && !probe.hasPlaceholder && !probe.hasBack && !probe.overflowX,
+      probe.listPaneWidth === null &&
+      !probe.hasPlaceholder &&
+      !probe.hasBack &&
+      !probe.overflowX &&
+      probe.visibleFilterNames.length === 0 &&
+      probe.filterToggleVisible,
     ...probe,
     reason:
       probe.listPaneWidth !== null
@@ -735,31 +783,42 @@ try {
           ? "detail placeholder leaked into phone list"
           : probe.hasBack
             ? "Back button on phone list route"
-            : probe.overflowX
-              ? "horizontal overflow at 390"
-              : undefined,
+            : probe.visibleFilterNames.length !== 0
+              ? "filters are visible before opening the phone sheet"
+              : !probe.filterToggleVisible
+                ? "filter toggle missing on phone"
+                : probe.overflowX
+                  ? "horizontal overflow at 390"
+                  : undefined,
   });
   await screenshot("07-phone-390-runs-list");
 
-  // Filter sheet: toggle visible, search visible.
+  // Filter sheet: toggle + search visible; controls not visibly exposed until opened.
   const sheetClosed = await evaluate(`(() => {
+    const isVisible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
+    };
     const toggle = document.querySelector('[data-action="toggle-filters"]');
     const search = document.querySelector('input[type="search"]');
+    const visibleFilters = [...document.querySelectorAll("select[data-filter]")].filter(isVisible);
     return {
-      toggle: Boolean(toggle),
-      search: Boolean(search),
-      sheetVisible: Boolean(document.querySelector('[data-filter="model"]')),
+      toggle: isVisible(toggle),
+      search: isVisible(search),
+      visibleFilterCount: visibleFilters.length,
     };
   })()`);
   record("phone-390-filters-closed", {
-    pass: sheetClosed.toggle && sheetClosed.search && !sheetClosed.sheetVisible,
+    pass: sheetClosed.toggle && sheetClosed.search && sheetClosed.visibleFilterCount === 0,
     ...sheetClosed,
     reason: !sheetClosed.toggle
       ? "filter toggle button missing on phone"
       : !sheetClosed.search
         ? "search input hidden on phone"
-        : sheetClosed.sheetVisible
-          ? "filter sheet visible before toggle"
+        : sheetClosed.visibleFilterCount !== 0
+          ? "filter controls visible before toggle"
           : undefined,
   });
 
@@ -770,19 +829,26 @@ try {
     return true;
   })()`);
   await waitFor(
-    "Boolean(document.querySelector('[data-filter=\"model\"]'))",
+    "Boolean(document.querySelector('[data-filter-sheet]'))",
     "phone filter sheet open",
   );
   const sheetOpen = await evaluate(`(() => {
+    const isVisible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
+    };
+    const sheet = document.querySelector("[data-filter-sheet]");
     const selects = ["model", "status", "mode", "source"].map((n) =>
-      Boolean(document.querySelector('[data-filter="' + n + '"]')),
+      isVisible(sheet?.querySelector('[data-filter="' + n + '"]')),
     );
     return {
       model: selects[0],
       status: selects[1],
       mode: selects[2],
       source: selects[3],
-      clear: Boolean(document.querySelector('[data-action="clear-filters"]')),
+      clear: isVisible(sheet?.querySelector('[data-action="clear-filters"]')),
       toggleText: (document.querySelector('[data-action="toggle-filters"]')?.textContent ?? "").trim(),
     };
   })()`);
@@ -801,7 +867,7 @@ try {
 
   // Apply filters -> applied-count badge.
   await evaluate(`(() => {
-    const sel = document.querySelector('[data-filter="model"]');
+    const sel = document.querySelector('[data-filter-sheet] [data-filter="model"]');
     sel.value = ${JSON.stringify("openrouter:z-ai/glm-5.2")};
     sel.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
@@ -821,7 +887,7 @@ try {
 
   // Add a second filter -> badge 2 and list filters accordingly.
   await evaluate(`(() => {
-    const sel = document.querySelector('[data-filter="status"]');
+    const sel = document.querySelector('[data-filter-sheet] [data-filter="status"]');
     sel.value = "running";
     sel.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
@@ -847,7 +913,9 @@ try {
   });
 
   // Clear filters -> badge gone, all rows back.
-  await evaluate(`document.querySelector('[data-action="clear-filters"]').click()`);
+  await evaluate(
+    `document.querySelector('[data-filter-sheet] [data-action="clear-filters"]').click()`,
+  );
   await waitFor(
     'document.querySelectorAll(\'ul[role="list"] a[href*="/runs/"]\').length >= 10',
     "cleared filter list",
@@ -866,14 +934,27 @@ try {
   // Close sheet via toggle; search remains.
   await evaluate(`document.querySelector('[data-action="toggle-filters"]').click()`);
   await wait(300);
-  const sheetClosedAgain = await evaluate(`({
-    sheetVisible: Boolean(document.querySelector('[data-filter="model"]')),
-    search: Boolean(document.querySelector('input[type="search"]')),
-  })`);
+  const sheetClosedAgain = await evaluate(`(() => {
+    const isVisible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
+    };
+    return {
+      visibleFilterCount: [...document.querySelectorAll("select[data-filter]")].filter(isVisible).length,
+      search: isVisible(document.querySelector('input[type="search"]')),
+    };
+  })()`);
   record("phone-390-filters-close", {
-    pass: !sheetClosedAgain.sheetVisible && sheetClosedAgain.search,
+    pass: sheetClosedAgain.visibleFilterCount === 0 && sheetClosedAgain.search,
     ...sheetClosedAgain,
-    reason: sheetClosedAgain.sheetVisible ? "sheet did not close on toggle" : undefined,
+    reason:
+      sheetClosedAgain.visibleFilterCount !== 0
+        ? "filter controls remain visible after closing the sheet"
+        : !sheetClosedAgain.search
+          ? "search disappeared when closing the sheet"
+          : undefined,
   });
 
   // Phone route-based detail.

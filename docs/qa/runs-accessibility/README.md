@@ -1,6 +1,7 @@
 # Runs Workspace - Accessibility Review
 
-Generated: 2026-08-09. Task: t_416739f3 (Accessibility review).
+Generated: 2026-08-09; refreshed 2026-08-10 after Slice 3. Task:
+t_416739f3 (Accessibility review).
 Driver: `scripts/cdp-runs-a11y-qa.mjs` (Chrome headless over CDP, fixtures seeded
 directly into IndexedDB; no provider calls). Full probe data in `results.json`,
 screenshots `01`-`06` in this directory.
@@ -28,8 +29,10 @@ PASS after four fixes applied during review (all verified after fix).
 ## Verified behaviors
 
 - Desktop list: Tab reaches header nav, connection status, command palette,
-  shortcuts, search input, filters toggle, every run row, Load more, Export,
-  Import, and the detail-pane actions - all with a visible focus indicator.
+  shortcuts, search input, all four always-visible filter selects, Clear
+  filters, every run row, Load more, Export, Import, and the detail-pane
+  actions - all with a visible focus indicator. The mobile filter toggle is not
+  exposed at desktop.
 - Desktop detail: candidate selector rows are Tab-reachable (both candidates),
   plus Open in Compare, Copy link, experiment breadcrumbs, and the
   Task & Configuration disclosure.
@@ -95,10 +98,8 @@ PASS after four fixes applied during review (all verified after fix).
   no uncaught exceptions).
 - Responsive QA (`scripts/cdp-runs-responsive-qa.mjs`): 18/18 probes PASS
   after the same source changes (no responsive regression).
-- `npm test`: 149 files / 2321 tests PASS (includes the new aria-current
-  test).
-- `npm run lint`: clean. `npx prettier --check`: clean.
-  `npm run typecheck:web`: clean.
+- Post-Slice-3 `npm run check`: PASS, including 149 test files / 2327 tests,
+  formatting, lint, web/server typechecks, and production build.
 
 ## Artifacts
 

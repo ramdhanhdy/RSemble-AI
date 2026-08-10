@@ -31,3 +31,6 @@ calls.
 
 32/32 probes pass, 16 screenshots, zero console errors. Latest run:
 `results.json` in this directory.
+
+Refreshed 2026-08-10 after Slice 3 desktop filter integration: 32/32 probes
+still pass with zero console errors.

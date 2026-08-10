@@ -129,6 +129,13 @@ The production React application is **richer** than the prototypes in behavior: 
 
 **Slice 3 scope:** Adjust RunFilters desktop presentation to be more compact/visible. Preserve all filter semantics (text, model, status, mode, source). Preserve mobile collapse behavior. Consider responsive approach: desktop shows inline controls, narrow layouts retain sheet.
 
+**Slice 3 completed (2026-08-10):** `RunFilters.tsx` now renders search plus
+Model, Status, Mode, and Source in a compact always-visible two-column desktop
+composition within the 380px pane. Below `lg`, the existing toggle, applied
+count, conditional sheet, and Clear behavior remain. Focused tests cover the
+desktop responsive contract, mobile collapse/open/close, count propagation,
+and desktop Clear behavior.
+
 ---
 
 ## Section F: Run Detail Visual Hierarchy
@@ -293,7 +300,8 @@ After implementation, the Runs workspace should feel:
 - [x] Cyan accent used selectively, not everywhere (verified 2026-08-09)
 
 Verification evidence: docs/qa/runs-visual-parity/REPORT.md (18/18 numeric
-probes, screenshots, vision pass). Residuals: per-row RecordRow card outline
+probes, including four visibly rendered desktop filters, screenshots, vision
+pass). Residuals: per-row RecordRow card outline
 (deliberate shared-component scope, see O2 in report); tab-lease banner
 truncation (out of Runs-UI scope, see O1).
 
@@ -313,9 +321,9 @@ After implementation, these must NOT regress:
 - [x] Accessibility/focus
 - [x] Responsive navigation (desktop split, mobile route-based)
 
-Verification evidence (2026-08-09, final behavioral regression gate on
+Verification evidence (refreshed 2026-08-10 after Slice 3 on
 feat/runs-fairness-baseline): `npm run check` PASS - 149 test files /
-2324 tests, eslint, typecheck web + server, production build. Live CDP
+2327 tests, eslint, typecheck web + server, production build. Live CDP
 suites with zero console errors: accessibility 15/15
 (docs/qa/runs-accessibility), edge 32/32 (docs/qa/runs-edge), responsive
 18/18 (docs/qa/runs-responsive), visual parity 18/18

@@ -443,11 +443,22 @@ const prodList = await evaluate(
       paneBg: paneCs?.backgroundColor,
       paneBorderRight: paneCs ? paneCs.borderRightWidth + " " + paneCs.borderRightStyle + " " + paneCs.borderRightColor : null,
       filtersVisible: (() => {
-        const input = document.querySelector('input[placeholder*="Search"], input[type="search"]');
-        if (!input) return false;
-        const r = input.getBoundingClientRect();
-        return r.width > 40 && r.height > 0;
+        const isVisible = (el) => {
+          const rect = el.getBoundingClientRect();
+          const style = getComputedStyle(el);
+          return rect.width > 40 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        };
+        const search = document.querySelector('input[placeholder*="Search"], input[type="search"]');
+        const visibleFilters = [...document.querySelectorAll("select[data-filter]")].filter(isVisible);
+        return Boolean(search && isVisible(search) && visibleFilters.length === 4);
       })(),
+      visibleFilterNames: [...document.querySelectorAll("select[data-filter]")]
+        .filter((el) => {
+          const rect = el.getBoundingClientRect();
+          const style = getComputedStyle(el);
+          return rect.width > 40 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        })
+        .map((el) => el.getAttribute("data-filter")),
       paneWidth: pane ? Math.round(pane.getBoundingClientRect().width) : null,
     };
   })()`,
@@ -482,7 +493,7 @@ record("prod.list.density", {
 record("prod.list.filtersVisible", {
   pass: prodList.filtersVisible === true,
   evidence: prodList,
-  note: "search control visible on desktop (transplant map E1)",
+  note: "search plus Model/Status/Mode/Source controls visibly rendered on desktop (transplant map E1)",
 });
 record("prod.list.cyanSelective", {
   pass: (prodCyanList.count ?? 99) <= Math.max(40, Math.round((protoCyanList.count ?? 19) * 1.75)),

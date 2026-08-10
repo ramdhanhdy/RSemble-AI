@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09T19:50:50.285Z",
+  "generatedAt": "2026-08-10T06:43:09.743Z",
   "baseUrl": "http://localhost:5173/",
   "probes": [
     {
@@ -70,12 +70,48 @@
           "indicator": true
         },
         {
-          "tag": "button",
-          "name": "Toggle filters",
-          "text": "Filters",
-          "dataAction": "toggle-filters",
+          "tag": "select",
+          "name": "All modelsopenrouter:deepseek/deepseek-v4-flashopenrouter:z-ai/glm-5.2",
+          "text": "All modelsopenrouter:deepseek/deepseek-v4-flashopenrouter:z-",
+          "dataAction": null,
           "dataCandidateId": null,
           "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "select",
+          "name": "All statusesRunningCompletedPartialFailedAbortedInterrupted",
+          "text": "All statusesRunningCompletedPartialFailedAbortedInterrupted",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "select",
+          "name": "All modesRankFuse",
+          "text": "All modesRankFuse",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "select",
+          "name": "All sourcesAd hocExperimentLegacy",
+          "text": "All sourcesAd hocExperimentLegacy",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Clear filters",
+          "text": "Clear filters",
+          "dataAction": "clear-filters",
+          "dataCandidateId": null,
+          "height": 64,
           "indicator": true
         },
         {
@@ -149,43 +185,13 @@
           "dataCandidateId": null,
           "height": 82,
           "indicator": true
-        },
-        {
-          "tag": "a",
-          "name": "Run: Filler run 37",
-          "text": "ad hocCompletedFiller run 37Winner: openrouter:z-ai/glm-5.22",
-          "dataAction": null,
-          "dataCandidateId": null,
-          "height": 82,
-          "indicator": true
-        },
-        {
-          "tag": "a",
-          "name": "Run: Filler run 36",
-          "text": "ad hocCompletedFiller run 36Winner: openrouter:z-ai/glm-5.22",
-          "dataAction": null,
-          "dataCandidateId": null,
-          "height": 82,
-          "indicator": true
-        },
-        {
-          "tag": "a",
-          "name": "Run: Filler run 35",
-          "text": "ad hocCompletedFiller run 35Winner: openrouter:z-ai/glm-5.22",
-          "dataAction": null,
-          "dataCandidateId": null,
-          "height": 82,
-          "indicator": true
-        },
-        {
-          "tag": "a",
-          "name": "Run: Filler run 34",
-          "text": "ad hocCompletedFiller run 34Winner: openrouter:z-ai/glm-5.22",
-          "dataAction": null,
-          "dataCandidateId": null,
-          "height": 82,
-          "indicator": true
         }
+      ],
+      "desktopFilterNames": [
+        "model",
+        "status",
+        "mode",
+        "source"
       ]
     },
     {
@@ -198,10 +204,15 @@
       "name": "a11y-03-detail-tab-order",
       "pass": true,
       "candidateRowsReachable": 2,
+      "desktopFilterNames": [
+        "model",
+        "status",
+        "mode",
+        "source"
+      ],
       "foundActions": [
         "open-in-compare",
         "copy-link",
-        "toggle-filters",
         "load-more"
       ],
       "stops": [
@@ -269,12 +280,48 @@
           "indicator": true
         },
         {
-          "tag": "button",
-          "name": "Toggle filters",
-          "text": "Filters",
-          "dataAction": "toggle-filters",
+          "tag": "select",
+          "name": "All modelsopenrouter:deepseek/deepseek-v4-flashopenrouter:z-ai/glm-5.2",
+          "text": "All modelsopenrouter:deepseek/deepseek-v4-flashopenrouter:z-",
+          "dataAction": null,
           "dataCandidateId": null,
           "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "select",
+          "name": "All statusesRunningCompletedPartialFailedAbortedInterrupted",
+          "text": "All statusesRunningCompletedPartialFailedAbortedInterrupted",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "select",
+          "name": "All modesRankFuse",
+          "text": "All modesRankFuse",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "select",
+          "name": "All sourcesAd hocExperimentLegacy",
+          "text": "All sourcesAd hocExperimentLegacy",
+          "dataAction": null,
+          "dataCandidateId": null,
+          "height": 44,
+          "indicator": true
+        },
+        {
+          "tag": "button",
+          "name": "Clear filters",
+          "text": "Clear filters",
+          "dataAction": "clear-filters",
+          "dataCandidateId": null,
+          "height": 64,
           "indicator": true
         },
         {
@@ -865,7 +912,7 @@
       "focusedCandidateId": "cand-s2",
       "ariaPressed": "true",
       "inViewport": true,
-      "rectTop": 616,
+      "rectTop": 496,
       "ringVisible": true,
       "judgePanelPresent": true,
       "judgeHighlighted": true,
@@ -904,10 +951,11 @@
         3,
         3,
         3,
+        3,
         4
       ],
       "skips": [],
-      "count": 6
+      "count": 7
     },
     {
       "name": "a11y-11-legacy-detail",

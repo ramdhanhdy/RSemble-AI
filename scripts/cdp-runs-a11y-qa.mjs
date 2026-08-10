@@ -601,6 +601,7 @@ async function tabWalk(maxStops) {
         end: false,
         ...base,
         dataAction: el.getAttribute("data-action") || null,
+        dataFilter: el.getAttribute("data-filter") || null,
         dataCandidateId: el.getAttribute("data-candidate-id") || null,
         href: el.getAttribute("href") || null,
         ariaPressed: el.getAttribute("aria-pressed"),
@@ -690,17 +691,19 @@ try {
   const listStops = await tabWalk(20);
   const listStopsSummaries = summarizeStops(listStops);
   const listStopNames = listStopsSummaries.map((s) => s.name ?? s.text ?? s.tag);
+  const desktopFilterNames = new Set(listStops.map((s) => s.dataFilter).filter(Boolean));
   const listProbe = {
     pass:
       listStopNames.some((n) => n.includes("Search runs")) &&
-      listStops.some((s) => s.dataAction === "toggle-filters") &&
+      desktopFilterNames.size === 4 &&
       listStops.some((s) => (s.href ?? "").includes("/runs/")) &&
       listStops.every((s) => !s.hiddenAncestor),
     stops: listStopsSummaries,
+    desktopFilterNames: [...desktopFilterNames],
     reason: !listStopNames.some((n) => n.includes("Search runs"))
       ? "search input not reachable via Tab"
-      : !listStops.some((s) => s.dataAction === "toggle-filters")
-        ? "filters toggle not reachable via Tab"
+      : desktopFilterNames.size !== 4
+        ? `expected 4 always-visible desktop filters in Tab order, found ${desktopFilterNames.size}`
         : !listStops.some((s) => (s.href ?? "").includes("/runs/"))
           ? "run row links not reachable via Tab"
           : listStops.some((s) => s.hiddenAncestor)
@@ -735,27 +738,32 @@ try {
   const detailStops = await tabWalk(120);
   const detailSummaries = summarizeStops(detailStops);
   const candidateStops = detailStops.filter((s) => s.dataCandidateId);
-  const expectedActions = ["open-in-compare", "copy-link", "toggle-filters", "load-more"];
+  const detailFilterNames = new Set(detailStops.map((s) => s.dataFilter).filter(Boolean));
+  const expectedActions = ["open-in-compare", "copy-link", "load-more"];
   const foundActions = expectedActions.filter((a) => detailStops.some((s) => s.dataAction === a));
   const detailProbe = {
     pass:
       candidateStops.length >= 2 &&
+      detailFilterNames.size === 4 &&
       foundActions.length === expectedActions.length &&
       detailStops.some((s) => (s.text ?? "").includes("Task & Configuration")) &&
       detailStops.every((s) => !s.hiddenAncestor),
     candidateRowsReachable: candidateStops.length,
+    desktopFilterNames: [...detailFilterNames],
     foundActions,
     stops: detailSummaries,
     reason:
       candidateStops.length < 2
         ? "candidate selector buttons are NOT reachable via Tab (tabIndex=-1 removes them from the keyboard order)"
-        : foundActions.length !== expectedActions.length
-          ? `missing keyboard actions: ${expectedActions.filter((a) => !foundActions.includes(a)).join(", ")}`
-          : !detailStops.some((s) => (s.text ?? "").includes("Task & Configuration"))
-            ? "Task & Configuration disclosure not reachable"
-            : detailStops.some((s) => s.hiddenAncestor)
-              ? "Tab reached a control inside aria-hidden"
-              : undefined,
+        : detailFilterNames.size !== 4
+          ? `expected 4 always-visible desktop filters in Tab order, found ${detailFilterNames.size}`
+          : foundActions.length !== expectedActions.length
+            ? `missing keyboard actions: ${expectedActions.filter((a) => !foundActions.includes(a)).join(", ")}`
+            : !detailStops.some((s) => (s.text ?? "").includes("Task & Configuration"))
+              ? "Task & Configuration disclosure not reachable"
+              : detailStops.some((s) => s.hiddenAncestor)
+                ? "Tab reached a control inside aria-hidden"
+                : undefined,
   };
   record("a11y-03-detail-tab-order", detailProbe);
 

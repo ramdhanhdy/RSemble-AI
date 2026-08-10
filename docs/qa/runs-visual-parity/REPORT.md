@@ -1,8 +1,8 @@
 # Runs UI - Final Visual Parity Review
 
 Task: t_f95b93e6 (Final visual parity review)
-Date: 2026-08-09
-Branch: feat/runs-fairness-baseline @ 80d9712
+Date: 2026-08-10 (refreshed after Slice 3)
+Branch: feat/runs-fairness-baseline, post-Slice-3 checkpoint (base d0b62a1)
 Reference: docs/explorations/runs-ia/prototypes/prototype-production-transplant-map.md (Visual Success Criteria)
 
 ## Method
@@ -12,7 +12,8 @@ Reference: docs/explorations/runs-ia/prototypes/prototype-production-transplant-
   baseline HTML prototype (baseline-standalone.html on a local static server).
 - Evidence: results.json (numeric computed styles) + 6 screenshots in this directory.
 - Visual pass: screenshots inspected via vision model, targeted at each criterion.
-- Regression guardrail: full vitest suite (149 files / 2324 tests) passes at HEAD.
+- Regression guardrail: full repository check passes, including 149 test files /
+  2327 tests, lint, web/server typechecks, and production build.
 
 ## Verdict
 
@@ -32,6 +33,8 @@ non-blocking residuals noted below). 18/18 numeric probes pass; console clean
    Split is a single 1px solid rgb(38,38,38) border-right; list rows stack
    flush with no inter-row gap (ul flex-col, no gap), matching the prototype's
    border-driven composition.
+   The desktop pane now keeps search plus Model, Status, Mode, and Source visibly
+   integrated above the list; the mobile filter toggle is hidden at desktop.
 
 3. Denser but still readable run scanning - PASS
    prod.list.density: 11 rows, heights 64-86px, mean 74px vs prototype baseline
@@ -78,6 +81,8 @@ prod.list.cyanSelective, prod.detail.selectedRow, prod.detail.sections,
 prod.detail.toolbar, prod.detail.costCards, prod.detail.timeline,
 prod.detail.cyanSelective, prod.continuity.split, prod.console.clean.
 Console errors: 0. Screenshots: 6 (01-06 in this directory).
+`prod.list.filtersVisible` now verifies the search input and all four visible
+desktop selects (`model`, `status`, `mode`, `source`), not search alone.
 
 ## Observations (non-blocking)
 
@@ -97,7 +102,7 @@ Console errors: 0. Screenshots: 6 (01-06 in this directory).
 
 ## Regression guardrails
 
-- Full vitest suite at HEAD: 149 files / 2324 tests pass (transplant map
+- Full vitest suite at HEAD: 149 files / 2327 tests pass (transplant map
   baseline was 10 files / 150 tests; suite grew with slice work).
 - Prior review tasks on this branch cover responsive (commit 19cf11a),
   accessibility (2105a8d), and edge states (80d9712); their drivers still pass

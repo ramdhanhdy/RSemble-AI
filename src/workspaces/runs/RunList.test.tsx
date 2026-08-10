@@ -332,6 +332,93 @@ describe("RunList", () => {
     cleanup(h);
   });
 
+  it("desktop filter composition renders without opening the sheet", async () => {
+    const repo = new InMemoryRunRepository();
+    await seedRepo(repo, [["run-1", 1000]]);
+    const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
+    await settle();
+    // happy-dom does not apply CSS media queries, so assert the responsive
+    // class/DOM contract: the desktop block is `hidden` below lg and becomes
+    // a grid at lg, while the sheet is not rendered until toggled.
+    const desktopBlock = h.$("[data-desktop-filters]");
+    expect(desktopBlock).toBeTruthy();
+    expect(desktopBlock!.className).toContain("hidden");
+    expect(desktopBlock!.className).toContain("lg:grid");
+    // All four filter semantics are always rendered inside the desktop block.
+    for (const name of ["model", "status", "mode", "source"]) {
+      expect(h.$(`[data-desktop-filters] select[data-filter='${name}']`)).toBeTruthy();
+    }
+    // Clear filters is available on desktop without opening the sheet.
+    const clear = h.$("[data-desktop-filters] button[data-action='clear-filters']");
+    expect(clear).toBeTruthy();
+    expect(clear!.className).toContain("min-h-[44px]");
+    // The mobile sheet is NOT rendered until toggled.
+    expect(h.$("[data-filter-sheet]")).toBeNull();
+    // The toggle is a mobile-only affordance: hidden at lg.
+    const toggle = h.$("button[data-action='toggle-filters']");
+    expect(toggle).toBeTruthy();
+    expect(toggle!.className).toContain("lg:hidden");
+    cleanup(h);
+  });
+
+  it("mobile filter sheet stays collapsed until toggled", async () => {
+    const repo = new InMemoryRunRepository();
+    await seedRepo(repo, [["run-1", 1000]]);
+    const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
+    await settle();
+    const toggle = h.$("button[data-action='toggle-filters']")!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(h.$("[data-filter-sheet]")).toBeNull();
+    // Open the sheet: all four filters + clear appear inside it.
+    act(() => toggle.click());
+    await settle();
+    const sheet = h.$("[data-filter-sheet]");
+    expect(sheet).toBeTruthy();
+    expect(sheet!.className).toContain("lg:hidden");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    for (const name of ["model", "status", "mode", "source"]) {
+      expect(h.$(`[data-filter-sheet] select[data-filter='${name}']`)).toBeTruthy();
+    }
+    expect(h.$("[data-filter-sheet] button[data-action='clear-filters']")).toBeTruthy();
+    // Toggling again collapses the sheet.
+    act(() => toggle.click());
+    await settle();
+    expect(h.$("[data-filter-sheet]")).toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    cleanup(h);
+  });
+
+  it("applied-count badge shows on desktop composition and mobile toggle; desktop clear resets", async () => {
+    const repo = new InMemoryRunRepository();
+    await seedRepo(repo, [["run-1", 1000]]);
+    const h = renderWithRouter(<RunList repo={repo} selectedId={null} />);
+    await settle();
+    // No filters applied: no badge anywhere.
+    expect(h.$("[data-desktop-filters] .rounded-full")).toBeNull();
+    expect(h.$("button[data-action='toggle-filters'] .rounded-full")).toBeNull();
+    // Apply status via the always-visible desktop select (sheet stays closed).
+    const statusSelect = h.$(
+      "[data-desktop-filters] select[data-filter='status']",
+    ) as HTMLSelectElement;
+    act(() => {
+      statusSelect.value = "completed";
+      statusSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+    // Count badge reads 1 in both the desktop header and the mobile toggle.
+    expect(h.$("[data-desktop-filters] .rounded-full")?.textContent).toBe("1");
+    expect(h.$("button[data-action='toggle-filters'] .rounded-full")?.textContent).toBe("1");
+    // Desktop Clear filters resets every field without opening the sheet.
+    act(() => h.$("[data-desktop-filters] button[data-action='clear-filters']")!.click());
+    await settle();
+    expect(h.$("[data-desktop-filters] .rounded-full")).toBeNull();
+    expect(
+      (h.$("[data-desktop-filters] select[data-filter='status']") as HTMLSelectElement).value,
+    ).toBe("");
+    expect(h.$("button[data-action='toggle-filters'] .rounded-full")).toBeNull();
+    cleanup(h);
+  });
+
   it("all interactive controls meet 44px target size", async () => {
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000]]);
