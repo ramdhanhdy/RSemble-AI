@@ -819,6 +819,54 @@ describe("sweepInterrupted — nested attempt terminalization (Round B)", () => 
 });
 
 describe("post-contested recovery retry (Round B)", () => {
+  it("cleans up when the contested lease becomes free before subscription", async () => {
+    const store = {
+      lease: null as null | LeaseInfo,
+      fence: 0,
+    };
+    const tabA = new InMemoryExecutionLease(store);
+    const tabB = new InMemoryExecutionLease(store);
+    await tabA.acquire();
+
+    // Force the contest to clear after getCurrent() observes tab A but before
+    // waitForLeaseFree() subscribes. InMemory subscribe emits synchronously,
+    // so this exercises the cleanup path where finish() runs before subscribe
+    // returns its unsubscribe handle.
+    const getCurrent = tabB.getCurrent.bind(tabB);
+    tabB.getCurrent = async () => {
+      const contested = await getCurrent();
+      await tabA.release();
+      return contested;
+    };
+    const subscribe = tabB.subscribe.bind(tabB);
+    let activeSubscriptions = 0;
+    tabB.subscribe = (listener) => {
+      activeSubscriptions++;
+      const unsubscribe = subscribe(listener);
+      return () => {
+        activeSubscriptions--;
+        unsubscribe();
+      };
+    };
+
+    vi.useFakeTimers();
+    try {
+      const acquired = await tabB.acquireForRecovery({
+        kind: "experiment",
+        executionId: "startup-recovery",
+      });
+
+      expect(acquired).not.toBeNull();
+      expect(activeSubscriptions).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await tabB.release();
+      tabA.dispose();
+      tabB.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it("arms exactly one safe retry after a contested lease becomes free and recovers (ad-hoc, InMemory)", async () => {
     const store = {
       lease: null as null | LeaseInfo,
