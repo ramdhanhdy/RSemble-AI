@@ -859,6 +859,97 @@ function acceptedFusionCrossReferencesValid(record: RunRecordV2): boolean {
 }
 // --- Run record ---------------------------------------------------------------
 
+/**
+ * Repair records written before the accepted-evidence cross-reference guard
+ * existed. The attempts themselves are immutable history; only pointers and
+ * values derived from now-invalid pointers are cleared. A null result means
+ * the record was not structurally close enough to repair safely.
+ */
+export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null {
+  if (!isRecord(v) || v.schemaVersion !== 2) return null;
+  if (!Array.isArray(v.candidates) || !isRecord(v.judge) || !isRecord(v.fusion)) return null;
+  if (!Array.isArray(v.judge.attempts) || !Array.isArray(v.fusion.attempts)) return null;
+  if (!v.candidates.every(isPersistedCandidate)) return null;
+  if (!v.judge.attempts.every(isJudgeAttemptRecord)) return null;
+  if (!v.fusion.attempts.every(isFusionAttemptRecord)) return null;
+  if (v.judge.report !== null && !isJudgeReport(v.judge.report)) return null;
+  if (v.judge.consensus !== null && !isConsensusBreakdown(v.judge.consensus)) return null;
+
+  const repaired = structuredClone(v) as Record<string, any>;
+  const candidates = repaired.candidates as Array<Record<string, any>>;
+  const invalidCandidateIds = new Set<string>();
+  for (const candidate of candidates) {
+    if (!isRecord(candidate) || !Array.isArray(candidate.attempts)) return null;
+    if (candidate.acceptedAttemptId === null) continue;
+    const accepted = candidate.attempts.find(
+      (attempt) =>
+        isRecord(attempt) &&
+        attempt.attemptId === candidate.acceptedAttemptId &&
+        attempt.status === "completed" &&
+        attempt.output !== null &&
+        attempt.output !== undefined,
+    );
+    if (!accepted) {
+      invalidCandidateIds.add(String(candidate.candidateId));
+      candidate.acceptedAttemptId = null;
+    }
+  }
+
+  const acceptedMap: Record<string, string> = {};
+  for (const candidate of candidates) {
+    if (typeof candidate.candidateId === "string" && typeof candidate.acceptedAttemptId === "string") {
+      acceptedMap[candidate.candidateId] = candidate.acceptedAttemptId;
+    }
+  }
+  const sameMap = (a: unknown): boolean => {
+    if (!isRecord(a)) return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(acceptedMap).length && keys.every((key) => a[key] === acceptedMap[key]);
+  };
+
+  const judge = repaired.judge as Record<string, any>;
+  if (judge.acceptedAttemptId !== null) {
+    const accepted = judge.attempts.find(
+      (attempt: unknown) =>
+        isRecord(attempt) &&
+        attempt.attemptId === judge.acceptedAttemptId &&
+        attempt.status === "completed" &&
+        attempt.report !== null &&
+        sameMap(attempt.candidateAttemptIdsByCandidateId),
+    );
+    if (!accepted) {
+      judge.acceptedAttemptId = null;
+      judge.report = null;
+      judge.consensus = null;
+    }
+  }
+
+  const fusion = repaired.fusion as Record<string, any>;
+  if (fusion.acceptedAttemptId !== null) {
+    const accepted = fusion.attempts.find(
+      (attempt: unknown) =>
+        isRecord(attempt) &&
+        attempt.attemptId === fusion.acceptedAttemptId &&
+        attempt.status === "completed" &&
+        attempt.result !== null &&
+        attempt.sourceJudgeAttemptId === judge.acceptedAttemptId &&
+        sameMap(attempt.candidateAttemptIdsByCandidateId),
+    );
+    if (!accepted) fusion.acceptedAttemptId = null;
+  }
+
+  if (Array.isArray(repaired.winnerKeys)) {
+    const invalidModels = new Set(
+      candidates
+        .filter((candidate) => invalidCandidateIds.has(String(candidate.candidateId)))
+        .map((candidate) => candidate.modelKey),
+    );
+    repaired.winnerKeys = repaired.winnerKeys.filter((key: unknown) => !invalidModels.has(key));
+  }
+
+  return isRunRecordV2(repaired) ? repaired : null;
+}
+
 export function isRunRecordV2(v: unknown): v is RunRecordV2 {
   if (!isRecord(v)) return false;
   if (v.schemaVersion !== 2) return false;

@@ -22,6 +22,7 @@ import {
   isFullRunSummaryV2,
   isLegacyRunSummary,
   isRunRecordV2,
+  repairRunRecordForCompatibility,
   isRunSummary,
   type FullRunSummaryV2,
   type LegacyRunSummary,
@@ -286,7 +287,8 @@ export function parseWorkbenchArchive(
   });
   const details: RunRecordV2[] = [];
   lists.details.forEach((entry, i) => {
-    if (isRunRecordV2(entry)) details.push(entry);
+    const compatible = repairRunRecordForCompatibility(entry) ?? (isRunRecordV2(entry) ? entry : null);
+    if (compatible) details.push(compatible);
     else errors.push(guardError("runs.details", i, entry));
   });
   const identities: ProfileRecord[] = [];
@@ -342,7 +344,8 @@ export async function exportWorkbenchArchive(db: RSembleEvaluationDB): Promise<W
       if (isRunSummary(row.summary)) summaries.push(row.summary);
     });
     await db.runDetails.orderBy("createdAt").each((row) => {
-      if (isRunRecordV2(row.record)) details.push(row.record);
+      const compatible = repairRunRecordForCompatibility(row.record) ?? (isRunRecordV2(row.record) ? row.record : null);
+      if (compatible) details.push(compatible);
     });
     await db.profiles.orderBy("updatedAt").each((row) => {
       if (isProfileRecord(row.record)) identities.push(row.record);
