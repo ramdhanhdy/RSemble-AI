@@ -900,6 +900,21 @@ describe("isRunRecordV2 accepted-evidence cross-reference validation", () => {
     expect(isRunRecordV2(validAcceptedRecord())).toBe(true);
   });
 
+  it("rejects inherited Object.prototype names as Judge criterion kinds", () => {
+    const r = validAcceptedRecord();
+    r.judge.report!.evaluationsById["c-1"].criterionScores = [
+      {
+        criterionId: "criterion-1",
+        label: "Criterion 1",
+        kind: "constructor",
+        score: 4,
+        rationale: "r",
+      } as unknown as (typeof r.judge.report.evaluationsById)["c-1"]["criterionScores"][number],
+    ];
+
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
   it("accepts a partial run: accepted Judge with one failed candidate (no accepted pointer)", () => {
     const r = validAcceptedRecord();
     // Second candidate failed — no acceptedAttemptId, so it is not required
