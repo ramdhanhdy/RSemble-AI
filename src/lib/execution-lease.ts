@@ -298,6 +298,14 @@ function waitForLeaseFree(
     unsub = lease.subscribe((state) => {
       if (state.status === "free") finish();
     });
+    if (settled) {
+      // subscribe emitted a free state synchronously, before finish() could
+      // see the returned cleanup handle. Release it now and do not arm a
+      // deadline interval for an already-resolved wait.
+      unsub();
+      unsub = null;
+      return;
+    }
     // Poll the clock as a fallback: subscribe relies on broadcast/poll
     // notifications, but a quiet channel plus a non-advancing test clock
     // would never fire. Check the deadline on a short interval.
