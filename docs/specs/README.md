@@ -29,4 +29,5 @@ spec is stale, read its grounding audit first.
 
 | Spec | Status |
 | --- | --- |
+| [task-first-evidence-workbench/](./pending/task-first-evidence-workbench/) | **Pending — not started.** Governing parent plus nine dependency-ordered vertical child specs and implementation plans for canonical Tasks, contextual results, qualified model evidence, secondary Records, Attention, and migration/archive hardening. |
 | ui-redesign-spec.md | **Stale (audit 2026-08-04)** — predates 140 commits; most items already shipped via other components; palette and icon-rail sections conflict with current DESIGN.md. See `ui-redesign-grounding-audit.md`. Genuinely unshipped remnants: gradient CTA, focus mode (⌘\), self-judge warning, compare diff highlighting. |
