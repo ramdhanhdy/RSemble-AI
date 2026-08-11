@@ -17,6 +17,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { RSembleEvaluationDB } from "../persistence/database";
 import { createRunRepository, type RunRepository } from "../persistence/run-repository";
+import { createExecutionLease } from "../execution-lease";
 import {
   createEvaluationRepository,
   type EvaluationRepository,
@@ -24,6 +25,7 @@ import {
 import { RepositoryContext, type RepositoryContextValue } from "../persistence/repository-context";
 import { ExecutionOwnerProvider } from "../execution-owner-context";
 import { ExperimentControllerProvider } from "./experiment-controller-context";
+import { useExperimentController } from "./experiment-controller-hooks";
 import { candidateIdForSlot } from "../pipeline";
 import type { RunRecordV2, FullRunSummaryV2 } from "../persistence/run-types";
 
@@ -47,6 +49,11 @@ function render(node: React.ReactNode): Harness {
 function cleanup(h: Harness) {
   act(() => h.root.unmount());
   h.container.remove();
+}
+
+function ControllerReadinessProbe() {
+  const controller = useExperimentController();
+  return <div data-controller-ready={controller ? "true" : "false"} />;
 }
 
 async function settle(ms = 30): Promise<void> {
@@ -152,6 +159,49 @@ function staleRunningRun(id: string): { record: RunRecordV2; summary: FullRunSum
 // --- Tests --------------------------------------------------------------------
 
 describe("ExperimentControllerProvider startup recovery", () => {
+  it("withholds execution actions until startup recovery completes", async () => {
+    const db = new RSembleEvaluationDB(
+      "test-startup-gate-" + Math.random().toString(36).slice(2),
+    );
+    await db.open();
+    const runRepo = createRunRepository(db);
+    const evalRepo = createEvaluationRepository(db, runRepo);
+    const blockingLease = createExecutionLease(db);
+    await blockingLease.acquire({ kind: "compare", executionId: "live-run" });
+
+    const value: RepositoryContextValue = {
+      runRepo,
+      evalRepo,
+      fusionRepo: null,
+      db,
+      storageState: "ready",
+      retry: () => undefined,
+    };
+
+    const h = render(
+      <MemoryRouter>
+        <RepositoryContext.Provider value={value}>
+          <ExecutionOwnerProvider>
+            <ExperimentControllerProvider>
+              <ControllerReadinessProbe />
+            </ExperimentControllerProvider>
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const readiness = () => h.container.querySelector("[data-controller-ready]");
+    expect(readiness()?.getAttribute("data-controller-ready")).toBe("false");
+
+    await blockingLease.release();
+    await waitUntil(async () => readiness()?.getAttribute("data-controller-ready") === "true");
+
+    cleanup(h);
+    await blockingLease.dispose();
+    db.close();
+    await db.delete();
+  });
+
   it("marks a stale ad-hoc running run interrupted on mount (spec §20)", async () => {
     const db = new RSembleEvaluationDB(
       "test-startup-recovery-" + Math.random().toString(36).slice(2),
