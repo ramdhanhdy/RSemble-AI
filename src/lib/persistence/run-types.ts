@@ -416,7 +416,7 @@ function isJudgeDeduction(v: unknown): v is JudgeDeduction {
   return isString(v.reason);
 }
 
-const JUDGE_CRITERION_KINDS: Record<string, true> = { graded: true, binary: true };
+const JUDGE_CRITERION_KINDS: ReadonlySet<string> = new Set(["graded", "binary"]);
 
 function isJudgeCriterionScore(v: unknown): v is JudgeCriterionScore {
   if (!isRecord(v)) return false;
@@ -424,7 +424,12 @@ function isJudgeCriterionScore(v: unknown): v is JudgeCriterionScore {
   if (!isString(v.label)) return false;
   if (v.score !== undefined && !isNumber(v.score)) return false;
   if (v.value !== undefined && typeof v.value !== "boolean") return false;
-  if (v.kind !== undefined && !JUDGE_CRITERION_KINDS[v.kind as string]) return false;
+  if (
+    v.kind !== undefined &&
+    (typeof v.kind !== "string" || !JUDGE_CRITERION_KINDS.has(v.kind))
+  ) {
+    return false;
+  }
   return isString(v.rationale);
 }
 
