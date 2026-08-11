@@ -3,6 +3,7 @@ dist
 dist-ssr
 coverage
 *.local
+.hermes
 
 # Environment files 
 .env
