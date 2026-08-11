@@ -197,7 +197,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     await waitUntil(async () => readiness()?.getAttribute("data-controller-ready") === "true");
 
     cleanup(h);
-    await blockingLease.dispose();
+    await blockingLease.dispose?.();
     db.close();
     await db.delete();
   });

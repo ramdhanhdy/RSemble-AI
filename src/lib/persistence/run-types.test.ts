@@ -909,7 +909,7 @@ describe("isRunRecordV2 accepted-evidence cross-reference validation", () => {
         kind: "constructor",
         score: 4,
         rationale: "r",
-      } as unknown as (typeof r.judge.report.evaluationsById)["c-1"]["criterionScores"][number],
+      } as unknown as any,
     ];
 
     expect(isRunRecordV2(r)).toBe(false);
