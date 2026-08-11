@@ -29,6 +29,7 @@ const baseState: StudioState = {
   insufficient: null,
   aborted: false,
   runContext: null,
+  runId: null,
   qualityRating: 0,
   audit: [],
 };

@@ -184,6 +184,65 @@ describe("RunDetail", () => {
     cleanup(h);
   });
 
+  it("renders the status timeline section after header and before outcome", () => {
+    const record = makeFullRecord();
+    const h = renderWithRouter(<RunDetail record={record} />);
+    const timeline = h.$("[data-section='timeline']");
+    expect(timeline).toBeTruthy();
+    expect(timeline?.textContent).toContain("Status timeline");
+    const ids = h.$$("[data-section]").map((s) => s.getAttribute("data-section"));
+    expect(ids.indexOf("header")).toBeLessThan(ids.indexOf("timeline"));
+    expect(ids.indexOf("timeline")).toBeLessThan(ids.indexOf("outcome"));
+    cleanup(h);
+  });
+
+  it("aborted run timeline labels the result aborted, never pending", () => {
+    const h = renderWithRouter(
+      <RunDetail
+        record={makeFullRecord({
+          status: "aborted",
+          winnerKeys: [],
+          judge: {
+            status: "idle",
+            acceptedAttemptId: null,
+            report: null,
+            consensus: null,
+            attempts: [],
+          },
+          completedAt: 1716048060000,
+        })}
+      />,
+    );
+    const text = h.$("[data-section='timeline']")?.textContent ?? "";
+    expect(text).toContain("aborted by user");
+    expect(text).not.toContain("pending");
+    // An idle judge on a terminal run never ran — "not run", not "pending".
+    expect(text).toContain("not run");
+    cleanup(h);
+  });
+
+  it("running run timeline keeps pending labels for the judge and result", () => {
+    const h = renderWithRouter(
+      <RunDetail
+        record={makeFullRecord({
+          status: "running",
+          winnerKeys: [],
+          judge: {
+            status: "idle",
+            acceptedAttemptId: null,
+            report: null,
+            consensus: null,
+            attempts: [],
+          },
+        })}
+      />,
+    );
+    const text = h.$("[data-section='timeline']")?.textContent ?? "";
+    expect(text).toContain("pending");
+    expect(text).not.toContain("not run");
+    cleanup(h);
+  });
+
   it("fusion section renders only when present", () => {
     // No fusion attempts → no fusion section
     const h1 = renderWithRouter(<RunDetail record={makeFullRecord()} />);
@@ -364,11 +423,11 @@ describe("RunDetail", () => {
     const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
     const taskConfig = h.$("[data-section='task-config']");
     expect(taskConfig).toBeTruthy();
-    // Collapsed — has a disclosure with aria-expanded=false
+    // Collapsed — a disclosure must exist and report aria-expanded=false. A
+    // missing disclosure must not silently pass (absence is a regression).
     const disclosure = taskConfig?.querySelector("[aria-expanded]");
-    if (disclosure) {
-      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-    }
+    expect(disclosure).toBeTruthy();
+    expect(disclosure?.getAttribute("aria-expanded")).toBe("false");
     cleanup(h);
   });
 
@@ -681,6 +740,16 @@ describe("LegacyRunDetail", () => {
     expect(link).toBeTruthy();
     cleanup(h);
   });
+
+  it("offers Copy link but never Open in Compare (no frozen config in v1)", () => {
+    const h = renderWithRouter(<LegacyRunDetail summary={makeLegacySummary()} />);
+    expect(h.$('[data-action="copy-link"]')).toBeTruthy();
+    // v1 summaries have no frozen config to preload — the action must not
+    // exist, not even as a disabled stub with fabricated data.
+    expect(h.$('[data-action="open-in-compare"]')).toBeNull();
+    expect(h.container.textContent).not.toContain("Open in Compare");
+    cleanup(h);
+  });
 });
 
 describe("RunDetail accessibility (Plan 006 workstream B)", () => {
@@ -715,6 +784,53 @@ describe("RunDetail accessibility (Plan 006 workstream B)", () => {
     expect(row).toBeTruthy();
     expect(row!.getAttribute("type")).toBe("button");
     expect(row!.getAttribute("aria-pressed")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("RunDetail contextual continuity (Slice 5)", () => {
+  it("header shows Open in Compare only when the handler is wired", () => {
+    const wired = renderWithRouter(
+      <RunDetail record={makeFullRecord()} onOpenInCompare={() => undefined} />,
+    );
+    expect(wired.$('[data-action="open-in-compare"]')).toBeTruthy();
+    cleanup(wired);
+
+    // Route-only renders (tests, non-shell embedding) get the honest
+    // degradation: no action button without a handler.
+    const plain = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    expect(plain.$('[data-action="open-in-compare"]')).toBeNull();
+    cleanup(plain);
+  });
+
+  it("Open in Compare passes the record id and its frozen config, never results", () => {
+    const onOpenInCompare = vi.fn();
+    const record = makeFullRecord();
+    const h = renderWithRouter(<RunDetail record={record} onOpenInCompare={onOpenInCompare} />);
+    const button = h.$('[data-action="open-in-compare"]')!;
+    act(() => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onOpenInCompare).toHaveBeenCalledTimes(1);
+    const [runId, config] = onOpenInCompare.mock.calls[0] as [string, { prompt: string }];
+    expect(runId).toBe(record.id);
+    // Frozen task restored from the record.
+    expect(config.prompt).toBe(record.task.prompt);
+    // The preload carries command-pane inputs only — never results: no
+    // candidate attempts, scores, winner keys, or judge report fields.
+    const serialized = JSON.stringify(config);
+    expect(serialized).not.toContain("winnerKeys");
+    expect(serialized).not.toContain("acceptedAttemptId");
+    expect(serialized).not.toContain("rationale");
+    cleanup(h);
+  });
+
+  it("header always offers Copy link for v2 records", () => {
+    const h = renderWithRouter(<RunDetail record={makeFullRecord()} />);
+    const header = h.$("[data-section='header']")!;
+    const copy = header.querySelector('[data-action="copy-link"]');
+    expect(copy).toBeTruthy();
+    expect(copy?.textContent).toContain("Copy link");
     cleanup(h);
   });
 });

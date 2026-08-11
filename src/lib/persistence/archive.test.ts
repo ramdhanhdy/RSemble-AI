@@ -18,6 +18,7 @@ import {
   type RunSummaryRow,
   type SuiteRow,
 } from "./database";
+import { createRunRepository } from "./run-repository";
 import {
   archiveFailureGuidance,
   buildRunExportMarkdown,
@@ -600,7 +601,23 @@ describe("archive accounting provenance", () => {
     rich.judge = {
       status: "done",
       acceptedAttemptId: "j-1",
-      report: null,
+      report: {
+        labelMap: [{ label: "A", candidateId: "c-1" }],
+        evaluationsById: {
+          "c-1": {
+            candidateId: "c-1",
+            blindLabel: "A",
+            overallScore: 4,
+            position: "p",
+            rationale: "r",
+            strengths: [],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+        },
+        comparisons: [],
+      },
       consensus: null,
       attempts: [
         {
@@ -609,8 +626,8 @@ describe("archive accounting provenance", () => {
           model: "judge",
           instruction: "",
           messages: [],
-          blindLabelToCandidateId: {},
-          candidateAttemptIdsByCandidateId: {},
+          blindLabelToCandidateId: { A: "c-1" },
+          candidateAttemptIdsByCandidateId: { "c-1": "att-1" },
           startedAt: 1000,
           finishedAt: 2000,
           status: "completed",
@@ -956,5 +973,258 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
     expect(md).toContain("3.5/5");
     // Graded criterion still shown.
     expect(md).toContain("Quality: 4.0/5");
+  });
+});
+
+// --- Archive integrity: accepted-evidence pointers -----------------------------
+
+describe("buildRunExportMarkdown — accepted-evidence pointers", () => {
+  it("uses the accepted candidate attempt only; never falls back to a rejected/historical attempt", () => {
+    const record = makeRun("run-accepted");
+    // acceptedAttemptId points to a missing attempt — must NOT fall back to the
+    // last attempt (which here is a stale rejected output).
+    record.candidates[0].acceptedAttemptId = "att-missing";
+    record.candidates[0].attempts[0].attemptId = "att-rejected";
+    record.candidates[0].attempts[0].status = "failed";
+    record.candidates[0].attempts[0].output = null;
+    record.candidates[0].attempts[0].error = { message: "provider 500", category: "provider" };
+
+    const md = buildRunExportMarkdown(record);
+    // The rejected attempt's error text and the stale output must not appear.
+    expect(md).not.toContain("provider 500");
+    expect(md).not.toContain("Answer for run-accepted");
+    // The established no-output wording is rendered for the missing accepted pointer.
+    expect(md).toContain("_No output._");
+  });
+
+  it("omits fusion usage/result when the accepted fusion attempt is missing", () => {
+    const record = makeRun("run-fusion-missing");
+    record.fusion.acceptedAttemptId = "f-missing";
+    // A stale, non-accepted fusion attempt with a result must not be exported.
+    record.fusion.attempts = [
+      {
+        attemptId: "f-stale",
+        providerId: "openrouter",
+        model: "fuse-model",
+        messages: [],
+        sourceJudgeAttemptId: "j-1",
+        candidateAttemptIdsByCandidateId: {},
+        startedAt: 1,
+        finishedAt: 2,
+        status: "completed",
+        error: null,
+        result: "STALE FUSED ANSWER",
+      },
+    ];
+
+    const md = buildRunExportMarkdown(record);
+    expect(md).not.toContain("STALE FUSED ANSWER");
+    expect(md).not.toContain("## Fusion Usage");
+    expect(md).not.toContain("## Fused Answer");
+  });
+});
+
+// --- Archive integrity: malformed nested JudgeReport rejection -----------------
+
+describe("parseWorkbenchArchive — malformed nested JudgeReport rejection", () => {
+  function archiveWithJudgeReport(report: unknown): WorkbenchArchiveV1 {
+    const record = makeRun("run-judge");
+    // The accepted Judge attempt must exist in the attempts array with a
+    // candidateAttemptIdsByCandidateId that matches the candidate's current
+    // acceptedAttemptId (cross-reference validation).
+    record.judge = {
+      status: "done",
+      acceptedAttemptId: "j-1",
+      report: report as never,
+      consensus: null,
+      attempts: [
+        {
+          attemptId: "j-1",
+          providerId: "openrouter",
+          model: "judge",
+          instruction: "",
+          messages: [],
+          blindLabelToCandidateId: { A: "c-1" },
+          candidateAttemptIdsByCandidateId: { "c-1": "att-1" },
+          startedAt: 1000,
+          finishedAt: 2000,
+          status: "completed",
+          error: null,
+          report: report as never,
+          consensus: null,
+        },
+      ],
+    };
+    const archive = emptyArchive();
+    archive.runs.summaries.push(makeFullSummary("run-judge"));
+    archive.runs.details.push(record);
+    return JSON.parse(JSON.stringify(archive)) as WorkbenchArchiveV1;
+  }
+
+  it("rejects an evaluation missing required fields (rationale)", () => {
+    const archive = archiveWithJudgeReport({
+      labelMap: [{ label: "A", candidateId: "c-1" }],
+      evaluationsById: {
+        "c-1": {
+          candidateId: "c-1",
+          blindLabel: "A",
+          overallScore: 4,
+          position: "p",
+          // rationale omitted
+          strengths: [],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [],
+        },
+      },
+      comparisons: [],
+    });
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(false);
+  });
+
+  it("rejects a deduction with an invalid severity", () => {
+    const archive = archiveWithJudgeReport({
+      labelMap: [{ label: "A", candidateId: "c-1" }],
+      evaluationsById: {
+        "c-1": {
+          candidateId: "c-1",
+          blindLabel: "A",
+          overallScore: 4,
+          position: "p",
+          rationale: "r",
+          strengths: [],
+          deductions: [{ severity: "critical", reason: "bad" }],
+          missedRequirements: [],
+          criterionScores: [],
+        },
+      },
+      comparisons: [],
+    });
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(false);
+  });
+
+  it("rejects a criterion score with a non-numeric score", () => {
+    const archive = archiveWithJudgeReport({
+      labelMap: [{ label: "A", candidateId: "c-1" }],
+      evaluationsById: {
+        "c-1": {
+          candidateId: "c-1",
+          blindLabel: "A",
+          overallScore: 4,
+          position: "p",
+          rationale: "r",
+          strengths: [],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [
+            { criterionId: "q", label: "Quality", kind: "graded", score: "high", rationale: "r" },
+          ],
+        },
+      },
+      comparisons: [],
+    });
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(false);
+  });
+
+  it("rejects a comparison with a non-string reason", () => {
+    const archive = archiveWithJudgeReport({
+      labelMap: [{ label: "A", candidateId: "c-1" }],
+      evaluationsById: {
+        "c-1": {
+          candidateId: "c-1",
+          blindLabel: "A",
+          overallScore: 4,
+          position: "p",
+          rationale: "r",
+          strengths: [],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [],
+        },
+      },
+      comparisons: [{ candidateIds: ["c-1", "c-2"], blindLabels: ["A", "B"], reason: 42 }],
+    });
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(false);
+  });
+
+  it("rejects a consensus insight missing the insight field", () => {
+    const record = makeRun("run-consensus");
+    record.judge = {
+      status: "done",
+      acceptedAttemptId: "j-1",
+      report: null,
+      consensus: {
+        consensus: [],
+        contradictions: [],
+        uniqueInsights: [{ source: "A" }] as never,
+      },
+      attempts: [],
+    };
+    const archive = emptyArchive();
+    archive.runs.summaries.push(makeFullSummary("run-consensus"));
+    archive.runs.details.push(record);
+    const check = parseWorkbenchArchive(JSON.parse(JSON.stringify(archive)));
+    expect(check.ok).toBe(false);
+  });
+
+  it("accepts a well-formed nested JudgeReport", () => {
+    const archive = archiveWithJudgeReport({
+      labelMap: [{ label: "A", candidateId: "c-1" }],
+      evaluationsById: {
+        "c-1": {
+          candidateId: "c-1",
+          blindLabel: "A",
+          overallScore: 4,
+          position: "Solid",
+          rationale: "r",
+          strengths: ["s"],
+          deductions: [{ severity: "minor", reason: "typo" }],
+          missedRequirements: [],
+          criterionScores: [
+            { criterionId: "q", label: "Quality", kind: "graded", score: 4, rationale: "r" },
+          ],
+        },
+      },
+      comparisons: [{ candidateIds: ["c-1", "c-2"], blindLabels: ["A", "B"], reason: "similar" }],
+    });
+    const check = parseWorkbenchArchive(archive);
+    expect(check.ok).toBe(true);
+  });
+});
+
+// --- Archive integrity: imported revision followed by a CAS update -------------
+
+describe("importWorkbenchArchive — preserves revision for subsequent CAS update", () => {
+  it("imports a record with revision > 1 and a repository update at that revision succeeds", async () => {
+    const record = makeRun("run-rev");
+    record.revision = 7;
+    const summary = makeFullSummary("run-rev");
+    summary.revision = 7;
+
+    const archive = emptyArchive();
+    archive.runs.summaries.push(summary);
+    archive.runs.details.push(record);
+
+    const result = await importWorkbenchArchive(db, archive);
+    expect(result.created).toEqual(["run-rev"]);
+
+    const detailRow = await db.runDetails.get("run-rev");
+    expect(detailRow?.revision).toBe(7);
+    const summaryRow = await db.runSummaries.get("run-rev");
+    expect(summaryRow?.revision).toBe(7);
+
+    // A repository update keyed to the imported revision must succeed (CAS).
+    const repo = createRunRepository(db);
+    const updated = { ...record, status: "failed" as const, revision: 7 };
+    const updatedSummary = { ...summary, status: "failed" as const, revision: 7 };
+    const newRev = await repo.update(updated, updatedSummary, 7);
+    expect(newRev).toBe(8);
+    const got = await repo.get("run-rev");
+    expect(got?.revision).toBe(8);
+    expect(got?.status).toBe("failed");
   });
 });

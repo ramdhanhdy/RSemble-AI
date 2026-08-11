@@ -30,7 +30,14 @@ import type {
   RunReasoningProvenance,
   UsageBreakdown,
 } from "../providers/types";
-import type { ConsensusBreakdown, JudgeReport } from "../../studio-data";
+import type {
+  CandidateEvaluation,
+  ConsensusBreakdown,
+  JudgeComparison,
+  JudgeCriterionScore,
+  JudgeDeduction,
+  JudgeReport,
+} from "../../studio-data";
 import type { StageStatus } from "../../studio-engine";
 import {
   isEvaluationProfile,
@@ -403,6 +410,53 @@ function isChatMessageArray(v: unknown): v is ChatMessage[] {
   return Array.isArray(v) && v.every(isChatMessage);
 }
 
+function isJudgeDeduction(v: unknown): v is JudgeDeduction {
+  if (!isRecord(v)) return false;
+  if (v.severity !== "minor" && v.severity !== "major") return false;
+  return isString(v.reason);
+}
+
+const JUDGE_CRITERION_KINDS: ReadonlySet<string> = new Set(["graded", "binary"]);
+
+function isJudgeCriterionScore(v: unknown): v is JudgeCriterionScore {
+  if (!isRecord(v)) return false;
+  if (!isNonEmptyString(v.criterionId)) return false;
+  if (!isString(v.label)) return false;
+  if (v.score !== undefined && !isNumber(v.score)) return false;
+  if (v.value !== undefined && typeof v.value !== "boolean") return false;
+  if (v.kind !== undefined && (typeof v.kind !== "string" || !JUDGE_CRITERION_KINDS.has(v.kind))) {
+    return false;
+  }
+  return isString(v.rationale);
+}
+
+function isCandidateEvaluation(v: unknown): v is CandidateEvaluation {
+  if (!isRecord(v)) return false;
+  if (!isNonEmptyString(v.candidateId)) return false;
+  if (!isString(v.blindLabel)) return false;
+  if (!isNumber(v.overallScore)) return false;
+  if (!isString(v.position)) return false;
+  if (!isString(v.rationale)) return false;
+  if (!isStringArray(v.strengths)) return false;
+  if (!Array.isArray(v.deductions) || !v.deductions.every(isJudgeDeduction)) return false;
+  if (!isStringArray(v.missedRequirements)) return false;
+  if (!Array.isArray(v.criterionScores) || !v.criterionScores.every(isJudgeCriterionScore)) {
+    return false;
+  }
+  return true;
+}
+
+function isStringPair(v: unknown): v is [string, string] {
+  return Array.isArray(v) && v.length === 2 && typeof v[0] === "string" && typeof v[1] === "string";
+}
+
+function isJudgeComparison(v: unknown): v is JudgeComparison {
+  if (!isRecord(v)) return false;
+  if (!isStringPair(v.candidateIds)) return false;
+  if (!isStringPair(v.blindLabels)) return false;
+  return isString(v.reason);
+}
+
 function isJudgeReport(v: unknown): v is JudgeReport {
   if (!isRecord(v)) return false;
   if (!Array.isArray(v.labelMap)) return false;
@@ -412,7 +466,10 @@ function isJudgeReport(v: unknown): v is JudgeReport {
     }
   }
   if (!isRecord(v.evaluationsById)) return false;
-  if (!Array.isArray(v.comparisons)) return false;
+  for (const key of Object.keys(v.evaluationsById)) {
+    if (!isCandidateEvaluation(v.evaluationsById[key])) return false;
+  }
+  if (!Array.isArray(v.comparisons) || !v.comparisons.every(isJudgeComparison)) return false;
   return true;
 }
 
@@ -421,6 +478,11 @@ function isConsensusBreakdown(v: unknown): v is ConsensusBreakdown {
   if (!isStringArray(v.consensus)) return false;
   if (!isStringArray(v.contradictions)) return false;
   if (!Array.isArray(v.uniqueInsights)) return false;
+  for (const insight of v.uniqueInsights) {
+    if (!isRecord(insight) || !isString(insight.source) || !isString(insight.insight)) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -683,7 +745,213 @@ export function isRunSummary(v: unknown): v is RunSummary {
   return false;
 }
 
+// --- Run record cross-reference validation -----------------------------------
+//
+// Protects imported/stored records against stale-evidence corruption: an
+// accepted pointer must resolve to a completed accepted attempt, and the
+// accepted Judge/Fusion candidate maps must match the current accepted
+// candidate attempt set. A Fusion source Judge must match the current
+// accepted Judge. These guards reject malformed nested judge/fusion reports
+// before any UI/export dereferences them (spec §5.6, §11.3, archive import).
+
+/** An accepted candidate pointer must resolve to a completed attempt with a
+ * non-null output. A null acceptedAttemptId is valid (candidate not yet
+ * accepted or failed). */
+function acceptedCandidateAttemptIsValid(candidate: PersistedCandidate): boolean {
+  if (candidate.acceptedAttemptId === null) return true;
+  const attempt = candidate.attempts.find((a) => a.attemptId === candidate.acceptedAttemptId);
+  return (
+    attempt !== undefined &&
+    attempt.status === "completed" &&
+    attempt.output !== null &&
+    attempt.output !== undefined
+  );
+}
+
+/** Build the current accepted candidate-id → attempt-id map from the
+ * record's candidates. Only candidates with a non-null acceptedAttemptId
+ * are included. This is the authoritative set the accepted Judge and
+ * Fusion candidate maps must match exactly (both directions). */
+function currentAcceptedCandidateMap(record: RunRecordV2): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const c of record.candidates) {
+    if (c.acceptedAttemptId !== null) {
+      map[c.candidateId] = c.acceptedAttemptId;
+    }
+  }
+  return map;
+}
+
+/** Exact structural equality between two candidate-id → attempt-id maps:
+ * same keys, same values, no extra entries on either side. */
+function candidateMapsExactlyEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
+/** An accepted Judge pointer must resolve to a completed attempt with a
+ * non-null report, AND its candidateAttemptIdsByCandidateId must be exactly
+ * equal to the current accepted candidate-id → attempt-id map (both
+ * directions). This rejects stale extra entries (e.g. a candidate whose
+ * accepted attempt was invalidated but whose score lingers in the Judge
+ * map/report) as well as missing entries. A null acceptedAttemptId is
+ * valid (Judge not yet accepted or failed). */
+function acceptedJudgeCrossReferencesValid(record: RunRecordV2): boolean {
+  const { judge } = record;
+  if (judge.acceptedAttemptId === null) return true;
+  const attempt = judge.attempts.find((a) => a.attemptId === judge.acceptedAttemptId);
+  if (attempt === undefined || attempt.status !== "completed" || judge.report === null) {
+    return false;
+  }
+  return candidateMapsExactlyEqual(
+    attempt.candidateAttemptIdsByCandidateId,
+    currentAcceptedCandidateMap(record),
+  );
+}
+
+/** An accepted Fusion pointer must resolve to a completed attempt with a
+ * non-null result, its sourceJudgeAttemptId must match the current accepted
+ * Judge, AND its candidateAttemptIdsByCandidateId must be exactly equal to
+ * the current accepted candidate-id → attempt-id map (both directions) —
+ * which must also match the source accepted Judge's candidate map. A null
+ * acceptedAttemptId is valid (Fusion not yet accepted, failed, or never
+ * requested). */
+function acceptedFusionCrossReferencesValid(record: RunRecordV2): boolean {
+  const { fusion } = record;
+  if (fusion.acceptedAttemptId === null) return true;
+  const attempt = fusion.attempts.find((a) => a.attemptId === fusion.acceptedAttemptId);
+  if (attempt === undefined || attempt.status !== "completed" || attempt.result === null) {
+    return false;
+  }
+  // The accepted Fusion's source Judge must match the current accepted Judge.
+  // When the Judge has been invalidated (null acceptedAttemptId), a leftover
+  // accepted Fusion is stale evidence.
+  if (
+    record.judge.acceptedAttemptId === null ||
+    attempt.sourceJudgeAttemptId !== record.judge.acceptedAttemptId
+  ) {
+    return false;
+  }
+  const currentMap = currentAcceptedCandidateMap(record);
+  // Fusion candidate map must exactly match the current accepted set.
+  if (!candidateMapsExactlyEqual(attempt.candidateAttemptIdsByCandidateId, currentMap)) {
+    return false;
+  }
+  // Fusion candidate map must also exactly match its source accepted Judge's
+  // candidate map — a Fusion that judges a different candidate set than its
+  // source Judge is stale evidence.
+  const sourceJudgeAttempt = record.judge.attempts.find(
+    (a) => a.attemptId === attempt.sourceJudgeAttemptId,
+  );
+  if (sourceJudgeAttempt === undefined) return false;
+  return candidateMapsExactlyEqual(
+    attempt.candidateAttemptIdsByCandidateId,
+    sourceJudgeAttempt.candidateAttemptIdsByCandidateId,
+  );
+}
 // --- Run record ---------------------------------------------------------------
+
+/**
+ * Repair records written before the accepted-evidence cross-reference guard
+ * existed. The attempts themselves are immutable history; only pointers and
+ * values derived from now-invalid pointers are cleared. A null result means
+ * the record was not structurally close enough to repair safely.
+ */
+export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null {
+  if (!isRecord(v) || v.schemaVersion !== 2) return null;
+  if (!Array.isArray(v.candidates) || !isRecord(v.judge) || !isRecord(v.fusion)) return null;
+  if (!Array.isArray(v.judge.attempts) || !Array.isArray(v.fusion.attempts)) return null;
+  if (!v.candidates.every(isPersistedCandidate)) return null;
+  if (!v.judge.attempts.every(isJudgeAttemptRecord)) return null;
+  if (!v.fusion.attempts.every(isFusionAttemptRecord)) return null;
+  if (v.judge.report !== null && !isJudgeReport(v.judge.report)) return null;
+  if (v.judge.consensus !== null && !isConsensusBreakdown(v.judge.consensus)) return null;
+
+  const repaired = structuredClone(v) as Record<string, any>;
+  const candidates = repaired.candidates as Array<Record<string, any>>;
+  const invalidCandidateIds = new Set<string>();
+  for (const candidate of candidates) {
+    if (!isRecord(candidate) || !Array.isArray(candidate.attempts)) return null;
+    if (candidate.acceptedAttemptId === null) continue;
+    const accepted = candidate.attempts.find(
+      (attempt) =>
+        isRecord(attempt) &&
+        attempt.attemptId === candidate.acceptedAttemptId &&
+        attempt.status === "completed" &&
+        attempt.output !== null &&
+        attempt.output !== undefined,
+    );
+    if (!accepted) {
+      invalidCandidateIds.add(String(candidate.candidateId));
+      candidate.acceptedAttemptId = null;
+    }
+  }
+
+  const acceptedMap: Record<string, string> = {};
+  for (const candidate of candidates) {
+    if (
+      typeof candidate.candidateId === "string" &&
+      typeof candidate.acceptedAttemptId === "string"
+    ) {
+      acceptedMap[candidate.candidateId] = candidate.acceptedAttemptId;
+    }
+  }
+  const sameMap = (a: unknown): boolean => {
+    if (!isRecord(a)) return false;
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(acceptedMap).length &&
+      keys.every((key) => a[key] === acceptedMap[key])
+    );
+  };
+
+  const judge = repaired.judge as Record<string, any>;
+  if (judge.acceptedAttemptId !== null) {
+    const accepted = judge.attempts.find(
+      (attempt: unknown) =>
+        isRecord(attempt) &&
+        attempt.attemptId === judge.acceptedAttemptId &&
+        attempt.status === "completed" &&
+        attempt.report !== null &&
+        sameMap(attempt.candidateAttemptIdsByCandidateId),
+    );
+    if (!accepted) {
+      judge.acceptedAttemptId = null;
+      judge.report = null;
+      judge.consensus = null;
+    }
+  }
+
+  const fusion = repaired.fusion as Record<string, any>;
+  if (fusion.acceptedAttemptId !== null) {
+    const accepted = fusion.attempts.find(
+      (attempt: unknown) =>
+        isRecord(attempt) &&
+        attempt.attemptId === fusion.acceptedAttemptId &&
+        attempt.status === "completed" &&
+        attempt.result !== null &&
+        attempt.sourceJudgeAttemptId === judge.acceptedAttemptId &&
+        sameMap(attempt.candidateAttemptIdsByCandidateId),
+    );
+    if (!accepted) fusion.acceptedAttemptId = null;
+  }
+
+  if (Array.isArray(repaired.winnerKeys)) {
+    const invalidModels = new Set(
+      candidates
+        .filter((candidate) => invalidCandidateIds.has(String(candidate.candidateId)))
+        .map((candidate) => candidate.modelKey),
+    );
+    repaired.winnerKeys = repaired.winnerKeys.filter((key: unknown) => !invalidModels.has(key));
+  }
+
+  return isRunRecordV2(repaired) ? repaired : null;
+}
 
 export function isRunRecordV2(v: unknown): v is RunRecordV2 {
   if (!isRecord(v)) return false;
@@ -752,6 +1020,16 @@ export function isRunRecordV2(v: unknown): v is RunRecordV2 {
   if (!isStringArray(v.winnerKeys)) return false;
 
   if (hasProhibitedKeys(v)) return false;
+
+  // Cross-reference validation: accepted pointers must resolve to completed
+  // accepted attempts, and accepted Judge/Fusion candidate maps must match
+  // the current accepted candidate attempt set. Protects imported/stored
+  // records against stale-evidence corruption (spec §5.6, §11.3).
+  const record = v as unknown as RunRecordV2;
+  if (!record.candidates.every(acceptedCandidateAttemptIsValid)) return false;
+  if (!acceptedJudgeCrossReferencesValid(record)) return false;
+  if (!acceptedFusionCrossReferencesValid(record)) return false;
+
   return true;
 }
 

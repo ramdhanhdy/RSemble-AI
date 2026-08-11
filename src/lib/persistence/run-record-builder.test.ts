@@ -353,6 +353,142 @@ describe("RunRecordBuilder — candidate retry", () => {
     expect(record.candidates[0].acceptedAttemptId).toBe("retry-att-1");
     expect(record.candidates[0].attempts).toHaveLength(3);
   });
+
+  it("successful candidate retry invalidates stale accepted Judge/Fusion evidence", () => {
+    // Defect: a successful candidate retry that replaces acceptedAttemptId
+    // must invalidate the current accepted Judge/Fusion pointers and derived
+    // result evidence (winnerKeys, report, consensus) — those results
+    // referred to a different candidate attempt set. Historical attempts
+    // remain persisted in the attempts arrays.
+    const builder = createRunRecordBuilder(makeDeps());
+    const state = builder.createInitialState();
+    const record = startFanout(state, builder);
+    completeAllCandidates(builder, state, record);
+    builder.applyFanoutTerminal(state, record, []);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
+    const report = record.judge.report;
+    expect(record.judge.acceptedAttemptId).toBe("judge-att-1");
+    expect(record.winnerKeys).toHaveLength(1);
+
+    // Successful candidate retry on S1
+    builder.applyCandidateAttemptStart(state, record, CANDIDATE_S1, {
+      attemptId: "retry-att-1",
+      messages: makeMessages(),
+      startedAt: 5000,
+    });
+    builder.applyCandidateAttemptTerminal(state, record, CANDIDATE_S1, "retry-att-1", {
+      status: "completed",
+      output: "second",
+      tokensIn: 6,
+      tokensOut: 12,
+      error: null,
+      finishedAt: 6000,
+    });
+
+    // Candidate accepted pointer moved to the new attempt
+    expect(record.candidates[0].acceptedAttemptId).toBe("retry-att-1");
+
+    // Stale Judge evidence invalidated
+    expect(record.judge.acceptedAttemptId).toBeNull();
+    expect(record.judge.report).toBeNull();
+    expect(record.judge.consensus).toBeNull();
+    expect(record.judge.status).toBe("idle");
+    expect(record.winnerKeys).toEqual([]);
+
+    // Historical Judge attempt preserved
+    expect(record.judge.attempts).toHaveLength(1);
+    expect(record.judge.attempts[0].attemptId).toBe("judge-att-1");
+    expect(record.judge.attempts[0].report).toBe(report);
+
+    // Terminal status preserved (no running regression)
+    expect(record.status).not.toBe("running");
+  });
+
+  it("successful candidate retry in fuse mode invalidates accepted Fusion evidence", () => {
+    const builder = createRunRecordBuilder(makeDeps());
+    const state = builder.createInitialState();
+    // Start in fuse mode
+    const record = builder.applyFanoutStart(state, {
+      runId: "run-1",
+      source: ADHOC,
+      mode: "fuse",
+      task: { title: "T", prompt: "p", systemPrompt: "", temperature: 0.7 },
+      evaluation: { profile: null, candidateMessages: [] },
+      slots: TWO_SLOTS.map((s) => ({ ...s, provider: "P" })),
+      fence: FENCE,
+    });
+    completeAllCandidates(builder, state, record);
+    builder.applyFanoutTerminal(state, record, []);
+    runJudgeAttempt(builder, state, record, "judge-att-1", true);
+
+    // Fusion succeeds
+    builder.applyFusionStart(state, record, "fusion-att-1", {
+      providerId: "openrouter",
+      model: "judge-model",
+      messages: makeMessages(),
+      sourceJudgeAttemptId: "judge-att-1",
+      candidateAttemptIdsByCandidateId: {
+        [CANDIDATE_S1]: `att-${CANDIDATE_S1}`,
+        [CANDIDATE_S2]: `att-${CANDIDATE_S2}`,
+      },
+      startedAt: 5000,
+    });
+    builder.applyFusionTerminal(state, record, "fusion-att-1", {
+      status: "completed",
+      result: "fused text",
+      error: null,
+      finishedAt: 6000,
+    });
+    expect(record.fusion.acceptedAttemptId).toBe("fusion-att-1");
+    expect(record.status).toBe("completed");
+
+    // Successful candidate retry on S1
+    builder.applyCandidateAttemptStart(state, record, CANDIDATE_S1, {
+      attemptId: "retry-att-1",
+      messages: makeMessages(),
+      startedAt: 7000,
+    });
+    builder.applyCandidateAttemptTerminal(state, record, CANDIDATE_S1, "retry-att-1", {
+      status: "completed",
+      output: "second",
+      tokensIn: 6,
+      tokensOut: 12,
+      error: null,
+      finishedAt: 8000,
+    });
+
+    // Stale Judge AND Fusion evidence invalidated
+    expect(record.judge.acceptedAttemptId).toBeNull();
+    expect(record.judge.report).toBeNull();
+    expect(record.fusion.acceptedAttemptId).toBeNull();
+    expect(record.fusion.status).toBe("idle");
+    expect(record.winnerKeys).toEqual([]);
+
+    // Historical attempts preserved
+    expect(record.judge.attempts).toHaveLength(1);
+    expect(record.fusion.attempts).toHaveLength(1);
+    expect(record.fusion.attempts[0].attemptId).toBe("fusion-att-1");
+    expect(record.fusion.attempts[0].result).toBe("fused text");
+
+    // Terminal status preserved (no running regression)
+    expect(record.status).not.toBe("running");
+  });
+
+  it("candidate retry that does NOT change acceptedAttemptId preserves Judge evidence", () => {
+    // First attempt completion (no prior accepted) must NOT invalidate
+    // Judge evidence — there is no prior accepted to supersede.
+    const builder = createRunRecordBuilder(makeDeps());
+    const state = builder.createInitialState();
+    const record = startFanout(state, builder);
+    // Complete S1 first (no prior accepted → no invalidation)
+    runCandidateAttempt(builder, state, record, CANDIDATE_S1, "att-1", {
+      status: "completed",
+      output: "first",
+    });
+    // No Judge was set, so nothing to invalidate — verify no crash
+    expect(record.judge.acceptedAttemptId).toBeNull();
+    expect(record.candidates[0].acceptedAttemptId).toBe("att-1");
+  });
 });
 
 describe("RunRecordBuilder — Judge", () => {

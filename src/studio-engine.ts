@@ -128,6 +128,11 @@ export interface StudioState {
    *  Enables Judge-only retry against the exact generation context the retained
    *  candidates answered. Null before the first run and after RESET_SESSION. */
   runContext: RunEvaluationContext | null;
+  /** Persisted id of the current/last Compare run, minted by the run
+   *  controller and surfaced at FANOUT_START (Slice 5, Compare → View record).
+   *  Retries and re-fuse reuse the same id; null before the first run and
+   *  after RESET_SESSION. */
+  runId: string | null;
   // --- background learning loop (RANK-mode only, optional surface) ---
   qualityRating: number;
   audit: AuditEntry[];
@@ -176,7 +181,15 @@ export type Action =
   | { type: "CLEAR_ATTACHMENTS" }
   | { type: "SET_ATTACHMENTS_TO_JUDGE"; value: boolean }
   // --- pipeline ---
-  | { type: "FANOUT_START"; candidates: Candidate[]; context: RunEvaluationContext }
+  | {
+      type: "FANOUT_START";
+      candidates: Candidate[];
+      context: RunEvaluationContext;
+      /** Production controllers always supply the persisted id. Optional only
+       *  so older in-memory/test callers degrade honestly to a non-linkable
+       *  current run instead of fabricating an id. */
+      runId?: string;
+    }
   | { type: "FANOUT_BLOCKED"; reason: string }
   | {
       type: "CANDIDATE_RESULT";
@@ -211,6 +224,27 @@ export type Action =
   | { type: "RESET_SESSION" }
   | { type: "ABORT_RUN" }
   | { type: "LEASE_LOST"; message: string }
+  // --- Compare config preload (Slice 5, Run Detail → Open in Compare) ---
+  // Opens the persisted configuration as a FRESH Compare draft: historical
+  // results, run identity/context, attachments, and non-restorable judge
+  // instruction must not leak into the new draft. Active Compare execution is
+  // immutable, so the reducer ignores this action while `running` is true.
+  | {
+      type: "LOAD_RUN_CONFIG";
+      config: {
+        mode: Mode;
+        prompt: string;
+        systemPrompt: string;
+        temperature: number;
+        evaluation: AdHocEvaluationConfig;
+        slots: ModelSlot[];
+        /** Judge target restored from the run's accepted judge attempt.
+         *  Absent when the record has no judge attempt (aborted pre-judge). */
+        critic?: CriticRef;
+        judgeInstruction?: string;
+        reasoningPolicy?: ReasoningPolicy;
+      };
+    }
   // --- single-candidate retry ---
   | { type: "RETRY_CANDIDATE_START"; id: string }
   | { type: "RETRY_CANDIDATE_DELTA"; id: string; delta: string }
@@ -446,6 +480,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
       return {
         ...state,
         running: true,
+        runId: action.runId ?? null,
         candidates: action.candidates,
         consensus: null,
         judgeStatus: "idle",
@@ -643,6 +678,43 @@ export function reducer(state: StudioState, action: Action): StudioState {
     case "SET_RATING":
       return { ...state, qualityRating: action.value };
 
+    case "LOAD_RUN_CONFIG": {
+      // Opening a persisted run is a NEW Compare draft, not a mutation of the
+      // current/previous execution. Never overwrite a live run. When idle,
+      // reset all execution/output identity plus in-memory attachments before
+      // applying the fields the persisted record can honestly restore.
+      if (state.running) return state;
+      const cfg = action.config;
+      return {
+        ...initialState,
+        models: state.models,
+        mode: cfg.mode,
+        prompt: cfg.prompt,
+        exampleIndex: -1,
+        systemPrompt: cfg.systemPrompt,
+        temperature: cfg.temperature,
+        evaluation: deepCopyEvaluationConfig(cfg.evaluation),
+        slots: cfg.slots.map((slot) => ({ ...slot })),
+        critic: cfg.critic ? { ...cfg.critic } : { ...initialState.critic },
+        // The record does not persist the user's ad-hoc custom judge
+        // instruction. Empty it instead of silently carrying unrelated text
+        // from the current Compare session into the historical draft.
+        judgeInstruction: cfg.judgeInstruction ?? "",
+        // A record that lacks a reconstructible reasoning policy (e.g.
+        // aborted pre-judge) must NOT inherit the mutable current Compare
+        // session policy — start the fresh draft from the clean initialState
+        // baseline so no session configuration leaks across historical loads.
+        reasoningPolicy: cfg.reasoningPolicy
+          ? { ...cfg.reasoningPolicy }
+          : { ...initialState.reasoningPolicy },
+        // Attachments are intentionally memory-only and cannot be reconstructed
+        // from persisted metadata. A historical draft therefore starts clean.
+        attachments: [],
+        attachmentsToJudge: computeAttachmentsToJudgeDefault([]),
+        audit: logAudit(state.audit, "Run configuration loaded as a fresh Compare draft."),
+      };
+    }
+
     case "RESET_SESSION":
       // Keep mode, catalog, and the user's model roster/judge — reset only clears
       // the current run/output, not command configuration the user chose.
@@ -779,6 +851,7 @@ export const initialState: StudioState = {
   aborted: false,
   executionConflict: null,
   runContext: null,
+  runId: null,
   qualityRating: 0,
   fusionStatus: "idle",
   fusionError: null,

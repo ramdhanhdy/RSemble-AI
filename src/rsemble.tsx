@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { RotateCcw } from "lucide-react";
+import { FileText, RotateCcw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
@@ -46,6 +46,7 @@ import { evaluateComparePreflight } from "./lib/compare-preflight";
 import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
+import type { RunConfigPreload } from "./lib/runs/run-config-preload";
 import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts";
 import { useRunRepository } from "./lib/persistence/repository-context";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
@@ -56,6 +57,28 @@ import {
 } from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 import { CloseIcon, SplitDivider, FocusStrip, PaneLabel, NoKeyBanner } from "./ui/CompareShell";
+
+// Compare → View record gate (Slice 5). The link is shown only when a
+// recorder-backed persisted record exists for the last run (never for
+// in-memory-only runs) and no run is in flight. Pure and exported for tests.
+export function canViewCompareRecord(
+  state: Pick<StudioState, "running" | "runId">,
+  recorderAvailable: boolean,
+): boolean {
+  return recorderAvailable && state.runId !== null && !state.running;
+}
+
+// Compare → historical preload notice (Slice 5). After a successful "Open in
+// Compare" preload the fresh draft has no run id of its own (LOAD_RUN_CONFIG
+// resets execution identity, so runId is null), so the honest "config loaded
+// from run …" notice is visible. It is cleared (preloadRunId → null) once a
+// new Compare run obtains its own id (the runId effect below) or the session
+// resets (handleResetSession), so a later reset can never resurrect an old
+// notice. Visibility is exact: only while the preloaded draft still has no
+// runId. Pure and exported for tests.
+export function isPreloadNoticeVisible(preloadRunId: string | null, runId: string | null): boolean {
+  return preloadRunId !== null && runId === null;
+}
 
 export default function RSemble() {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -104,6 +127,15 @@ export default function RSemble() {
     max,
   } = useResizableSplit();
   const [focusMode, setFocusMode] = useState(false);
+  // Slice 5 (Open in Compare): id of the run whose frozen config was last
+  // loaded into the command pane. Drives the honest "config loaded" notice on
+  // the Compare toolbar. The notice is visible while the fresh draft has no
+  // new run id of its own; preloadRunId is cleared once a new Compare run
+  // obtains its own id (see the runId effect below) or the session resets
+  // (see the reset handler), so a later reset can never resurrect an old
+  // notice. It is also never set while a Compare run is in flight — see
+  // handleOpenInCompare's active-execution guard.
+  const [preloadRunId, setPreloadRunId] = useState<string | null>(null);
 
   // Focus mode only applies to the horizontal lg split. At md (stacked) and
   // mobile (drawer) the command pane is already compact, so collapsing to a
@@ -380,6 +412,57 @@ export default function RSemble() {
     handleModeChange("fuse");
   }, [handleModeChange]);
 
+  // Reset the Compare session and retire any historical-preload notice in
+  // one shot. Centralized so every Reset button (desktop command pane + mobile
+  // command dialog) clears preloadRunId together with RESET_SESSION — a later
+  // reset can never resurrect an old "config loaded from run …" notice.
+  const handleResetSession = useCallback(() => {
+    dispatch({ type: "RESET_SESSION" });
+    setPreloadRunId(null);
+  }, [dispatch]);
+
+  // ---------------------------------------------------------------------------
+  // Run Detail → Open in Compare (Slice 5)
+  // ---------------------------------------------------------------------------
+  // Honest S-class preload: dispatch the record's frozen command-pane config
+  // (never results, never the record itself), record which run it came from for
+  // the toolbar notice, then navigate to Compare. The user reviews the loaded
+  // inputs and explicitly starts a NEW run — no lineage is fabricated.
+  const handleOpenInCompare = useCallback(
+    (runId: string, config: RunConfigPreload) => {
+      // Active-execution safety: if a Compare run is in flight, neither
+      // dispatch a preload (the reducer's LOAD_RUN_CONFIG also no-ops on
+      // running state, but skipping here is the load-bearing guard) nor set
+      // the historical-preload notice — otherwise the notice would surface
+      // the moment the live run finished and runId changed. Navigating to the
+      // existing Compare view is still allowed; no other active state is
+      // touched.
+      if (stateRef.current.running) {
+        void navigate("/compare");
+        return;
+      }
+      dispatch({ type: "LOAD_RUN_CONFIG", config });
+      setPreloadRunId(runId);
+      // Navigation return is intentionally ignored — the dispatch above is the
+      // source of truth and the route change is fire-and-forget.
+      void navigate("/compare");
+    },
+    [dispatch, navigate],
+  );
+
+  // Clear the historical-preload notice once a new Compare run obtains its
+  // own run id. After a successful preload the fresh draft has runId === null
+  // (LOAD_RUN_CONFIG resets execution identity), so this effect stays idle
+  // until requestRun mints a fresh `cmp-…` id that differs from the
+  // historical preloadRunId — at which point the notice is retired and a
+  // later reset cannot resurrect it. (Reset clears preloadRunId directly via
+  // handleResetSession, which wraps RESET_SESSION for every Reset button.)
+  useEffect(() => {
+    if (preloadRunId !== null && state.runId !== null && state.runId !== preloadRunId) {
+      setPreloadRunId(null);
+    }
+  }, [preloadRunId, state.runId]);
+
   // ---------------------------------------------------------------------------
   // Action shortcuts (extracted)
   // ---------------------------------------------------------------------------
@@ -474,11 +557,39 @@ export default function RSemble() {
                     <div className="flex min-h-0 flex-1 flex-col">
                       <div
                         data-compare-toolbar=""
-                        className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
+                        className="flex min-h-[52px] shrink-0 items-center justify-between gap-3 border-b border-edge bg-panel px-3 py-1.5 sm:px-4"
                       >
-                        <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
-                          Finish
-                        </span>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                            Finish
+                          </span>
+                          {/* Compare → View record (Slice 5): links the
+                            persisted run of the last finished Compare run into
+                            the Runs workspace. Only when a recorder-backed
+                            record exists (never for in-memory-only runs) and
+                            the run is not in flight. */}
+                          {canViewCompareRecord(state, recorder !== null) && (
+                            <button
+                              type="button"
+                              data-action="view-record"
+                              onClick={() => state.runId && navigate(`/runs/${state.runId}`)}
+                              className="pressable flex min-h-[32px] items-center gap-1.5 rounded-md border border-edge px-2.5 text-xs text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+                            >
+                              <FileText size={13} aria-hidden="true" />
+                              View record
+                            </button>
+                          )}
+                          {preloadRunId !== null &&
+                            isPreloadNoticeVisible(preloadRunId, state.runId) && (
+                              <span
+                                data-preload-notice=""
+                                className="hidden truncate text-xs text-text-muted sm:inline"
+                              >
+                                Config loaded from run {preloadRunId.slice(0, 12)}… — results not
+                                copied; run Compare to execute.
+                              </span>
+                            )}
+                        </div>
                         <ModeToggle
                           mode={state.mode}
                           onChange={handleModeChange}
@@ -513,6 +624,7 @@ export default function RSemble() {
                               onRun={requestRun}
                               onAbort={abortRun}
                               blockReason={attachmentBlockReason}
+                              onResetSession={handleResetSession}
                             />
                           )}
                         </section>
@@ -546,6 +658,7 @@ export default function RSemble() {
                   }
                   models={state.models}
                   availableProviderIds={availableProviderIds}
+                  onOpenInCompare={handleOpenInCompare}
                 />
               </RouteErrorBoundary>
             </div>
@@ -587,6 +700,7 @@ export default function RSemble() {
                         setCommandOpen(false);
                       }}
                       onAbort={abortRun}
+                      onResetSession={handleResetSession}
                     />
                   </div>
                 </Dialog.Popup>
@@ -643,6 +757,7 @@ function CommandPane({
   onRun,
   onAbort,
   blockReason,
+  onResetSession,
 }: {
   state: StudioState;
   dispatch: React.Dispatch<Action>;
@@ -651,6 +766,9 @@ function CommandPane({
   onAbort: () => void;
   /** Attachment gate reason for the Run button (plan 7.6.8). */
   blockReason?: string | null;
+  /** Reset the Compare session: dispatches RESET_SESSION and retires any
+   *  historical-preload notice so a later reset cannot resurrect it. */
+  onResetSession: () => void;
 }) {
   const enabledCount = state.slots.filter((s) => s.enabled).length;
   const hasRun = state.candidates.length > 0 || state.running;
@@ -661,13 +779,7 @@ function CommandPane({
         index="01"
         title="Command"
         hint="Define your task, select models, choose a judge, and set evaluation criteria."
-        action={
-          <ResetButton
-            hasRun={hasRun}
-            running={state.running}
-            onReset={() => dispatch({ type: "RESET_SESSION" })}
-          />
-        }
+        action={<ResetButton hasRun={hasRun} running={state.running} onReset={onResetSession} />}
       />
 
       <TaskInput

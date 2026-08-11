@@ -16,6 +16,7 @@ import { RunList } from "./runs/RunList";
 import { RunDetail } from "./runs/RunDetail";
 import { LegacyRunDetail } from "./runs/LegacyRunDetail";
 import { DataArchiveActions } from "../ui/DataArchiveActions";
+import type { RunConfigPreload } from "../lib/runs/run-config-preload";
 
 /** Inline media query — matches the pattern in rsemble.tsx. */
 function useMediaQuery(query: string): boolean {
@@ -36,7 +37,13 @@ function useMediaQuery(query: string): boolean {
 const DESKTOP_QUERY = "(min-width: 1024px)";
 const LIST_WIDTH = 380;
 
-export function RunsWorkspace() {
+export function RunsWorkspace({
+  onOpenInCompare,
+}: {
+  /** Run Detail → Open in Compare (Slice 5). Optional; wired by the root
+   *  shell, omitted in route-only test renders. */
+  onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+}) {
   const repo = useRunRepository();
   const { runId } = useParams<{ runId: string }>();
   const [searchParams] = useSearchParams();
@@ -80,6 +87,7 @@ export function RunsWorkspace() {
               record={record}
               focusCandidateId={focusCandidateId}
               focusJudgeAttemptId={focusJudgeAttemptId}
+              onOpenInCompare={onOpenInCompare}
             />
           )}
         </div>
@@ -90,8 +98,8 @@ export function RunsWorkspace() {
   // --- Mobile/tablet: list only ---
   if (!isDesktop) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="min-h-0 flex-1 p-3">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel">
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-3">
           <RunList repo={repo} selectedId={runId ?? null} />
         </div>
         <div className="shrink-0 border-t border-edge px-3 py-2">
@@ -104,12 +112,14 @@ export function RunsWorkspace() {
   // --- Desktop: split layout ---
   return (
     <div className="flex min-h-0 flex-1">
-      {/* List pane */}
+      {/* List pane — solid panel surface so the run rows read as one
+          workspace list instead of cards floating on the shell void
+          (Slice 1, transplant map §C1). Detail pane stays on shell. */}
       <div
-        className="flex min-h-0 flex-col border-r border-edge"
+        className="flex min-h-0 flex-col border-r border-edge bg-panel"
         style={{ width: `${LIST_WIDTH}px`, flexShrink: 0 }}
       >
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-3">
           <RunList repo={repo} selectedId={runId ?? null} />
         </div>
         <div className="shrink-0 border-t border-edge px-3 py-2">
@@ -130,6 +140,7 @@ export function RunsWorkspace() {
               record={record}
               focusCandidateId={focusCandidateId}
               focusJudgeAttemptId={focusJudgeAttemptId}
+              onOpenInCompare={onOpenInCompare}
             />
           )
         ) : (

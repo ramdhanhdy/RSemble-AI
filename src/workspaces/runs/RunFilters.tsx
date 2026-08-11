@@ -1,11 +1,19 @@
 // =============================================================================
 // RunFilters — search + filter controls for the Runs list (spec §8.2).
 //
-// At 390px search stays visible; model/status/mode/source collapse into a
-// single Filters sheet with an applied-count badge. Clear filters resets all.
+// Desktop (lg/1024+, where the Runs workspace split begins): search stays
+// visible and model/status/mode/source render always-visible in a compact
+// 2-column grid sized for the 380px list pane. A quiet reset action sits with
+// search only when something is active; there is no redundant "Filters"
+// heading competing with the real field labels.
+//
+// Below lg: search stays visible; model/status/mode/source collapse into a
+// single Filters sheet behind the toggle, with the applied-count badge on the
+// toggle (KEEP — mobile collapsed sheet/toggle). Clear filters resets all five
+// fields at every width. No new query semantics, chips, or persistence.
 // =============================================================================
 
-import { useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
 import { Filter, X } from "lucide-react";
 import type { RunStatus } from "../../lib/persistence/run-types";
 
@@ -34,6 +42,91 @@ function countApplied(v: RunFiltersValue): number {
   return n;
 }
 
+/** Shared select chrome so the mobile sheet and the desktop composition can
+ *  never drift apart (transplant map §E1 — one source of truth for the
+ *  data-filter selects and their accessible label structure). */
+const SELECT_CLASSES =
+  "min-h-[44px] rounded-md border border-edge bg-canvas px-2 text-sm text-text focus:border-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+/** Local presentational helper: labeled filter select with a data-filter
+ *  hook. The wrapping <label> keeps the accessible name; the data-filter
+ *  attribute keeps the query hook used by RunList tests and CDP probes. */
+function FilterSelect({
+  label,
+  dataFilter,
+  value,
+  onChange,
+  wrapperClassName = "",
+  labelClassName = "text-text-muted",
+  selectClassName = "",
+  children,
+}: {
+  label: string;
+  dataFilter: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  wrapperClassName?: string;
+  labelClassName?: string;
+  selectClassName?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className={`flex flex-col gap-1 text-sm ${wrapperClassName}`}>
+      <span className={labelClassName}>{label}</span>
+      <select
+        data-filter={dataFilter}
+        value={value}
+        onChange={onChange}
+        className={`${SELECT_CLASSES} ${selectClassName}`}
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+/** Shared option lists — identical in the sheet and the desktop grid so the
+ *  filter semantics (text, model, status, mode, source) cannot diverge. */
+const modelOptions = (modelKeys: string[]) => (
+  <>
+    <option value="">All models</option>
+    {modelKeys.map((k) => (
+      <option key={k} value={k}>
+        {k}
+      </option>
+    ))}
+  </>
+);
+
+const statusOptions = (
+  <>
+    <option value="">All statuses</option>
+    <option value="running">Running</option>
+    <option value="completed">Completed</option>
+    <option value="partial">Partial</option>
+    <option value="failed">Failed</option>
+    <option value="aborted">Aborted</option>
+    <option value="interrupted">Interrupted</option>
+  </>
+);
+
+const modeOptions = (
+  <>
+    <option value="">All modes</option>
+    <option value="rank">Rank</option>
+    <option value="fuse">Fuse</option>
+  </>
+);
+
+const sourceOptions = (
+  <>
+    <option value="">All sources</option>
+    <option value="adhoc">Ad hoc</option>
+    <option value="experiment">Experiment</option>
+    <option value="legacy">Legacy</option>
+  </>
+);
+
 export function RunFilters({
   value,
   onChange,
@@ -45,14 +138,20 @@ export function RunFilters({
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const applied = countApplied(value);
+  const hasAny = value.text.trim().length > 0 || applied > 0;
 
   function update(patch: Partial<RunFiltersValue>) {
     onChange({ ...value, ...patch });
   }
 
+  function clearAll() {
+    onChange({ ...EMPTY_FILTERS });
+  }
+
   return (
     <div className="flex flex-col gap-2">
-      {/* Search — always visible */}
+      {/* Search — always visible at every width. Desktop reset stays visually
+          quiet and only appears when there is something to clear. */}
       <div className="flex items-center gap-2">
         <input
           type="search"
@@ -60,16 +159,30 @@ export function RunFilters({
           placeholder="Search task or model…"
           value={value.text}
           onChange={(e: ChangeEvent<HTMLInputElement>) => update({ text: e.target.value })}
-          className="min-h-[44px] flex-1 rounded-md border border-edge bg-panel px-3 text-sm text-text placeholder:text-text-muted focus:border-accent/50 focus:outline-none"
+          className="min-h-[44px] flex-1 rounded-md border border-edge bg-panel px-3 text-sm text-text placeholder:text-text-muted focus:border-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
-        {/* Filters sheet toggle — visible on all sizes, essential on mobile */}
+        {hasAny && (
+          <button
+            type="button"
+            data-action="clear-filters"
+            aria-label="Clear search and filters"
+            onClick={clearAll}
+            className="hidden min-h-[44px] shrink-0 items-center gap-1 rounded-md px-2 text-xs text-text-muted transition-colors duration-150 hover:bg-raised hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:flex"
+          >
+            <X size={13} aria-hidden="true" />
+            Clear
+          </button>
+        )}
+        {/* Filters sheet toggle — mobile/tablet only (below lg). On desktop the
+            composition below is always visible, so the toggle is redundant
+            there and hidden via lg:hidden (KEEP: mobile collapsed sheet). */}
         <button
           type="button"
           data-action="toggle-filters"
           aria-label="Toggle filters"
           aria-expanded={sheetOpen}
           onClick={() => setSheetOpen((o) => !o)}
-          className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+          className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:ring-2 focus-visible:ring-accent lg:hidden"
         >
           <Filter size={14} aria-hidden="true" />
           <span className="hidden sm:inline">Filters</span>
@@ -81,80 +194,118 @@ export function RunFilters({
         </button>
       </div>
 
-      {/* Filter controls — visible when sheet open or on desktop */}
+      {/* Desktop composition — always rendered at lg+ (transplant map §E1
+          RESTYLE): the real field labels provide the hierarchy; no orphaned
+          generic heading. Model spans full width because model keys are long. */}
+      <div data-desktop-filters className="hidden grid-cols-2 gap-2 lg:grid">
+        <FilterSelect
+          label="Model"
+          dataFilter="model"
+          value={value.modelKey}
+          onChange={(e) => update({ modelKey: e.target.value })}
+          wrapperClassName="col-span-2"
+          labelClassName="text-xs text-text-muted"
+          selectClassName="w-full min-w-0"
+        >
+          {modelOptions(modelKeys)}
+        </FilterSelect>
+
+        <FilterSelect
+          label="Status"
+          dataFilter="status"
+          value={value.status}
+          onChange={(e) => update({ status: e.target.value as RunStatus | "" })}
+          labelClassName="text-xs text-text-muted"
+          selectClassName="w-full min-w-0"
+        >
+          {statusOptions}
+        </FilterSelect>
+
+        <FilterSelect
+          label="Mode"
+          dataFilter="mode"
+          value={value.mode}
+          onChange={(e) => update({ mode: e.target.value as "rank" | "fuse" | "" })}
+          labelClassName="text-xs text-text-muted"
+          selectClassName="w-full min-w-0"
+        >
+          {modeOptions}
+        </FilterSelect>
+
+        <FilterSelect
+          label="Source"
+          dataFilter="source"
+          value={value.source}
+          onChange={(e) =>
+            update({ source: e.target.value as "adhoc" | "experiment" | "legacy" | "" })
+          }
+          wrapperClassName="col-span-2"
+          labelClassName="text-xs text-text-muted"
+          selectClassName="w-full min-w-0"
+        >
+          {sourceOptions}
+        </FilterSelect>
+      </div>
+
+      {/* Mobile/tablet sheet — below lg only, opened via the toggle (KEEP).
+          lg:hidden guards against a sheet left open when the viewport crosses
+          into desktop, where the composition above is authoritative. */}
       {sheetOpen && (
-        <div className="flex flex-wrap items-end gap-2 rounded-md border border-edge bg-panel p-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-text-muted">Model</span>
-            <select
-              data-filter="model"
-              value={value.modelKey}
-              onChange={(e) => update({ modelKey: e.target.value })}
-              className="min-h-[44px] rounded-md border border-edge bg-canvas px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
-            >
-              <option value="">All models</option>
-              {modelKeys.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div
+          data-filter-sheet
+          className="flex flex-wrap items-end gap-2 rounded-md border border-edge bg-panel p-3 overflow-x-hidden min-w-0 lg:hidden"
+        >
+          <FilterSelect
+            label="Model"
+            dataFilter="model"
+            value={value.modelKey}
+            onChange={(e) => update({ modelKey: e.target.value })}
+            wrapperClassName="w-full min-w-0"
+            selectClassName="w-full min-w-0 max-w-full"
+          >
+            {modelOptions(modelKeys)}
+          </FilterSelect>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-text-muted">Status</span>
-            <select
-              data-filter="status"
-              value={value.status}
-              onChange={(e) => update({ status: e.target.value as RunStatus | "" })}
-              className="min-h-[44px] rounded-md border border-edge bg-canvas px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
-            >
-              <option value="">All statuses</option>
-              <option value="running">Running</option>
-              <option value="completed">Completed</option>
-              <option value="partial">Partial</option>
-              <option value="failed">Failed</option>
-              <option value="aborted">Aborted</option>
-              <option value="interrupted">Interrupted</option>
-            </select>
-          </label>
+          <FilterSelect
+            label="Status"
+            dataFilter="status"
+            value={value.status}
+            onChange={(e) => update({ status: e.target.value as RunStatus | "" })}
+            wrapperClassName="min-w-0 flex-1 basis-[calc(50%-0.25rem)]"
+            selectClassName="w-full min-w-0 max-w-full"
+          >
+            {statusOptions}
+          </FilterSelect>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-text-muted">Mode</span>
-            <select
-              data-filter="mode"
-              value={value.mode}
-              onChange={(e) => update({ mode: e.target.value as "rank" | "fuse" | "" })}
-              className="min-h-[44px] rounded-md border border-edge bg-canvas px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
-            >
-              <option value="">All modes</option>
-              <option value="rank">Rank</option>
-              <option value="fuse">Fuse</option>
-            </select>
-          </label>
+          <FilterSelect
+            label="Mode"
+            dataFilter="mode"
+            value={value.mode}
+            onChange={(e) => update({ mode: e.target.value as "rank" | "fuse" | "" })}
+            wrapperClassName="min-w-0 flex-1 basis-[calc(50%-0.25rem)]"
+            selectClassName="w-full min-w-0 max-w-full"
+          >
+            {modeOptions}
+          </FilterSelect>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-text-muted">Source</span>
-            <select
-              data-filter="source"
-              value={value.source}
-              onChange={(e) =>
-                update({ source: e.target.value as "adhoc" | "experiment" | "legacy" | "" })
-              }
-              className="min-h-[44px] rounded-md border border-edge bg-canvas px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
-            >
-              <option value="">All sources</option>
-              <option value="adhoc">Ad hoc</option>
-              <option value="experiment">Experiment</option>
-              <option value="legacy">Legacy</option>
-            </select>
-          </label>
+          <FilterSelect
+            label="Source"
+            dataFilter="source"
+            value={value.source}
+            onChange={(e) =>
+              update({ source: e.target.value as "adhoc" | "experiment" | "legacy" | "" })
+            }
+            wrapperClassName="w-full min-w-0"
+            selectClassName="w-full min-w-0 max-w-full"
+          >
+            {sourceOptions}
+          </FilterSelect>
 
           <button
             type="button"
             data-action="clear-filters"
-            onClick={() => onChange({ ...EMPTY_FILTERS })}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+            onClick={clearAll}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:ring-2 focus-visible:ring-accent"
           >
             <X size={14} aria-hidden="true" />
             Clear filters

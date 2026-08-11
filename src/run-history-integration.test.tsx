@@ -10,6 +10,10 @@
 //      after every Fusion attempt (append-only, never mutated).
 //
 // Uses the real reducer so dispatch mutations mirror production behavior.
+// The real run-history module (localStorage sink) stays unmocked so the
+// "no durable write" contract is observed through the production sink, not a
+// vacuous mock assertion: getRunCount() reads the same localStorage that
+// addRun would write to, so any regression to the legacy fallback fails here.
 // =============================================================================
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -20,7 +24,7 @@ import type { StreamDeltaBuffer } from "./lib/stream-buffer";
 import { InMemoryRunRepository } from "./lib/persistence/run-repository";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import type { RunRecordV2 } from "./lib/persistence/run-types";
-import { addRun } from "./lib/run-history";
+import { clearHistory, getRunCount } from "./lib/run-history";
 
 // ---------------------------------------------------------------------------
 // Provider mocks — same shape as run-controller.test.ts
@@ -32,11 +36,6 @@ const getProviderMock = vi.fn();
 
 vi.mock("./lib/providers/registry", () => ({
   getProvider: (...args: unknown[]) => getProviderMock(...args),
-}));
-
-vi.mock("./lib/run-history", () => ({
-  addRun: vi.fn(),
-  modelKey: (p: string, s: string) => `${p}:${s}`,
 }));
 
 // ---------------------------------------------------------------------------
@@ -54,8 +53,6 @@ const TWO_SLOTS: StudioState["slots"] = [
   },
   { id: "s2", providerId: "umans", provider: "Umans", model: "B", slug: "model-b", enabled: true },
 ];
-
-const addRunMock = addRun as unknown as ReturnType<typeof vi.fn>;
 
 /** Wait for the controller's async IIFE to settle. */
 function delay(ms: number): Promise<void> {
@@ -141,6 +138,10 @@ beforeEach(() => {
     chatCompletionStream: chatStreamMock,
     chatCompletion: chatCompletionMock,
   }));
+  // Reset the real localStorage sink so each test starts from zero runs.
+  // getRunCount() reads this same sink, so a clean baseline makes "no durable
+  // write" assertions meaningful rather than contaminated by prior tests.
+  clearHistory();
 });
 
 describe("run-history integration: one stable run ID lifecycle", () => {
@@ -170,8 +171,10 @@ describe("run-history integration: one stable run ID lifecycle", () => {
     const runId = summariesAfterRank[0]!.id;
     expect(summariesAfterRank[0]!.kind).toBe("full");
 
-    // No duplicate addRun calls — persistence is through the recorder
-    expect(addRunMock).not.toHaveBeenCalled();
+    // Persistence flows through the recorder, not the legacy localStorage
+    // addRun path. The real localStorage sink stays empty — observable through
+    // getRunCount(), which reads the same storage addRun would write to.
+    expect(getRunCount()).toBe(0);
 
     // Snapshot accepted candidate + Judge evidence before Fusion
     const recordAfterRank = await repo.get(runId);
@@ -270,16 +273,24 @@ describe("run-history integration: one stable run ID lifecycle", () => {
     expect(candidatesAfterFail).toEqual(candidatesBeforeFusion);
     expect(recordAfterFail!.judge.acceptedAttemptId).toBe(judgeBeforeFusion);
 
-    // --- Final: still exactly one summary ---
+    // --- Final: still exactly one summary, and the localStorage sink was
+    // never touched — persistence stayed entirely on the recorder/repo path.
     const finalSummaries = await repo.list({ limit: 100 });
     expect(finalSummaries).toHaveLength(1);
     expect(finalSummaries[0]!.id).toBe(runId);
-    expect(addRunMock).not.toHaveBeenCalled();
+    expect(getRunCount()).toBe(0);
   });
 
-  it("Rank run with no recorder keeps evidence in memory only — no addRun fallback", async () => {
+  it("Rank run with no recorder keeps evidence in memory only — no durable write, no repository record", async () => {
+    // A fresh in-memory repository is NOT wired to the controller (recorder is
+    // null), so it represents the production "storage unavailable" state: the
+    // controller must keep evidence in memory only and never fall back to the
+    // legacy localStorage addRun path. Both sinks are observed through their
+    // real production read paths — getRunCount() reads localStorage, repo.list
+    // reads the repository — so a regression to either fallback fails here.
+    const repo = new InMemoryRunRepository();
     const state = stateWithSlots(TWO_SLOTS, "rank");
-    const { deps } = makeDeps(state, null);
+    const { deps, stateRef } = makeDeps(state, null);
     const controller = createRunController(deps);
 
     chatStreamMock.mockImplementation(() => streamOf("answer"));
@@ -291,7 +302,53 @@ describe("run-history integration: one stable run ID lifecycle", () => {
     );
     await controller.runFanout();
 
-    // No recorder → no addRun fallback, evidence stays in memory only
-    expect(addRunMock).not.toHaveBeenCalled();
+    // No recorder → no repository record was created.
+    expect(await repo.list({ limit: 100 })).toHaveLength(0);
+
+    // No recorder → no legacy localStorage write either. getRunCount() reads
+    // the real localStorage sink (installed by the shared test setup), so this
+    // observes the actual durable boundary, not a mock.
+    expect(getRunCount()).toBe(0);
+
+    // Evidence stayed in memory: the run completed and dispatched candidate
+    // results into state, even though nothing was persisted durably.
+    expect(stateRef.current.running).toBe(false);
+    expect(stateRef.current.candidates.length).toBeGreaterThan(0);
+    expect(
+      stateRef.current.candidates.every((c) => c.status === "done" && c.summary.length > 0),
+    ).toBe(true);
+  });
+
+  it("surfaces the persisted run id into state at FANOUT_START (Slice 5 G1 — Compare → View record)", async () => {
+    const repo = new InMemoryRunRepository();
+    const recorder = createRunRecorder(repo, { now: () => Date.now() });
+    const state = stateWithSlots(TWO_SLOTS, "rank");
+    const { deps, stateRef } = makeDeps(state, recorder);
+    const controller = createRunController(deps);
+
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4.0],
+        ["B", 3.0],
+      ]),
+    );
+    await controller.runFanout();
+
+    // The id surfaced into state is the SAME id the recorder persisted —
+    // never a fabricated/alternate id.
+    const summaries = await repo.list({ limit: 100 });
+    expect(summaries).toHaveLength(1);
+    expect(stateRef.current.runId).toBe(summaries[0]!.id);
+    expect(stateRef.current.runId).toMatch(/^run-/);
+    expect(stateRef.current.running).toBe(false);
+
+    // Re-fuse reuses the same surfaced id (no re-dispatch, no drift).
+    stateRef.current = { ...stateRef.current, mode: "fuse", fusionStatus: "idle" };
+    chatCompletionMock.mockResolvedValueOnce("fused answer");
+    controller.triggerFusion(true);
+    await delay(50);
+    expect(stateRef.current.runId).toBe(summaries[0]!.id);
+    expect(await repo.list({ limit: 100 })).toHaveLength(1);
   });
 });

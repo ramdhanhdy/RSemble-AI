@@ -1,0 +1,319 @@
+{
+  "generatedAt": "2026-08-10T13:11:44.667Z",
+  "baseUrl": "http://127.0.0.1:5173/",
+  "probes": [
+    {
+      "name": "empty-db-no-history-state",
+      "pass": true,
+      "hasNoHistory": true,
+      "hasGoCompare": true,
+      "rowCount": 0
+    },
+    {
+      "name": "desktop-no-selection-placeholder",
+      "pass": true
+    },
+    {
+      "name": "rows-all-statuses",
+      "pass": true,
+      "rows": [
+        {
+          "href": "#/runs/run-judge-multi",
+          "status": "Completed"
+        },
+        {
+          "href": "#/runs/run-reused",
+          "status": "Completed"
+        },
+        {
+          "href": "#/runs/run-exp",
+          "status": "Completed"
+        },
+        {
+          "href": "#/runs/run-fuse",
+          "status": "Completed"
+        },
+        {
+          "href": "#/runs/run-interrupted",
+          "status": "Interrupted"
+        },
+        {
+          "href": "#/runs/run-aborted",
+          "status": "Aborted"
+        },
+        {
+          "href": "#/runs/run-partial",
+          "status": "Partial"
+        },
+        {
+          "href": "#/runs/run-failed",
+          "status": "Failed"
+        },
+        {
+          "href": "#/runs/run-running",
+          "status": "Running"
+        },
+        {
+          "href": "#/runs/run-completed",
+          "status": "Completed"
+        },
+        {
+          "href": "#/runs/legacy-1",
+          "status": "Completed"
+        }
+      ]
+    },
+    {
+      "name": "row-legacy-renders",
+      "pass": true,
+      "found": true,
+      "hasLegacyChip": true,
+      "hasCompletedToken": true,
+      "excerptShown": true,
+      "text": "legacyCompletedLegacy run from the v1 localStorage history.Winner: openrouter:z-ai/glm-5.2 · Score: 3.21 models1115d ago"
+    },
+    {
+      "name": "row-winner-score-summary",
+      "pass": true,
+      "text": "ad hocCompletedAd hoc completed evidence walkWinner: openrouter:z-ai/glm-5.2 · Score: 4.42 models1000d ago",
+      "hasWinner": true,
+      "hasScore": true
+    },
+    {
+      "name": "rows-source-chips",
+      "pass": true,
+      "adhoc": "ad hoc",
+      "experiment": "experiment",
+      "legacy": "legacy",
+      "reason": "source chips mislabeled"
+    },
+    {
+      "name": "row-selected-treatment",
+      "pass": true,
+      "selectedHref": "#/runs/run-completed",
+      "ariaCurrent": "true",
+      "srSelected": true
+    },
+    {
+      "name": "detail-completed-full-evidence",
+      "pass": true,
+      "sections": [
+        "header",
+        "timeline",
+        "outcome",
+        "cost-breakdown",
+        "candidates",
+        "selected-candidate",
+        "judge",
+        "task-config"
+      ],
+      "header": "ad hocCompletedrankAd hoc completed evidence walkStarted 11/15/2023, 5:13:20 AM (1000d ago)·Completed 11/15/2023, 5:13:21 AM (1000d ago)·Duration 1s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates2/2 doneJudgeacceptedResultranked - winner set",
+      "outcome": "OutcomeWinners:openrouter:z-ai/glm-5.22 candidates",
+      "costCards": 3,
+      "costTotal": "Incremental total: $0.002400",
+      "candidates": [
+        "cand-s1:true",
+        "cand-s2:false"
+      ],
+      "judge": "Judge EvidenceOpenRouter·Qwen 3.8 Maxopenrouter:Qwen 3.8 Max·Attempt judge-atInput: 700 tokens — provider reportedBlind-label mapping:A → cand-s1B → cand-s2Evaluate the candidates blind.Evaluationscan",
+      "fusion": ""
+    },
+    {
+      "name": "detail-task-config-disclosure",
+      "pass": true,
+      "text": "Task & ConfigurationPrompt: Write a short poem about persistence.Temperature: 0.7Models: openrouter:z-ai/glm-5.2, openrouter:deepseek/deepseek-v4-flashReasoning policyCandidate openrouter:z-ai/glm-5.2: requested high · effective high · provider-docsCandidate openrouter:deepseek/deepseek-v4-flash: requested medium · effective medium · provider-docsJudge: requested medium · effective medium · provider-docs",
+      "reasoning": "Reasoning policyCandidate openrouter:z-ai/glm-5.2: requested high · effective high · provider-docsCandidate openrouter:deepseek/deepseek-v4-flash: requested medium · effective medium · provider-docsJudge: requested medium · effective medium · provider-docs",
+      "hasPrompt": true,
+      "hasTemperature": true,
+      "hasModels": true,
+      "hasReasoning": true
+    },
+    {
+      "name": "detail-running-state",
+      "pass": true,
+      "header": "ad hocRunningrankAd hoc streaming summarizationStarted 11/15/2023, 5:13:22 AM (1000d ago)·Running for 23990h 58m 29s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates1/2 done · 1 pendingJudgerunningResultpending"
+    },
+    {
+      "name": "detail-failed-state",
+      "pass": true,
+      "header": "ad hocFailedrankAd hoc failed extractionStarted 11/15/2023, 5:13:23 AM (1000d ago)·Ended 11/15/2023, 5:13:23 AM (1000d ago)·Duration 1s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates0/2 done · 2 errorsJudgefailedResultno result - judge failed",
+      "outcome": "OutcomeNo winners recorded.2 candidates",
+      "judge": "Judge EvidenceNo accepted Judge attempt.",
+      "cost": "CostNo cost data for this run."
+    },
+    {
+      "name": "detail-partial-state",
+      "pass": true,
+      "header": "ad hocPartialrankAd hoc partial coverageStarted 11/15/2023, 5:13:24 AM (1000d ago)·Ended 11/15/2023, 5:13:24 AM (1000d ago)·Duration 1s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates1/2 done · 1 errorJudgeacceptedResultno result - candidate error"
+    },
+    {
+      "name": "detail-aborted-state",
+      "pass": true,
+      "header": "ad hocAbortedrankAd hoc aborted cleanupStarted 11/15/2023, 5:13:25 AM (1000d ago)·Ended 11/15/2023, 5:13:25 AM (1000d ago)·Duration 0s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates1/2 done · 1 not completedJudgenot runResultaborted by user"
+    },
+    {
+      "name": "detail-interrupted-state",
+      "pass": true,
+      "header": "ad hocInterruptedrankAd hoc interrupted retryStarted 11/15/2023, 5:13:26 AM (1000d ago)·Ended 11/15/2023, 5:13:26 AM (1000d ago)·Duration 0s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates1/2 done · 1 not completedJudgeinterruptedResultstopped mid-run"
+    },
+    {
+      "name": "detail-fuse-state",
+      "pass": true,
+      "header": "ad hocCompletedfuseAd hoc fused verdictStarted 11/15/2023, 5:13:27 AM (1000d ago)·Completed 11/15/2023, 5:13:28 AM (1000d ago)·Duration 1s·Asia/JakartaOpen in CompareCopy link — this device",
+      "timeline": "Status timelineCreated1000d agoCandidates2/2 doneJudgeacceptedResultfused",
+      "fusion": "Fusion ResultOpenRouter·Qwen 3.8 Maxopenrouter:Qwen 3.8 MaxInput: 400 tokens — provider reportedFused verdict: persistence wins with nuance on tone."
+    },
+    {
+      "name": "detail-experiment-provenance",
+      "pass": true,
+      "provenance": "Experiment·Suite v1·pricing·att-exp-…att-exp-1Back to experiment",
+      "provenanceLinks": [
+        "#/experiments/exp-qa",
+        "#/evaluations/suite-qa",
+        "#/experiments/exp-qa"
+      ]
+    },
+    {
+      "name": "detail-reused-output",
+      "pass": true,
+      "hasNote": true,
+      "noteText": "Reused from prior attemptView source run",
+      "viewSourceHref": "#/runs/run-completed"
+    },
+    {
+      "name": "deeplink-candidate-focus",
+      "pass": true,
+      "pressed": "true",
+      "focused": true,
+      "panelHasS2": true
+    },
+    {
+      "name": "deeplink-judge-attempt-accepted",
+      "pass": true,
+      "highlighted": true,
+      "label": true
+    },
+    {
+      "name": "deeplink-judge-attempt-historical",
+      "pass": true,
+      "histLabel": true,
+      "acceptedStillShown": true,
+      "acceptedStillAccepted": true,
+      "histHighlighted": true
+    },
+    {
+      "name": "deeplink-invalid-candidate",
+      "pass": true,
+      "notice": true,
+      "overviewStillRenders": true
+    },
+    {
+      "name": "deeplink-invalid-attempt",
+      "pass": true,
+      "notice": true,
+      "overviewStillRenders": true
+    },
+    {
+      "name": "not-found-unknown-run-desktop",
+      "pass": true,
+      "notFound": true,
+      "backHref": "#/runs",
+      "overflowX": false
+    },
+    {
+      "name": "deeplink-legacy-detail",
+      "pass": true,
+      "legacyBadge": true,
+      "limitation": true,
+      "winner": true,
+      "hasCopyLink": true,
+      "hasOpenCompare": false
+    },
+    {
+      "name": "zero-results-search-no-match",
+      "pass": true,
+      "noMatch": true,
+      "noHistoryLeak": true,
+      "rows": 0,
+      "hasClear": true,
+      "reason": "no-history state leaked into no-match search"
+    },
+    {
+      "name": "zero-results-search-clear-recovery",
+      "pass": true,
+      "rowsBack": 11,
+      "noMatchGone": true,
+      "searchCleared": true
+    },
+    {
+      "name": "zero-results-filter-no-match",
+      "pass": true,
+      "noMatch": true,
+      "noHistoryLeak": true,
+      "rows": 0,
+      "badge": "Filters2",
+      "reason": "no-history state leaked into no-match filter"
+    },
+    {
+      "name": "zero-results-filter-clear-recovery",
+      "pass": true,
+      "rowsBack": 11,
+      "badge": "Filters",
+      "noMatchGone": true
+    },
+    {
+      "name": "mobile-deeplink-failed-detail",
+      "pass": true,
+      "hasBack": true,
+      "failedCopy": true,
+      "overflowX": false
+    },
+    {
+      "name": "mobile-not-found-unknown-run",
+      "pass": true,
+      "notFound": true,
+      "backHref": "#/runs",
+      "overflowX": false
+    },
+    {
+      "name": "mobile-legacy-detail",
+      "pass": true,
+      "hasBack": true,
+      "limitation": true
+    },
+    {
+      "name": "no-uncaught-exceptions",
+      "pass": true,
+      "errors": []
+    }
+  ],
+  "screenshots": [
+    "01-empty-history.png",
+    "02-rows-all-states.png",
+    "03-completed-detail.png",
+    "04-running-detail.png",
+    "05-failed-detail.png",
+    "06-aborted-detail.png",
+    "07-fuse-detail.png",
+    "08-experiment-provenance.png",
+    "09-reused-output.png",
+    "10-deeplink-candidate-focus.png",
+    "11-deeplink-judge-historical.png",
+    "12-not-found-desktop.png",
+    "13-legacy-detail.png",
+    "14-zero-results-search.png",
+    "15-mobile-failed-detail.png",
+    "16-mobile-not-found.png"
+  ],
+  "consoleErrors": [],
+  "seeded": {
+    "runCount": 10,
+    "legacyCount": 1
+  }
+}

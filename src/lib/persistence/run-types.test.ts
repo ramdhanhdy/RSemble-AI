@@ -760,6 +760,405 @@ describe("isRunRecordV2 structural guards", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// 12. Accepted-evidence cross-reference validation
+//    Protects imported/stored records against stale-evidence corruption:
+//    accepted pointers must resolve completed accepted attempts, and the
+//    accepted Judge/Fusion candidate maps must match the current accepted
+//    candidate attempt set. A Fusion source Judge must match the current
+//    accepted Judge (spec §5.6, §11.3, archive import).
+// ---------------------------------------------------------------------------
+
+describe("isRunRecordV2 accepted-evidence cross-reference validation", () => {
+  /** A valid record with accepted candidate, Judge, and Fusion all
+   * cross-referencing consistently. */
+  function validAcceptedRecord(): RunRecordV2 {
+    const r = validRunRecord();
+    r.candidates = [
+      {
+        candidateId: "c-1",
+        slotId: "s-1",
+        modelKey: "openrouter:foo",
+        providerId: "openrouter",
+        model: "foo",
+        slug: "foo",
+        acceptedAttemptId: "att-1",
+        attempts: [
+          {
+            attemptId: "att-1",
+            messages: [{ role: "user", content: "p" }],
+            startedAt: 1,
+            finishedAt: 2,
+            status: "completed",
+            output: "out",
+            tokensIn: 10,
+            tokensOut: 20,
+            error: null,
+          },
+        ],
+      },
+      {
+        candidateId: "c-2",
+        slotId: "s-2",
+        modelKey: "gemini:bar",
+        providerId: "gemini",
+        model: "bar",
+        slug: "bar",
+        acceptedAttemptId: "att-2",
+        attempts: [
+          {
+            attemptId: "att-2",
+            messages: [{ role: "user", content: "p" }],
+            startedAt: 1,
+            finishedAt: 2,
+            status: "completed",
+            output: "out2",
+            tokensIn: 10,
+            tokensOut: 20,
+            error: null,
+          },
+        ],
+      },
+    ];
+    r.judge = {
+      status: "done",
+      acceptedAttemptId: "j-1",
+      report: {
+        labelMap: [
+          { label: "A", candidateId: "c-1" },
+          { label: "B", candidateId: "c-2" },
+        ],
+        evaluationsById: {
+          "c-1": {
+            candidateId: "c-1",
+            blindLabel: "A",
+            overallScore: 4,
+            position: "p",
+            rationale: "r",
+            strengths: [],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+          "c-2": {
+            candidateId: "c-2",
+            blindLabel: "B",
+            overallScore: 3,
+            position: "p",
+            rationale: "r",
+            strengths: [],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [],
+          },
+        },
+        comparisons: [],
+      },
+      consensus: null,
+      attempts: [
+        {
+          attemptId: "j-1",
+          providerId: "openrouter",
+          model: "judge",
+          instruction: "",
+          messages: [],
+          blindLabelToCandidateId: { A: "c-1", B: "c-2" },
+          candidateAttemptIdsByCandidateId: { "c-1": "att-1", "c-2": "att-2" },
+          startedAt: 1,
+          finishedAt: 2,
+          status: "completed",
+          error: null,
+          report: null,
+          consensus: null,
+        },
+      ],
+    };
+    r.fusion = {
+      status: "done",
+      acceptedAttemptId: "f-1",
+      attempts: [
+        {
+          attemptId: "f-1",
+          providerId: "openrouter",
+          model: "fuse",
+          messages: [],
+          sourceJudgeAttemptId: "j-1",
+          candidateAttemptIdsByCandidateId: { "c-1": "att-1", "c-2": "att-2" },
+          startedAt: 1,
+          finishedAt: 2,
+          status: "completed",
+          error: null,
+          result: "fused",
+        },
+      ],
+    };
+    r.winnerKeys = ["openrouter:foo"];
+    return r;
+  }
+
+  it("accepts a record with consistent accepted candidate, Judge, and Fusion", () => {
+    expect(isRunRecordV2(validAcceptedRecord())).toBe(true);
+  });
+
+  it("rejects inherited Object.prototype names as Judge criterion kinds", () => {
+    const r = validAcceptedRecord();
+    r.judge.report!.evaluationsById["c-1"].criterionScores = [
+      {
+        criterionId: "criterion-1",
+        label: "Criterion 1",
+        kind: "constructor",
+        score: 4,
+        rationale: "r",
+      } as unknown as any,
+    ];
+
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("accepts a partial run: accepted Judge with one failed candidate (no accepted pointer)", () => {
+    const r = validAcceptedRecord();
+    // Second candidate failed — no acceptedAttemptId, so it is not required
+    // in the Judge candidate map.
+    r.candidates[1].acceptedAttemptId = null;
+    r.candidates[1].attempts[0].status = "failed";
+    r.candidates[1].attempts[0].output = null;
+    r.candidates[1].attempts[0].error = { message: "fail" };
+    // Judge map only includes c-1 now.
+    r.judge.attempts[0].candidateAttemptIdsByCandidateId = { "c-1": "att-1" };
+    r.fusion.attempts[0].candidateAttemptIdsByCandidateId = { "c-1": "att-1" };
+    expect(isRunRecordV2(r)).toBe(true);
+  });
+
+  it("accepts a failed re-fuse: fusion.status=error but prior accepted Fusion valid", () => {
+    const r = validAcceptedRecord();
+    // Add a failed re-fuse attempt.
+    r.fusion.attempts.push({
+      attemptId: "f-2",
+      providerId: "openrouter",
+      model: "fuse",
+      messages: [],
+      sourceJudgeAttemptId: "j-1",
+      candidateAttemptIdsByCandidateId: { "c-1": "att-1", "c-2": "att-2" },
+      startedAt: 3,
+      finishedAt: 4,
+      status: "failed",
+      error: { message: "fail" },
+      result: null,
+    });
+    r.fusion.status = "error";
+    // acceptedAttemptId still points to the prior successful fusion.
+    expect(isRunRecordV2(r)).toBe(true);
+  });
+
+  it("accepts a record with no accepted Judge or Fusion (idle stages)", () => {
+    const r = validAcceptedRecord();
+    r.judge.acceptedAttemptId = null;
+    r.judge.report = null;
+    r.judge.status = "idle";
+    r.fusion.acceptedAttemptId = null;
+    r.fusion.status = "idle";
+    r.winnerKeys = [];
+    expect(isRunRecordV2(r)).toBe(true);
+  });
+
+  // --- Rejection cases --------------------------------------------------------
+
+  it("rejects an accepted candidate pointer that does not resolve to a completed attempt", () => {
+    const r = validAcceptedRecord();
+    // Point to a non-existent attempt.
+    r.candidates[0].acceptedAttemptId = "nonexistent";
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted candidate pointer resolving to a failed attempt", () => {
+    const r = validAcceptedRecord();
+    r.candidates[0].attempts[0].status = "failed";
+    r.candidates[0].attempts[0].output = null;
+    r.candidates[0].attempts[0].error = { message: "fail" };
+    // acceptedAttemptId still points to att-1, which is now failed.
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted candidate pointer resolving to a completed attempt with null output", () => {
+    const r = validAcceptedRecord();
+    r.candidates[0].attempts[0].output = null;
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Judge pointer that does not resolve to an attempt", () => {
+    const r = validAcceptedRecord();
+    r.judge.acceptedAttemptId = "nonexistent";
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Judge pointer resolving to a failed attempt", () => {
+    const r = validAcceptedRecord();
+    r.judge.attempts[0].status = "failed";
+    r.judge.attempts[0].error = { message: "fail" };
+    // acceptedAttemptId still points to j-1, which is now failed.
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Judge pointer with a null report", () => {
+    const r = validAcceptedRecord();
+    r.judge.report = null;
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Judge whose candidate map misses a currently accepted candidate", () => {
+    const r = validAcceptedRecord();
+    // c-2 is accepted but missing from the Judge candidate map.
+    delete r.judge.attempts[0].candidateAttemptIdsByCandidateId["c-2"];
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Judge whose candidate map references a stale candidate attempt", () => {
+    const r = validAcceptedRecord();
+    // The candidate's acceptedAttemptId was updated to a retry, but the Judge
+    // map still references the old attempt — stale evidence.
+    r.candidates[0].acceptedAttemptId = "att-1-retry";
+    r.candidates[0].attempts.push({
+      attemptId: "att-1-retry",
+      messages: [{ role: "user", content: "p" }],
+      startedAt: 3,
+      finishedAt: 4,
+      status: "completed",
+      output: "out-retry",
+      tokensIn: 10,
+      tokensOut: 20,
+      error: null,
+    });
+    // Judge map still says c-1 → att-1 (stale).
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Fusion pointer that does not resolve to an attempt", () => {
+    const r = validAcceptedRecord();
+    r.fusion.acceptedAttemptId = "nonexistent";
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Fusion pointer resolving to a failed attempt", () => {
+    const r = validAcceptedRecord();
+    r.fusion.attempts[0].status = "failed";
+    r.fusion.attempts[0].error = { message: "fail" };
+    r.fusion.attempts[0].result = null;
+    // acceptedAttemptId still points to f-1, which is now failed.
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Fusion pointer resolving to a completed attempt with null result", () => {
+    const r = validAcceptedRecord();
+    r.fusion.attempts[0].result = null;
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Fusion whose source Judge does not match the current accepted Judge", () => {
+    const r = validAcceptedRecord();
+    // Fusion points to a different Judge attempt than the accepted one.
+    r.fusion.attempts[0].sourceJudgeAttemptId = "j-other";
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Fusion when the accepted Judge has been invalidated (null)", () => {
+    const r = validAcceptedRecord();
+    // Judge invalidated (e.g. by a candidate retry) but Fusion accepted
+    // pointer left behind — stale evidence.
+    r.judge.acceptedAttemptId = null;
+    r.judge.report = null;
+    r.judge.status = "idle";
+    r.winnerKeys = [];
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  // --- Exact equality (both directions) ---------------------------------------
+
+  it("rejects an accepted Judge map with a stale extra entry for a candidate no longer accepted", () => {
+    // c-2's accepted attempt was invalidated (candidate retry superseded it
+    // and Judge was cleared), but the old Judge map still scores c-2 —
+    // deriveWinnerKeys would loop over a candidate with no current accepted
+    // output. Exact equality rejects this stale extra entry.
+    const r = validAcceptedRecord();
+    r.candidates[1].acceptedAttemptId = null;
+    r.candidates[1].attempts[0].status = "failed";
+    r.candidates[1].attempts[0].output = null;
+    r.candidates[1].attempts[0].error = { message: "fail" };
+    // Judge map still has c-2 → att-2 (stale extra entry).
+    // (Not removing c-2 from the map — the map has an extra key now.)
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Judge map with a stale extra entry for a removed candidate", () => {
+    const r = validAcceptedRecord();
+    // Remove c-2 entirely from candidates, but leave it in the Judge map.
+    r.candidates = [r.candidates[0]];
+    // Judge map still references c-2 → att-2 (stale).
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Fusion map with a stale extra entry not in the current accepted set", () => {
+    const r = validAcceptedRecord();
+    // Fusion map has an extra entry c-3 that is not a current candidate.
+    r.fusion.attempts[0].candidateAttemptIdsByCandidateId = {
+      "c-1": "att-1",
+      "c-2": "att-2",
+      "c-3": "att-3",
+    };
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Fusion map that differs from its source accepted Judge map", () => {
+    const r = validAcceptedRecord();
+    // Fusion map references a different attempt for c-2 than the source
+    // Judge map — the Fusion fused a different candidate set than its Judge.
+    r.fusion.attempts[0].candidateAttemptIdsByCandidateId = {
+      "c-1": "att-1",
+      "c-2": "att-2-other",
+    };
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("rejects an accepted Fusion map missing an entry present in the source Judge map", () => {
+    const r = validAcceptedRecord();
+    // Fusion map drops c-2 but the source Judge and current accepted set
+    // both include it.
+    r.fusion.attempts[0].candidateAttemptIdsByCandidateId = { "c-1": "att-1" };
+    expect(isRunRecordV2(r)).toBe(false);
+  });
+
+  it("accepts a partial run where the accepted map is the judged usable subset (exact match)", () => {
+    // A partial run: c-2 failed, so the accepted set is {c-1}. The Judge and
+    // Fusion maps must both be exactly {c-1: att-1} — no stale c-2 entry.
+    const r = validAcceptedRecord();
+    r.candidates[1].acceptedAttemptId = null;
+    r.candidates[1].attempts[0].status = "failed";
+    r.candidates[1].attempts[0].output = null;
+    r.candidates[1].attempts[0].error = { message: "fail" };
+    r.judge.attempts[0].candidateAttemptIdsByCandidateId = { "c-1": "att-1" };
+    r.judge.attempts[0].blindLabelToCandidateId = { A: "c-1" };
+    r.judge.report = {
+      labelMap: [{ label: "A", candidateId: "c-1" }],
+      evaluationsById: {
+        "c-1": {
+          candidateId: "c-1",
+          blindLabel: "A",
+          overallScore: 4,
+          position: "p",
+          rationale: "r",
+          strengths: [],
+          deductions: [],
+          missedRequirements: [],
+          criterionScores: [],
+        },
+      },
+      comparisons: [],
+    };
+    r.fusion.attempts[0].candidateAttemptIdsByCandidateId = { "c-1": "att-1" };
+    r.winnerKeys = ["openrouter:foo"];
+    expect(isRunRecordV2(r)).toBe(true);
+  });
+});
+
 // ===========================================================================
 // Evaluation domain validators
 // ===========================================================================

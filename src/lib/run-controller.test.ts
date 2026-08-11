@@ -2312,6 +2312,7 @@ function withoutLeaseNotifications(tab: InMemoryExecutionLease): ExecutionLease 
     isOwner: tab.isOwner.bind(tab),
     getCurrent: tab.getCurrent.bind(tab),
     subscribe: () => () => {},
+    acquireForRecovery: tab.acquireForRecovery.bind(tab),
     recoverInterruptedRuns: tab.recoverInterruptedRuns.bind(tab),
     dispose: tab.dispose.bind(tab),
   };

@@ -961,12 +961,16 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
   // --- Recovery ---------------------------------------------------------------
 
   async function recoverOnStartup(): Promise<number> {
-    // Try to acquire the lease. If another tab holds it, we can't recover.
-    try {
-      activeLease = await lease.acquire({ kind: "experiment", executionId: "startup-recovery" });
-    } catch {
-      return 0;
-    }
+    // Try to acquire the lease. If another tab holds it, acquireForRecovery
+    // arms exactly one safe retry after that lease becomes free/expired —
+    // never interrupting a live owner, never looping. If acquisition still
+    // fails, we can't recover.
+    const acquired = await lease.acquireForRecovery({
+      kind: "experiment",
+      executionId: "startup-recovery",
+    });
+    if (!acquired) return 0;
+    activeLease = acquired;
 
     let recovered = 0;
     try {

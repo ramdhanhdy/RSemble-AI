@@ -11,7 +11,7 @@
 // recreated on navigation, so an active experiment survives route changes.
 // =============================================================================
 
-import { useContext, useEffect, useMemo, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { RepositoryContext } from "../persistence/repository-context";
 import {
   DexieExperimentStore,
@@ -50,6 +50,7 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
     return { controller, lease };
   }, [db, evalRepo, runRepo, owner]);
   const controller = composed?.controller ?? null;
+  const [recoveredController, setRecoveredController] = useState<ExperimentController | null>(null);
 
   // Startup recovery (spec §20): after lease acquisition, mark stale
   // running/paused experiments (and their non-terminal task runs) interrupted,
@@ -58,6 +59,7 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
   // resumes work and runs once per controller instance.
   useEffect(() => {
     if (!controller || !composed || !runRepo) return;
+    let cancelled = false;
     const lease = composed.lease;
     const repo = runRepo;
     void (async () => {
@@ -72,12 +74,21 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
       } catch {
         // Sweep is idempotent; a later startup retries.
       }
+      if (!cancelled) setRecoveredController(controller);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [controller, composed, runRepo]);
 
+  // Never expose execution actions until both recovery passes finish. Identity
+  // matching also withholds a newly composed controller immediately, without
+  // relying on an effect to clear readiness from a previous database handle.
+  const readyController = recoveredController === controller ? controller : null;
+
   const value = useMemo<ExperimentControllerContextValue>(
-    () => ({ controller, lease: composed?.lease ?? null }),
-    [controller, composed],
+    () => ({ controller: readyController, lease: composed?.lease ?? null }),
+    [readyController, composed],
   );
 
   return (

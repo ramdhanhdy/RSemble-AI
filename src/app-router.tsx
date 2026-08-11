@@ -17,6 +17,7 @@ import {
   useFusionStudyRepository,
 } from "./lib/persistence/repository-context";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
+import type { RunConfigPreload } from "./lib/runs/run-config-preload";
 
 // Route-level code splitting: Compare is the default surface and stays in the
 // main chunk; Runs, Evaluations (suites, profiles, fusion study), and
@@ -67,19 +68,30 @@ export function AppRoutes({
   compareOutlet,
   models,
   availableProviderIds,
+  onOpenInCompare,
 }: {
   compareOutlet: React.ReactNode;
   models: CatalogModel[];
   /** Providers currently ready (registry order) — powers the add-model picker
    *  on terminal experiment results (roster spec F1). */
   availableProviderIds?: ProviderId[];
+  /** Run Detail → Open in Compare (Slice 5): preloads a record's frozen
+   *  config into the Compare command pane and navigates there. Optional so
+   *  route-only renderers (tests) can omit it. */
+  onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
 }) {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/compare" replace />} />
       <Route path="/compare" element={<CompareSlot>{compareOutlet}</CompareSlot>} />
-      <Route path="/runs" element={withSuspense(<RunsWorkspace />)} />
-      <Route path="/runs/:runId" element={withSuspense(<RunsWorkspace />)} />
+      <Route
+        path="/runs"
+        element={withSuspense(<RunsWorkspace onOpenInCompare={onOpenInCompare} />)}
+      />
+      <Route
+        path="/runs/:runId"
+        element={withSuspense(<RunsWorkspace onOpenInCompare={onOpenInCompare} />)}
+      />
 
       {/* Evaluations workspace — segmented nav (Suites | Profiles) + Outlet.
           EvaluationContext is provided by EvaluationsWorkspace so child routes

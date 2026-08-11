@@ -20,6 +20,7 @@ import {
   isFullRunSummaryV2,
   isLegacyRunSummary,
   isRunRecordV2,
+  repairRunRecordForCompatibility,
   isRunArchiveV1,
   type FullRunSummaryV2,
   type LegacyRunSummary,
@@ -119,6 +120,10 @@ function summaryToRow(summary: FullRunSummaryV2 | LegacyRunSummary): RunSummaryR
   };
 }
 
+function compatibleRecord(record: unknown): RunRecordV2 | null {
+  return isRunRecordV2(record) ? record : repairRunRecordForCompatibility(record);
+}
+
 export interface RunRepositoryOptions {
   /** Injected clock for deterministic lease-expiry tests. */
   now?: () => number;
@@ -202,9 +207,10 @@ export function createRunRepository(
     expectedRevision: number,
     expectedFence?: ExpectedExecutionFence,
   ): Promise<number> {
-    if (!isRunRecordV2(record)) throw new StorageError("validation", "Invalid run record");
+    const compatible = compatibleRecord(record);
+    if (!compatible) throw new StorageError("validation", "Invalid run record");
     if (!isFullRunSummaryV2(summary)) throw new StorageError("validation", "Invalid summary");
-    if (record.id !== summary.id) {
+    if (compatible.id !== summary.id) {
       throw new StorageError(
         "validation",
         `Record ID "${record.id}" does not match summary ID "${summary.id}"`,
@@ -213,7 +219,7 @@ export function createRunRepository(
     db.assertWritable();
 
     const newRevision = expectedRevision + 1;
-    const updatedRecord: RunRecordV2 = { ...record, revision: newRevision };
+    const updatedRecord: RunRecordV2 = { ...compatible, revision: newRevision };
     try {
       await db.transaction("rw", db.runSummaries, db.runDetails, db.storageMeta, async () => {
         if (expectedFence) {
@@ -224,8 +230,8 @@ export function createRunRepository(
             now(),
           );
         }
-        const existingDetail = await db.runDetails.get(record.id);
-        if (!existingDetail) throw new StorageError("conflict", `Run ${record.id} not found`);
+        const existingDetail = await db.runDetails.get(compatible.id);
+        if (!existingDetail) throw new StorageError("conflict", `Run ${compatible.id} not found`);
         if (existingDetail.revision !== expectedRevision) {
           throw new StorageError(
             "conflict",
@@ -234,10 +240,10 @@ export function createRunRepository(
         }
 
         // Reject illegal terminal-state regressions to "running".
-        if (TERMINAL_STATUSES.has(existingDetail.status) && record.status === "running") {
+        if (TERMINAL_STATUSES.has(existingDetail.status) && compatible.status === "running") {
           throw new StorageError(
             "validation",
-            `Cannot regress terminal status "${existingDetail.status}" to "running" (run ${record.id})`,
+            `Cannot regress terminal status "${existingDetail.status}" to "running" (run ${compatible.id})`,
           );
         }
 
@@ -252,8 +258,8 @@ export function createRunRepository(
           id: record.id,
           record: updatedRecord,
           revision: newRevision,
-          createdAt: record.createdAt,
-          status: record.status,
+          createdAt: compatible.createdAt,
+          status: compatible.status,
         };
         await db.runDetails.put(detailRow);
       });
@@ -291,8 +297,8 @@ export function createRunRepository(
     try {
       const row = await db.runDetails.get(id);
       if (!row) return null;
-      const record = row.record;
-      return isRunRecordV2(record) ? record : null;
+      const record = compatibleRecord(row.record);
+      return record;
     } catch (err) {
       throw classifyStorageError(err);
     }
@@ -375,8 +381,8 @@ export function createRunRepository(
       });
 
       await db.runDetails.orderBy("createdAt").each((row) => {
-        const r = row.record;
-        if (isRunRecordV2(r)) runs.push(r);
+        const r = compatibleRecord(row.record);
+        if (r) runs.push(r);
       });
 
       return {
@@ -391,7 +397,11 @@ export function createRunRepository(
   }
 
   async function importArchive(archive: RunArchiveV1): Promise<RunImportResult> {
-    if (!isRunArchiveV1(archive)) throw new StorageError("validation", "Invalid archive");
+    const compatibleArchive: RunArchiveV1 = {
+      ...archive,
+      runs: archive.runs.map((record) => compatibleRecord(record) ?? record),
+    };
+    if (!isRunArchiveV1(compatibleArchive)) throw new StorageError("validation", "Invalid archive");
     db.assertWritable();
     let imported = 0;
     let skipped = 0;
@@ -401,7 +411,7 @@ export function createRunRepository(
     const summariesById = new Map<string, FullRunSummaryV2>();
     const legacySummaries: LegacyRunSummary[] = [];
 
-    for (const s of archive.summaries) {
+    for (const s of compatibleArchive.summaries) {
       if (isFullRunSummaryV2(s)) {
         summariesById.set(s.id, s);
       } else if (isLegacyRunSummary(s)) {
@@ -413,7 +423,7 @@ export function createRunRepository(
 
     try {
       // Import full runs (detail + summary paired).
-      for (const record of archive.runs) {
+      for (const record of compatibleArchive.runs) {
         if (!isRunRecordV2(record)) {
           errors.push(
             `Invalid run record: ${typeof record === "object" && record !== null ? ((record as { id?: unknown }).id ?? "unknown") : "unknown"}`,
@@ -556,6 +566,8 @@ export class InMemoryRunRepository implements RunRepository {
     expectedRevision: number,
     expectedFence?: ExpectedExecutionFence,
   ): Promise<number> {
+    const compatible = compatibleRecord(record);
+    if (!compatible) throw new StorageError("validation", "Invalid run record");
     if (record.id !== summary.id) {
       throw new StorageError(
         "validation",
@@ -567,7 +579,7 @@ export class InMemoryRunRepository implements RunRepository {
     if (!existing) throw new StorageError("conflict", `Run ${record.id} not found`);
     if (existing.revision !== expectedRevision)
       throw new StorageError("conflict", "Stale revision");
-    if (TERMINAL_STATUSES.has(existing.status) && record.status === "running") {
+    if (TERMINAL_STATUSES.has(existing.status) && compatible.status === "running") {
       throw new StorageError(
         "validation",
         `Cannot regress terminal status "${existing.status}" to "running" (run ${record.id})`,
@@ -582,7 +594,7 @@ export class InMemoryRunRepository implements RunRepository {
         searchText: normalizeSearchText(summary),
       }),
     );
-    this.details.set(record.id, structuredClone({ ...record, revision: newRevision }));
+    this.details.set(compatible.id, structuredClone({ ...compatible, revision: newRevision }));
     this.notify();
     return newRevision;
   }
@@ -595,7 +607,7 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   async get(id: string): Promise<RunRecordV2 | null> {
-    const record = this.details.get(id);
+    const record = compatibleRecord(this.details.get(id));
     // Deep-clone on read so callers cannot mutate stored state through the
     // returned reference (mirrors Dexie structured-clone reads).
     return record ? structuredClone(record) : null;
@@ -639,7 +651,9 @@ export class InMemoryRunRepository implements RunRepository {
     return {
       schemaVersion: 1,
       exportedAt: Date.now(),
-      runs: [...this.details.values()],
+      runs: [...this.details.values()]
+        .map((record) => compatibleRecord(record))
+        .filter((record): record is RunRecordV2 => record !== null),
       summaries: [...this.summaries.values()],
     };
   }

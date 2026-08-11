@@ -1,0 +1,257 @@
+{
+  "generatedAt": "2026-08-10T13:07:16.013Z",
+  "baseUrl": "http://127.0.0.1:5173/",
+  "probes": [
+    {
+      "name": "desktop-1440-split",
+      "pass": true,
+      "hash": "#/runs",
+      "listPaneWidth": 380,
+      "rowCount": 11,
+      "hasPlaceholder": true,
+      "hasBack": false,
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "visibleFilterNames": [
+        "model",
+        "status",
+        "mode",
+        "source"
+      ],
+      "filterToggleVisible": false,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "desktop-1440-select-detail",
+      "pass": true,
+      "hash": "#/runs/run-long-key",
+      "listPaneWidth": 380,
+      "rowCount": 11,
+      "hasPlaceholder": false,
+      "hasBack": false,
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "overflowX": false,
+      "visibleFilterNames": [
+        "model",
+        "status",
+        "mode",
+        "source"
+      ],
+      "filterToggleVisible": false,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "boundary-1024-split",
+      "pass": true,
+      "hash": "#/runs",
+      "listPaneWidth": 380,
+      "rowCount": 11,
+      "hasPlaceholder": true,
+      "hasBack": false,
+      "scrollWidth": 1024,
+      "clientWidth": 1024,
+      "overflowX": false,
+      "visibleFilterNames": [
+        "model",
+        "status",
+        "mode",
+        "source"
+      ],
+      "filterToggleVisible": false,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "tablet-768-list-only",
+      "pass": true,
+      "hash": "#/runs",
+      "listPaneWidth": null,
+      "rowCount": 11,
+      "hasPlaceholder": false,
+      "hasBack": false,
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "visibleFilterNames": [],
+      "filterToggleVisible": true,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "tablet-768-route-detail",
+      "pass": true,
+      "hash": "#/runs/run-long-key",
+      "listPaneWidth": null,
+      "rowCount": 0,
+      "hasPlaceholder": false,
+      "hasBack": true,
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "visibleFilterNames": [],
+      "filterToggleVisible": false,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "tablet-768-back-to-list",
+      "pass": true,
+      "hash": "#/runs",
+      "listPaneWidth": null,
+      "rowCount": 11,
+      "hasPlaceholder": false,
+      "hasBack": false,
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "visibleFilterNames": [],
+      "filterToggleVisible": true,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "tablet-768-deeplink-detail",
+      "pass": true,
+      "hash": "#/runs/run-adhoc-4",
+      "listPaneWidth": null,
+      "rowCount": 0,
+      "hasPlaceholder": false,
+      "hasBack": true,
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflowX": false,
+      "visibleFilterNames": [],
+      "filterToggleVisible": false,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "phone-390-list-only",
+      "pass": true,
+      "hash": "#/runs",
+      "listPaneWidth": null,
+      "rowCount": 11,
+      "hasPlaceholder": false,
+      "hasBack": false,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "visibleFilterNames": [],
+      "filterToggleVisible": true,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "phone-390-filters-closed",
+      "pass": true,
+      "toggle": true,
+      "search": true,
+      "visibleFilterCount": 0
+    },
+    {
+      "name": "phone-390-filters-sheet",
+      "pass": true,
+      "model": true,
+      "status": true,
+      "mode": true,
+      "source": true,
+      "clear": true,
+      "toggleText": "Filters"
+    },
+    {
+      "name": "phone-390-long-model-key-no-overflow",
+      "pass": true,
+      "sheetFound": true,
+      "modelSelectFound": true,
+      "hasLongOption": true,
+      "selectWidth": 314,
+      "selectRight": 348,
+      "sheetWidth": 340,
+      "sheetRight": 361,
+      "sheetScrollWidth": 338,
+      "sheetClientWidth": 338,
+      "docClientWidth": 390,
+      "selectOverflowViewport": false,
+      "sheetOverflowViewport": false,
+      "sheetInternalOverflow": false
+    },
+    {
+      "name": "phone-390-filter-badge",
+      "pass": true,
+      "badge": "Filters1"
+    },
+    {
+      "name": "phone-390-filter-combined",
+      "pass": true,
+      "href": "#/runs/run-adhoc-2"
+    },
+    {
+      "name": "phone-390-filter-clear",
+      "pass": true,
+      "toggleText": "Filters",
+      "rows": 11
+    },
+    {
+      "name": "phone-390-filters-close",
+      "pass": true,
+      "visibleFilterCount": 0,
+      "search": true
+    },
+    {
+      "name": "phone-390-route-detail",
+      "pass": true,
+      "hash": "#/runs/run-long-key",
+      "listPaneWidth": null,
+      "rowCount": 0,
+      "hasPlaceholder": false,
+      "hasBack": true,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "overflowX": false,
+      "visibleFilterNames": [],
+      "filterToggleVisible": false,
+      "smallTapTargets": 0
+    },
+    {
+      "name": "phone-390-candidate-rows-no-clip",
+      "pass": true,
+      "rows": [
+        {
+          "buttonRight": 365,
+          "contentRight": 352,
+          "clipped": false,
+          "lastText": "openrouter:z-ai/glm-5.2Label: A1 attempt"
+        },
+        {
+          "buttonRight": 365,
+          "contentRight": 352,
+          "clipped": false,
+          "lastText": "pseek/deepseek-v4-flashLabel: B1 attempt"
+        }
+      ]
+    },
+    {
+      "name": "phone-390-legacy-detail",
+      "pass": true
+    },
+    {
+      "name": "no-uncaught-exceptions",
+      "pass": true,
+      "errors": []
+    }
+  ],
+  "screenshots": [
+    "01-desktop-1440-runs-list.png",
+    "02-desktop-1440-run-detail.png",
+    "03-boundary-1024-runs-list.png",
+    "04-tablet-768-runs-list.png",
+    "05-tablet-768-run-detail.png",
+    "06-tablet-768-deeplink-detail.png",
+    "07-phone-390-runs-list.png",
+    "08-phone-390-filter-sheet-open.png",
+    "09-phone-390-run-detail.png",
+    "11-phone-390-candidates-after-fix.png",
+    "10-phone-390-legacy-detail.png"
+  ],
+  "consoleErrors": [],
+  "seeded": {
+    "runCount": 9,
+    "legacyCount": 2
+  }
+}

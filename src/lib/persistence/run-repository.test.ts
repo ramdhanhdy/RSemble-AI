@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RSembleEvaluationDB, type RunDetailRow } from "./database";
 import { LEASE_KEY, type LeaseInfo } from "../execution-lease";
 import { createRunRepository, InMemoryRunRepository, type RunRepository } from "./run-repository";
+import { exportWorkbenchArchive, importWorkbenchArchive, type WorkbenchArchiveV1 } from "./archive";
 import type { FullRunSummaryV2, LegacyRunSummary, RunArchiveV1, RunRecordV2 } from "./run-types";
 
 // ---------------------------------------------------------------------------
@@ -555,4 +556,108 @@ runRepositorySuite("createRunRepository (Dexie + fake-indexeddb)", async () => {
       db.close();
     },
   };
+});
+
+// A record written by the previous validator can have immutable attempts but
+// stale accepted pointers after a candidate replacement. It must be repaired,
+// not discarded, when read, exported, updated, or imported.
+function staleEvidenceRun(id: string): RunRecordV2 {
+  return makeRunRecord(id, {
+    revision: 1,
+    status: "completed",
+    completedAt: 2,
+    candidates: [
+      {
+        candidateId: "c-1",
+        slotId: "s-1",
+        modelKey: "openrouter:foo",
+        providerId: "openrouter",
+        model: "Foo",
+        slug: "foo",
+        acceptedAttemptId: "removed-attempt",
+        attempts: [],
+      },
+    ],
+    winnerKeys: ["openrouter:foo"],
+  });
+}
+
+function emptyWorkbenchArchive(
+  details: RunRecordV2[],
+  summary: FullRunSummaryV2,
+): WorkbenchArchiveV1 {
+  return {
+    schemaVersion: 1,
+    exportedAt: 10,
+    runs: { summaries: [summary], details },
+    profiles: { identities: [], versions: [] },
+    suites: [],
+    experiments: [],
+  };
+}
+
+describe("persisted run compatibility repair", () => {
+  it("repairs stale evidence across the in-memory public repository boundary", async () => {
+    const stale = staleEvidenceRun("stale-memory");
+    const summary = makeFullSummary(stale.id, 1, { revision: 1, status: "completed" });
+    const details = new Map([[stale.id, stale]]);
+    const summaries = new Map<string, FullRunSummaryV2>([[summary.id, summary]]);
+    const repo = new InMemoryRunRepository({ details, summaries });
+
+    const repaired = await repo.get(stale.id);
+    expect(repaired?.candidates[0]?.acceptedAttemptId).toBeNull();
+    expect(repaired?.winnerKeys).toEqual([]);
+    expect((await repo.exportAll()).runs[0]?.candidates[0]?.acceptedAttemptId).toBeNull();
+    await expect(repo.update(stale, { ...summary, revision: 1 }, 1)).resolves.toBe(2);
+  });
+
+  it("repairs stale evidence through Dexie get/export/update and workbench import", async () => {
+    const db = new RSembleEvaluationDB("compat-" + Math.random().toString(36).slice(2));
+    const repo = createRunRepository(db);
+    const stale = staleEvidenceRun("stale-dexie");
+    const summary = makeFullSummary(stale.id, 1, { revision: 1, status: "completed" });
+    await db.runSummaries.put({
+      kind: "full",
+      summary,
+      id: summary.id,
+      revision: summary.revision,
+      createdAt: summary.createdAt,
+      completedAt: summary.completedAt,
+      status: summary.status,
+      mode: summary.mode,
+      sourceKind: "adhoc",
+      sourceProtocolFingerprint: null,
+      sourceExperimentTaskAttemptId: null,
+      modelKeys: summary.modelKeys,
+    });
+    await db.runDetails.put({
+      id: stale.id,
+      record: stale,
+      revision: stale.revision,
+      createdAt: stale.createdAt,
+      status: stale.status,
+    });
+
+    const repaired = await repo.get(stale.id);
+    expect(repaired?.candidates[0]?.acceptedAttemptId).toBeNull();
+    expect((await repo.exportAll()).runs).toHaveLength(1);
+    await expect(repo.update(stale, summary, 1)).resolves.toBe(2);
+
+    const importedDb = new RSembleEvaluationDB(
+      "compat-import-" + Math.random().toString(36).slice(2),
+    );
+    const imported = await importWorkbenchArchive(
+      importedDb,
+      emptyWorkbenchArchive(
+        [staleEvidenceRun("stale-import")],
+        makeFullSummary("stale-import", 1, { revision: 1, status: "completed" }),
+      ),
+    );
+    expect(imported.created).toContain("stale-import");
+    const importedArchive = await exportWorkbenchArchive(importedDb);
+    expect(importedArchive.runs.details[0]?.candidates[0]?.acceptedAttemptId).toBeNull();
+
+    db.close();
+    importedDb.close();
+  });
 });

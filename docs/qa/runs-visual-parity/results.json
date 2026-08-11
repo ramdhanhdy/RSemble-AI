@@ -1,0 +1,495 @@
+{
+  "generatedAt": "2026-08-10T13:15:08.806Z",
+  "prodBaseUrl": "http://localhost:5173/",
+  "protoBaseUrl": "http://127.0.0.1:4181/",
+  "probes": [
+    {
+      "name": "proto.list.surface",
+      "pass": true,
+      "evidence": {
+        "paneBg": "rgb(10, 10, 10)",
+        "paneBorderRight": "1px solid rgb(38, 38, 38)",
+        "filtersVisible": true,
+        "splitWidth": 1007
+      },
+      "note": "prototype pane = shell bg + 1px edge border-right (border-driven split)"
+    },
+    {
+      "name": "proto.list.density",
+      "pass": true,
+      "evidence": {
+        "rowCount": 11,
+        "heights": [
+          84,
+          84,
+          84,
+          84,
+          84,
+          84,
+          84,
+          84,
+          84,
+          84,
+          84
+        ],
+        "min": 84,
+        "max": 84,
+        "mean": 84,
+        "listGap": "normal/normal",
+        "listPaddingTop": "0px"
+      },
+      "note": "prototype baseline: 11 rows at 84px each, zero row-gap, border-separated"
+    },
+    {
+      "name": "proto.list.cyanSelective",
+      "pass": true,
+      "evidence": {
+        "count": 19,
+        "samples": [
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "nav-item active",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "run-row-icon source-adhoc"
+        ]
+      },
+      "note": "prototype baseline count incl. SVG icon strokes + active nav + adhoc chips"
+    },
+    {
+      "name": "proto.detail.selectedRow",
+      "pass": true,
+      "evidence": {
+        "cls": "run-row selected",
+        "bg": "rgb(24, 24, 24)",
+        "color": "rgb(237, 237, 237)",
+        "borderTop": "0px none rgb(237, 237, 237)",
+        "borderRight": "0px none rgb(237, 237, 237)",
+        "borderBottom": "1px solid rgb(38, 38, 38)",
+        "borderLeft": "2px solid rgb(0, 229, 255)",
+        "boxShadow": "none",
+        "font": "14px/21px Geist",
+        "width": 371,
+        "height": 84,
+        "top": 197
+      },
+      "note": "prototype selected = raised bg + 2px accent left border"
+    },
+    {
+      "name": "proto.detail.hierarchy",
+      "pass": true,
+      "evidence": {
+        "sectionCount": 4,
+        "headerText": "Ad hoc Completed rank Explain transformer attention mechanism Aug 9 03:15 PM · 47s · 3 candidates · $0.0140 Open in Compare Copy link — this device"
+      }
+    },
+    {
+      "name": "proto.detail.cyanSelective",
+      "pass": true,
+      "evidence": {
+        "count": 23,
+        "samples": [
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "nav-item active",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "run-row selected"
+        ]
+      }
+    },
+    {
+      "name": "prod.list.surface",
+      "pass": true,
+      "evidence": {
+        "paneBg": "rgb(18, 18, 18)",
+        "paneBorderRight": "1px solid rgb(38, 38, 38)",
+        "filtersVisible": true,
+        "visibleFilterNames": [
+          "model",
+          "status",
+          "mode",
+          "source"
+        ],
+        "paneWidth": 380
+      },
+      "note": "production pane = panel bg + 1px edge border-right; solid surface, not floating cards"
+    },
+    {
+      "name": "prod.list.density",
+      "pass": true,
+      "evidence": {
+        "rowCount": 11,
+        "heights": [
+          86,
+          86,
+          86,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          86,
+          86
+        ],
+        "min": 64,
+        "max": 86,
+        "mean": 74,
+        "listGap": "normal/normal",
+        "listPaddingTop": "0px",
+        "protoMean": 84
+      },
+      "note": "production row density within +-25% band of prototype 84px baseline"
+    },
+    {
+      "name": "prod.list.filtersVisible",
+      "pass": true,
+      "evidence": {
+        "paneBg": "rgb(18, 18, 18)",
+        "paneBorderRight": "1px solid rgb(38, 38, 38)",
+        "filtersVisible": true,
+        "visibleFilterNames": [
+          "model",
+          "status",
+          "mode",
+          "source"
+        ],
+        "paneWidth": 380
+      },
+      "note": "search plus Model/Status/Mode/Source controls visibly rendered on desktop (transplant map E1)"
+    },
+    {
+      "name": "prod.list.cyanSelective",
+      "pass": true,
+      "evidence": {
+        "count": 27,
+        "samples": [
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]"
+        ],
+        "protoCount": 19
+      },
+      "note": "cyan usage within 1.75x of prototype's own list count; selective use (chips/status/selection only)"
+    },
+    {
+      "name": "prod.detail.selectedRow",
+      "pass": true,
+      "evidence": {
+        "cls": "px-2 py-0.5 bg-raised shadow-[inset_2px_0_0_0_#00e5ff]",
+        "bg": "rgb(24, 24, 24)",
+        "color": "rgb(237, 237, 237)",
+        "borderTop": "0px solid rgb(229, 231, 235)",
+        "borderRight": "0px solid rgb(229, 231, 235)",
+        "borderBottom": "0px solid rgb(229, 231, 235)",
+        "borderLeft": "0px solid rgb(229, 231, 235)",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(0, 229, 255) 2px 0px 0px 0px inset",
+        "font": "16px/24px Geist",
+        "width": 347,
+        "height": 86,
+        "top": 1023
+      },
+      "note": "production selected = raised bg + 2px inset cyan accent via box-shadow"
+    },
+    {
+      "name": "prod.detail.sections",
+      "pass": true,
+      "evidence": {
+        "sections": [
+          "header",
+          "timeline",
+          "outcome",
+          "cost-breakdown",
+          "candidates",
+          "selected-candidate",
+          "judge",
+          "task-config"
+        ],
+        "headerTitle": "Ad hoc completed evidence walk",
+        "headerMetaLines": 4,
+        "timelineSteps": 4,
+        "toolbarButtons": [
+          "Open in Compare",
+          "Copy link — this device"
+        ]
+      }
+    },
+    {
+      "name": "prod.detail.toolbar",
+      "pass": true,
+      "evidence": {
+        "sections": [
+          "header",
+          "timeline",
+          "outcome",
+          "cost-breakdown",
+          "candidates",
+          "selected-candidate",
+          "judge",
+          "task-config"
+        ],
+        "headerTitle": "Ad hoc completed evidence walk",
+        "headerMetaLines": 4,
+        "timelineSteps": 4,
+        "toolbarButtons": [
+          "Open in Compare",
+          "Copy link — this device"
+        ]
+      },
+      "note": "Slice 5 contextual continuity: Copy link + Open in Compare present in detail header"
+    },
+    {
+      "name": "prod.detail.costCards",
+      "pass": true,
+      "evidence": {
+        "sections": [
+          "header",
+          "timeline",
+          "outcome",
+          "cost-breakdown",
+          "candidates",
+          "selected-candidate",
+          "judge",
+          "fusion",
+          "task-config"
+        ],
+        "costCards": 2,
+        "costSources": [
+          "provider-reported",
+          "provider-reported"
+        ],
+        "costTotal": "Incremental total: $0.000900",
+        "timelineSteps": 4,
+        "fusionText": "Fusion ResultOpenRouter·Qwen 3.8 Maxopenrouter:Qwen 3.8 MaxInput: 400 tokens — provider reportedFused verdict: persisten"
+      },
+      "note": "cost breakdown rendered as per-stage cards (one per candidate with a cost source) plus a total (transplant map F1)"
+    },
+    {
+      "name": "prod.detail.timeline",
+      "pass": true,
+      "evidence": {
+        "sections": [
+          "header",
+          "timeline",
+          "outcome",
+          "cost-breakdown",
+          "candidates",
+          "selected-candidate",
+          "judge",
+          "fusion",
+          "task-config"
+        ],
+        "costCards": 2,
+        "costSources": [
+          "provider-reported",
+          "provider-reported"
+        ],
+        "costTotal": "Incremental total: $0.000900",
+        "timelineSteps": 4,
+        "fusionText": "Fusion ResultOpenRouter·Qwen 3.8 Maxopenrouter:Qwen 3.8 MaxInput: 400 tokens — provider reportedFused verdict: persisten"
+      },
+      "note": "lifecycle timeline present (transplant map J: RESTYLE visual version)"
+    },
+    {
+      "name": "prod.detail.cyanSelective",
+      "pass": true,
+      "evidence": {
+        "count": 32,
+        "samples": [
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]",
+          "[object SVGAnimatedString]"
+        ],
+        "protoCount": 23
+      }
+    },
+    {
+      "name": "prod.continuity.split",
+      "pass": true,
+      "evidence": {
+        "listVisibleInSplit": true,
+        "selectedCount": 1
+      },
+      "note": "desktop split keeps the list + selected accent visible while detail renders"
+    },
+    {
+      "name": "prod.console.clean",
+      "pass": true,
+      "evidence": {
+        "errors": []
+      }
+    }
+  ],
+  "screenshots": [
+    "01-proto-list.png",
+    "02-proto-detail-selected.png",
+    "03-prod-list.png",
+    "04-prod-list-selected.png",
+    "05-prod-detail-completed.png",
+    "06-prod-detail-fuse.png"
+  ],
+  "consoleErrors": [],
+  "summary": {
+    "protoList": {
+      "paneBg": "rgb(10, 10, 10)",
+      "paneBorderRight": "1px solid rgb(38, 38, 38)",
+      "filtersVisible": true,
+      "splitWidth": 1007
+    },
+    "protoRows": {
+      "rowCount": 11,
+      "heights": [
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84
+      ],
+      "min": 84,
+      "max": 84,
+      "mean": 84,
+      "listGap": "normal/normal",
+      "listPaddingTop": "0px"
+    },
+    "prodList": {
+      "paneBg": "rgb(18, 18, 18)",
+      "paneBorderRight": "1px solid rgb(38, 38, 38)",
+      "filtersVisible": true,
+      "visibleFilterNames": [
+        "model",
+        "status",
+        "mode",
+        "source"
+      ],
+      "paneWidth": 380
+    },
+    "prodRows": {
+      "rowCount": 11,
+      "heights": [
+        86,
+        86,
+        86,
+        64,
+        64,
+        64,
+        64,
+        64,
+        64,
+        86,
+        86
+      ],
+      "min": 64,
+      "max": 86,
+      "mean": 74,
+      "listGap": "normal/normal",
+      "listPaddingTop": "0px"
+    },
+    "prodRowSample": [
+      {
+        "href": "#/runs/run-judge-multi",
+        "text": "ad hocCompletedAd hoc judge retry historyWinner: openrouter:z-ai/glm-5.22 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-reused",
+        "text": "ad hocCompletedAd hoc reused evidenceWinner: openrouter:deepseek/deepseek-v4-flash · Score: 4.32 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-exp",
+        "text": "experimentCompletedExperiment suite pricingWinner: openrouter:z-ai/glm-5.22 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-fuse",
+        "text": "ad hocCompletedAd hoc fused verdict2 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-interrupted",
+        "text": "ad hocInterruptedAd hoc interrupted retry2 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-aborted",
+        "text": "ad hocAbortedAd hoc aborted cleanup2 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-partial",
+        "text": "ad hocPartialAd hoc partial coverage2 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-failed",
+        "text": "ad hocFailedAd hoc failed extraction2 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-running",
+        "text": "ad hocRunningAd hoc streaming summarization2 models1000d ago"
+      },
+      {
+        "href": "#/runs/run-completed",
+        "text": "ad hocCompletedAd hoc completed evidence walkWinner: openrouter:z-ai/glm-5.2 · Score: 4.42 models1000d ago"
+      },
+      {
+        "href": "#/runs/legacy-1",
+        "text": "legacyCompletedLegacy run from the v1 localStorage history.Winner: openrouter:z-ai/glm-5.2 · Score: 3.21 models1115d ago"
+      }
+    ],
+    "completedDetail": {
+      "sections": [
+        "header",
+        "timeline",
+        "outcome",
+        "cost-breakdown",
+        "candidates",
+        "selected-candidate",
+        "judge",
+        "task-config"
+      ],
+      "headerTitle": "Ad hoc completed evidence walk",
+      "headerMetaLines": 4,
+      "timelineSteps": 4,
+      "toolbarButtons": [
+        "Open in Compare",
+        "Copy link — this device"
+      ]
+    },
+    "fuseDetail": {
+      "sections": [
+        "header",
+        "timeline",
+        "outcome",
+        "cost-breakdown",
+        "candidates",
+        "selected-candidate",
+        "judge",
+        "fusion",
+        "task-config"
+      ],
+      "costCards": 2,
+      "costSources": [
+        "provider-reported",
+        "provider-reported"
+      ],
+      "costTotal": "Incremental total: $0.000900",
+      "timelineSteps": 4,
+      "fusionText": "Fusion ResultOpenRouter·Qwen 3.8 Maxopenrouter:Qwen 3.8 MaxInput: 400 tokens — provider reportedFused verdict: persisten"
+    }
+  }
+}
