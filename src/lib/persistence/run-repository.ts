@@ -651,7 +651,9 @@ export class InMemoryRunRepository implements RunRepository {
     return {
       schemaVersion: 1,
       exportedAt: Date.now(),
-      runs: [...this.details.values()].map((record) => compatibleRecord(record)).filter((record): record is RunRecordV2 => record !== null),
+      runs: [...this.details.values()]
+        .map((record) => compatibleRecord(record))
+        .filter((record): record is RunRecordV2 => record !== null),
       summaries: [...this.summaries.values()],
     };
   }

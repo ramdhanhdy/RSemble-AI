@@ -160,9 +160,7 @@ function staleRunningRun(id: string): { record: RunRecordV2; summary: FullRunSum
 
 describe("ExperimentControllerProvider startup recovery", () => {
   it("withholds execution actions until startup recovery completes", async () => {
-    const db = new RSembleEvaluationDB(
-      "test-startup-gate-" + Math.random().toString(36).slice(2),
-    );
+    const db = new RSembleEvaluationDB("test-startup-gate-" + Math.random().toString(36).slice(2));
     await db.open();
     const runRepo = createRunRepository(db);
     const evalRepo = createEvaluationRepository(db, runRepo);

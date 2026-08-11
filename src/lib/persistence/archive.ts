@@ -287,7 +287,8 @@ export function parseWorkbenchArchive(
   });
   const details: RunRecordV2[] = [];
   lists.details.forEach((entry, i) => {
-    const compatible = repairRunRecordForCompatibility(entry) ?? (isRunRecordV2(entry) ? entry : null);
+    const compatible =
+      repairRunRecordForCompatibility(entry) ?? (isRunRecordV2(entry) ? entry : null);
     if (compatible) details.push(compatible);
     else errors.push(guardError("runs.details", i, entry));
   });
@@ -344,7 +345,9 @@ export async function exportWorkbenchArchive(db: RSembleEvaluationDB): Promise<W
       if (isRunSummary(row.summary)) summaries.push(row.summary);
     });
     await db.runDetails.orderBy("createdAt").each((row) => {
-      const compatible = repairRunRecordForCompatibility(row.record) ?? (isRunRecordV2(row.record) ? row.record : null);
+      const compatible =
+        repairRunRecordForCompatibility(row.record) ??
+        (isRunRecordV2(row.record) ? row.record : null);
       if (compatible) details.push(compatible);
     });
     await db.profiles.orderBy("updatedAt").each((row) => {

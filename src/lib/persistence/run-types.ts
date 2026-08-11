@@ -424,10 +424,7 @@ function isJudgeCriterionScore(v: unknown): v is JudgeCriterionScore {
   if (!isString(v.label)) return false;
   if (v.score !== undefined && !isNumber(v.score)) return false;
   if (v.value !== undefined && typeof v.value !== "boolean") return false;
-  if (
-    v.kind !== undefined &&
-    (typeof v.kind !== "string" || !JUDGE_CRITERION_KINDS.has(v.kind))
-  ) {
+  if (v.kind !== undefined && (typeof v.kind !== "string" || !JUDGE_CRITERION_KINDS.has(v.kind))) {
     return false;
   }
   return isString(v.rationale);
@@ -897,14 +894,20 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
 
   const acceptedMap: Record<string, string> = {};
   for (const candidate of candidates) {
-    if (typeof candidate.candidateId === "string" && typeof candidate.acceptedAttemptId === "string") {
+    if (
+      typeof candidate.candidateId === "string" &&
+      typeof candidate.acceptedAttemptId === "string"
+    ) {
       acceptedMap[candidate.candidateId] = candidate.acceptedAttemptId;
     }
   }
   const sameMap = (a: unknown): boolean => {
     if (!isRecord(a)) return false;
     const keys = Object.keys(a);
-    return keys.length === Object.keys(acceptedMap).length && keys.every((key) => a[key] === acceptedMap[key]);
+    return (
+      keys.length === Object.keys(acceptedMap).length &&
+      keys.every((key) => a[key] === acceptedMap[key])
+    );
   };
 
   const judge = repaired.judge as Record<string, any>;

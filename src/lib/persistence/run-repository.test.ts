@@ -582,7 +582,10 @@ function staleEvidenceRun(id: string): RunRecordV2 {
   });
 }
 
-function emptyWorkbenchArchive(details: RunRecordV2[], summary: FullRunSummaryV2): WorkbenchArchiveV1 {
+function emptyWorkbenchArchive(
+  details: RunRecordV2[],
+  summary: FullRunSummaryV2,
+): WorkbenchArchiveV1 {
   return {
     schemaVersion: 1,
     exportedAt: 10,
@@ -605,9 +608,7 @@ describe("persisted run compatibility repair", () => {
     expect(repaired?.candidates[0]?.acceptedAttemptId).toBeNull();
     expect(repaired?.winnerKeys).toEqual([]);
     expect((await repo.exportAll()).runs[0]?.candidates[0]?.acceptedAttemptId).toBeNull();
-    await expect(
-      repo.update(stale, { ...summary, revision: 1 }, 1),
-    ).resolves.toBe(2);
+    await expect(repo.update(stale, { ...summary, revision: 1 }, 1)).resolves.toBe(2);
   });
 
   it("repairs stale evidence through Dexie get/export/update and workbench import", async () => {
@@ -642,10 +643,15 @@ describe("persisted run compatibility repair", () => {
     expect((await repo.exportAll()).runs).toHaveLength(1);
     await expect(repo.update(stale, summary, 1)).resolves.toBe(2);
 
-    const importedDb = new RSembleEvaluationDB("compat-import-" + Math.random().toString(36).slice(2));
+    const importedDb = new RSembleEvaluationDB(
+      "compat-import-" + Math.random().toString(36).slice(2),
+    );
     const imported = await importWorkbenchArchive(
       importedDb,
-      emptyWorkbenchArchive([staleEvidenceRun("stale-import")], makeFullSummary("stale-import", 1, { revision: 1, status: "completed" })),
+      emptyWorkbenchArchive(
+        [staleEvidenceRun("stale-import")],
+        makeFullSummary("stale-import", 1, { revision: 1, status: "completed" }),
+      ),
     );
     expect(imported.created).toContain("stale-import");
     const importedArchive = await exportWorkbenchArchive(importedDb);
