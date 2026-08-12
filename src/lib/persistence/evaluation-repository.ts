@@ -2,9 +2,18 @@
 // RSemble AI — Evaluation repository (Dexie-backed)
 //
 // Implements the EvaluationRepository interface over RSembleEvaluationDB.
-// Profile versions are immutable; archive/restore mutates only ProfileRecord.
-// Suites pin exact profile versions. Experiment task operations are atomic
+// Rubric versions are immutable; archive/restore mutates only RubricRecord.
+// Suites pin exact rubric versions. Experiment task operations are atomic
 // across experiments and runs.
+//
+// Canonical Rubric repository API (spec §5.1): listRubrics, getRubricRecord,
+// getRubricVersion, createRubric, appendRubricVersion, archiveRubric,
+// restoreRubric, duplicateRubric. These methods operate directly over the
+// frozen physical `profiles` / `profileVersions` Dexie stores — no store
+// renames, no data copies, no migration. The legacy `*Profile*` methods
+// remain only as explicitly deprecated forwarding adapters so existing
+// consumers compile during the staged terminology migration; new consumers
+// MUST call the canonical methods.
 // =============================================================================
 
 import { type RSembleEvaluationDB, StorageError, classifyStorageError } from "./database";
@@ -16,16 +25,21 @@ import {
   type ExperimentUnitOfWork,
 } from "./experiment-unit-of-work";
 import {
-  isEvaluationProfile,
+  isEvaluationRubric,
   isEvaluationSuite,
-  isProfileRecord,
+  isRubricRecord,
   isExperimentRecord,
-  type EvaluationProfile,
+  type EvaluationRubric,
   type EvaluationSuite,
-  type ProfileRecord,
+  type RubricRecord,
   type ExperimentRecord,
   type BeginExperimentTaskInput,
   type CommitExperimentTaskTerminalInput,
+  // Legacy type aliases — used only in the deprecated adapter method
+  // signatures below. They are identical to the canonical types above
+  // (EvaluationProfile = EvaluationRubric, ProfileRecord = RubricRecord).
+  type EvaluationProfile,
+  type ProfileRecord,
 } from "../evaluations/evaluation-types";
 import {
   importSuitePackage as persistSuitePackage,
@@ -38,16 +52,47 @@ export interface EvaluationRepository {
   getSuite(id: string): Promise<EvaluationSuite | null>;
   saveSuite(suite: EvaluationSuite, expectedRevision: number): Promise<number>;
   archiveSuite(id: string): Promise<void>;
+
+  // --- Canonical Rubric repository API (spec §5.1) -------------------------
+  // Operates over the frozen `profiles` / `profileVersions` physical stores.
+  // New consumers MUST call these methods instead of the deprecated
+  // `*Profile*` adapters below.
+  listRubrics(includeArchived?: boolean): Promise<RubricRecord[]>;
+  getRubricRecord(id: string): Promise<RubricRecord | null>;
+  getRubricVersion(id: string, version: number): Promise<EvaluationRubric | null>;
+  createRubric(record: RubricRecord, rubric: EvaluationRubric): Promise<void>;
+  appendRubricVersion(
+    record: RubricRecord,
+    rubric: EvaluationRubric,
+    expectedRevision: number,
+  ): Promise<number>;
+  archiveRubric(id: string, expectedRevision: number): Promise<number>;
+  restoreRubric(id: string, expectedRevision: number): Promise<number>;
+  duplicateRubric(sourceId: string, newId: string): Promise<void>;
+
+  // --- Deprecated legacy Profile adapter surface ---------------------------
+  // These methods forward to the canonical Rubric methods above. They remain
+  // only so existing consumers compile during the staged terminology
+  // migration (rubric-terminology spec §3.2/§7). New consumers MUST NOT call
+  // them — import and use the canonical methods instead. Remove once every
+  // consumer migrates.
+  /** @deprecated Use `listRubrics`. */
   listProfiles(includeArchived?: boolean): Promise<ProfileRecord[]>;
+  /** @deprecated Use `getRubricRecord`. */
   getProfileRecord(id: string): Promise<ProfileRecord | null>;
+  /** @deprecated Use `getRubricVersion`. */
   getProfile(id: string, version: number): Promise<EvaluationProfile | null>;
+  /** @deprecated Use `createRubric`. */
   createProfile(record: ProfileRecord, profile: EvaluationProfile): Promise<void>;
+  /** @deprecated Use `appendRubricVersion`. */
   appendProfileVersion(
     record: ProfileRecord,
     profile: EvaluationProfile,
     expectedRevision: number,
   ): Promise<number>;
+  /** @deprecated Use `archiveRubric` / `restoreRubric`. */
   setProfileArchived(id: string, archived: boolean, expectedRevision: number): Promise<number>;
+
   createExperiment(experiment: ExperimentRecord): Promise<void>;
   updateExperiment(experiment: ExperimentRecord, expectedRevision: number): Promise<number>;
   getExperiment(id: string): Promise<ExperimentRecord | null>;
@@ -141,50 +186,54 @@ export function createEvaluationRepository(
     }
   }
 
-  async function listProfiles(includeArchived = false): Promise<ProfileRecord[]> {
+  // --- Canonical Rubric repository API ---------------------------------------
+  // Operates directly over the frozen `profiles` / `profileVersions` physical
+  // Dexie stores. No store renames, no data copies.
+
+  async function listRubrics(includeArchived = false): Promise<RubricRecord[]> {
     try {
       const rows = await db.profiles.toArray();
       return rows
         .filter((r) => includeArchived || r.archivedAt === null)
-        .filter((r) => isProfileRecord(r.record))
-        .map((r) => r.record as ProfileRecord)
+        .filter((r) => isRubricRecord(r.record))
+        .map((r) => r.record as RubricRecord)
         .sort((a, b) => b.updatedAt - a.updatedAt);
     } catch (err) {
       throw classifyStorageError(err);
     }
   }
 
-  async function getProfileRecord(id: string): Promise<ProfileRecord | null> {
+  async function getRubricRecord(id: string): Promise<RubricRecord | null> {
     try {
       const row = await db.profiles.get(id);
       if (!row) return null;
-      return isProfileRecord(row.record) ? row.record : null;
+      return isRubricRecord(row.record) ? row.record : null;
     } catch (err) {
       throw classifyStorageError(err);
     }
   }
 
-  async function getProfile(id: string, version: number): Promise<EvaluationProfile | null> {
+  async function getRubricVersion(id: string, version: number): Promise<EvaluationRubric | null> {
     try {
       const row = await db.profileVersions.get([id, version]);
       if (!row) return null;
-      return isEvaluationProfile(row.profile) ? row.profile : null;
+      return isEvaluationRubric(row.profile) ? row.profile : null;
     } catch (err) {
       throw classifyStorageError(err);
     }
   }
 
-  async function createProfile(record: ProfileRecord, profile: EvaluationProfile): Promise<void> {
-    if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
-    if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-    if (record.id !== profile.id)
-      throw new StorageError("validation", "Record/profile ID mismatch");
-    if (profile.version !== 1) throw new StorageError("validation", "First version must be 1");
+  async function createRubric(record: RubricRecord, rubric: EvaluationRubric): Promise<void> {
+    if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
+    if (!isEvaluationRubric(rubric)) throw new StorageError("validation", "Invalid rubric");
+    if (record.id !== rubric.id)
+      throw new StorageError("validation", "Record/rubric ID mismatch");
+    if (rubric.version !== 1) throw new StorageError("validation", "First version must be 1");
     db.assertWritable();
     try {
       await db.transaction("rw", db.profiles, db.profileVersions, async () => {
         const existing = await db.profiles.get(record.id);
-        if (existing) throw new StorageError("conflict", `Profile ${record.id} already exists`);
+        if (existing) throw new StorageError("conflict", `Rubric ${record.id} already exists`);
         await db.profiles.put({
           id: record.id,
           record,
@@ -194,10 +243,10 @@ export function createEvaluationRepository(
           archivedAt: record.archivedAt,
         });
         await db.profileVersions.put({
-          id: profile.id,
-          version: profile.version,
-          profile,
-          updatedAt: profile.updatedAt,
+          id: rubric.id,
+          version: rubric.version,
+          profile: rubric,
+          updatedAt: rubric.updatedAt,
         });
       });
     } catch (err) {
@@ -206,21 +255,21 @@ export function createEvaluationRepository(
     }
   }
 
-  async function appendProfileVersion(
-    record: ProfileRecord,
-    profile: EvaluationProfile,
+  async function appendRubricVersion(
+    record: RubricRecord,
+    rubric: EvaluationRubric,
     expectedRevision: number,
   ): Promise<number> {
-    if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
-    if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-    if (record.id !== profile.id)
-      throw new StorageError("validation", "Record/profile ID mismatch");
+    if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
+    if (!isEvaluationRubric(rubric)) throw new StorageError("validation", "Invalid rubric");
+    if (record.id !== rubric.id)
+      throw new StorageError("validation", "Record/rubric ID mismatch");
     db.assertWritable();
     const newRevision = expectedRevision + 1;
     try {
       await db.transaction("rw", db.profiles, db.profileVersions, async () => {
         const existing = await db.profiles.get(record.id);
-        if (!existing) throw new StorageError("conflict", `Profile ${record.id} not found`);
+        if (!existing) throw new StorageError("conflict", `Rubric ${record.id} not found`);
         if (existing.revision !== expectedRevision) {
           throw new StorageError(
             "conflict",
@@ -228,8 +277,8 @@ export function createEvaluationRepository(
           );
         }
         const newVersion = existing.latestVersion + 1;
-        const updatedProfile: EvaluationProfile = { ...profile, version: newVersion };
-        const updatedRecord: ProfileRecord = {
+        const updatedRubric: EvaluationRubric = { ...rubric, version: newVersion };
+        const updatedRecord: RubricRecord = {
           ...record,
           revision: newRevision,
           latestVersion: newVersion,
@@ -244,9 +293,9 @@ export function createEvaluationRepository(
           archivedAt: record.archivedAt,
         });
         await db.profileVersions.put({
-          id: profile.id,
+          id: rubric.id,
           version: newVersion,
-          profile: updatedProfile,
+          profile: updatedRubric,
           updatedAt: updatedRecord.updatedAt,
         });
       });
@@ -257,29 +306,25 @@ export function createEvaluationRepository(
     }
   }
 
-  async function setProfileArchived(
-    id: string,
-    archived: boolean,
-    expectedRevision: number,
-  ): Promise<number> {
+  async function archiveRubric(id: string, expectedRevision: number): Promise<number> {
     db.assertWritable();
     const newRevision = expectedRevision + 1;
     try {
       await db.transaction("rw", db.profiles, async () => {
         const existing = await db.profiles.get(id);
-        if (!existing) throw new StorageError("conflict", `Profile ${id} not found`);
+        if (!existing) throw new StorageError("conflict", `Rubric ${id} not found`);
         if (existing.revision !== expectedRevision) {
           throw new StorageError(
             "conflict",
             `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
           );
         }
-        const record = isProfileRecord(existing.record) ? existing.record : null;
-        if (!record) throw new StorageError("validation", "Invalid profile record");
-        const updated: ProfileRecord = {
+        const record = isRubricRecord(existing.record) ? existing.record : null;
+        if (!record) throw new StorageError("validation", "Invalid rubric record");
+        const updated: RubricRecord = {
           ...record,
           revision: newRevision,
-          archivedAt: archived ? Date.now() : null,
+          archivedAt: Date.now(),
           updatedAt: Date.now(),
         };
         await db.profiles.put({
@@ -296,6 +341,138 @@ export function createEvaluationRepository(
       if (err instanceof StorageError) throw err;
       throw classifyStorageError(err);
     }
+  }
+
+  async function restoreRubric(id: string, expectedRevision: number): Promise<number> {
+    db.assertWritable();
+    const newRevision = expectedRevision + 1;
+    try {
+      await db.transaction("rw", db.profiles, async () => {
+        const existing = await db.profiles.get(id);
+        if (!existing) throw new StorageError("conflict", `Rubric ${id} not found`);
+        if (existing.revision !== expectedRevision) {
+          throw new StorageError(
+            "conflict",
+            `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
+          );
+        }
+        const record = isRubricRecord(existing.record) ? existing.record : null;
+        if (!record) throw new StorageError("validation", "Invalid rubric record");
+        const updated: RubricRecord = {
+          ...record,
+          revision: newRevision,
+          archivedAt: null,
+          updatedAt: Date.now(),
+        };
+        await db.profiles.put({
+          ...existing,
+          record: updated,
+          revision: newRevision,
+          latestVersion: existing.latestVersion,
+          updatedAt: updated.updatedAt,
+          archivedAt: updated.archivedAt,
+        });
+      });
+      return newRevision;
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function duplicateRubric(sourceId: string, newId: string): Promise<void> {
+    db.assertWritable();
+    try {
+      await db.transaction("rw", db.profiles, db.profileVersions, async () => {
+        const sourceRow = await db.profiles.get(sourceId);
+        if (!sourceRow) throw new StorageError("conflict", `Rubric ${sourceId} not found`);
+        const sourceRecord = isRubricRecord(sourceRow.record) ? sourceRow.record : null;
+        if (!sourceRecord) throw new StorageError("validation", "Invalid rubric record");
+        const sourceVersionRow = await db.profileVersions.get([
+          sourceId,
+          sourceRow.latestVersion,
+        ]);
+        if (!sourceVersionRow)
+          throw new StorageError("validation", `Missing rubric version ${sourceRow.latestVersion}`);
+        const sourceRubric = isEvaluationRubric(sourceVersionRow.profile)
+          ? sourceVersionRow.profile
+          : null;
+        if (!sourceRubric) throw new StorageError("validation", "Invalid rubric version");
+        const existing = await db.profiles.get(newId);
+        if (existing) throw new StorageError("conflict", `Rubric ${newId} already exists`);
+        const now = Date.now();
+        const newRecord: RubricRecord = {
+          id: newId,
+          revision: 0,
+          latestVersion: 1,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+        };
+        const newRubric: EvaluationRubric = {
+          ...sourceRubric,
+          id: newId,
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await db.profiles.put({
+          id: newId,
+          record: newRecord,
+          revision: newRecord.revision,
+          latestVersion: newRecord.latestVersion,
+          updatedAt: newRecord.updatedAt,
+          archivedAt: newRecord.archivedAt,
+        });
+        await db.profileVersions.put({
+          id: newId,
+          version: 1,
+          profile: newRubric,
+          updatedAt: newRubric.updatedAt,
+        });
+      });
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
+      throw classifyStorageError(err);
+    }
+  }
+
+  // --- Deprecated legacy Profile adapter surface -----------------------------
+  // Forward to the canonical Rubric methods. Remove once all consumers migrate.
+
+  /** @deprecated Use `listRubrics`. */
+  async function listProfiles(includeArchived = false): Promise<ProfileRecord[]> {
+    return listRubrics(includeArchived);
+  }
+  /** @deprecated Use `getRubricRecord`. */
+  async function getProfileRecord(id: string): Promise<ProfileRecord | null> {
+    return getRubricRecord(id);
+  }
+  /** @deprecated Use `getRubricVersion`. */
+  async function getProfile(id: string, version: number): Promise<EvaluationProfile | null> {
+    return getRubricVersion(id, version);
+  }
+  /** @deprecated Use `createRubric`. */
+  async function createProfile(record: ProfileRecord, profile: EvaluationProfile): Promise<void> {
+    return createRubric(record, profile);
+  }
+  /** @deprecated Use `appendRubricVersion`. */
+  async function appendProfileVersion(
+    record: ProfileRecord,
+    profile: EvaluationProfile,
+    expectedRevision: number,
+  ): Promise<number> {
+    return appendRubricVersion(record, profile, expectedRevision);
+  }
+  /** @deprecated Use `archiveRubric` / `restoreRubric`. */
+  async function setProfileArchived(
+    id: string,
+    archived: boolean,
+    expectedRevision: number,
+  ): Promise<number> {
+    return archived
+      ? archiveRubric(id, expectedRevision)
+      : restoreRubric(id, expectedRevision);
   }
 
   async function createExperiment(experiment: ExperimentRecord): Promise<void> {
@@ -410,6 +587,15 @@ export function createEvaluationRepository(
     getSuite,
     saveSuite,
     archiveSuite,
+    listRubrics,
+    getRubricRecord,
+    getRubricVersion,
+    createRubric,
+    appendRubricVersion,
+    archiveRubric,
+    restoreRubric,
+    duplicateRubric,
+    // Deprecated legacy Profile adapter surface.
     listProfiles,
     getProfileRecord,
     getProfile,
@@ -428,8 +614,8 @@ export function createEvaluationRepository(
 
 export class InMemoryEvaluationRepository implements EvaluationRepository {
   private suites = new Map<string, EvaluationSuite>();
-  private profileRecords = new Map<string, ProfileRecord>();
-  private profileVersions = new Map<string, Map<number, EvaluationProfile>>();
+  private rubricRecords = new Map<string, RubricRecord>();
+  private rubricVersions = new Map<string, Map<number, EvaluationRubric>>();
   private experiments: Map<string, ExperimentRecord>;
   private readonly experimentUow: ExperimentUnitOfWork;
 
@@ -467,72 +653,150 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     if (!s) throw new StorageError("conflict", `Suite ${id} not found`);
     this.suites.set(id, { ...s, archivedAt: Date.now(), revision: s.revision + 1 });
   }
-  async listProfiles(includeArchived = false): Promise<ProfileRecord[]> {
-    return [...this.profileRecords.values()]
+
+  // --- Canonical Rubric repository API ---------------------------------------
+
+  async listRubrics(includeArchived = false): Promise<RubricRecord[]> {
+    return [...this.rubricRecords.values()]
       .filter((r) => includeArchived || !r.archivedAt)
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }
-  async getProfileRecord(id: string): Promise<ProfileRecord | null> {
-    return this.profileRecords.get(id) ?? null;
+  async getRubricRecord(id: string): Promise<RubricRecord | null> {
+    return this.rubricRecords.get(id) ?? null;
   }
-  async getProfile(id: string, version: number): Promise<EvaluationProfile | null> {
-    return this.profileVersions.get(id)?.get(version) ?? null;
+  async getRubricVersion(id: string, version: number): Promise<EvaluationRubric | null> {
+    return this.rubricVersions.get(id)?.get(version) ?? null;
   }
-  async createProfile(record: ProfileRecord, profile: EvaluationProfile): Promise<void> {
+  async createRubric(record: RubricRecord, rubric: EvaluationRubric): Promise<void> {
     // Same contract as the Dexie store (validation + id/version checks).
-    if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
-    if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-    if (record.id !== profile.id)
-      throw new StorageError("validation", "Record/profile ID mismatch");
-    if (profile.version !== 1) throw new StorageError("validation", "First version must be 1");
-    if (this.profileRecords.has(record.id)) throw new StorageError("conflict", "Profile exists");
-    this.profileRecords.set(record.id, record);
-    const versions = new Map<number, EvaluationProfile>();
-    versions.set(profile.version, profile);
-    this.profileVersions.set(record.id, versions);
+    if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
+    if (!isEvaluationRubric(rubric)) throw new StorageError("validation", "Invalid rubric");
+    if (record.id !== rubric.id)
+      throw new StorageError("validation", "Record/rubric ID mismatch");
+    if (rubric.version !== 1) throw new StorageError("validation", "First version must be 1");
+    if (this.rubricRecords.has(record.id)) throw new StorageError("conflict", "Rubric exists");
+    this.rubricRecords.set(record.id, record);
+    const versions = new Map<number, EvaluationRubric>();
+    versions.set(rubric.version, rubric);
+    this.rubricVersions.set(record.id, versions);
   }
-  async appendProfileVersion(
-    record: ProfileRecord,
-    profile: EvaluationProfile,
+  async appendRubricVersion(
+    record: RubricRecord,
+    rubric: EvaluationRubric,
     expectedRevision: number,
   ): Promise<number> {
-    if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
-    if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-    if (record.id !== profile.id)
-      throw new StorageError("validation", "Record/profile ID mismatch");
-    const existing = this.profileRecords.get(record.id);
-    if (!existing) throw new StorageError("conflict", "Profile not found");
+    if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
+    if (!isEvaluationRubric(rubric)) throw new StorageError("validation", "Invalid rubric");
+    if (record.id !== rubric.id)
+      throw new StorageError("validation", "Record/rubric ID mismatch");
+    const existing = this.rubricRecords.get(record.id);
+    if (!existing) throw new StorageError("conflict", "Rubric not found");
     if (existing.revision !== expectedRevision)
       throw new StorageError("conflict", "Stale revision");
     const newVersion = existing.latestVersion + 1;
     const newRevision = expectedRevision + 1;
-    this.profileRecords.set(record.id, {
+    this.rubricRecords.set(record.id, {
       ...record,
       revision: newRevision,
       latestVersion: newVersion,
       updatedAt: Date.now(),
     });
-    this.profileVersions.get(record.id)?.set(newVersion, { ...profile, version: newVersion });
+    this.rubricVersions.get(record.id)?.set(newVersion, { ...rubric, version: newVersion });
     return newRevision;
   }
+  async archiveRubric(id: string, expectedRevision: number): Promise<number> {
+    const existing = this.rubricRecords.get(id);
+    if (!existing) throw new StorageError("conflict", "Rubric not found");
+    if (existing.revision !== expectedRevision)
+      throw new StorageError("conflict", "Stale revision");
+    const newRevision = expectedRevision + 1;
+    this.rubricRecords.set(id, {
+      ...existing,
+      revision: newRevision,
+      archivedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    return newRevision;
+  }
+  async restoreRubric(id: string, expectedRevision: number): Promise<number> {
+    const existing = this.rubricRecords.get(id);
+    if (!existing) throw new StorageError("conflict", "Rubric not found");
+    if (existing.revision !== expectedRevision)
+      throw new StorageError("conflict", "Stale revision");
+    const newRevision = expectedRevision + 1;
+    this.rubricRecords.set(id, {
+      ...existing,
+      revision: newRevision,
+      archivedAt: null,
+      updatedAt: Date.now(),
+    });
+    return newRevision;
+  }
+  async duplicateRubric(sourceId: string, newId: string): Promise<void> {
+    const sourceRecord = this.rubricRecords.get(sourceId);
+    if (!sourceRecord) throw new StorageError("conflict", `Rubric ${sourceId} not found`);
+    const sourceVersion = this.rubricVersions.get(sourceId)?.get(sourceRecord.latestVersion);
+    if (!sourceVersion) throw new StorageError("validation", "Missing rubric version");
+    if (this.rubricRecords.has(newId))
+      throw new StorageError("conflict", `Rubric ${newId} already exists`);
+    const now = Date.now();
+    const newRecord: RubricRecord = {
+      id: newId,
+      revision: 0,
+      latestVersion: 1,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+    };
+    const newRubric: EvaluationRubric = {
+      ...sourceVersion,
+      id: newId,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rubricRecords.set(newId, newRecord);
+    this.rubricVersions.set(newId, new Map([[1, newRubric]]));
+  }
+
+  // --- Deprecated legacy Profile adapter surface -----------------------------
+  // Forward to the canonical Rubric methods. Remove once all consumers migrate.
+
+  /** @deprecated Use `listRubrics`. */
+  async listProfiles(includeArchived = false): Promise<ProfileRecord[]> {
+    return this.listRubrics(includeArchived);
+  }
+  /** @deprecated Use `getRubricRecord`. */
+  async getProfileRecord(id: string): Promise<ProfileRecord | null> {
+    return this.getRubricRecord(id);
+  }
+  /** @deprecated Use `getRubricVersion`. */
+  async getProfile(id: string, version: number): Promise<EvaluationProfile | null> {
+    return this.getRubricVersion(id, version);
+  }
+  /** @deprecated Use `createRubric`. */
+  async createProfile(record: ProfileRecord, profile: EvaluationProfile): Promise<void> {
+    return this.createRubric(record, profile);
+  }
+  /** @deprecated Use `appendRubricVersion`. */
+  async appendProfileVersion(
+    record: ProfileRecord,
+    profile: EvaluationProfile,
+    expectedRevision: number,
+  ): Promise<number> {
+    return this.appendRubricVersion(record, profile, expectedRevision);
+  }
+  /** @deprecated Use `archiveRubric` / `restoreRubric`. */
   async setProfileArchived(
     id: string,
     archived: boolean,
     expectedRevision: number,
   ): Promise<number> {
-    const existing = this.profileRecords.get(id);
-    if (!existing) throw new StorageError("conflict", "Profile not found");
-    if (existing.revision !== expectedRevision)
-      throw new StorageError("conflict", "Stale revision");
-    const newRevision = expectedRevision + 1;
-    this.profileRecords.set(id, {
-      ...existing,
-      revision: newRevision,
-      archivedAt: archived ? Date.now() : null,
-      updatedAt: Date.now(),
-    });
-    return newRevision;
+    return archived
+      ? this.archiveRubric(id, expectedRevision)
+      : this.restoreRubric(id, expectedRevision);
   }
+
   async createExperiment(experiment: ExperimentRecord): Promise<void> {
     if (this.experiments.has(experiment.id))
       throw new StorageError("conflict", "Experiment exists");
@@ -567,22 +831,22 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
   }
   async importSuitePackage(imported: ImportedSuitePackage): Promise<SuitePackageImportResult> {
     // Same contract as the Dexie writer: never skips, conflicts are errors.
-    const profileIds: string[] = [];
+    const rubricIds: string[] = [];
     for (const { record, profile } of imported.profiles) {
-      if (!isProfileRecord(record)) throw new StorageError("validation", "Invalid profile record");
-      if (!isEvaluationProfile(profile)) throw new StorageError("validation", "Invalid profile");
-      if (this.profileRecords.has(record.id)) {
-        throw new StorageError("conflict", `Profile ${record.id} already exists`);
+      if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
+      if (!isEvaluationRubric(profile)) throw new StorageError("validation", "Invalid rubric");
+      if (this.rubricRecords.has(record.id)) {
+        throw new StorageError("conflict", `Rubric ${record.id} already exists`);
       }
-      this.profileRecords.set(record.id, record);
-      this.profileVersions.set(record.id, new Map([[profile.version, profile]]));
-      profileIds.push(record.id);
+      this.rubricRecords.set(record.id, record);
+      this.rubricVersions.set(record.id, new Map([[profile.version, profile]]));
+      rubricIds.push(record.id);
     }
     if (!isEvaluationSuite(imported.suite)) throw new StorageError("validation", "Invalid suite");
     if (this.suites.has(imported.suite.id)) {
       throw new StorageError("conflict", `Suite ${imported.suite.id} already exists`);
     }
     this.suites.set(imported.suite.id, imported.suite);
-    return { suiteId: imported.suite.id, profileIds };
+    return { suiteId: imported.suite.id, profileIds: rubricIds };
   }
 }
