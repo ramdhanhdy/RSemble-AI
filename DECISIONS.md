@@ -6,6 +6,17 @@ This document records architectural decisions made for RSemble AI.
 > `TODOS.md` referenced inside historical decisions are no longer shipped in
 > this repository. Those references are preserved for provenance; the current
 > product/UI authority is `PRODUCT.md` plus this file.
+>
+> **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
+> "Profiles" or "evaluation profiles" are now "Rubrics" in all user-facing
+> surfaces, domain code, and routes (spec: `docs/specs/pending/
+> task-first-evidence-workbench/01-rubric-terminology/`). Historical decisions
+> below preserve the original "Profile" terminology for provenance; the
+> scoring contracts they define (versioning, immutability, criteria validation,
+> `Q − λ(1−C)` ranking) are unchanged. Legacy IndexedDB stores and frozen
+> serialized field names (`evaluationProfileId`, `evaluationProfileVersion`)
+> remain physical implementation details behind canonical Rubric adapters.
+> The word "profile" is reserved for the future model evidence profile.
 
 ---
 

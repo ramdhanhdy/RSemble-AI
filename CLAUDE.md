@@ -2,6 +2,16 @@
 
 > Authority hierarchy: `PRODUCT.md` > `PROVIDERS.md`. (`UI.md` / `DESIGN.md`
 > are historical and no longer shipped; references to them are provenance-only.)
+>
+> **Terminology (Child 01, 2026-08-12):** Scoring objects are **Rubrics**, not
+> "Profiles." Use canonical Rubric names (`EvaluationRubric`, `RubricRecord`,
+> `RubricVersionRef`, `RubricRepository`) in new code. Legacy `profile*`
+> identifiers survive only at frozen IndexedDB stores (`profiles`,
+> `profileVersions`), frozen serialized fields (`evaluationProfileId`,
+> `evaluationProfileVersion`), v1 archive payloads, and explicit compat modules
+> (`rubric-compat.ts`, `evaluation-rubric-adhoc.ts`). The terminology guard
+> (`src/lib/evaluations/rubric-terminology.test.ts`) enforces this boundary.
+> The word "profile" is reserved for the future model evidence profile.
 
 ## Principles
 1. **Maintain single pipeline spine:** Task → Evaluation → Compare (N models in parallel) → Judge → Rank / Fuse. The pipeline serves one-off Compare runs and per-task suite execution alike; do not branch `pipeline.ts` by workspace or provider.

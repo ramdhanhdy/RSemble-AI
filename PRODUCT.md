@@ -1,7 +1,17 @@
 # PRODUCT.md — RSemble AI Product Specification
 
-> Status: Implemented (three workspaces, hardening contracts D1–D6 live)
-> Last reconciled: 2026-08-07 at commit `049f144`
+> Status: Implemented (three workspaces, hardening contracts D1–D6 live, Rubric terminology shipped)
+> Last reconciled: 2026-08-12 at commit `7335830` (Child 01 — Rubric terminology)
+>
+> **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
+> "Profiles" are now "Rubrics" in all user-facing surfaces, domain code, routes,
+> and this document. Legacy IndexedDB stores (`profiles`, `profileVersions`),
+> frozen `RunRecordV2`/`ExperimentRecord` fields (`evaluationProfileId`,
+> `evaluationProfileVersion`), and v1 archive payloads keep their physical names
+> as implementation details; canonical Rubric adapters expose Rubric language
+> above those boundaries. Historical decisions in `DECISIONS.md` preserve the
+> original "Profile" terminology for provenance. The word "profile" is reserved
+> for the future model evidence profile (Child 06).
 
 > **The source of truth for what RSemble AI is and is not.**
 > Authority: PRODUCT.md defines *what the product is*. `PROVIDERS.md` defines *how models are reached*.
@@ -35,7 +45,7 @@ Task → Evaluation → Compare (N models in parallel) → Judge
                           "Use this model."                "Here's the merged answer."
 ```
 
-1. **Command**: User describes task + optional evaluation criteria (holistic judgment, a pinned saved profile, or one-off custom criteria).
+1. **Command**: User describes task + optional evaluation criteria (holistic judgment, a pinned saved rubric, or one-off custom criteria).
 2. **Fanout**: N enabled candidate slots stream responses in parallel. Candidate generation never receives evaluator-only criteria.
 3. **Judge**: Single judge model scores candidates against the evaluation and breaks down consensus and contradictions. Judging is **blind**: candidates reach the judge only as `Candidate A/B/C…` in randomized order — never with RSemble-supplied model/provider identity — and every accepted score carries a structured explanation (position, rationale, strengths, deductions, missed requirements, criterion scores). A score without an explanation is rejected as a visible judge failure, never an opaque ranking.
 4. **Finish**:
@@ -57,11 +67,11 @@ Task → Evaluation → Compare (N models in parallel) → Judge
   - Umans (`umans`)
   - 9Router (`9router`) — a local/remote routing gateway with 9Router-managed models and fallback; one requested model ID produces one candidate, regardless of internal fallback
 - **Localhost Node Codex bridge**: Lightweight 127.0.0.1 process that also serves as an allowlisted proxy for compatible providers (e.g. 9Router). The bridge forwards only approved method/path pairs to server-configured upstreams; it is not a general-purpose proxy. When `RSEMBLE_BRIDGE_SECRET` is configured it **must** be presented as `X-RSemble-Bridge-Secret` on every credential-bearing endpoint; `/health` stays unauthenticated (Plan 002 decision D3, `DECISIONS.md` #11).
-- **Evaluation-driven blind judging**: Configurable judge model evaluates anonymized candidates against holistic judgment or a versioned evaluation profile. Profiles support explicit **graded criteria** (authored 1–5 anchors, integer scoring) and **binary checks** (true/false) organized into ALL-mode **Requirement Groups**, plus legacy 1/3/5 profiles. Scoring derives the authoritative **rank value** `Q − λ·(1−C)` (Q = graded weighted mean, C = weighted group pass share, λ = compliance influence in [0,1], default 1.0) with a bounded `max(1, rankValue)` presentation score and explicit floor disclosure. **Compliance-only profiles** (no graded criteria) have no Q and no rankValue/rankScore: they rank on C in the 0–100% compliance domain and display C-labeled percentages. The judge outputs consensus/contradictions plus a per-candidate score explanation (native boolean for binary checks — never encoded as 1/5). The judge receives no RSemble-supplied model/provider metadata; the label mapping is resolved only after judging and is auditable in the UI and Markdown export.
+- **Evaluation-driven blind judging**: Configurable judge model evaluates anonymized candidates against holistic judgment or a versioned evaluation rubric. Rubrics support explicit **graded criteria** (authored 1–5 anchors, integer scoring) and **binary checks** (true/false) organized into ALL-mode **Requirement Groups**, plus legacy 1/3/5 rubrics. Scoring derives the authoritative **rank value** `Q − λ·(1−C)` (Q = graded weighted mean, C = weighted group pass share, λ = compliance influence in [0,1], default 1.0) with a bounded `max(1, rankValue)` presentation score and explicit floor disclosure. **Compliance-only rubrics** (no graded criteria) have no Q and no rankValue/rankScore: they rank on C in the 0–100% compliance domain and display C-labeled per…
 - **Rank & Fuse finishes**: The single mode toggle lives in the Compare workspace toolbar (immediately above the split panes) and switches between Rank and Fuse. It is the sole per-task finish switch, shown only in Compare; the global header is route-invariant and never carries it.
-- **Three workspaces — Compare, Runs, Evaluations**: Navigation destinations, not pipeline modes. Compare is the one-off working surface; Runs and Evaluations are audit surfaces. Profile and suite editors are working surfaces nested inside Evaluations.
+- **Three workspaces — Compare, Runs, Evaluations**: Navigation destinations, not pipeline modes. Compare is the one-off working surface; Runs and Evaluations are audit surfaces. Rubric and suite editors are working surfaces nested inside Evaluations.
 - **Durable run history**: Browser-local (IndexedDB) persistence of complete run evidence — task inputs, candidate outputs, Judge evidence, scores, configuration, and failures — so completed, partial, failed, aborted, and interrupted runs are inspectable after reload.
-- **Local evaluation suites**: Versioned suites of multiple tasks, each executed one at a time through the existing comparison pipeline, with a model-by-task result matrix, transparent coverage, equal-task aggregation, and provenance links to underlying run evidence. Profiles are versioned and immutable; suites pin to profile versions. Suite executions produce immutable experiment snapshots with per-task results, coverage, and provenance — experiment history is auditable but not semantic-searchable in this phase. Suites and profiles can also be **authored or shared as suite-package files** and imported as new entities (distinct from whole-workbench archive backup/restore).
+- **Local evaluation suites**: Versioned suites of multiple tasks, each executed one at a time through the existing comparison pipeline, with a model-by-task result matrix, transparent coverage, equal-task aggregation, and provenance links to underlying run evidence. Rubrics are versioned and immutable; suites pin to rubric versions. Suite executions produce immutable experiment snapshots with per-task results, coverage, and provenance — experiment history is auditable but not semantic-searchable in this phase. Suites and rubrics can also be **authored or shared as suite-package files** and imported as new entities (distinct from whole-workbench archive backup/restore).
 - **Reasoning-effort policy**: Suites and Compare can request a shared candidate and Judge reasoning effort (Provider default / Minimal / Low / Medium / High / X-high / Max). Effort is part of the immutable experiment snapshot and protocol fingerprint; each run records requested and effective levels. A shared name is a controlled request — it does not prove model families spend equal compute or tokens.
 - **Auditable cost provenance**: Every paid stage (candidate, Judge, Fusion) persists provider-reported usage/cost when the provider exposes it, a clearly labeled catalog estimate when only exact pricing is known, or Unknown otherwise. Costs render from the pricing snapshot captured at execution time, never today's catalog. Reused evidence is never double-charged.
 - **Fusion Study (policy discovery on a suite)**: An Evaluations experiment type attached to a suite version that discovers, empirically, which execution policy — best-fixed single model, Rank over a pair, Fuse under a versioned recipe, or rubric-aware refine-the-winner — gives the best quality/cost tradeoff for that suite. Policies are compared **blocked** on shared candidate generations and development-judge evidence; a separate holdout judge evaluates policy outputs blind (development/holdout separation is mandatory). Fusion recipes are versioned artifacts with explicit `rubricAccess` and verification flags; candidates always reach the synthesizer anonymized — blindness is an invariant, never an experimental variable. Studies proceed by elimination (recipes) and a predeclared shortlist rule (pairs), report the complete screened-pair table, and produce a per-suite **playbook** with two visibly different claim levels — **Exploratory** (best observed configuration under this pool and protocol) and **Confirmed** (the preselected configuration held on a fresh suite version without re-selection). **"Do not fuse" is a first-class playbook verdict**, not a failure state.
@@ -76,7 +86,7 @@ Task → Evaluation → Compare (N models in parallel) → Judge
 - **Node-based canvas, connected execution blocks**: Out of scope.
 - **Reactive inspector drawer / config tabs**: Out of scope.
 - **Frankenstein manual snippet pickers**: Out of scope.
-- **Routing profiles / model routing strategies**: Out of scope as pipeline concepts. (Evaluations' local Suites | Profiles navigation is in scope — see IN scope above.)
+- **Routing profiles / model routing strategies**: Out of scope as pipeline concepts. (Evaluations' local Suites | Rubrics navigation is in scope — see IN scope above.)
 - **Task-preset library**: Out of scope.
 - **Strategy variants (pragmatic/rigorous/creative)**: Out of scope (every run is a plain multi-model fanout).
 - **Model roles (draft/critic/verifier/synthesizer as user-facing concepts)**: Out of scope.

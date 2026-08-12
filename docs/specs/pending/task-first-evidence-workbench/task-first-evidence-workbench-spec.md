@@ -654,17 +654,17 @@ Child 09 must create or consolidate executable invariant tests proving:
 
 ## 15. Child dependency and completion gates
 
-| Child | Entry gate | Completion gate |
-|---|---|---|
-| 01 Rubrics | Parent accepted | All user/domain terminology migrated; legacy data/routes/archive read; no model profiles introduced |
-| 02 Tasks | 01 complete | Canonical schema, immutability, task UI, legacy scoped migration, archive v2 base round-trip, and version/artifact/instance tests pass |
-| 03 Task Sets/Evaluations | 01 + 02 complete | Set versions reference canonical Task Versions; ordinary executions and Fusion Studies preserve exact snapshots/results/recovery/extension and route/archive compatibility |
-| 04 Observations/Evidence | 01–03 complete | Idempotent derivation, eligibility reason codes, counting and comparability invariants pass |
-| 05 Compare Results | 02 + 04 complete | Compare owns durable history, promotion/linking, evidence receipts, retry/recovery, exact record links |
-| 06 Model Profiles | 04 + 05 complete | Qualified evidence views, coverage, uncertainty, cohort filtering, drilldown, prohibited-claim tests pass |
-| 07 Shell/Records | 03 + 05 + 06 complete | Final topology ships without inert destinations; Records and all legacy deep links work |
-| 08 Attention | 03 + 05 + 07 complete | Membership/supersession/handoff semantics pass; no execution lives in Attention |
-| 09 Hardening | 01–08 complete | Search, archive v2 completion/collision hardening, migration repair, performance, responsive/a11y QA, and authority reconciliation pass |
+| Child | Entry gate | Completion gate | Status |
+|---|---|---|---|
+| 01 Rubrics | Parent accepted | All user/domain terminology migrated; legacy data/routes/archive read; no model profiles introduced | ✅ Shipped (2026-08-12) |
+| 02 Tasks | 01 complete | Canonical schema, immutability, task UI, legacy scoped migration, archive v2 base round-trip, and version/artifact/instance tests pass | Pending |
+| 03 Task Sets/Evaluations | 01 + 02 complete | Set versions reference canonical Task Versions; ordinary executions and Fusion Studies preserve exact snapshots/results/recovery/extension and route/archive compatibility | Pending |
+| 04 Observations/Evidence | 01–03 complete | Idempotent derivation, eligibility reason codes, counting and comparability invariants pass | Pending |
+| 05 Compare Results | 02 + 04 complete | Compare owns durable history, promotion/linking, evidence receipts, retry/recovery, exact record links | Pending |
+| 06 Model Profiles | 04 + 05 complete | Qualified evidence views, coverage, uncertainty, cohort filtering, drilldown, prohibited-claim tests pass | Pending |
+| 07 Shell/Records | 03 + 05 + 06 complete | Final topology ships without inert destinations; Records and all legacy deep links work | Pending |
+| 08 Attention | 03 + 05 + 07 complete | Membership/supersession/handoff semantics pass; no execution lives in Attention | Pending |
+| 09 Hardening | 01–08 complete | Search, archive v2 completion/collision hardening, migration repair, performance, responsive/a11y QA, and authority reconciliation pass | Pending |
 
 Children may not be marked complete with placeholder controls, hidden compatibility debt, or a later child required to make their core outcome truthful.
 
