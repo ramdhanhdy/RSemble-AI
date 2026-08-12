@@ -847,6 +847,6 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
       throw new StorageError("conflict", `Suite ${imported.suite.id} already exists`);
     }
     this.suites.set(imported.suite.id, imported.suite);
-    return { suiteId: imported.suite.id, profileIds: rubricIds };
+    return { suiteId: imported.suite.id, rubricIds };
   }
 }

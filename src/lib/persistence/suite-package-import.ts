@@ -2,7 +2,7 @@
 // RSemble AI — Suite package import (persistence writer)
 //
 // Writes a normalized suite package (suite-package.ts) into the database in
-// one transaction: embedded profiles (record + version 1) and the suite.
+// one transaction: embedded rubrics (record + version 1) and the suite.
 // Unlike importWorkbenchArchive this NEVER skips — every import creates new
 // entities; identity conflicts were already suffixed during normalization.
 // =============================================================================
@@ -12,7 +12,7 @@ import type { ImportedSuitePackage } from "../evaluations/suite-package";
 
 export interface SuitePackageImportResult {
   suiteId: string;
-  profileIds: string[];
+  rubricIds: string[];
 }
 
 export async function importSuitePackage(
@@ -22,13 +22,13 @@ export async function importSuitePackage(
   db.assertWritable();
   try {
     return await db.transaction("rw", db.suites, db.profiles, db.profileVersions, async () => {
-      const profileIds: string[] = [];
-      for (const { record, profile } of imported.profiles) {
+      const rubricIds: string[] = [];
+      for (const { record, profile: rubric } of imported.profiles) {
         const existing = await db.profiles.get(record.id);
         if (existing) {
           // Normalization suffixed conflicts, so this is unreachable in
           // practice — kept as the transactional hard floor.
-          throw new StorageError("conflict", `Profile ${record.id} already exists`);
+          throw new StorageError("conflict", `Rubric ${record.id} already exists`);
         }
         await db.profiles.put({
           id: record.id,
@@ -39,12 +39,12 @@ export async function importSuitePackage(
           archivedAt: record.archivedAt,
         });
         await db.profileVersions.put({
-          id: profile.id,
-          version: profile.version,
-          profile,
-          updatedAt: profile.updatedAt,
+          id: rubric.id,
+          version: rubric.version,
+          profile: rubric,
+          updatedAt: rubric.updatedAt,
         });
-        profileIds.push(record.id);
+        rubricIds.push(record.id);
       }
 
       const existingSuite = await db.suites.get(imported.suite.id);
@@ -59,7 +59,7 @@ export async function importSuitePackage(
         updatedAt: imported.suite.updatedAt,
         archivedAt: imported.suite.archivedAt,
       });
-      return { suiteId: imported.suite.id, profileIds };
+      return { suiteId: imported.suite.id, rubricIds };
     });
   } catch (err) {
     if (err instanceof StorageError) throw err;

@@ -3,7 +3,7 @@
 //
 // Builds an honest command-pane preload from a persisted RunRecordV2. This is
 // an S-class surface action: it restores what the record actually stores
-// (task, resolved evaluation profile, candidate roster, judge target from the
+// (task, resolved evaluation rubric, candidate roster, judge target from the
 // accepted judge attempt, reasoning policy) and deliberately omits what it
 // does NOT store (attachments, the user's custom judgeInstruction, results).
 //
@@ -14,7 +14,7 @@
 import type { Mode, ModelSlot } from "../../studio-data";
 import type { RunRecordV2 } from "../persistence/run-types";
 import type { CriticRef, ProviderId, ReasoningPolicy } from "../providers/types";
-import type { AdHocEvaluationConfig } from "../evaluations/evaluation-profile-adhoc";
+import type { AdHocEvaluationConfig } from "../evaluations/evaluation-rubric-adhoc";
 
 /** Command-pane fields restorable from a run record. Optional fields are
  *  absent when the record cannot restore them; the reducer keeps the user's
@@ -37,14 +37,14 @@ export interface RunConfigPreload {
  *  records; legacy summaries have no frozen config and are handled separately
  *  (no button). */
 export function runConfigFromRecord(record: RunRecordV2): RunConfigPreload {
-  const profile = record.evaluation.profile;
-  const evaluation: AdHocEvaluationConfig = profile
+  const rubric = record.evaluation.profile;
+  const evaluation: AdHocEvaluationConfig = rubric
     ? {
         kind: "profile",
-        ref: { id: profile.id, version: profile.version },
+        ref: { id: rubric.id, version: rubric.version },
         // The record stores the resolved snapshot; embed it so the command
         // pane renders exactly the criteria that were judged.
-        profile,
+        profile: rubric,
       }
     : { kind: "holistic" };
 

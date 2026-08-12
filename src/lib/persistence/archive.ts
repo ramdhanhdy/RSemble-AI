@@ -1,7 +1,7 @@
 // =============================================================================
 // RSemble AI — Workbench archive (plan 8.1, spec §13/§18/§20)
 //
-// Whole-workbench export/import across run summaries/details, profiles,
+// Whole-workbench export/import across run summaries/details, profiles: rubrics,
 // suites, and experiments. Export is allowlisted by construction — only
 // guard-passing domain records leave the database. Import validates every
 // centralized v1 limit (bytes, counts, string size, depth, safe IDs) plus
@@ -30,14 +30,14 @@ import {
   type RunSummary,
 } from "./run-types";
 import {
-  isEvaluationProfile,
+  isEvaluationRubric,
   isEvaluationSuite,
   isExperimentRecord,
-  isProfileRecord,
-  type EvaluationProfile,
+  isRubricRecord,
+  type EvaluationRubric,
   type EvaluationSuite,
   type ExperimentRecord,
-  type ProfileRecord,
+  type RubricRecord,
 } from "../evaluations/evaluation-types";
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
 import {
@@ -58,7 +58,7 @@ export interface WorkbenchArchiveV1 {
   schemaVersion: 1;
   exportedAt: number;
   runs: { summaries: RunSummary[]; details: RunRecordV2[] };
-  profiles: { identities: ProfileRecord[]; versions: EvaluationProfile[] };
+  profiles: { identities: RubricRecord[]; versions: EvaluationRubric[] };
   suites: EvaluationSuite[];
   experiments: ExperimentRecord[];
 }
@@ -68,8 +68,8 @@ export const IMPORT_LIMITS = {
   ARCHIVE_BYTES: 268435456,
   RUN_SUMMARIES: 25000,
   RUN_DETAILS: 25000,
-  PROFILE_IDENTITIES: 5000,
-  PROFILE_REVISIONS: 10000,
+  RUBRIC_IDENTITIES: 5000,
+  RUBRIC_REVISIONS: 10000,
   SUITES: 5000,
   EXPERIMENTS: 25000,
   STRING_BYTES: 8388608,
@@ -256,8 +256,8 @@ export function parseWorkbenchArchive(
   const countChecks: Array<[string, number, number]> = [
     ["runs.summaries", lists.summaries.length, IMPORT_LIMITS.RUN_SUMMARIES],
     ["runs.details", lists.details.length, IMPORT_LIMITS.RUN_DETAILS],
-    ["profiles.identities", lists.identities.length, IMPORT_LIMITS.PROFILE_IDENTITIES],
-    ["profiles.versions", lists.versions.length, IMPORT_LIMITS.PROFILE_REVISIONS],
+    ["profiles.identities", lists.identities.length, IMPORT_LIMITS.RUBRIC_IDENTITIES],
+    ["profiles.versions", lists.versions.length, IMPORT_LIMITS.RUBRIC_REVISIONS],
     ["suites", lists.suites.length, IMPORT_LIMITS.SUITES],
     ["experiments", lists.experiments.length, IMPORT_LIMITS.EXPERIMENTS],
   ];
@@ -292,14 +292,14 @@ export function parseWorkbenchArchive(
     if (compatible) details.push(compatible);
     else errors.push(guardError("runs.details", i, entry));
   });
-  const identities: ProfileRecord[] = [];
+  const identities: RubricRecord[] = [];
   lists.identities.forEach((entry, i) => {
-    if (isProfileRecord(entry)) identities.push(entry);
+    if (isRubricRecord(entry)) identities.push(entry);
     else errors.push(guardError("profiles.identities", i, entry));
   });
-  const versions: EvaluationProfile[] = [];
+  const versions: EvaluationRubric[] = [];
   lists.versions.forEach((entry, i) => {
-    if (isEvaluationProfile(entry)) versions.push(entry);
+    if (isEvaluationRubric(entry)) versions.push(entry);
     else errors.push(guardError("profiles.versions", i, entry));
   });
   const suites: EvaluationSuite[] = [];
@@ -336,8 +336,8 @@ export function parseWorkbenchArchive(
 export async function exportWorkbenchArchive(db: RSembleEvaluationDB): Promise<WorkbenchArchiveV1> {
   const summaries: RunSummary[] = [];
   const details: RunRecordV2[] = [];
-  const identities: ProfileRecord[] = [];
-  const versions: EvaluationProfile[] = [];
+  const identities: RubricRecord[] = [];
+  const versions: EvaluationRubric[] = [];
   const suites: EvaluationSuite[] = [];
   const experiments: ExperimentRecord[] = [];
   try {
@@ -351,10 +351,10 @@ export async function exportWorkbenchArchive(db: RSembleEvaluationDB): Promise<W
       if (compatible) details.push(compatible);
     });
     await db.profiles.orderBy("updatedAt").each((row) => {
-      if (isProfileRecord(row.record)) identities.push(row.record);
+      if (isRubricRecord(row.record)) identities.push(row.record);
     });
     await db.profileVersions.orderBy("updatedAt").each((row) => {
-      if (isEvaluationProfile(row.profile)) versions.push(row.profile);
+      if (isEvaluationRubric(row.profile)) versions.push(row.profile);
     });
     await db.suites.orderBy("updatedAt").each((row) => {
       if (isEvaluationSuite(row.suite)) suites.push(row.suite);
@@ -486,7 +486,7 @@ export async function importWorkbenchArchive(
           created.push(legacy.id);
         }
 
-        // Profile identities.
+        // Rubric identities.
         for (const record of a.profiles.identities) {
           const existing = await db.profiles.get(record.id);
           if (existing) {
@@ -505,20 +505,20 @@ export async function importWorkbenchArchive(
           created.push(record.id);
         }
 
-        // Profile versions — conflict/skip at the [id+version] composite key.
-        for (const profile of a.profiles.versions) {
-          const key = `${profile.id}@${profile.version}`;
-          const existing = await db.profileVersions.get([profile.id, profile.version]);
+        // Rubric versions — conflict/skip at the [id+version] composite key.
+        for (const rubric of a.profiles.versions) {
+          const key = `${rubric.id}@${rubric.version}`;
+          const existing = await db.profileVersions.get([rubric.id, rubric.version]);
           if (existing) {
-            if (canon(existing.profile) === canon(profile)) skipped.push(key);
+            if (canon(existing.profile) === canon(rubric)) skipped.push(key);
             else conflicting.push(key);
             continue;
           }
           await db.profileVersions.put({
-            id: profile.id,
-            version: profile.version,
-            profile,
-            updatedAt: profile.updatedAt,
+            id: rubric.id,
+            version: rubric.version,
+            profile: rubric,
+            updatedAt: rubric.updatedAt,
           });
           created.push(key);
         }
@@ -677,20 +677,20 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       if (!evaluation) continue;
       const candidate = record.candidates.find((c) => c.candidateId === candidateId);
       const name = candidate ? mdSafe(candidate.model) : candidateId;
-      const profile = record.evaluation.profile;
-      const rv = profile ? rankValueFromResults(evaluation.criterionScores, profile) : null;
+      const rubric = record.evaluation.profile;
+      const rv = rubric ? rankValueFromResults(evaluation.criterionScores, rubric) : null;
       // Domain-aware headline: compliance-only profiles render C as a percentage
       // (no /5, no floor); graded/legacy/holistic keep the 1–5 /5 suffix.
       const headline =
         rv !== null
-          ? formatRankValueDisplay(rv, profile)
+          ? formatRankValueDisplay(rv, rubric)
           : `${evaluation.overallScore.toFixed(1)}/5`;
       lines.push(`### ${name} (Candidate ${label}) — ${headline}`, ``);
       lines.push(`Position: ${mdSafe(evaluation.position)}`, ``);
       lines.push(`Why this score: ${mdSafe(evaluation.rationale)}`, ``);
 
       // Scoring derivation (spec §18): Q, C, λ, rankValue, rankScore, floor marker.
-      if (profile && rv !== null) {
+      if (rubric && rv !== null) {
         const numericScores: Record<string, number> = {};
         const booleanResults: Record<string, boolean> = {};
         for (const cs of evaluation.criterionScores) {
@@ -700,9 +700,9 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
             numericScores[cs.criterionId] = cs.score;
           }
         }
-        const Q = qualityScore(numericScores, profile);
-        const comp = complianceScore(booleanResults, profile);
-        const lambda = getComplianceInfluence(profile);
+        const Q = qualityScore(numericScores, rubric);
+        const comp = complianceScore(booleanResults, rubric);
+        const lambda = getComplianceInfluence(rubric);
         const C = comp?.C ?? null;
         const rs = rankScoreOf(rv);
         const floored = isFloored(rv);
@@ -741,7 +741,7 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
           `- Compliance (C): ${cStr}`,
           `- Compliance influence (λ): ${lambda.toFixed(2)}`,
           ...(complianceOnly
-            ? [`- Compliance: ${(C! * 100).toFixed(0)}% (compliance-only profile, §16.3)`]
+            ? [`- Compliance: ${(C! * 100).toFixed(0)}% (compliance-only rubric, §16.3)`]
             : [
                 `- Rank Value: ${rv.toFixed(3)}${floored ? " (floored)" : ""}`,
                 `- Rank Score: ${rs !== null ? rs.toFixed(1) : "—"}${floored ? "*" : ""}`,
@@ -773,8 +773,8 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       if (evaluation.criterionScores.length > 0) {
         // Build a lookup of group membership for binary criteria context.
         const groupLookup = new Map<string, string>();
-        if (profile?.requirementGroups) {
-          for (const g of profile.requirementGroups) {
+        if (rubric?.requirementGroups) {
+          for (const g of rubric.requirementGroups) {
             for (const checkId of g.checkIds) {
               groupLookup.set(checkId, g.name);
             }

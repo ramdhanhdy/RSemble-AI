@@ -40,9 +40,9 @@ import type {
 } from "../../studio-data";
 import type { StageStatus } from "../../studio-engine";
 import {
-  isEvaluationProfile,
+  isEvaluationRubric,
   isExperimentTaskExecutionPlan,
-  type EvaluationProfileSnapshot,
+  type RubricSnapshot,
   type ExperimentTaskExecutionPlan,
 } from "../evaluations/evaluation-types";
 
@@ -155,7 +155,7 @@ export interface FullRunSummaryV2 {
   evaluationProfileId: string | null;
   evaluationProfileVersion: number | null;
   /** Score domain for display (spec §16.3): "compliance" when the run used a
-   *  compliance-only profile (winner score = C in [0,1]). */
+   *  compliance-only rubric (winner score = C in [0,1]). */
   scoreDomain?: "rank" | "compliance";
   detailAvailable: true;
   searchText: string;
@@ -267,7 +267,7 @@ export interface RunRecordV2 {
   task: { title: string; prompt: string; systemPrompt: string; temperature: number };
   /** Attachment metadata for the run's task — absent for older records. */
   attachments?: TaskAttachmentMeta[];
-  evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
+  evaluation: { profile: RubricSnapshot | null; candidateMessages: ChatMessage[] };
   /** Requested/effective effort snapshot; absent on pre-policy schema-v2 runs. */
   reasoning?: RunReasoningProvenance;
   candidates: PersistedCandidate[];
@@ -981,7 +981,7 @@ export function isRunRecordV2(v: unknown): v is RunRecordV2 {
   if (
     !isRecord(evaluation) ||
     !isChatMessageArray(evaluation.candidateMessages) ||
-    (evaluation.profile !== null && !isEvaluationProfile(evaluation.profile))
+    (evaluation.profile !== null && !isEvaluationRubric(evaluation.profile))
   ) {
     return false;
   }

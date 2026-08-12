@@ -7,8 +7,8 @@ import type { StudioState } from "../studio-engine";
 import { formatBytes } from "./attachments/limits";
 import { resolveReasoningEffort } from "./providers/reasoning";
 import { formatRankValueDisplay } from "./evaluations/evaluation-rubric";
-import type { EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
-import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
+import type { RubricSnapshot } from "./evaluations/evaluation-types";
+import { resolveEvaluationRubric } from "./evaluations/evaluation-rubric-adhoc";
 
 /**
  * Sanitize judge-provided or model-provided free text for safe Markdown export.
@@ -32,10 +32,10 @@ export function buildExportMarkdown(s: StudioState): string | null {
   const exportAttachments = s.runContext?.attachments ?? s.attachments;
   const exportMode = s.runContext?.mode ?? s.mode;
   const exportJudgeInstruction = s.runContext?.judgeInstruction ?? s.judgeInstruction;
-  // Frozen evaluation profile (resolved once): compliance-only profiles must
+  // Frozen evaluation rubric (resolved once): compliance-only rubrics must
   // render C as a percentage, never as a floored 1.0*/5 rank score (spec §16.3).
-  const frozenProfile: EvaluationProfileSnapshot | null = s.runContext
-    ? resolveEvaluationProfile(s.runContext.evaluation)
+  const frozenRubric: RubricSnapshot | null = s.runContext
+    ? resolveEvaluationRubric(s.runContext.evaluation)
     : null;
   const lines: string[] = [`# RSemble AI — Export`, ``, `## Task`, ``, exportPrompt, ``];
 
@@ -113,7 +113,7 @@ export function buildExportMarkdown(s: StudioState): string | null {
       const ev = report.evaluationsById[c.id];
       if (!ev) continue;
       lines.push(
-        `### ${mdSafe(c.model)} (Candidate ${ev.blindLabel}) — ${formatRankValueDisplay(c.weightedScore, frozenProfile)}`,
+        `### ${mdSafe(c.model)} (Candidate ${ev.blindLabel}) — ${formatRankValueDisplay(c.weightedScore, frozenRubric)}`,
         ``,
       );
       lines.push(`Position: ${mdSafe(ev.position)}`, ``);
@@ -174,7 +174,7 @@ export function buildExportMarkdown(s: StudioState): string | null {
     lines.push(`## Ranked Candidates`, ``);
     ranked.forEach((c, i) => {
       lines.push(
-        `### ${i + 1}. ${c.model} — ${formatRankValueDisplay(c.weightedScore, frozenProfile)}`,
+        `### ${i + 1}. ${c.model} — ${formatRankValueDisplay(c.weightedScore, frozenRubric)}`,
         ``,
         candidateFullText(c),
         ``,

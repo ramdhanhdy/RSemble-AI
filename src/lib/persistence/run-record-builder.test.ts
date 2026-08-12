@@ -23,7 +23,7 @@ import {
 } from "../../studio-data";
 import type { ChatMessage, ProviderId } from "../providers/types";
 import { type RunSource, type ExecutionFence, type RunRecordV2, isRunRecordV2 } from "./run-types";
-import type { EvaluationProfile } from "../evaluations/evaluation-types";
+import type { EvaluationRubric } from "../evaluations/evaluation-types";
 import {
   createRunRecordBuilder,
   type RunRecordBuilderState,
@@ -1348,7 +1348,7 @@ describe("run record builder — attachment metadata (7.7.2)", () => {
 });
 
 describe("RunRecordBuilder — hybrid rankValue winner authority", () => {
-  function hybridProfile(): EvaluationProfile {
+  function hybridRubric(): EvaluationRubric {
     return {
       id: "p1",
       version: 1,
@@ -1385,9 +1385,9 @@ describe("RunRecordBuilder — hybrid rankValue winner authority", () => {
       candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" },
       startedAt: 3000,
     });
-    // Set a pinned profile so deriveWinnerKeys uses rankValue rather than
+    // Set a pinned rubric so deriveWinnerKeys uses rankValue rather than
     // the Judge's holistic overallScore.
-    record.evaluation.profile = hybridProfile();
+    record.evaluation.profile = hybridRubric();
     // Candidate A: graded quality 0.8 (ranks higher). Candidate B: quality 0.4.
     // Both rankScore = 1.0 (floored) but rankValue 0.8 > 0.4 — A must win alone.
     const report: JudgeReport = {
@@ -1454,7 +1454,7 @@ describe("RunRecordBuilder — hybrid rankValue winner authority", () => {
 });
 
 describe("RunRecordBuilder — compliance-only winner ranks on C (spec §16.3)", () => {
-  function complianceOnlyProfile() {
+  function complianceOnlyRubric() {
     return {
       id: "p-comp",
       version: 1,
@@ -1504,8 +1504,8 @@ describe("RunRecordBuilder — compliance-only winner ranks on C (spec §16.3)",
       candidateAttemptIdsByCandidateId: { [CANDIDATE_S1]: "a1", [CANDIDATE_S2]: "a2" },
       startedAt: 3000,
     });
-    // Compliance-only profile → rank on C, never the holistic overallScore.
-    record.evaluation.profile = complianceOnlyProfile();
+    // Compliance-only rubric → rank on C, never the holistic overallScore.
+    record.evaluation.profile = complianceOnlyRubric();
     // Candidate A: both checks pass → C = 1.0. Candidate B: b2 fails → C = 0.5.
     // Judge's holistic overallScore is 4.0 for both (must NOT win by that).
     const report: JudgeReport = {

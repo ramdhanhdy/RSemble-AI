@@ -1,7 +1,7 @@
 // =============================================================================
 // RSemble AI — Dexie persistence database
 //
-// Single IndexedDB database hosting the run, evaluation profile, suite,
+// Single IndexedDB database hosting the run, evaluation rubric, suite,
 // experiment, and storage-meta tables. Version 1 schema. Owns the storage
 // lifecycle: classified StorageError for quota/unavailable/blocked states and a
 // StorageState surface so React providers can react when the database is

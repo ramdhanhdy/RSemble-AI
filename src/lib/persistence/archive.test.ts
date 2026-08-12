@@ -31,10 +31,10 @@ import {
 } from "./archive";
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "./run-types";
 import type {
-  EvaluationProfile,
+  EvaluationRubric,
   EvaluationSuite,
   ExperimentRecord,
-  ProfileRecord,
+  RubricRecord,
 } from "../evaluations/evaluation-types";
 
 // --- Valid baselines ----------------------------------------------------------
@@ -122,7 +122,7 @@ function makeLegacySummary(id: string): LegacyRunSummary {
   };
 }
 
-function makeProfile(id: string, version = 1, name = `Profile ${id}`): EvaluationProfile {
+function makeRubric(id: string, version = 1, name = `Rubric ${id}`): EvaluationRubric {
   return {
     id,
     version,
@@ -143,7 +143,7 @@ function makeProfile(id: string, version = 1, name = `Profile ${id}`): Evaluatio
   };
 }
 
-function makeProfileRecord(id: string): ProfileRecord {
+function makeRubricRecord(id: string): RubricRecord {
   return {
     id,
     revision: 1,
@@ -255,7 +255,7 @@ function detailRow(record: RunRecordV2): RunDetailRow {
   };
 }
 
-function profileRow(record: ProfileRecord): ProfileRow {
+function profileRow(record: RubricRecord): ProfileRow {
   return {
     id: record.id,
     record,
@@ -266,8 +266,8 @@ function profileRow(record: ProfileRecord): ProfileRow {
   };
 }
 
-function profileVersionRow(profile: EvaluationProfile): ProfileVersionRow {
-  return { id: profile.id, version: profile.version, profile, updatedAt: profile.updatedAt };
+function profileVersionRow(rubric: EvaluationRubric): ProfileVersionRow {
+  return { id: rubric.id, version: rubric.version, profile: rubric, updatedAt: rubric.updatedAt };
 }
 
 function suiteRow(suite: EvaluationSuite): SuiteRow {
@@ -309,8 +309,8 @@ function populatedArchive(): WorkbenchArchiveV1 {
   const archive = emptyArchive();
   archive.runs.summaries.push(makeFullSummary("run-1"), makeLegacySummary("legacy-1"));
   archive.runs.details.push(makeRun("run-1"));
-  archive.profiles.identities.push(makeProfileRecord("prof-1"));
-  archive.profiles.versions.push(makeProfile("prof-1"));
+  archive.profiles.identities.push(makeRubricRecord("prof-1"));
+  archive.profiles.versions.push(makeRubric("prof-1"));
   archive.suites.push(makeSuite("suite-1"));
   archive.experiments.push(makeExperiment("exp-1", "suite-1"));
   return archive;
@@ -333,13 +333,13 @@ afterEach(async () => {
 // --- 1. Export completeness ----------------------------------------------------
 
 describe("exportWorkbenchArchive", () => {
-  it("includes schema version, summaries, details, profiles, suites, and experiments", async () => {
+  it("includes schema version, summaries, details, profiles: rubrics, suites, and experiments", async () => {
     await db.runSummaries.put(summaryRow(makeFullSummary("run-1")));
     await db.runSummaries.put(summaryRow(makeLegacySummary("legacy-1")));
     await db.runDetails.put(detailRow(makeRun("run-1")));
-    await db.profiles.put(profileRow(makeProfileRecord("prof-1")));
-    await db.profileVersions.put(profileVersionRow(makeProfile("prof-1")));
-    await db.profileVersions.put(profileVersionRow(makeProfile("prof-1", 2)));
+    await db.profiles.put(profileRow(makeRubricRecord("prof-1")));
+    await db.profileVersions.put(profileVersionRow(makeRubric("prof-1")));
+    await db.profileVersions.put(profileVersionRow(makeRubric("prof-1", 2)));
     await db.suites.put(suiteRow(makeSuite("suite-1")));
     await db.experiments.put(experimentRow(makeExperiment("exp-1", "suite-1")));
 
@@ -403,8 +403,8 @@ describe("IMPORT_LIMITS constants", () => {
     expect(IMPORT_LIMITS.ARCHIVE_BYTES).toBe(268435456);
     expect(IMPORT_LIMITS.RUN_SUMMARIES).toBe(25000);
     expect(IMPORT_LIMITS.RUN_DETAILS).toBe(25000);
-    expect(IMPORT_LIMITS.PROFILE_IDENTITIES).toBe(5000);
-    expect(IMPORT_LIMITS.PROFILE_REVISIONS).toBe(10000);
+    expect(IMPORT_LIMITS.RUBRIC_IDENTITIES).toBe(5000);
+    expect(IMPORT_LIMITS.RUBRIC_REVISIONS).toBe(10000);
     expect(IMPORT_LIMITS.SUITES).toBe(5000);
     expect(IMPORT_LIMITS.EXPERIMENTS).toBe(25000);
     expect(IMPORT_LIMITS.STRING_BYTES).toBe(8388608);
@@ -555,11 +555,11 @@ describe("importWorkbenchArchive", () => {
   it("conflicts at the profileVersions [id+version] composite key", async () => {
     await importWorkbenchArchive(db, populatedArchive());
     const changed = emptyArchive();
-    changed.profiles.versions.push(makeProfile("prof-1", 1, "Renamed profile"));
+    changed.profiles.versions.push(makeRubric("prof-1", 1, "Renamed rubric"));
     const result = await importWorkbenchArchive(db, changed);
     expect(result.conflicting).toEqual(["prof-1@1"]);
     const row = await db.profileVersions.get(["prof-1", 1]);
-    expect((row?.profile as EvaluationProfile).name).toBe("Profile prof-1");
+    expect((row?.profile as EvaluationRubric).name).toBe("Rubric prof-1");
   });
 
   it("writes nothing when a record in a multi-record archive is corrupt", async () => {
@@ -798,7 +798,7 @@ describe("archiveFailureGuidance", () => {
 // --- §18 export completeness: hybrid scoring derivation ------------------------
 
 function makeHybridRun(
-  profile: EvaluationProfile | null,
+  rubric: EvaluationRubric | null,
   criterionScores: Array<{
     criterionId: string;
     label: string;
@@ -811,7 +811,7 @@ function makeHybridRun(
   id = "run-hybrid",
 ): RunRecordV2 {
   const record = makeRun(id);
-  record.evaluation.profile = profile;
+  record.evaluation.profile = rubric;
   record.judge = {
     status: "done",
     acceptedAttemptId: null,
@@ -862,7 +862,7 @@ const binaryB = {
   trueWhen: "yes",
   falseWhen: "no",
 };
-const mixedProfile: EvaluationProfile = {
+const mixedRubric: EvaluationRubric = {
   id: "p-mix",
   version: 1,
   name: "Mixed",
@@ -879,7 +879,7 @@ const mixedProfile: EvaluationProfile = {
 
 describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () => {
   it("ordinary mixed profile: Q, C, λ, rankValue, rankScore, derivation, binary PASS/FAIL", () => {
-    const record = makeHybridRun(mixedProfile, [
+    const record = makeHybridRun(mixedRubric, [
       { criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" },
       { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
       { criterionId: "check-b", label: "Check B", kind: "binary", value: true, rationale: "r" },
@@ -902,14 +902,14 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
   });
 
   it("uneven group weights: derivation reflects weighted compliance", () => {
-    const profile: EvaluationProfile = {
-      ...mixedProfile,
+    const rubric: EvaluationRubric = {
+      ...mixedRubric,
       requirementGroups: [
         { id: "g1", name: "Core", checkIds: ["check-a"], weight: 2, mode: "ALL" },
         { id: "g2", name: "Extra", checkIds: ["check-b"], weight: 1, mode: "ALL" },
       ],
     };
-    const record = makeHybridRun(profile, [
+    const record = makeHybridRun(rubric, [
       { criterionId: "quality", label: "Quality", kind: "graded", score: 3, rationale: "r" },
       { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
       { criterionId: "check-b", label: "Check B", kind: "binary", value: false, rationale: "r" },
@@ -926,12 +926,12 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
   it("floored candidate: floor marker and raw rankValue shown", () => {
     // Q = 1 (valid graded score 1), C = 0 (group fails), λ = 1
     // → rv = 1 - 1*(1-0) = 0 < 1 → floored.
-    const profile: EvaluationProfile = {
-      ...mixedProfile,
+    const rubric: EvaluationRubric = {
+      ...mixedRubric,
       complianceInfluence: 1.0,
     };
     const record = makeHybridRun(
-      profile,
+      rubric,
       [
         { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
         { criterionId: "check-a", label: "Check A", kind: "binary", value: false, rationale: "r" },
@@ -948,7 +948,7 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
   });
 
   it("binary group labels shown on binary criterion rows", () => {
-    const record = makeHybridRun(mixedProfile, [
+    const record = makeHybridRun(mixedRubric, [
       { criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" },
       { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
       { criterionId: "check-b", label: "Check B", kind: "binary", value: false, rationale: "r" },
@@ -959,14 +959,14 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
     expect(md).toContain("Check B: FAIL");
   });
 
-  it("legacy profile (null): falls back to overallScore headline, no derivation", () => {
+  it("legacy rubric (null): falls back to overallScore headline, no derivation", () => {
     const record = makeHybridRun(
       null,
       [{ criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" }],
       3.5,
     );
     const md = buildRunExportMarkdown(record);
-    // No profile → no scoring derivation section.
+    // No rubric → no scoring derivation section.
     expect(md).not.toContain("rankValue = Q");
     expect(md).not.toContain("Compliance influence (λ)");
     // Headline uses overallScore.

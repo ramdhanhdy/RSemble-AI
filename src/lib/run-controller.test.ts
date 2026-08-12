@@ -5,7 +5,7 @@ import { initialState, type Action, type StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 import type { StreamDeltaBuffer } from "./stream-buffer";
 import { ProviderError, type ProviderId } from "./providers/types";
-import type { EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
+import type { RubricSnapshot } from "./evaluations/evaluation-types";
 import { InMemoryExecutionLease, type ExecutionLease } from "./execution-lease";
 
 // ---------------------------------------------------------------------------
@@ -1615,7 +1615,7 @@ function doneCandidate(id: string, providerId: ProviderId, slug: string, text: s
 /** Post-failure state: Judge errored after two candidates completed. The command
  *  pane has since been EDITED (prompt/evaluation) and the Judge model swapped, so
  *  tests can prove the retry uses the frozen context + current critic. */
-function editedProfile(): EvaluationProfileSnapshot {
+function editedRubric(): RubricSnapshot {
   return {
     id: "edited",
     version: 1,
@@ -1635,7 +1635,7 @@ function editedProfile(): EvaluationProfileSnapshot {
     updatedAt: 1000,
   };
 }
-function retainedProfile(): EvaluationProfileSnapshot {
+function retainedRubric(): RubricSnapshot {
   return {
     id: "retained",
     version: 1,
@@ -1663,12 +1663,12 @@ function judgeRetryState(mode: "rank" | "fuse" = "rank"): StudioState {
     judgeStatus: "error",
     judgeError: "judge exploded",
     prompt: "EDITED_TASK_MARKER",
-    evaluation: { kind: "custom", profile: editedProfile() },
+    evaluation: { kind: "custom", profile: editedRubric() },
     critic: { providerId: "gemini", model: "gemini-3.1-pro-preview" },
     judgeInstruction: "CURRENT_INSTRUCTION_MARKER",
     runContext: {
       prompt: "ORIGINAL_TASK_MARKER",
-      evaluation: { kind: "custom", profile: retainedProfile() },
+      evaluation: { kind: "custom", profile: retainedRubric() },
       attachments: [],
       attachmentsToJudge: true,
     },
@@ -1680,7 +1680,7 @@ function judgeRetryState(mode: "rank" | "fuse" = "rank"): StudioState {
 }
 
 /** Valid judge payload for retry tests — per-evaluation criterionScores must
- *  exact-match the retained profile's criteria (r1), or the strict
+ *  exact-match the retained rubric's criteria (r1), or the strict
  *  parser rejects the response. */
 function retryJudgeResponse(scores: Array<readonly [string, number]>): string {
   return JSON.stringify({

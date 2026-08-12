@@ -10,8 +10,8 @@ import {
   checkFusionEligibility,
   checkAttachmentEligibility,
 } from "./pipeline";
-import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
-import { rankValueFromResults, isComplianceOnlyProfile } from "./evaluations/evaluation-rubric";
+import { resolveEvaluationRubric } from "./evaluations/evaluation-rubric-adhoc";
+import { rankValueFromResults, isComplianceOnlyRubric } from "./evaluations/evaluation-rubric";
 import { evaluateComparePreflight, type ComparePreflight } from "./compare-preflight";
 import type { RunRecorder } from "./persistence/run-recorder";
 import type { ExecutionFence } from "./persistence/run-types";
@@ -297,10 +297,10 @@ export function createRunController(deps: RunControllerDeps) {
                 temperature: s.temperature,
               }),
             },
-            // Persist the resolved evaluation profile so run evidence (and
+            // Persist the resolved evaluation rubric so run evidence (and
             // summary provenance) reflects the actual frozen scoring protocol.
             evaluation: {
-              profile: resolveEvaluationProfile(context.evaluation),
+              profile: resolveEvaluationRubric(context.evaluation),
               candidateMessages: [],
             },
             // The eligibility gate may have filtered slots — the record must
@@ -438,16 +438,16 @@ export function createRunController(deps: RunControllerDeps) {
             // the mutable command-pane mode after execution begins.
             mode: frozenContext?.mode ?? capturedMode,
             consensus: input.consensus!,
-            // Resolve the frozen profile once per Judge result, not once per
+            // Resolve the frozen rubric once per Judge result, not once per
             // candidate (spec §16.3 domain consistency; avoids redundant work).
             scoresById: (() => {
-              const profile = frozenContext
-                ? resolveEvaluationProfile(frozenContext.evaluation)
+              const rubric = frozenContext
+                ? resolveEvaluationRubric(frozenContext.evaluation)
                 : null;
               return Object.fromEntries(
                 Object.entries(input.report.evaluationsById).map(([cid, ev]) => {
-                  if (profile) {
-                    const rv = rankValueFromResults(ev.criterionScores, profile);
+                  if (rubric) {
+                    const rv = rankValueFromResults(ev.criterionScores, rubric);
                     if (rv !== null) return [cid, rv];
                   }
                   return [cid, ev.overallScore];
@@ -457,10 +457,10 @@ export function createRunController(deps: RunControllerDeps) {
             // Compliance-only runs carry C in [0,1]; live surfaces must render
             // it as a C-labeled percentage, never a floored rankScore (§16.3).
             scoreDomain: (() => {
-              const profile = frozenContext
-                ? resolveEvaluationProfile(frozenContext.evaluation)
+              const rubric = frozenContext
+                ? resolveEvaluationRubric(frozenContext.evaluation)
                 : null;
-              return isComplianceOnlyProfile(profile) ? "compliance" : "rank";
+              return isComplianceOnlyRubric(rubric) ? "compliance" : "rank";
             })(),
             report: input.report,
           });

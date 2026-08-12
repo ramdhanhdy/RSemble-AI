@@ -45,9 +45,9 @@ import {
   type FanoutJob,
 } from "./pipeline";
 import {
-  resolveEvaluationProfile,
+  resolveEvaluationRubric,
   type AdHocEvaluationConfig,
-} from "./evaluations/evaluation-profile-adhoc";
+} from "./evaluations/evaluation-rubric-adhoc";
 import { devTerminalLog, type DevTerminalFields } from "./dev-terminal-log";
 import {
   DEFAULT_PROVIDER_DEADLINE_POLICY,
@@ -396,10 +396,10 @@ export async function runJudge(
   if (isAborted(signal)) return { ok: false };
 
   const blindSet = createBlindCandidateSet(done, random);
-  const profile = resolveEvaluationProfile(request.evaluation);
+  const rubric = resolveEvaluationRubric(request.evaluation);
   const messages = judgeMessages(
     request.task.prompt,
-    profile,
+    rubric,
     blindSet.candidates,
     request.judgeInstruction,
     request.attachments,
@@ -505,7 +505,7 @@ export async function runJudge(
         .catch(() => {});
       return { ok: false };
     }
-    const { breakdown, scoresById, report } = parseJudge(content, blindSet, profile, done);
+    const { breakdown, scoresById, report } = parseJudge(content, blindSet, rubric, done);
     const inputEstimate = inputUsageEstimate(messages, usage);
     const resolvedCost =
       cost ??
@@ -661,10 +661,10 @@ export async function runFusion(
   } = ctx;
   if (isAborted(signal)) return { ok: false, result: null };
 
-  const fusionProfile = resolveEvaluationProfile(request.evaluation);
+  const fusionRubric = resolveEvaluationRubric(request.evaluation);
   const messages = fusionMessages({
     prompt: request.task.prompt,
-    profile: fusionProfile,
+    profile: fusionRubric,
     blindCandidates,
     judgeInstruction: request.judgeInstruction ?? "",
     attachments: request.attachments,

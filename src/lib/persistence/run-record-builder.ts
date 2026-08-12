@@ -33,11 +33,11 @@ import type {
   FusionAttemptRecord,
   ExecutionFence,
 } from "./run-types";
-import type { EvaluationProfileSnapshot } from "../evaluations/evaluation-types";
+import type { RubricSnapshot } from "../evaluations/evaluation-types";
 import {
   rankValueFromResults,
   WINNER_EPSILON,
-  isComplianceOnlyProfile,
+  isComplianceOnlyRubric,
 } from "../evaluations/evaluation-rubric";
 import { candidateIdForSlot } from "../pipeline";
 import { resolveReasoningEffort } from "../providers/reasoning";
@@ -49,7 +49,7 @@ export interface FanoutStartInput {
   source: RunSource;
   mode: "rank" | "fuse";
   task: { title: string; prompt: string; systemPrompt: string; temperature: number };
-  evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
+  evaluation: { profile: RubricSnapshot | null; candidateMessages: ChatMessage[] };
   slots: ModelSlot[];
   critic?: { providerId: string; model: string };
   fence: ExecutionFence;
@@ -63,7 +63,7 @@ export interface RepairRunSeedInput {
   /** Source of the new run — experiment branch carries repair metadata. */
   source: RunSource;
   task: { title: string; prompt: string; systemPrompt: string; temperature: number };
-  evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
+  evaluation: { profile: RubricSnapshot | null; candidateMessages: ChatMessage[] };
   /** Snapshot roster slots (full candidate set for the new Judge pass). */
   critic?: { providerId: string; model: string };
   slots: ModelSlot[];
@@ -758,14 +758,14 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
   function deriveWinnerKeys(record: RunRecordV2): string[] {
     if (!record.judge.report) return [];
     const { evaluationsById } = record.judge.report;
-    const profile = record.evaluation.profile;
+    const rubric = record.evaluation.profile;
     const scores: Array<{ modelKey: string; score: number }> = [];
     for (const c of record.candidates) {
       const ev = evaluationsById[c.candidateId];
       if (ev) {
-        // When a profile is pinned, rankValue is the authoritative ranking
+        // When a rubric is pinned, rankValue is the authoritative ranking
         // quantity. Otherwise, fall back to the Judge's holistic overallScore.
-        const rv = profile ? rankValueFromResults(ev.criterionScores, profile) : null;
+        const rv = rubric ? rankValueFromResults(ev.criterionScores, rubric) : null;
         scores.push({ modelKey: c.modelKey, score: rv ?? ev.overallScore });
       }
     }
@@ -784,15 +784,15 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
     const winnerKeys = deriveWinnerKeys(record);
 
     // scoresByModelKey from accepted Judge report.
-    // When a profile is pinned, use the authoritative rankValue; otherwise
+    // When a rubric is pinned, use the authoritative rankValue; otherwise
     // fall back to the Judge's holistic overallScore.
     const scoresByModelKey: Record<string, number> = {};
     if (record.judge.report) {
-      const profile = record.evaluation.profile;
+      const rubric = record.evaluation.profile;
       for (const c of record.candidates) {
         const ev = record.judge.report.evaluationsById[c.candidateId];
         if (ev) {
-          const rv = profile ? rankValueFromResults(ev.criterionScores, profile) : null;
+          const rv = rubric ? rankValueFromResults(ev.criterionScores, rubric) : null;
           scoresByModelKey[c.modelKey] = rv ?? ev.overallScore;
         }
       }
@@ -829,7 +829,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       judgeModelKey,
       evaluationProfileId: record.evaluation.profile?.id ?? null,
       evaluationProfileVersion: record.evaluation.profile?.version ?? null,
-      scoreDomain: isComplianceOnlyProfile(record.evaluation.profile ?? null)
+      scoreDomain: isComplianceOnlyRubric(record.evaluation.profile ?? null)
         ? "compliance"
         : "rank",
       detailAvailable: true,
