@@ -31,8 +31,8 @@ function evaluationModeBadge(sel: TaskEvaluationSelection): { label: string; tit
       return { label: "Holistic", title: "Holistic judgment for this task" };
     case "profile":
       return {
-        label: "Profile",
-        title: `Pinned profile ${sel.profile.id} v${sel.profile.version}`,
+        label: "Rubric",
+        title: `Pinned rubric ${sel.profile.id} v${sel.profile.version}`,
       };
   }
 }

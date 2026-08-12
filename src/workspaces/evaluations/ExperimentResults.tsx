@@ -5,7 +5,7 @@
 // (equal task weight, coverage-transparent means, complete-coverage winners),
 // and renders the summary: identity/suite/date/status, winner line, per-model
 // mean + coverage, failed/partial/interrupted/aborted attempt summary with
-// run links, and the Judge/profile snapshot. ≥768px shows the full matrix;
+// run links, and the Judge/rubric snapshot. ≥768px shows the full matrix;
 // below that the model-selectable mobile adaptation.
 // =============================================================================
 
@@ -534,10 +534,10 @@ export function ExperimentResults({
     });
   });
 
-  const profiles = experiment.snapshot.profiles;
-  const profileText =
-    profiles.length > 0
-      ? profiles.map((p) => `${p.name} v${p.version}`).join(", ")
+  const rubrics = experiment.snapshot.profiles;
+  const rubricText =
+    rubrics.length > 0
+      ? rubrics.map((p) => `${p.name} v${p.version}`).join(", ")
       : "Holistic judgment";
 
   const winnerModels = aggregation.models.filter((m) =>
@@ -770,16 +770,16 @@ export function ExperimentResults({
         </section>
       ) : null}
 
-      <section aria-label="Judge and evaluation profile" className="flex min-w-0 flex-col gap-1">
+      <section aria-label="Judge and evaluation rubric" className="flex min-w-0 flex-col gap-1">
         <h2 className="text-xs font-medium uppercase tracking-wide text-text-muted">
-          Judge &amp; profile
+          Judge &amp; rubric
         </h2>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <CompactModelLabel
             providerId={experiment.snapshot.defaultJudge.providerId}
             slug={experiment.snapshot.defaultJudge.model}
           />
-          <span className="text-sm text-text-secondary">{profileText}</span>
+          <span className="text-sm text-text-secondary">{rubricText}</span>
         </div>
       </section>
 

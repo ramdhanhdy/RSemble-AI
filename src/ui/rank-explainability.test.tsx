@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RankResult } from "./RankResult";
 import type { StudioState } from "../studio-engine";
-import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
+import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-rubric-adhoc";
 import type { Candidate, JudgeReport, JudgeComparison, JudgeCriterionScore } from "../studio-data";
 
 function makeUsableCandidate(

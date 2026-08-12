@@ -771,9 +771,9 @@ function JudgeSection({
                     </span>
                     <span className="ml-auto font-mono text-text tabular-nums">
                       {(() => {
-                        const profile = record.evaluation.profile;
-                        if (profile) {
-                          const rv = rankValueFromResults(ev.criterionScores, profile);
+                        const rubric = record.evaluation.profile;
+                        if (rubric) {
+                          const rv = rankValueFromResults(ev.criterionScores, rubric);
                           if (rv !== null) {
                             const rs = rankScoreOf(rv);
                             const floored = isFloored(rv);

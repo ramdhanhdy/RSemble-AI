@@ -2,7 +2,7 @@
 // KindEyebrow — entity identity eyebrow (identity spec §5.1).
 //
 // One consistent grammar across every Evaluations surface: Suite = Workload,
-// Profile = Rubric. The 11px uppercase-tracked eyebrow carries a glyph plus
+// Rubric = Rubric. The 11px uppercase-tracked eyebrow carries a glyph plus
 // the kind word — never shape or color alone (DESIGN.md). The one-line
 // definition is exposed as a title tooltip for first-contact learning.
 // =============================================================================

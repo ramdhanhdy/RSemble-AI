@@ -4,9 +4,9 @@
 // implementation plan Task 4).
 //
 // Covers: canonical /evaluations/rubrics routes render; real baseline
-// /evaluations/profiles… routes redirect to canonical Rubric routes
+// /evaluations/rubrics… routes redirect to canonical Rubric routes
 // preserving the entity id and any version/return location state; no
-// invented /profiles/* alias; direct-load, refresh, and browser
+// invented /rubrics/* alias; direct-load, refresh, and browser
 // back/forward history compatibility. Uses the repo's createRoot/act
 // harness pattern from sibling tests (no testing-library).
 
@@ -373,22 +373,22 @@ describe("AppRouter — canonical Rubric version route (spec §4)", () => {
   });
 });
 
-describe("AppRouter — /evaluations/profiles compatibility redirects (spec §4)", () => {
-  it("redirects /evaluations/profiles → /evaluations/rubrics (replace)", async () => {
+describe("AppRouter — /evaluations/rubrics compatibility redirects (spec §4)", () => {
+  it("redirects /evaluations/rubrics → /evaluations/rubrics (replace)", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedRubric(repo, "r-1", "Quality");
-    const h = await renderRouterAsync({ initialEntries: ["/evaluations/profiles"], repo });
+    const h = await renderRouterAsync({ initialEntries: ["/evaluations/rubrics"], repo });
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics");
     // The canonical list rendered after the redirect.
     expect(h.$("button[data-action='new-rubric']")).toBeTruthy();
     cleanup(h);
   });
 
-  it("redirects /evaluations/profiles/:profileId → /evaluations/rubrics/:rubricId preserving entity", async () => {
+  it("redirects /evaluations/rubrics/:rubricId → /evaluations/rubrics/:rubricId preserving entity", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedRubric(repo, "p-legacy", "Quality");
     const h = await renderRouterAsync({
-      initialEntries: ["/evaluations/profiles/p-legacy"],
+      initialEntries: ["/evaluations/rubrics/p-legacy"],
       repo,
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-legacy");
@@ -401,7 +401,7 @@ describe("AppRouter — /evaluations/profiles compatibility redirects (spec §4)
 
   it("preserves search (return location) through the list redirect", async () => {
     const h = await renderRouterAsync({
-      initialEntries: ["/evaluations/profiles?returnTo=/compare"],
+      initialEntries: ["/evaluations/rubrics?returnTo=/compare"],
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics");
     expect(h.loc.current?.search).toBe("?returnTo=/compare");
@@ -412,7 +412,7 @@ describe("AppRouter — /evaluations/profiles compatibility redirects (spec §4)
     const repo = new InMemoryEvaluationRepository();
     await seedRubric(repo, "p-1", "Quality");
     const h = await renderRouterAsync({
-      initialEntries: ["/evaluations/profiles/p-1?returnTo=/evaluations"],
+      initialEntries: ["/evaluations/rubrics/p-1?returnTo=/evaluations"],
       repo,
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-1");
@@ -425,7 +425,7 @@ describe("AppRouter — /evaluations/profiles compatibility redirects (spec §4)
     await seedRubric(repo, "p-1", "Quality");
     const returnState = { returnTo: "/compare", version: 2 };
     const h = await renderRouterAsync({
-      initialEntries: [{ pathname: "/evaluations/profiles/p-1", state: returnState }],
+      initialEntries: [{ pathname: "/evaluations/rubrics/p-1", state: returnState }],
       repo,
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-1");
@@ -436,7 +436,7 @@ describe("AppRouter — /evaluations/profiles compatibility redirects (spec §4)
   it("preserves location state through the list redirect", async () => {
     const returnState = { returnTo: "/runs" };
     const h = await renderRouterAsync({
-      initialEntries: [{ pathname: "/evaluations/profiles", state: returnState }],
+      initialEntries: [{ pathname: "/evaluations/rubrics", state: returnState }],
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics");
     expect(h.loc.current?.state).toEqual(returnState);
@@ -448,16 +448,16 @@ describe("AppRouter — history compatibility (back/forward, no alias)", () => {
   it("redirect uses replace so browser back does not loop to the legacy URL", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedRubric(repo, "p-1", "Quality");
-    // Start at /compare, then navigate to the legacy profile route. The
+    // Start at /compare, then navigate to the legacy rubric route. The
     // redirect replaces the legacy entry, so back returns to /compare.
     const h = await renderRouterAsync({ initialEntries: ["/compare"], repo });
     expect(h.loc.current?.pathname).toBe("/compare");
 
-    act(() => h.nav.current!("/evaluations/profiles/p-1"));
+    act(() => h.nav.current!("/evaluations/rubrics/p-1"));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-1");
 
-    // Back should return to /compare, not /evaluations/profiles/p-1.
+    // Back should return to /compare, not /evaluations/rubrics/p-1.
     act(() => h.nav.current!(-1));
     await settle();
     expect(h.loc.current?.pathname).toBe("/compare");
@@ -469,7 +469,7 @@ describe("AppRouter — history compatibility (back/forward, no alias)", () => {
     await seedRubric(repo, "p-1", "Quality");
     const h = await renderRouterAsync({ initialEntries: ["/compare"], repo });
 
-    act(() => h.nav.current!("/evaluations/profiles/p-1"));
+    act(() => h.nav.current!("/evaluations/rubrics/p-1"));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-1");
 
@@ -484,18 +484,18 @@ describe("AppRouter — history compatibility (back/forward, no alias)", () => {
     cleanup(h);
   });
 
-  it("does not invent a /profiles/* legacy alias", async () => {
-    // /profiles/foo is not a real baseline route; it must hit NotFound, not
-    // redirect or render a rubric surface (spec §4: "No new /profiles/*
+  it("does not invent a /rubrics/* legacy alias", async () => {
+    // /rubrics/foo is not a real baseline route; it must hit NotFound, not
+    // redirect or render a rubric surface (spec §4: "No new /rubrics/*
     // alias is invented").
-    const h = await renderRouterAsync({ initialEntries: ["/profiles/foo"] });
+    const h = await renderRouterAsync({ initialEntries: ["/rubrics/foo"] });
     expect(h.container.textContent).toContain("Not found");
-    expect(h.loc.current?.pathname).toBe("/profiles/foo");
+    expect(h.loc.current?.pathname).toBe("/rubrics/foo");
     cleanup(h);
   });
 
-  it("does not invent a /profiles alias at the top level", async () => {
-    const h = await renderRouterAsync({ initialEntries: ["/profiles"] });
+  it("does not invent a /rubrics alias at the top level", async () => {
+    const h = await renderRouterAsync({ initialEntries: ["/rubrics"] });
     expect(h.container.textContent).toContain("Not found");
     cleanup(h);
   });

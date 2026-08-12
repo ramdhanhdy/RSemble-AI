@@ -27,10 +27,10 @@ import {
 } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { EvaluationRubric, RubricRecord } from "../../lib/evaluations/evaluation-types";
-import { suitesUsingProfile, type ProfileUsage } from "../../lib/evaluations/profile-usage";
+import { suitesUsingRubric, type RubricUsage } from "../../lib/evaluations/rubric-usage";
 import { validateRubric } from "../../lib/evaluations/evaluation-rubric";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
-import { EvaluationProfileEditor } from "../../ui/EvaluationProfileEditor";
+import { EvaluationRubricEditor } from "../../ui/EvaluationRubricEditor";
 import { RecordRow } from "../../ui/RecordRow";
 import { KindEyebrow } from "../../ui/KindEyebrow";
 
@@ -63,7 +63,7 @@ export function RubricDetail({
   const [selectedVersion, setSelectedVersion] = useState(0);
   const [viewed, setViewed] = useState<EvaluationRubric | null>(null);
   const [draft, setDraft] = useState<EvaluationRubric | null>(null);
-  const [usage, setUsage] = useState<ProfileUsage[]>([]);
+  const [usage, setUsage] = useState<RubricUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -96,7 +96,7 @@ export function RubricDetail({
         // Shared tested derivation (identity spec §5.3). Rendering splits the
         // result into suites pinned at the selected version and suites still
         // pinned at other versions.
-        setUsage(suitesUsingProfile(suites, rubricId));
+        setUsage(suitesUsingRubric(suites, rubricId));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load rubric.");
       } finally {
@@ -448,8 +448,8 @@ export function RubricDetail({
             />
           </div>
 
-          <EvaluationProfileEditor
-            profile={current}
+          <EvaluationRubricEditor
+            rubric={current}
             onChange={handleEditorChange}
             readOnly={!isLatest}
           />

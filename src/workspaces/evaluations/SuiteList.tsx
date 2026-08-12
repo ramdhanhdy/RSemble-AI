@@ -14,7 +14,7 @@ import { Link } from "react-router-dom";
 import { AlertCircle, Copy, Loader2, Upload, Plus, Archive } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type {
-  EvaluationProfile,
+  EvaluationRubric,
   EvaluationSuite,
   ExperimentRecord,
 } from "../../lib/evaluations/evaluation-types";
@@ -38,8 +38,8 @@ interface SuiteListState {
   suites: EvaluationSuite[];
   loading: boolean;
   error: string | null;
-  /** Pinned profile resolved per "profileId@version" (identity spec §5.3). */
-  profiles: Map<string, EvaluationProfile>;
+  /** Pinned rubric resolved per "rubricId@version" (identity spec §5.3). */
+  rubrics: Map<string, EvaluationRubric>;
   /** Latest experiment per suite id, by updatedAt (identity spec §5.4). */
   latestExperiment: Map<string, ExperimentRecord>;
 }
@@ -102,7 +102,7 @@ export function SuiteList({ repo }: SuiteListProps) {
     suites: [],
     loading: true,
     error: null,
-    profiles: new Map(),
+    rubrics: new Map(),
     latestExperiment: new Map(),
   });
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -122,7 +122,7 @@ export function SuiteList({ repo }: SuiteListProps) {
         suites: [],
         loading: false,
         error: "Storage not available.",
-        profiles: new Map(),
+        rubrics: new Map(),
         latestExperiment: new Map(),
       });
       return;
@@ -137,7 +137,7 @@ export function SuiteList({ repo }: SuiteListProps) {
         repo.listSuites(true),
         repo.listExperiments(),
       ]);
-      // Resolve only the profiles actually pinned by suite default
+      // Resolve only the rubrics actually pinned by suite default
       // evaluations — one lookup per distinct (id, version) pair.
       const pairKeys = new Set<string>();
       for (const s of suites) {
@@ -151,13 +151,13 @@ export function SuiteList({ repo }: SuiteListProps) {
           const sep = key.lastIndexOf("@");
           const pid = key.slice(0, sep);
           const version = Number(key.slice(sep + 1));
-          const profile = await repo.getProfile(pid, version).catch(() => null);
-          return [key, profile ?? null] as const;
+          const rubric = await repo.getRubricVersion(pid, version).catch(() => null);
+          return [key, rubric ?? null] as const;
         }),
       );
-      const profiles = new Map<string, EvaluationProfile>();
-      for (const [key, profile] of resolvedPairs) {
-        if (profile) profiles.set(key, profile);
+      const rubrics = new Map<string, EvaluationRubric>();
+      for (const [key, rubric] of resolvedPairs) {
+        if (rubric) rubrics.set(key, rubric);
       }
       const latestExperiment = new Map<string, ExperimentRecord>();
       // Mock/test repos may return undefined for listExperiments — tolerate it.
@@ -166,7 +166,7 @@ export function SuiteList({ repo }: SuiteListProps) {
         if (!prev || e.updatedAt > prev.updatedAt) latestExperiment.set(e.suiteId, e);
       }
       if (id === requestIdRef.current) {
-        setState({ suites, loading: false, error: null, profiles, latestExperiment });
+        setState({ suites, loading: false, error: null, rubrics, latestExperiment });
       }
     } catch (err: unknown) {
       if (id === requestIdRef.current) {
@@ -174,7 +174,7 @@ export function SuiteList({ repo }: SuiteListProps) {
           suites: [],
           loading: false,
           error: err instanceof Error ? err.message : "Failed to load suites.",
-          profiles: new Map(),
+          rubrics: new Map(),
           latestExperiment: new Map(),
         });
       }
@@ -233,14 +233,14 @@ export function SuiteList({ repo }: SuiteListProps) {
         setImportErrors(check.errors);
         return;
       }
-      const [suites, profiles] = await Promise.all([
+      const [suites, rubrics] = await Promise.all([
         repo.listSuites(true),
-        repo.listProfiles(true),
+        repo.listRubrics(true),
       ]);
-      const takenIds = new Set<string>([...suites.map((s) => s.id), ...profiles.map((p) => p.id)]);
+      const takenIds = new Set<string>([...suites.map((s) => s.id), ...rubrics.map((p) => p.id)]);
       const normalized = normalizeSuitePackage(check.pkg, {
         takenIds,
-        existingProfileIds: new Set(profiles.map((p) => p.id)),
+        existingRubricIds: new Set(rubrics.map((p) => p.id)),
       });
       if (!normalized.ok) {
         setImportErrors(normalized.errors);
@@ -249,7 +249,7 @@ export function SuiteList({ repo }: SuiteListProps) {
       const result = await repo.importSuitePackage(normalized.result);
       setImportNotes([
         `Imported "${normalized.result.suite.name}" — ${normalized.result.suite.tasks.length} task(s)` +
-          (result.profileIds.length > 0 ? `, ${result.profileIds.length} profile(s)` : "") +
+          (result.rubricIds.length > 0 ? `, ${result.rubricIds.length} rubric(s)` : "") +
           (normalized.result.executionReady ? " — ready to run." : " — saved as a draft."),
         ...normalized.result.notes,
       ]);
@@ -367,16 +367,16 @@ export function SuiteList({ repo }: SuiteListProps) {
         <p className="max-w-md text-sm text-text-secondary">
           An evaluation suite groups several tasks into a versioned set, executed one at a time
           through the comparison pipeline. Build a suite to compare models across a shared workload
-          with a consistent judge and evaluation profile.
+          with a consistent judge and evaluation rubric.
         </p>
         {/* Identity spec §5.4: teach the split from the suite side. */}
         <p className="max-w-md text-sm text-text-muted">
           Judging rules live in{" "}
           <Link
-            to="/evaluations/profiles"
+            to="/evaluations/rubrics"
             className="text-text-secondary underline decoration-edge-bright underline-offset-2 hover:text-text"
           >
-            Profiles
+            Rubrics
           </Link>
           ; suites pin them.
         </p>
@@ -518,11 +518,11 @@ export function SuiteList({ repo }: SuiteListProps) {
           const evalChip = (() => {
             const ev = suite.defaultEvaluation;
             if (ev.kind === "holistic") return <RubricRefChip holistic />;
-            const profile = state.profiles.get(`${ev.profile.id}@${ev.profile.version}`);
-            if (!profile) return <RubricRefChip missing />;
+            const rubric = state.rubrics.get(`${ev.profile.id}@${ev.profile.version}`);
+            if (!rubric) return <RubricRefChip missing />;
             return (
               <RubricRefChip
-                name={profile.name || "Untitled rubric"}
+                name={rubric.name || "Untitled rubric"}
                 rubricId={ev.profile.id}
                 version={ev.profile.version}
               />

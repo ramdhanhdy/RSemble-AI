@@ -12,7 +12,7 @@ import {
 } from "./OutputPane";
 import { initialState, type StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
-import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
+import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-rubric-adhoc";
 
 const candidate: Candidate = {
   id: "live-1",

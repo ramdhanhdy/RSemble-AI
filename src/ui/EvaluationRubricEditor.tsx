@@ -1,5 +1,5 @@
 // =============================================================================
-// EvaluationProfileEditor — criterion authoring with anchored 1/3/5 scores.
+// EvaluationRubricEditor — criterion authoring with anchored 1/3/5 scores.
 //
 // Spec §10.5:
 // - One-open-at-a-time accordion
@@ -12,7 +12,7 @@
 import { useState, useMemo } from "react";
 import { ChevronDown, Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import type {
-  EvaluationProfile,
+  EvaluationRubric,
   EvaluationCriterion,
   RequirementGroup,
 } from "../lib/evaluations/evaluation-types";
@@ -22,24 +22,24 @@ import {
   getComplianceInfluence,
 } from "../lib/evaluations/evaluation-rubric";
 
-export function EvaluationProfileEditor({
-  profile,
+export function EvaluationRubricEditor({
+  rubric,
   onChange,
   readOnly = false,
 }: {
-  profile: EvaluationProfile;
-  onChange: (profile: EvaluationProfile) => void;
+  rubric: EvaluationRubric;
+  onChange: (rubric: EvaluationRubric) => void;
   readOnly?: boolean;
 }) {
-  const [openId, setOpenId] = useState<string | null>(profile.criteria[0]?.id ?? null);
+  const [openId, setOpenId] = useState<string | null>(rubric.criteria[0]?.id ?? null);
 
-  const nw = useMemo(() => normalizedWeights(profile.criteria), [profile.criteria]);
-  const tw = useMemo(() => totalWeight(profile.criteria), [profile.criteria]);
+  const nw = useMemo(() => normalizedWeights(rubric.criteria), [rubric.criteria]);
+  const tw = useMemo(() => totalWeight(rubric.criteria), [rubric.criteria]);
 
   function updateCriterion(id: string, patch: Record<string, unknown>) {
     onChange({
-      ...profile,
-      criteria: profile.criteria.map((c) =>
+      ...rubric,
+      criteria: rubric.criteria.map((c) =>
         c.id === id ? ({ ...c, ...patch } as EvaluationCriterion) : c,
       ),
       updatedAt: Date.now(),
@@ -62,7 +62,7 @@ export function EvaluationProfileEditor({
         five: "5 — fully meets this criterion",
       },
     } as EvaluationCriterion;
-    onChange({ ...profile, criteria: [...profile.criteria, newCriterion], updatedAt: Date.now() });
+    onChange({ ...rubric, criteria: [...rubric.criteria, newCriterion], updatedAt: Date.now() });
     setOpenId(id);
   }
 
@@ -86,23 +86,23 @@ export function EvaluationProfileEditor({
       mode: "ALL",
     };
     onChange({
-      ...profile,
-      criteria: [...profile.criteria, newCriterion],
-      requirementGroups: [...(profile.requirementGroups ?? []), group],
+      ...rubric,
+      criteria: [...rubric.criteria, newCriterion],
+      requirementGroups: [...(rubric.requirementGroups ?? []), group],
       updatedAt: Date.now(),
     });
     setOpenId(id);
   }
 
   function updateComplianceInfluence(value: number) {
-    onChange({ ...profile, complianceInfluence: value, updatedAt: Date.now() });
+    onChange({ ...rubric, complianceInfluence: value, updatedAt: Date.now() });
   }
 
   function updateGroupWeight(groupId: string, value: number) {
     if (!isFinite(value) || value <= 0) return; // positive-weight only
     onChange({
-      ...profile,
-      requirementGroups: (profile.requirementGroups ?? []).map((g) =>
+      ...rubric,
+      requirementGroups: (rubric.requirementGroups ?? []).map((g) =>
         g.id === groupId ? { ...g, weight: value } : g,
       ),
       updatedAt: Date.now(),
@@ -110,8 +110,8 @@ export function EvaluationProfileEditor({
   }
 
   function removeCriterion(id: string) {
-    const isBinary = profile.criteria.find((c) => c.id === id)?.kind === "binary";
-    let nextGroups = profile.requirementGroups;
+    const isBinary = rubric.criteria.find((c) => c.id === id)?.kind === "binary";
+    let nextGroups = rubric.requirementGroups;
     if (isBinary && nextGroups) {
       // Cascade-delete: remove the check from its group, and delete the group
       // when it becomes empty, so no dangling group silently loses weight.
@@ -120,8 +120,8 @@ export function EvaluationProfileEditor({
         .filter((g) => g.checkIds.length > 0);
     }
     onChange({
-      ...profile,
-      criteria: profile.criteria.filter((c) => c.id !== id),
+      ...rubric,
+      criteria: rubric.criteria.filter((c) => c.id !== id),
       requirementGroups: nextGroups,
       updatedAt: Date.now(),
     });
@@ -129,13 +129,13 @@ export function EvaluationProfileEditor({
   }
 
   function moveCriterion(id: string, direction: -1 | 1) {
-    const idx = profile.criteria.findIndex((c) => c.id === id);
+    const idx = rubric.criteria.findIndex((c) => c.id === id);
     if (idx < 0) return;
     const newIdx = idx + direction;
-    if (newIdx < 0 || newIdx >= profile.criteria.length) return;
-    const criteria = [...profile.criteria];
+    if (newIdx < 0 || newIdx >= rubric.criteria.length) return;
+    const criteria = [...rubric.criteria];
     [criteria[idx], criteria[newIdx]] = [criteria[newIdx], criteria[idx]];
-    onChange({ ...profile, criteria, updatedAt: Date.now() });
+    onChange({ ...rubric, criteria, updatedAt: Date.now() });
   }
 
   return (
@@ -153,7 +153,7 @@ export function EvaluationProfileEditor({
 
       {/* Criteria accordion */}
       <ul className="space-y-1" role="list">
-        {profile.criteria.map((c, i) => (
+        {rubric.criteria.map((c, i) => (
           <CriterionAccordion
             key={c.id}
             criterion={c}
@@ -161,7 +161,7 @@ export function EvaluationProfileEditor({
             isOpen={openId === c.id}
             readOnly={readOnly}
             canMoveUp={i > 0}
-            canMoveDown={i < profile.criteria.length - 1}
+            canMoveDown={i < rubric.criteria.length - 1}
             onToggle={() => setOpenId(openId === c.id ? null : c.id)}
             onChange={(patch) => updateCriterion(c.id, patch)}
             onRemove={() => removeCriterion(c.id)}
@@ -172,7 +172,7 @@ export function EvaluationProfileEditor({
       </ul>
 
       {/* Compliance influence control */}
-      {(profile.requirementGroups?.length ?? 0) > 0 && (
+      {(rubric.requirementGroups?.length ?? 0) > 0 && (
         <div className="rounded-sm bg-card-hover px-2 py-1.5">
           <label
             htmlFor="compliance-influence"
@@ -183,7 +183,7 @@ export function EvaluationProfileEditor({
           <div className="mt-1 flex items-center gap-2">
             <NumericDraftField
               id="compliance-influence"
-              value={getComplianceInfluence(profile)}
+              value={getComplianceInfluence(rubric)}
               min={0}
               max={1}
               step={0.1}
@@ -194,9 +194,9 @@ export function EvaluationProfileEditor({
               className="w-20 rounded-sm border border-edge bg-card px-2 py-1 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
             <span className="text-xs text-text-muted">
-              Max points failing all checks may cost ({getComplianceInfluence(profile).toFixed(1)})
+              Max points failing all checks may cost ({getComplianceInfluence(rubric).toFixed(1)})
             </span>
-            {getComplianceInfluence(profile) === 0 && (
+            {getComplianceInfluence(rubric) === 0 && (
               <span className="text-xs text-warning">· checks excluded from ranking</span>
             )}
           </div>
@@ -204,15 +204,15 @@ export function EvaluationProfileEditor({
       )}
 
       {/* Requirement Group editor — v1 (spec §11.4) */}
-      {(profile.requirementGroups?.length ?? 0) > 0 && (
+      {(rubric.requirementGroups?.length ?? 0) > 0 && (
         <div className="rounded-sm border border-edge px-2 py-1.5">
           <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
-            Requirement groups ({profile.requirementGroups!.length})
+            Requirement groups ({rubric.requirementGroups!.length})
           </span>
           {(() => {
-            const groups = profile.requirementGroups!;
+            const groups = rubric.requirementGroups!;
             const sumV = groups.reduce((s, g) => s + g.weight, 0);
-            const lambda = getComplianceInfluence(profile);
+            const lambda = getComplianceInfluence(rubric);
             return (
               <ul className="mt-1 space-y-1.5">
                 {groups.map((g) => {
@@ -547,7 +547,7 @@ function NumericDraftField({
   const [draft, setDraft] = useState<string | null>(null);
 
   // Sync the visible text from the committed value whenever the field is not
-  // mid-edit (draft === null), so external profile updates still render.
+  // mid-edit (draft === null), so external rubric updates still render.
   const display = draft !== null ? draft : String(value);
   const commit = () => {
     if (draft === null) return;

@@ -28,7 +28,7 @@ export interface RecordRowProps {
    *  e.g. a KindEyebrow naming the entity kind (identity spec §5.4). */
   kind?: ReactNode;
   /** Optional node rendered after the summary text on the meta line,
-   *  e.g. a ProfileRefChip or latest-experiment mark (identity spec §5.4). */
+   *  e.g. a RubricRefChip or latest-experiment mark (identity spec §5.4). */
   afterSummary?: ReactNode;
   /** When provided, the list variant renders as a link. */
   href?: string;

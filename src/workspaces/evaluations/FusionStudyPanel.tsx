@@ -15,9 +15,9 @@ import type { FusionStudyRepository } from "../../lib/persistence/fusion-study-r
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import {
   type EvaluationSuite,
-  type EvaluationProfileSnapshot,
-  type EvaluationProfile,
-  type EvaluationProfileRef,
+  type RubricSnapshot,
+  type EvaluationRubric,
+  type RubricVersionRef,
 } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel, CriticRef } from "../../lib/providers/types";
 import type { FusionStudy, PoolManifestVersion } from "../../lib/evaluations/fusion-study-types";
@@ -174,28 +174,28 @@ export function FusionStudyPanel({
     }
   }
 
-  /** Protocol fingerprint over the suite and its pinned profiles (spec §11.1). */
+  /** Protocol fingerprint over the suite and its pinned rubrics (spec §11.1). */
   async function computeFingerprint(): Promise<string> {
-    const refs: EvaluationProfileRef[] = [];
+    const refs: RubricVersionRef[] = [];
     if (suite.defaultEvaluation.kind === "profile") refs.push(suite.defaultEvaluation.profile);
     for (const task of suite.tasks) {
       if (task.evaluation.kind === "profile") refs.push(task.evaluation.profile);
     }
     const unique = new Map(refs.map((r) => [`${r.id}@${r.version}`, r]));
-    const profiles: EvaluationProfile[] = [];
+    const rubrics: EvaluationRubric[] = [];
     if (evalRepo) {
       for (const ref of unique.values()) {
-        const profile = await evalRepo.getProfile(ref.id, ref.version);
-        if (profile) profiles.push(profile);
+        const rubric = await evalRepo.getRubricVersion(ref.id, ref.version);
+        if (rubric) rubrics.push(rubric);
       }
     }
-    return computeProtocolFingerprint(suite, profiles);
+    return computeProtocolFingerprint(suite, rubrics);
   }
 
-  async function resolveProfile(): Promise<EvaluationProfileSnapshot | null> {
+  async function resolveRubric(): Promise<RubricSnapshot | null> {
     if (!evalRepo) return null;
     if (suite.defaultEvaluation.kind === "profile") {
-      return evalRepo.getProfile(
+      return evalRepo.getRubricVersion(
         suite.defaultEvaluation.profile.id,
         suite.defaultEvaluation.profile.version,
       );
@@ -215,7 +215,7 @@ export function FusionStudyPanel({
     try {
       const controller = createFusionStudyController({ repo: fusionRepo });
       const exec = executor ?? createLiveFusionExecutor();
-      const profile = await resolveProfile();
+      const rubric = await resolveRubric();
       const fingerprint = await computeFingerprint();
       const confirmation: FusionStudy = {
         id: `fusion-conf-${crypto.randomUUID()}`,
@@ -245,7 +245,7 @@ export function FusionStudyPanel({
           sourceStudyId: sourceStudy.id,
           confirmationStudyId: confirmation.id,
           suite,
-          profile,
+          rubric,
           tasksPerPair: Math.min(3, suite.tasks.length),
           mpid: 0.2,
         },
@@ -265,13 +265,13 @@ export function FusionStudyPanel({
     try {
       const controller = createFusionStudyController({ repo: fusionRepo });
       const exec = executor ?? createLiveFusionExecutor();
-      const profile = await resolveProfile();
+      const rubric = await resolveRubric();
       await runFusionStudy(
         { controller, executor: exec, repo: fusionRepo },
         {
           studyId,
           suite,
-          profile,
+          rubric,
           stratificationTasks: 3,
           tasksPerPairA: 2,
           tasksPerPairB: Math.min(3, suite.tasks.length),

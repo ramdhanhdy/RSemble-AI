@@ -3,7 +3,7 @@
 //
 // Compare can choose:
 //   1. Holistic judgment (default — no explicit criteria)
-//   2. A previously pinned profile snapshot (displayed read-only in Compare)
+//   2. A previously pinned rubric snapshot (displayed read-only in Compare)
 //   3. Custom criteria (one-off snapshot)
 //
 // No goal/metric/gap kinds, no preset chips. Criteria use a one-open accordion
@@ -16,9 +16,9 @@ import type { Action } from "../studio-engine";
 import {
   type AdHocEvaluationConfig,
   HOLISTIC_EVALUATION,
-} from "../lib/evaluations/evaluation-profile-adhoc";
-import { EvaluationProfileEditor } from "./EvaluationProfileEditor";
-import type { EvaluationProfile } from "../lib/evaluations/evaluation-types";
+} from "../lib/evaluations/evaluation-rubric-adhoc";
+import { EvaluationRubricEditor } from "./EvaluationRubricEditor";
+import type { EvaluationRubric } from "../lib/evaluations/evaluation-types";
 
 export function EvaluationDisclosure({
   evaluation,
@@ -59,15 +59,15 @@ export function EvaluationDisclosure({
           <EvaluationModeSelector evaluation={evaluation} dispatch={dispatch} />
 
           {evaluation.kind !== "holistic" && (
-            <EvaluationProfileEditor
-              profile={evaluation.profile}
-              onChange={(profile: EvaluationProfile) => {
+            <EvaluationRubricEditor
+              rubric={evaluation.profile}
+              onChange={(rubric: EvaluationRubric) => {
                 if (evaluation.kind === "custom") {
-                  dispatch({ type: "SET_EVALUATION", config: { kind: "custom", profile } });
+                dispatch({ type: "SET_EVALUATION", config: { kind: "custom", profile: rubric } });
                 } else if (evaluation.kind === "profile") {
                   dispatch({
                     type: "SET_EVALUATION",
-                    config: { kind: "custom", profile },
+                config: { kind: "custom", profile: rubric },
                   });
                 }
               }}
@@ -109,7 +109,7 @@ function EvaluationModeSelector({
         active={evaluation.kind === "custom"}
         onClick={() => {
           if (evaluation.kind !== "custom") {
-            const emptyProfile: EvaluationProfile = {
+            const emptyRubric: EvaluationRubric = {
               id: "custom",
               version: 1,
               name: "Custom criteria",
@@ -119,7 +119,7 @@ function EvaluationModeSelector({
               createdAt: Date.now(),
               updatedAt: Date.now(),
             };
-            dispatch({ type: "SET_EVALUATION", config: { kind: "custom", profile: emptyProfile } });
+            dispatch({ type: "SET_EVALUATION", config: { kind: "custom", profile: emptyRubric } });
           }
         }}
       />

@@ -37,10 +37,10 @@ import { useFusionStudyRepository } from "../../lib/persistence/repository-conte
 import {
   type EvaluationSuite,
   type EvaluationTask,
-  type EvaluationProfileRef,
+  type RubricVersionRef,
   type ExperimentRecord,
-  type EvaluationProfile,
-  type ProfileRecord,
+  type EvaluationRubric,
+  type RubricRecord,
 } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import {
@@ -94,12 +94,12 @@ export function SuiteEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [profileRecords, setProfileRecords] = useState<ProfileRecord[]>([]);
+  const [rubricRecords, setRubricRecords] = useState<RubricRecord[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [preflightOpen, setPreflightOpen] = useState(false);
   const requestIdRef = useRef(0);
 
-  // --- Load suite + profile records ---
+  // --- Load suite + rubric records ---
   const load = useCallback(async () => {
     if (!repo || !suiteId) {
       setPersisted(null);
@@ -111,9 +111,9 @@ export function SuiteEditor({
     setLoading(true);
     setLoadError(null);
     try {
-      const [suite, profiles] = await Promise.all([
+      const [suite, rubrics] = await Promise.all([
         repo.getSuite(suiteId),
-        repo.listProfiles(true),
+        repo.listRubrics(true),
       ]);
       if (id !== requestIdRef.current) return;
       if (!suite) {
@@ -126,7 +126,7 @@ export function SuiteEditor({
         // Auto-select first task if none selected.
         setSelectedTaskId((prev) => prev ?? suite.tasks[0]?.id ?? null);
       }
-      setProfileRecords(profiles.filter((p) => !p.archivedAt));
+      setRubricRecords(rubrics.filter((p) => !p.archivedAt));
       setLoading(false);
     } catch (err: unknown) {
       if (id !== requestIdRef.current) return;
@@ -160,28 +160,28 @@ export function SuiteEditor({
 
   // Resolve the persisted default-evaluation pin for the header rubric chip
   // (identity spec §5.3). Tracks the persisted suite — the version Run uses.
-  const [pinnedProfile, setPinnedProfile] = useState<EvaluationProfile | null>(null);
-  const [pinnedProfileLoaded, setPinnedProfileLoaded] = useState(false);
+  const [pinnedRubric, setPinnedRubric] = useState<EvaluationRubric | null>(null);
+  const [pinnedRubricLoaded, setPinnedRubricLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    setPinnedProfile(null);
-    setPinnedProfileLoaded(false);
+    setPinnedRubric(null);
+    setPinnedRubricLoaded(false);
     if (!repo || !persisted) return;
     const ev = persisted.defaultEvaluation;
     if (ev.kind !== "profile") {
-      setPinnedProfileLoaded(true);
+      setPinnedRubricLoaded(true);
       return;
     }
     void repo
-      .getProfile(ev.profile.id, ev.profile.version)
+      .getRubricVersion(ev.profile.id, ev.profile.version)
       .then((p) => {
         if (!cancelled) {
-          setPinnedProfile(p);
-          setPinnedProfileLoaded(true);
+          setPinnedRubric(p);
+          setPinnedRubricLoaded(true);
         }
       })
       .catch(() => {
-        if (!cancelled) setPinnedProfileLoaded(true);
+        if (!cancelled) setPinnedRubricLoaded(true);
       });
     return () => {
       cancelled = true;
@@ -201,14 +201,14 @@ export function SuiteEditor({
 
   const nextVersion = (persisted?.version ?? 0) + 1;
 
-  // --- Resolve profile label (id + version → "Name vN") ---
-  const resolveProfileLabel = useCallback(
-    (ref: EvaluationProfileRef): string => {
-      const rec = profileRecords.find((p) => p.id === ref.id);
-      const name = rec ? `Profile ${ref.id}` : ref.id;
+  // --- Resolve rubric label (id + version → "Name vN") ---
+  const resolveRubricLabel = useCallback(
+    (ref: RubricVersionRef): string => {
+      const rec = rubricRecords.find((p) => p.id === ref.id);
+      const name = rec ? `Rubric ${ref.id}` : ref.id;
       return `${name} v${ref.version}`;
     },
-    [profileRecords],
+    [rubricRecords],
   );
 
   // --- Draft mutation helpers ---
@@ -408,10 +408,10 @@ export function SuiteEditor({
             {/* Identity spec §5.3: name the pinned rubric where the suite is
                 configured. Rendered outside the row-link pattern — the header
                 has no nesting constraint. */}
-            {persisted.defaultEvaluation.kind === "profile" && pinnedProfileLoaded ? (
-              pinnedProfile ? (
+            {persisted.defaultEvaluation.kind === "profile" && pinnedRubricLoaded ? (
+              pinnedRubric ? (
                 <RubricRefChip
-                  name={pinnedProfile.name || "Untitled rubric"}
+                  name={pinnedRubric.name || "Untitled rubric"}
                   rubricId={persisted.defaultEvaluation.profile.id}
                   version={persisted.defaultEvaluation.profile.version}
                 />
@@ -517,8 +517,8 @@ export function SuiteEditor({
             suite={draft}
             onChange={patchDraft}
             models={models}
-            profileRecords={profileRecords}
-            resolveProfileLabel={resolveProfileLabel}
+            rubricRecords={rubricRecords}
+            resolveRubricLabel={resolveRubricLabel}
           />
         </div>
       )}
@@ -562,8 +562,8 @@ export function SuiteEditor({
               task={selectedTask}
               suiteDefaultEvaluation={draft.defaultEvaluation}
               onChange={(patch) => patchTask(selectedTask.id, patch)}
-              profileRecords={profileRecords}
-              resolveProfileLabel={resolveProfileLabel}
+              rubricRecords={rubricRecords}
+              resolveRubricLabel={resolveRubricLabel}
             />
           ) : (
             <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">

@@ -94,13 +94,13 @@ describe("SuiteList — empty state", () => {
     cleanup(h);
   });
 
-  it("cross-links profiles so first-run users learn the split", async () => {
+  it("cross-links rubrics so first-run users learn the split", async () => {
     const repo = new InMemoryEvaluationRepository();
     const h = renderWithRouter(<SuiteList repo={repo} />);
     await settle();
-    const link = h.$("a[href='/evaluations/profiles']");
+    const link = h.$("a[href='/evaluations/rubrics']");
     expect(link).toBeTruthy();
-    expect(link?.textContent).toContain("Profiles");
+    expect(link?.textContent).toContain("Rubrics");
     expect(h.container.textContent).toMatch(/suites pin them/i);
     cleanup(h);
   });
@@ -111,12 +111,12 @@ describe("SuiteList — empty state", () => {
       getSuite: vi.fn(),
       saveSuite: vi.fn(),
       archiveSuite: vi.fn(),
-      listProfiles: vi.fn(),
-      getProfileRecord: vi.fn(),
-      getProfile: vi.fn(),
-      createProfile: vi.fn(),
-      appendProfileVersion: vi.fn(),
-      setProfileArchived: vi.fn(),
+      listRubrics: vi.fn(),
+      getRubricRecord: vi.fn(),
+      getRubricVersion: vi.fn(),
+      createRubric: vi.fn(),
+      appendRubricVersion: vi.fn(),
+      setRubricArchived: vi.fn(),
       createExperiment: vi.fn(),
       updateExperiment: vi.fn(),
       getExperiment: vi.fn(),
@@ -258,7 +258,7 @@ describe("SuiteList — rows", () => {
     });
     await settle();
     // Suite removed from default list — scoped to row links; the empty-state
-    // profiles cross-link (identity spec §5.4) is not a suite row.
+    // rubrics cross-link (identity spec §5.4) is not a suite row.
     expect(h.$$("[data-record-row] a[href^='/evaluations/']")).toHaveLength(0);
     // Archived filter restores discoverability
     const showArchived = h.$("input[type='checkbox']") as HTMLInputElement;
@@ -295,12 +295,12 @@ describe("SuiteList — create", () => {
       getSuite: vi.fn(),
       saveSuite: vi.fn().mockRejectedValue(new StorageError("quota", "disk full")),
       archiveSuite: vi.fn(),
-      listProfiles: vi.fn(),
-      getProfileRecord: vi.fn(),
-      getProfile: vi.fn(),
-      createProfile: vi.fn(),
-      appendProfileVersion: vi.fn(),
-      setProfileArchived: vi.fn(),
+      listRubrics: vi.fn(),
+      getRubricRecord: vi.fn(),
+      getRubricVersion: vi.fn(),
+      createRubric: vi.fn(),
+      appendRubricVersion: vi.fn(),
+      setRubricArchived: vi.fn(),
       createExperiment: vi.fn(),
       updateExperiment: vi.fn(),
       getExperiment: vi.fn(),
@@ -415,10 +415,10 @@ describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
     cleanup(h);
   });
 
-  it("shows the pinned rubric chip linking to the profile", async () => {
+  it("shows the pinned rubric chip linking to the rubric", async () => {
     const repo = new InMemoryEvaluationRepository();
     const now = Date.now();
-    // The repository requires the first profile version to be 1 and at least
+    // The repository requires the first rubric version to be 1 and at least
     // one positive-weight criterion.
     const criterion = {
       id: "c1",
@@ -427,7 +427,7 @@ describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
       weight: 1,
       anchors: { one: "1", three: "3", five: "5" },
     };
-    await repo.createProfile(
+    await repo.createRubric(
       { id: "p1", revision: 1, latestVersion: 1, createdAt: now, updatedAt: now, archivedAt: null },
       {
         id: "p1",
@@ -447,13 +447,13 @@ describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
     ]);
     const h = renderWithRouter(<SuiteList repo={repo} />);
     await settle();
-    const chip = h.$("a[href='/evaluations/profiles/p1']");
+    const chip = h.$("a[href='/evaluations/rubrics/p1']");
     expect(chip).toBeTruthy();
     expect(chip?.textContent).toContain("Clarity rubric v1");
     cleanup(h);
   });
 
-  it("shows a holistic judging chip when the suite uses no profile", async () => {
+  it("shows a holistic judging chip when the suite uses no rubric", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedRepo(repo, [makeSuite("s1")]);
     const h = renderWithRouter(<SuiteList repo={repo} />);
@@ -462,7 +462,7 @@ describe("SuiteList — identity (spec evaluations-identity-ux)", () => {
     cleanup(h);
   });
 
-  it("shows rubric missing when the pinned profile no longer exists", async () => {
+  it("shows rubric missing when the pinned rubric no longer exists", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedRepo(repo, [
       makeSuite("s1", {

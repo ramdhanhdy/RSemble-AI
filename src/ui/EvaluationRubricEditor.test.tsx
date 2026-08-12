@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EvaluationProfileEditor } from "./EvaluationProfileEditor";
-import { validateProfile } from "../lib/evaluations/evaluation-rubric";
-import type { EvaluationProfile, EvaluationCriterion } from "../lib/evaluations/evaluation-types";
+import { EvaluationRubricEditor } from "./EvaluationRubricEditor";
+import { validateRubric } from "../lib/evaluations/evaluation-rubric";
+import type { EvaluationRubric, EvaluationCriterion } from "../lib/evaluations/evaluation-types";
 
 function makeCriterion(
   id: string,
@@ -20,11 +20,11 @@ function makeCriterion(
   } as EvaluationCriterion;
 }
 
-function makeProfile(criteria: EvaluationCriterion[] = []): EvaluationProfile {
+function makeRubric(criteria: EvaluationCriterion[] = []): EvaluationRubric {
   return {
     id: "p1",
     version: 1,
-    name: "Test Profile",
+    name: "Test Rubric",
     description: "test",
     judgeInstruction: "",
     criteria,
@@ -33,31 +33,31 @@ function makeProfile(criteria: EvaluationCriterion[] = []): EvaluationProfile {
   };
 }
 
-describe("EvaluationProfileEditor — structure", () => {
+describe("EvaluationRubricEditor — structure", () => {
   it("shows total weight summary", () => {
-    const profile = makeProfile([
+    const rubric = makeRubric([
       makeCriterion("c1", { weight: 1 }),
       makeCriterion("c2", { weight: 2 }),
     ]);
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={rubric} onChange={() => {}} />,
     );
     expect(html).toContain("Total weight");
     expect(html).toContain("3.00");
   });
 
   it("shows zero total weight warning", () => {
-    const profile = makeProfile([makeCriterion("c1", { weight: 0 })]);
+    const rubric = makeRubric([makeCriterion("c1", { weight: 0 })]);
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={rubric} onChange={() => {}} />,
     );
     expect(html).toContain("needs positive weight");
   });
 
   it("renders criterion name, weight, and normalized share in collapsed header", () => {
-    const profile = makeProfile([makeCriterion("c1", { weight: 2 })]);
+    const rubric = makeRubric([makeCriterion("c1", { weight: 2 })]);
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={rubric} onChange={() => {}} />,
     );
     expect(html).toContain("Criterion c1");
     expect(html).toContain("Weight 2.0");
@@ -66,9 +66,9 @@ describe("EvaluationProfileEditor — structure", () => {
   });
 
   it("renders anchor fields for 1, 3, and 5", () => {
-    const profile = makeProfile([makeCriterion("c1")]);
+    const rubric = makeRubric([makeCriterion("c1")]);
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={rubric} onChange={() => {}} />,
     );
     // The accordion is open by default for the first criterion
     expect(html).toContain("Score 1 anchor");
@@ -78,26 +78,26 @@ describe("EvaluationProfileEditor — structure", () => {
 
   it("renders Add criterion button", () => {
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={makeProfile()} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={makeRubric()} onChange={() => {}} />,
     );
     expect(html).toContain("Add graded");
     expect(html).toContain("Add binary");
   });
 
   it("renders Move up/down buttons", () => {
-    const profile = makeProfile([makeCriterion("c1"), makeCriterion("c2")]);
+    const rubric = makeRubric([makeCriterion("c1"), makeCriterion("c2")]);
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={rubric} onChange={() => {}} />,
     );
     expect(html).toContain("Move criterion up");
     expect(html).toContain("Move criterion down");
   });
 });
 
-describe("EvaluationProfileEditor — no presets", () => {
+describe("EvaluationRubricEditor — no presets", () => {
   it("does not render goal, metric, gap, Accuracy, Depth, or Clarity", () => {
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={makeProfile()} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={makeRubric()} onChange={() => {}} />,
     );
     expect(html).not.toContain("Accuracy");
     expect(html).not.toContain("Depth");
@@ -108,11 +108,11 @@ describe("EvaluationProfileEditor — no presets", () => {
   });
 });
 
-describe("EvaluationProfileEditor — accessibility", () => {
+describe("EvaluationRubricEditor — accessibility", () => {
   it("every field has an associated label", () => {
-    const profile = makeProfile([makeCriterion("c1")]);
+    const rubric = makeRubric([makeCriterion("c1")]);
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={rubric} onChange={() => {}} />,
     );
     expect(html).toContain("Criterion name");
     expect(html).toContain("Description");
@@ -120,16 +120,16 @@ describe("EvaluationProfileEditor — accessibility", () => {
   });
 
   it("accordion header has aria-expanded", () => {
-    const profile = makeProfile([makeCriterion("c1")]);
+    const rubric = makeRubric([makeCriterion("c1")]);
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={rubric} onChange={() => {}} />,
     );
     expect(html).toContain("aria-expanded");
   });
 });
 
-describe("EvaluationProfileEditor — Requirement Group weight authoring (spec §11.4)", () => {
-  function hybridProfile(): EvaluationProfile {
+describe("EvaluationRubricEditor — Requirement Group weight authoring (spec §11.4)", () => {
+  function hybridRubric(): EvaluationRubric {
     return {
       id: "p1",
       version: 1,
@@ -174,7 +174,7 @@ describe("EvaluationProfileEditor — Requirement Group weight authoring (spec �
 
   it("renders each group's editable weight input and ALL mode (no MEAN, no member weight)", () => {
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={hybridProfile()} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={hybridRubric()} onChange={() => {}} />,
     );
     expect(html).toContain('aria-label="Group A group weight"');
     expect(html).toContain('aria-label="Group B group weight"');
@@ -186,7 +186,7 @@ describe("EvaluationProfileEditor — Requirement Group weight authoring (spec �
 
   it("discloses per-group fail cost = lambda * v_g / sum(v)", () => {
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={hybridProfile()} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={hybridRubric()} onChange={() => {}} />,
     );
     // groups weights 1 + 3 = 4; lambda 1.0.
     // gA fail cost = 1*1/4 = 0.25; gB = 1*3/4 = 0.75.
@@ -195,19 +195,19 @@ describe("EvaluationProfileEditor — Requirement Group weight authoring (spec �
   });
 
   it("changing a group weight changes the fail-cost disclosure", () => {
-    const captures: EvaluationProfile[] = [];
+    const captures: EvaluationRubric[] = [];
     // Simulate a weight edit on Group B (3 -> 5) via the onChange-driven pattern:
     // the editor calls updateGroupWeight only on a valid finite positive value.
-    const profile = hybridProfile();
+    const rubric = hybridRubric();
     const edited = {
-      ...profile,
-      requirementGroups: profile.requirementGroups!.map((g) =>
+      ...rubric,
+      requirementGroups: rubric.requirementGroups!.map((g) =>
         g.id === "gB" ? { ...g, weight: 5 } : g,
       ),
     };
     captures.push(edited);
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={edited} onChange={(p) => captures.push(p)} />,
+      <EvaluationRubricEditor rubric={edited} onChange={(p) => captures.push(p)} />,
     );
     // weights now 1 + 5 = 6; gA fail cost = 1/6 ≈ 0.17, gB = 5/6 ≈ 0.83.
     expect(html).toContain("fail cost 0.17 pts");
@@ -218,21 +218,21 @@ describe("EvaluationProfileEditor — Requirement Group weight authoring (spec �
     // The editor's updateGroupWeight guard rejects <= 0 and non-finite.
     // Exercise via a direct call path by rendering the component and firing the
     // input is not feasible in static render, so we assert the guard contract:
-    // a zero-weight group must not survive a profile save (validateProfile).
+    // a zero-weight group must not survive a rubric save (validateRubric).
 
     const zeroGroup = {
-      ...hybridProfile(),
+      ...hybridRubric(),
       requirementGroups: [
         { id: "gA", name: "A", checkIds: ["b1"], weight: 0, mode: "ALL" as const },
       ],
     };
-    const errors = validateProfile(zeroGroup);
+    const errors = validateRubric(zeroGroup);
     expect(errors.some((e: string) => e.includes("weight must be positive"))).toBe(true);
   });
 
   it("shows the ALL-fragility warning at N >= 4 subchecks", () => {
-    const profile = hybridProfile();
-    profile.requirementGroups = [
+    const rubric = hybridRubric();
+    rubric.requirementGroups = [
       {
         id: "gA",
         name: "Group A",
@@ -241,8 +241,8 @@ describe("EvaluationProfileEditor — Requirement Group weight authoring (spec �
         mode: "ALL",
       },
     ];
-    profile.criteria = [
-      ...profile.criteria,
+    rubric.criteria = [
+      ...rubric.criteria,
       ...["b3", "b4", "b5"].map((id) => ({
         id,
         kind: "binary" as const,
@@ -253,7 +253,7 @@ describe("EvaluationProfileEditor — Requirement Group weight authoring (spec �
       })),
     ];
     const html = renderToStaticMarkup(
-      <EvaluationProfileEditor profile={profile} onChange={() => {}} />,
+      <EvaluationRubricEditor rubric={rubric} onChange={() => {}} />,
     );
     expect(html).toContain("any single false verdict fails the group");
   });

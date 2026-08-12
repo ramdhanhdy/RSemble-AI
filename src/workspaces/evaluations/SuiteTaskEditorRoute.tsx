@@ -14,8 +14,8 @@ import type { EvaluationRepository } from "../../lib/persistence/evaluation-repo
 import type {
   EvaluationSuite,
   EvaluationTask,
-  EvaluationProfileRef,
-  ProfileRecord,
+  RubricVersionRef,
+  RubricRecord,
 } from "../../lib/evaluations/evaluation-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import { SuiteTaskEditor } from "./SuiteTaskEditor";
@@ -32,7 +32,7 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
   const [suite, setSuite] = useState<EvaluationSuite | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [profileRecords, setProfileRecords] = useState<ProfileRecord[]>([]);
+  const [rubricRecords, setRubricRecords] = useState<RubricRecord[]>([]);
 
   const load = useCallback(async () => {
     if (!repo || !suiteId) {
@@ -43,14 +43,14 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
     setLoading(true);
     setError(null);
     try {
-      const [s, profiles] = await Promise.all([repo.getSuite(suiteId), repo.listProfiles(true)]);
+      const [s, rubrics] = await Promise.all([repo.getSuite(suiteId), repo.listRubrics(true)]);
       if (!s) {
         setSuite(null);
         setError("Suite not found.");
       } else {
         setSuite(s);
       }
-      setProfileRecords(profiles.filter((p) => !p.archivedAt));
+      setRubricRecords(rubrics.filter((p) => !p.archivedAt));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load suite.");
     } finally {
@@ -62,13 +62,13 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
     void load();
   }, [load]);
 
-  const resolveProfileLabel = useCallback(
-    (ref: EvaluationProfileRef): string => {
-      const rec = profileRecords.find((p) => p.id === ref.id);
-      const name = rec ? `Profile ${ref.id}` : ref.id;
+  const resolveRubricLabel = useCallback(
+    (ref: RubricVersionRef): string => {
+      const rec = rubricRecords.find((p) => p.id === ref.id);
+      const name = rec ? `Rubric ${ref.id}` : ref.id;
       return `${name} v${ref.version}`;
     },
-    [profileRecords],
+    [rubricRecords],
   );
 
   const task = useMemo(
@@ -153,8 +153,8 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
           task={task}
           suiteDefaultEvaluation={suite.defaultEvaluation}
           onChange={patchTask}
-          profileRecords={profileRecords}
-          resolveProfileLabel={resolveProfileLabel}
+          rubricRecords={rubricRecords}
+          resolveRubricLabel={resolveRubricLabel}
         />
       </div>
     </div>

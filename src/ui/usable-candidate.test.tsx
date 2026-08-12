@@ -6,7 +6,7 @@ import { CompareView } from "./CompareView";
 import type { StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
 import type { EvaluationCriterion } from "../lib/evaluations/evaluation-types";
-import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
+import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-rubric-adhoc";
 
 function makeUsableCandidate(id: string, model: string, score = 4.0): Candidate {
   return {

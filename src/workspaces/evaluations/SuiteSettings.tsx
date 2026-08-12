@@ -4,7 +4,7 @@
 // Not a permanent third pane. Opens from the SuiteEditor header as a disclosure.
 // Holds: name + description (with saved-state), model roster (provider-scoped
 // selector reusing Compare's AddModelCombobox pattern), default Judge selector,
-// and default evaluation selection (holistic or pinned profile version).
+// and default evaluation selection (holistic or pinned rubric version).
 // Duplicate model keys surface a field error.
 // =============================================================================
 
@@ -21,8 +21,8 @@ import type { ModelSlot } from "../../studio-data";
 import {
   type EvaluationSuite,
   type EvaluationSelection,
-  type EvaluationProfileRef,
-  type ProfileRecord,
+  type RubricVersionRef,
+  type RubricRecord,
 } from "../../lib/evaluations/evaluation-types";
 import { ProviderTabs, PROVIDER_LABELS } from "../../ui/ProviderTabs";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
@@ -35,18 +35,18 @@ interface SuiteSettingsProps {
   onChange: (patch: Partial<EvaluationSuite>) => void;
   /** Catalog models from provider probes (may be empty if no keys). */
   models: CatalogModel[];
-  /** Available profile records for the default-evaluation pinned-profile picker. */
-  profileRecords: ProfileRecord[];
-  /** Resolve a pinned profile ref to a display label (name + version). */
-  resolveProfileLabel: (ref: EvaluationProfileRef) => string;
+  /** Available rubric records for the default-evaluation pinned-rubric picker. */
+  rubricRecords: RubricRecord[];
+  /** Resolve a pinned rubric ref to a display label (name + version). */
+  resolveRubricLabel: (ref: RubricVersionRef) => string;
 }
 
 export function SuiteSettings({
   suite,
   onChange,
   models,
-  profileRecords,
-  resolveProfileLabel,
+  rubricRecords,
+  resolveRubricLabel,
 }: SuiteSettingsProps) {
   const { testBatch } = useModelProbe();
   const enabledSlots = suite.modelSlots.filter((s) => s.enabled);
@@ -231,8 +231,8 @@ export function SuiteSettings({
         </span>
         <DefaultEvaluationPicker
           selection={suite.defaultEvaluation}
-          profileRecords={profileRecords}
-          resolveProfileLabel={resolveProfileLabel}
+          rubricRecords={rubricRecords}
+          resolveRubricLabel={resolveRubricLabel}
           onChange={setDefaultEvaluation}
         />
       </div>
@@ -661,18 +661,18 @@ function JudgeSelector({
 }
 
 // -----------------------------------------------------------------------------
-// DefaultEvaluationPicker — holistic or pinned-profile version.
+// DefaultEvaluationPicker — holistic or pinned-rubric version.
 // -----------------------------------------------------------------------------
 
 function DefaultEvaluationPicker({
   selection,
-  profileRecords,
-  resolveProfileLabel,
+  rubricRecords,
+  resolveRubricLabel,
   onChange,
 }: {
   selection: EvaluationSelection;
-  profileRecords: ProfileRecord[];
-  resolveProfileLabel: (ref: EvaluationProfileRef) => string;
+  rubricRecords: RubricRecord[];
+  resolveRubricLabel: (ref: RubricVersionRef) => string;
   onChange: (sel: EvaluationSelection) => void;
 }) {
   const isHolistic = selection.kind === "holistic";
@@ -697,8 +697,8 @@ function DefaultEvaluationPicker({
           type="button"
           aria-pressed={!isHolistic}
           onClick={() => {
-            // Pin the first available profile if none pinned yet.
-            const first = profileRecords[0];
+            // Pin the first available rubric if none pinned yet.
+            const first = rubricRecords[0];
             if (first) {
               onChange({
                 kind: "profile",
@@ -714,31 +714,31 @@ function DefaultEvaluationPicker({
               : "text-text-secondary hover:text-text"
           }`}
         >
-          Pinned profile
+          Pinned rubric
         </button>
       </div>
 
       {!isHolistic && (
         <div>
-          {profileRecords.length === 0 ? (
+          {rubricRecords.length === 0 ? (
             <p className="text-xs text-text-muted">
-              No profiles available. Create a profile under the Profiles tab first.
+              No rubrics available. Create a rubric under the Rubrics tab first.
             </p>
           ) : (
             <label className="block">
-              <span className="sr-only">Pinned profile version</span>
+              <span className="sr-only">Pinned rubric version</span>
               <select
                 value={pinned ? `${pinned.id}:${pinned.version}` : ""}
                 onChange={(e) => {
                   const [id, ver] = e.target.value.split(":");
                   onChange({ kind: "profile", profile: { id, version: Number(ver) } });
                 }}
-                aria-label="Pinned profile version"
+                aria-label="Pinned rubric version"
                 className="min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
-                {profileRecords.map((r) => (
+                {rubricRecords.map((r) => (
                   <option key={`${r.id}:${r.latestVersion}`} value={`${r.id}:${r.latestVersion}`}>
-                    {resolveProfileLabel({ id: r.id, version: r.latestVersion })}
+                    {resolveRubricLabel({ id: r.id, version: r.latestVersion })}
                   </option>
                 ))}
               </select>

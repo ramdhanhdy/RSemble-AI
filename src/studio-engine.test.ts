@@ -7,8 +7,8 @@ import {
   type JudgeCriterionScore,
 } from "./studio-data";
 import type { ProviderId, ReasoningPolicy } from "./lib/providers/types";
-import type { EvaluationProfileSnapshot } from "./lib/evaluations/evaluation-types";
-import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-profile-adhoc";
+import type { RubricSnapshot } from "./lib/evaluations/evaluation-types";
+import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-rubric-adhoc";
 import type { Attachment } from "./lib/attachments/types";
 import { MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from "./lib/attachments/limits";
 
@@ -559,11 +559,11 @@ describe("reducer — FANOUT_START clears fusion state (regression)", () => {
 // ---------------------------------------------------------------------------
 
 describe("reducer — retained run evaluation context", () => {
-  // initialState.evaluation is holistic — context tests need a real profile.
-  const testProfile = (): EvaluationProfileSnapshot => ({
+  // initialState.evaluation is holistic — context tests need a real rubric.
+  const testRubric = (): RubricSnapshot => ({
     id: "tp",
     version: 1,
-    name: "Test Profile",
+    name: "Test Rubric",
     description: "test",
     judgeInstruction: "",
     criteria: [
@@ -585,7 +585,7 @@ describe("reducer — retained run evaluation context", () => {
     createdAt: 1000,
     updatedAt: 1000,
   });
-  const testEvaluation = () => ({ kind: "custom" as const, profile: testProfile() });
+  const testEvaluation = () => ({ kind: "custom" as const, profile: testRubric() });
 
   it("FANOUT_START stores a deep-copied current-run evaluation context", () => {
     const c1 = makeCandidate("c1", "openrouter", "model-a");
@@ -598,9 +598,9 @@ describe("reducer — retained run evaluation context", () => {
     expect(next.runContext).not.toBeNull();
     expect(next.runContext?.prompt).toBe("original task");
     expect(next.runContext?.evaluation).toEqual(evaluation);
-    // Deep copy: the stored profile must not alias the payload's object.
+    // Deep copy: the stored rubric must not alias the payload's object.
     expect(next.runContext?.evaluation).not.toBe(evaluation);
-    expect(next.runContext?.evaluation).toEqual({ kind: "custom", profile: testProfile() });
+    expect(next.runContext?.evaluation).toEqual({ kind: "custom", profile: testRubric() });
   });
 
   it("replacing the command evaluation after fanout does not mutate the stored run evaluation", () => {

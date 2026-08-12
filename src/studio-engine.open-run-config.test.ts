@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { initialState, reducer, type StudioState } from "./studio-engine";
-import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-profile-adhoc";
-import type { EvaluationProfileSnapshot } from "./lib/evaluations/evaluation-types";
+import { HOLISTIC_EVALUATION } from "./lib/evaluations/evaluation-rubric-adhoc";
+import type { RubricSnapshot } from "./lib/evaluations/evaluation-types";
 
 const preload = {
   mode: "fuse" as const,
@@ -12,7 +12,7 @@ const preload = {
   slots: initialState.slots.map((slot) => ({ ...slot })),
 };
 
-const profile = (): EvaluationProfileSnapshot => ({
+const rubric = (): RubricSnapshot => ({
   id: "p1",
   version: 3,
   name: "Loadable",
@@ -132,11 +132,11 @@ describe("LOAD_RUN_CONFIG fresh-draft boundary", () => {
     expect(next.audit[0]?.message).toContain("fresh Compare draft");
   });
 
-  it("restores persisted config and deep-copies the evaluation profile", () => {
+  it("restores persisted config and deep-copies the evaluation rubric", () => {
     const evaluation = {
       kind: "profile" as const,
       ref: { id: "p1", version: 3 },
-      profile: profile(),
+      profile: rubric(),
     };
     const next = reducer(initialState, {
       type: "LOAD_RUN_CONFIG",

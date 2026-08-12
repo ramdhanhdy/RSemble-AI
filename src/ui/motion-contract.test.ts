@@ -49,7 +49,7 @@ describe("motion contract", () => {
     const offendersList = [
       "src/ui/RecordRow.tsx",
       "src/workspaces/evaluations/SuiteList.tsx",
-      "src/workspaces/evaluations/ProfileList.tsx",
+      "src/workspaces/evaluations/RubricList.tsx",
     ].flatMap((file) => {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       return source.match(/hover:-translate|hover:scale/g) ?? [];
@@ -60,7 +60,7 @@ describe("motion contract", () => {
   it("new identity components use no ease-in, transition-all, or scale(0)", () => {
     // Named guard for the identity primitives so the contract holds even if
     // the whole-tree scan above is ever narrowed.
-    for (const file of ["src/ui/KindEyebrow.tsx", "src/ui/ProfileRefChip.tsx"]) {
+    for (const file of ["src/ui/KindEyebrow.tsx", "src/ui/RubricRefChip.tsx"]) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source).not.toMatch(/transition-all|\bease-in\b(?!-out)|scale\(0\)/);
     }
