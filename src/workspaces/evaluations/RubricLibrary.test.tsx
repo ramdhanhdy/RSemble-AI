@@ -3,14 +3,14 @@ import { describe, expect, it, afterEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { ProfileList } from "./ProfileList";
-import { ProfileDetail } from "./ProfileDetail";
+import { RubricList } from "./RubricList";
+import { RubricDetail } from "./RubricDetail";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type {
   EvaluationCriterion,
-  EvaluationProfile,
+  EvaluationRubric,
   EvaluationSuite,
-  ProfileRecord,
+  RubricRecord,
 } from "../../lib/evaluations/evaluation-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -68,12 +68,12 @@ function makeCriterion(id: string, name: string): EvaluationCriterion {
   };
 }
 
-function makeProfile(
+function makeRubric(
   id: string,
   version: number,
   name: string,
-  overrides: Partial<EvaluationProfile> = {},
-): EvaluationProfile {
+  overrides: Partial<EvaluationRubric> = {},
+): EvaluationRubric {
   const now = Date.now();
   return {
     id,
@@ -91,8 +91,8 @@ function makeProfile(
 function makeRecord(
   id: string,
   latestVersion: number,
-  overrides: Partial<ProfileRecord> = {},
-): ProfileRecord {
+  overrides: Partial<RubricRecord> = {},
+): RubricRecord {
   const now = Date.now();
   return {
     id,
@@ -105,7 +105,7 @@ function makeRecord(
   };
 }
 
-async function seedProfile(
+async function seedRubric(
   repo: InMemoryEvaluationRepository,
   id: string,
   name: string,
@@ -115,8 +115,8 @@ async function seedProfile(
     makeCriterion(`c-${i + 1}`, `Criterion ${i + 1}`),
   );
   const record = makeRecord(id, 1);
-  const profile = makeProfile(id, 1, name, { criteria });
-  await repo.createProfile(record, profile);
+  const rubric = makeRubric(id, 1, name, { criteria });
+  await repo.createRubric(record, rubric);
 }
 
 async function appendVersion(
@@ -124,11 +124,11 @@ async function appendVersion(
   id: string,
   name: string,
 ): Promise<void> {
-  const rec = await repo.getProfileRecord(id);
+  const rec = await repo.getRubricRecord(id);
   if (!rec) throw new Error("record missing");
-  const latest = await repo.getProfile(id, rec.latestVersion);
+  const latest = await repo.getRubricVersion(id, rec.latestVersion);
   if (!latest) throw new Error("version missing");
-  await repo.appendProfileVersion(
+  await repo.appendRubricVersion(
     { ...rec },
     { ...latest, name, updatedAt: Date.now() },
     rec.revision,
@@ -137,11 +137,11 @@ async function appendVersion(
 
 // --- Tests -------------------------------------------------------------------
 
-describe("ProfileList", () => {
+describe("RubricList", () => {
   it("shows the rubric kind eyebrow and reusable status, not completed", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality");
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await seedRubric(repo, "p-1", "Quality");
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
     const text = h.container.textContent ?? "";
     expect(text).toContain("Rubric");
@@ -152,8 +152,8 @@ describe("ProfileList", () => {
 
   it("previews the first criterion name and counts the rest", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality", 3);
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await seedRubric(repo, "p-1", "Quality", 3);
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
     const text = h.container.textContent ?? "";
     expect(text).toContain("Criterion 1");
@@ -161,23 +161,23 @@ describe("ProfileList", () => {
     cleanup(h);
   });
 
-  it("lists latest revisions and rows link to /evaluations/profiles/:id", async () => {
+  it("lists latest revisions and rows link to /evaluations/rubrics/:id", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality");
-    await seedProfile(repo, "p-2", "Safety");
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await seedRubric(repo, "p-1", "Quality");
+    await seedRubric(repo, "p-2", "Safety");
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
-    const links = h.$$("a[href^='/evaluations/profiles/']");
+    const links = h.$$("a[href^='/evaluations/rubrics/']");
     expect(links).toHaveLength(2);
-    expect(links.some((l) => l.getAttribute("href") === "/evaluations/profiles/p-1")).toBe(true);
-    expect(links.some((l) => l.getAttribute("href") === "/evaluations/profiles/p-2")).toBe(true);
+    expect(links.some((l) => l.getAttribute("href") === "/evaluations/rubrics/p-1")).toBe(true);
+    expect(links.some((l) => l.getAttribute("href") === "/evaluations/rubrics/p-2")).toBe(true);
     cleanup(h);
   });
 
   it("shows criterion count and version in the row summary", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality", 3);
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await seedRubric(repo, "p-1", "Quality", 3);
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
     const text = h.container.textContent ?? "";
     expect(text).toContain("3 criteria");
@@ -185,56 +185,56 @@ describe("ProfileList", () => {
     cleanup(h);
   });
 
-  it("empty state shows 'No profiles yet' and a Create profile button", async () => {
+  it("empty state shows 'No rubrics yet' and a Create rubric button", async () => {
     const repo = new InMemoryEvaluationRepository();
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
-    expect(h.container.textContent).toMatch(/No profiles yet/i);
-    const createBtn = h.$("button[data-action='create-profile']");
+    expect(h.container.textContent).toMatch(/No rubrics yet/i);
+    const createBtn = h.$("button[data-action='create-rubric']");
     expect(createBtn).toBeTruthy();
     cleanup(h);
   });
 
   it("empty state cross-links suites so first-run users learn the split", async () => {
     const repo = new InMemoryEvaluationRepository();
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
     const link = h.$("a[href='/evaluations']");
     expect(link).toBeTruthy();
     expect(link?.textContent).toContain("Suites");
-    expect(h.container.textContent).toMatch(/pin profiles to score their tasks/i);
+    expect(h.container.textContent).toMatch(/pin rubrics to score their tasks/i);
     cleanup(h);
   });
 
-  it("Create profile persists a valid draft that appears in the list", async () => {
+  it("Create rubric persists a valid draft that appears in the list", async () => {
     const repo = new InMemoryEvaluationRepository();
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
-    const createBtn = h.$("button[data-action='create-profile']");
+    const createBtn = h.$("button[data-action='create-rubric']");
     await act(async () => {
       createBtn!.click();
       await flush();
     });
     await settle();
     // The repository's strict guard accepted the draft AND it lists.
-    const records = await repo.listProfiles(true);
+    const records = await repo.listRubrics(true);
     expect(records).toHaveLength(1);
     expect(h.container.textContent).not.toMatch(/validation/i);
     cleanup(h);
   });
 
-  it("Show archived toggle reveals archived profiles and hides them by default", async () => {
+  it("Show archived toggle reveals archived rubrics and hides them by default", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-active", "Active");
-    await seedProfile(repo, "p-archived", "Archived");
+    await seedRubric(repo, "p-active", "Active");
+    await seedRubric(repo, "p-archived", "Archived");
     // archive the second
-    const rec = await repo.getProfileRecord("p-archived");
-    await repo.setProfileArchived("p-archived", true, rec!.revision);
+    const rec = await repo.getRubricRecord("p-archived");
+    await repo.archiveRubric("p-archived", rec!.revision);
 
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
     // By default, archived is hidden
-    expect(h.$$("a[href^='/evaluations/profiles/']")).toHaveLength(1);
+    expect(h.$$("a[href^='/evaluations/rubrics/']")).toHaveLength(1);
     expect(h.container.textContent).toContain("Active");
     expect(h.container.textContent).not.toContain("Archived");
 
@@ -243,42 +243,42 @@ describe("ProfileList", () => {
     expect(toggle).toBeTruthy();
     act(() => toggle!.click());
     await settle();
-    expect(h.$$("a[href^='/evaluations/profiles/']")).toHaveLength(2);
+    expect(h.$$("a[href^='/evaluations/rubrics/']")).toHaveLength(2);
     expect(h.container.textContent).toContain("Archived");
     cleanup(h);
   });
 
   it("Archive removes from the default list", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "One");
-    await seedProfile(repo, "p-2", "Two");
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await seedRubric(repo, "p-1", "One");
+    await seedRubric(repo, "p-2", "Two");
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
-    expect(h.$$("a[href^='/evaluations/profiles/']")).toHaveLength(2);
+    expect(h.$$("a[href^='/evaluations/rubrics/']")).toHaveLength(2);
 
-    // archive the first row's profile
+    // archive the first row's rubric
     const buttons = h.$$("button[data-action='archive']");
     expect(buttons.length).toBeGreaterThanOrEqual(1);
     act(() => buttons[0]!.click());
     await settle();
-    expect(h.$$("a[href^='/evaluations/profiles/']")).toHaveLength(1);
+    expect(h.$$("a[href^='/evaluations/rubrics/']")).toHaveLength(1);
     cleanup(h);
   });
 
-  it("Restore makes the profile selectable again", async () => {
+  it("Restore makes the rubric selectable again", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "One");
+    await seedRubric(repo, "p-1", "One");
     // pre-archive
-    const rec = await repo.getProfileRecord("p-1");
-    await repo.setProfileArchived("p-1", true, rec!.revision);
+    const rec = await repo.getRubricRecord("p-1");
+    await repo.archiveRubric("p-1", rec!.revision);
 
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
     // archived is hidden by default; toggle to reveal
-    expect(h.$$("a[href^='/evaluations/profiles/']")).toHaveLength(0);
+    expect(h.$$("a[href^='/evaluations/rubrics/']")).toHaveLength(0);
     act(() => h.$("button[data-action='toggle-archived']")!.click());
     await settle();
-    expect(h.$$("a[href^='/evaluations/profiles/']")).toHaveLength(1);
+    expect(h.$$("a[href^='/evaluations/rubrics/']")).toHaveLength(1);
 
     // Restore it
     const restoreBtn = h.$("button[data-action='restore']");
@@ -288,31 +288,31 @@ describe("ProfileList", () => {
     // now visible without the archived toggle
     act(() => h.$("button[data-action='toggle-archived']")!.click());
     await settle();
-    expect(h.$$("a[href^='/evaluations/profiles/']")).toHaveLength(1);
+    expect(h.$$("a[href^='/evaluations/rubrics/']")).toHaveLength(1);
     cleanup(h);
   });
 
-  it("Duplicate creates a new profile identity row", async () => {
+  it("Duplicate creates a new rubric identity row", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Original");
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await seedRubric(repo, "p-1", "Original");
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
     const dupBtn = h.$("button[data-action='duplicate']");
     expect(dupBtn).toBeTruthy();
     act(() => dupBtn!.click());
     await settle();
     // two rows now, the new one navigates elsewhere; both exist in repo
-    const records = await repo.listProfiles(true);
+    const records = await repo.listRubrics(true);
     expect(records).toHaveLength(2);
     cleanup(h);
   });
 
   it("all interactive controls meet 44px minimum target", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality");
-    const h = renderWithRouter(<ProfileList repo={repo} />);
+    await seedRubric(repo, "p-1", "Quality");
+    const h = renderWithRouter(<RubricList repo={repo} />);
     await settle();
-    const interactives = [...h.$$("button"), ...h.$$("a[href^='/evaluations/profiles/']")];
+    const interactives = [...h.$$("button"), ...h.$$("a[href^='/evaluations/rubrics/']")];
     for (const el of interactives) {
       const cls = el.getAttribute("class") ?? "";
       // 44px is expressed via min-h-[44px] or h-11 (44px)
@@ -322,16 +322,16 @@ describe("ProfileList", () => {
   });
 });
 
-describe("ProfileDetail", () => {
+describe("RubricDetail", () => {
   it("shows name, version, description, judge instruction for the latest version", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality");
-    const h = renderWithRouter(<ProfileDetail repo={repo} profileId="p-1" />);
+    await seedRubric(repo, "p-1", "Quality");
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
     await settle();
-    const nameInput = h.$("#profile-name") as HTMLInputElement;
+    const nameInput = h.$("#rubric-name") as HTMLInputElement;
     expect(nameInput).toBeTruthy();
     expect(nameInput.value).toBe("Quality");
-    const judge = h.$("#profile-judge") as HTMLTextAreaElement;
+    const judge = h.$("#rubric-judge") as HTMLTextAreaElement;
     expect(judge).toBeTruthy();
     expect(judge.value).toBe("Judge fairly.");
     const text = h.container.textContent ?? "";
@@ -341,9 +341,9 @@ describe("ProfileDetail", () => {
 
   it("non-latest version shows read-only banner + Edit as new version", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "v1-name");
+    await seedRubric(repo, "p-1", "v1-name");
     await appendVersion(repo, "p-1", "v2-name");
-    const h = renderWithRouter(<ProfileDetail repo={repo} profileId="p-1" />);
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
     await settle();
     // default view is latest (v2); select v1
     const select = h.$("select[data-action='version-selector']") as HTMLSelectElement;
@@ -363,7 +363,7 @@ describe("ProfileDetail", () => {
     const editBtn = h.$("button[data-action='edit-as-new-version']");
     expect(editBtn).toBeTruthy();
     // name field is read-only
-    const nameInput = h.$("#profile-name") as HTMLInputElement;
+    const nameInput = h.$("#rubric-name") as HTMLInputElement;
     expect(nameInput.readOnly).toBe(true);
     expect(nameInput.value).toBe("v1-name");
     cleanup(h);
@@ -371,9 +371,9 @@ describe("ProfileDetail", () => {
 
   it("Edit as new version preserves prior revisions", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "v1-name");
+    await seedRubric(repo, "p-1", "v1-name");
     await appendVersion(repo, "p-1", "v2-name");
-    const h = renderWithRouter(<ProfileDetail repo={repo} profileId="p-1" />);
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
     await settle();
     // go to v1 (read-only)
     const select = h.$("select[data-action='version-selector']") as HTMLSelectElement;
@@ -383,8 +383,8 @@ describe("ProfileDetail", () => {
     });
     await settle();
     // prior revisions exist
-    expect(await repo.getProfile("p-1", 1)).not.toBeNull();
-    expect(await repo.getProfile("p-1", 2)).not.toBeNull();
+    expect(await repo.getRubricVersion("p-1", 1)).not.toBeNull();
+    expect(await repo.getRubricVersion("p-1", 2)).not.toBeNull();
 
     // Edit as new version from v1
     const editBtn = h.$("button[data-action='edit-as-new-version']");
@@ -392,27 +392,27 @@ describe("ProfileDetail", () => {
     await settle();
 
     // latest is now v3, and prior revisions preserved
-    const rec = await repo.getProfileRecord("p-1");
+    const rec = await repo.getRubricRecord("p-1");
     expect(rec!.latestVersion).toBe(3);
-    expect(await repo.getProfile("p-1", 1)).not.toBeNull();
-    expect(await repo.getProfile("p-1", 2)).not.toBeNull();
+    expect(await repo.getRubricVersion("p-1", 1)).not.toBeNull();
+    expect(await repo.getRubricVersion("p-1", 2)).not.toBeNull();
     // new version based on v1 content
-    const v3 = await repo.getProfile("p-1", 3);
+    const v3 = await repo.getRubricVersion("p-1", 3);
     expect(v3?.name).toBe("v1-name");
     cleanup(h);
   });
 
   it("Archive and Restore toggle the record archivedAt", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality");
-    const h = renderWithRouter(<ProfileDetail repo={repo} profileId="p-1" />);
+    await seedRubric(repo, "p-1", "Quality");
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
     await settle();
 
     const archiveBtn = h.$("button[data-action='archive']");
     expect(archiveBtn).toBeTruthy();
     act(() => archiveBtn!.click());
     await settle();
-    let rec = await repo.getProfileRecord("p-1");
+    let rec = await repo.getRubricRecord("p-1");
     expect(rec!.archivedAt).not.toBeNull();
     expect(h.container.textContent).toMatch(/archived/i);
 
@@ -420,19 +420,19 @@ describe("ProfileDetail", () => {
     expect(restoreBtn).toBeTruthy();
     act(() => restoreBtn!.click());
     await settle();
-    rec = await repo.getProfileRecord("p-1");
+    rec = await repo.getRubricRecord("p-1");
     expect(rec!.archivedAt).toBeNull();
     cleanup(h);
   });
 
   it("latest version is editable (Save commits a new version)", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality");
-    const h = renderWithRouter(<ProfileDetail repo={repo} profileId="p-1" />);
+    await seedRubric(repo, "p-1", "Quality");
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
     await settle();
 
     // name is editable
-    const nameInput = h.$("#profile-name") as HTMLInputElement;
+    const nameInput = h.$("#rubric-name") as HTMLInputElement;
     expect(nameInput.readOnly).toBe(false);
     // Save button present on latest
     const saveBtn = h.$("button[data-action='save']");
@@ -447,19 +447,19 @@ describe("ProfileDetail", () => {
     act(() => saveBtn!.click());
     await settle();
 
-    const rec = await repo.getProfileRecord("p-1");
+    const rec = await repo.getRubricRecord("p-1");
     expect(rec!.latestVersion).toBe(2);
-    const v2 = await repo.getProfile("p-1", 2);
+    const v2 = await repo.getRubricVersion("p-1", 2);
     expect(v2?.name).toBe("Renamed");
     // prior version preserved
-    const v1 = await repo.getProfile("p-1", 1);
+    const v1 = await repo.getRubricVersion("p-1", 1);
     expect(v1?.name).toBe("Quality");
     cleanup(h);
   });
 
   it("lists suites pinned to the viewed version", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedProfile(repo, "p-1", "Quality");
+    await seedRubric(repo, "p-1", "Quality");
     const suite: EvaluationSuite = {
       id: "s-1",
       revision: 1,
@@ -476,7 +476,7 @@ describe("ProfileDetail", () => {
     };
     await repo.saveSuite(suite, 0);
 
-    const h = renderWithRouter(<ProfileDetail repo={repo} profileId="p-1" />);
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
     await settle();
     const text = h.container.textContent ?? "";
     expect(text).toContain("My suite");
@@ -484,12 +484,12 @@ describe("ProfileDetail", () => {
     cleanup(h);
   });
 
-  it("missing profile shows not-found state with back link", async () => {
+  it("missing rubric shows not-found state with back link", async () => {
     const repo = new InMemoryEvaluationRepository();
-    const h = renderWithRouter(<ProfileDetail repo={repo} profileId="nope" />);
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="nope" />);
     await settle();
     expect(h.container.textContent).toMatch(/not found/i);
-    const back = h.$("a[href='/evaluations/profiles']");
+    const back = h.$("a[href='/evaluations/rubrics']");
     expect(back).toBeTruthy();
     cleanup(h);
   });

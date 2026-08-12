@@ -1,8 +1,8 @@
 // =============================================================================
-// EvaluationsWorkspace — segmented nav (Suites | Profiles) + Outlet.
+// EvaluationsWorkspace — segmented nav (Suites | Rubrics) + Outlet.
 //
 // The Evaluations workspace has a local secondary navigation with Suites and
-// Profiles. It is a compact segmented route control using real links with
+// Rubrics. It is a compact segmented route control using real links with
 // aria-current; it is visually subordinate to the primary header and never
 // spans the full shell width like a second global nav (spec §9.2).
 //
@@ -28,7 +28,7 @@ interface SegNavEntry {
 
 const SEG_NAV: readonly SegNavEntry[] = [
   { to: "/evaluations", label: "Suites", sublabel: "workloads you run", end: true },
-  { to: "/evaluations/profiles", label: "Profiles", sublabel: "rubrics that score" },
+  { to: "/evaluations/rubrics", label: "Rubrics", sublabel: "rubrics that score" },
 ] as const;
 
 export function EvaluationsWorkspace() {

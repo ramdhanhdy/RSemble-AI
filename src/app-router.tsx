@@ -15,8 +15,8 @@
 // the entity id and any location state (return location / historical
 // version state) so existing deep links keep working. No invented
 // /profiles/* alias is added — only real baseline profile routes redirect.
-// The list/detail components still ship as ProfileList/ProfileDetail until
-// Task 5 renames the surfaces; the route paths are canonical already.
+// The list/detail components ship as RubricList/RubricDetail; the route
+// paths and surfaces are both canonical.
 // =============================================================================
 
 import { lazy, Suspense } from "react";
@@ -48,11 +48,11 @@ const SuiteTaskEditorRoute = lazy(() =>
     default: m.SuiteTaskEditorRoute,
   })),
 );
-const ProfileList = lazy(() =>
-  import("./workspaces/evaluations/ProfileList").then((m) => ({ default: m.ProfileList })),
+const RubricList = lazy(() =>
+  import("./workspaces/evaluations/RubricList").then((m) => ({ default: m.RubricList })),
 );
-const ProfileDetail = lazy(() =>
-  import("./workspaces/evaluations/ProfileDetail").then((m) => ({ default: m.ProfileDetail })),
+const RubricDetail = lazy(() =>
+  import("./workspaces/evaluations/RubricDetail").then((m) => ({ default: m.RubricDetail })),
 );
 const FusionStudyRoute = lazy(() =>
   import("./workspaces/evaluations/FusionStudyView").then((m) => ({ default: m.FusionStudyRoute })),
@@ -171,26 +171,26 @@ function FusionStudyRouteWrapper() {
 }
 
 /** RubricList route wrapper — canonical /evaluations/rubrics. Renders the
- *  rubric list (currently the ProfileList component, renamed in Task 5).
- *  Passes the repo explicitly for consistency with the suite route wrappers. */
+ *  RubricList surface. Passes the repo explicitly for consistency with the
+ *  suite route wrappers. */
 function RubricListRoute() {
   const repo = useEvaluationRepository();
-  return <ProfileList repo={repo} />;
+  return <RubricList repo={repo} />;
 }
 
 /** RubricDetail route wrapper — canonical /evaluations/rubrics/:rubricId.
- *  Reads :rubricId and passes it as the rubric identity to ProfileDetail
- *  (renamed in Task 5). The stored record id is the same whether the link
- *  arrived via the canonical route or the legacy profile redirect. */
+ *  Reads :rubricId and passes it as the rubric identity to RubricDetail.
+ *  The stored record id is the same whether the link arrived via the
+ *  canonical route or the legacy profile redirect. */
 function RubricDetailRoute() {
   const repo = useEvaluationRepository();
   const { rubricId } = useParams<{ rubricId: string }>();
-  return <ProfileDetail repo={repo} profileId={rubricId ?? ""} />;
+  return <RubricDetail repo={repo} rubricId={rubricId ?? ""} />;
 }
 
 /** RubricVersion route wrapper — canonical
  *  /evaluations/rubrics/:rubricId/versions/:version (spec §4). Reads
- *  :rubricId and :version and passes them to ProfileDetail so a direct
+ *  :rubricId and :version and passes them to RubricDetail so a direct
  *  load/refresh/deep link opens the requested historical version (read-only
  *  when not latest). The version prop drives reloading on URL navigation
  *  (back/forward between versions). */
@@ -199,7 +199,7 @@ function RubricVersionRoute() {
   const { rubricId, version } = useParams<{ rubricId: string; version: string }>();
   const parsed = Number(version);
   const versionNum = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-  return <ProfileDetail repo={repo} profileId={rubricId ?? ""} version={versionNum} />;
+  return <RubricDetail repo={repo} rubricId={rubricId ?? ""} version={versionNum} />;
 }
 
 /** Compatibility redirect: /evaluations/profiles → /evaluations/rubrics.

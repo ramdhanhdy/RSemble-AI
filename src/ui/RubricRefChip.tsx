@@ -1,11 +1,15 @@
 // =============================================================================
-// ProfileRefChip — the suite→profile relationship made visible (spec §5.3).
+// RubricRefChip — the suite→rubric relationship made visible (spec §5.3, §6.3).
 //
 // One shared chip so suite rows, the suite editor header, and any future
 // reference surface never diverge. Three states:
-//   - pinned profile: link chip "⚖ <name> vN" → /evaluations/profiles/:id
+//   - pinned rubric: link chip "⚖ <name> vN" → /evaluations/rubrics/:rubricId
 //   - holistic evaluation: muted non-link "Holistic judging"
-//   - pinned profile no longer exists: muted non-link "Rubric missing"
+//   - pinned rubric no longer exists: muted non-link "Rubric missing"
+//
+// The link target is the canonical Rubric route (rubric-terminology spec §4).
+// A missing legacy object renders a bounded compatibility warning and preserves
+// the stored id rather than inventing a name (spec §6.3).
 // =============================================================================
 
 import { Link } from "react-router-dom";
@@ -15,7 +19,7 @@ interface Props {
   holistic?: boolean;
   missing?: boolean;
   name?: string;
-  profileId?: string;
+  rubricId?: string;
   version?: number;
 }
 
@@ -25,7 +29,7 @@ interface Props {
 const MUTED =
   "flex items-center gap-1 rounded-sm border border-edge bg-panel px-1 py-0.5 text-xs text-text-muted sm:px-1.5";
 
-export function ProfileRefChip({ holistic, missing, name, profileId, version }: Props) {
+export function RubricRefChip({ holistic, missing, name, rubricId, version }: Props) {
   if (holistic) {
     return (
       <span className={MUTED} title="Holistic judging" aria-label="Holistic judging">
@@ -34,7 +38,7 @@ export function ProfileRefChip({ holistic, missing, name, profileId, version }: 
       </span>
     );
   }
-  if (missing || !profileId) {
+  if (missing || !rubricId) {
     return (
       <span className={MUTED} title="Rubric missing" aria-label="Rubric missing">
         <Scale size={11} aria-hidden="true" />
@@ -44,7 +48,7 @@ export function ProfileRefChip({ holistic, missing, name, profileId, version }: 
   }
   return (
     <Link
-      to={`/evaluations/profiles/${profileId}`}
+      to={`/evaluations/rubrics/${rubricId}`}
       onClick={(e) => e.stopPropagation()}
       className="flex min-w-0 items-center gap-1 rounded-sm border border-edge bg-panel px-1 py-0.5 text-xs text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-1.5"
       aria-label={`Rubric ${name} v${version}`}

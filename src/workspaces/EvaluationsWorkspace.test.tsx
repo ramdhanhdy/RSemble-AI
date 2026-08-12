@@ -24,7 +24,7 @@ function renderAt(path: string): Harness {
         <Routes>
           <Route path="/evaluations" element={<EvaluationsWorkspace />}>
             <Route index element={<div data-testid="suite-content" />} />
-            <Route path="profiles" element={<div data-testid="profile-content" />} />
+          <Route path="rubrics" element={<div data-testid="rubric-content" />} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -58,32 +58,32 @@ describe("EvaluationsWorkspace — segmented nav identity (spec §5.4)", () => {
     cleanup(h);
   });
 
-  it("shows 'workloads you run' under active Suites, hidden under Profiles", () => {
+  it("shows 'workloads you run' under active Suites, hidden under Rubrics", () => {
     const h = renderAt("/evaluations");
     const links = h.$$("nav[aria-label='Evaluations'] a");
     const suites = links.find((l) => l.textContent?.includes("Suites"));
-    const profiles = links.find((l) => l.textContent?.includes("Profiles"));
+    const rubrics = links.find((l) => l.textContent?.includes("Rubrics"));
     // Sublabel text exists in the DOM for stable geometry...
     expect(suites?.textContent).toContain("workloads you run");
-    expect(profiles?.textContent).toContain("rubrics that score");
+    expect(rubrics?.textContent).toContain("rubrics that score");
     // ...but only the active one's sublabel is exposed to assistive tech.
     const suitesSub = suites?.querySelector("[data-nav-sublabel]");
-    const profilesSub = profiles?.querySelector("[data-nav-sublabel]");
+    const rubricsSub = rubrics?.querySelector("[data-nav-sublabel]");
     expect(suitesSub?.getAttribute("aria-hidden")).not.toBe("true");
-    expect(profilesSub?.getAttribute("aria-hidden")).toBe("true");
+    expect(rubricsSub?.getAttribute("aria-hidden")).toBe("true");
     cleanup(h);
   });
 
-  it("flips the visible sublabel when Profiles is active", () => {
-    const h = renderAt("/evaluations/profiles");
+  it("flips the visible sublabel when Rubrics is active", () => {
+    const h = renderAt("/evaluations/rubrics");
     const links = h.$$("nav[aria-label='Evaluations'] a");
     const suites = links.find((l) => l.textContent?.includes("Suites"));
-    const profiles = links.find((l) => l.textContent?.includes("Profiles"));
-    expect(profiles?.getAttribute("aria-current")).toBe("page");
+    const rubrics = links.find((l) => l.textContent?.includes("Rubrics"));
+    expect(rubrics?.getAttribute("aria-current")).toBe("page");
     const suitesSub = suites?.querySelector("[data-nav-sublabel]");
-    const profilesSub = profiles?.querySelector("[data-nav-sublabel]");
+    const rubricsSub = rubrics?.querySelector("[data-nav-sublabel]");
     expect(suitesSub?.getAttribute("aria-hidden")).toBe("true");
-    expect(profilesSub?.getAttribute("aria-hidden")).not.toBe("true");
+    expect(rubricsSub?.getAttribute("aria-hidden")).not.toBe("true");
     cleanup(h);
   });
 });

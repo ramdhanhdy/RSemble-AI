@@ -1,10 +1,10 @@
 // =============================================================================
-// ProfileList — latest profile revisions with archived filtering (spec §5.1).
+// RubricList — latest rubric revisions with archived filtering (spec §5.1, §6.1).
 //
-// Lists each ProfileRecord's latest revision: name, version, criterion count,
-// updated timestamp, archived state. Primary action: New profile. Row overflow:
+// Lists each RubricRecord's latest revision: name, version, criterion count,
+// updated timestamp, archived state. Primary action: New rubric. Row overflow:
 // Duplicate, Archive/Restore. Archived filter toggle. Rows render as links to
-// /evaluations/profiles/:profileId via RecordRow.
+// /evaluations/rubrics/:rubricId via RecordRow.
 //
 // Reads the EvaluationRepository from EvaluationContext (no props) so the
 // EvaluationsWorkspace provider can inject the repo once for all routes.
@@ -26,23 +26,23 @@ import {
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type {
   EvaluationCriterion,
-  EvaluationProfile,
-  ProfileRecord,
+  EvaluationRubric,
+  RubricRecord,
 } from "../../lib/evaluations/evaluation-types";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
 import { RecordRow } from "../../ui/RecordRow";
 import { KindEyebrow } from "../../ui/KindEyebrow";
 
-interface ProfileRow {
-  record: ProfileRecord;
-  profile: EvaluationProfile | null;
+interface RubricRow {
+  record: RubricRecord;
+  rubric: EvaluationRubric | null;
 }
 
 function genId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  return `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `r-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function makeDefaultCriterion(): EvaluationCriterion {
@@ -64,13 +64,13 @@ function makeDefaultCriterion(): EvaluationCriterion {
 const ACTION_BTN =
   "flex h-11 w-11 items-center justify-center text-text-secondary transition-colors hover:bg-card-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30";
 
-export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
+export function RubricList({ repo }: { repo?: EvaluationRepository | null }) {
   // Hook order must be stable: read the context unconditionally, then
   // prefer the injected repository when one is provided.
   const contextRepository = useEvaluationRepository();
   const repository = repo ?? contextRepository;
   const navigate = useNavigate();
-  const [rows, setRows] = useState<ProfileRow[]>([]);
+  const [rows, setRows] = useState<RubricRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -84,13 +84,13 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
     setLoading(true);
     setError(null);
     try {
-      const records = await repository.listProfiles(showArchived);
-      const profiles = await Promise.all(
-        records.map((r) => repository.getProfile(r.id, r.latestVersion)),
+      const records = await repository.listRubrics(showArchived);
+      const rubrics = await Promise.all(
+        records.map((r) => repository.getRubricVersion(r.id, r.latestVersion)),
       );
-      setRows(records.map((record, i) => ({ record, profile: profiles[i] ?? null })));
+      setRows(records.map((record, i) => ({ record, rubric: rubrics[i] ?? null })));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load profiles.");
+      setError(e instanceof Error ? e.message : "Failed to load rubrics.");
       setRows([]);
     } finally {
       setLoading(false);
@@ -101,11 +101,11 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
     void load();
   }, [load]);
 
-  async function createProfile() {
+  async function createRubric() {
     if (!repository) return;
     const id = genId();
     const now = Date.now();
-    const record: ProfileRecord = {
+    const record: RubricRecord = {
       id,
       revision: 1,
       latestVersion: 1,
@@ -113,10 +113,10 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
       updatedAt: now,
       archivedAt: null,
     };
-    const profile: EvaluationProfile = {
+    const rubric: EvaluationRubric = {
       id,
       version: 1,
-      name: "Untitled profile",
+      name: "Untitled rubric",
       description: "",
       judgeInstruction: "",
       criteria: [makeDefaultCriterion()],
@@ -124,21 +124,21 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
       updatedAt: now,
     };
     try {
-      await repository.createProfile(record, profile);
+      await repository.createRubric(record, rubric);
       await load();
-      void navigate(`/evaluations/profiles/${id}`);
+      void navigate(`/evaluations/rubrics/${id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create profile.");
+      setError(e instanceof Error ? e.message : "Failed to create rubric.");
     }
   }
 
-  async function duplicateProfile(record: ProfileRecord, profile: EvaluationProfile | null) {
-    if (!repository || !profile) return;
+  async function duplicateRubric(record: RubricRecord, rubric: EvaluationRubric | null) {
+    if (!repository || !rubric) return;
     setBusyId(record.id);
     try {
       const newId = genId();
       const now = Date.now();
-      const newRecord: ProfileRecord = {
+      const newRecord: RubricRecord = {
         id: newId,
         revision: 1,
         latestVersion: 1,
@@ -146,34 +146,36 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
         updatedAt: now,
         archivedAt: null,
       };
-      const newProfile: EvaluationProfile = {
-        ...profile,
+      const newRubric: EvaluationRubric = {
+        ...rubric,
         id: newId,
         version: 1,
         createdAt: now,
         updatedAt: now,
       };
-      await repository.createProfile(newRecord, newProfile);
+      await repository.createRubric(newRecord, newRubric);
       await load();
-      void navigate(`/evaluations/profiles/${newId}`);
+      void navigate(`/evaluations/rubrics/${newId}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to duplicate profile.");
+      setError(e instanceof Error ? e.message : "Failed to duplicate rubric.");
     } finally {
       setBusyId(null);
     }
   }
 
-  async function toggleArchive(record: ProfileRecord) {
+  async function toggleArchive(record: RubricRecord) {
     if (!repository) return;
     setBusyId(record.id);
     try {
-      const fresh = await repository.getProfileRecord(record.id);
+      const fresh = await repository.getRubricRecord(record.id);
       if (!fresh) return;
       const willArchive = !fresh.archivedAt;
-      await repository.setProfileArchived(record.id, willArchive, fresh.revision);
+      await (willArchive
+        ? repository.archiveRubric(record.id, fresh.revision)
+        : repository.restoreRubric(record.id, fresh.revision));
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update profile.");
+      setError(e instanceof Error ? e.message : "Failed to update rubric.");
     } finally {
       setBusyId(null);
     }
@@ -194,7 +196,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
     return (
       <div className="flex min-h-[120px] items-center justify-center gap-2 text-sm text-text-muted">
         <Loader2 size={14} className="animate-spin-ease" aria-hidden="true" />
-        <span>Loading profiles…</span>
+        <span>Loading rubrics…</span>
       </div>
     );
   }
@@ -203,7 +205,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center">
         <AlertCircle size={16} className="text-error" aria-hidden="true" />
-        <p className="text-sm text-error">Failed to load profiles.</p>
+        <p className="text-sm text-error">Failed to load rubrics.</p>
         <p className="text-sm text-text-secondary">{error}</p>
         <button
           type="button"
@@ -221,12 +223,12 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
     <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        data-action="new-profile"
-        onClick={() => void createProfile()}
+        data-action="new-rubric"
+        onClick={() => void createRubric()}
         className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-4 text-sm text-text transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <Plus size={15} aria-hidden="true" />
-        New profile
+        New rubric
       </button>
       <button
         type="button"
@@ -247,11 +249,11 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
         {toolbar}
         <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 p-4 text-center">
           <FolderOpen size={18} className="text-text-muted" aria-hidden="true" />
-          <p className="text-sm text-text-secondary">No profiles yet.</p>
+          <p className="text-sm text-text-secondary">No rubrics yet.</p>
           <p className="text-sm text-text-muted">
-            Create an evaluation profile to define scoring criteria.
+            Rubrics define how candidate work is assessed.
           </p>
-          {/* Identity spec §5.4: teach the split from the profile side. */}
+          {/* Identity spec §5.4: teach the split from the rubric side. */}
           <p className="text-sm text-text-muted">
             <Link
               to="/evaluations"
@@ -259,16 +261,16 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
             >
               Suites
             </Link>{" "}
-            pin profiles to score their tasks.
+            pin rubrics to score their tasks.
           </p>
           <button
             type="button"
-            data-action="create-profile"
-            onClick={() => void createProfile()}
+            data-action="create-rubric"
+            onClick={() => void createRubric()}
             className="mt-2 flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <Plus size={15} aria-hidden="true" />
-            Create profile
+            Create rubric
           </button>
         </div>
       </div>
@@ -282,12 +284,12 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
       {toolbar}
 
       <ul className="flex min-w-0 flex-col gap-1.5" role="list">
-        {rows.map(({ record, profile }) => {
+        {rows.map(({ record, rubric }) => {
           const archived = record.archivedAt != null;
-          const criteriaCount = profile?.criteria.length ?? 0;
+          const criteriaCount = rubric?.criteria.length ?? 0;
           // Identity spec §5.4: preview what the rubric actually measures —
           // first criterion name plus a count of the rest.
-          const firstName = profile?.criteria[0]?.name ?? "";
+          const firstName = rubric?.criteria[0]?.name ?? "";
           const preview =
             criteriaCount === 0
               ? ""
@@ -297,7 +299,7 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
           const summary = `${criteriaCount} ${
             criteriaCount === 1 ? "criterion" : "criteria"
           }${preview ? ` · ${preview}` : ""}${archived ? " · Archived" : ""}`;
-          const label = profile?.name ?? record.id;
+          const label = rubric?.name ?? record.id;
           return (
             <li key={record.id} className="min-w-0">
               <RecordRow
@@ -309,14 +311,14 @@ export function ProfileList({ repo }: { repo?: EvaluationRepository | null }) {
                 kind={<KindEyebrow kind="profile" />}
                 summary={summary}
                 provenance={`v${record.latestVersion}`}
-                href={`/evaluations/profiles/${record.id}`}
+                href={`/evaluations/rubrics/${record.id}`}
               >
                 <button
                   type="button"
                   data-action="duplicate"
                   aria-label={`Duplicate ${label}`}
                   disabled={busyId === record.id}
-                  onClick={() => void duplicateProfile(record, profile)}
+                  onClick={() => void duplicateRubric(record, rubric)}
                   className={ACTION_BTN}
                 >
                   <Copy size={14} />

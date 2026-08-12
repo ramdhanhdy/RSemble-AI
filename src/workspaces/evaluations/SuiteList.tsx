@@ -21,7 +21,7 @@ import type {
 import { RecordRow, formatRelativeTime } from "../../ui/RecordRow";
 import { StatusMark } from "../../ui/StatusMark";
 import { KindEyebrow } from "../../ui/KindEyebrow";
-import { ProfileRefChip } from "../../ui/ProfileRefChip";
+import { RubricRefChip } from "../../ui/RubricRefChip";
 import { StorageError } from "../../lib/persistence/database";
 import { DEFAULT_CRITIC_REF } from "../../studio-data";
 import {
@@ -517,13 +517,13 @@ export function SuiteList({ repo }: SuiteListProps) {
           // Identity spec §5.3: resolve the suite's default-evaluation pin.
           const evalChip = (() => {
             const ev = suite.defaultEvaluation;
-            if (ev.kind === "holistic") return <ProfileRefChip holistic />;
+            if (ev.kind === "holistic") return <RubricRefChip holistic />;
             const profile = state.profiles.get(`${ev.profile.id}@${ev.profile.version}`);
-            if (!profile) return <ProfileRefChip missing />;
+            if (!profile) return <RubricRefChip missing />;
             return (
-              <ProfileRefChip
+              <RubricRefChip
                 name={profile.name || "Untitled rubric"}
-                profileId={ev.profile.id}
+                rubricId={ev.profile.id}
                 version={ev.profile.version}
               />
             );

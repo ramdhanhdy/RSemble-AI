@@ -52,7 +52,7 @@ import { StorageError } from "../../lib/persistence/database";
 import { SuiteTaskList } from "./SuiteTaskList";
 import { SuiteTaskEditor } from "./SuiteTaskEditor";
 import { SuiteSettings } from "./SuiteSettings";
-import { ProfileRefChip } from "../../ui/ProfileRefChip";
+import { RubricRefChip } from "../../ui/RubricRefChip";
 
 interface SuiteEditorProps {
   repo: EvaluationRepository | null;
@@ -410,16 +410,16 @@ export function SuiteEditor({
                 has no nesting constraint. */}
             {persisted.defaultEvaluation.kind === "profile" && pinnedProfileLoaded ? (
               pinnedProfile ? (
-                <ProfileRefChip
+                <RubricRefChip
                   name={pinnedProfile.name || "Untitled rubric"}
-                  profileId={persisted.defaultEvaluation.profile.id}
+                  rubricId={persisted.defaultEvaluation.profile.id}
                   version={persisted.defaultEvaluation.profile.version}
                 />
               ) : (
-                <ProfileRefChip missing />
+                <RubricRefChip missing />
               )
             ) : persisted.defaultEvaluation.kind === "holistic" ? (
-              <ProfileRefChip holistic />
+              <RubricRefChip holistic />
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">

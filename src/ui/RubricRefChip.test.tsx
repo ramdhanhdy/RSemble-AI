@@ -3,7 +3,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { ProfileRefChip } from "./ProfileRefChip";
+import { RubricRefChip } from "./RubricRefChip";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -36,12 +36,12 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("ProfileRefChip", () => {
-  it("renders name and version as a link to the profile", () => {
-    const h = render(<ProfileRefChip name="Clarity rubric" profileId="p1" version={3} />);
+describe("RubricRefChip", () => {
+  it("renders name and version as a link to the canonical rubric route", () => {
+    const h = render(<RubricRefChip name="Clarity rubric" rubricId="p1" version={3} />);
     const link = h.$("a");
     expect(link).toBeTruthy();
-    expect(link?.getAttribute("href")).toBe("/evaluations/profiles/p1");
+    expect(link?.getAttribute("href")).toBe("/evaluations/rubrics/p1");
     expect(link?.textContent).toContain("Clarity rubric v3");
     // Accessible name includes the kind word so chips are self-describing.
     expect(link?.getAttribute("aria-label")).toContain("Rubric");
@@ -49,14 +49,14 @@ describe("ProfileRefChip", () => {
   });
 
   it("renders holistic judging as a non-link muted chip", () => {
-    const h = render(<ProfileRefChip holistic />);
+    const h = render(<RubricRefChip holistic />);
     expect(h.$("a")).toBeNull();
     expect(h.container.textContent).toContain("Holistic judging");
     cleanup(h);
   });
 
-  it("renders a rubric-missing chip when the pinned profile no longer exists", () => {
-    const h = render(<ProfileRefChip missing />);
+  it("renders a bounded rubric-missing chip when the pinned rubric no longer exists", () => {
+    const h = render(<RubricRefChip missing />);
     expect(h.$("a")).toBeNull();
     expect(h.container.textContent).toContain("Rubric missing");
     cleanup(h);

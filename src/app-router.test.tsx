@@ -21,8 +21,8 @@ import { MemoryRouter, useLocation, useNavigate, type Location, type NavigateFun
 // still exercises its real lazy boundaries; these imports only warm the
 // cache so the test can observe the resolved route content.
 import "./workspaces/EvaluationsWorkspace";
-import "./workspaces/evaluations/ProfileList";
-import "./workspaces/evaluations/ProfileDetail";
+import "./workspaces/evaluations/RubricList";
+import "./workspaces/evaluations/RubricDetail";
 import { AppRoutes } from "./app-router";
 import { RepositoryContext } from "./lib/persistence/repository-context";
 import { InMemoryEvaluationRepository } from "./lib/persistence/evaluation-repository";
@@ -136,8 +136,8 @@ function flush(): Promise<void> {
 async function settle(): Promise<void> {
   // Resolve any suspended lazy route chunk before the test observes the
   // tree; otherwise the import can settle after the act boundary. A few
-  // flushes cover the outer (EvaluationsWorkspace) and inner (ProfileList /
-  // ProfileDetail) lazy boundaries plus their async data load.
+  // flushes cover the outer (EvaluationsWorkspace) and inner (RubricList /
+  // RubricDetail) lazy boundaries plus their async data load.
   for (let i = 0; i < 4; i++) {
     await act(async () => {
       await flush();
@@ -223,13 +223,12 @@ describe("AppRouter — canonical Rubric routes (spec §4)", () => {
     const repo = new InMemoryEvaluationRepository();
     await seedRubric(repo, "r-1", "Quality");
     const h = await renderRouterAsync({ initialEntries: ["/evaluations/rubrics"], repo });
-    // ProfileList renders a "new rubric" action button (data-action="new-profile").
-    expect(h.$("button[data-action='new-profile']")).toBeTruthy();
-    // The seeded rubric appears as a row. The row link still uses the legacy
-    // /evaluations/profiles/:id href until Task 5 renames the list surface;
-    // that href redirects to the canonical route (exercised below).
+    // RubricList renders a "new rubric" action button (data-action="new-rubric").
+    expect(h.$("button[data-action='new-rubric']")).toBeTruthy();
+    // The seeded rubric appears as a row. The row link uses the canonical
+    // /evaluations/rubrics/:id href (Task 5 renamed the list surface).
     expect(h.container.textContent).toContain("Quality");
-    expect(h.$("a[href='/evaluations/profiles/r-1']")).toBeTruthy();
+    expect(h.$("a[href='/evaluations/rubrics/r-1']")).toBeTruthy();
     cleanup(h);
   });
 
@@ -240,10 +239,10 @@ describe("AppRouter — canonical Rubric routes (spec §4)", () => {
       initialEntries: ["/evaluations/rubrics/r-1"],
       repo,
     });
-    // ProfileDetail renders its root with data-profile-detail.
-    expect(h.$("[data-profile-detail]")).toBeTruthy();
+    // RubricDetail renders its root with data-rubric-detail.
+    expect(h.$("[data-rubric-detail]")).toBeTruthy();
     // The seeded name loads into the name input (value, not textContent).
-    const nameInput = h.$("#profile-name") as HTMLInputElement | null;
+    const nameInput = h.$("#rubric-name") as HTMLInputElement | null;
     expect(nameInput).toBeTruthy();
     expect(nameInput?.value).toBe("Quality");
     cleanup(h);
@@ -256,7 +255,7 @@ describe("AppRouter — canonical Rubric routes (spec §4)", () => {
       initialEntries: ["/evaluations/rubrics/r-1"],
       repo,
     });
-    expect(first.$("[data-profile-detail]")).toBeTruthy();
+    expect(first.$("[data-rubric-detail]")).toBeTruthy();
     cleanup(first);
 
     // A browser refresh is equivalent to remounting the app at the same URL.
@@ -264,8 +263,8 @@ describe("AppRouter — canonical Rubric routes (spec §4)", () => {
       initialEntries: ["/evaluations/rubrics/r-1"],
       repo,
     });
-    expect(refreshed.$("[data-profile-detail]")).toBeTruthy();
-    const nameInput = refreshed.$("#profile-name") as HTMLInputElement | null;
+    expect(refreshed.$("[data-rubric-detail]")).toBeTruthy();
+    const nameInput = refreshed.$("#rubric-name") as HTMLInputElement | null;
     expect(nameInput?.value).toBe("Quality");
     cleanup(refreshed);
   });
@@ -276,7 +275,7 @@ describe("AppRouter — canonical Rubric routes (spec §4)", () => {
     // If the static "rubrics" segment did not win over :suiteId, the suite
     // editor would render instead of the rubric list.
     const h = await renderRouterAsync({ initialEntries: ["/evaluations/rubrics"], repo });
-    expect(h.$("button[data-action='new-profile']")).toBeTruthy();
+    expect(h.$("button[data-action='new-rubric']")).toBeTruthy();
     cleanup(h);
   });
 });
@@ -289,9 +288,9 @@ describe("AppRouter — canonical Rubric version route (spec §4)", () => {
       initialEntries: ["/evaluations/rubrics/r-1/versions/1"],
       repo,
     });
-    expect(h.$("[data-profile-detail]")).toBeTruthy();
+    expect(h.$("[data-rubric-detail]")).toBeTruthy();
     // v1 is historical (latest is 2); the name input shows v1's name.
-    const nameInput = h.$("#profile-name") as HTMLInputElement | null;
+    const nameInput = h.$("#rubric-name") as HTMLInputElement | null;
     expect(nameInput?.value).toBe("v1-name");
     // The version selector reflects the loaded historical version.
     const selector = h.$("select[data-action='version-selector']") as HTMLSelectElement | null;
@@ -308,8 +307,8 @@ describe("AppRouter — canonical Rubric version route (spec §4)", () => {
       initialEntries: ["/evaluations/rubrics/r-1/versions/2"],
       repo,
     });
-    expect(h.$("[data-profile-detail]")).toBeTruthy();
-    const nameInput = h.$("#profile-name") as HTMLInputElement | null;
+    expect(h.$("[data-rubric-detail]")).toBeTruthy();
+    const nameInput = h.$("#rubric-name") as HTMLInputElement | null;
     expect(nameInput?.value).toBe("v2-name");
     // Latest version is editable — no read-only banner.
     expect(h.container.textContent).not.toContain("read-only");
@@ -323,14 +322,14 @@ describe("AppRouter — canonical Rubric version route (spec §4)", () => {
       initialEntries: ["/evaluations/rubrics/r-1/versions/1"],
       repo,
     });
-    expect((first.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v1-name");
+    expect((first.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v1-name");
     cleanup(first);
 
     const refreshed = await renderRouterAsync({
       initialEntries: ["/evaluations/rubrics/r-1/versions/1"],
       repo,
     });
-    expect((refreshed.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v1-name");
+    expect((refreshed.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v1-name");
     cleanup(refreshed);
   });
 
@@ -341,22 +340,22 @@ describe("AppRouter — canonical Rubric version route (spec §4)", () => {
       initialEntries: ["/evaluations/rubrics/r-1/versions/1"],
       repo,
     });
-    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v1-name");
+    expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v1-name");
 
     // Navigate to v2 via the canonical version route.
     act(() => h.nav.current!("/evaluations/rubrics/r-1/versions/2"));
     await settle();
-    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v2-name");
+    expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v2-name");
 
     // Back returns to v1.
     act(() => h.nav.current!(-1));
     await settle();
-    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v1-name");
+    expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v1-name");
 
     // Forward returns to v2.
     act(() => h.nav.current!(1));
     await settle();
-    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v2-name");
+    expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v2-name");
     cleanup(h);
   });
 
@@ -367,9 +366,9 @@ describe("AppRouter — canonical Rubric version route (spec §4)", () => {
       initialEntries: ["/evaluations/rubrics/r-1/versions/not-a-number"],
       repo,
     });
-    expect(h.$("[data-profile-detail]")).toBeTruthy();
+    expect(h.$("[data-rubric-detail]")).toBeTruthy();
     // Non-numeric version is treated as "latest" (v2).
-    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v2-name");
+    expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v2-name");
     cleanup(h);
   });
 });
@@ -381,7 +380,7 @@ describe("AppRouter — /evaluations/profiles compatibility redirects (spec §4)
     const h = await renderRouterAsync({ initialEntries: ["/evaluations/profiles"], repo });
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics");
     // The canonical list rendered after the redirect.
-    expect(h.$("button[data-action='new-profile']")).toBeTruthy();
+    expect(h.$("button[data-action='new-rubric']")).toBeTruthy();
     cleanup(h);
   });
 
@@ -394,8 +393,8 @@ describe("AppRouter — /evaluations/profiles compatibility redirects (spec §4)
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-legacy");
     // The same stored record loads through the canonical detail route.
-    expect(h.$("[data-profile-detail]")).toBeTruthy();
-    const nameInput = h.$("#profile-name") as HTMLInputElement | null;
+    expect(h.$("[data-rubric-detail]")).toBeTruthy();
+    const nameInput = h.$("#rubric-name") as HTMLInputElement | null;
     expect(nameInput?.value).toBe("Quality");
     cleanup(h);
   });

@@ -1,15 +1,15 @@
 // =============================================================================
-// ProfileDetail — view/edit a profile across its version history (spec §5.1).
+// RubricDetail — view/edit a rubric across its version history (spec §5.1, §6.2).
 //
 // Shows name, version, description, judge instruction, and the criteria editor.
 // Latest version is editable (Save commits a new immutable version). Non-latest
 // versions are read-only with a banner and "Edit as new version". Duplicate
-// creates a new profile identity. Archive/Restore toggles the record. Lists
+// creates a new rubric identity. Archive/Restore toggles the record. Lists
 // suites pinned to the viewed version.
 //
 // Accepts a `repo` prop (testability + route wrappers) that takes precedence
-// over the EvaluationRepository read from EvaluationContext. `profileId`
-// identifies the profile record to load.
+// over the EvaluationRepository read from EvaluationContext. `rubricId`
+// identifies the rubric record to load.
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -26,9 +26,9 @@ import {
   Pin,
 } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
-import type { EvaluationProfile, ProfileRecord } from "../../lib/evaluations/evaluation-types";
+import type { EvaluationRubric, RubricRecord } from "../../lib/evaluations/evaluation-types";
 import { suitesUsingProfile, type ProfileUsage } from "../../lib/evaluations/profile-usage";
-import { validateProfile } from "../../lib/evaluations/evaluation-rubric";
+import { validateRubric } from "../../lib/evaluations/evaluation-rubric";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
 import { EvaluationProfileEditor } from "../../ui/EvaluationProfileEditor";
 import { RecordRow } from "../../ui/RecordRow";
@@ -38,16 +38,16 @@ function genId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  return `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `r-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function ProfileDetail({
+export function RubricDetail({
   repo,
-  profileId,
+  rubricId,
   version,
 }: {
   repo?: EvaluationRepository | null;
-  profileId: string;
+  rubricId: string;
   /** Optional initial/version rubric version to load, driven by the
    *  canonical /evaluations/rubrics/:rubricId/versions/:version route
    *  (rubric-terminology spec §4). When omitted, the latest version loads.
@@ -59,10 +59,10 @@ export function ProfileDetail({
   const contextRepository = useEvaluationRepository();
   const repository = repo ?? contextRepository;
   const navigate = useNavigate();
-  const [record, setRecord] = useState<ProfileRecord | null>(null);
+  const [record, setRecord] = useState<RubricRecord | null>(null);
   const [selectedVersion, setSelectedVersion] = useState(0);
-  const [viewed, setViewed] = useState<EvaluationProfile | null>(null);
-  const [draft, setDraft] = useState<EvaluationProfile | null>(null);
+  const [viewed, setViewed] = useState<EvaluationRubric | null>(null);
+  const [draft, setDraft] = useState<EvaluationRubric | null>(null);
   const [usage, setUsage] = useState<ProfileUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,14 +71,14 @@ export function ProfileDetail({
 
   const load = useCallback(
     async (version: number | "latest") => {
-      if (!repository || !profileId) {
+      if (!repository || !rubricId) {
         setLoading(false);
         return;
       }
       setLoading(true);
       setError(null);
       try {
-        const rec = await repository.getProfileRecord(profileId);
+        const rec = await repository.getRubricRecord(rubricId);
         if (!rec) {
           setRecord(null);
           setViewed(null);
@@ -89,21 +89,21 @@ export function ProfileDetail({
         setRecord(rec);
         const v = version === "latest" ? rec.latestVersion : version;
         setSelectedVersion(v);
-        const prof = await repository.getProfile(profileId, v);
-        setViewed(prof);
-        setDraft(v === rec.latestVersion && prof ? prof : null);
+        const rub = await repository.getRubricVersion(rubricId, v);
+        setViewed(rub);
+        setDraft(v === rec.latestVersion && rub ? rub : null);
         const suites = await repository.listSuites(true);
         // Shared tested derivation (identity spec §5.3). Rendering splits the
         // result into suites pinned at the selected version and suites still
         // pinned at other versions.
-        setUsage(suitesUsingProfile(suites, profileId));
+        setUsage(suitesUsingProfile(suites, rubricId));
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load profile.");
+        setError(e instanceof Error ? e.message : "Failed to load rubric.");
       } finally {
         setLoading(false);
       }
     },
-    [repository, profileId],
+    [repository, rubricId],
   );
 
   useEffect(() => {
@@ -112,16 +112,16 @@ export function ProfileDetail({
 
   const isLatest =
     record != null && selectedVersion === record.latestVersion && selectedVersion > 0;
-  const current: EvaluationProfile | null = isLatest ? draft : viewed;
+  const current: EvaluationRubric | null = isLatest ? draft : viewed;
 
   const handleEditorChange = useCallback(
-    (p: EvaluationProfile) => {
+    (p: EvaluationRubric) => {
       if (isLatest) setDraft(p);
     },
     [isLatest],
   );
 
-  function updateDraft(patch: Partial<EvaluationProfile>) {
+  function updateDraft(patch: Partial<EvaluationRubric>) {
     setDraft((d) => (d ? { ...d, ...patch, updatedAt: Date.now() } : d));
   }
 
@@ -129,7 +129,7 @@ export function ProfileDetail({
     if (!repository || !draft) return;
     // Authoring-boundary validation: actionable errors for gate rejection,
     // ungrouped binary checks, invalid groups, and out-of-range lambda.
-    const validationErrors = validateProfile(draft);
+    const validationErrors = validateRubric(draft);
     if (validationErrors.length > 0) {
       setError(validationErrors.join(" "));
       return;
@@ -137,15 +137,15 @@ export function ProfileDetail({
     setSaving(true);
     setError(null);
     try {
-      const fresh = await repository.getProfileRecord(profileId);
+      const fresh = await repository.getRubricRecord(rubricId);
       if (!fresh) {
-        setError("Profile not found.");
+        setError("Rubric not found.");
         return;
       }
-      await repository.appendProfileVersion(fresh, draft, fresh.revision);
+      await repository.appendRubricVersion(fresh, draft, fresh.revision);
       await load("latest");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save profile.");
+      setError(e instanceof Error ? e.message : "Failed to save rubric.");
     } finally {
       setSaving(false);
     }
@@ -156,12 +156,12 @@ export function ProfileDetail({
     setBusy(true);
     setError(null);
     try {
-      const fresh = await repository.getProfileRecord(profileId);
+      const fresh = await repository.getRubricRecord(rubricId);
       if (!fresh) {
-        setError("Profile not found.");
+        setError("Rubric not found.");
         return;
       }
-      await repository.appendProfileVersion(fresh, { ...viewed }, fresh.revision);
+      await repository.appendRubricVersion(fresh, { ...viewed }, fresh.revision);
       await load("latest");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create version.");
@@ -170,14 +170,14 @@ export function ProfileDetail({
     }
   }
 
-  async function duplicateProfile() {
+  async function duplicateRubric() {
     if (!repository || !viewed) return;
     setBusy(true);
     setError(null);
     try {
       const newId = genId();
       const now = Date.now();
-      const newRecord: ProfileRecord = {
+      const newRecord: RubricRecord = {
         id: newId,
         revision: 1,
         latestVersion: 1,
@@ -185,17 +185,17 @@ export function ProfileDetail({
         updatedAt: now,
         archivedAt: null,
       };
-      const newProfile: EvaluationProfile = {
+      const newRubric: EvaluationRubric = {
         ...viewed,
         id: newId,
         version: 1,
         createdAt: now,
         updatedAt: now,
       };
-      await repository.createProfile(newRecord, newProfile);
-      void navigate(`/evaluations/profiles/${newId}`);
+      await repository.createRubric(newRecord, newRubric);
+      void navigate(`/evaluations/rubrics/${newId}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to duplicate profile.");
+      setError(e instanceof Error ? e.message : "Failed to duplicate rubric.");
     } finally {
       setBusy(false);
     }
@@ -206,16 +206,18 @@ export function ProfileDetail({
     setBusy(true);
     setError(null);
     try {
-      const fresh = await repository.getProfileRecord(profileId);
+      const fresh = await repository.getRubricRecord(rubricId);
       if (!fresh) {
-        setError("Profile not found.");
+        setError("Rubric not found.");
         return;
       }
       const willArchive = !fresh.archivedAt;
-      await repository.setProfileArchived(profileId, willArchive, fresh.revision);
+      await (willArchive
+        ? repository.archiveRubric(rubricId, fresh.revision)
+        : repository.restoreRubric(rubricId, fresh.revision));
       await load(selectedVersion > 0 ? selectedVersion : "latest");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update profile.");
+      setError(e instanceof Error ? e.message : "Failed to update rubric.");
     } finally {
       setBusy(false);
     }
@@ -250,7 +252,7 @@ export function ProfileDetail({
     return (
       <div className="flex min-h-[120px] items-center justify-center gap-2 text-sm text-text-muted">
         <Loader2 size={14} className="animate-spin-ease" aria-hidden="true" />
-        <span>Loading profile…</span>
+        <span>Loading rubric…</span>
       </div>
     );
   }
@@ -258,13 +260,13 @@ export function ProfileDetail({
   if (!record) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-sm text-text-secondary">Profile not found.</p>
+        <p className="text-sm text-text-secondary">Rubric not found.</p>
         <Link
-          to="/evaluations/profiles"
+          to="/evaluations/rubrics"
           className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <ArrowLeft size={15} aria-hidden="true" />
-          Back to profiles
+          Back to rubrics
         </Link>
       </div>
     );
@@ -276,15 +278,15 @@ export function ProfileDetail({
 
   return (
     <div
-      data-profile-detail=""
+      data-rubric-detail=""
       className="flex min-w-0 flex-col gap-3 overflow-x-hidden p-3 text-sm"
     >
       <Link
-        to="/evaluations/profiles"
+        to="/evaluations/rubrics"
         className="flex min-h-[44px] w-fit items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <ArrowLeft size={14} aria-hidden="true" />
-        Profiles
+        Rubrics
       </Link>
 
       {/* Sticky action bar — stays visible above the soft keyboard */}
@@ -316,7 +318,7 @@ export function ProfileDetail({
           type="button"
           data-action="duplicate"
           disabled={busy}
-          onClick={() => void duplicateProfile()}
+          onClick={() => void duplicateRubric()}
           className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
         >
           <Copy size={14} aria-hidden="true" />
@@ -348,13 +350,13 @@ export function ProfileDetail({
       {/* Version selector */}
       <div className="flex flex-wrap items-center gap-2">
         <label
-          htmlFor="profile-version"
+          htmlFor="rubric-version"
           className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
         >
           Version
         </label>
         <select
-          id="profile-version"
+          id="rubric-version"
           data-action="version-selector"
           value={selectedVersion}
           onChange={(e) => void load(Number(e.target.value))}
@@ -390,22 +392,22 @@ export function ProfileDetail({
 
       {archived && (
         <div className="rounded-md border border-edge bg-card-hover px-3 py-2 text-sm text-text-secondary">
-          This profile is archived. Restore it to use in new suites.
+          This rubric is archived. Restore it to use in new suites.
         </div>
       )}
 
-      {/* Profile fields */}
+      {/* Rubric fields */}
       {current && (
         <div className="flex min-w-0 flex-col gap-3">
           <div>
             <label
-              htmlFor="profile-name"
+              htmlFor="rubric-name"
               className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
             >
               Name
             </label>
             <input
-              id="profile-name"
+              id="rubric-name"
               type="text"
               value={current.name}
               readOnly={!isLatest}
@@ -415,13 +417,13 @@ export function ProfileDetail({
           </div>
           <div>
             <label
-              htmlFor="profile-description"
+              htmlFor="rubric-description"
               className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
             >
               Description
             </label>
             <textarea
-              id="profile-description"
+              id="rubric-description"
               rows={2}
               value={current.description}
               readOnly={!isLatest}
@@ -431,13 +433,13 @@ export function ProfileDetail({
           </div>
           <div>
             <label
-              htmlFor="profile-judge"
+              htmlFor="rubric-judge"
               className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
             >
               Judge instruction
             </label>
             <textarea
-              id="profile-judge"
+              id="rubric-judge"
               rows={3}
               value={current.judgeInstruction}
               readOnly={!isLatest}
