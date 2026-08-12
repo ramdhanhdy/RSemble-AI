@@ -603,8 +603,10 @@ export function validateTaskFacetAnnotation(v: unknown): TaskValidationResult {
  *  entity, no duplicate IDs within a collection, no prohibited keys, and
  *  internal referential integrity (versions → tasks, instances → task+version,
  *  assignments → tasks+versions+families, annotations → tasks, supersession
- *  → annotations). Non-identical ID collision remapping is child 09; this
- *  child only validates structure and internal references. */
+ *  → annotations, artifact refs → artifacts). Version histories must be the
+ *  contiguous range 1..TaskRecord.latestVersion. Non-identical ID collision
+ *  remapping is child 09; this child only validates structure and internal
+ *  references. */
 export function validateTaskImport(payload: unknown): TaskValidationResult {
   const errors: TaskValidationError[] = [];
   if (!isRecord(payload)) {
@@ -633,23 +635,27 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   const assignments = payload.taskFamilyAssignments as unknown[];
   const annotations = payload.taskFacetAnnotations as unknown[];
 
-  // Structural validation + duplicate-ID detection.
   const taskIds = new Set<string>();
+  const taskLatest = new Map<string, number>();
+  const taskIndex = new Map<string, number>();
   tasks.forEach((t, i) => {
     const r = validateTaskRecord(t);
     if (!r.valid) {
       for (const e of r.errors) errors.push({ field: `tasks[${i}].${e.field}`, message: e.message });
     } else {
-      const id = (t as TaskRecord).id;
-      if (taskIds.has(id)) {
-        errors.push({ field: `tasks[${i}].id`, message: `duplicate task id ${id}.` });
+      const rec = t as TaskRecord;
+      if (taskIds.has(rec.id)) {
+        errors.push({ field: `tasks[${i}].id`, message: `duplicate task id ${rec.id}.` });
       } else {
-        taskIds.add(id);
+        taskIds.add(rec.id);
+        taskLatest.set(rec.id, rec.latestVersion);
+        taskIndex.set(rec.id, i);
       }
     }
   });
 
   const versionKeys = new Set<string>();
+  const validVersions: Array<{ i: number; v: TaskVersion }> = [];
   versions.forEach((ver, i) => {
     const r = validateTaskVersion(ver);
     if (!r.valid) {
@@ -661,6 +667,7 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
         errors.push({ field: `taskVersions[${i}]`, message: `duplicate version ${key}.` });
       } else {
         versionKeys.add(key);
+        validVersions.push({ i, v });
       }
       if (!taskIds.has(v.taskId)) {
         errors.push({
@@ -670,6 +677,27 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
       }
     }
   });
+
+  for (const [taskId, latest] of taskLatest) {
+    const i = taskIndex.get(taskId) ?? 0;
+    for (let n = 1; n <= latest; n++) {
+      if (!versionKeys.has(`${taskId}@${n}`)) {
+        errors.push({
+          field: `tasks[${i}]`,
+          message: `task ${taskId} is missing version ${n}.`,
+        });
+      }
+    }
+  }
+  for (const { i, v } of validVersions) {
+    const latest = taskLatest.get(v.taskId);
+    if (latest !== undefined && v.version > latest) {
+      errors.push({
+        field: `taskVersions[${i}]`,
+        message: `version ${v.taskId}@${v.version} exceeds latestVersion ${latest}.`,
+      });
+    }
+  }
 
   const artifactIds = new Set<string>();
   artifacts.forEach((a, i) => {
@@ -686,12 +714,29 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
     }
   });
 
+  for (const { i, v } of validVersions) {
+    v.defaultContextManifest.forEach((entry, j) => {
+      if (entry.artifactId !== null && !artifactIds.has(entry.artifactId)) {
+        errors.push({
+          field: `taskVersions[${i}].defaultContextManifest[${j}].artifactId`,
+          message: `version references unknown artifact ${entry.artifactId}.`,
+        });
+      }
+    });
+  }
+
+  const instanceIds = new Set<string>();
   instances.forEach((inst, i) => {
     const r = validateTaskInstance(inst);
     if (!r.valid) {
       for (const e of r.errors) errors.push({ field: `taskInstances[${i}].${e.field}`, message: e.message });
     } else {
       const x = inst as TaskInstance;
+      if (instanceIds.has(x.id)) {
+        errors.push({ field: `taskInstances[${i}].id`, message: `duplicate instance id ${x.id}.` });
+      } else {
+        instanceIds.add(x.id);
+      }
       if (!taskIds.has(x.taskId)) {
         errors.push({
           field: `taskInstances[${i}].taskId`,
@@ -704,6 +749,22 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
           message: `instance references unknown version ${x.taskId}@${x.taskVersion}.`,
         });
       }
+      x.normalizedInput.artifactIds.forEach((id, j) => {
+        if (!artifactIds.has(id)) {
+          errors.push({
+            field: `taskInstances[${i}].normalizedInput.artifactIds[${j}]`,
+            message: `instance references unknown artifact ${id}.`,
+          });
+        }
+      });
+      x.contextManifest.forEach((entry, j) => {
+        if (entry.artifactId !== null && !artifactIds.has(entry.artifactId)) {
+          errors.push({
+            field: `taskInstances[${i}].contextManifest[${j}].artifactId`,
+            message: `instance references unknown artifact ${entry.artifactId}.`,
+          });
+        }
+      });
     }
   });
 
@@ -721,7 +782,6 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
       }
     }
   });
-  // Family parent references must resolve (and not form a self-parent).
   families.forEach((f, i) => {
     if (isTaskFamily(f)) {
       const fam = f as TaskFamily;
@@ -766,17 +826,18 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   });
 
   const annotationIds = new Set<string>();
+  const validAnnotations: Array<{ i: number; x: TaskFacetAnnotation }> = [];
   annotations.forEach((a, i) => {
     const r = validateTaskFacetAnnotation(a);
     if (!r.valid) {
       for (const e of r.errors) errors.push({ field: `taskFacetAnnotations[${i}].${e.field}`, message: e.message });
     } else {
       const x = a as TaskFacetAnnotation;
-      const id = x.id;
-      if (annotationIds.has(id)) {
-        errors.push({ field: `taskFacetAnnotations[${i}].id`, message: `duplicate annotation id ${id}.` });
+      if (annotationIds.has(x.id)) {
+        errors.push({ field: `taskFacetAnnotations[${i}].id`, message: `duplicate annotation id ${x.id}.` });
       } else {
-        annotationIds.add(id);
+        annotationIds.add(x.id);
+        validAnnotations.push({ i, x });
       }
       if (!taskIds.has(x.taskId)) {
         errors.push({
@@ -790,14 +851,16 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
           message: `annotation references unknown version ${x.taskId}@${x.taskVersion}.`,
         });
       }
-      if (x.supersedesId !== null && !annotationIds.has(x.supersedesId)) {
-        errors.push({
-          field: `taskFacetAnnotations[${i}].supersedesId`,
-          message: `annotation supersedes unknown annotation ${x.supersedesId}.`,
-        });
-      }
     }
   });
+  for (const { i, x } of validAnnotations) {
+    if (x.supersedesId !== null && !annotationIds.has(x.supersedesId)) {
+      errors.push({
+        field: `taskFacetAnnotations[${i}].supersedesId`,
+        message: `annotation supersedes unknown annotation ${x.supersedesId}.`,
+      });
+    }
+  }
 
   return result(errors);
 }

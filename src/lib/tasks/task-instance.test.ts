@@ -322,10 +322,16 @@ describe("normalizeInstanceForDigest / instancesReuseEqual", () => {
     expect(instancesReuseEqual(a, b)).toBe(false);
   });
 
-  it("two metadata_only instances with identical inputs are reuse-equal to each other (but never to complete)", () => {
+  it("two metadata_only instances with identical inputs are NOT reuse-equal", () => {
     const a = instance({ inputCompleteness: "metadata_only" });
     const b = instance({ inputCompleteness: "metadata_only", id: "inst-2" });
-    expect(instancesReuseEqual(a, b)).toBe(true);
+    expect(instancesReuseEqual(a, b)).toBe(false);
+  });
+
+  it("two incomplete instances with identical inputs are NOT reuse-equal", () => {
+    const a = instance({ inputCompleteness: "incomplete" });
+    const b = instance({ inputCompleteness: "incomplete", id: "inst-2" });
+    expect(instancesReuseEqual(a, b)).toBe(false);
   });
 
   it("two instances with identical digests but different normalizedInput text are NOT reuse-equal (deep equality, not just digest)", () => {

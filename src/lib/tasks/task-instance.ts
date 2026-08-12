@@ -254,11 +254,11 @@ export function buildInstanceReuseKey(instance: TaskInstance): InstanceReuseKey 
 /**
  * Deep reuse equality between two instances (spec §3.4). Two instances are
  * reuse-equal iff:
- *   1. they share the same `taskId` AND `taskVersion` (same Task Version
+ *   1. both have `inputCompleteness === "complete"` — reuse is allowed only
+ *      for exact complete inputs; `metadata_only` and `incomplete` pairs
+ *      never establish identity;
+ *   2. they share the same `taskId` AND `taskVersion` (same Task Version
  *      only);
- *   2. they share the same `inputCompleteness` (a `complete` instance is
- *      never reused for a `metadata_only`/`incomplete` one, and vice versa —
- *      spec §3.4, §6.4);
  *   3. their normalized input + context manifest are deeply equal (canonical
  *      JSON string equality — order-significant for `artifactIds` and
  *      manifest entries, insertion-order-invariant for object keys).
@@ -268,9 +268,9 @@ export function buildInstanceReuseKey(instance: TaskInstance): InstanceReuseKey 
  * by deep equality before reuse (spec §3.4).
  */
 export function instancesReuseEqual(a: TaskInstance, b: TaskInstance): boolean {
+  if (a.inputCompleteness !== "complete" || b.inputCompleteness !== "complete") return false;
   if (a.taskId !== b.taskId) return false;
   if (a.taskVersion !== b.taskVersion) return false;
-  if (a.inputCompleteness !== b.inputCompleteness) return false;
   return (
     canonicalJsonString(normalizeInstanceForDigest(a)) ===
     canonicalJsonString(normalizeInstanceForDigest(b))

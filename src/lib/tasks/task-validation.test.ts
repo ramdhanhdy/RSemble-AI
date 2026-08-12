@@ -724,6 +724,94 @@ describe("validateTaskImport", () => {
     expect(validateTaskImport(p).valid).toBe(true);
   });
 
+  it("resolves a supersession reference when the predecessor appears later in the array", () => {
+    const p = validImportPayload();
+    const predecessor = validTaskFacetAnnotation();
+    const later: TaskFacetAnnotation = {
+      ...validTaskFacetAnnotation(),
+      id: "ann-2",
+      supersedesId: "ann-1",
+    };
+    p.taskFacetAnnotations = [later, predecessor];
+    expect(validateTaskImport(p).valid).toBe(true);
+  });
+
+  it("rejects a dangling version-manifest artifactId", () => {
+    const p = validImportPayload();
+    p.taskVersions[0].defaultContextManifest[0].artifactId = "no-such-art";
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(
+      r.errors.some((e) => e.field === "taskVersions[0].defaultContextManifest[0].artifactId"),
+    ).toBe(true);
+  });
+
+  it("rejects a dangling instance normalizedInput artifactId", () => {
+    const p = validImportPayload();
+    p.taskInstances[0].normalizedInput.artifactIds = ["no-such-art"];
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field === "taskInstances[0].normalizedInput.artifactIds[0]")).toBe(
+      true,
+    );
+  });
+
+  it("rejects a dangling instance contextManifest artifactId", () => {
+    const p = validImportPayload();
+    p.taskInstances[0].contextManifest[0].artifactId = "no-such-art";
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field === "taskInstances[0].contextManifest[0].artifactId")).toBe(
+      true,
+    );
+  });
+
+  it("rejects a version history with a gap before latestVersion", () => {
+    const p = validImportPayload();
+    p.tasks[0].latestVersion = 3;
+    p.taskVersions.push({ ...validTaskVersion(), version: 3, createdAt: 3_000 });
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.message.includes("missing version 2"))).toBe(true);
+  });
+
+  it("rejects a version history missing v1", () => {
+    const p = validImportPayload();
+    p.tasks[0].latestVersion = 2;
+    p.taskVersions[0].version = 2;
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.message.includes("missing version 1"))).toBe(true);
+  });
+
+  it("rejects a stale latestVersion when a higher version is imported", () => {
+    const p = validImportPayload();
+    p.tasks[0].latestVersion = 1;
+    p.taskVersions.push({ ...validTaskVersion(), version: 2, createdAt: 2_000 });
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.message.includes("exceeds") && e.message.includes("latestVersion"))).toBe(
+      true,
+    );
+  });
+
+  it("accepts a contiguous 1..latestVersion history independent of array order", () => {
+    const p = validImportPayload();
+    p.tasks[0].latestVersion = 2;
+    const v1 = validTaskVersion();
+    const v2 = { ...validTaskVersion(), version: 2, createdAt: 2_000 };
+    p.taskVersions = [v2, v1];
+    expect(validateTaskImport(p).valid).toBe(true);
+  });
+
+  it("rejects duplicate instance ids", () => {
+    const p = validImportPayload();
+    p.taskInstances.push({ ...validTaskInstance() });
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.message.includes("duplicate instance id"))).toBe(true);
+  });
+
   it("uses two distinct digests without collision confusion", () => {
     const p = validImportPayload();
     p.taskArtifacts[0].contentDigest = VALID_DIGEST_B;
