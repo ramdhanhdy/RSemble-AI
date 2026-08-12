@@ -44,9 +44,15 @@ function genId(): string {
 export function ProfileDetail({
   repo,
   profileId,
+  version,
 }: {
   repo?: EvaluationRepository | null;
   profileId: string;
+  /** Optional initial/version rubric version to load, driven by the
+   *  canonical /evaluations/rubrics/:rubricId/versions/:version route
+   *  (rubric-terminology spec §4). When omitted, the latest version loads.
+   *  A change to this prop (URL navigation) reloads the requested version. */
+  version?: number;
 }) {
   // Hook order must be stable: read the context unconditionally, then
   // prefer the injected repository when one is provided.
@@ -101,8 +107,8 @@ export function ProfileDetail({
   );
 
   useEffect(() => {
-    void load("latest");
-  }, [load]);
+    void load(version ?? "latest");
+  }, [load, version]);
 
   const isLatest =
     record != null && selectedVersion === record.latestVersion && selectedVersion > 0;

@@ -86,6 +86,25 @@ async function seedRubric(
   await repo.createRubric(makeRecord(id, 1), makeRubric(id, 1, name));
 }
 
+/** Seed a rubric with two versions so the version route has a historical
+ *  (non-latest) version to load. v1 name differs from v2 to make the
+ *  loaded version observable. */
+async function seedRubricTwoVersions(
+  repo: InMemoryEvaluationRepository,
+  id: string,
+): Promise<void> {
+  await repo.createRubric(makeRecord(id, 1), makeRubric(id, 1, "v1-name"));
+  const rec = await repo.getRubricRecord(id);
+  if (!rec) throw new Error("record missing");
+  const latest = await repo.getRubricVersion(id, rec.latestVersion);
+  if (!latest) throw new Error("version missing");
+  await repo.appendRubricVersion(
+    { ...rec },
+    { ...latest, name: "v2-name", updatedAt: Date.now() },
+    rec.revision,
+  );
+}
+
 // --- Harness -----------------------------------------------------------------
 
 interface CapturedLocation {
@@ -258,6 +277,99 @@ describe("AppRouter — canonical Rubric routes (spec §4)", () => {
     // editor would render instead of the rubric list.
     const h = await renderRouterAsync({ initialEntries: ["/evaluations/rubrics"], repo });
     expect(h.$("button[data-action='new-profile']")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("AppRouter — canonical Rubric version route (spec §4)", () => {
+  it("direct-loads /evaluations/rubrics/:rubricId/versions/:version at a historical version", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRubricTwoVersions(repo, "r-1");
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/rubrics/r-1/versions/1"],
+      repo,
+    });
+    expect(h.$("[data-profile-detail]")).toBeTruthy();
+    // v1 is historical (latest is 2); the name input shows v1's name.
+    const nameInput = h.$("#profile-name") as HTMLInputElement | null;
+    expect(nameInput?.value).toBe("v1-name");
+    // The version selector reflects the loaded historical version.
+    const selector = h.$("select[data-action='version-selector']") as HTMLSelectElement | null;
+    expect(selector?.value).toBe("1");
+    // Historical (non-latest) versions render the read-only banner.
+    expect(h.container.textContent).toContain("read-only");
+    cleanup(h);
+  });
+
+  it("direct-loads the latest version via the version route", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRubricTwoVersions(repo, "r-1");
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/rubrics/r-1/versions/2"],
+      repo,
+    });
+    expect(h.$("[data-profile-detail]")).toBeTruthy();
+    const nameInput = h.$("#profile-name") as HTMLInputElement | null;
+    expect(nameInput?.value).toBe("v2-name");
+    // Latest version is editable — no read-only banner.
+    expect(h.container.textContent).not.toContain("read-only");
+    cleanup(h);
+  });
+
+  it("refresh (remount) at the version route reloads the same historical version", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRubricTwoVersions(repo, "r-1");
+    const first = await renderRouterAsync({
+      initialEntries: ["/evaluations/rubrics/r-1/versions/1"],
+      repo,
+    });
+    expect((first.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v1-name");
+    cleanup(first);
+
+    const refreshed = await renderRouterAsync({
+      initialEntries: ["/evaluations/rubrics/r-1/versions/1"],
+      repo,
+    });
+    expect((refreshed.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v1-name");
+    cleanup(refreshed);
+  });
+
+  it("back/forward between versions reloads the requested version", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRubricTwoVersions(repo, "r-1");
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/rubrics/r-1/versions/1"],
+      repo,
+    });
+    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v1-name");
+
+    // Navigate to v2 via the canonical version route.
+    act(() => h.nav.current!("/evaluations/rubrics/r-1/versions/2"));
+    await settle();
+    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v2-name");
+
+    // Back returns to v1.
+    act(() => h.nav.current!(-1));
+    await settle();
+    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v1-name");
+
+    // Forward returns to v2.
+    act(() => h.nav.current!(1));
+    await settle();
+    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v2-name");
+    cleanup(h);
+  });
+
+  it("falls back to latest when the version param is non-numeric", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRubricTwoVersions(repo, "r-1");
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/rubrics/r-1/versions/not-a-number"],
+      repo,
+    });
+    expect(h.$("[data-profile-detail]")).toBeTruthy();
+    // Non-numeric version is treated as "latest" (v2).
+    expect((h.$("#profile-name") as HTMLInputElement | null)?.value).toBe("v2-name");
     cleanup(h);
   });
 });

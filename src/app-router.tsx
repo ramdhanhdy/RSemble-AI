@@ -114,6 +114,10 @@ export function AppRoutes({
             resolve to the rubric surfaces, never to a suite editor. */}
         <Route path="rubrics" element={withSuspense(<RubricListRoute />)} />
         <Route path="rubrics/:rubricId" element={withSuspense(<RubricDetailRoute />)} />
+        <Route
+          path="rubrics/:rubricId/versions/:version"
+          element={withSuspense(<RubricVersionRoute />)}
+        />
 
         {/* Compatibility redirects — real baseline /evaluations/profiles…
             links redirect to the canonical Rubric routes, preserving the
@@ -182,6 +186,20 @@ function RubricDetailRoute() {
   const repo = useEvaluationRepository();
   const { rubricId } = useParams<{ rubricId: string }>();
   return <ProfileDetail repo={repo} profileId={rubricId ?? ""} />;
+}
+
+/** RubricVersion route wrapper — canonical
+ *  /evaluations/rubrics/:rubricId/versions/:version (spec §4). Reads
+ *  :rubricId and :version and passes them to ProfileDetail so a direct
+ *  load/refresh/deep link opens the requested historical version (read-only
+ *  when not latest). The version prop drives reloading on URL navigation
+ *  (back/forward between versions). */
+function RubricVersionRoute() {
+  const repo = useEvaluationRepository();
+  const { rubricId, version } = useParams<{ rubricId: string; version: string }>();
+  const parsed = Number(version);
+  const versionNum = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  return <ProfileDetail repo={repo} profileId={rubricId ?? ""} version={versionNum} />;
 }
 
 /** Compatibility redirect: /evaluations/profiles → /evaluations/rubrics.
