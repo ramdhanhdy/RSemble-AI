@@ -345,11 +345,7 @@ describe("judgeMessages — blind candidate packet", () => {
         segments: [{ id: "c2-s0", text: "two" }],
       },
     ];
-    const msgs = judgeMessages(
-      "test prompt",
-      makeRubric(criteria),
-      blindOf(candidates).candidates,
-    );
+    const msgs = judgeMessages("test prompt", makeRubric(criteria), blindOf(candidates).candidates);
     const joined = msgs.map((m) => m.content).join("\n");
     expect(joined).toContain("commercial-reasoning");
     expect(joined).toContain("Commercial reasoning");

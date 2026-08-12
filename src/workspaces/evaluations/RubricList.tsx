@@ -250,9 +250,7 @@ export function RubricList({ repo }: { repo?: EvaluationRepository | null }) {
         <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 p-4 text-center">
           <FolderOpen size={18} className="text-text-muted" aria-hidden="true" />
           <p className="text-sm text-text-secondary">No rubrics yet.</p>
-          <p className="text-sm text-text-muted">
-            Rubrics define how candidate work is assessed.
-          </p>
+          <p className="text-sm text-text-muted">Rubrics define how candidate work is assessed.</p>
           {/* Identity spec §5.4: teach the split from the rubric side. */}
           <p className="text-sm text-text-muted">
             <Link

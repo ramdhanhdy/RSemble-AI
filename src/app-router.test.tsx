@@ -13,7 +13,13 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, useLocation, useNavigate, type Location, type NavigateFunction } from "react-router-dom";
+import {
+  MemoryRouter,
+  useLocation,
+  useNavigate,
+  type Location,
+  type NavigateFunction,
+} from "react-router-dom";
 // Pre-load the lazy route chunks so `lazy(() => import(...))` inside
 // AppRoutes resolves from the module cache on the first microtask inside
 // act() — vitest's first dynamic transform of these modules can out-run a
@@ -343,17 +349,17 @@ describe("AppRouter — canonical Rubric version route (spec §4)", () => {
     expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v1-name");
 
     // Navigate to v2 via the canonical version route.
-    act(() => h.nav.current!("/evaluations/rubrics/r-1/versions/2"));
+    void act(() => h.nav.current!("/evaluations/rubrics/r-1/versions/2"));
     await settle();
     expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v2-name");
 
     // Back returns to v1.
-    act(() => h.nav.current!(-1));
+    void act(() => h.nav.current!(-1));
     await settle();
     expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v1-name");
 
     // Forward returns to v2.
-    act(() => h.nav.current!(1));
+    void act(() => h.nav.current!(1));
     await settle();
     expect((h.$("#rubric-name") as HTMLInputElement | null)?.value).toBe("v2-name");
     cleanup(h);
@@ -453,12 +459,12 @@ describe("AppRouter — history compatibility (back/forward, no alias)", () => {
     const h = await renderRouterAsync({ initialEntries: ["/compare"], repo });
     expect(h.loc.current?.pathname).toBe("/compare");
 
-    act(() => h.nav.current!("/evaluations/rubrics/p-1"));
+    void act(() => h.nav.current!("/evaluations/rubrics/p-1"));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-1");
 
     // Back should return to /compare, not /evaluations/rubrics/p-1.
-    act(() => h.nav.current!(-1));
+    void act(() => h.nav.current!(-1));
     await settle();
     expect(h.loc.current?.pathname).toBe("/compare");
     cleanup(h);
@@ -469,16 +475,16 @@ describe("AppRouter — history compatibility (back/forward, no alias)", () => {
     await seedRubric(repo, "p-1", "Quality");
     const h = await renderRouterAsync({ initialEntries: ["/compare"], repo });
 
-    act(() => h.nav.current!("/evaluations/rubrics/p-1"));
+    void act(() => h.nav.current!("/evaluations/rubrics/p-1"));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-1");
 
-    act(() => h.nav.current!(-1));
+    void act(() => h.nav.current!(-1));
     await settle();
     expect(h.loc.current?.pathname).toBe("/compare");
 
     // Forward returns to the canonical route (the replaced entry).
-    act(() => h.nav.current!(1));
+    void act(() => h.nav.current!(1));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/rubrics/p-1");
     cleanup(h);

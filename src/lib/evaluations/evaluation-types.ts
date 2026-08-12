@@ -163,8 +163,7 @@ export type ProfileRecord = RubricRecord;
 export type EvaluationProfileRef = RubricVersionRef;
 
 export type EvaluationSelection =
-  | { kind: "holistic" }
-  | { kind: "profile"; profile: RubricVersionRef };
+  { kind: "holistic" } | { kind: "profile"; profile: RubricVersionRef };
 
 export type TaskEvaluationSelection = { kind: "inherit" } | EvaluationSelection;
 

@@ -63,11 +63,11 @@ export function EvaluationDisclosure({
               rubric={evaluation.profile}
               onChange={(rubric: EvaluationRubric) => {
                 if (evaluation.kind === "custom") {
-                dispatch({ type: "SET_EVALUATION", config: { kind: "custom", profile: rubric } });
+                  dispatch({ type: "SET_EVALUATION", config: { kind: "custom", profile: rubric } });
                 } else if (evaluation.kind === "profile") {
                   dispatch({
                     type: "SET_EVALUATION",
-                config: { kind: "custom", profile: rubric },
+                    config: { kind: "custom", profile: rubric },
                   });
                 }
               }}

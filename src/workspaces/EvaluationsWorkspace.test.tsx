@@ -24,7 +24,7 @@ function renderAt(path: string): Harness {
         <Routes>
           <Route path="/evaluations" element={<EvaluationsWorkspace />}>
             <Route index element={<div data-testid="suite-content" />} />
-          <Route path="rubrics" element={<div data-testid="rubric-content" />} />
+            <Route path="rubrics" element={<div data-testid="rubric-content" />} />
           </Route>
         </Routes>
       </MemoryRouter>,

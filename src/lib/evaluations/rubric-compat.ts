@@ -28,13 +28,6 @@ export type {
   EvaluationProfileRef,
 } from "./evaluation-types";
 
-export {
-  isEvaluationProfile,
-  isProfileRecord,
-  isEvaluationProfileRef,
-} from "./evaluation-types";
+export { isEvaluationProfile, isProfileRecord, isEvaluationProfileRef } from "./evaluation-types";
 
-export {
-  validateProfile,
-  isComplianceOnlyProfile,
-} from "./evaluation-rubric";
+export { validateProfile, isComplianceOnlyProfile } from "./evaluation-rubric";

@@ -14,11 +14,7 @@
 // recommendation is promoted; otherwise the claim stays exploratory (demoted).
 // =============================================================================
 
-import type {
-  RubricSnapshot,
-  EvaluationSuite,
-  EvaluationTask,
-} from "./evaluation-types";
+import type { RubricSnapshot, EvaluationSuite, EvaluationTask } from "./evaluation-types";
 import type {
   FusionPlaybook,
   FusionPolicyKind,

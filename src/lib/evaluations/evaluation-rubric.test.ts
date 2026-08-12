@@ -439,14 +439,44 @@ describe("isCriterionFacetMapping — structural guard", () => {
   });
 
   it("rejects missing or empty criterionId/facetId", () => {
-    expect(isCriterionFacetMapping({ criterionId: "", facetId: "f", mappingKind: "direct", source: "authored" })).toBe(false);
-    expect(isCriterionFacetMapping({ criterionId: "c1", facetId: "", mappingKind: "direct", source: "authored" })).toBe(false);
-    expect(isCriterionFacetMapping({ facetId: "f", mappingKind: "direct", source: "authored" })).toBe(false);
+    expect(
+      isCriterionFacetMapping({
+        criterionId: "",
+        facetId: "f",
+        mappingKind: "direct",
+        source: "authored",
+      }),
+    ).toBe(false);
+    expect(
+      isCriterionFacetMapping({
+        criterionId: "c1",
+        facetId: "",
+        mappingKind: "direct",
+        source: "authored",
+      }),
+    ).toBe(false);
+    expect(
+      isCriterionFacetMapping({ facetId: "f", mappingKind: "direct", source: "authored" }),
+    ).toBe(false);
   });
 
   it("rejects unknown mappingKind/source", () => {
-    expect(isCriterionFacetMapping({ criterionId: "c1", facetId: "f", mappingKind: "gate", source: "authored" })).toBe(false);
-    expect(isCriterionFacetMapping({ criterionId: "c1", facetId: "f", mappingKind: "direct", source: "inferred" })).toBe(false);
+    expect(
+      isCriterionFacetMapping({
+        criterionId: "c1",
+        facetId: "f",
+        mappingKind: "gate",
+        source: "authored",
+      }),
+    ).toBe(false);
+    expect(
+      isCriterionFacetMapping({
+        criterionId: "c1",
+        facetId: "f",
+        mappingKind: "direct",
+        source: "inferred",
+      }),
+    ).toBe(false);
   });
 
   it("rejects non-objects", () => {
@@ -549,7 +579,12 @@ describe("isEvaluationRubric — facetMappings validation", () => {
   it("rejects a structurally malformed mapping entry", () => {
     const rubric = makeRubric({
       facetMappings: [
-        { criterionId: "c1", facetId: "f", mappingKind: "gate", source: "authored" } as unknown as CriterionFacetMapping,
+        {
+          criterionId: "c1",
+          facetId: "f",
+          mappingKind: "gate",
+          source: "authored",
+        } as unknown as CriterionFacetMapping,
       ],
     });
     expect(isEvaluationRubric(rubric)).toBe(false);

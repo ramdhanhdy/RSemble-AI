@@ -111,10 +111,7 @@ export function SuiteEditor({
     setLoading(true);
     setLoadError(null);
     try {
-      const [suite, rubrics] = await Promise.all([
-        repo.getSuite(suiteId),
-        repo.listRubrics(true),
-      ]);
+      const [suite, rubrics] = await Promise.all([repo.getSuite(suiteId), repo.listRubrics(true)]);
       if (id !== requestIdRef.current) return;
       if (!suite) {
         setPersisted(null);

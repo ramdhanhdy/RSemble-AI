@@ -160,10 +160,7 @@ export function findBlindnessViolations(
 // --- Shared prompt sections -------------------------------------------------------------
 
 /** The rubric section — byte-identical between fusion and the refine control. */
-export function rubricSection(
-  rubric: RubricSnapshot | null,
-  rubricAccess: boolean,
-): string {
+export function rubricSection(rubric: RubricSnapshot | null, rubricAccess: boolean): string {
   if (!rubricAccess) return "";
   const text =
     rubric && rubric.criteria.length > 0

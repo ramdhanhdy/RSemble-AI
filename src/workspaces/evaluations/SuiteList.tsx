@@ -233,10 +233,7 @@ export function SuiteList({ repo }: SuiteListProps) {
         setImportErrors(check.errors);
         return;
       }
-      const [suites, rubrics] = await Promise.all([
-        repo.listSuites(true),
-        repo.listRubrics(true),
-      ]);
+      const [suites, rubrics] = await Promise.all([repo.listSuites(true), repo.listRubrics(true)]);
       const takenIds = new Set<string>([...suites.map((s) => s.id), ...rubrics.map((p) => p.id)]);
       const normalized = normalizeSuitePackage(check.pkg, {
         takenIds,

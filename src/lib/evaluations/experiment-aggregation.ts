@@ -17,11 +17,7 @@
 //    is never spliced across retries.
 // =============================================================================
 
-import type {
-  RubricSnapshot,
-  ExperimentSnapshot,
-  ExperimentTaskState,
-} from "./evaluation-types";
+import type { RubricSnapshot, ExperimentSnapshot, ExperimentTaskState } from "./evaluation-types";
 import type { RunRecordV2 } from "../persistence/run-types";
 import {
   computeWinnerKeys,

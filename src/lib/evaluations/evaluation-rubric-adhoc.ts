@@ -5,11 +5,7 @@
 // or one-off custom criteria. This type replaces the old RubricCriterion[].
 // =============================================================================
 
-import type {
-  EvaluationRubric,
-  RubricVersionRef,
-  RubricSnapshot,
-} from "./evaluation-types";
+import type { EvaluationRubric, RubricVersionRef, RubricSnapshot } from "./evaluation-types";
 
 export type AdHocEvaluationConfig =
   | { kind: "holistic" }
@@ -24,9 +20,7 @@ export const HOLISTIC_EVALUATION: AdHocEvaluationConfig = { kind: "holistic" };
  * Candidate generation never receives this — only the Judge and (optionally)
  * Fusion.
  */
-export function resolveEvaluationRubric(
-  config: AdHocEvaluationConfig,
-): RubricSnapshot | null {
+export function resolveEvaluationRubric(config: AdHocEvaluationConfig): RubricSnapshot | null {
   if (config.kind === "holistic") return null;
   return config.profile;
 }

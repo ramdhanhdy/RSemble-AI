@@ -21,15 +21,15 @@
 // canonicalized; persisted field/store names are unchanged.
 // =============================================================================
 
-import type {
-  CriterionFacetMapping,
-  EvaluationCriterion,
-  RubricSnapshot,
-  GradedEvaluationCriterion,
-  BinaryEvaluationCriterion,
-  LegacyGradedEvaluationCriterion,
+import {
+  isCriterionFacetMapping,
+  type CriterionFacetMapping,
+  type EvaluationCriterion,
+  type RubricSnapshot,
+  type GradedEvaluationCriterion,
+  type BinaryEvaluationCriterion,
+  type LegacyGradedEvaluationCriterion,
 } from "./evaluation-types";
-import { isCriterionFacetMapping } from "./evaluation-types";
 
 /** String values that must never appear in an authored identifier field.
  *  Matches the credential-shape check in `evaluation-types.ts` and
@@ -229,9 +229,7 @@ export function formatRankScoreDisplay(rv: number | null): string {
 /** A rubric with no graded criteria is compliance-only (spec §16.3): its
  *  ranking quantity is the weighted compliance share C in the 0–1 domain and
  *  must never be displayed as a 1–5 rankScore or floored `1.0*` value. */
-export function isComplianceOnlyRubric(
-  profile: RubricSnapshot | null | undefined,
-): boolean {
+export function isComplianceOnlyRubric(profile: RubricSnapshot | null | undefined): boolean {
   return (
     !!profile && profile.criteria.length > 0 && !profile.criteria.some((c) => c.kind !== "binary")
   );
@@ -248,10 +246,7 @@ export function formatComplianceDisplay(c: number): string {
  *  the bounded 1–5 rankScore representation with its /5 domain suffix.
  *  Callers with a rubric snapshot should use this instead of hardcoding `/5`
  *  suffixes. */
-export function formatRankValueDisplay(
-  rv: number | null,
-  profile?: RubricSnapshot | null,
-): string {
+export function formatRankValueDisplay(rv: number | null, profile?: RubricSnapshot | null): string {
   if (rv === null) return "—";
   if (isComplianceOnlyRubric(profile)) return formatComplianceDisplay(rv);
   return `${formatRankScoreDisplay(rv)}/5`;

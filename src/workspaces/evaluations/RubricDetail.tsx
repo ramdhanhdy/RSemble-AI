@@ -28,7 +28,12 @@ import {
   Trash2,
 } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
-import type { EvaluationRubric, RubricRecord, CriterionFacetMapping, EvaluationCriterion } from "../../lib/evaluations/evaluation-types";
+import type {
+  EvaluationRubric,
+  RubricRecord,
+  CriterionFacetMapping,
+  EvaluationCriterion,
+} from "../../lib/evaluations/evaluation-types";
 import { suitesUsingRubric, type RubricUsage } from "../../lib/evaluations/rubric-usage";
 import { validateRubric } from "../../lib/evaluations/evaluation-rubric";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
@@ -132,7 +137,11 @@ export function RubricDetail({
   // seam is optional and may stay empty; child 06 decides how authored
   // mappings are consumed. Only the latest version is editable; historical
   // versions disclose their mappings read-only.
-  function addFacetMapping(criterionId: string, facetId: string, mappingKind: "direct" | "supporting") {
+  function addFacetMapping(
+    criterionId: string,
+    facetId: string,
+    mappingKind: "direct" | "supporting",
+  ) {
     if (!draft || !criterionId.trim() || !facetId.trim()) return;
     const next: CriterionFacetMapping = {
       criterionId: criterionId.trim(),
@@ -492,15 +501,11 @@ export function RubricDetail({
             Evidence metadata (optional)
           </summary>
           <p className="mt-2 text-xs text-text-muted">
-            Authored criterion→facet mapping is disclosed evidence metadata,
-            not scoring configuration. Unmapped criteria remain visible.
+            Authored criterion→facet mapping is disclosed evidence metadata, not scoring
+            configuration. Unmapped criteria remain visible.
           </p>
           {current.facetMappings && current.facetMappings.length > 0 ? (
-            <ul
-              className="mt-2 flex flex-col gap-1"
-              role="list"
-              data-facet-mapping-list
-            >
+            <ul className="mt-2 flex flex-col gap-1" role="list" data-facet-mapping-list>
               {current.facetMappings.map((m, i) => (
                 <li
                   key={`${m.criterionId}-${m.facetId}-${m.mappingKind}-${i}`}
@@ -534,14 +539,10 @@ export function RubricDetail({
             </p>
           )}
           {isLatest && current.criteria.length > 0 && (
-            <FacetMappingAddForm
-              criteria={current.criteria}
-              onAdd={addFacetMapping}
-            />
+            <FacetMappingAddForm criteria={current.criteria} onAdd={addFacetMapping} />
           )}
         </details>
       )}
-
 
       {/* Suites pinned to this version (identity spec §5.3) */}
       <div className="flex min-w-0 flex-col gap-2">

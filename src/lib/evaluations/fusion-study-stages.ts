@@ -19,11 +19,7 @@
 import type { CriticRef } from "../providers/types";
 import type { Attachment } from "../attachments/types";
 import type { ModelSlot } from "../../studio-data";
-import type {
-  RubricSnapshot,
-  EvaluationTask,
-  EvaluationSuite,
-} from "./evaluation-types";
+import type { RubricSnapshot, EvaluationTask, EvaluationSuite } from "./evaluation-types";
 import type {
   FusionPolicyKind,
   FusionRecipeFamily,

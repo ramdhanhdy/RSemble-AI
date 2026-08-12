@@ -308,7 +308,8 @@ function renderReport(violations: Violation[]): string {
     const tokenList = distinct.slice(0, MAX_TOKENS).join(", ");
     const tokenTail =
       distinct.length > MAX_TOKENS ? ` (+${distinct.length - MAX_TOKENS} more tokens)` : "";
-    const lineTail = vs.length > MAX_SAMPLE_LINES ? ` …(+${vs.length - MAX_SAMPLE_LINES} more)` : "";
+    const lineTail =
+      vs.length > MAX_SAMPLE_LINES ? ` …(+${vs.length - MAX_SAMPLE_LINES} more)` : "";
     lines.push(
       `  ${file} — ${vs.length} hit(s); tokens: ${tokenList}${tokenTail}; e.g. ${sampleLines.join(", ")}${lineTail}`,
     );

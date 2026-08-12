@@ -283,9 +283,9 @@ describe("EvaluationRepository (Dexie-backed)", () => {
 
     it("rejects creating a rubric when the id already exists", async () => {
       await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
-      await expect(
-        evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1")),
-      ).rejects.toThrow(/already exists/i);
+      await expect(evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"))).rejects.toThrow(
+        /already exists/i,
+      );
     });
 
     it("appends a new version and advances latestVersion", async () => {

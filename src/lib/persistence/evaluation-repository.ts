@@ -226,8 +226,7 @@ export function createEvaluationRepository(
   async function createRubric(record: RubricRecord, rubric: EvaluationRubric): Promise<void> {
     if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
     if (!isEvaluationRubric(rubric)) throw new StorageError("validation", "Invalid rubric");
-    if (record.id !== rubric.id)
-      throw new StorageError("validation", "Record/rubric ID mismatch");
+    if (record.id !== rubric.id) throw new StorageError("validation", "Record/rubric ID mismatch");
     if (rubric.version !== 1) throw new StorageError("validation", "First version must be 1");
     db.assertWritable();
     try {
@@ -262,8 +261,7 @@ export function createEvaluationRepository(
   ): Promise<number> {
     if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
     if (!isEvaluationRubric(rubric)) throw new StorageError("validation", "Invalid rubric");
-    if (record.id !== rubric.id)
-      throw new StorageError("validation", "Record/rubric ID mismatch");
+    if (record.id !== rubric.id) throw new StorageError("validation", "Record/rubric ID mismatch");
     db.assertWritable();
     const newRevision = expectedRevision + 1;
     try {
@@ -388,10 +386,7 @@ export function createEvaluationRepository(
         if (!sourceRow) throw new StorageError("conflict", `Rubric ${sourceId} not found`);
         const sourceRecord = isRubricRecord(sourceRow.record) ? sourceRow.record : null;
         if (!sourceRecord) throw new StorageError("validation", "Invalid rubric record");
-        const sourceVersionRow = await db.profileVersions.get([
-          sourceId,
-          sourceRow.latestVersion,
-        ]);
+        const sourceVersionRow = await db.profileVersions.get([sourceId, sourceRow.latestVersion]);
         if (!sourceVersionRow)
           throw new StorageError("validation", `Missing rubric version ${sourceRow.latestVersion}`);
         const sourceRubric = isEvaluationRubric(sourceVersionRow.profile)
@@ -470,9 +465,7 @@ export function createEvaluationRepository(
     archived: boolean,
     expectedRevision: number,
   ): Promise<number> {
-    return archived
-      ? archiveRubric(id, expectedRevision)
-      : restoreRubric(id, expectedRevision);
+    return archived ? archiveRubric(id, expectedRevision) : restoreRubric(id, expectedRevision);
   }
 
   async function createExperiment(experiment: ExperimentRecord): Promise<void> {
@@ -671,8 +664,7 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     // Same contract as the Dexie store (validation + id/version checks).
     if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
     if (!isEvaluationRubric(rubric)) throw new StorageError("validation", "Invalid rubric");
-    if (record.id !== rubric.id)
-      throw new StorageError("validation", "Record/rubric ID mismatch");
+    if (record.id !== rubric.id) throw new StorageError("validation", "Record/rubric ID mismatch");
     if (rubric.version !== 1) throw new StorageError("validation", "First version must be 1");
     if (this.rubricRecords.has(record.id)) throw new StorageError("conflict", "Rubric exists");
     this.rubricRecords.set(record.id, record);
@@ -687,8 +679,7 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
   ): Promise<number> {
     if (!isRubricRecord(record)) throw new StorageError("validation", "Invalid rubric record");
     if (!isEvaluationRubric(rubric)) throw new StorageError("validation", "Invalid rubric");
-    if (record.id !== rubric.id)
-      throw new StorageError("validation", "Record/rubric ID mismatch");
+    if (record.id !== rubric.id) throw new StorageError("validation", "Record/rubric ID mismatch");
     const existing = this.rubricRecords.get(record.id);
     if (!existing) throw new StorageError("conflict", "Rubric not found");
     if (existing.revision !== expectedRevision)
