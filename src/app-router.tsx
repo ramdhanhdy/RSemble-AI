@@ -8,10 +8,19 @@
 //
 // The reducer, controller refs, provider probes, and modals stay mounted
 // in RSemble above this router so state persists across navigation.
+//
+// Rubric routes (rubric-terminology spec §4): /evaluations/rubrics and
+// /evaluations/rubrics/:rubricId are the canonical scoring-rubric routes.
+// The baseline /evaluations/profiles… routes redirect to them, preserving
+// the entity id and any location state (return location / historical
+// version state) so existing deep links keep working. No invented
+// /profiles/* alias is added — only real baseline profile routes redirect.
+// The list/detail components still ship as ProfileList/ProfileDetail until
+// Task 5 renames the surfaces; the route paths are canonical already.
 // =============================================================================
 
 import { lazy, Suspense } from "react";
-import { Routes, Route, Navigate, Link, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, Link, useParams, useLocation } from "react-router-dom";
 import {
   useEvaluationRepository,
   useFusionStudyRepository,
@@ -20,7 +29,7 @@ import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
 
 // Route-level code splitting: Compare is the default surface and stays in the
-// main chunk; Runs, Evaluations (suites, profiles, fusion study), and
+// main chunk; Runs, Evaluations (suites, rubrics, fusion study), and
 // experiment results load on first navigation to them.
 const RunsWorkspace = lazy(() =>
   import("./workspaces/RunsWorkspace").then((m) => ({ default: m.RunsWorkspace })),
@@ -93,13 +102,26 @@ export function AppRoutes({
         element={withSuspense(<RunsWorkspace onOpenInCompare={onOpenInCompare} />)}
       />
 
-      {/* Evaluations workspace — segmented nav (Suites | Profiles) + Outlet.
+      {/* Evaluations workspace — segmented nav (Suites | Rubrics) + Outlet.
           EvaluationContext is provided by EvaluationsWorkspace so child routes
           can call useEvaluationRepository() from evaluation-context.tsx. */}
       <Route path="/evaluations" element={withSuspense(<EvaluationsWorkspace />)}>
         <Route index element={withSuspense(<SuiteListRoute />)} />
-        <Route path="profiles" element={withSuspense(<ProfileListRoute />)} />
-        <Route path="profiles/:profileId" element={withSuspense(<ProfileDetailRoute />)} />
+
+        {/* Canonical Rubric routes (rubric-terminology spec §4). Static
+            segments rank above the dynamic :suiteId route below, so
+            /evaluations/rubrics and /evaluations/rubrics/:rubricId always
+            resolve to the rubric surfaces, never to a suite editor. */}
+        <Route path="rubrics" element={withSuspense(<RubricListRoute />)} />
+        <Route path="rubrics/:rubricId" element={withSuspense(<RubricDetailRoute />)} />
+
+        {/* Compatibility redirects — real baseline /evaluations/profiles…
+            links redirect to the canonical Rubric routes, preserving the
+            entity id and any location state (return location / historical
+            version state) without an invented /profiles/* alias (spec §4). */}
+        <Route path="profiles" element={<ProfileListRedirect />} />
+        <Route path="profiles/:profileId" element={<ProfileDetailRedirect />} />
+
         <Route path=":suiteId" element={withSuspense(<SuiteEditorRoute models={models} />)} />
         <Route
           path=":suiteId/tasks/:taskId"
@@ -144,19 +166,54 @@ function FusionStudyRouteWrapper() {
   return <FusionStudyRoute fusionRepo={fusionRepo} />;
 }
 
-/** ProfileList route wrapper. ProfileList falls back to context, but we pass
- *  repo explicitly for consistency with the suite route wrappers. */
-function ProfileListRoute() {
+/** RubricList route wrapper — canonical /evaluations/rubrics. Renders the
+ *  rubric list (currently the ProfileList component, renamed in Task 5).
+ *  Passes the repo explicitly for consistency with the suite route wrappers. */
+function RubricListRoute() {
   const repo = useEvaluationRepository();
   return <ProfileList repo={repo} />;
 }
 
-/** ProfileDetail route wrapper. Reads :profileId from the route and passes it
- *  as a prop (spec §5.1: /evaluations/profiles/:profileId). */
-function ProfileDetailRoute() {
+/** RubricDetail route wrapper — canonical /evaluations/rubrics/:rubricId.
+ *  Reads :rubricId and passes it as the rubric identity to ProfileDetail
+ *  (renamed in Task 5). The stored record id is the same whether the link
+ *  arrived via the canonical route or the legacy profile redirect. */
+function RubricDetailRoute() {
   const repo = useEvaluationRepository();
+  const { rubricId } = useParams<{ rubricId: string }>();
+  return <ProfileDetail repo={repo} profileId={rubricId ?? ""} />;
+}
+
+/** Compatibility redirect: /evaluations/profiles → /evaluations/rubrics.
+ *  Preserves search and location state so return locations and any
+ *  historical version state encoded in the URL/location survive the
+ *  redirect (rubric-terminology spec §4). `replace` keeps the legacy URL
+ *  out of the history stack so browser back does not loop back to it. */
+function ProfileListRedirect() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{ pathname: "/evaluations/rubrics", search: location.search }}
+      replace
+      state={location.state}
+    />
+  );
+}
+
+/** Compatibility redirect: /evaluations/profiles/:profileId →
+ *  /evaluations/rubrics/:rubricId. The profileId entity becomes the rubricId
+ *  (same stored record — only the route name changes). Preserves search and
+ *  location state; `replace` avoids a back-button loop. */
+function ProfileDetailRedirect() {
   const { profileId } = useParams<{ profileId: string }>();
-  return <ProfileDetail repo={repo} profileId={profileId ?? ""} />;
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{ pathname: `/evaluations/rubrics/${profileId ?? ""}`, search: location.search }}
+      replace
+      state={location.state}
+    />
+  );
 }
 
 /** SuiteTaskEditorRoute wrapper for the mobile deep-link route. */
