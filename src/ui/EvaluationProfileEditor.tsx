@@ -20,7 +20,7 @@ import {
   normalizedWeights,
   totalWeight,
   getComplianceInfluence,
-} from "../lib/evaluations/evaluation-profile";
+} from "../lib/evaluations/evaluation-rubric";
 
 export function EvaluationProfileEditor({
   profile,

@@ -1,7 +1,8 @@
 // =============================================================================
-// RSemble AI — Evaluation profile formatting and canonical scoring
+// RSemble AI — Evaluation rubric formatting and canonical scoring
 //
-// Spec §9: evaluation profiles replace the old goal|metric|gap rubric.
+// Canonical scoring module (moved unchanged from `evaluation-profile.ts`).
+// Spec §9: evaluation rubrics replace the old goal|metric|gap rubric.
 // Criteria are evaluator-only — candidate generation never receives them.
 // The Judge receives criteria + anchors (graded) or TRUE/FALSE conditions
 // (binary); the canonical score is the normalized weighted mean of the
@@ -14,11 +15,15 @@
 //   rankValue = Q − λ·(1 − C)                  (authoritative ranking value)
 //   rankScore = max(1, rankValue)              (bounded 1–5 presentation)
 //   floored   = rankValue < 1                  (disclosure flag)
+//
+// Scoring math, WINNER_EPSILON, and validator semantics are identical to the
+// previous `evaluation-profile.ts` module. Only the domain name is
+// canonicalized; persisted field/store names are unchanged.
 // =============================================================================
 
 import type {
   EvaluationCriterion,
-  EvaluationProfileSnapshot,
+  RubricSnapshot,
   GradedEvaluationCriterion,
   BinaryEvaluationCriterion,
   LegacyGradedEvaluationCriterion,
@@ -27,7 +32,7 @@ import type {
 /** Maximum epsilon for floating-point winner comparison. */
 export const WINNER_EPSILON = 1e-9;
 
-/** Default compliance influence (λ) when not specified on the profile. */
+/** Default compliance influence (λ) when not specified on the rubric. */
 export const DEFAULT_COMPLIANCE_INFLUENCE = 1.0;
 
 // --- Kind helpers -------------------------------------------------------------
@@ -53,7 +58,7 @@ export function isBinaryCriterion(c: EvaluationCriterion): c is BinaryEvaluation
  * sent to candidate generation.
  */
 export function evaluationCriteriaText(
-  profile: EvaluationProfileSnapshot,
+  profile: RubricSnapshot,
   opts?: { withIds?: boolean },
 ): string {
   if (profile.criteria.length === 0) {
@@ -91,11 +96,11 @@ export function evaluationCriteriaText(
 }
 
 /**
- * Build the Judge instruction block from a profile snapshot.
- * Includes the profile's base judge instruction and the criteria text.
+ * Build the Judge instruction block from a rubric snapshot.
+ * Includes the rubric's base judge instruction and the criteria text.
  */
 export function judgeEvaluationBlock(
-  profile: EvaluationProfileSnapshot | null,
+  profile: RubricSnapshot | null,
   judgeInstructionOverride?: string,
 ): string {
   if (!profile || profile.criteria.length === 0) {
@@ -127,7 +132,7 @@ export function judgeEvaluationBlock(
  */
 export function qualityScore(
   criterionScores: Record<string, number>,
-  profile: EvaluationProfileSnapshot,
+  profile: RubricSnapshot,
 ): number | null {
   const positive = profile.criteria.filter(
     (c): c is GradedEvaluationCriterion | LegacyGradedEvaluationCriterion =>
@@ -154,7 +159,7 @@ export function qualityScore(
  */
 export function complianceScore(
   booleanResults: Record<string, boolean>,
-  profile: EvaluationProfileSnapshot,
+  profile: RubricSnapshot,
 ): { C: number; groupsPresent: number } | null {
   const groups = profile.requirementGroups;
   if (!groups || groups.length === 0) return null;
@@ -176,7 +181,7 @@ export function complianceScore(
 }
 
 /** Get the compliance influence (λ), defaulting to 1.0. */
-export function getComplianceInfluence(profile: EvaluationProfileSnapshot): number {
+export function getComplianceInfluence(profile: RubricSnapshot): number {
   return profile.complianceInfluence ?? DEFAULT_COMPLIANCE_INFLUENCE;
 }
 
@@ -214,11 +219,11 @@ export function formatRankScoreDisplay(rv: number | null): string {
   return `${rankScoreOf(rv)!.toFixed(1)}${floored ? "*" : ""}`;
 }
 
-/** A profile with no graded criteria is compliance-only (spec §16.3): its
+/** A rubric with no graded criteria is compliance-only (spec §16.3): its
  *  ranking quantity is the weighted compliance share C in the 0–1 domain and
  *  must never be displayed as a 1–5 rankScore or floored `1.0*` value. */
-export function isComplianceOnlyProfile(
-  profile: EvaluationProfileSnapshot | null | undefined,
+export function isComplianceOnlyRubric(
+  profile: RubricSnapshot | null | undefined,
 ): boolean {
   return (
     !!profile && profile.criteria.length > 0 && !profile.criteria.some((c) => c.kind !== "binary")
@@ -226,22 +231,22 @@ export function isComplianceOnlyProfile(
 }
 
 /** Format a compliance-domain value (0–1) as a C-labeled percentage.
- *  Only valid for compliance-only profiles; never used for graded rankValues. */
+ *  Only valid for compliance-only rubrics; never used for graded rankValues. */
 export function formatComplianceDisplay(c: number): string {
   return `${(c * 100).toFixed(0)}%`;
 }
 
-/** Domain-aware display formatter: compliance-only profiles render the raw
+/** Domain-aware display formatter: compliance-only rubrics render the raw
  *  compliance share as a percentage (no /5, no floor); everything else keeps
  *  the bounded 1–5 rankScore representation with its /5 domain suffix.
- *  Callers with a profile snapshot should use this instead of hardcoding `/5`
+ *  Callers with a rubric snapshot should use this instead of hardcoding `/5`
  *  suffixes. */
 export function formatRankValueDisplay(
   rv: number | null,
-  profile?: EvaluationProfileSnapshot | null,
+  profile?: RubricSnapshot | null,
 ): string {
   if (rv === null) return "—";
-  if (isComplianceOnlyProfile(profile)) return formatComplianceDisplay(rv);
+  if (isComplianceOnlyRubric(profile)) return formatComplianceDisplay(rv);
   return `${formatRankScoreDisplay(rv)}/5`;
 }
 
@@ -260,7 +265,7 @@ export function formatCandidateScoreDisplay(
 // --- Full rank computation from JudgeCriterionScore[] -------------------------
 
 /** Compute the authoritative rank value from a candidate's criterion results
- *  and a profile snapshot. Handles graded (numeric score) and binary (boolean
+ *  and a rubric snapshot. Handles graded (numeric score) and binary (boolean
  *  value) criterion results. Returns null when no scoring data is available. */
 export function rankValueFromResults(
   criterionScores: Array<{
@@ -269,7 +274,7 @@ export function rankValueFromResults(
     value?: boolean;
     kind?: "graded" | "binary" | undefined;
   }>,
-  profile: EvaluationProfileSnapshot,
+  profile: RubricSnapshot,
 ): number | null {
   const numericScores: Record<string, number> = {};
   const booleanResults: Record<string, boolean> = {};
@@ -291,13 +296,13 @@ export function rankValueFromResults(
 
 /**
  * Compute the canonical weighted score from criterion scores.
- * Legacy entry point — for pure-graded profiles this is identical to Q.
+ * Legacy entry point — for pure-graded rubrics this is identical to Q.
  * Returns null when no criteria have positive weight.
- * @deprecated Use qualityScore + complianceScore + rankValueOf for hybrid profiles.
+ * @deprecated Use qualityScore + complianceScore + rankValueOf for hybrid rubrics.
  */
 export function canonicalScore(
   criterionScores: Record<string, number>,
-  profile: EvaluationProfileSnapshot,
+  profile: RubricSnapshot,
 ): number | null {
   return qualityScore(criterionScores, profile);
 }
@@ -316,10 +321,12 @@ export function computeWinnerKeys(scoresByModelKey: Record<string, number>): str
 // --- Validation ---------------------------------------------------------------
 
 /**
- * Validate an evaluation profile snapshot for use in a run.
+ * Validate a rubric snapshot for use in a run.
  * Returns an array of field-specific error messages (empty = valid).
+ * Validator semantics and error text are unchanged from the previous
+ * `validateProfile` so existing callers and snapshots behave identically.
  */
-export function validateProfile(profile: EvaluationProfileSnapshot): string[] {
+export function validateRubric(profile: RubricSnapshot): string[] {
   const errors: string[] = [];
 
   if (!profile.name.trim()) {
@@ -462,3 +469,17 @@ export function normalizedWeights(criteria: EvaluationCriterion[]): Record<strin
 export function totalWeight(criteria: EvaluationCriterion[]): number {
   return criteria.filter(isWeightedCriterion).reduce((sum, c) => sum + Math.max(0, c.weight), 0);
 }
+
+// --- Legacy function aliases (deprecated) -------------------------------------
+// Canonical helpers above are the primary surface. The legacy names below
+// remain importable from this module only because existing consumers (suite
+// packaging, archive, run-record builder, UI, tests) still reference them;
+// this is the documented migration window authorized by the rubric-terminology
+// spec. The explicit deprecated re-export surface lives in `rubric-compat.ts`.
+// Remove once all consumers migrate to the canonical names.
+
+/** @deprecated Use `validateRubric`. Legacy alias for the rubric validator. */
+export const validateProfile = validateRubric;
+
+/** @deprecated Use `isComplianceOnlyRubric`. Legacy alias. */
+export const isComplianceOnlyProfile = isComplianceOnlyRubric;

@@ -23,7 +23,7 @@ import {
   rankValueFromResults,
   rankScoreOf,
   isFloored,
-} from "../../lib/evaluations/evaluation-profile";
+} from "../../lib/evaluations/evaluation-rubric";
 import { inputUsageLabel } from "../../lib/cost";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";

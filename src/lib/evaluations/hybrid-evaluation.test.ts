@@ -24,7 +24,7 @@ import {
   isWeightedCriterion,
   isBinaryCriterion,
   canonicalScore,
-} from "./evaluation-profile";
+} from "./evaluation-rubric";
 import {
   isEvaluationCriterion,
   isEvaluationProfile,

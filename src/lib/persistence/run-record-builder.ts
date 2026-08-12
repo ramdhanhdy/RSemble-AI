@@ -38,7 +38,7 @@ import {
   rankValueFromResults,
   WINNER_EPSILON,
   isComplianceOnlyProfile,
-} from "../evaluations/evaluation-profile";
+} from "../evaluations/evaluation-rubric";
 import { candidateIdForSlot } from "../pipeline";
 import { resolveReasoningEffort } from "../providers/reasoning";
 

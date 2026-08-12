@@ -79,14 +79,22 @@ export interface RequirementGroup {
   mode: "ALL"; // only mode in v1; MEAN is deferred
 }
 
-export interface EvaluationProfile {
+/**
+ * Canonical scoring rubric: an immutable versioned set of criteria (graded,
+ * binary, or legacy 1/3/5) plus optional requirement groups and compliance
+ * influence. This is the canonical domain name for the scoring object
+ * historically called an "evaluation profile". Persisted field and store names
+ * (`evaluationProfileId`, `profiles`, `profileVersions`) are frozen and
+ * unchanged; only the domain type name is canonicalized.
+ */
+export interface EvaluationRubric {
   id: string;
   version: number;
   name: string;
   description: string;
   judgeInstruction: string;
   criteria: EvaluationCriterion[];
-  /** Binary requirement groups; absent for legacy/graded-only profiles. */
+  /** Binary requirement groups; absent for legacy/graded-only rubrics. */
   requirementGroups?: RequirementGroup[];
   /** Compliance influence (lambda) in [0,1], default 1.0. "Maximum number of
    *  ranking points that failing all ordinary compliance requirements may cost." */
@@ -95,9 +103,12 @@ export interface EvaluationProfile {
   updatedAt: number;
 }
 
-export type EvaluationProfileSnapshot = EvaluationProfile;
+/** Canonical alias for a rubric snapshot embedded in run/experiment provenance. */
+export type RubricSnapshot = EvaluationRubric;
 
-export interface ProfileRecord {
+/** Canonical persisted rubric record. Mutable archive state lives here; the
+ *  immutable rubric versions are stored separately. */
+export interface RubricRecord {
   id: string;
   revision: number;
   latestVersion: number;
@@ -106,13 +117,34 @@ export interface ProfileRecord {
   archivedAt: number | null;
 }
 
-export interface EvaluationProfileRef {
+/** Canonical reference to an immutable rubric version. */
+export interface RubricVersionRef {
   id: string;
   version: number;
 }
 
+// --- Legacy aliases (deprecated) ---------------------------------------------
+// Canonical names above are the primary domain surface. The legacy names below
+// remain importable from this module only because `evaluation-repository.ts`
+// (migrated in a later task) still references them; new domain code MUST import
+// the canonical names. The explicit deprecated re-export surface lives in
+// `rubric-compat.ts`. Remove these aliases once all consumers migrate.
+
+/** @deprecated Use `EvaluationRubric`. Legacy alias for the scoring rubric. */
+export type EvaluationProfile = EvaluationRubric;
+
+/** @deprecated Use `RubricSnapshot`. Legacy alias for a rubric snapshot. */
+export type EvaluationProfileSnapshot = RubricSnapshot;
+
+/** @deprecated Use `RubricRecord`. Legacy alias for a persisted rubric record. */
+export type ProfileRecord = RubricRecord;
+
+/** @deprecated Use `RubricVersionRef`. Legacy alias for a rubric version ref. */
+export type EvaluationProfileRef = RubricVersionRef;
+
 export type EvaluationSelection =
-  { kind: "holistic" } | { kind: "profile"; profile: EvaluationProfileRef };
+  | { kind: "holistic" }
+  | { kind: "profile"; profile: RubricVersionRef };
 
 export type TaskEvaluationSelection = { kind: "inherit" } | EvaluationSelection;
 
@@ -239,7 +271,7 @@ export interface ExperimentSnapshot {
   defaultEvaluation: EvaluationSelection;
   /** Optional for imported pre-policy snapshots. */
   reasoningPolicy?: ReasoningPolicy;
-  profiles: EvaluationProfileSnapshot[];
+  profiles: RubricSnapshot[];
   protocolFingerprint: string;
   createdAt: number;
 }
@@ -472,7 +504,7 @@ export function isRequirementGroup(v: unknown): v is RequirementGroup {
   return true;
 }
 
-export function isEvaluationProfile(v: unknown): v is EvaluationProfile {
+export function isEvaluationRubric(v: unknown): v is EvaluationRubric {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
   if (!isNumber(v.version)) return false;
@@ -547,14 +579,14 @@ export function isEvaluationProfile(v: unknown): v is EvaluationProfile {
   return true;
 }
 
-export function isEvaluationProfileRef(v: unknown): v is EvaluationProfileRef {
+export function isRubricVersionRef(v: unknown): v is RubricVersionRef {
   return isRecord(v) && isNonEmptyString(v.id) && isNumber(v.version);
 }
 
 export function isEvaluationSelection(v: unknown): v is EvaluationSelection {
   if (!isRecord(v)) return false;
   if (v.kind === "holistic") return true;
-  if (v.kind === "profile") return isEvaluationProfileRef(v.profile);
+  if (v.kind === "profile") return isRubricVersionRef(v.profile);
   return false;
 }
 
@@ -565,7 +597,7 @@ export function isTaskEvaluationSelection(v: unknown): v is TaskEvaluationSelect
   return isEvaluationSelection(v);
 }
 
-export function isProfileRecord(v: unknown): v is ProfileRecord {
+export function isRubricRecord(v: unknown): v is RubricRecord {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
   if (!isNumber(v.revision)) return false;
@@ -577,6 +609,22 @@ export function isProfileRecord(v: unknown): v is ProfileRecord {
   if (hasProhibitedKeys(v)) return false;
   return true;
 }
+
+// --- Legacy guard aliases (deprecated) ---------------------------------------
+// Canonical guards above are the primary surface. The legacy aliases below
+// remain importable here only because `evaluation-repository.ts` (migrated in
+// a later task) still imports them; this is the documented migration window
+// authorized by the rubric-terminology spec. The explicit deprecated re-export
+// surface lives in `rubric-compat.ts`. Remove once all consumers migrate.
+
+/** @deprecated Use `isEvaluationRubric`. Legacy alias for the rubric guard. */
+export const isEvaluationProfile = isEvaluationRubric;
+
+/** @deprecated Use `isRubricVersionRef`. Legacy alias for the version-ref guard. */
+export const isEvaluationProfileRef = isRubricVersionRef;
+
+/** @deprecated Use `isRubricRecord`. Legacy alias for the record guard. */
+export const isProfileRecord = isRubricRecord;
 
 // --- Model slot / critic ref --------------------------------------------------
 
@@ -753,7 +801,7 @@ export function isExperimentSnapshot(v: unknown): v is ExperimentSnapshot {
   if (!isCriticRef(v.defaultJudge)) return false;
   if (!isEvaluationSelection(v.defaultEvaluation)) return false;
   if (v.reasoningPolicy !== undefined && !isReasoningPolicy(v.reasoningPolicy)) return false;
-  if (!Array.isArray(v.profiles) || !v.profiles.every(isEvaluationProfile)) return false;
+  if (!Array.isArray(v.profiles) || !v.profiles.every(isEvaluationRubric)) return false;
   if (!isNonEmptyString(v.protocolFingerprint)) return false;
   if (!isNumber(v.createdAt)) return false;
   return true;

@@ -13,7 +13,7 @@ import { Pagination, PAGE_SIZE } from "../../ui/Pagination";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { ModelSlot } from "../../studio-data";
 import type { EvaluationTask } from "../../lib/evaluations/evaluation-types";
-import { rankScoreOf } from "../../lib/evaluations/evaluation-profile";
+import { rankScoreOf } from "../../lib/evaluations/evaluation-rubric";
 import {
   type CellState,
   type MissingReason,

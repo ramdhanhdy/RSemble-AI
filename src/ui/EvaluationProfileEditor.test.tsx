@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EvaluationProfileEditor } from "./EvaluationProfileEditor";
-import { validateProfile } from "../lib/evaluations/evaluation-profile";
+import { validateProfile } from "../lib/evaluations/evaluation-rubric";
 import type { EvaluationProfile, EvaluationCriterion } from "../lib/evaluations/evaluation-types";
 
 function makeCriterion(

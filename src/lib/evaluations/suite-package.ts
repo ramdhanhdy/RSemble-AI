@@ -33,7 +33,7 @@ import {
   type ProfileRecord,
 } from "./evaluation-types";
 import { validateSuiteForExecution } from "./suite-validation";
-import { validateProfile } from "./evaluation-profile";
+import { validateProfile } from "./evaluation-rubric";
 import type { CriticRef, ProviderId } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
 

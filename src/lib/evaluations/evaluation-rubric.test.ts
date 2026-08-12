@@ -1,5 +1,10 @@
 // =============================================================================
-// evaluation-profile.ts — tests for anchored-profile formatting and scoring
+// evaluation-rubric.ts — tests for anchored-rubric formatting and scoring
+//
+// Moved from evaluation-profile.test.ts. Scoring behavior is unchanged; the
+// canonical Rubric names are exercised directly. A compatibility block at the
+// end proves the legacy serialized shapes and deprecated aliases remain
+// deep-equal to the canonical surface at the frozen boundaries.
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
@@ -8,14 +13,31 @@ import {
   judgeEvaluationBlock,
   canonicalScore,
   computeWinnerKeys,
-  validateProfile,
+  validateRubric,
   normalizedWeights,
   totalWeight,
   WINNER_EPSILON,
   formatRankValueDisplay,
+  isComplianceOnlyRubric,
+} from "./evaluation-rubric";
+import {
+  isEvaluationRubric,
+  isRubricRecord,
+  isRubricVersionRef,
+  type EvaluationRubric,
+  type RubricRecord,
+  type RubricVersionRef,
+  type RubricSnapshot,
+  type EvaluationCriterion,
+} from "./evaluation-types";
+import {
+  validateProfile,
   isComplianceOnlyProfile,
-} from "./evaluation-profile";
-import type { EvaluationProfile, EvaluationCriterion } from "./evaluation-types";
+  type EvaluationProfile,
+  type EvaluationProfileSnapshot,
+  type ProfileRecord,
+  type EvaluationProfileRef,
+} from "./rubric-compat";
 
 function makeCriterion(
   id: string,
@@ -32,7 +54,7 @@ function makeCriterion(
   } as EvaluationCriterion;
 }
 
-function makeProfile(overrides: Partial<EvaluationProfile> = {}): EvaluationProfile {
+function makeProfile(overrides: Partial<EvaluationRubric> = {}): EvaluationRubric {
   return {
     id: "p1",
     version: 1,
@@ -128,18 +150,18 @@ describe("computeWinnerKeys", () => {
   });
 });
 
-describe("validateProfile", () => {
+describe("validateRubric", () => {
   it("passes for a valid profile with criteria", () => {
-    expect(validateProfile(makeProfile())).toEqual([]);
+    expect(validateRubric(makeProfile())).toEqual([]);
   });
 
   it("passes for a holistic profile (no criteria)", () => {
-    expect(validateProfile(makeProfile({ criteria: [] }))).toEqual([]);
+    expect(validateRubric(makeProfile({ criteria: [] }))).toEqual([]);
   });
 
   it("rejects zero total weight", () => {
     const profile = makeProfile({ criteria: [makeCriterion("c1", { weight: 0 })] });
-    const errors = validateProfile(profile);
+    const errors = validateRubric(profile);
     expect(errors.some((e) => e.includes("positive weight"))).toBe(true);
   });
 
@@ -147,25 +169,25 @@ describe("validateProfile", () => {
     const profile = makeProfile({
       criteria: [makeCriterion("c1", { anchors: { one: "", three: "ok", five: "great" } })],
     });
-    const errors = validateProfile(profile);
+    const errors = validateRubric(profile);
     expect(errors.some((e) => e.includes("anchors"))).toBe(true);
   });
 
   it("rejects negative weight", () => {
     const profile = makeProfile({ criteria: [makeCriterion("c1", { weight: -1 })] });
-    const errors = validateProfile(profile);
+    const errors = validateRubric(profile);
     expect(errors.some((e) => e.includes("non-negative"))).toBe(true);
   });
 
   it("rejects missing name", () => {
     const profile = makeProfile({ criteria: [makeCriterion("c1", { name: "" })] });
-    const errors = validateProfile(profile);
+    const errors = validateRubric(profile);
     expect(errors.some((e) => e.includes("name"))).toBe(true);
   });
 
   it("rejects missing description", () => {
     const profile = makeProfile({ criteria: [makeCriterion("c1", { description: "" })] });
-    const errors = validateProfile(profile);
+    const errors = validateRubric(profile);
     expect(errors.some((e) => e.includes("description"))).toBe(true);
   });
 });
@@ -207,7 +229,7 @@ describe("WINNER_EPSILON", () => {
 });
 
 describe("formatRankValueDisplay — compliance-only domain (spec §16.3)", () => {
-  const gradedProfile: EvaluationProfile = {
+  const gradedProfile: EvaluationRubric = {
     id: "p-g",
     version: 1,
     name: "Graded",
@@ -228,7 +250,7 @@ describe("formatRankValueDisplay — compliance-only domain (spec §16.3)", () =
     createdAt: 100,
     updatedAt: 100,
   };
-  const complianceProfile: EvaluationProfile = {
+  const complianceProfile: EvaluationRubric = {
     id: "p-c",
     version: 1,
     name: "Compliance only",
@@ -265,9 +287,107 @@ describe("formatRankValueDisplay — compliance-only domain (spec §16.3)", () =
   });
 
   it("detects compliance-only profiles only when no graded criteria exist", () => {
-    expect(isComplianceOnlyProfile(complianceProfile)).toBe(true);
-    expect(isComplianceOnlyProfile(gradedProfile)).toBe(false);
-    expect(isComplianceOnlyProfile(null)).toBe(false);
-    expect(isComplianceOnlyProfile(undefined)).toBe(false);
+    expect(isComplianceOnlyRubric(complianceProfile)).toBe(true);
+    expect(isComplianceOnlyRubric(gradedProfile)).toBe(false);
+    expect(isComplianceOnlyRubric(null)).toBe(false);
+    expect(isComplianceOnlyRubric(undefined)).toBe(false);
+  });
+});
+
+// --- Canonical names + legacy compatibility at frozen serialized boundaries ---
+
+describe("canonical rubric names and legacy compatibility", () => {
+  // An exact existing valid scoring object (legacy serialized shape). The
+  // persisted field names (`id`, `version`, `criteria`, `requirementGroups`,
+  // `complianceInfluence`, `createdAt`, `updatedAt`) are unchanged.
+  const legacySerializedProfile: EvaluationProfile = {
+    id: "legacy-1",
+    version: 3,
+    name: "Legacy Rubric",
+    description: "imported v1 shape",
+    judgeInstruction: "Judge fairly.",
+    criteria: [
+      {
+        id: "c1",
+        kind: "graded" as const,
+        name: "Correctness",
+        description: "Is it correct?",
+        weight: 2,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+      {
+        id: "b1",
+        kind: "binary" as const,
+        name: "Has tests",
+        description: "Tests present?",
+        trueWhen: "tests exist",
+        falseWhen: "no tests",
+      },
+    ],
+    requirementGroups: [{ id: "g1", name: "G1", checkIds: ["b1"], weight: 1, mode: "ALL" }],
+    complianceInfluence: 0.5,
+    createdAt: 1234,
+    updatedAt: 5678,
+  };
+
+  const legacySerializedRecord: ProfileRecord = {
+    id: "legacy-1",
+    revision: 2,
+    latestVersion: 3,
+    createdAt: 1234,
+    updatedAt: 5678,
+    archivedAt: null,
+  };
+
+  const legacySerializedRef: EvaluationProfileRef = { id: "legacy-1", version: 3 };
+
+  it("canonical guards accept the exact existing valid objects", () => {
+    expect(isEvaluationRubric(legacySerializedProfile)).toBe(true);
+    expect(isRubricRecord(legacySerializedRecord)).toBe(true);
+    expect(isRubricVersionRef(legacySerializedRef)).toBe(true);
+  });
+
+  it("canonical validator accepts the exact existing valid object", () => {
+    expect(validateRubric(legacySerializedProfile)).toEqual([]);
+  });
+
+  it("canonical and legacy type aliases are the same identity (deep-equal at frozen boundary)", () => {
+    // Type aliases share structure; the same object is assignable to both and
+    // deep-equals itself. This pins that no field was renamed/added/removed.
+    const asCanonical: EvaluationRubric = legacySerializedProfile;
+    const asSnapshot: RubricSnapshot = legacySerializedProfile;
+    expect(asCanonical).toEqual(legacySerializedProfile);
+    expect(asSnapshot).toEqual(legacySerializedProfile);
+    const asRubricRecord: RubricRecord = legacySerializedRecord;
+    expect(asRubricRecord).toEqual(legacySerializedRecord);
+    const asRubricRef: RubricVersionRef = legacySerializedRef;
+    expect(asRubricRef).toEqual(legacySerializedRef);
+    const asRubricSnapshotAlias: EvaluationProfileSnapshot = legacySerializedProfile;
+    expect(asRubricSnapshotAlias).toEqual(legacySerializedProfile);
+  });
+
+  it("legacy deprecated function aliases are the same callable as canonical", () => {
+    // Aliases must be the identical function reference so behavior is identical.
+    expect(validateProfile).toBe(validateRubric);
+    expect(isComplianceOnlyProfile).toBe(isComplianceOnlyRubric);
+    expect(validateProfile(legacySerializedProfile)).toEqual([]);
+    expect(isComplianceOnlyProfile(legacySerializedProfile)).toBe(false);
+  });
+
+  it("rejects invalid objects with unchanged semantics", () => {
+    // validateRubric catches authoring errors (empty name) that the structural
+    // guard intentionally does not — the guard only checks shape, not content.
+    const invalidNoName = { ...legacySerializedProfile, name: "" };
+    expect(isEvaluationRubric(invalidNoName)).toBe(true); // empty name is still a string
+    expect(validateRubric(invalidNoName as EvaluationRubric).some((e) => e.includes("name"))).toBe(
+      true,
+    );
+    // The guard rejects structurally wrong shapes (missing required number field).
+    const invalidShape = { id: "legacy-1", name: "x" } as unknown as EvaluationRubric;
+    expect(isEvaluationRubric(invalidShape)).toBe(false);
+    const invalidRecord = { ...legacySerializedRecord, revision: "x" as unknown as number };
+    expect(isRubricRecord(invalidRecord)).toBe(false);
+    const invalidRef = { id: "legacy-1" } as unknown as RubricVersionRef;
+    expect(isRubricVersionRef(invalidRef)).toBe(false);
   });
 });

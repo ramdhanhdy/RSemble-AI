@@ -29,7 +29,7 @@ import {
   complianceScore,
   rankValueOf,
   getComplianceInfluence,
-} from "./evaluation-profile";
+} from "./evaluation-rubric";
 
 // --- Canonical per-model scores from one accepted run ---------------------------
 

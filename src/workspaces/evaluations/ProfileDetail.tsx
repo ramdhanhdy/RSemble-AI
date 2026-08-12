@@ -28,7 +28,7 @@ import {
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { EvaluationProfile, ProfileRecord } from "../../lib/evaluations/evaluation-types";
 import { suitesUsingProfile, type ProfileUsage } from "../../lib/evaluations/profile-usage";
-import { validateProfile } from "../../lib/evaluations/evaluation-profile";
+import { validateProfile } from "../../lib/evaluations/evaluation-rubric";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
 import { EvaluationProfileEditor } from "../../ui/EvaluationProfileEditor";
 import { RecordRow } from "../../ui/RecordRow";

@@ -6,7 +6,7 @@ import { candidateFullText } from "./pipeline";
 import type { StudioState } from "../studio-engine";
 import { formatBytes } from "./attachments/limits";
 import { resolveReasoningEffort } from "./providers/reasoning";
-import { formatRankValueDisplay } from "./evaluations/evaluation-profile";
+import { formatRankValueDisplay } from "./evaluations/evaluation-rubric";
 import type { EvaluationProfileSnapshot } from "./evaluations/evaluation-types";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
 

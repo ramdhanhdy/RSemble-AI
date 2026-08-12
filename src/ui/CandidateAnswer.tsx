@@ -13,7 +13,7 @@ import { useState } from "react";
 import { Check, ChevronRight, Copy } from "lucide-react";
 import type { Candidate } from "../studio-data";
 import { Markdown } from "./Markdown";
-import { formatCandidateScoreDisplay } from "../lib/evaluations/evaluation-profile";
+import { formatCandidateScoreDisplay } from "../lib/evaluations/evaluation-rubric";
 
 function tierColor(score: number): string {
   if (score >= 4.0) return "text-success";

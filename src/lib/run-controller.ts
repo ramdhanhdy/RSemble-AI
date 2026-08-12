@@ -11,7 +11,7 @@ import {
   checkAttachmentEligibility,
 } from "./pipeline";
 import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
-import { rankValueFromResults, isComplianceOnlyProfile } from "./evaluations/evaluation-profile";
+import { rankValueFromResults, isComplianceOnlyProfile } from "./evaluations/evaluation-rubric";
 import { evaluateComparePreflight, type ComparePreflight } from "./compare-preflight";
 import type { RunRecorder } from "./persistence/run-recorder";
 import type { ExecutionFence } from "./persistence/run-types";

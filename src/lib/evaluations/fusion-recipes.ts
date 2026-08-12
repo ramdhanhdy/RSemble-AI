@@ -39,7 +39,7 @@ import {
   type JudgeReport,
 } from "../../studio-data";
 import type { EvaluationProfileSnapshot } from "./evaluation-types";
-import { evaluationCriteriaText } from "./evaluation-profile";
+import { evaluationCriteriaText } from "./evaluation-rubric";
 import type { FusionRecipeRef, FusionRecipeVersion } from "./fusion-study-types";
 
 // --- Built-in versioned recipes --------------------------------------------------

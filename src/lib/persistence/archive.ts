@@ -48,7 +48,7 @@ import {
   getComplianceInfluence,
   rankScoreOf,
   isFloored,
-} from "../evaluations/evaluation-profile";
+} from "../evaluations/evaluation-rubric";
 import { REDACTED } from "./error-redaction";
 import { inputUsageLabel } from "../cost";
 

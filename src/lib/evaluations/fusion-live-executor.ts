@@ -26,7 +26,7 @@ import {
   splitSegments,
 } from "../pipeline";
 import type { EvaluationProfileSnapshot, EvaluationTask } from "./evaluation-types";
-import { rankValueFromResults } from "./evaluation-profile";
+import { rankValueFromResults } from "./evaluation-rubric";
 import type {
   BlockedRunResult,
   FusionPolicyExecutor,

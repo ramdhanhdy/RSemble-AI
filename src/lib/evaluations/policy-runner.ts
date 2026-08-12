@@ -17,7 +17,7 @@
 import type { ChatMessage } from "../providers/types";
 import type { BlindCandidate, ConsensusBreakdown, JudgeReport } from "../../studio-data";
 import type { EvaluationProfileSnapshot } from "./evaluation-types";
-import { rankValueFromResults } from "./evaluation-profile";
+import { rankValueFromResults } from "./evaluation-rubric";
 import type { FusionRecipeRef, FusionRecipeVersion } from "./fusion-study-types";
 import {
   findBlindnessViolations,

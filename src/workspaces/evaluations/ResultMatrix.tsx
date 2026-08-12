@@ -26,7 +26,7 @@ import {
   type MissingReason,
   formatAggregateMean,
 } from "../../lib/evaluations/experiment-aggregation";
-import { rankScoreOf } from "../../lib/evaluations/evaluation-profile";
+import { rankScoreOf } from "../../lib/evaluations/evaluation-rubric";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
