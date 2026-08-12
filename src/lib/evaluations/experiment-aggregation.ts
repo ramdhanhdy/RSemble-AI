@@ -18,7 +18,7 @@
 // =============================================================================
 
 import type {
-  EvaluationProfileSnapshot,
+  RubricSnapshot,
   ExperimentSnapshot,
   ExperimentTaskState,
 } from "./evaluation-types";
@@ -42,12 +42,12 @@ import {
 export function canonicalScoresFromRun(record: RunRecordV2): Record<string, number> {
   const report = record.judge.report;
   if (!report) return {};
-  const profile = record.evaluation.profile;
+  const rubric = record.evaluation.profile;
   const scores: Record<string, number> = {};
   for (const candidate of record.candidates) {
     const evaluation = report.evaluationsById[candidate.candidateId];
     if (!evaluation) continue;
-    if (profile) {
+    if (rubric) {
       const numericScores: Record<string, number> = {};
       const booleanResults: Record<string, boolean> = {};
       for (const cs of evaluation.criterionScores) {
@@ -57,9 +57,9 @@ export function canonicalScoresFromRun(record: RunRecordV2): Record<string, numb
           numericScores[cs.criterionId] = cs.score;
         }
       }
-      const Q = qualityScore(numericScores, profile);
-      const comp = complianceScore(booleanResults, profile);
-      const lambda = getComplianceInfluence(profile);
+      const Q = qualityScore(numericScores, rubric);
+      const comp = complianceScore(booleanResults, rubric);
+      const lambda = getComplianceInfluence(rubric);
       const C = comp?.C ?? null;
       const rv = rankValueOf(Q, C, lambda);
       if (rv !== null) scores[candidate.modelKey] = rv;
@@ -83,10 +83,10 @@ export function decomposeTaskScore(
       criterionId: string;
     }>;
   },
-  profile: EvaluationProfileSnapshot | null,
+  rubric: RubricSnapshot | null,
   fallbackOverall: number,
 ): { rankValue: number; Q: number | null; C: number | null } | null {
-  if (!profile) {
+  if (!rubric) {
     return { rankValue: fallbackOverall, Q: null, C: null };
   }
   const numericScores: Record<string, number> = {};
@@ -98,9 +98,9 @@ export function decomposeTaskScore(
       numericScores[cs.criterionId] = cs.score;
     }
   }
-  const Q = qualityScore(numericScores, profile);
-  const comp = complianceScore(booleanResults, profile);
-  const lambda = getComplianceInfluence(profile);
+  const Q = qualityScore(numericScores, rubric);
+  const comp = complianceScore(booleanResults, rubric);
+  const lambda = getComplianceInfluence(rubric);
   const C = comp?.C ?? null;
   const rv = rankValueOf(Q, C, lambda);
   if (rv === null) return null;
@@ -201,15 +201,15 @@ export function aggregateExperiment(input: AggregateExperimentInput): Experiment
       }));
     }
 
-    const profile = record.evaluation.profile;
+    const rubric = record.evaluation.profile;
     const report = record.judge.report;
     return modelKeys.map((modelKey): CellState => {
       const candidate = record.candidates.find(
         (c) => `${c.providerId}:${c.slug}` === modelKey || c.modelKey === modelKey,
       );
       const evaluation = report?.evaluationsById[candidate?.candidateId ?? ""];
-      if (profile && candidate && evaluation) {
-        const dec = decomposeTaskScore(candidate, evaluation, profile, evaluation.overallScore);
+      if (rubric && candidate && evaluation) {
+        const dec = decomposeTaskScore(candidate, evaluation, rubric, evaluation.overallScore);
         if (dec === null) {
           return { kind: "missing", reason: "no-score", runId, attemptId: selected.id };
         }
@@ -222,7 +222,7 @@ export function aggregateExperiment(input: AggregateExperimentInput): Experiment
           attemptId: selected.id,
         };
       }
-      // No profile (holistic): use the persisted canonical score.
+      // No rubric (holistic): use the persisted canonical score.
       const score = canonicalScoresFromRun(record)[modelKey];
       if (score === undefined) {
         return { kind: "missing", reason: "no-score", runId, attemptId: selected.id };

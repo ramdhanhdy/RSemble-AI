@@ -38,7 +38,7 @@ import {
   type ConsensusBreakdown,
   type JudgeReport,
 } from "../../studio-data";
-import type { EvaluationProfileSnapshot } from "./evaluation-types";
+import type { RubricSnapshot } from "./evaluation-types";
 import { evaluationCriteriaText } from "./evaluation-rubric";
 import type { FusionRecipeRef, FusionRecipeVersion } from "./fusion-study-types";
 
@@ -97,8 +97,8 @@ export function fusionRecipeRef(recipe: FusionRecipeVersion): FusionRecipeRef {
 export interface FusionSynthesisInput {
   /** The user task prompt. */
   prompt: string;
-  /** Evaluation profile — rendered only when the recipe grants rubric access. */
-  profile: EvaluationProfileSnapshot | null;
+  /** Evaluation rubric — rendered only when the recipe grants rubric access. */
+  profile: RubricSnapshot | null;
   /**
    * Anonymized candidates in the JUDGE'S label order. The same labels the
    * development judge used must be reused so analysis references line up.
@@ -161,13 +161,13 @@ export function findBlindnessViolations(
 
 /** The rubric section — byte-identical between fusion and the refine control. */
 export function rubricSection(
-  profile: EvaluationProfileSnapshot | null,
+  rubric: RubricSnapshot | null,
   rubricAccess: boolean,
 ): string {
   if (!rubricAccess) return "";
   const text =
-    profile && profile.criteria.length > 0
-      ? evaluationCriteriaText(profile)
+    rubric && rubric.criteria.length > 0
+      ? evaluationCriteriaText(rubric)
       : "(no explicit criteria provided — use your best holistic judgment)";
   return `Evaluation criteria:\n${text}`;
 }
@@ -371,7 +371,7 @@ export function renderRecipeMessages(
 
 export interface RefineWinnerInput {
   prompt: string;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   /** Blind label of the Judge-1 winner being revised. */
   winnerLabel: string;
   winnerContent: string;
@@ -400,7 +400,7 @@ export interface RefineWinnerInput {
  * shared `rubricSection` — byte-identical to the fusion recipe under test.
  */
 export function renderRefineWinnerMessages(input: RefineWinnerInput): ChatMessage[] {
-  const rubric = rubricSection(input.profile, input.rubricAccess);
+  const rubric = rubricSection(input.rubric, input.rubricAccess);
   const attachment = attachmentMaterial(input);
 
   const system =

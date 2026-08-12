@@ -950,7 +950,7 @@ describe("experiment-controller — reload and recovery", () => {
     h.store.runSummaries.set("run-crash-1", crashedSummary);
 
     const { createExperimentRecord } = await import("./experiment-engine");
-    const record = createExperimentRecord({ id: "exp-crash", suite, profiles: [], now: h.now() });
+    const record = createExperimentRecord({ id: "exp-crash", suite, rubrics: [], now: h.now() });
     const crashed: ExperimentRecord = {
       ...record,
       status: "running",
@@ -1069,7 +1069,7 @@ describe("experiment-controller — reload and recovery", () => {
     const record = createExperimentRecord({
       id: "exp-contested",
       suite,
-      profiles: [],
+      rubrics: [],
       now: h.now(),
     });
     const crashed: ExperimentRecord = {
@@ -1242,7 +1242,7 @@ describe("experiment-controller — reload and recovery", () => {
     const record = createExperimentRecord({
       id: "exp-committed",
       suite,
-      profiles: [],
+      rubrics: [],
       now: h.now(),
     });
     const crashed: ExperimentRecord = {
@@ -1697,7 +1697,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
       ...createExperimentRecord({
         id: "exp-running",
         suite: makeSuite(["t1"]),
-        profiles: [],
+        rubrics: [],
         now: h.now(),
       }),
       status: "running",
@@ -1827,7 +1827,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
 
     // Base terminal record: both tasks completed with accepted runs.
     const base: ExperimentRecord = {
-      ...createExperimentRecord({ id: "exp-ext", suite, profiles: [], now: h.now() }),
+      ...createExperimentRecord({ id: "exp-ext", suite, rubrics: [], now: h.now() }),
       status: "completed",
       tasks: [
         {

@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { BlindCandidate, JudgeReport, ConsensusBreakdown } from "../../studio-data";
-import type { EvaluationProfile } from "./evaluation-types";
+import type { EvaluationRubric } from "./evaluation-types";
 import { contentToText } from "../providers/content";
 import {
   findBlindnessViolations,
@@ -41,7 +41,7 @@ const BLIND: BlindCandidate[] = [
   { label: "B", candidateId: "cand-2", content: "Answer B: use Dijkstra's algorithm." },
 ];
 
-const PROFILE: EvaluationProfile = {
+const RUBRIC: EvaluationRubric = {
   id: "prof-1",
   version: 2,
   name: "Quality",
@@ -114,7 +114,7 @@ const CONSENSUS: ConsensusBreakdown = {
 function inputFor(recipe: "raw" | "fed" | "scores") {
   return {
     prompt: "Which algorithm finds the shortest path?",
-    profile: PROFILE,
+    profile: RUBRIC,
     blindCandidates: BLIND,
     judgeReport: recipe === "raw" ? null : REPORT,
     consensus: recipe === "raw" ? null : CONSENSUS,
@@ -140,7 +140,7 @@ describe("recipe prompt assembly (snapshots)", () => {
   it("refine-the-winner — revises the blind winner against the rubric", () => {
     const messages = renderRefineWinnerMessages({
       prompt: "Which algorithm finds the shortest path?",
-      profile: PROFILE,
+      rubric: RUBRIC,
       winnerLabel: "A",
       winnerContent: BLIND[0].content,
       blindCandidates: BLIND,
@@ -215,7 +215,7 @@ describe("blindness invariant (spec test 5)", () => {
   it("the refine control is equally blind", () => {
     const messages = renderRefineWinnerMessages({
       prompt: "Which algorithm finds the shortest path?",
-      profile: PROFILE,
+      rubric: RUBRIC,
       winnerLabel: "A",
       winnerContent: BLIND[0].content,
       blindCandidates: BLIND,
@@ -240,14 +240,14 @@ describe("refine-the-winner confound control (spec §7.1)", () => {
     const fusion = renderRecipeMessages(recipe, inputFor("scores"));
     const refine = renderRefineWinnerMessages({
       prompt: "Which algorithm finds the shortest path?",
-      profile: PROFILE,
+      rubric: RUBRIC,
       winnerLabel: "A",
       winnerContent: BLIND[0].content,
       blindCandidates: BLIND,
       rubricAccess: recipe.rubricAccess,
       verification: recipe.verification,
     });
-    const expectedRubric = rubricSection(PROFILE, recipe.rubricAccess);
+    const expectedRubric = rubricSection(RUBRIC, recipe.rubricAccess);
     expect(expectedRubric.length).toBeGreaterThan(0);
     expect(fusion[1].content).toContain(expectedRubric);
     expect(refine[1].content).toContain(expectedRubric);
@@ -256,7 +256,7 @@ describe("refine-the-winner confound control (spec §7.1)", () => {
   it("a no-rubric recipe yields a no-rubric refine control", () => {
     const refine = renderRefineWinnerMessages({
       prompt: "p",
-      profile: PROFILE,
+      rubric: RUBRIC,
       winnerLabel: "A",
       winnerContent: BLIND[0].content,
       blindCandidates: BLIND,
@@ -293,7 +293,7 @@ const IMAGE_ATT = {
 
 const baseInput = {
   prompt: "merge these",
-  profile: PROFILE,
+  profile: RUBRIC,
   blindCandidates: BLIND,
   judgeReport: REPORT,
   consensus: {
@@ -306,7 +306,7 @@ const baseInput = {
 
 const refineBase = {
   prompt: "merge these",
-  profile: PROFILE,
+  rubric: RUBRIC,
   winnerLabel: "A",
   winnerContent: "winning draft",
   blindCandidates: BLIND,
@@ -324,7 +324,7 @@ describe("renderRecipeMessages — attachment policy (7.6.4)", () => {
     });
     const withUndefined = renderRecipeMessages(FUSION_RECIPE_BLIND_RAW_V1, {
       prompt: "merge these",
-      profile: PROFILE,
+      profile: RUBRIC,
       blindCandidates: BLIND,
       judgeReport: REPORT,
       consensus: baseInput.consensus,

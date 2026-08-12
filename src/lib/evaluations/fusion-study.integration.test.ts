@@ -17,7 +17,7 @@ import type {
   ModelSlot,
 } from "../../studio-data";
 import type { CriticRef, ChatMessage } from "../providers/types";
-import type { EvaluationProfile, EvaluationSuite, EvaluationTask } from "./evaluation-types";
+import type { EvaluationRubric, EvaluationSuite, EvaluationTask } from "./evaluation-types";
 import type { FusionRecipeVersion, FusionStudy, PoolManifestVersion } from "./fusion-study-types";
 import {
   FUSION_RECIPE_ANALYSIS_FED_V1,
@@ -76,7 +76,7 @@ const STRENGTHS: Record<string, { acc: number; comp: number }> = {
   "openrouter:m-x": { acc: 4, comp: 4 },
 };
 
-const PROFILE: EvaluationProfile = {
+const RUBRIC: EvaluationRubric = {
   id: "prof-1",
   version: 1,
   name: "Quality",
@@ -208,14 +208,14 @@ function makeMockExecutor(overrides: Partial<FusionPolicyExecutor> = {}): Fusion
         })),
       };
     },
-    async judgePool(_task, _profile, _judge, outputs) {
+    async judgePool(_task, _rubric, _judge, outputs) {
       return {
         report: judgeReportFor(outputs),
         consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
         cost: { tokensIn: 200, tokensOut: 100 },
       };
     },
-    async runBlockedEvidence(task, _profile, pair, _judge) {
+    async runBlockedEvidence(task, _rubric, pair, _judge) {
       const outputs: PoolSweepOutput[] = pair.map((s) => ({
         slot: s,
         modelKey: `${s.providerId}:${s.slug}`,
@@ -248,7 +248,7 @@ function makeMockExecutor(overrides: Partial<FusionPolicyExecutor> = {}): Fusion
         cost: { tokensIn: 300, tokensOut: 150 },
       };
     },
-    async runHoldout(_task, _profile, _judge, artifacts) {
+    async runHoldout(_task, _rubric, _judge, artifacts) {
       const scoresByKey: Record<string, number> = {};
       for (const artifact of artifacts) {
         scoresByKey[artifact.key] = HOLDOUT_SCORES[artifact.key] ?? 3.0;
@@ -314,7 +314,7 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       study,
       suite: SUITE,
       pool: POOL,
-      profile: PROFILE,
+      rubric: RUBRIC,
       recipes: RECIPES,
       stratifiedPairs: stratified,
       tasksPerPair: 2,
@@ -335,7 +335,7 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       study,
       suite: SUITE,
       pool: POOL,
-      profile: PROFILE,
+      rubric: RUBRIC,
       recipes: RECIPES,
       stratifiedPairs: stratified.slice(0, 1),
       tasksPerPair: 1,
@@ -358,7 +358,7 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       study,
       suite: SUITE,
       pool: POOL,
-      profile: PROFILE,
+      rubric: RUBRIC,
       survivingRecipes: [FUSION_RECIPE_ANALYSIS_SCORES_V1, FUSION_RECIPE_ANALYSIS_FED_V1],
       shortlistRule: {
         description: "H_synth ≥ 0.15 or H_select ≥ 0.25; top 5 by max headroom",
@@ -412,7 +412,7 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       study,
       suite: SUITE,
       pool: POOL,
-      profile: PROFILE,
+      rubric: RUBRIC,
       frozenRecipe: FUSION_RECIPE_ANALYSIS_SCORES_V1,
       runnerUpRecipe: FUSION_RECIPE_ANALYSIS_FED_V1,
       topPairs: [{ pair: ["openrouter:m-b", "openrouter:m-c"], frozenMean: 4.5 }],
@@ -437,7 +437,7 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       study: study2,
       suite: SUITE,
       pool: POOL,
-      profile: PROFILE,
+      rubric: RUBRIC,
       frozenRecipe: FUSION_RECIPE_ANALYSIS_SCORES_V1,
       runnerUpRecipe: FUSION_RECIPE_ANALYSIS_FED_V1,
       topPairs: [{ pair: ["openrouter:m-b", "openrouter:m-c"], frozenMean: 4.5 }],
@@ -472,7 +472,7 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       study: uniformStudy,
       suite: SUITE,
       pool: uniformPool,
-      profile: PROFILE,
+      rubric: RUBRIC,
       survivingRecipes: [FUSION_RECIPE_ANALYSIS_SCORES_V1, FUSION_RECIPE_ANALYSIS_FED_V1],
       shortlistRule: {
         description: "none pass",
@@ -496,7 +496,7 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       study,
       suite: SUITE,
       pool: POOL,
-      profile: PROFILE,
+      rubric: RUBRIC,
       survivingRecipes: [FUSION_RECIPE_ANALYSIS_SCORES_V1, FUSION_RECIPE_ANALYSIS_FED_V1],
       shortlistRule: {
         description: "rule",
@@ -546,7 +546,7 @@ describe("Fusion Study end-to-end (mock providers)", () => {
       study,
       suite: SUITE,
       pool: POOL,
-      profile: PROFILE,
+      rubric: RUBRIC,
       survivingRecipes: [FUSION_RECIPE_ANALYSIS_SCORES_V1, FUSION_RECIPE_ANALYSIS_FED_V1],
       shortlistRule: {
         description: "rule",

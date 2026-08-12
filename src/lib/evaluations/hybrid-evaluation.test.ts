@@ -15,7 +15,7 @@ import {
   rankScoreOf,
   isFloored,
   computeWinnerKeys,
-  validateProfile,
+  validateRubric,
   normalizedWeights,
   totalWeight,
   getComplianceInfluence,
@@ -27,12 +27,12 @@ import {
 } from "./evaluation-rubric";
 import {
   isEvaluationCriterion,
-  isEvaluationProfile,
+  isEvaluationRubric,
   isGradedEvaluationCriterion,
   isBinaryEvaluationCriterion,
   isLegacyGradedEvaluationCriterion,
   isRequirementGroup,
-  type EvaluationProfile,
+  type EvaluationRubric,
   type EvaluationCriterion,
   type GradedEvaluationCriterion,
   type BinaryEvaluationCriterion,
@@ -107,11 +107,11 @@ function makeGroup(
   };
 }
 
-function makeProfile(overrides: Partial<EvaluationProfile> = {}): EvaluationProfile {
+function makeRubric(overrides: Partial<EvaluationRubric> = {}): EvaluationRubric {
   return {
     id: "p1",
     version: 1,
-    name: "Test Profile",
+    name: "Test Rubric",
     description: "test",
     judgeInstruction: "",
     criteria: [makeGradedCriterion("c1"), makeGradedCriterion("c2", { weight: 2 })],
@@ -121,12 +121,12 @@ function makeProfile(overrides: Partial<EvaluationProfile> = {}): EvaluationProf
   };
 }
 
-function makeMixedProfile(overrides: Partial<EvaluationProfile> = {}): EvaluationProfile {
+function makeMixedRubric(overrides: Partial<EvaluationRubric> = {}): EvaluationRubric {
   const checks = [makeBinaryCriterion("b1"), makeBinaryCriterion("b2")];
   return {
     id: "p1",
     version: 1,
-    name: "Mixed Profile",
+    name: "Mixed Rubric",
     description: "test",
     judgeInstruction: "",
     criteria: [makeGradedCriterion("c1", { weight: 2 }), ...checks],
@@ -226,41 +226,41 @@ describe("isRequirementGroup", () => {
     expect(isRequirementGroup(makeGroup("g1", []))).toBe(false);
   });
   it("rejects duplicate checkIds", () => {
-    expect(isRequirementGroup(makeGroup("g1", ["b1", "b1"]))).toBe(true); // guard doesn't check dupes; validateProfile does
+    expect(isRequirementGroup(makeGroup("g1", ["b1", "b1"]))).toBe(true); // guard doesn't check dupes; validateRubric does
   });
 });
 
-describe("isEvaluationProfile", () => {
-  it("accepts mixed profile with groups and complianceInfluence", () => {
-    expect(isEvaluationProfile(makeMixedProfile())).toBe(true);
+describe("isEvaluationRubric", () => {
+  it("accepts mixed rubric with groups and complianceInfluence", () => {
+    expect(isEvaluationRubric(makeMixedRubric())).toBe(true);
   });
-  it("accepts graded-only profile", () => {
-    expect(isEvaluationProfile(makeProfile())).toBe(true);
+  it("accepts graded-only rubric", () => {
+    expect(isEvaluationRubric(makeRubric())).toBe(true);
   });
-  it("accepts legacy graded-only profile", () => {
-    const p = makeProfile({ criteria: [makeLegacyCriterion("c1")] as EvaluationCriterion[] });
-    expect(isEvaluationProfile(p)).toBe(true);
+  it("accepts legacy graded-only rubric", () => {
+    const p = makeRubric({ criteria: [makeLegacyCriterion("c1")] as EvaluationCriterion[] });
+    expect(isEvaluationRubric(p)).toBe(true);
   });
-  it("accepts binary-only profile with groups", () => {
-    const p = makeProfile({
+  it("accepts binary-only rubric with groups", () => {
+    const p = makeRubric({
       criteria: [makeBinaryCriterion("b1")] as EvaluationCriterion[],
       requirementGroups: [makeGroup("g1", ["b1"])],
     });
-    expect(isEvaluationProfile(p)).toBe(true);
+    expect(isEvaluationRubric(p)).toBe(true);
   });
-  it("rejects binary-only profile without groups", () => {
-    const p = makeProfile({
+  it("rejects binary-only rubric without groups", () => {
+    const p = makeRubric({
       criteria: [makeBinaryCriterion("b1")] as EvaluationCriterion[],
     });
-    expect(isEvaluationProfile(p)).toBe(false);
+    expect(isEvaluationRubric(p)).toBe(false);
   });
   it("rejects complianceInfluence > 1", () => {
-    const p = makeMixedProfile({ complianceInfluence: 1.5 });
-    expect(isEvaluationProfile(p)).toBe(false);
+    const p = makeMixedRubric({ complianceInfluence: 1.5 });
+    expect(isEvaluationRubric(p)).toBe(false);
   });
   it("rejects complianceInfluence < 0", () => {
-    const p = makeMixedProfile({ complianceInfluence: -0.5 });
-    expect(isEvaluationProfile(p)).toBe(false);
+    const p = makeMixedRubric({ complianceInfluence: -0.5 });
+    expect(isEvaluationRubric(p)).toBe(false);
   });
 });
 
@@ -285,7 +285,7 @@ describe("isWeightedCriterion / isBinaryCriterion", () => {
 
 describe("evaluationCriteriaText (hybrid)", () => {
   it("renders graded with all five anchors", () => {
-    const text = evaluationCriteriaText(makeProfile(), { withIds: true });
+    const text = evaluationCriteriaText(makeRubric(), { withIds: true });
     expect(text).toContain("Score 1: 1 — poor");
     expect(text).toContain("Score 2: 2 — weak");
     expect(text).toContain("Score 3: 3 — adequate");
@@ -293,13 +293,13 @@ describe("evaluationCriteriaText (hybrid)", () => {
     expect(text).toContain("Score 5: 5 — excellent");
   });
   it("renders binary with TRUE/FALSE conditions", () => {
-    const text = evaluationCriteriaText(makeMixedProfile(), { withIds: true });
+    const text = evaluationCriteriaText(makeMixedRubric(), { withIds: true });
     expect(text).toContain("TRUE when: Condition for true");
     expect(text).toContain("FALSE when: Condition for false");
     expect(text).toContain("(binary)");
   });
   it("does NOT encode binary as numeric score", () => {
-    const binaryOnly = makeProfile({
+    const binaryOnly = makeRubric({
       criteria: [makeBinaryCriterion("b1")] as EvaluationCriterion[],
       requirementGroups: [makeGroup("g1", ["b1"])],
     });
@@ -309,12 +309,12 @@ describe("evaluationCriteriaText (hybrid)", () => {
     expect(text).toContain("Return a JSON boolean");
   });
   it("renders group annotation for binary checks", () => {
-    const text = evaluationCriteriaText(makeMixedProfile(), { withIds: true });
+    const text = evaluationCriteriaText(makeMixedRubric(), { withIds: true });
     expect(text).toContain("[group: g1]");
     expect(text).toContain("[group: g2]");
   });
   it("renders legacy with 1/3/5 anchors only", () => {
-    const p = makeProfile({ criteria: [makeLegacyCriterion("c1")] as EvaluationCriterion[] });
+    const p = makeRubric({ criteria: [makeLegacyCriterion("c1")] as EvaluationCriterion[] });
     const text = evaluationCriteriaText(p);
     expect(text).toContain("Score 1: Poor");
     expect(text).toContain("Score 3: OK");
@@ -325,13 +325,13 @@ describe("evaluationCriteriaText (hybrid)", () => {
 });
 
 describe("judgeEvaluationBlock (hybrid)", () => {
-  it("includes mixed-scale instruction for hybrid profiles", () => {
-    const block = judgeEvaluationBlock(makeMixedProfile());
+  it("includes mixed-scale instruction for hybrid rubrics", () => {
+    const block = judgeEvaluationBlock(makeMixedRubric());
     expect(block).toContain("graded criteria on a 1–5 integer scale");
     expect(block).toContain("binary criteria as true/false");
   });
-  it("includes graded-only instruction for graded profiles", () => {
-    const block = judgeEvaluationBlock(makeProfile());
+  it("includes graded-only instruction for graded rubrics", () => {
+    const block = judgeEvaluationBlock(makeRubric());
     expect(block).toContain("1–5 integer scale");
   });
 });
@@ -340,54 +340,54 @@ describe("judgeEvaluationBlock (hybrid)", () => {
 
 describe("qualityScore", () => {
   it("computes weighted mean of graded criteria", () => {
-    const profile = makeProfile({
+    const rubric = makeRubric({
       criteria: [
         makeGradedCriterion("c1", { weight: 1 }),
         makeGradedCriterion("c2", { weight: 2 }),
       ],
     });
-    expect(qualityScore({ c1: 4, c2: 5 }, profile)).toBeCloseTo(14 / 3, 10);
+    expect(qualityScore({ c1: 4, c2: 5 }, rubric)).toBeCloseTo(14 / 3, 10);
   });
   it("returns null when no graded criteria", () => {
-    const profile = makeProfile({
+    const rubric = makeRubric({
       criteria: [makeBinaryCriterion("b1")] as EvaluationCriterion[],
       requirementGroups: [makeGroup("g1", ["b1"])],
     });
-    expect(qualityScore({}, profile)).toBeNull();
+    expect(qualityScore({}, rubric)).toBeNull();
   });
   it("ignores binary criteria (no weight)", () => {
-    expect(qualityScore({ c1: 4 }, makeMixedProfile())).toBe(4);
+    expect(qualityScore({ c1: 4 }, makeMixedRubric())).toBe(4);
   });
 });
 
 describe("complianceScore", () => {
   it("computes weighted pass share for all-pass", () => {
-    const profile = makeMixedProfile();
-    expect(complianceScore({ b1: true, b2: true }, profile)?.C).toBe(1);
+    const rubric = makeMixedRubric();
+    expect(complianceScore({ b1: true, b2: true }, rubric)?.C).toBe(1);
   });
   it("computes weighted pass share for half-pass", () => {
-    const profile = makeMixedProfile();
-    expect(complianceScore({ b1: true, b2: false }, profile)?.C).toBeCloseTo(0.5, 10);
+    const rubric = makeMixedRubric();
+    expect(complianceScore({ b1: true, b2: false }, rubric)?.C).toBeCloseTo(0.5, 10);
   });
   it("returns null when no groups", () => {
-    expect(complianceScore({}, makeProfile())).toBeNull();
+    expect(complianceScore({}, makeRubric())).toBeNull();
   });
   it("ALL mode: one false subcheck fails the group", () => {
-    const profile = makeMixedProfile({
+    const rubric = makeMixedRubric({
       requirementGroups: [makeGroup("g1", ["b1", "b2"], { weight: 1 })],
     });
-    expect(complianceScore({ b1: true, b2: false }, profile)?.C).toBe(0);
-    expect(complianceScore({ b1: true, b2: true }, profile)?.C).toBe(1);
+    expect(complianceScore({ b1: true, b2: false }, rubric)?.C).toBe(0);
+    expect(complianceScore({ b1: true, b2: true }, rubric)?.C).toBe(1);
   });
   it("unequal group weights", () => {
-    const profile = makeMixedProfile({
+    const rubric = makeMixedRubric({
       requirementGroups: [
         makeGroup("g1", ["b1"], { weight: 3 }),
         makeGroup("g2", ["b2"], { weight: 1 }),
       ],
     });
     // b1 passes (weight 3), b2 fails (weight 1) → C = 3/4 = 0.75
-    expect(complianceScore({ b1: true, b2: false }, profile)?.C).toBeCloseTo(0.75, 10);
+    expect(complianceScore({ b1: true, b2: false }, rubric)?.C).toBeCloseTo(0.75, 10);
   });
 });
 
@@ -409,7 +409,7 @@ describe("rankValueOf", () => {
     expect(rankValueOf(4, null, 1)).toBe(4);
   });
   it("compliance-only (no graded) ranks on the weighted compliance share C", () => {
-    // Spec §16.3: a compliance-only profile ranks on C̄ (0–100%).
+    // Spec §16.3: a compliance-only rubric ranks on C̄ (0–100%).
     expect(rankValueOf(null, 0.5, 1)).toBe(0.5);
     expect(rankValueOf(null, 0.8, 1)).toBe(0.8);
     // Nothing to rank when both channels are absent.
@@ -448,7 +448,7 @@ describe("isFloored", () => {
 // --- Composition-cap invariant: Q - rankValue <= lambda -----------------------
 
 describe("composition-cap invariant", () => {
-  it("Q - rankValue <= lambda for valid mixed profiles", () => {
+  it("Q - rankValue <= lambda for valid mixed rubrics", () => {
     // Randomized sweep
     for (let trial = 0; trial < 100; trial++) {
       const Q = 1 + Math.random() * 4; // 1..5
@@ -459,20 +459,20 @@ describe("composition-cap invariant", () => {
     }
   });
   it("fail cost of one group = lambda * v_g / sum(v)", () => {
-    const profile = makeMixedProfile({
+    const rubric = makeMixedRubric({
       requirementGroups: [
         makeGroup("g1", ["b1"], { weight: 1 }),
         makeGroup("g2", ["b2"], { weight: 3 }),
       ],
       complianceInfluence: 1.0,
     });
-    const lambda = getComplianceInfluence(profile);
-    const groups = profile.requirementGroups!;
+    const lambda = getComplianceInfluence(rubric);
+    const groups = rubric.requirementGroups!;
     const sumV = groups.reduce((s, g) => s + g.weight, 0);
     // Fail g1 only: rankValue moves by lambda * v_g1 / sumV
     const Q = 4;
-    const C_all_pass = complianceScore({ b1: true, b2: true }, profile)!.C;
-    const C_g1_fail = complianceScore({ b1: false, b2: true }, profile)!.C;
+    const C_all_pass = complianceScore({ b1: true, b2: true }, rubric)!.C;
+    const C_g1_fail = complianceScore({ b1: false, b2: true }, rubric)!.C;
     const rv_all = rankValueOf(Q, C_all_pass, lambda)!;
     const rv_fail = rankValueOf(Q, C_g1_fail, lambda)!;
     const cost = rv_all - rv_fail;
@@ -485,8 +485,8 @@ describe("composition-cap invariant", () => {
 
 describe("decomposition invariance", () => {
   it("1 check vs 5 subchecks in one ALL group (same v) yields same C and rankValue", () => {
-    // Profile A: one binary check in one group (weight 1)
-    const profileA = makeProfile({
+    // Rubric A: one binary check in one group (weight 1)
+    const rubricA = makeRubric({
       criteria: [
         makeGradedCriterion("c1", { weight: 2 }),
         makeBinaryCriterion("b1"),
@@ -494,8 +494,8 @@ describe("decomposition invariance", () => {
       requirementGroups: [makeGroup("g1", ["b1"], { weight: 1 })],
       complianceInfluence: 1.0,
     });
-    // Profile B: five binary checks in one ALL group (weight 1)
-    const profileB = makeProfile({
+    // Rubric B: five binary checks in one ALL group (weight 1)
+    const rubricB = makeRubric({
       criteria: [
         makeGradedCriterion("c1", { weight: 2 }),
         ...["b1", "b2", "b3", "b4", "b5"].map((id) => makeBinaryCriterion(id)),
@@ -505,16 +505,16 @@ describe("decomposition invariance", () => {
     });
 
     // All pass
-    const Ca = complianceScore({ b1: true }, profileA)!.C;
-    const Cb = complianceScore({ b1: true, b2: true, b3: true, b4: true, b5: true }, profileB)!.C;
+    const Ca = complianceScore({ b1: true }, rubricA)!.C;
+    const Cb = complianceScore({ b1: true, b2: true, b3: true, b4: true, b5: true }, rubricB)!.C;
     expect(Ca).toBe(Cb);
     expect(rankValueOf(4, Ca, 1)).toBe(rankValueOf(4, Cb, 1));
 
     // All fail
-    const Cfa = complianceScore({ b1: false }, profileA)!.C;
+    const Cfa = complianceScore({ b1: false }, rubricA)!.C;
     const Cfb = complianceScore(
       { b1: false, b2: false, b3: false, b4: false, b5: false },
-      profileB,
+      rubricB,
     )!.C;
     expect(Cfa).toBe(Cfb);
     expect(rankValueOf(4, Cfa, 1)).toBe(rankValueOf(4, Cfb, 1));
@@ -540,12 +540,12 @@ describe("floor ranking authority", () => {
 
 // --- Validation ---------------------------------------------------------------
 
-describe("validateProfile (hybrid)", () => {
-  it("passes for valid mixed profile", () => {
-    expect(validateProfile(makeMixedProfile())).toEqual([]);
+describe("validateRubric (hybrid)", () => {
+  it("passes for valid mixed rubric", () => {
+    expect(validateRubric(makeMixedRubric())).toEqual([]);
   });
   it("rejects kind:gate with actionable message", () => {
-    const p = makeProfile({
+    const p = makeRubric({
       criteria: [
         {
           id: "g1",
@@ -555,14 +555,14 @@ describe("validateProfile (hybrid)", () => {
         } as unknown as EvaluationCriterion,
       ],
     });
-    const errors = validateProfile(p);
+    const errors = validateRubric(p);
     expect(errors.some((e) => e.includes("hard-gate"))).toBe(true);
   });
   it("rejects binary check without group", () => {
-    const p = makeProfile({
+    const p = makeRubric({
       criteria: [makeGradedCriterion("c1"), makeBinaryCriterion("b1")] as EvaluationCriterion[],
     });
-    const errors = validateProfile(p);
+    const errors = validateRubric(p);
     expect(errors.some((e) => e.includes("not assigned to any requirement group"))).toBe(true);
   });
   it("rejects graded criterion missing Score 2", () => {
@@ -575,29 +575,29 @@ describe("validateProfile (hybrid)", () => {
         five: "5",
       },
     });
-    const p = makeProfile({ criteria: [c] as EvaluationCriterion[] });
-    const errors = validateProfile(p);
+    const p = makeRubric({ criteria: [c] as EvaluationCriterion[] });
+    const errors = validateRubric(p);
     expect(errors.some((e) => e.includes("all five anchors"))).toBe(true);
   });
   it("rejects group with non-binary check", () => {
-    const p = makeProfile({
+    const p = makeRubric({
       criteria: [makeGradedCriterion("c1"), makeBinaryCriterion("b1")] as EvaluationCriterion[],
       requirementGroups: [makeGroup("g1", ["c1", "b1"])],
     });
-    const errors = validateProfile(p);
+    const errors = validateRubric(p);
     expect(errors.some((e) => e.includes("not a binary criterion"))).toBe(true);
   });
   it("rejects duplicate group membership", () => {
-    const p = makeProfile({
+    const p = makeRubric({
       criteria: [makeBinaryCriterion("b1")] as EvaluationCriterion[],
       requirementGroups: [makeGroup("g1", ["b1"]), makeGroup("g2", ["b1"])],
     });
-    const errors = validateProfile(p);
+    const errors = validateRubric(p);
     expect(errors.some((e) => e.includes("already assigned"))).toBe(true);
   });
   it("rejects invalid complianceInfluence", () => {
-    const p = makeMixedProfile({ complianceInfluence: 2 });
-    const errors = validateProfile(p);
+    const p = makeMixedRubric({ complianceInfluence: 2 });
+    const errors = validateRubric(p);
     expect(errors.some((e) => e.includes("complianceInfluence"))).toBe(true);
   });
 });
@@ -606,12 +606,12 @@ describe("validateProfile (hybrid)", () => {
 
 describe("normalizedWeights / totalWeight (hybrid)", () => {
   it("normalizedWeights returns 0 for binary criteria", () => {
-    const nw = normalizedWeights(makeMixedProfile().criteria);
+    const nw = normalizedWeights(makeMixedRubric().criteria);
     expect(nw.b1).toBe(0);
     expect(nw.b2).toBe(0);
   });
   it("totalWeight only sums graded weights", () => {
-    const tw = totalWeight(makeMixedProfile().criteria);
+    const tw = totalWeight(makeMixedRubric().criteria);
     expect(tw).toBe(2); // only c1 with weight 2
   });
 });
@@ -620,18 +620,18 @@ describe("normalizedWeights / totalWeight (hybrid)", () => {
 
 describe("pure-graded compatibility", () => {
   it("Q = rankValue when no binary checks (C:=1)", () => {
-    const profile = makeProfile();
-    const Q = qualityScore({ c1: 4, c2: 5 }, profile)!;
-    const C = complianceScore({}, profile)?.C ?? null; // null → C:=1
+    const rubric = makeRubric();
+    const Q = qualityScore({ c1: 4, c2: 5 }, rubric)!;
+    const C = complianceScore({}, rubric)?.C ?? null; // null → C:=1
     const rv = rankValueOf(Q, C, 1.0)!;
     expect(rv).toBe(Q);
     expect(rankScoreOf(rv)).toBe(Q);
     expect(isFloored(rv)).toBe(false);
   });
   it("canonicalScore === qualityScore for graded-only", () => {
-    const profile = makeProfile();
+    const rubric = makeRubric();
     const scores = { c1: 4, c2: 5 };
-    expect(canonicalScore(scores, profile)).toBe(qualityScore(scores, profile));
+    expect(canonicalScore(scores, rubric)).toBe(qualityScore(scores, rubric));
   });
 });
 
@@ -642,9 +642,9 @@ describe("DEFAULT_COMPLIANCE_INFLUENCE", () => {
     expect(DEFAULT_COMPLIANCE_INFLUENCE).toBe(1.0);
   });
   it("getComplianceInfluence defaults to 1.0 when absent", () => {
-    expect(getComplianceInfluence(makeProfile())).toBe(1.0);
+    expect(getComplianceInfluence(makeRubric())).toBe(1.0);
   });
   it("getComplianceInfluence returns explicit value", () => {
-    expect(getComplianceInfluence(makeMixedProfile({ complianceInfluence: 0.5 }))).toBe(0.5);
+    expect(getComplianceInfluence(makeMixedRubric({ complianceInfluence: 0.5 }))).toBe(0.5);
   });
 });

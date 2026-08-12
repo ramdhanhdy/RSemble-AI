@@ -25,7 +25,7 @@ import {
   parseJudge,
   splitSegments,
 } from "../pipeline";
-import type { EvaluationProfileSnapshot, EvaluationTask } from "./evaluation-types";
+import type { RubricSnapshot, EvaluationTask } from "./evaluation-types";
 import { rankValueFromResults } from "./evaluation-rubric";
 import type {
   BlockedRunResult,
@@ -91,7 +91,7 @@ export function createLiveFusionExecutor(deps?: {
 
   async function judgeOutputs(
     task: EvaluationTask,
-    profile: EvaluationProfileSnapshot | null,
+    rubric: RubricSnapshot | null,
     judge: CriticRef,
     candidates: Candidate[],
   ): Promise<{
@@ -101,9 +101,9 @@ export function createLiveFusionExecutor(deps?: {
     blindSet: ReturnType<typeof createBlindCandidateSet>;
   }> {
     const blindSet = createBlindCandidateSet(candidates, random);
-    const messages = judgeMessages(task.prompt, profile, blindSet.candidates);
+    const messages = judgeMessages(task.prompt, rubric, blindSet.candidates);
     const content = await chatOnce(judge, messages, 0.1);
-    const { report, breakdown } = parseJudge(content, blindSet, profile, candidates);
+    const { report, breakdown } = parseJudge(content, blindSet, rubric, candidates);
     return {
       report,
       consensus: breakdown,
@@ -121,19 +121,19 @@ export function createLiveFusionExecutor(deps?: {
       return { taskId: task.id, outputs };
     },
 
-    async judgePool(task, profile, judge1, outputs) {
+    async judgePool(task, rubric, judge1, outputs) {
       const candidates = outputs.map((o) => candidateFromOutput(o.candidateId, o.slot, o.text));
-      const judged = await judgeOutputs(task, profile, judge1, candidates);
+      const judged = await judgeOutputs(task, rubric, judge1, candidates);
       return { report: judged.report, consensus: judged.consensus, cost: judged.cost };
     },
 
-    async runBlockedEvidence(task, profile, pair, judge1) {
+    async runBlockedEvidence(task, rubric, pair, judge1) {
       const outputs: PoolSweepOutput[] = [];
       for (let i = 0; i < pair.length; i++) {
         outputs.push(await generateForSlot(task, pair[i], `cand-${pair[i].id}`));
       }
       const live = outputs.map((o) => candidateFromOutput(o.candidateId, o.slot, o.text));
-      const judged = await judgeOutputs(task, profile, judge1, live);
+      const judged = await judgeOutputs(task, rubric, judge1, live);
       return {
         blindCandidates: judged.blindSet.candidates,
         report: judged.report,
@@ -154,7 +154,7 @@ export function createLiveFusionExecutor(deps?: {
       return { text, cost: { tokensIn: messageTokens(messages), tokensOut: estimateTokens(text) } };
     },
 
-    async runHoldout(task, profile, judge2, artifacts: HoldoutArtifact[]) {
+    async runHoldout(task, rubric, judge2, artifacts: HoldoutArtifact[]) {
       // Holdout evaluates policy artifacts blind and randomized (spec §5.3).
       const candidates = artifacts.map((a) =>
         candidateFromOutput(
@@ -171,17 +171,17 @@ export function createLiveFusionExecutor(deps?: {
         ),
       );
       const blindSet = createBlindCandidateSet(candidates, random);
-      const messages = judgeMessages(task.prompt, profile, blindSet.candidates);
+      const messages = judgeMessages(task.prompt, rubric, blindSet.candidates);
       const content = await chatOnce(judge2, messages, 0.1);
-      const { report } = parseJudge(content, blindSet, profile, candidates);
+      const { report } = parseJudge(content, blindSet, rubric, candidates);
       const scoresByKey: Record<string, number> = {};
       for (const artifact of artifacts) {
         const ev = report.evaluationsById[artifact.key];
         if (!ev) continue;
-        // With a pinned profile, use the authoritative rankValue (Q − λ(1−C))
+        // With a pinned rubric, use the authoritative rankValue (Q − λ(1−C))
         // so compliance checks enter the holdout score; otherwise the Judge's
         // holistic overallScore.
-        const rv = profile ? rankValueFromResults(ev.criterionScores, profile) : null;
+        const rv = rubric ? rankValueFromResults(ev.criterionScores, rubric) : null;
         scoresByKey[artifact.key] = rv ?? ev.overallScore;
       }
       return {

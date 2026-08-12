@@ -15,7 +15,7 @@
 // =============================================================================
 
 import type {
-  EvaluationProfileSnapshot,
+  RubricSnapshot,
   EvaluationSuite,
   EvaluationTask,
 } from "./evaluation-types";
@@ -69,7 +69,7 @@ export interface ConfirmationInput {
   confirmationStudyId: string;
   /** The NEW suite version carrying fresh tasks. */
   suite: EvaluationSuite;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   tasksPerPair: number;
   mpid: number;
   rng?: () => number;
@@ -159,7 +159,7 @@ export async function runConfirmationStudy(
     {
       study: confirmation,
       pool,
-      profile: input.profile,
+      rubric: input.rubric,
       mpid: input.mpid,
       rng: input.rng,
     },

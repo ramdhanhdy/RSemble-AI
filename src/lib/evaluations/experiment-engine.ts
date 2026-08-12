@@ -25,7 +25,7 @@
 
 import {
   type EvaluationSuite,
-  type EvaluationProfile,
+  type EvaluationRubric,
   type ExperimentAttemptCoverage,
   type ExperimentRecord,
   type ExperimentTaskAttempt,
@@ -102,15 +102,15 @@ export function selectAttemptId(task: ExperimentTaskState): string | null {
 export interface CreateExperimentRecordInput {
   id: string;
   suite: EvaluationSuite;
-  profiles: EvaluationProfile[];
+  rubrics: EvaluationRubric[];
   now: number;
 }
 
 export function createExperimentRecord(input: CreateExperimentRecordInput): ExperimentRecord {
-  const { id, suite, profiles, now } = input;
+  const { id, suite, rubrics, now } = input;
   // createExperimentSnapshot deep-copies the suite's semantic content, so later
   // suite edits never mutate an existing experiment (spec §11.1).
-  const snapshot = createExperimentSnapshot(suite, profiles, now);
+  const snapshot = createExperimentSnapshot(suite, rubrics, now);
   const tasks: ExperimentTaskState[] = [...suite.tasks]
     .sort((a, b) => a.order - b.order)
     .map((t) => ({ taskId: t.id, selectedAttemptId: null, attempts: [] }));

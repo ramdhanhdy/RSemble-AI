@@ -114,6 +114,46 @@ const PROFILES_TOKEN_FILES: Record<string, true> = {
   "lib/evaluations/suite-package.ts": true,
 };
 
+/**
+ * Files in which ALL Profile-bearing tokens are explicit compatibility /
+ * legacy-adapter boundaries (spec §3.3, §7.6). These files either re-export
+ * deprecated aliases (rubric-compat), declare the legacy type aliases and
+ * guards that hard-no-edit consumers depend on (evaluation-types,
+ * evaluation-rubric), provide the legacy ad-hoc compat shim for an excluded
+ * consumer (evaluation-rubric-adhoc), implement the physical repository
+ * adapter whose method names are frozen public API (evaluation-repository),
+ * or are hard-no-edit compatibility consumers themselves (pipeline.ts,
+ * studio-engine.ts, studio-data.ts). New consumers must migrate to canonical
+ * Rubric names and must NOT appear here.
+ */
+const COMPAT_FILES: Record<string, true> = {
+  // Legacy type aliases + guards needed by excluded pipeline.ts.
+  "lib/evaluations/evaluation-types.ts": true,
+  // Legacy function aliases (validateProfile, isComplianceOnlyProfile) needed
+  // by excluded pipeline.ts + internal `profile` param in frozen-boundary code.
+  "lib/evaluations/evaluation-rubric.ts": true,
+  // Explicit deprecated re-exports for migration safety.
+  "lib/evaluations/rubric-compat.ts": true,
+  // Legacy ad-hoc compat shim re-exported for excluded studio-engine.ts.
+  "lib/evaluations/evaluation-rubric-adhoc.ts": true,
+  // Legacy repository adapter — method names are frozen public API.
+  "lib/persistence/evaluation-repository.ts": true,
+  // Hard-no-edit compatibility consumers.
+  "lib/pipeline.ts": true,
+  "studio-engine.ts": true,
+  "studio-data.ts": true,
+};
+
+/**
+ * Test files that exercise the legacy compat surface and therefore reference
+ * deprecated aliases by name. These are the test counterparts of the
+ * COMPAT_FILES above.
+ */
+const COMPAT_TEST_FILES: Record<string, true> = {
+  "lib/evaluations/evaluation-rubric.test.ts": true,
+  "lib/persistence/evaluation-repository.test.ts": true,
+};
+
 // --- Scanner -----------------------------------------------------------------
 
 /**
@@ -142,15 +182,55 @@ interface Violation {
  * allowed only at physical Dexie stores (`db.profiles`) or v1 archive/import
  * payload fields; capital `Profiles` (nav labels, headings) and all-caps
  * `PROFILES` are user-facing/API terms and stay flagged.
+ *
+ * The standalone lowercase `profile` token is allowed when it is a frozen
+ * serialized field access (property access `.profile`, property key `profile:`,
+ * kind discriminant string literal `"profile"`). In every other context it is
+ * a local variable / parameter that must become `rubric`.
  */
 function isAllowed(token: string, relFile: string, line: string, idx: number): boolean {
   if (token in FROZEN_IDENTIFIERS) return true;
+
+  // Explicit compat/legacy-adapter files — all Profile tokens allowed.
+  if (relFile in COMPAT_FILES) return true;
+  if (relFile in COMPAT_TEST_FILES) return true;
+
   if (token === "profiles") {
     // `db.profiles` — physical Dexie store access (frozen, any file).
     if (/\bdb\.\s*$/.test(line.slice(0, idx))) return true;
+    // `.profiles` — frozen serialized field access (e.g. snapshot.profiles).
+    if (line[idx - 1] === ".") return true;
+    // `profiles:` — frozen serialized property key in object literal (not a
+    // variable declaration like `const profiles:`).
+    const afterProfiles = line.slice(idx + token.length);
+    if (/^\s*:/.test(afterProfiles)) {
+      const beforeProfiles = line.slice(0, idx).trimEnd();
+      if (!/(?:const|let|var)\s*$/.test(beforeProfiles)) return true;
+    }
     // v1 archive envelope / v1 import payload `profiles` field.
     if (relFile in PROFILES_TOKEN_FILES) return true;
   }
+
+  if (token === "profile") {
+    // `.profile` — frozen serialized field access (e.g. evaluation.profile,
+    // evalConfig.profile, record.evaluation.profile).
+    if (line[idx - 1] === ".") return true;
+    // `profile:` — frozen serialized property key in object literal (not a
+    // variable declaration like `const profile:`).
+    const after = line.slice(idx + token.length);
+    if (/^\s*:/.test(after)) {
+      const before = line.slice(0, idx).trimEnd();
+      // Exclude variable declarations (const/let/var profile: Type).
+      if (!/(?:const|let|var)\s*$/.test(before)) return true;
+    }
+    // `"profile"` or `'profile'` — frozen kind discriminant string literal.
+    const beforeChar = line[idx - 1] ?? "";
+    const afterChar = line[idx + token.length] ?? "";
+    if ((beforeChar === '"' || beforeChar === "'") && (afterChar === '"' || afterChar === "'")) {
+      return true;
+    }
+  }
+
   return false;
 }
 

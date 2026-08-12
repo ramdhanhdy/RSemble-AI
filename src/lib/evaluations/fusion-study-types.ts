@@ -301,7 +301,7 @@ export interface ScreenedPairRow {
   /** Binary channel pass-rate imbalances (spec §17); absent when no binary checks. */
   binaryPerCriterionHeadroom?: BinaryCriterionHeadroom[];
   /** Group-level binary oracle contribution to H_synth (spec §17/§21);
-   *  null/absent when the profile has no requirement groups. */
+   *  null/absent when the rubric has no requirement groups. */
   binaryOracleHeadroom?: number | null;
 }
 

@@ -37,7 +37,7 @@ import type {
   FusionTrialCost,
   PoolManifestRef,
 } from "./fusion-study-types";
-import type { EvaluationProfileSnapshot, EvaluationTask } from "./evaluation-types";
+import type { RubricSnapshot, EvaluationTask } from "./evaluation-types";
 import type { FusionStudyRepository } from "../persistence/fusion-study-repository";
 
 // --- Executor port ------------------------------------------------------------------
@@ -103,14 +103,14 @@ export interface FusionPolicyExecutor {
   /** Judge-1 scoring of sweep outputs for one task. */
   judgePool(
     task: EvaluationTask,
-    profile: EvaluationProfileSnapshot | null,
+    rubric: RubricSnapshot | null,
     judge1: CriticRef,
     outputs: PoolSweepOutput[],
   ): Promise<DevJudgeResult>;
   /** Candidates + Judge 1 for one pair on one task (shared by all finishes). */
   runBlockedEvidence(
     task: EvaluationTask,
-    profile: EvaluationProfileSnapshot | null,
+    rubric: RubricSnapshot | null,
     pair: [ModelSlot, ModelSlot],
     judge1: CriticRef,
   ): Promise<BlockedRunResult>;
@@ -119,7 +119,7 @@ export interface FusionPolicyExecutor {
   /** Holdout judge evaluates policy artifacts blind and randomized. */
   runHoldout(
     task: EvaluationTask,
-    profile: EvaluationProfileSnapshot | null,
+    rubric: RubricSnapshot | null,
     judge2: CriticRef,
     artifacts: HoldoutArtifact[],
   ): Promise<HoldoutResult>;

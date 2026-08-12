@@ -31,7 +31,7 @@ import type { RunExecutor, RunExecutorEvents } from "../run-executor";
 import {
   type EvaluationSuite,
   type EvaluationTask,
-  type EvaluationProfileSnapshot,
+  type RubricSnapshot,
   type EvaluationSelection,
   type ExperimentRecord,
   type ExperimentTaskState,
@@ -56,7 +56,7 @@ import type {
   RunSource,
   ExecutionFence,
 } from "../persistence/run-types";
-import { type AdHocEvaluationConfig, HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
+import { type AdHocEvaluationConfig, HOLISTIC_EVALUATION } from "./evaluation-rubric-adhoc";
 import { type Candidate, type ModelSlot } from "../../studio-data";
 import type { ProviderId } from "../providers/types";
 import { devTerminalLog } from "../dev-terminal-log";
@@ -148,13 +148,13 @@ function pinnedSuiteFromSnapshot(record: ExperimentRecord): EvaluationSuite {
 function taskEvaluationConfig(
   task: EvaluationTask,
   suite: EvaluationSuite,
-  profiles: EvaluationProfileSnapshot[],
+  rubrics: RubricSnapshot[],
 ): AdHocEvaluationConfig {
   const sel: EvaluationSelection =
     task.evaluation.kind === "inherit" ? suite.defaultEvaluation : task.evaluation;
   if (sel.kind === "holistic") return HOLISTIC_EVALUATION;
-  // Profile selection: find the pinned snapshot by { id, version }.
-  const snapshot = profiles.find(
+  // Rubric selection: find the pinned snapshot by { id, version }.
+  const snapshot = rubrics.find(
     (p) => p.id === sel.profile.id && p.version === sel.profile.version,
   );
   if (!snapshot) return HOLISTIC_EVALUATION;
@@ -789,29 +789,29 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
     // Create experiment record.
     const id = `exp-${generateId()}`;
-    const profiles: EvaluationProfileSnapshot[] = [];
-    // Resolve pinned profiles from the suite's tasks.
+    const rubrics: RubricSnapshot[] = [];
+    // Resolve pinned rubrics from the suite's tasks.
     for (const task of loadedSuite.tasks) {
       if (task.evaluation.kind === "profile") {
-        const p = await evalRepo.getProfile(
+        const p = await evalRepo.getRubricVersion(
           task.evaluation.profile.id,
           task.evaluation.profile.version,
         );
-        if (p && !profiles.find((x) => x.id === p.id && x.version === p.version)) {
-          profiles.push(p);
+        if (p && !rubrics.find((x) => x.id === p.id && x.version === p.version)) {
+          rubrics.push(p);
         }
       }
     }
-    // Also resolve the suite default if it's a profile.
+    // Also resolve the suite default if it's a rubric.
     if (loadedSuite.defaultEvaluation.kind === "profile") {
       const ref = loadedSuite.defaultEvaluation.profile;
-      const p = await evalRepo.getProfile(ref.id, ref.version);
-      if (p && !profiles.find((x) => x.id === p.id && x.version === p.version)) {
-        profiles.push(p);
+      const p = await evalRepo.getRubricVersion(ref.id, ref.version);
+      if (p && !rubrics.find((x) => x.id === p.id && x.version === p.version)) {
+        rubrics.push(p);
       }
     }
 
-    const record = createExperimentRecord({ id, suite: loadedSuite, profiles, now: now() });
+    const record = createExperimentRecord({ id, suite: loadedSuite, rubrics, now: now() });
     await evalRepo.createExperiment(record);
     persistedExperimentRevision = record.revision;
 

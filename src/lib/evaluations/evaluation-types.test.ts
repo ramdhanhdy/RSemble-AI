@@ -7,10 +7,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  isEvaluationProfile,
+  isEvaluationRubric,
   isExperimentRecord,
   isExperimentTaskAttempt,
-  type EvaluationProfile,
+  type EvaluationRubric,
   type EvaluationSuite,
   type EvaluationTask,
   type ExperimentRecord,
@@ -318,9 +318,9 @@ describe("isExperimentRecord — rosterExtensions history", () => {
   });
 });
 
-// --- Hybrid evaluation profile guard regressions (CodeRabbit 3741038007/3741038010) ---
+// --- Hybrid evaluation rubric guard regressions (CodeRabbit 3741038007/3741038010) ---
 
-function baseProfile(overrides: Partial<EvaluationProfile> = {}): EvaluationProfile {
+function baseRubric(overrides: Partial<EvaluationRubric> = {}): EvaluationRubric {
   return {
     id: "p1",
     version: 1,
@@ -336,7 +336,7 @@ function baseProfile(overrides: Partial<EvaluationProfile> = {}): EvaluationProf
   };
 }
 
-function gradedCriterion(id: string): EvaluationProfile["criteria"][number] {
+function gradedCriterion(id: string): EvaluationRubric["criteria"][number] {
   return {
     id,
     kind: "graded",
@@ -347,7 +347,7 @@ function gradedCriterion(id: string): EvaluationProfile["criteria"][number] {
   };
 }
 
-function binaryCheck(id: string): EvaluationProfile["criteria"][number] {
+function binaryCheck(id: string): EvaluationRubric["criteria"][number] {
   return {
     id,
     kind: "binary",
@@ -358,17 +358,17 @@ function binaryCheck(id: string): EvaluationProfile["criteria"][number] {
   };
 }
 
-describe("isEvaluationProfile — hybrid guard regressions", () => {
+describe("isEvaluationRubric — hybrid guard regressions", () => {
   it("accepts an empty criteria list as holistic mode", () => {
-    // Aligned with validateProfile / judgeEvaluationBlock (CodeRabbit
+    // Aligned with validateRubric / judgeEvaluationBlock (CodeRabbit
     // 3741038007): empty criteria = valid holistic, no positive-score demand.
-    expect(isEvaluationProfile(baseProfile())).toBe(true);
+    expect(isEvaluationRubric(baseRubric())).toBe(true);
   });
 
-  it("accepts a valid compliance-only profile (binary checks in groups)", () => {
+  it("accepts a valid compliance-only rubric (binary checks in groups)", () => {
     expect(
-      isEvaluationProfile(
-        baseProfile({
+      isEvaluationRubric(
+        baseRubric({
           criteria: [binaryCheck("b1"), binaryCheck("b2")],
           requirementGroups: [
             { id: "g1", name: "G1", checkIds: ["b1", "b2"], weight: 1, mode: "ALL" },
@@ -380,16 +380,16 @@ describe("isEvaluationProfile — hybrid guard regressions", () => {
 
   it("rejects a group referencing a missing or non-binary check", () => {
     expect(
-      isEvaluationProfile(
-        baseProfile({
+      isEvaluationRubric(
+        baseRubric({
           criteria: [gradedCriterion("g1")],
           requirementGroups: [{ id: "x", name: "X", checkIds: ["g1"], weight: 1, mode: "ALL" }],
         }),
       ),
     ).toBe(false);
     expect(
-      isEvaluationProfile(
-        baseProfile({
+      isEvaluationRubric(
+        baseRubric({
           criteria: [binaryCheck("b1")],
           requirementGroups: [{ id: "x", name: "X", checkIds: ["nope"], weight: 1, mode: "ALL" }],
         }),
@@ -399,8 +399,8 @@ describe("isEvaluationProfile — hybrid guard regressions", () => {
 
   it("rejects the same check in two groups", () => {
     expect(
-      isEvaluationProfile(
-        baseProfile({
+      isEvaluationRubric(
+        baseRubric({
           criteria: [binaryCheck("b1"), binaryCheck("b2")],
           requirementGroups: [
             { id: "g1", name: "G1", checkIds: ["b1"], weight: 1, mode: "ALL" },
@@ -413,8 +413,8 @@ describe("isEvaluationProfile — hybrid guard regressions", () => {
 
   it("rejects an ungrouped binary check", () => {
     expect(
-      isEvaluationProfile(
-        baseProfile({
+      isEvaluationRubric(
+        baseRubric({
           criteria: [binaryCheck("b1"), binaryCheck("b2")],
           requirementGroups: [{ id: "g1", name: "G1", checkIds: ["b1"], weight: 1, mode: "ALL" }],
         }),
@@ -424,21 +424,21 @@ describe("isEvaluationProfile — hybrid guard regressions", () => {
 
   it("rejects binary criteria when requirementGroups is undefined (CodeRabbit 4890236254)", () => {
     // Spec §19: every binary check belongs to exactly one ALL-mode group.
-    // A profile with binary checks but no requirementGroups field must be
+    // A rubric with binary checks but no requirementGroups field must be
     // rejected by the runtime guard, not silently accepted by skipping
     // membership validation.
     expect(
-      isEvaluationProfile(
-        baseProfile({
+      isEvaluationRubric(
+        baseRubric({
           criteria: [binaryCheck("b1"), binaryCheck("b2")],
           requirementGroups: undefined,
         }),
       ),
     ).toBe(false);
-    // Graded-only profiles legitimately omit requirementGroups.
+    // Graded-only rubrics legitimately omit requirementGroups.
     expect(
-      isEvaluationProfile(
-        baseProfile({
+      isEvaluationRubric(
+        baseRubric({
           criteria: [gradedCriterion("g1")],
           requirementGroups: undefined,
         }),

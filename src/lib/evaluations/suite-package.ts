@@ -22,18 +22,18 @@
 
 import { isRecord } from "../persistence/run-types";
 import {
-  isEvaluationProfile,
+  isEvaluationRubric,
   isEvaluationSuite,
   isTaskVerification,
-  type EvaluationProfile,
-  type EvaluationProfileRef,
+  type EvaluationRubric,
+  type RubricVersionRef,
   type EvaluationSelection,
   type EvaluationSuite,
   type EvaluationTask,
-  type ProfileRecord,
+  type RubricRecord,
 } from "./evaluation-types";
 import { validateSuiteForExecution } from "./suite-validation";
-import { validateProfile } from "./evaluation-rubric";
+import { validateRubric } from "./evaluation-rubric";
 import type { CriticRef, ProviderId } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
 
@@ -45,7 +45,7 @@ export const SUITE_PACKAGE_LIMITS = {
   BYTES: 8388608,
   TASKS: 500,
   CRITERIA: 100,
-  PROFILES: 50,
+  RUBRICS: 50,
   DEPTH: 32,
   STRING_BYTES: 8388608,
   ID_PATTERN: /^[A-Za-z0-9._:-]{1,128}$/,
@@ -72,14 +72,14 @@ export interface SuitePackageModelSlot {
   enabled?: boolean;
 }
 
-export interface SuitePackageProfile {
+export interface SuitePackageRubric {
   id?: string;
   name: string;
   description?: string;
   judgeInstruction?: string;
-  criteria: EvaluationProfile["criteria"];
-  requirementGroups?: EvaluationProfile["requirementGroups"];
-  complianceInfluence?: EvaluationProfile["complianceInfluence"];
+  criteria: EvaluationRubric["criteria"];
+  requirementGroups?: EvaluationRubric["requirementGroups"];
+  complianceInfluence?: EvaluationRubric["complianceInfluence"];
 }
 
 export interface SuitePackageV1 {
@@ -91,12 +91,12 @@ export interface SuitePackageV1 {
   modelSlots: SuitePackageModelSlot[];
   defaultJudge: CriticRef;
   defaultEvaluation?: EvaluationSelection;
-  profiles?: SuitePackageProfile[];
+  profiles?: SuitePackageRubric[];
 }
 
 export interface ImportedSuitePackage {
   suite: EvaluationSuite;
-  profiles: Array<{ record: ProfileRecord; profile: EvaluationProfile }>;
+  profiles: Array<{ record: RubricRecord; profile: EvaluationRubric }>;
   /** True when the imported suite passes validateSuiteForExecution. */
   executionReady: boolean;
   /** Human-readable notes (e.g. conflict suffixes, non-executable draft). */
@@ -183,11 +183,11 @@ function isValidPackageSlot(
   return errors.length === 0;
 }
 
-function isValidPackageProfile(
+function isValidPackageRubric(
   v: unknown,
   where: string,
   errors: string[],
-): v is SuitePackageProfile {
+): v is SuitePackageRubric {
   if (!isRecord(v)) {
     errors.push(`${where} must be an object.`);
     return false;
@@ -222,29 +222,29 @@ export function parseSuitePackage(
 
   const tasksRaw = Array.isArray(value.tasks) ? value.tasks : null;
   const slotsRaw = Array.isArray(value.modelSlots) ? value.modelSlots : null;
-  const profilesRaw =
+  const rubricsRaw =
     value.profiles === undefined || Array.isArray(value.profiles) ? (value.profiles ?? []) : null;
   if (tasksRaw === null) errors.push("tasks must be an array.");
   if (slotsRaw === null) errors.push("modelSlots must be an array.");
-  if (profilesRaw === null) errors.push("profiles must be an array when present.");
+  if (rubricsRaw === null) errors.push("profiles must be an array when present.");
   if (tasksRaw && tasksRaw.length > SUITE_PACKAGE_LIMITS.TASKS) {
     errors.push(
       `tasks has ${tasksRaw.length} entries — the limit is ${SUITE_PACKAGE_LIMITS.TASKS}.`,
     );
   }
-  if (profilesRaw && profilesRaw.length > SUITE_PACKAGE_LIMITS.PROFILES) {
+  if (rubricsRaw && rubricsRaw.length > SUITE_PACKAGE_LIMITS.RUBRICS) {
     errors.push(
-      `profiles has ${profilesRaw.length} entries — the limit is ${SUITE_PACKAGE_LIMITS.PROFILES}.`,
+      `profiles has ${rubricsRaw.length} entries — the limit is ${SUITE_PACKAGE_LIMITS.RUBRICS}.`,
     );
   }
   if (errors.length > 0) return { ok: false, errors };
 
   tasksRaw!.forEach((t, i) => isValidPackageTask(t, `tasks[${i}]`, errors));
   slotsRaw!.forEach((s, i) => isValidPackageSlot(s, `modelSlots[${i}]`, errors));
-  profilesRaw!.forEach((p, i) => {
-    if (!isValidPackageProfile(p, `profiles[${i}]`, errors)) return;
-    const profile = p as SuitePackageProfile;
-    if (profile.criteria.length > SUITE_PACKAGE_LIMITS.CRITERIA) {
+  rubricsRaw!.forEach((p, i) => {
+    if (!isValidPackageRubric(p, `profiles[${i}]`, errors)) return;
+    const rubric = p as SuitePackageRubric;
+    if (rubric.criteria.length > SUITE_PACKAGE_LIMITS.CRITERIA) {
       errors.push(`profiles[${i}].criteria exceeds the limit of ${SUITE_PACKAGE_LIMITS.CRITERIA}.`);
     }
   });
@@ -266,7 +266,7 @@ export function parseSuitePackage(
       modelSlots: slotsRaw as SuitePackageModelSlot[],
       defaultJudge: judge as CriticRef,
       defaultEvaluation: value.defaultEvaluation as EvaluationSelection | undefined,
-      profiles: profilesRaw as SuitePackageProfile[],
+      profiles: rubricsRaw as SuitePackageRubric[],
     },
   };
 }
@@ -277,15 +277,15 @@ export interface NormalizeSuitePackageOptions {
   /** Ids already taken in the local store (suites and profiles). */
   takenIds: ReadonlySet<string>;
   /** Ids of profiles that already exist locally (tasks may pin them). */
-  existingProfileIds: ReadonlySet<string>;
+  existingRubricIds: ReadonlySet<string>;
   generateId?: () => string;
   now?: () => number;
 }
 
 /**
  * Normalize a parsed package into persistable records. Ids are minted for
- * missing entries and suffixed on conflict; embedded profile references are
- * remapped to the minted ids. Errors when a task pins a profile that is
+ * missing entries and suffixed on conflict; embedded rubric references are
+ * remapped to the minted ids. Errors when a task pins a rubric that is
  * neither embedded nor present locally.
  */
 export function normalizeSuitePackage(
@@ -310,27 +310,27 @@ export function normalizeSuitePackage(
     return candidate;
   };
 
-  // Profiles first — tasks and the suite default pin them by id.
-  const profileIdMap = new Map<string, string>();
-  const profiles: Array<{ record: ProfileRecord; profile: EvaluationProfile }> = [];
+  // Rubrics first — tasks and the suite default pin them by id.
+  const rubricIdMap = new Map<string, string>();
+  const profiles: Array<{ record: RubricRecord; profile: EvaluationRubric }> = [];
   const errors: string[] = [];
   const timestamp = now();
-  for (const pkgProfile of pkg.profiles ?? []) {
-    const minted = mintId(pkgProfile.id, "Profile");
-    if (pkgProfile.id && pkgProfile.id !== minted) {
-      profileIdMap.set(pkgProfile.id, minted);
+  for (const pkgRubric of pkg.profiles ?? []) {
+    const minted = mintId(pkgRubric.id, "Rubric");
+    if (pkgRubric.id && pkgRubric.id !== minted) {
+      rubricIdMap.set(pkgRubric.id, minted);
     } else {
-      profileIdMap.set(pkgProfile.id ?? minted, minted);
+      rubricIdMap.set(pkgRubric.id ?? minted, minted);
     }
-    const profile: EvaluationProfile = {
+    const rubric: EvaluationRubric = {
       id: minted,
       version: 1,
-      name: pkgProfile.name,
-      description: pkgProfile.description ?? "",
-      judgeInstruction: pkgProfile.judgeInstruction ?? "",
-      criteria: pkgProfile.criteria,
-      requirementGroups: pkgProfile.requirementGroups,
-      complianceInfluence: pkgProfile.complianceInfluence,
+      name: pkgRubric.name,
+      description: pkgRubric.description ?? "",
+      judgeInstruction: pkgRubric.judgeInstruction ?? "",
+      criteria: pkgRubric.criteria,
+      requirementGroups: pkgRubric.requirementGroups,
+      complianceInfluence: pkgRubric.complianceInfluence,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -340,14 +340,14 @@ export function normalizeSuitePackage(
     // structural guard below runs as the final shape check; because the guard
     // also rejects binary criteria with undefined requirementGroups (spec §19),
     // it must not preempt the detailed authoring message.
-    const profileErrors = validateProfile(profile);
-    if (profileErrors.length > 0) {
-      errors.push(`Profile "${pkgProfile.name}" is invalid: ${profileErrors.join("; ")}`);
+    const rubricErrors = validateRubric(rubric);
+    if (rubricErrors.length > 0) {
+      errors.push(`Rubric "${pkgRubric.name}" is invalid: ${rubricErrors.join("; ")}`);
       continue;
     }
-    if (!isEvaluationProfile(profile)) {
+    if (!isEvaluationRubric(rubric)) {
       errors.push(
-        `Profile "${pkgProfile.name}" fails the record guard — check criteria anchors and weights (a kind:"gate" criterion is not supported in this version; author it as a binary check or wait for gate support).`,
+        `Rubric "${pkgRubric.name}" fails the record guard — check criteria anchors and weights (a kind:"gate" criterion is not supported in this version; author it as a binary check or wait for gate support).`,
       );
       continue;
     }
@@ -360,20 +360,20 @@ export function normalizeSuitePackage(
         updatedAt: timestamp,
         archivedAt: null,
       },
-      profile,
+      profile: rubric,
     });
   }
   if (errors.length > 0) return { ok: false, errors };
 
-  const remapRef = (ref: EvaluationProfileRef, where: string): EvaluationProfileRef | null => {
-    if (profileIdMap.has(ref.id)) {
-      return { id: profileIdMap.get(ref.id)!, version: 1 };
+  const remapRef = (ref: RubricVersionRef, where: string): RubricVersionRef | null => {
+    if (rubricIdMap.has(ref.id)) {
+      return { id: rubricIdMap.get(ref.id)!, version: 1 };
     }
-    if (opts.existingProfileIds.has(ref.id)) {
-      return ref; // pins an existing local profile — left untouched
+    if (opts.existingRubricIds.has(ref.id)) {
+      return ref; // pins an existing local rubric — left untouched
     }
     errors.push(
-      `${where} pins profile "${ref.id}" v${ref.version}, which is neither embedded in the package nor present locally.`,
+      `${where} pins rubric "${ref.id}" v${ref.version}, which is neither embedded in the package nor present locally.`,
     );
     return null;
   };
@@ -412,7 +412,7 @@ export function normalizeSuitePackage(
     slug: s.slug,
     enabled: s.enabled ?? true,
   }));
-  // Suite defaults are EvaluationSelection (holistic | profile) — "inherit"
+  // Suite defaults are EvaluationSelection (holistic | rubric) — "inherit"
   // exists only at task level.
   const defaultEvaluation: EvaluationSelection = pkg.defaultEvaluation
     ? (remapSelection(pkg.defaultEvaluation, "defaultEvaluation") as EvaluationSelection)

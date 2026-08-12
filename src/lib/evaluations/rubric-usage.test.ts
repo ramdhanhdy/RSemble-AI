@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EvaluationSuite } from "./evaluation-types";
-import { suitesUsingProfile } from "./profile-usage";
+import { suitesUsingRubric } from "./rubric-usage";
 
 /** Minimal suite fixture — mirrors the makeSuite pattern in SuiteList.test.tsx. */
 function makeSuite(id: string, overrides: Partial<EvaluationSuite> = {}): EvaluationSuite {
@@ -24,12 +24,12 @@ function makeSuite(id: string, overrides: Partial<EvaluationSuite> = {}): Evalua
 
 const PIN = { id: "p1", version: 2 };
 
-describe("suitesUsingProfile", () => {
-  it("matches suites whose default evaluation pins the profile", () => {
+describe("suitesUsingRubric", () => {
+  it("matches suites whose default evaluation pins the rubric", () => {
     const s = makeSuite("s1", {
       defaultEvaluation: { kind: "profile", profile: PIN },
     });
-    const usage = suitesUsingProfile([s], "p1");
+    const usage = suitesUsingRubric([s], "p1");
     expect(usage).toHaveLength(1);
     expect(usage[0].suite.id).toBe("s1");
     expect(usage[0].versions).toEqual([2]);
@@ -50,7 +50,7 @@ describe("suitesUsingProfile", () => {
         },
       ],
     });
-    const usage = suitesUsingProfile([s], "p1");
+    const usage = suitesUsingRubric([s], "p1");
     expect(usage).toHaveLength(1);
     expect(usage[0].versions).toEqual([2]);
     expect(usage[0].levels).toEqual(["task"]);
@@ -80,7 +80,7 @@ describe("suitesUsingProfile", () => {
         },
       ],
     });
-    const usage = suitesUsingProfile([s], "p1");
+    const usage = suitesUsingRubric([s], "p1");
     expect(usage[0].versions).toEqual([1, 3]);
     expect(usage[0].levels.sort()).toEqual(["default", "task"]);
   });
@@ -90,19 +90,19 @@ describe("suitesUsingProfile", () => {
       archivedAt: 1,
       defaultEvaluation: { kind: "profile", profile: PIN },
     });
-    expect(suitesUsingProfile([archived], "p1")).toEqual([]);
+    expect(suitesUsingRubric([archived], "p1")).toEqual([]);
   });
 
   it("excludes holistic suites", () => {
     const holistic = makeSuite("s3");
-    expect(suitesUsingProfile([holistic], "p1")).toEqual([]);
+    expect(suitesUsingRubric([holistic], "p1")).toEqual([]);
   });
 
-  it("does not match other profile ids", () => {
+  it("does not match other rubric ids", () => {
     const s = makeSuite("s4", {
       defaultEvaluation: { kind: "profile", profile: { id: "p9", version: 1 } },
     });
-    expect(suitesUsingProfile([s], "p1")).toEqual([]);
+    expect(suitesUsingRubric([s], "p1")).toEqual([]);
   });
 
   it("excludes tasks whose evaluation is inherit", () => {
@@ -119,6 +119,6 @@ describe("suitesUsingProfile", () => {
         },
       ],
     });
-    expect(suitesUsingProfile([s], "p1")).toEqual([]);
+    expect(suitesUsingRubric([s], "p1")).toEqual([]);
   });
 });
