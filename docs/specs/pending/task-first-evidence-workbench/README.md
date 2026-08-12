@@ -23,7 +23,7 @@ The parent specification is the governing contract. Each child is a vertical, in
 
 | Order | Child | Outcome | Depends on | Status |
 |---|---|---|---|---|
-| 01 | [Rubric terminology and compatibility](./01-rubric-terminology/rubric-terminology-spec.md) | Scoring Profiles become Rubrics everywhere users and new domain code see them, while old data remains readable. | Parent | Pending |
+| 01 | [Rubric terminology and compatibility](../../archive/01-rubric-terminology/rubric-terminology-spec.md) | Scoring Profiles become Rubrics everywhere users and new domain code see them, while old data remains readable. | Parent | Archived |
 | 02 | [Canonical tasks and immutable versions](./02-canonical-tasks/canonical-tasks-spec.md) | Tasks exist independently of comparisons and task sets, with explicit identity, immutable executable versions, instances, families, and facets. | 01 | Pending |
 | 03 | [Task sets and owned evaluation results](./03-task-sets-and-evaluations/task-sets-and-evaluations-spec.md) | Task Sets reference canonical Task Versions and own ordinary Evaluation executions/results/recovery/roster-extension history—not Policy Studies. | 01, 02 | Pending |
 | 04 | [Observations and evidence provenance](./04-observations-and-evidence/observations-and-evidence-spec.md) | Accepted attempts become idempotent, eligibility-scoped Observations without duplicating immutable source evidence or inflating counts. | 01, 02, 03 | Pending |

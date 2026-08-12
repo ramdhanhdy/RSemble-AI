@@ -9,8 +9,8 @@ This document records architectural decisions made for RSemble AI.
 >
 > **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
 > "Profiles" or "evaluation profiles" are now "Rubrics" in all user-facing
-> surfaces, domain code, and routes (spec: `docs/specs/pending/
-> task-first-evidence-workbench/01-rubric-terminology/`). Historical decisions
+> surfaces, domain code, and routes (spec: `docs/specs/archive/
+> 01-rubric-terminology/`). Historical decisions
 > below preserve the original "Profile" terminology for provenance; the
 > scoring contracts they define (versioning, immutability, criteria validation,
 > `Q − λ(1−C)` ranking) are unchanged. Legacy IndexedDB stores and frozen

@@ -9,7 +9,7 @@
 **Tech stack:** TypeScript, React, React Router, Dexie, Vitest, happy-dom, Vite.
 
 **Specification:** [`rubric-terminology-spec.md`](./rubric-terminology-spec.md)
-**Parent:** [`../task-first-evidence-workbench-spec.md`](../task-first-evidence-workbench-spec.md)
+**Parent:** [`../../pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md`](../../pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md)
 **Execution authorization:** This plan does not authorize implementation, commits, or pushes. Obtain explicit user approval. Local commits only when approved; never push unless separately requested.
 
 ---

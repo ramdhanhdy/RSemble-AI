@@ -3,7 +3,7 @@
 **Date:** 2026-08-12
 **Branch:** `feat/task-first-evidence-workbench`
 **HEAD:** recovery over `4e8847d` (legacy profiles redirect correction)
-**Spec:** `docs/specs/pending/task-first-evidence-workbench/01-rubric-terminology/rubric-terminology-spec.md` §10 Browser
+**Spec:** `docs/specs/archive/01-rubric-terminology/rubric-terminology-spec.md` §10 Browser
 
 ## Flows verified
 

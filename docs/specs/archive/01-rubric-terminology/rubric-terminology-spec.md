@@ -1,7 +1,7 @@
 # Rubric Terminology and Compatibility Specification
 
 **Status:** Shipped (2026-08-12)
-**Parent:** [`../task-first-evidence-workbench-spec.md`](../task-first-evidence-workbench-spec.md)
+**Parent:** [`../../pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md`](../../pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md)
 **Order:** 01
 **Dependencies:** Parent only
 
