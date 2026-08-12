@@ -9,14 +9,15 @@
 // The reducer, controller refs, provider probes, and modals stay mounted
 // in RSemble above this router so state persists across navigation.
 //
-// Rubric routes (rubric-terminology spec §4): /evaluations/rubrics and
-// /evaluations/rubrics/:rubricId are the canonical scoring-rubric routes.
-// The baseline /evaluations/rubrics… routes redirect to them, preserving
-// the entity id and any location state (return location / historical
-// version state) so existing deep links keep working. No invented
-// /rubrics/* alias is added — only real baseline rubric routes redirect.
-// The list/detail components ship as RubricList/RubricDetail; the route
-// paths and surfaces are both canonical.
+// Rubric routes (rubric-terminology spec §4): /evaluations/rubrics,
+// /evaluations/rubrics/:rubricId, and /evaluations/rubrics/:rubricId/versions/:version
+// are the canonical scoring-rubric routes. The real baseline legacy routes
+// /evaluations/profiles and /evaluations/profiles/:rubricId redirect to them,
+// preserving the entity id and any location state (return location / historical
+// version state) so existing deep links keep working. No invented /rubrics/*
+// alias is added — only the real baseline profiles routes redirect. The
+// list/detail components ship as RubricList/RubricDetail; the route paths and
+// surfaces are both canonical.
 // =============================================================================
 
 import { lazy, Suspense } from "react";
@@ -118,13 +119,14 @@ export function AppRoutes({
           path="rubrics/:rubricId/versions/:version"
           element={withSuspense(<RubricVersionRoute />)}
         />
-
-        {/* Compatibility redirects — real baseline /evaluations/rubrics…
+        {/* Compatibility redirects — real baseline /evaluations/profiles
             links redirect to the canonical Rubric routes, preserving the
             entity id and any location state (return location / historical
-            version state) without an invented /rubrics/* alias (spec §4). */}
-        <Route path="rubrics" element={<RubricListRedirect />} />
-        <Route path="rubrics/:rubricId" element={<RubricDetailRedirect />} />
+            version state) without an invented /rubrics/* alias (spec §4).
+            The legacy profiles segment is a frozen compatibility boundary;
+            the entity id param is the canonical rubricId. */}
+        <Route path="profiles" element={<RubricListRedirect />} />
+        <Route path="profiles/:rubricId" element={<RubricDetailRedirect />} />
 
         <Route path=":suiteId" element={withSuspense(<SuiteEditorRoute models={models} />)} />
         <Route
@@ -202,7 +204,7 @@ function RubricVersionRoute() {
   return <RubricDetail repo={repo} rubricId={rubricId ?? ""} version={versionNum} />;
 }
 
-/** Compatibility redirect: /evaluations/rubrics → /evaluations/rubrics.
+/** Compatibility redirect: /evaluations/profiles → /evaluations/rubrics.
  *  Preserves search and location state so return locations and any
  *  historical version state encoded in the URL/location survive the
  *  redirect (rubric-terminology spec §4). `replace` keeps the legacy URL
@@ -218,9 +220,9 @@ function RubricListRedirect() {
   );
 }
 
-/** Compatibility redirect: /evaluations/rubrics/:rubricId →
- *  /evaluations/rubrics/:rubricId. The rubricId entity becomes the rubricId
- *  (same stored record — only the route name changes). Preserves search and
+/** Compatibility redirect: /evaluations/profiles/:rubricId →
+ *  /evaluations/rubrics/:rubricId. The legacy profiles entity id is the same
+ *  stored record — only the route name changes. Preserves search and
  *  location state; `replace` avoids a back-button loop. */
 function RubricDetailRedirect() {
   const { rubricId } = useParams<{ rubricId: string }>();

@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-12
 **Branch:** `feat/task-first-evidence-workbench`
-**HEAD:** `7335830` (+ formatter/lint recovery + authority docs)
+**HEAD:** recovery over `4e8847d` (legacy profiles redirect correction)
 **Spec:** `docs/specs/pending/task-first-evidence-workbench/01-rubric-terminology/rubric-terminology-spec.md` §10 Browser
 
 ## Flows verified
@@ -21,21 +21,22 @@
 - Save creates rubric and navigates to canonical detail route.
 
 ### Rubric edit / version
-- Editing description + adding criterion + filling required criterion descriptions → Save creates v2.
+- Editing description + adding criterion + filling required criterion descriptions → Save creates a new version.
 - Version selector shows "v1" and "v2 (latest)".
 - Historical version (v1) is read-only: description field `readOnly`, no save action.
 - Latest version (v2) is editable.
 - Version switching via `<select>` updates the form.
 
 ### Rubric archive / restore
-- Archive button archives the rubric; "This rubric is archived. Restore it to use in new suites." shown.
+- Archive button archives the rubric; archived banner shown ("This rubric is archived. Restore it to use in new suites.").
 - Restore button restores the rubric; archive state cleared, Archive button returns.
 
-### Legacy redirects
-- `/evaluations/rubrics` → `/evaluations/rubrics` (canonical list, preserves search/state).
-- `/evaluations/rubrics/:id?returnTo=/compare` → `/evaluations/rubrics/:id?returnTo=/compare` (canonical detail, preserves entity + search).
-- `/evaluations/profiles/:id` → Not found (was never a real baseline route; no invented alias).
+### Legacy redirects (real baseline `/evaluations/profiles` routes)
+- `/evaluations/profiles` → `/evaluations/rubrics` (canonical list renders, preserves search/state).
+- `/evaluations/profiles/:id?returnTo=/compare` → `/evaluations/rubrics/:id?returnTo=/compare` (canonical detail renders, preserves entity id + search).
+- `/evaluations/profiles/:id` with location state preserves the state through the redirect.
 - `/rubrics/foo` → Not found (no invented `/rubrics/*` alias per spec §4).
+- `/rubrics` → Not found (no invented top-level `/rubrics` alias).
 
 ## Viewport / zoom / keyboard / reduced-motion matrix
 
@@ -65,7 +66,7 @@
 
 | Gate | Command | Result |
 |---|---|---|
-| Targeted vitest | `npx vitest run src/lib/evaluations src/lib/persistence src/workspaces/evaluations src/ui` | 93 files, 1446 tests passed |
+| Targeted vitest | `npx vitest run src/lib/evaluations src/lib/persistence src/workspaces/evaluations src/ui src/app-router.test.tsx` | 94 files, 1465 tests passed |
 | Typecheck web | `npm run typecheck:web` | Exit 0 |
 | Full check | `npm run check` | Exit 0 (format, lint, typecheck, test, build all green) |
 | Terminology guard | `npx vitest run src/lib/evaluations/rubric-terminology.test.ts` | 1 test passed (zero violations) |

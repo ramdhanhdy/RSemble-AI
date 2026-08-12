@@ -101,9 +101,10 @@ const FROZEN_IDENTIFIERS: Record<string, true> = {
 
 /**
  * Files in which the standalone lowercase token `profiles` is a frozen physical
- * Dexie store declaration or a v1 archive/import payload field (spec §3.3, §7).
- * In every other file `profiles` is a route segment, nav label, public API
- * field, or local variable that must become Rubric.
+ * Dexie store declaration, a v1 archive/import payload field (spec §3.3, §7),
+ * or the legacy `/evaluations/profiles` route redirect segment required by
+ * spec §4. In every other file `profiles` is a nav label, public API field, or
+ * local variable that must become Rubric.
  */
 const PROFILES_TOKEN_FILES: Record<string, true> = {
   // `profiles` Dexie store declaration + schema.
@@ -112,6 +113,10 @@ const PROFILES_TOKEN_FILES: Record<string, true> = {
   "lib/persistence/archive.ts": true,
   // v1 suite-package import payload field `profiles` (import reads v1 profiles).
   "lib/evaluations/suite-package.ts": true,
+  // Legacy /evaluations/profiles compatibility redirect route segments
+  // (spec §4) and the route tests that exercise them.
+  "app-router.tsx": true,
+  "app-router.test.tsx": true,
 };
 
 /**
