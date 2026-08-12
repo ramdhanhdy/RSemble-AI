@@ -80,6 +80,22 @@ export interface RequirementGroup {
 }
 
 /**
+ * Optional authored criterion-to-facet mapping (rubric-terminology spec §5.3).
+ *
+ * Disclosed evidence metadata only — never consumed by scoring math, never
+ * used to infer mappings, and never used to authorize model-profile
+ * aggregation. Child 06 decides how authored mappings are consumed. The
+ * field may remain empty; unmapped criteria stay visible and cannot silently
+ * power facet-level claims.
+ */
+export interface CriterionFacetMapping {
+  criterionId: string;
+  facetId: string;
+  mappingKind: "direct" | "supporting";
+  source: "authored" | "imported";
+}
+
+/**
  * Canonical scoring rubric: an immutable versioned set of criteria (graded,
  * binary, or legacy 1/3/5) plus optional requirement groups and compliance
  * influence. This is the canonical domain name for the scoring object
@@ -99,6 +115,10 @@ export interface EvaluationRubric {
   /** Compliance influence (lambda) in [0,1], default 1.0. "Maximum number of
    *  ranking points that failing all ordinary compliance requirements may cost." */
   complianceInfluence?: number;
+  /** Optional authored criterion-to-facet mapping metadata (spec §5.3).
+   *  Disclosed evidence metadata — never consumed by scoring math. May remain
+   *  empty; child 06 decides how authored mappings are consumed. */
+  facetMappings?: CriterionFacetMapping[];
   createdAt: number;
   updatedAt: number;
 }
@@ -366,6 +386,12 @@ const PROHIBITED_KEYS: ReadonlySet<string> = new Set([
   "env",
 ]);
 
+/** String values that must never appear in an authored identifier field —
+ *  matches the credential-shape check used for roster-extension model keys
+ *  (see `experiment-roster-extension.ts`). Used to reject secret-shaped
+ *  criterion/facet mapping values before they are persisted. */
+const CREDENTIAL_LIKE_VALUE = /^(sk-|AIza|Bearer\s)/i;
+
 function isString(v: unknown): v is string {
   return typeof v === "string";
 }
@@ -504,6 +530,20 @@ export function isRequirementGroup(v: unknown): v is RequirementGroup {
   return true;
 }
 
+/** Structural guard for a single CriterionFacetMapping (spec §5.3).
+ *  Checks field types and enum values only; cross-field references
+ *  (criterionId ∈ rubric.criteria, duplicate tuples, secret-shaped values)
+ *  are enforced by `isEvaluationRubric` / `validateRubric`, which have the
+ *  rubric context required to evaluate them. */
+export function isCriterionFacetMapping(v: unknown): v is CriterionFacetMapping {
+  if (!isRecord(v)) return false;
+  if (!isNonEmptyString(v.criterionId)) return false;
+  if (!isNonEmptyString(v.facetId)) return false;
+  if (v.mappingKind !== "direct" && v.mappingKind !== "supporting") return false;
+  if (v.source !== "authored" && v.source !== "imported") return false;
+  return true;
+}
+
 export function isEvaluationRubric(v: unknown): v is EvaluationRubric {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
@@ -570,6 +610,35 @@ export function isEvaluationRubric(v: unknown): v is EvaluationRubric {
       v.complianceInfluence > 1
     ) {
       return false;
+    }
+  }
+
+  // Validate optional criterion-to-facet mappings (spec §5.3). Disclosed
+  // evidence metadata only — never consumed by scoring math. The runtime
+  // guard enforces the same invariants as `validateRubric` so an imported
+  // rubric carrying malformed mappings cannot silently pass the guard.
+  if (v.facetMappings !== undefined) {
+    if (!Array.isArray(v.facetMappings) || !v.facetMappings.every(isCriterionFacetMapping)) {
+      return false;
+    }
+    const criterionIds = new Set(v.criteria.map((c) => c.id));
+    const seen = new Set<string>();
+    for (const m of v.facetMappings) {
+      // Missing criterion: criterionId must reference an existing criterion.
+      if (!criterionIds.has(m.criterionId)) return false;
+      // Missing facet: facetId must be non-empty (structural guard already
+      // enforces this; kept defensive against future relaxation).
+      if (!m.facetId) return false;
+      // Duplicate mapping: the same (criterionId, facetId, mappingKind) tuple
+      // may not appear twice.
+      const key = `${m.criterionId}\u{1F}/${m.facetId}\u{1F}/${m.mappingKind}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      // Prohibited/secret-shaped values: authored identifiers must never look
+      // like credentials (matches the roster-extension credential check).
+      if (CREDENTIAL_LIKE_VALUE.test(m.criterionId) || CREDENTIAL_LIKE_VALUE.test(m.facetId)) {
+        return false;
+      }
     }
   }
 

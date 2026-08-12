@@ -19,9 +19,12 @@ import {
   WINNER_EPSILON,
   formatRankValueDisplay,
   isComplianceOnlyRubric,
+  qualityScore,
+  rankValueFromResults,
 } from "./evaluation-rubric";
 import {
   isEvaluationRubric,
+  isCriterionFacetMapping,
   isRubricRecord,
   isRubricVersionRef,
   type EvaluationRubric,
@@ -29,6 +32,7 @@ import {
   type RubricVersionRef,
   type RubricSnapshot,
   type EvaluationCriterion,
+  type CriterionFacetMapping,
 } from "./evaluation-types";
 import {
   validateProfile as validateRubricLegacy,
@@ -407,5 +411,251 @@ describe("canonical rubric names and legacy compatibility", () => {
     expect(isRubricRecord(invalidRecord)).toBe(false);
     const invalidRef = { id: "legacy-1" } as unknown as RubricVersionRef;
     expect(isRubricVersionRef(invalidRef)).toBe(false);
+  });
+});
+
+// --- Criterion-to-facet mapping seam (spec §5.3) ----------------------------
+
+describe("isCriterionFacetMapping — structural guard", () => {
+  it("accepts a well-formed mapping", () => {
+    expect(
+      isCriterionFacetMapping({
+        criterionId: "c1",
+        facetId: "reasoning",
+        mappingKind: "direct",
+        source: "authored",
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts both mappingKind and source variants", () => {
+    for (const mappingKind of ["direct", "supporting"] as const) {
+      for (const source of ["authored", "imported"] as const) {
+        expect(
+          isCriterionFacetMapping({ criterionId: "c1", facetId: "f", mappingKind, source }),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("rejects missing or empty criterionId/facetId", () => {
+    expect(isCriterionFacetMapping({ criterionId: "", facetId: "f", mappingKind: "direct", source: "authored" })).toBe(false);
+    expect(isCriterionFacetMapping({ criterionId: "c1", facetId: "", mappingKind: "direct", source: "authored" })).toBe(false);
+    expect(isCriterionFacetMapping({ facetId: "f", mappingKind: "direct", source: "authored" })).toBe(false);
+  });
+
+  it("rejects unknown mappingKind/source", () => {
+    expect(isCriterionFacetMapping({ criterionId: "c1", facetId: "f", mappingKind: "gate", source: "authored" })).toBe(false);
+    expect(isCriterionFacetMapping({ criterionId: "c1", facetId: "f", mappingKind: "direct", source: "inferred" })).toBe(false);
+  });
+
+  it("rejects non-objects", () => {
+    expect(isCriterionFacetMapping(null)).toBe(false);
+    expect(isCriterionFacetMapping("c1/f")).toBe(false);
+    expect(isCriterionFacetMapping([])).toBe(false);
+  });
+});
+
+describe("isEvaluationRubric — facetMappings validation", () => {
+  const base = makeRubric();
+
+  it("accepts a rubric with no facetMappings (unchanged)", () => {
+    expect(isEvaluationRubric(base)).toBe(true);
+  });
+
+  it("accepts a rubric with valid authored facet mappings", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "reasoning", mappingKind: "direct", source: "authored" },
+        { criterionId: "c2", facetId: "clarity", mappingKind: "supporting", source: "imported" },
+      ],
+    });
+    expect(isEvaluationRubric(rubric)).toBe(true);
+  });
+
+  it("rejects a mapping whose criterionId is not in the rubric", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "nope", facetId: "f", mappingKind: "direct", source: "authored" },
+      ],
+    });
+    expect(isEvaluationRubric(rubric)).toBe(false);
+  });
+
+  it("rejects an empty facetId", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "", mappingKind: "direct", source: "authored" },
+      ],
+    });
+    expect(isEvaluationRubric(rubric)).toBe(false);
+  });
+
+  it("rejects duplicate (criterionId, facetId, mappingKind) tuples", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "f", mappingKind: "direct", source: "authored" },
+        { criterionId: "c1", facetId: "f", mappingKind: "direct", source: "imported" },
+      ],
+    });
+    expect(isEvaluationRubric(rubric)).toBe(false);
+  });
+
+  it("allows the same criterion+facet with different mappingKind (not a duplicate)", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "f", mappingKind: "direct", source: "authored" },
+        { criterionId: "c1", facetId: "f", mappingKind: "supporting", source: "authored" },
+      ],
+    });
+    expect(isEvaluationRubric(rubric)).toBe(true);
+  });
+
+  it("rejects secret-shaped criterionId/facetId values", () => {
+    const skCriterion = makeRubric({
+      facetMappings: [
+        { criterionId: "sk-live123", facetId: "f", mappingKind: "direct", source: "authored" },
+      ],
+    });
+    expect(isEvaluationRubric(skCriterion)).toBe(false);
+    const bearerFacet = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "Bearer xyz", mappingKind: "direct", source: "authored" },
+      ],
+    });
+    expect(isEvaluationRubric(bearerFacet)).toBe(false);
+  });
+
+  it("rejects prohibited keys carried on a mapping (hasProhibitedKeys recursion)", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        {
+          criterionId: "c1",
+          facetId: "f",
+          mappingKind: "direct",
+          source: "authored",
+          apiKey: "sk-...",
+        } as unknown as CriterionFacetMapping,
+      ],
+    });
+    expect(isEvaluationRubric(rubric)).toBe(false);
+  });
+
+  it("rejects non-array facetMappings", () => {
+    const rubric = makeRubric({ facetMappings: {} as unknown as CriterionFacetMapping[] });
+    expect(isEvaluationRubric(rubric)).toBe(false);
+  });
+
+  it("rejects a structurally malformed mapping entry", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "f", mappingKind: "gate", source: "authored" } as unknown as CriterionFacetMapping,
+      ],
+    });
+    expect(isEvaluationRubric(rubric)).toBe(false);
+  });
+});
+
+describe("validateRubric — facetMappings authoring errors", () => {
+  it("adds no errors for valid mappings", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "reasoning", mappingKind: "direct", source: "authored" },
+      ],
+    });
+    expect(validateRubric(rubric)).toEqual([]);
+  });
+
+  it("reports a missing criterion", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "nope", facetId: "f", mappingKind: "direct", source: "authored" },
+      ],
+    });
+    const errors = validateRubric(rubric);
+    expect(errors.some((e) => e.includes("not in this rubric"))).toBe(true);
+  });
+
+  it("reports an empty facetId", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "", mappingKind: "direct", source: "authored" },
+      ],
+    });
+    const errors = validateRubric(rubric);
+    expect(errors.some((e) => e.includes("non-empty"))).toBe(true);
+  });
+
+  it("reports a duplicate mapping", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "c1", facetId: "f", mappingKind: "direct", source: "authored" },
+        { criterionId: "c1", facetId: "f", mappingKind: "direct", source: "imported" },
+      ],
+    });
+    const errors = validateRubric(rubric);
+    expect(errors.some((e) => e.includes("duplicate mapping"))).toBe(true);
+  });
+
+  it("reports secret-shaped identifiers", () => {
+    const rubric = makeRubric({
+      facetMappings: [
+        { criterionId: "sk-live123", facetId: "f", mappingKind: "direct", source: "authored" },
+      ],
+    });
+    const errors = validateRubric(rubric);
+    expect(errors.some((e) => e.includes("credentials"))).toBe(true);
+  });
+
+  it("reports a non-array facetMappings", () => {
+    const rubric = makeRubric({ facetMappings: {} as unknown as CriterionFacetMapping[] });
+    const errors = validateRubric(rubric);
+    expect(errors.some((e) => e.includes("must be an array"))).toBe(true);
+  });
+
+  it("preserves current validation semantics (no facetMappings ⇒ no new errors)", () => {
+    const rubric = makeRubric();
+    expect(validateRubric(rubric)).toEqual([]);
+  });
+});
+
+describe("facetMappings do not change scoring outputs (spec §5.3)", () => {
+  // The mapping seam is disclosed evidence metadata only. Scoring math must
+  // be byte-for-byte identical with and without facetMappings on the same
+  // criteria/anchors/groups.
+  const criterionScores: Record<string, number> = { c1: 4, c2: 2 };
+
+  const withoutMappings = makeRubric();
+  const withMappings = makeRubric({
+    facetMappings: [
+      { criterionId: "c1", facetId: "reasoning", mappingKind: "direct", source: "authored" },
+      { criterionId: "c2", facetId: "clarity", mappingKind: "supporting", source: "imported" },
+    ],
+  });
+
+  it("qualityScore is identical with and without mappings", () => {
+    expect(qualityScore(criterionScores, withMappings)).toEqual(
+      qualityScore(criterionScores, withoutMappings),
+    );
+  });
+
+  it("canonicalScore is identical with and without mappings", () => {
+    expect(canonicalScore(criterionScores, withMappings)).toEqual(
+      canonicalScore(criterionScores, withoutMappings),
+    );
+  });
+
+  it("rankValueFromResults is identical with and without mappings", () => {
+    const results = [
+      { criterionId: "c1", score: 4 },
+      { criterionId: "c2", score: 2 },
+    ];
+    expect(rankValueFromResults(results, withMappings)).toEqual(
+      rankValueFromResults(results, withoutMappings),
+    );
+  });
+
+  it("judgeEvaluationBlock is identical with and without mappings (criteria text unaffected)", () => {
+    expect(judgeEvaluationBlock(withMappings)).toBe(judgeEvaluationBlock(withoutMappings));
   });
 });

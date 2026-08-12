@@ -24,9 +24,11 @@ import {
   Save,
   GitBranch,
   Pin,
+  Tag,
+  Trash2,
 } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
-import type { EvaluationRubric, RubricRecord } from "../../lib/evaluations/evaluation-types";
+import type { EvaluationRubric, RubricRecord, CriterionFacetMapping, EvaluationCriterion } from "../../lib/evaluations/evaluation-types";
 import { suitesUsingRubric, type RubricUsage } from "../../lib/evaluations/rubric-usage";
 import { validateRubric } from "../../lib/evaluations/evaluation-rubric";
 import { useEvaluationRepository } from "../../lib/persistence/evaluation-context";
@@ -123,6 +125,27 @@ export function RubricDetail({
 
   function updateDraft(patch: Partial<EvaluationRubric>) {
     setDraft((d) => (d ? { ...d, ...patch, updatedAt: Date.now() } : d));
+  }
+
+  // --- Optional criterion-to-facet mapping (spec §5.3 / §6.2) ---------------
+  // Disclosed authored evidence metadata — never scoring configuration. The
+  // seam is optional and may stay empty; child 06 decides how authored
+  // mappings are consumed. Only the latest version is editable; historical
+  // versions disclose their mappings read-only.
+  function addFacetMapping(criterionId: string, facetId: string, mappingKind: "direct" | "supporting") {
+    if (!draft || !criterionId.trim() || !facetId.trim()) return;
+    const next: CriterionFacetMapping = {
+      criterionId: criterionId.trim(),
+      facetId: facetId.trim(),
+      mappingKind,
+      source: "authored",
+    };
+    updateDraft({ facetMappings: [...(draft.facetMappings ?? []), next] });
+  }
+
+  function removeFacetMapping(index: number) {
+    if (!draft || !draft.facetMappings) return;
+    updateDraft({ facetMappings: draft.facetMappings.filter((_, i) => i !== index) });
   }
 
   async function save() {
@@ -456,6 +479,70 @@ export function RubricDetail({
         </div>
       )}
 
+      {/* Optional criterion-to-facet mapping — disclosed evidence metadata
+          (spec §5.3 / §6.2). Not scoring configuration; may stay empty.
+          Latest version is editable, historical versions are read-only. */}
+      {current && (
+        <details
+          data-facet-mappings
+          className="rounded-sm border border-edge bg-card px-3 py-2 text-sm"
+        >
+          <summary className="flex min-h-[44px] cursor-pointer items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <Tag size={12} aria-hidden="true" />
+            Evidence metadata (optional)
+          </summary>
+          <p className="mt-2 text-xs text-text-muted">
+            Authored criterion→facet mapping is disclosed evidence metadata,
+            not scoring configuration. Unmapped criteria remain visible.
+          </p>
+          {current.facetMappings && current.facetMappings.length > 0 ? (
+            <ul
+              className="mt-2 flex flex-col gap-1"
+              role="list"
+              data-facet-mapping-list
+            >
+              {current.facetMappings.map((m, i) => (
+                <li
+                  key={`${m.criterionId}-${m.facetId}-${m.mappingKind}-${i}`}
+                  className="flex flex-wrap items-center gap-1.5 text-xs text-text-secondary"
+                >
+                  <span className="font-mono text-text">{m.criterionId}</span>
+                  <span aria-hidden="true">→</span>
+                  <span className="font-mono text-text">{m.facetId}</span>
+                  <span className="text-text-muted">
+                    {m.mappingKind} · {m.source}
+                  </span>
+                  {isLatest && (
+                    <button
+                      type="button"
+                      data-action="remove-facet-mapping"
+                      data-index={i}
+                      onClick={() => removeFacetMapping(i)}
+                      aria-label={`Remove mapping ${m.criterionId} → ${m.facetId}`}
+                      className="ml-auto flex min-h-[44px] items-center gap-1 rounded-sm border border-edge px-2 text-text-muted transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      <Trash2 size={12} aria-hidden="true" />
+                      Remove
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-text-muted" data-facet-mapping-empty>
+              No facet mappings authored.
+            </p>
+          )}
+          {isLatest && current.criteria.length > 0 && (
+            <FacetMappingAddForm
+              criteria={current.criteria}
+              onAdd={addFacetMapping}
+            />
+          )}
+        </details>
+      )}
+
+
       {/* Suites pinned to this version (identity spec §5.3) */}
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
@@ -510,6 +597,104 @@ export function RubricDetail({
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+// --- Facet mapping add form (spec §5.3 / §6.2) ------------------------------
+
+/** Compact inline form for authoring one criterion→facet mapping at a time.
+ *  Source is fixed to "authored" (the editor is the authored surface; imported
+ *  mappings arrive through archive import, not hand-editing). */
+function FacetMappingAddForm({
+  criteria,
+  onAdd,
+}: {
+  criteria: EvaluationCriterion[];
+  onAdd: (criterionId: string, facetId: string, mappingKind: "direct" | "supporting") => void;
+}) {
+  const [criterionId, setCriterionId] = useState("");
+  const [facetId, setFacetId] = useState("");
+  const [mappingKind, setMappingKind] = useState<"direct" | "supporting">("direct");
+
+  function submit() {
+    if (!criterionId || !facetId.trim()) return;
+    onAdd(criterionId, facetId, mappingKind);
+    setFacetId("");
+  }
+
+  return (
+    <div
+      data-facet-mapping-add
+      className="mt-2 flex flex-wrap items-end gap-2 rounded-sm border border-edge bg-card-hover px-2 py-1.5 text-xs"
+    >
+      <div className="flex flex-col gap-1">
+        <label
+          htmlFor="facet-mapping-criterion"
+          className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+        >
+          Criterion
+        </label>
+        <select
+          id="facet-mapping-criterion"
+          data-field="criterion"
+          value={criterionId}
+          onChange={(e) => setCriterionId(e.target.value)}
+          className="min-h-[44px] rounded-sm border border-edge bg-card px-2 py-1 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <option value="">Select criterion…</option>
+          {criteria.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.id} — {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label
+          htmlFor="facet-mapping-facet"
+          className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+        >
+          Facet ID
+        </label>
+        <input
+          id="facet-mapping-facet"
+          data-field="facet"
+          type="text"
+          value={facetId}
+          onChange={(e) => setFacetId(e.target.value)}
+          placeholder="e.g. reasoning"
+          className="min-h-[44px] w-44 rounded-sm border border-edge bg-card px-2 py-1 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label
+          htmlFor="facet-mapping-kind"
+          className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+        >
+          Kind
+        </label>
+        <select
+          id="facet-mapping-kind"
+          data-field="kind"
+          value={mappingKind}
+          onChange={(e) => setMappingKind(e.target.value as "direct" | "supporting")}
+          className="min-h-[44px] rounded-sm border border-edge bg-card px-2 py-1 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <option value="direct">direct</option>
+          <option value="supporting">supporting</option>
+        </select>
+      </div>
+      <button
+        type="button"
+        data-action="add-facet-mapping"
+        onClick={submit}
+        disabled={!criterionId || !facetId.trim()}
+        className="flex min-h-[44px] items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-sm text-text transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+      >
+        <Tag size={13} aria-hidden="true" />
+        Add mapping
+      </button>
     </div>
   );
 }

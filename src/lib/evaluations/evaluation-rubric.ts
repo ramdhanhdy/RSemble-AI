@@ -22,13 +22,20 @@
 // =============================================================================
 
 import type {
+  CriterionFacetMapping,
   EvaluationCriterion,
   RubricSnapshot,
   GradedEvaluationCriterion,
   BinaryEvaluationCriterion,
   LegacyGradedEvaluationCriterion,
 } from "./evaluation-types";
+import { isCriterionFacetMapping } from "./evaluation-types";
 
+/** String values that must never appear in an authored identifier field.
+ *  Matches the credential-shape check in `evaluation-types.ts` and
+ *  `experiment-roster-extension.ts`; duplicated locally to keep this scoring
+ *  module dependency-free at the value-shape boundary. */
+const CREDENTIAL_LIKE_VALUE = /^(sk-|AIza|Bearer\s)/i;
 /** Maximum epsilon for floating-point winner comparison. */
 export const WINNER_EPSILON = 1e-9;
 
@@ -439,6 +446,44 @@ export function validateRubric(profile: RubricSnapshot): string[] {
     const lambda = profile.complianceInfluence;
     if (typeof lambda !== "number" || !Number.isFinite(lambda) || lambda < 0 || lambda > 1) {
       errors.push("complianceInfluence must be a finite number in [0, 1].");
+    }
+  }
+
+  // Validate optional criterion-to-facet mappings (spec §5.3). Disclosed
+  // evidence metadata only — never consumed by scoring math. Authoring
+  // boundary: actionable errors for missing criterion/facet, duplicates, and
+  // prohibited/secret-shaped values. Current scoring validation semantics are
+  // preserved (an absent `facetMappings` field adds no errors).
+  if (profile.facetMappings !== undefined) {
+    if (!Array.isArray(profile.facetMappings)) {
+      errors.push("facetMappings must be an array when present.");
+    } else {
+      const criterionIds = new Set(profile.criteria.map((c) => c.id));
+      const seen = new Set<string>();
+      profile.facetMappings.forEach((m: CriterionFacetMapping, idx: number) => {
+        if (!isCriterionFacetMapping(m)) {
+          errors.push(
+            `Facet mapping ${idx}: must have non-empty criterionId and facetId, mappingKind "direct"|"supporting", and source "authored"|"imported".`,
+          );
+          return;
+        }
+        if (!criterionIds.has(m.criterionId)) {
+          errors.push(`Facet mapping ${idx}: criterion ${m.criterionId} is not in this rubric.`);
+        }
+        const key = `${m.criterionId}\u{1F}/${m.facetId}\u{1F}/${m.mappingKind}`;
+        if (seen.has(key)) {
+          errors.push(
+            `Facet mapping ${idx}: duplicate mapping for criterion ${m.criterionId}, facet ${m.facetId} (${m.mappingKind}).`,
+          );
+        } else {
+          seen.add(key);
+        }
+        if (CREDENTIAL_LIKE_VALUE.test(m.criterionId) || CREDENTIAL_LIKE_VALUE.test(m.facetId)) {
+          errors.push(
+            `Facet mapping ${idx}: criterion/facet identifiers must not look like credentials.`,
+          );
+        }
+      });
     }
   }
 

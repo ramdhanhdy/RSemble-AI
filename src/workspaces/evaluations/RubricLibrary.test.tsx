@@ -494,3 +494,132 @@ describe("RubricDetail", () => {
     cleanup(h);
   });
 });
+
+// --- Facet mapping editor (spec §5.3 / §6.2) --------------------------------
+
+describe("RubricDetail — facet mapping editor", () => {
+  it("discloses an optional evidence-metadata section with empty state", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRubric(repo, "p-1", "Quality");
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
+    await settle();
+    const details = h.$("details[data-facet-mappings]");
+    expect(details).toBeTruthy();
+    expect(h.container.textContent).toMatch(/evidence metadata/i);
+    expect(h.$("[data-facet-mapping-empty]")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("lists existing authored mappings read-only on a historical version", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    // v1 carries an authored mapping.
+    await repo.createRubric(
+      makeRecord("p-1", 1),
+      makeRubric("p-1", 1, "With mapping", {
+        criteria: [makeCriterion("c-1", "Correctness")],
+        facetMappings: [
+          { criterionId: "c-1", facetId: "reasoning", mappingKind: "direct", source: "authored" },
+        ],
+      }),
+    );
+    // append v2 without mappings so v1 becomes historical.
+    await appendVersion(repo, "p-1", "v2 no mapping");
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
+    await settle();
+    // switch to v1 (read-only)
+    const select = h.$("select[data-action='version-selector']") as HTMLSelectElement;
+    act(() => {
+      select.value = "1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+
+    const list = h.$("[data-facet-mapping-list]");
+    expect(list).toBeTruthy();
+    expect(h.container.textContent).toContain("c-1");
+    expect(h.container.textContent).toContain("reasoning");
+    // read-only historical version has no add form and no remove button
+    expect(h.$("[data-facet-mapping-add]")).toBeNull();
+    expect(h.$("button[data-action='remove-facet-mapping']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("latest version can author a mapping and Save persists it", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRubric(repo, "p-1", "Quality");
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
+    await settle();
+
+    // The add form is present on the latest version.
+    const addForm = h.$("[data-facet-mapping-add]");
+    expect(addForm).toBeTruthy();
+
+    const criterionSelect = h.$("select[data-field='criterion']") as HTMLSelectElement;
+    const facetInput = h.$("input[data-field='facet']") as HTMLInputElement;
+    const addBtn = h.$("button[data-action='add-facet-mapping']") as HTMLButtonElement;
+
+    act(() => {
+      criterionSelect.value = "c-1";
+      criterionSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(facetInput, "reasoning");
+      facetInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    act(() => addBtn.click());
+    await settle();
+
+    // The mapping now appears in the list (draft state).
+    const list = h.$("[data-facet-mapping-list]");
+    expect(list).toBeTruthy();
+    expect(h.container.textContent).toContain("reasoning");
+
+    // Save commits a new immutable version carrying the mapping.
+    const saveBtn = h.$("button[data-action='save']") as HTMLButtonElement;
+    act(() => saveBtn.click());
+    await settle();
+
+    const rec = await repo.getRubricRecord("p-1");
+    expect(rec!.latestVersion).toBe(2);
+    const v2 = await repo.getRubricVersion("p-1", 2);
+    expect(v2?.facetMappings).toEqual([
+      { criterionId: "c-1", facetId: "reasoning", mappingKind: "direct", source: "authored" },
+    ]);
+    cleanup(h);
+  });
+
+  it("Remove drops a mapping from the draft before save", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await repo.createRubric(
+      makeRecord("p-1", 1),
+      makeRubric("p-1", 1, "With mapping", {
+        criteria: [makeCriterion("c-1", "Correctness")],
+        facetMappings: [
+          { criterionId: "c-1", facetId: "reasoning", mappingKind: "direct", source: "authored" },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<RubricDetail repo={repo} rubricId="p-1" />);
+    await settle();
+
+    // Latest version shows a remove button for the existing mapping.
+    const removeBtn = h.$("button[data-action='remove-facet-mapping']") as HTMLButtonElement;
+    expect(removeBtn).toBeTruthy();
+    act(() => removeBtn.click());
+    await settle();
+
+    // Draft no longer lists the mapping; empty state returns.
+    expect(h.$("[data-facet-mapping-list]")).toBeNull();
+    expect(h.$("[data-facet-mapping-empty]")).toBeTruthy();
+
+    // Save persists the cleared mapping on a new version.
+    const saveBtn = h.$("button[data-action='save']") as HTMLButtonElement;
+    act(() => saveBtn.click());
+    await settle();
+    const v2 = await repo.getRubricVersion("p-1", 2);
+    expect(v2?.facetMappings ?? []).toEqual([]);
+    cleanup(h);
+  });
+});
