@@ -1,14 +1,29 @@
 // =============================================================================
-// RSemble AI — Workbench archive (plan 8.1, spec §13/§18/§20)
+// RSemble AI — Workbench archive (plan 8.1, spec §13/§18/§20; Child 02 §8.5)
 //
-// Whole-workbench export/import across run summaries/details, profiles: rubrics,
-// suites, and experiments. Export is allowlisted by construction — only
-// guard-passing domain records leave the database. Import validates every
-// centralized v1 limit (bytes, counts, string size, depth, safe IDs) plus
-// every record guard BEFORE any mutation, then writes inside one Dexie
-// transaction: canonically identical records are skipped, same-ID different
-// content is reported as conflicting and never written, and any thrown error
-// rolls the whole import back.
+// Whole-workbench export/import behind two explicit adapters that share the
+// core Run/Rubric/Suite/Experiment reads:
+//
+//  - v1 (`exportWorkbenchArchive` / `parseWorkbenchArchive` /
+//    `importWorkbenchArchive`): the established schemaVersion-1 shape. Export
+//    is allowlisted by construction — only guard-passing domain records leave
+//    the database. Import validates every centralized v1 limit (bytes, counts,
+//    string size, depth, safe IDs) plus every record guard BEFORE any
+//    mutation, then writes inside one Dexie transaction: canonically identical
+//    records are skipped, same-ID different content is reported as conflicting
+//    and never written, and any thrown error rolls the whole import back.
+//
+//  - v2 (`exportWorkbenchArchiveV2`, Child 02 Task 10B): the task-first
+//    envelope (`WorkbenchArchiveV2`). Exports every canonical Child 02
+//    collection — exact Runs/Experiments, Rubrics, all seven Fusion stores,
+//    Tasks/versions/artifacts+bytes/instances/families/assignments/relations/
+//    facet annotations/crosswalks — in deterministic order with exact counts
+//    and an integrity digest. Before delivery it scans structured fields and
+//    artifact bytes for prohibited credential/auth material and blocks safely
+//    with entity/type diagnostics, never echoing a matched value. Disposable
+//    caches/indexes and unrestricted `storageMeta` are never read. Supports
+//    progress reporting and cancellation before final delivery. V2 import is
+//    deliberately not implemented in this slice.
 // =============================================================================
 
 import {
@@ -51,6 +66,49 @@ import {
 } from "../evaluations/evaluation-rubric";
 import { REDACTED } from "./error-redaction";
 import { inputUsageLabel } from "../cost";
+import {
+  ARCHIVE_V2_FORMAT_VERSION,
+  ARCHIVE_V2_STORAGE_VERSION,
+  computeArchiveV2PayloadDigest,
+  type ArchiveV2TaskArtifactBytes,
+  type WorkbenchArchiveV2,
+} from "./archive-v2-types";
+import {
+  isEvaluationObservation,
+  isFusionAttempt,
+  isFusionPlaybook,
+  isFusionRecipeVersion,
+  isFusionStudy,
+  isFusionTrial,
+  isPoolManifestVersion,
+  type EvaluationObservation,
+  type FusionAttempt,
+  type FusionPlaybook,
+  type FusionRecipeVersion,
+  type FusionStudy,
+  type FusionTrial,
+  type PoolManifestVersion,
+} from "../evaluations/fusion-study-types";
+import {
+  isTaskArtifact,
+  isTaskFacetAnnotation,
+  isTaskFamily,
+  isTaskFamilyAssignment,
+  isTaskInstance,
+  isTaskRecord,
+  isTaskVersion,
+} from "../tasks/task-validation";
+import type {
+  TaskArtifact,
+  TaskFacetAnnotation,
+  TaskFamily,
+  TaskFamilyAssignment,
+  TaskFamilyRelation,
+  TaskInstance,
+  TaskRecord,
+  TaskVersion,
+} from "../tasks/task-types";
+import type { TaskMigrationCrosswalk } from "../tasks/task-references";
 
 // --- Archive shape -------------------------------------------------------------
 
@@ -576,6 +634,9 @@ export async function importWorkbenchArchive(
 
 /** Classified recovery guidance for archive failures (spec §20). */
 export function archiveFailureGuidance(err: unknown): string {
+  if (err instanceof ArchiveExportCancelledError) {
+    return "Export was cancelled — no archive was delivered.";
+  }
   if (err instanceof StorageError) {
     switch (err.kind) {
       case "quota":
@@ -836,4 +897,521 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
   }
 
   return lines.join("\n");
+}
+
+// =============================================================================
+// Archive v2 export adapter (Child 02 Task 10B)
+//
+// The task-first, deterministic, secret-safe export. Shares the guard-passing
+// read shape with the v1 adapter, adds the seven Fusion stores and every
+// canonical Task collection, sorts each collection by its deterministic key,
+// attaches artifact bytes, scans structured fields and bytes for prohibited
+// credential/auth material BEFORE delivery, and supports progress reporting
+// and cancellation with an AbortSignal.
+// =============================================================================
+
+/** A stage of the v2 export pipeline. Stages run in declaration order:
+ *  collection reads first, artifact byte encoding, the pre-delivery secret
+ *  scan, then finalize. */
+export type ArchiveExportStage =
+  | "runs"
+  | "rubrics"
+  | "suites"
+  | "experiments"
+  | "fusion"
+  | "tasks"
+  | "artifact-bytes"
+  | "scan"
+  | "finalize";
+
+/** One progress observation for the v2 export. `done`/`total` count collections
+ *  completed; both are monotonic non-decreasing and `done === total` only when
+ *  the finalize stage completes (the archive is ready to deliver). */
+export interface ArchiveExportProgress {
+  /** One of `ArchiveExportStage`; widened to string so observers can compare
+   *  stages and build stage sets over plain string literals. */
+  stage: string;
+  done: number;
+  total: number;
+}
+
+/** Rejection raised when an export is cancelled before delivery. Distinct from
+ *  StorageError so callers can classify it (see `archiveFailureGuidance`). */
+export class ArchiveExportCancelledError extends Error {
+  constructor() {
+    super("Export was cancelled — no archive was delivered.");
+    this.name = "ArchiveExportCancelledError";
+  }
+}
+
+/** Options for `exportWorkbenchArchiveV2`. */
+export interface ArchiveExportV2Options {
+  /** Deterministic clock for tests; defaults to Date.now. */
+  now?: () => number;
+  /** Receives monotonic per-stage progress before the archive resolves. */
+  onProgress?: (progress: ArchiveExportProgress) => void;
+  /** Abort before or during the export to reject without delivering. */
+  signal?: AbortSignal;
+}
+
+/** Ordered export stage list — `total` counts these stages. */
+const ARCHIVE_V2_STAGES: ArchiveExportStage[] = [
+  "runs",
+  "rubrics",
+  "suites",
+  "experiments",
+  "fusion",
+  "tasks",
+  "artifact-bytes",
+  "scan",
+  "finalize",
+];
+
+const ARCHIVE_V2_DISCLOSURE_NOTES = "Local workbench export. No remote transport metadata.";
+
+function v2OrderingKeyString(a: unknown, b: unknown): number {
+  const ka = typeof a === "string" ? a : "";
+  const kb = typeof b === "string" ? b : "";
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+
+function v2SortById<T extends { id: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.id, b.id));
+}
+
+function v2SortByIdVersion<T extends { id: string; version: number }>(items: T[]): T[] {
+  const key = (t: T) => `${t.id} ${t.version.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v2SortByTaskIdVersion<T extends { taskId: string; version: number }>(items: T[]): T[] {
+  const key = (t: T) => `${t.taskId} ${t.version.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v2SortByLegacyScopeKey<T extends { legacyScopeKey: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.legacyScopeKey, b.legacyScopeKey));
+}
+
+/**
+ * Export-time allowlist guard for task family relations. This is deliberately
+ * NOT the canonical write guard (`isTaskFamilyRelation`): the domain
+ * no-self-relation rule constrains what may be CREATED, not what may be
+ * reported. Persisted legacy self-relations are real entities and must
+ * round-trip through the archive faithfully — export omits only
+ * structurally unsafe rows (bad identifiers, unknown kind, prohibited
+ * credential/transport keys), mirroring the v1 allowlist construction.
+ */
+function isExportableTaskFamilyRelation(v: unknown): v is TaskFamilyRelation {
+  if (!isRecord(v)) return false;
+  if (typeof v.id !== "string" || !IMPORT_LIMITS.ID_PATTERN.test(v.id)) return false;
+  if (typeof v.fromFamilyId !== "string" || !IMPORT_LIMITS.ID_PATTERN.test(v.fromFamilyId)) {
+    return false;
+  }
+  if (typeof v.toFamilyId !== "string" || !IMPORT_LIMITS.ID_PATTERN.test(v.toFamilyId)) {
+    return false;
+  }
+  if (v.kind !== "overlap" && v.kind !== "parent" && v.kind !== "derivative") return false;
+  if (typeof v.createdAt !== "number") return false;
+  return findProhibitedKey(v) === null;
+}
+
+/** Local, deterministic base64 encoder — matches the fixture wire encoding
+ *  byte-for-byte (no runtime or Buffer dependency). */
+function v2BytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/** Credential-like VALUE pattern applied to every string field and to decoded
+ *  artifact bytes. Matches `CREDENTIAL_LIKE_VALUE` in task-validation
+ *  (key-like prefixes), extended to fire mid-string only at a token boundary —
+ *  auth material must be caught inside prose ("prefix sk-… suffix"), while
+ *  ordinary words containing key-shaped character runs ("legacy-task-set")
+ *  are not credentials. */
+const CREDENTIAL_LIKE_INLINE =
+  /(?:^|[^A-Za-z0-9])(?:sk-[A-Za-z0-9]|AIza[0-9A-Za-z_-]{10,}|Bearer\s+\S)/;
+
+/**
+ * Deep-scan a structured entity for credential-like VALUES. Self-referential
+ * identity strings (`id`, `taskId`, `studyId`, `trialId`, `legacyScopeKey`,
+ * `supersedesId`, `originId`) are skipped — a record's own ID legitimately
+ * appears verbatim inside test-seeded collections like `legacy:task-1` and
+ * must never be mistaken for secret material.
+ */
+function v2ScanForCredentialValue(value: unknown): boolean {
+  const stack: unknown[] = [value];
+  while (stack.length > 0) {
+    const v = stack.pop();
+    if (typeof v === "string") {
+      if (CREDENTIAL_LIKE_INLINE.test(v)) return true;
+      continue;
+    }
+    if (Array.isArray(v)) {
+      for (const item of v) stack.push(item);
+      continue;
+    }
+    if (isRecord(v)) {
+      for (const [key, field] of Object.entries(v)) {
+        if (
+          key === "id" ||
+          key === "taskId" ||
+          key === "studyId" ||
+          key === "trialId" ||
+          key === "legacyScopeKey" ||
+          key === "supersedesId" ||
+          key === "originId"
+        ) {
+          continue;
+        }
+        stack.push(field);
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Export the complete canonical workbench as a v2 envelope.
+ *
+ * Behavior contract (fixed by the RED tests):
+ *  - Reads every Child 02 canonical collection; keeps ONLY guard-passing
+ *    domain records (allowlisted by construction — never silently drops a
+ *    valid entity, never reads `storageMeta`).
+ *  - Deterministic: explicit ascending sort per collection, exact 23-key
+ *    counts, recomputable payload digest.
+ *  - Secret-safe: scans structured fields AND decoded artifact bytes for
+ *    prohibited keys/credential-like values BEFORE delivery; blocks with a
+ *    validation StorageError naming entity/collection + ID, never echoing a
+ *    matched value.
+ *  - Cancel-safe: an already-aborted signal rejects immediately without any
+ *    progress callback; abort during `scan` (or any stage) rejects with
+ *    ArchiveExportCancelledError and delivers no archive.
+ */
+export async function exportWorkbenchArchiveV2(
+  db: RSembleEvaluationDB,
+  options: ArchiveExportV2Options = {},
+): Promise<WorkbenchArchiveV2> {
+  const now = options.now ?? (() => Date.now());
+  const onProgress = options.onProgress;
+  const signal = options.signal;
+
+  // Already-aborted: reject before any read or progress callback.
+  if (signal?.aborted) throw new ArchiveExportCancelledError();
+
+  const total = ARCHIVE_V2_STAGES.length;
+  let done = 0;
+
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveExportCancelledError();
+  };
+  const emit = (stage: ArchiveExportStage) => {
+    if (onProgress) onProgress({ stage, done, total });
+  };
+  const completeStage = (stage: ArchiveExportStage) => {
+    done += 1;
+    emit(stage);
+    throwIfAborted();
+  };
+
+  try {
+    // --- runs ---
+    emit("runs");
+    throwIfAborted();
+    const summaries: RunSummary[] = [];
+    await db.runSummaries.orderBy("id").each((row) => {
+      if (isRunSummary(row.summary)) summaries.push(row.summary);
+    });
+    const details: RunRecordV2[] = [];
+    await db.runDetails.orderBy("id").each((row) => {
+      const compatible =
+        repairRunRecordForCompatibility(row.record) ??
+        (isRunRecordV2(row.record) ? row.record : null);
+      if (compatible) details.push(compatible);
+    });
+    completeStage("runs");
+
+    // --- rubrics ---
+    emit("rubrics");
+    throwIfAborted();
+    const identities: RubricRecord[] = [];
+    await db.profiles.orderBy("id").each((row) => {
+      if (isRubricRecord(row.record)) identities.push(row.record);
+    });
+    const versions: EvaluationRubric[] = [];
+    await db.profileVersions.orderBy("id").each((row) => {
+      if (isEvaluationRubric(row.profile)) versions.push(row.profile);
+    });
+    completeStage("rubrics");
+
+    // --- suites ---
+    emit("suites");
+    throwIfAborted();
+    const suites: EvaluationSuite[] = [];
+    await db.suites.orderBy("id").each((row) => {
+      if (isEvaluationSuite(row.suite)) suites.push(row.suite);
+    });
+    completeStage("suites");
+
+    // --- experiments ---
+    emit("experiments");
+    throwIfAborted();
+    const experiments: ExperimentRecord[] = [];
+    await db.experiments.orderBy("id").each((row) => {
+      if (isExperimentRecord(row.experiment)) experiments.push(row.experiment);
+    });
+    completeStage("experiments");
+
+    // --- fusion (seven stores) ---
+    emit("fusion");
+    throwIfAborted();
+    const recipes: FusionRecipeVersion[] = [];
+    await db.fusionRecipes.orderBy("id").each((row) => {
+      if (isFusionRecipeVersion(row.recipe)) recipes.push(row.recipe);
+    });
+    const poolManifests: PoolManifestVersion[] = [];
+    await db.poolManifests.orderBy("id").each((row) => {
+      if (isPoolManifestVersion(row.manifest)) poolManifests.push(row.manifest);
+    });
+    const studies: FusionStudy[] = [];
+    await db.fusionStudies.orderBy("id").each((row) => {
+      if (isFusionStudy(row.study)) studies.push(row.study);
+    });
+    const trials: FusionTrial[] = [];
+    await db.fusionTrials.orderBy("id").each((row) => {
+      if (isFusionTrial(row.trial)) trials.push(row.trial);
+    });
+    const attempts: FusionAttempt[] = [];
+    await db.fusionAttempts.orderBy("id").each((row) => {
+      if (isFusionAttempt(row.attempt)) attempts.push(row.attempt);
+    });
+    const observations: EvaluationObservation[] = [];
+    await db.fusionObservations.orderBy("id").each((row) => {
+      if (isEvaluationObservation(row.observation)) observations.push(row.observation);
+    });
+    const playbooks: FusionPlaybook[] = [];
+    await db.fusionPlaybooks.orderBy("id").each((row) => {
+      if (isFusionPlaybook(row.playbook)) playbooks.push(row.playbook);
+    });
+    completeStage("fusion");
+
+    // --- tasks (every canonical collection) ---
+    emit("tasks");
+    throwIfAborted();
+    const taskRecords: TaskRecord[] = [];
+    await db.tasks.orderBy("id").each((row) => {
+      if (isTaskRecord(row.record)) taskRecords.push(row.record);
+    });
+    const taskVersions: TaskVersion[] = [];
+    await db.taskVersions.orderBy("taskId").each((row) => {
+      if (isTaskVersion(row.version_)) taskVersions.push(row.version_);
+    });
+    const taskArtifacts: TaskArtifact[] = [];
+    const artifactIdsValid = new Set<string>();
+    await db.taskArtifacts.orderBy("id").each((row) => {
+      if (isTaskArtifact(row)) {
+        taskArtifacts.push(row);
+        artifactIdsValid.add(row.id);
+      }
+    });
+    const taskInstances: TaskInstance[] = [];
+    await db.taskInstances.orderBy("id").each((row) => {
+      if (isTaskInstance(row.instance)) taskInstances.push(row.instance);
+    });
+    const taskFamilies: TaskFamily[] = [];
+    await db.taskFamilies.orderBy("id").each((row) => {
+      if (isTaskFamily(row.family)) taskFamilies.push(row.family);
+    });
+    const taskFamilyAssignments: TaskFamilyAssignment[] = [];
+    await db.taskFamilyAssignments.orderBy("id").each((row) => {
+      if (isTaskFamilyAssignment(row.assignment)) taskFamilyAssignments.push(row.assignment);
+    });
+    const taskFamilyRelations: TaskFamilyRelation[] = [];
+    await db.taskFamilyRelations.orderBy("id").each((row) => {
+      if (isExportableTaskFamilyRelation(row.relation)) taskFamilyRelations.push(row.relation);
+    });
+    const taskFacetAnnotations: TaskFacetAnnotation[] = [];
+    await db.taskFacetAnnotations.orderBy("id").each((row) => {
+      if (isTaskFacetAnnotation(row.annotation)) taskFacetAnnotations.push(row.annotation);
+    });
+    const taskRecordsById = new Map(taskRecords.map((t) => [t.id, t]));
+    const taskMigrationCrosswalks: TaskMigrationCrosswalk[] = [];
+    await db.taskMigrationCrosswalk.orderBy("legacyScopeKey").each((row) => {
+      const cw: TaskMigrationCrosswalk = {
+        legacyScopeKey: row.legacyScopeKey,
+        taskId: row.taskId,
+        taskVersion: row.taskVersion,
+      };
+      // Keep only crosswalks that reference a guard-passing canonical
+      // task/version — a dangling crosswalk is a disposable index, not a
+      // canonical entity.
+      const record = taskRecordsById.get(cw.taskId);
+      if (record !== undefined && cw.taskVersion <= record.latestVersion) {
+        taskMigrationCrosswalks.push(cw);
+      }
+    });
+    completeStage("tasks");
+
+    // --- artifact bytes (encoded alongside the canonical task payload) ---
+    emit("artifact-bytes");
+    throwIfAborted();
+    const artifactRows = await db.taskArtifactBytes.toArray();
+    const artifactRowById = new Map(artifactRows.map((row) => [row.id, row]));
+    const taskArtifactBytes: ArchiveV2TaskArtifactBytes[] = [];
+    const blockedBytes: string[] = [];
+    for (const artifact of taskArtifacts) {
+      const row = artifactRowById.get(artifact.id);
+      if (row === undefined) {
+        throw new StorageError(
+          "validation",
+          `tasks.taskArtifacts[${artifact.id}] is missing bytes payload.`,
+        );
+      }
+      const text = new TextDecoder("utf-8", { fatal: false }).decode(row.bytes);
+      if (CREDENTIAL_LIKE_INLINE.test(text)) {
+        blockedBytes.push(
+          `tasks.taskArtifactBytes[${artifact.id}] carries credential-like material (value ${REDACTED})`,
+        );
+        continue;
+      }
+      taskArtifactBytes.push({ id: artifact.id, bytesBase64: v2BytesToBase64(row.bytes) });
+    }
+    completeStage("artifact-bytes");
+
+    // --- scan (structured fields, BEFORE finalizing counts/digest) ---
+    emit("scan");
+    throwIfAborted();
+
+    const violations: string[] = [...blockedBytes];
+    // Guard-passing entities already carry no prohibited KEY names; the
+    // pre-delivery safety net is a deep credential-VALUE scan of every
+    // structured record. Identity-key fields are skipped (they legitimately
+    // repeat entity ids). Diagnostics name entity/collection + id, never the
+    // matched value or its content.
+    const scanStructured = (label: string, id: string, entity: unknown) => {
+      if (v2ScanForCredentialValue(entity)) {
+        violations.push(`${label}[${id}] contains credential-like material (value ${REDACTED})`);
+      }
+    };
+    for (const s of summaries) scanStructured("runs.summaries", s.id, s);
+    for (const d of details) scanStructured("runs.details", d.id, d);
+    for (const r of identities) scanStructured("rubrics.identities", r.id, r);
+    for (const r of versions)
+      scanStructured("rubrics.versions", `${r.id}@${r.version}`, r);
+    for (const s of suites) scanStructured("suites", s.id, s);
+    for (const e of experiments) scanStructured("experiments", e.id, e);
+    for (const r of recipes)
+      scanStructured("fusion.recipes", `${r.id}@${r.version}`, r);
+    for (const p of poolManifests)
+      scanStructured("fusion.poolManifests", `${p.id}@${p.version}`, p);
+    for (const s of studies) scanStructured("fusion.studies", s.id, s);
+    for (const t of trials) scanStructured("fusion.trials", t.id, t);
+    for (const a of attempts) scanStructured("fusion.attempts", a.id, a);
+    for (const o of observations) scanStructured("fusion.observations", o.id, o);
+    for (const p of playbooks) scanStructured("fusion.playbooks", p.id, p);
+    for (const t of taskRecords) scanStructured("tasks.tasks", t.id, t);
+    for (const v of taskVersions)
+      scanStructured("tasks.taskVersions", `${v.taskId}@${v.version}`, v);
+    for (const a of taskArtifacts) scanStructured("tasks.taskArtifacts", a.id, a);
+    for (const i of taskInstances) scanStructured("tasks.taskInstances", i.id, i);
+    for (const f of taskFamilies) scanStructured("tasks.taskFamilies", f.id, f);
+    for (const a of taskFamilyAssignments)
+      scanStructured("tasks.taskFamilyAssignments", a.id, a);
+    for (const r of taskFamilyRelations)
+      scanStructured("tasks.taskFamilyRelations", r.id, r);
+    for (const a of taskFacetAnnotations)
+      scanStructured("tasks.taskFacetAnnotations", a.id, a);
+    for (const c of taskMigrationCrosswalks)
+      scanStructured("tasks.taskMigrationCrosswalks", c.legacyScopeKey, c);
+
+    completeStage("scan");
+
+    if (violations.length > 0) {
+      throw new StorageError(
+        "validation",
+        `Export blocked: prohibited credential/auth material found. ${violations.join("; ")}`,
+      );
+    }
+
+    // --- finalize ---
+    emit("finalize");
+
+    const archive: WorkbenchArchiveV2 = {
+      manifest: {
+        formatVersion: ARCHIVE_V2_FORMAT_VERSION,
+        storageVersion: ARCHIVE_V2_STORAGE_VERSION,
+        exportedAt: now(),
+        producer: "rsemble-ai",
+        counts: {
+          runSummaries: summaries.length,
+          runDetails: details.length,
+          rubricIdentities: identities.length,
+          rubricVersions: versions.length,
+          suites: suites.length,
+          experiments: experiments.length,
+          fusionRecipes: recipes.length,
+          poolManifests: poolManifests.length,
+          fusionStudies: studies.length,
+          fusionTrials: trials.length,
+          fusionAttempts: attempts.length,
+          fusionObservations: observations.length,
+          fusionPlaybooks: playbooks.length,
+          tasks: taskRecords.length,
+          taskVersions: taskVersions.length,
+          taskArtifacts: taskArtifacts.length,
+          taskArtifactBytes: taskArtifactBytes.length,
+          taskInstances: taskInstances.length,
+          taskFamilies: taskFamilies.length,
+          taskFamilyAssignments: taskFamilyAssignments.length,
+          taskFamilyRelations: taskFamilyRelations.length,
+          taskFacetAnnotations: taskFacetAnnotations.length,
+          taskMigrationCrosswalks: taskMigrationCrosswalks.length,
+        },
+        payloadDigest: "",
+        disclosure: { scope: "local", notes: ARCHIVE_V2_DISCLOSURE_NOTES },
+      },
+      runs: {
+        summaries: v2SortById(summaries),
+        details: v2SortById(details),
+      },
+      rubrics: {
+        identities: v2SortById(identities),
+        versions: v2SortByIdVersion(versions),
+      },
+      suites: v2SortById(suites),
+      experiments: v2SortById(experiments),
+      fusion: {
+        recipes: v2SortByIdVersion(recipes),
+        poolManifests: v2SortByIdVersion(poolManifests),
+        studies: v2SortById(studies),
+        trials: v2SortById(trials),
+        attempts: v2SortById(attempts),
+        observations: v2SortById(observations),
+        playbooks: v2SortById(playbooks),
+      },
+      tasks: {
+        tasks: v2SortById(taskRecords),
+        taskVersions: v2SortByTaskIdVersion(taskVersions),
+        taskArtifacts: v2SortById(taskArtifacts),
+        taskArtifactBytes: v2SortById(taskArtifactBytes),
+        taskInstances: v2SortById(taskInstances),
+        taskFamilies: v2SortById(taskFamilies),
+        taskFamilyAssignments: v2SortById(taskFamilyAssignments),
+        taskFamilyRelations: v2SortById(taskFamilyRelations),
+        taskFacetAnnotations: v2SortById(taskFacetAnnotations),
+        taskMigrationCrosswalks: v2SortByLegacyScopeKey(taskMigrationCrosswalks),
+      },
+    };
+    // Digest is computed over the final payload (collections only — the
+    // manifest carries the digest itself).
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    completeStage("finalize");
+    return archive;
+  } catch (err) {
+    if (err instanceof ArchiveExportCancelledError) throw err;
+    if (err instanceof StorageError) throw err;
+    throw classifyStorageError(err);
+  }
 }

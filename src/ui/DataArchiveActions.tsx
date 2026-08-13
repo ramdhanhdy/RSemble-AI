@@ -10,15 +10,18 @@
 // =============================================================================
 
 import { useContext, useRef, useState, type ReactElement } from "react";
-import { Download, Upload } from "lucide-react";
+import { Download, Upload, XCircle } from "lucide-react";
 import { RepositoryContext } from "../lib/persistence/repository-context";
 import { StorageError } from "../lib/persistence/database";
 import {
   archiveFailureGuidance,
+  ArchiveExportCancelledError,
   exportWorkbenchArchive,
+  exportWorkbenchArchiveV2,
   importWorkbenchArchive,
   parseWorkbenchArchive,
   validateArchiveBytes,
+  type ArchiveExportProgress,
   type ArchiveImportResult,
 } from "../lib/persistence/archive";
 
@@ -37,10 +40,23 @@ export function serializeWorkbenchArchive(archive: unknown): string {
   return `${JSON.stringify(archive, null, 2)}\n`;
 }
 
+/** Human-readable v2 archive serialization. Deterministic for a deterministic
+ *  envelope: `JSON.stringify` preserves the adapter's declaration/sort order,
+ *  and the payload digest is recomputed over canonical JSON (recursive key
+ *  sort) so key order here cannot corrupt integrity. Presentation-only: v2
+ *  validation re-parses the exact same JSON data model. */
+export function serializeWorkbenchArchiveV2(archive: unknown): string {
+  return `${JSON.stringify(archive, null, 2)}\n`;
+}
+
 export function DataArchiveActions(): ReactElement | null {
   const { db, storageState } = useContext(RepositoryContext);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exportV2Busy, setExportV2Busy] = useState(false);
+  const [exportV2Progress, setExportV2Progress] = useState<ArchiveExportProgress | null>(null);
+  const [exportV2Total, setExportV2Total] = useState<number | null>(null);
+  const exportV2AbortRef = useRef<AbortController | null>(null);
   const [report, setReport] = useState<ArchiveImportResult | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
@@ -50,6 +66,7 @@ export function DataArchiveActions(): ReactElement | null {
     storageState === "versionchange" ||
     storageState === "unavailable";
   const controlsDisabled = busy || db === null || storageBlocked;
+  const exportV2Disabled = controlsDisabled || exportV2Busy;
 
   const resetFeedback = () => {
     setReport(null);
@@ -57,21 +74,68 @@ export function DataArchiveActions(): ReactElement | null {
     setFailure(null);
   };
 
+  /** Deliver the serialized archive as a download. */
+  function deliverArchive(filename: string, text: string) {
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function onExportV2() {
+    if (db === null || exportV2AbortRef.current !== null) return;
+    const controller = new AbortController();
+    exportV2AbortRef.current = controller;
+    setExportV2Busy(true);
+    setExportV2Progress(null);
+    resetFeedback();
+    try {
+      const archive = await exportWorkbenchArchiveV2(db, {
+        signal: controller.signal,
+        onProgress: (p) => setExportV2Progress(p),
+      });
+      // The export resolved — the signal was never aborted (a pre-delivery
+      // abort rejects with ArchiveExportCancelledError inside the adapter).
+      deliverArchive(
+        `rsemble-archive-v2-${archiveTimestamp()}.json`,
+        serializeWorkbenchArchiveV2(archive),
+      );
+      const total = Object.values(archive.manifest.counts).reduce((sum, n) => sum + n, 0);
+      setExportV2Total(total);
+    } catch (err) {
+      if (err instanceof ArchiveExportCancelledError) {
+        setFailure(archiveFailureGuidance(err));
+      } else if (err instanceof StorageError && err.kind === "validation") {
+        setErrors([err.message]);
+      } else {
+        setFailure(archiveFailureGuidance(err));
+      }
+    } finally {
+      exportV2AbortRef.current = null;
+      setExportV2Busy(false);
+      setExportV2Progress(null);
+    }
+  }
+
+  function onExportV2Cancel() {
+    exportV2AbortRef.current?.abort();
+  }
+
   async function onExport() {
     if (db === null) return;
     setBusy(true);
     resetFeedback();
     try {
       const archive = await exportWorkbenchArchive(db);
-      const blob = new Blob([serializeWorkbenchArchive(archive)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `rsemble-archive-${archiveTimestamp()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      deliverArchive(
+        `rsemble-archive-${archiveTimestamp()}.json`,
+        serializeWorkbenchArchive(archive),
+      );
     } catch (err) {
       setFailure(archiveFailureGuidance(err));
     } finally {
@@ -141,6 +205,29 @@ export function DataArchiveActions(): ReactElement | null {
           <Upload size={16} aria-hidden="true" />
           Import data
         </button>
+        <button
+          type="button"
+          data-action="export-v2"
+          className={buttonClass}
+          disabled={exportV2Disabled}
+          onClick={() => {
+            void onExportV2();
+          }}
+        >
+          <Download size={16} aria-hidden="true" />
+          Export v2 archive
+        </button>
+        {exportV2Busy && (
+          <button
+            type="button"
+            data-action="cancel-export"
+            className={buttonClass}
+            onClick={onExportV2Cancel}
+          >
+            <XCircle size={16} aria-hidden="true" />
+            Cancel export
+          </button>
+        )}
         <input
           ref={fileRef}
           type="file"
@@ -196,6 +283,21 @@ export function DataArchiveActions(): ReactElement | null {
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {exportV2Busy && exportV2Progress !== null && (
+        <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
+          <p>
+            Exporting v2 archive — stage {exportV2Progress.stage} · {exportV2Progress.done}/
+            {exportV2Progress.total}
+          </p>
+        </div>
+      )}
+
+      {!exportV2Busy && exportV2Total !== null && (
+        <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
+          <p>Exported complete v2 archive — {exportV2Total} entities.</p>
         </div>
       )}
     </section>

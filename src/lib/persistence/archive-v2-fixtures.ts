@@ -1,5 +1,5 @@
 // =============================================================================
-// RSemble AI — Archive v2 deterministic fixtures (Child 02, Task 10A)
+// RSemble AI — Archive v2 deterministic fixtures (Child 02, Tasks 10A/10B)
 //
 // Pure, deterministic builders for the task-first archive v2 envelope. The
 // valid fixture round-trips one representative entity of every collection
@@ -9,8 +9,13 @@
 // crosswalk. The manifest carries exact counts, a recomputed payload digest,
 // and a local-scope disclosure.
 //
-// These fixtures are validation fixtures only: they exercise the pure
-// `validateArchiveV2` contract. No database, no mutation, no provider calls.
+// Task 10B exports the entity builders and adds deterministic DB row builders:
+// the exact indexed row shapes the repositories write, so export tests can
+// seed every Dexie store directly with the same persisted data model.
+//
+// These fixtures are validation/export fixtures only: they exercise the pure
+// `validateArchiveV2` contract and the v2 export adapter. No database is
+// opened here, no mutation, no provider calls.
 // =============================================================================
 
 import {
@@ -51,6 +56,31 @@ import type {
 import type { FullRunSummaryV2, RunRecordV2 } from "./run-types";
 import type { CriticRef } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
+import type {
+  ExperimentRow,
+  FusionAttemptRow,
+  FusionObservationRow,
+  FusionPlaybookRow,
+  FusionRecipeRow,
+  FusionStudyRow,
+  FusionTrialRow,
+  PoolManifestRow,
+  ProfileRow,
+  ProfileVersionRow,
+  RunDetailRow,
+  RunSummaryRow,
+  SuiteRow,
+  TaskArtifactBytesRow,
+  TaskArtifactRow,
+  TaskFacetAnnotationRow,
+  TaskFamilyAssignmentRow,
+  TaskFamilyRelationRow,
+  TaskFamilyRow,
+  TaskInstanceRow,
+  TaskMigrationCrosswalkRow,
+  TaskRecordRow,
+  TaskVersionRow,
+} from "./database";
 
 // --- Shared constants --------------------------------------------------------
 
@@ -76,7 +106,7 @@ const SLOT: ModelSlot = {
   enabled: true,
 };
 
-function makeRunSummary(id: string): FullRunSummaryV2 {
+export function makeRunSummary(id: string): FullRunSummaryV2 {
   return {
     kind: "full",
     schemaVersion: 2,
@@ -100,7 +130,7 @@ function makeRunSummary(id: string): FullRunSummaryV2 {
   };
 }
 
-function makeRunDetail(id: string): RunRecordV2 {
+export function makeRunDetail(id: string): RunRecordV2 {
   return {
     schemaVersion: 2,
     id,
@@ -144,7 +174,7 @@ function makeRunDetail(id: string): RunRecordV2 {
   };
 }
 
-function makeRubricRecord(id: string): RubricRecord {
+export function makeRubricRecord(id: string): RubricRecord {
   return {
     id,
     revision: 1,
@@ -155,7 +185,7 @@ function makeRubricRecord(id: string): RubricRecord {
   };
 }
 
-function makeRubricVersion(id: string, version = 1): EvaluationRubric {
+export function makeRubricVersion(id: string, version = 1): EvaluationRubric {
   return {
     id,
     version,
@@ -176,7 +206,7 @@ function makeRubricVersion(id: string, version = 1): EvaluationRubric {
   };
 }
 
-function makeSuite(id: string): EvaluationSuite {
+export function makeSuite(id: string): EvaluationSuite {
   return {
     id,
     revision: 1,
@@ -203,7 +233,7 @@ function makeSuite(id: string): EvaluationSuite {
   };
 }
 
-function makeExperiment(id: string, suiteId: string): ExperimentRecord {
+export function makeExperiment(id: string, suiteId: string): ExperimentRecord {
   const suite = makeSuite(suiteId);
   return {
     id,
@@ -230,7 +260,7 @@ function makeExperiment(id: string, suiteId: string): ExperimentRecord {
   };
 }
 
-function makeRecipe(id: string, version = 1): FusionRecipeVersion {
+export function makeRecipe(id: string, version = 1): FusionRecipeVersion {
   return {
     id,
     version,
@@ -243,7 +273,7 @@ function makeRecipe(id: string, version = 1): FusionRecipeVersion {
   };
 }
 
-function makePoolManifest(id: string, version = 1): PoolManifestVersion {
+export function makePoolManifest(id: string, version = 1): PoolManifestVersion {
   return {
     id,
     version,
@@ -256,7 +286,7 @@ function makePoolManifest(id: string, version = 1): PoolManifestVersion {
   };
 }
 
-function makeStudy(id: string): FusionStudy {
+export function makeStudy(id: string): FusionStudy {
   return {
     id,
     revision: 1,
@@ -276,7 +306,7 @@ function makeStudy(id: string): FusionStudy {
   };
 }
 
-function makeTrial(id: string, studyId: string): FusionTrial {
+export function makeTrial(id: string, studyId: string): FusionTrial {
   return {
     id,
     revision: 1,
@@ -308,7 +338,7 @@ function makeTrial(id: string, studyId: string): FusionTrial {
   };
 }
 
-function makeAttempt(id: string, studyId: string): FusionAttempt {
+export function makeAttempt(id: string, studyId: string): FusionAttempt {
   return {
     id,
     studyId,
@@ -319,7 +349,7 @@ function makeAttempt(id: string, studyId: string): FusionAttempt {
   };
 }
 
-function makeObservation(id: string, trialId: string): EvaluationObservation {
+export function makeObservation(id: string, trialId: string): EvaluationObservation {
   return {
     id,
     trialId,
@@ -335,7 +365,7 @@ function makeObservation(id: string, trialId: string): EvaluationObservation {
   };
 }
 
-function makePlaybook(id: string, studyId: string): FusionPlaybook {
+export function makePlaybook(id: string, studyId: string): FusionPlaybook {
   return {
     id,
     studyId,
@@ -360,7 +390,7 @@ function makePlaybook(id: string, studyId: string): FusionPlaybook {
 
 // --- Task entity builders ----------------------------------------------------
 
-function makeTaskRecord(id: string): TaskRecord {
+export function makeTaskRecord(id: string): TaskRecord {
   return {
     id,
     latestVersion: 1,
@@ -372,7 +402,7 @@ function makeTaskRecord(id: string): TaskRecord {
   };
 }
 
-function makeTaskVersion(taskId: string, version: number, artifactId: string): TaskVersion {
+export function makeTaskVersion(taskId: string, version: number, artifactId: string): TaskVersion {
   return {
     taskId,
     version,
@@ -396,7 +426,7 @@ function makeTaskVersion(taskId: string, version: number, artifactId: string): T
   };
 }
 
-function makeTaskArtifact(id: string, bytes: Uint8Array): TaskArtifact {
+export function makeTaskArtifact(id: string, bytes: Uint8Array): TaskArtifact {
   return {
     id,
     contentDigest: computeArtifactDigest(bytes),
@@ -407,13 +437,11 @@ function makeTaskArtifact(id: string, bytes: Uint8Array): TaskArtifact {
   };
 }
 
-function makeArtifactBytes(id: string, bytes: Uint8Array): ArchiveV2TaskArtifactBytes {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return { id, bytesBase64: btoa(binary) };
+export function makeArtifactBytes(id: string, bytes: Uint8Array): ArchiveV2TaskArtifactBytes {
+  return { id, bytesBase64: bytesToBase64(bytes) };
 }
 
-function makeTaskInstance(id: string, taskId: string, version: number, artifactId: string): TaskInstance {
+export function makeTaskInstance(id: string, taskId: string, version: number, artifactId: string): TaskInstance {
   return {
     id,
     taskId,
@@ -436,7 +464,7 @@ function makeTaskInstance(id: string, taskId: string, version: number, artifactI
   };
 }
 
-function makeTaskFamily(id: string): TaskFamily {
+export function makeTaskFamily(id: string): TaskFamily {
   return {
     id,
     name: `Family ${id}`,
@@ -449,7 +477,7 @@ function makeTaskFamily(id: string): TaskFamily {
   };
 }
 
-function makeTaskFamilyAssignment(id: string, taskId: string, version: number, familyId: string): TaskFamilyAssignment {
+export function makeTaskFamilyAssignment(id: string, taskId: string, version: number, familyId: string): TaskFamilyAssignment {
   return {
     id,
     taskId,
@@ -462,7 +490,7 @@ function makeTaskFamilyAssignment(id: string, taskId: string, version: number, f
   };
 }
 
-function makeTaskFamilyRelation(id: string, fromFamilyId: string, toFamilyId: string): TaskFamilyRelation {
+export function makeTaskFamilyRelation(id: string, fromFamilyId: string, toFamilyId: string): TaskFamilyRelation {
   return {
     id,
     fromFamilyId,
@@ -472,7 +500,7 @@ function makeTaskFamilyRelation(id: string, fromFamilyId: string, toFamilyId: st
   };
 }
 
-function makeTaskFacetAnnotation(id: string, taskId: string): TaskFacetAnnotation {
+export function makeTaskFacetAnnotation(id: string, taskId: string): TaskFacetAnnotation {
   return {
     id,
     taskId,
@@ -488,11 +516,257 @@ function makeTaskFacetAnnotation(id: string, taskId: string): TaskFacetAnnotatio
   };
 }
 
-function makeCrosswalk(taskId: string, version: number): TaskMigrationCrosswalk {
+export function makeCrosswalk(taskId: string, version: number): TaskMigrationCrosswalk {
   return {
     legacyScopeKey: `legacy:${taskId}`,
     taskId,
     taskVersion: version,
+  };
+}
+
+// --- Wire encoding helper ------------------------------------------------------
+
+/** Encode bytes as base64 — the v2 artifact-bytes wire encoding, shared by
+ *  fixtures and the v2 export adapter. Deterministic; no runtime dependency. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+// --- DB row builders (mirror the repository row mapping) ----------------------
+//
+// Export tests seed Dexie stores directly; these builders produce the exact
+// indexed row shape the repositories write, so the v2 export adapter is
+// exercised against the real persisted data model.
+
+export function runSummaryRow(summary: FullRunSummaryV2): RunSummaryRow {
+  return {
+    kind: summary.kind,
+    summary,
+    id: summary.id,
+    revision: summary.revision,
+    createdAt: summary.createdAt,
+    completedAt: summary.completedAt,
+    status: summary.status,
+    mode: summary.mode,
+    sourceKind: summary.source.kind,
+    sourceProtocolFingerprint: null,
+    sourceExperimentTaskAttemptId: null,
+    modelKeys: summary.modelKeys,
+  };
+}
+
+export function runDetailRow(record: RunRecordV2): RunDetailRow {
+  return {
+    id: record.id,
+    record,
+    revision: record.revision,
+    createdAt: record.createdAt,
+    status: record.status,
+  };
+}
+
+export function profileRow(record: RubricRecord): ProfileRow {
+  return {
+    id: record.id,
+    record,
+    revision: record.revision,
+    latestVersion: record.latestVersion,
+    updatedAt: record.updatedAt,
+    archivedAt: record.archivedAt,
+  };
+}
+
+export function profileVersionRow(rubric: EvaluationRubric): ProfileVersionRow {
+  return { id: rubric.id, version: rubric.version, profile: rubric, updatedAt: rubric.updatedAt };
+}
+
+export function suiteRow(suite: EvaluationSuite): SuiteRow {
+  return {
+    id: suite.id,
+    suite,
+    revision: suite.revision,
+    version: suite.version,
+    updatedAt: suite.updatedAt,
+    archivedAt: suite.archivedAt,
+  };
+}
+
+export function experimentRow(experiment: ExperimentRecord): ExperimentRow {
+  return {
+    id: experiment.id,
+    experiment,
+    revision: experiment.revision,
+    suiteId: experiment.suiteId,
+    suiteVersion: experiment.suiteVersion,
+    protocolFingerprint: experiment.protocolFingerprint,
+    createdAt: experiment.createdAt,
+    status: experiment.status,
+  };
+}
+
+export function fusionRecipeRow(recipe: FusionRecipeVersion): FusionRecipeRow {
+  return { id: recipe.id, version: recipe.version, recipe, createdAt: 1000 };
+}
+
+export function poolManifestRow(manifest: PoolManifestVersion): PoolManifestRow {
+  return { id: manifest.id, version: manifest.version, manifest, createdAt: manifest.createdAt };
+}
+
+export function fusionStudyRow(study: FusionStudy): FusionStudyRow {
+  return {
+    id: study.id,
+    study,
+    revision: study.revision,
+    suiteId: study.suiteRef.suiteId,
+    suiteVersion: study.suiteRef.suiteVersion,
+    status: study.status,
+    updatedAt: study.updatedAt,
+  };
+}
+
+export function fusionTrialRow(trial: FusionTrial): FusionTrialRow {
+  return {
+    id: trial.id,
+    trial,
+    revision: trial.revision,
+    studyId: trial.studyId,
+    stage: trial.stage,
+    status: trial.status,
+    createdAt: trial.createdAt,
+  };
+}
+
+export function fusionAttemptRow(attempt: FusionAttempt): FusionAttemptRow {
+  return {
+    id: attempt.id,
+    attempt,
+    studyId: attempt.studyId,
+    createdAt: attempt.createdAt,
+  };
+}
+
+export function fusionObservationRow(observation: EvaluationObservation): FusionObservationRow {
+  return {
+    id: observation.id,
+    observation,
+    trialId: observation.trialId,
+    createdAt: observation.finishedAt,
+  };
+}
+
+export function fusionPlaybookRow(playbook: FusionPlaybook): FusionPlaybookRow {
+  return {
+    id: playbook.id,
+    playbook,
+    studyId: playbook.studyId,
+    createdAt: playbook.createdAt,
+  };
+}
+
+export function taskRecordRow(record: TaskRecord): TaskRecordRow {
+  return {
+    id: record.id,
+    record,
+    latestVersion: record.latestVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    archivedAt: record.archivedAt,
+    origin: record.origin,
+    revision: record.revision,
+  };
+}
+
+export function taskVersionRow(version: TaskVersion): TaskVersionRow {
+  return {
+    taskId: version.taskId,
+    version: version.version,
+    version_: version,
+    createdAt: version.createdAt,
+  };
+}
+
+export function taskArtifactRow(artifact: TaskArtifact): TaskArtifactRow {
+  return {
+    id: artifact.id,
+    contentDigest: artifact.contentDigest,
+    mediaType: artifact.mediaType,
+    byteCount: artifact.byteCount,
+    storageRef: artifact.storageRef,
+    createdAt: artifact.createdAt,
+  };
+}
+
+export function taskArtifactBytesRow(id: string, bytes: Uint8Array): TaskArtifactBytesRow {
+  return { id, bytes };
+}
+
+export function taskInstanceRow(instance: TaskInstance): TaskInstanceRow {
+  return {
+    id: instance.id,
+    instance,
+    taskId: instance.taskId,
+    taskVersion: instance.taskVersion,
+    inputDigest: instance.inputDigest,
+    inputCompleteness: instance.inputCompleteness,
+    createdAt: instance.createdAt,
+  };
+}
+
+export function taskFamilyRow(family: TaskFamily): TaskFamilyRow {
+  return {
+    id: family.id,
+    family,
+    parentFamilyId: family.parentFamilyId,
+    updatedAt: family.updatedAt,
+    archivedAt: family.archivedAt,
+    revision: family.revision,
+  };
+}
+
+export function taskFamilyAssignmentRow(assignment: TaskFamilyAssignment): TaskFamilyAssignmentRow {
+  return {
+    id: assignment.id,
+    assignment,
+    taskId: assignment.taskId,
+    taskVersion: assignment.taskVersion,
+    familyId: assignment.familyId,
+    isPrimary: assignment.isPrimary ? 1 : 0,
+    createdAt: assignment.createdAt,
+    revision: assignment.revision,
+    archivedAt: assignment.archivedAt,
+  };
+}
+
+export function taskFamilyRelationRow(relation: TaskFamilyRelation): TaskFamilyRelationRow {
+  return {
+    id: relation.id,
+    relation,
+    fromFamilyId: relation.fromFamilyId,
+    toFamilyId: relation.toFamilyId,
+    kind: relation.kind,
+    createdAt: relation.createdAt,
+  };
+}
+
+export function taskFacetAnnotationRow(annotation: TaskFacetAnnotation): TaskFacetAnnotationRow {
+  return {
+    id: annotation.id,
+    annotation,
+    taskId: annotation.taskId,
+    taskVersion: annotation.taskVersion,
+    facetId: annotation.facetId,
+    valueId: annotation.valueId,
+    createdAt: annotation.createdAt,
+  };
+}
+
+export function taskMigrationCrosswalkRow(crosswalk: TaskMigrationCrosswalk): TaskMigrationCrosswalkRow {
+  return {
+    legacyScopeKey: crosswalk.legacyScopeKey,
+    taskId: crosswalk.taskId,
+    taskVersion: crosswalk.taskVersion,
   };
 }
 
