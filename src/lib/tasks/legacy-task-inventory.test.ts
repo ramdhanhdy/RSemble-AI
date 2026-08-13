@@ -134,7 +134,7 @@ describe("buildLegacyTaskInventory — suite definitions", () => {
     expect(entry.status).toBe("complete");
     expect(entry.executions).toBe(0);
     expect(entry.definitionDigest).toBe(expectedDigest(makeTask()));
-    expect(entry.source).toBe("legacy-task-set");
+    expect(entry.origin).toBe("legacy-task-set");
     // Latest unexecuted suite definition is still included per §6.2 #6.
     expect(entry.sources).toContain("current-suite");
     expect(entry.latestSuiteVersion).toBe(1);
