@@ -42,11 +42,13 @@ import type {
   TaskRecord,
   TaskVersion,
 } from "../tasks/task-types";
-import type {
-  GetOrCreateInstanceResult,
-  TaskFamilyRelationRepository,
-  TaskListQuery,
-  TaskRepository,
+import {
+  parseCanonicalTaskMigrationMarker,
+  type CanonicalTaskMigrationMarker,
+  type GetOrCreateInstanceResult,
+  type TaskFamilyRelationRepository,
+  type TaskListQuery,
+  type TaskRepository,
 } from "./task-repository";
 import type { TaskMigrationCrosswalk } from "../tasks/task-references";
 
@@ -74,6 +76,8 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
   private assignments = new Map<string, TaskFamilyAssignment>();
   private annotations = new Map<string, TaskFacetAnnotation>();
   private relations = new Map<string, TaskFamilyRelation>();
+  private crosswalks = new Map<string, TaskMigrationCrosswalk>();
+  private migrationMarker: CanonicalTaskMigrationMarker | null = null;
 
   // --- Task + version lifecycle ---------------------------------------------
 
@@ -198,9 +202,58 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
   }
 
   async listTaskMigrationCrosswalks(taskId: string): Promise<TaskMigrationCrosswalk[]> {
-    void taskId;
-    return [];
+    return [...this.crosswalks.values()]
+      .filter((row) => row.taskId === taskId)
+      .map((row) => ({
+        legacyScopeKey: row.legacyScopeKey,
+        taskId: row.taskId,
+        taskVersion: row.taskVersion,
+      }))
+      .sort((a, b) => a.legacyScopeKey.localeCompare(b.legacyScopeKey));
   }
+
+  async putTaskMigrationCrosswalk(row: TaskMigrationCrosswalk): Promise<void> {
+    if (typeof row.legacyScopeKey !== "string" || row.legacyScopeKey.trim() === "") {
+      throw new StorageError("validation", "Invalid migration crosswalk legacyScopeKey");
+    }
+    if (typeof row.taskId !== "string" || row.taskId.trim() === "") {
+      throw new StorageError("validation", "Invalid migration crosswalk taskId");
+    }
+    if (!Number.isInteger(row.taskVersion) || row.taskVersion < 1) {
+      throw new StorageError("validation", "Invalid migration crosswalk taskVersion");
+    }
+    this.crosswalks.set(row.legacyScopeKey, {
+      legacyScopeKey: row.legacyScopeKey,
+      taskId: row.taskId,
+      taskVersion: row.taskVersion,
+    });
+  }
+
+  async getCanonicalTaskMigrationMarker(): Promise<CanonicalTaskMigrationMarker | null> {
+    return parseCanonicalTaskMigrationMarker(this.migrationMarker);
+  }
+
+  async putCanonicalTaskMigrationMarker(marker: CanonicalTaskMigrationMarker): Promise<void> {
+    if (marker.kind !== "canonical-task-migration") {
+      throw new StorageError("validation", "Invalid canonical task migration marker kind");
+    }
+    if (typeof marker.version !== "number" || !Number.isFinite(marker.version)) {
+      throw new StorageError("validation", "Invalid canonical task migration marker version");
+    }
+    if (typeof marker.completedAt !== "number" || !Number.isFinite(marker.completedAt)) {
+      throw new StorageError("validation", "Invalid canonical task migration marker completedAt");
+    }
+    if (!Array.isArray(marker.unresolvedKeys) || marker.unresolvedKeys.some((key) => typeof key !== "string")) {
+      throw new StorageError("validation", "Invalid canonical task migration marker unresolvedKeys");
+    }
+    this.migrationMarker = {
+      kind: "canonical-task-migration",
+      version: marker.version,
+      completedAt: marker.completedAt,
+      unresolvedKeys: [...marker.unresolvedKeys],
+    };
+  }
+
 
 
   async listTasks(query: TaskListQuery): Promise<TaskRecord[]> {

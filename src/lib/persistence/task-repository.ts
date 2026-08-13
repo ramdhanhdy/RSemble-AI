@@ -42,6 +42,8 @@ import {
   validateTaskVersion,
 } from "../tasks/task-validation";
 import type { TaskMigrationCrosswalk } from "../tasks/task-references";
+import { canonicalTaskMigrationMarkerKey } from "./canonical-task-migration";
+
 
 import type {
   TaskArtifact,
@@ -90,6 +92,13 @@ export interface GetOrCreateInstanceResult {
   reused: boolean;
 }
 
+export interface CanonicalTaskMigrationMarker {
+  kind: "canonical-task-migration";
+  version: number;
+  completedAt: number;
+  unresolvedKeys: string[];
+}
+
 // --- repository interface ----------------------------------------------------
 
 export interface TaskRepository {
@@ -120,6 +129,9 @@ export interface TaskRepository {
   listTaskInstances(taskId: string, taskVersion?: number): Promise<TaskInstance[]>;
   listTaskVersions(taskId: string): Promise<TaskVersion[]>;
   listTaskMigrationCrosswalks(taskId: string): Promise<TaskMigrationCrosswalk[]>;
+  putTaskMigrationCrosswalk(row: TaskMigrationCrosswalk): Promise<void>;
+  getCanonicalTaskMigrationMarker(): Promise<CanonicalTaskMigrationMarker | null>;
+  putCanonicalTaskMigrationMarker(marker: CanonicalTaskMigrationMarker): Promise<void>;
 
 
   // --- families -------------------------------------------------------------
@@ -168,6 +180,62 @@ function assertValid(
     const first = result.errors[0];
     throw new StorageError("validation", first ? first.message : fallback);
   }
+}
+
+const UNRESOLVED_INVENTORY_KEY = /^(.+)::(.+)::v(\d+)$/;
+
+function assertTaskMigrationCrosswalk(row: TaskMigrationCrosswalk): void {
+  if (typeof row.legacyScopeKey !== "string" || row.legacyScopeKey.trim() === "") {
+    throw new StorageError("validation", "Invalid migration crosswalk legacyScopeKey");
+  }
+  if (typeof row.taskId !== "string" || row.taskId.trim() === "") {
+    throw new StorageError("validation", "Invalid migration crosswalk taskId");
+  }
+  if (!Number.isInteger(row.taskVersion) || row.taskVersion < 1) {
+    throw new StorageError("validation", "Invalid migration crosswalk taskVersion");
+  }
+}
+
+function assertCanonicalTaskMigrationMarker(marker: CanonicalTaskMigrationMarker): void {
+  if (marker.kind !== "canonical-task-migration") {
+    throw new StorageError("validation", "Invalid canonical task migration marker kind");
+  }
+  if (typeof marker.version !== "number" || !Number.isFinite(marker.version)) {
+    throw new StorageError("validation", "Invalid canonical task migration marker version");
+  }
+  if (typeof marker.completedAt !== "number" || !Number.isFinite(marker.completedAt)) {
+    throw new StorageError("validation", "Invalid canonical task migration marker completedAt");
+  }
+  if (!Array.isArray(marker.unresolvedKeys) || marker.unresolvedKeys.some((key) => typeof key !== "string")) {
+    throw new StorageError("validation", "Invalid canonical task migration marker unresolvedKeys");
+  }
+}
+
+function validatedUnresolvedInventoryKeys(keys: readonly string[]): string[] {
+  const unique = new Set<string>();
+  for (const key of keys) {
+    if (UNRESOLVED_INVENTORY_KEY.test(key)) unique.add(key);
+  }
+  return [...unique].sort((a, b) => a.localeCompare(b));
+}
+
+export function parseCanonicalTaskMigrationMarker(
+  value: unknown,
+): CanonicalTaskMigrationMarker | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const rec = value as Record<string, unknown>;
+  if (rec.kind !== "canonical-task-migration") return null;
+  if (typeof rec.version !== "number" || !Number.isFinite(rec.version)) return null;
+  if (typeof rec.completedAt !== "number" || !Number.isFinite(rec.completedAt)) return null;
+  if (!Array.isArray(rec.unresolvedKeys) || rec.unresolvedKeys.some((key) => typeof key !== "string")) {
+    return null;
+  }
+  return {
+    kind: "canonical-task-migration",
+    version: rec.version,
+    completedAt: rec.completedAt,
+    unresolvedKeys: validatedUnresolvedInventoryKeys(rec.unresolvedKeys as string[]),
+  };
 }
 
 // --- Dexie implementation ----------------------------------------------------
@@ -402,6 +470,51 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
         }))
         .sort((a, b) => a.legacyScopeKey.localeCompare(b.legacyScopeKey));
     } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function putTaskMigrationCrosswalk(row: TaskMigrationCrosswalk): Promise<void> {
+    assertTaskMigrationCrosswalk(row);
+    db.assertWritable();
+    try {
+      await db.taskMigrationCrosswalk.put({
+        legacyScopeKey: row.legacyScopeKey,
+        taskId: row.taskId,
+        taskVersion: row.taskVersion,
+      });
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function getCanonicalTaskMigrationMarker(): Promise<CanonicalTaskMigrationMarker | null> {
+    try {
+      const row = await db.storageMeta.get(canonicalTaskMigrationMarkerKey);
+      return parseCanonicalTaskMigrationMarker(row?.value);
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function putCanonicalTaskMigrationMarker(
+    marker: CanonicalTaskMigrationMarker,
+  ): Promise<void> {
+    assertCanonicalTaskMigrationMarker(marker);
+    db.assertWritable();
+    try {
+      await db.storageMeta.put({
+        key: canonicalTaskMigrationMarkerKey,
+        value: {
+          kind: "canonical-task-migration",
+          version: marker.version,
+          completedAt: marker.completedAt,
+          unresolvedKeys: [...marker.unresolvedKeys],
+        },
+      });
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
       throw classifyStorageError(err);
     }
   }
@@ -1190,6 +1303,9 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
     getTaskVersion,
     listTaskVersions,
     listTaskMigrationCrosswalks,
+    putTaskMigrationCrosswalk,
+    getCanonicalTaskMigrationMarker,
+    putCanonicalTaskMigrationMarker,
 
     listTasks,
     putTaskArtifact,

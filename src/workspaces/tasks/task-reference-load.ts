@@ -18,10 +18,11 @@ export async function loadTaskReferenceReadModel(
   task: TaskRecord,
   evalRepo: EvaluationRepository | null,
 ): Promise<TaskReferenceReadModel> {
-  const [versions, crosswalks, instances] = await Promise.all([
+  const [versions, crosswalks, instances, marker] = await Promise.all([
     taskRepo.listTaskVersions(task.id),
     taskRepo.listTaskMigrationCrosswalks(task.id),
     taskRepo.listTaskInstances(task.id),
+    taskRepo.getCanonicalTaskMigrationMarker(),
   ]);
   let suites: EvaluationSuite[] = [];
   let experiments: ExperimentRecord[] = [];
@@ -47,6 +48,7 @@ export async function loadTaskReferenceReadModel(
     experiments,
     instances,
     liveScanAvailable,
+    unresolvedInventoryKeys: marker?.unresolvedKeys ?? [],
   });
 }
 
