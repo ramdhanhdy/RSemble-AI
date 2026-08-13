@@ -728,6 +728,43 @@ export function repositorySuite(
       );
     });
 
+    // --- Task 8B: facet annotation provenance integrity (spec §3.6) ---------
+
+    it("rejects a facet annotation whose supersedesId is unknown", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      await expect(
+        repo.annotateTaskFacet(facetAnnotation({ supersedesId: "missing-annotation" })),
+      ).rejects.toThrow(/not found/i);
+    });
+
+    it("rejects a facet annotation superseding an annotation of a different Task", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      await repo.createTask(
+        taskRecord({ id: "task-2" }),
+        taskVersion({ taskId: "task-2" }),
+      );
+      await repo.annotateTaskFacet(facetAnnotation({ id: "ann-other", taskId: "task-2" }));
+      await expect(
+        repo.annotateTaskFacet(facetAnnotation({ supersedesId: "ann-other" })),
+      ).rejects.toThrow(/not found|same task/i);
+    });
+
+    it("accepts an annotation superseding an existing annotation of the same Task", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      await repo.annotateTaskFacet(facetAnnotation({ id: "ann-1" }));
+      await repo.annotateTaskFacet(
+        facetAnnotation({ id: "ann-2", valueId: "code", supersedesId: "ann-1" }),
+      );
+      const annotations = await repo.listTaskFacetAnnotations("task-1");
+      expect(annotations.map((a) => a.id)).toEqual(["ann-1", "ann-2"]);
+      expect(annotations[1].supersedesId).toBe("ann-1");
+      // Supersession appends — the superseded annotation is not mutated.
+      expect(annotations[0]).toMatchObject({ id: "ann-1", valueId: "nlp" });
+    });
+
     // --- deterministic paginated queries ------------------------------------
 
     it("lists tasks deterministically by updatedAt desc with pagination", async () => {
@@ -959,6 +996,76 @@ export function repositorySuite(
         offset: 1,
       });
       expect(page2.map((t) => t.id)).toEqual(["t-1"]);
+    });
+
+    // --- Task 8B: archive-state and facet filters (spec §7.1) ---------------
+
+    it("listTasks archiveState 'archived' returns only archived Tasks", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-live", createdAt: 100 }),
+        taskVersion({ taskId: "t-live" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-archived", createdAt: 200 }),
+        taskVersion({ taskId: "t-archived" }),
+      );
+      const rec = (await repo.getTaskRecord("t-archived"))!;
+      await repo.archiveTask("t-archived", rec.revision);
+      const archived = await repo.listTasks({ archiveState: "archived" });
+      expect(archived.map((t) => t.id)).toEqual(["t-archived"]);
+      const all = await repo.listTasks({ archiveState: "all" });
+      expect(all.map((t) => t.id).sort()).toEqual(["t-archived", "t-live"]);
+      const active = await repo.listTasks({ archiveState: "active" });
+      expect(active.map((t) => t.id)).toEqual(["t-live"]);
+    });
+
+    it("listTasks filters by facet annotation (facetId + valueId)", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-nlp", createdAt: 100 }),
+        taskVersion({ taskId: "t-nlp" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-code", createdAt: 200 }),
+        taskVersion({ taskId: "t-code" }),
+      );
+      await repo.annotateTaskFacet(facetAnnotation({ taskId: "t-nlp" }));
+      await repo.annotateTaskFacet(
+        facetAnnotation({ id: "ann-code", taskId: "t-code", valueId: "code" }),
+      );
+      const nlp = await repo.listTasks({ facetId: "domain", facetValueId: "nlp" });
+      expect(nlp.map((t) => t.id)).toEqual(["t-nlp"]);
+      // A value with no annotation yields nothing — the filter is exact.
+      const none = await repo.listTasks({ facetId: "domain", facetValueId: "multimodal" });
+      expect(none).toEqual([]);
+    });
+
+    it("listTasks facet filter composes with search and archive state", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-a", createdAt: 100 }),
+        taskVersion({ taskId: "t-a", title: "Summarize contracts" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-b", createdAt: 200 }),
+        taskVersion({ taskId: "t-b", title: "Summarize reports" }),
+      );
+      await repo.annotateTaskFacet(facetAnnotation({ taskId: "t-a" }));
+      await repo.annotateTaskFacet(facetAnnotation({ id: "ann-b", taskId: "t-b" }));
+      const recB = (await repo.getTaskRecord("t-b"))!;
+      await repo.archiveTask("t-b", recB.revision);
+      // Archived t-b is excluded by default even though it matches facet+search.
+      const active = await repo.listTasks({ search: "summarize", facetId: "domain", facetValueId: "nlp" });
+      expect(active.map((t) => t.id)).toEqual(["t-a"]);
+      // archiveState 'all' brings the archived match back.
+      const all = await repo.listTasks({
+        search: "summarize",
+        facetId: "domain",
+        facetValueId: "nlp",
+        archiveState: "all",
+      });
+      expect(all.map((t) => t.id)).toEqual(["t-b", "t-a"]);
     });
 
     // --- classified storage failures ----------------------------------------
@@ -1206,6 +1313,71 @@ export function repositorySuite(
       await repo.createTaskFamily(taskFamily({ id: "family-2" }));
       const bad = { ...familyRelation(), apiKey: "sk-leak" } as unknown as TaskFamilyRelation;
       await expect(repo.createTaskFamilyRelation(bad)).rejects.toThrow(/prohibited|validation/i);
+    });
+
+    // --- Task 8B: family parent validity and cycles (spec §3.5) -------------
+
+    it("rejects creating a family whose parentFamilyId is itself (direct self-cycle)", async () => {
+      const repo = makeRepo();
+      await expect(
+        repo.createTaskFamily(taskFamily({ id: "fam-self", parentFamilyId: "fam-self" })),
+      ).rejects.toThrow(/cycle|itself/i);
+      expect(await repo.getTaskFamily("fam-self")).toBeNull();
+    });
+
+    it("rejects creating a family whose parent does not exist (invalid parent)", async () => {
+      const repo = makeRepo();
+      await expect(
+        repo.createTaskFamily(taskFamily({ id: "fam-orphan", parentFamilyId: "fam-missing" })),
+      ).rejects.toThrow(/not found/i);
+      expect(await repo.getTaskFamily("fam-orphan")).toBeNull();
+    });
+
+    it("rejects creating a family that would form a two-hop parent cycle", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "fam-a" }));
+      await repo.createTaskFamily(taskFamily({ id: "fam-b", parentFamilyId: "fam-a" }));
+      // fam-a → parent fam-b → parent fam-a would close the loop.
+      const famA = (await repo.getTaskFamily("fam-a"))!;
+      await expect(
+        repo.updateTaskFamily({ ...famA, parentFamilyId: "fam-b" }, famA.revision),
+      ).rejects.toThrow(/cycle/i);
+      expect((await repo.getTaskFamily("fam-a"))!.parentFamilyId).toBeNull();
+    });
+
+    it("rejects updating a family's parent to itself", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "fam-a" }));
+      const famA = (await repo.getTaskFamily("fam-a"))!;
+      await expect(
+        repo.updateTaskFamily({ ...famA, parentFamilyId: "fam-a" }, famA.revision),
+      ).rejects.toThrow(/cycle|itself/i);
+    });
+
+    it("rejects updating a family's parent to a nonexistent family", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "fam-a" }));
+      const famA = (await repo.getTaskFamily("fam-a"))!;
+      await expect(
+        repo.updateTaskFamily({ ...famA, parentFamilyId: "fam-ghost" }, famA.revision),
+      ).rejects.toThrow(/not found/i);
+    });
+
+    it("rejects a multi-hop parent cycle introduced through an update", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "fam-a" }));
+      await repo.createTaskFamily(taskFamily({ id: "fam-b", parentFamilyId: "fam-a" }));
+      await repo.createTaskFamily(taskFamily({ id: "fam-c", parentFamilyId: "fam-b" }));
+      // fam-a → fam-c → fam-b → fam-a would close a 3-hop loop.
+      const famA = (await repo.getTaskFamily("fam-a"))!;
+      await expect(
+        repo.updateTaskFamily({ ...famA, parentFamilyId: "fam-c" }, famA.revision),
+      ).rejects.toThrow(/cycle/i);
+      // A legitimate re-parent that creates no cycle still succeeds.
+      const famC = (await repo.getTaskFamily("fam-c"))!;
+      const rev = await repo.updateTaskFamily({ ...famC, parentFamilyId: null }, famC.revision);
+      expect((await repo.getTaskFamily("fam-c"))!.parentFamilyId).toBeNull();
+      expect(rev).toBe(famC.revision + 1);
     });
 
     it("does not infer a universal tree from relations (no parent/child API)", () => {
