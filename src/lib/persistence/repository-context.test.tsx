@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
-import { act } from "react";
+import { act, useContext } from "react";
 import { createRoot } from "react-dom/client";
 import { hashArtifactContent } from "../evaluations/protocol-fingerprint";
 import { RSembleEvaluationDB } from "./database";
 import {
+  RepositoryContext,
   RepositoryProvider,
   useRunRepository,
   useStorageState,
@@ -15,7 +16,11 @@ import {
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
+let activeProviderDatabase: RSembleEvaluationDB | null = null;
+
 afterEach(() => {
+  activeProviderDatabase?.close();
+  activeProviderDatabase = null;
   document.body.innerHTML = "";
   indexedDB.deleteDatabase("rsemble-evaluation");
 });
@@ -25,6 +30,7 @@ function RepositoryProbe() {
   const taskRepo = useTaskRepository();
   const storageState = useStorageState();
   const taskMigrationError = useTaskMigrationError();
+  activeProviderDatabase = useContext(RepositoryContext).db;
   return <div
     data-run={runRepo ? "ready" : "pending"}
     data-task={taskRepo ? "ready" : "pending"}

@@ -421,7 +421,11 @@ export class RSembleEvaluationDB extends Dexie {
 export interface DatabaseHandle {
   db: RSembleEvaluationDB;
   state: StorageState;
-  /** Resolves when the database is open, or rejects with a StorageError. */
+  /** Non-fatal failure that leaves existing Compare storage operational while
+   *  preventing the canonical Task repository from being published. */
+  taskMigrationError: StorageError | null;
+  /** Resolves when the database is open and Task migration has settled. Rejects
+   *  only when the underlying database itself cannot be opened. */
   ready: Promise<void>;
 }
 
@@ -436,14 +440,27 @@ export interface DatabaseHandle {
  */
 export function createDatabase(name?: string): DatabaseHandle {
   const db = new RSembleEvaluationDB(name);
-  const handle: DatabaseHandle = { db, state: db.state, ready: Promise.resolve() };
+  const handle: DatabaseHandle = {
+    db,
+    state: db.state,
+    taskMigrationError: null,
+    ready: Promise.resolve(),
+  };
 
   db.onStateChange((s) => {
     handle.state = s;
   });
 
   handle.ready = db.open()
-    .then(() => migrateEmbeddedLegacyTasks(db))
+    .then(async () => {
+      try {
+        await migrateEmbeddedLegacyTasks(db);
+      } catch (err) {
+        // Canonical Task migration is additive. Its failure must not turn the
+        // established Run/Evaluation/Compare stores into an unavailable DB.
+        handle.taskMigrationError = classifyStorageError(err);
+      }
+    })
     .then(
       () => undefined,
       (err: unknown) => {

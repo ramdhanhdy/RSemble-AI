@@ -1,5 +1,5 @@
 // Conservative, resumable migration of embedded suite Tasks into canonical Tasks.
-import { hashArtifactContent } from "../evaluations/protocol-fingerprint";
+import { canonicalJsonString, hashArtifactContent } from "../evaluations/protocol-fingerprint";
 import {
   buildLegacyTaskInventory,
   type LegacyChronology,
@@ -68,6 +68,14 @@ function taskRecord(taskId: string, createdAt: number): TaskRecord {
   };
 }
 
+function legacyDefinitionSourceNote(expected: ExpectedVersion): string {
+  return [
+    `legacy-definition:${expected.digest}`,
+    `legacy-verifier:${canonicalJsonString(expected.definition.taskVerifierRef)}`,
+    `legacy-evaluation:${canonicalJsonString(expected.definition.evaluation)}`,
+  ].join(";");
+}
+
 function taskVersion(
   taskId: string,
   version: number,
@@ -83,11 +91,12 @@ function taskVersion(
     defaultContextManifest: [],
     responseContract: null,
     taskVerifierRef: null,
-    // Legacy verifier configurations are not versioned canonical references.
+    // Legacy verifier/evaluation configurations are reconstructed from the
+    // immutable migration source note rather than canonical references.
     source: {
       kind: "legacy-task-set",
       legacyScopeKey: scopeKey,
-      note: `legacy-definition:${expected.digest};legacy-verifier:${JSON.stringify(expected.definition.taskVerifierRef)}`,
+      note: legacyDefinitionSourceNote(expected),
     },
     createdAt: expected.createdAt,
   };
@@ -196,7 +205,7 @@ export async function migrateEmbeddedLegacyTasks(
           if (
             existingVersions[index].version !== index + 1 ||
             actual.source.legacyScopeKey !== scopeKey ||
-            actual.source.note !== `legacy-definition:${expected.digest};legacy-verifier:${JSON.stringify(expected.definition.taskVerifierRef)}`
+            actual.source.note !== legacyDefinitionSourceNote(expected)
           ) {
             throw new StorageError("validation", "Task migration found an inconsistent version history");
           }

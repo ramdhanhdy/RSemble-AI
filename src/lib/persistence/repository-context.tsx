@@ -6,9 +6,9 @@
 // Runs/Evaluations show a blocking storage error with Retry.
 //
 // Child 02 (Canonical Tasks) Milestone B — Task 3: composes the Task
-// repository beside run → eval → fusion. When storage initialization fails,
-// `taskRepo` is null alongside the other repositories, preserving the current
-// Compare fallback behavior (spec §8).
+// repository beside run → eval → fusion. A canonical Task migration failure is
+// bounded to `taskMigrationError` and leaves Compare's established repositories
+// operational (spec §8).
 // =============================================================================
 
 import {
@@ -24,6 +24,7 @@ import {
   createDatabase,
   type DatabaseHandle,
   type RSembleEvaluationDB,
+  type StorageError,
   type StorageState,
 } from "./database";
 import { createRunRepository, type RunRepository } from "./run-repository";
@@ -40,6 +41,9 @@ export interface RepositoryContextValue {
    *  lease, experiment unit of work). Null while storage is unavailable. */
   db: RSembleEvaluationDB | null;
   storageState: StorageState;
+  /** Additive canonical Task migration failure, if one prevented Task catalog
+   *  publication without affecting existing Compare repositories. */
+  taskMigrationError?: StorageError | null;
   /** Retry database initialization after a failure. */
   retry: () => void;
 }
@@ -51,6 +55,7 @@ export const RepositoryContext = createContext<RepositoryContextValue>({
   taskRepo: null,
   db: null,
   storageState: "unavailable",
+  taskMigrationError: null,
   retry: () => undefined,
 });
 
@@ -70,6 +75,12 @@ export function useTaskRepository(): TaskRepository | null {
   return useContext(RepositoryContext).taskRepo;
 }
 
+/** Read the bounded canonical Task migration failure, if Task catalog storage
+ * could not be prepared while the established Compare stores remain ready. */
+export function useTaskMigrationError(): StorageError | null {
+  return useContext(RepositoryContext).taskMigrationError ?? null;
+}
+
 export function useStorageState(): StorageState {
   return useContext(RepositoryContext).storageState;
 }
@@ -77,12 +88,14 @@ export function useStorageState(): StorageState {
 export function RepositoryProvider({ children }: { children: ReactNode }) {
   const [handle, setHandle] = useState<DatabaseHandle | null>(null);
   const [storageState, setStorageState] = useState<StorageState>("ready");
+  const [taskMigrationError, setTaskMigrationError] = useState<StorageError | null>(null);
   const [repositoriesReady, setRepositoriesReady] = useState(false);
   const initialize = useCallback(() => {
     const h = createDatabase();
     setHandle(h);
     setStorageState(h.state);
     setRepositoriesReady(false);
+    setTaskMigrationError(null);
 
     h.db.onStateChange((s) => {
       setStorageState(s);
@@ -90,10 +103,12 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
 
     h.ready
       .then(() => {
+        setTaskMigrationError(h.taskMigrationError);
         setRepositoriesReady(true);
         setStorageState(h.state);
       })
       .catch(() => {
+        setTaskMigrationError(null);
         setRepositoriesReady(false);
         setStorageState("unavailable");
       });
@@ -116,6 +131,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     });
     setStorageState("ready");
     setRepositoriesReady(false);
+    setTaskMigrationError(null);
     // Reinitialize on next tick.
     setTimeout(initialize, 0);
   }, [initialize]);
@@ -136,8 +152,12 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     [repositoriesReady, handle],
   );
   const taskRepo = useMemo(
-    () => (repositoriesReady && handle ? createTaskRepository(handle.db) : null),
-    [repositoriesReady, handle],
+    () => (
+      repositoriesReady && handle && taskMigrationError === null
+        ? createTaskRepository(handle.db)
+        : null
+    ),
+    [repositoriesReady, handle, taskMigrationError],
   );
 
   const value = useMemo<RepositoryContextValue>(
@@ -148,10 +168,10 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       taskRepo,
       db: handle?.db ?? null,
       storageState,
+      taskMigrationError,
       retry,
     }),
-    [runRepo, evalRepo, fusionRepo, taskRepo, handle, storageState, retry],
+    [runRepo, evalRepo, fusionRepo, taskRepo, handle, storageState, taskMigrationError, retry],
   );
-
   return <RepositoryContext.Provider value={value}>{children}</RepositoryContext.Provider>;
 }

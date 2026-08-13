@@ -22,13 +22,14 @@
 //
 // JSON of the canonical Task-version identity slice — title, objective,
 // candidate instruction, default context manifest, response contract, and the
-// legacy verifier configuration — reusing `canonicalJsonString` and
-// `hashArtifactContent` from `../evaluations/protocol-fingerprint`. Evaluation
-// selection / judge instruction override are execution protocol, not Task
-// identity (spec §3.2); changes to either therefore do not create a version.
-// The context manifest is empty and the response contract is null for legacy
-// tasks: embedded EvaluationTask objects have no separate response-contract
-// field; the verifier configuration IS the legacy correctness contract.
+// legacy verifier and evaluation configuration — reusing `canonicalJsonString`
+// and `hashArtifactContent` from `../evaluations/protocol-fingerprint`.
+// Evaluation selection is required to reconstruct executable Task meaning.
+// Judge instruction override is execution protocol, not Task identity (spec
+// §3.2); a judge-only edit therefore does not create a version. The context
+// manifest is empty and the response contract is null for legacy tasks:
+// embedded EvaluationTask objects have no separate response-contract field;
+// verifier configuration IS the legacy correctness contract.
 //
 // Pure/read-only domain logic only: no Dexie writes, no source-record
 // mutation, no provider calls.
@@ -119,6 +120,7 @@ export interface LegacyExecutableDefinition {
   defaultContextManifest: never[];
   responseContract: null;
   taskVerifierRef: EvaluationTask["verification"] | null;
+  evaluation: EvaluationTask["evaluation"];
 }
 
 export interface LegacyTaskInventoryInput {
@@ -310,6 +312,7 @@ export function buildLegacyTaskInventory(
           defaultContextManifest: [],
           responseContract: null,
           taskVerifierRef: task.verification ?? null,
+          evaluation: task.evaluation,
         };
         const digest = computeLegacyExecutableDefinitionDigest(definition);
         let acc = bucket.accumulatorsByDigest.get(digest);
@@ -368,6 +371,7 @@ export function buildLegacyTaskInventory(
         defaultContextManifest: [],
         responseContract: null,
         taskVerifierRef: task.verification ?? null,
+        evaluation: task.evaluation,
       };
       const digest = computeLegacyExecutableDefinitionDigest(definition);
       let acc = bucket.accumulatorsByDigest.get(digest);

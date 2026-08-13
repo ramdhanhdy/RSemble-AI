@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { TaskVersion } from "../tasks/task-types";
 import { RSembleEvaluationDB } from "./database";
 import {
   canonicalTaskMigrationMarkerKey,
@@ -100,9 +101,11 @@ describe("migrateEmbeddedLegacyTasks", () => {
     expect(await db.tasks.count()).toBe(1);
     expect(await db.taskVersions.count()).toBe(2);
     expect(await db.taskMigrationCrosswalk.count()).toBe(2);
-    const latestVersion = (await db.taskVersions.get([(
-      await db.tasks.toArray()
-    )[0].id, 2]))!.version_;
+    const [migratedTask] = await db.tasks.toArray();
+    expect(migratedTask).toBeDefined();
+    const latestVersionRow = await db.taskVersions.get([migratedTask!.id, 2]);
+    expect(latestVersionRow).toBeDefined();
+    const latestVersion = latestVersionRow!.version_ as TaskVersion;
     expect(latestVersion.source.note).toContain('legacy-evaluation:{"kind":"inherit"}');
     expect(await db.storageMeta.get(canonicalTaskMigrationMarkerKey)).toBeDefined();
     expect(JSON.stringify({ sourceSuite, sourceExperiment })).toBe(before);
