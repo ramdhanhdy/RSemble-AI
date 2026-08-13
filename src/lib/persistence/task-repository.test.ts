@@ -869,13 +869,40 @@ export function repositorySuite(
     });
 
     it("lists migration crosswalks for a Task in deterministic key order", async () => {
-      const repo = makeRepo();
+      const repo = makeRepo() as TaskRepository & {
+        putTaskMigrationCrosswalk?(row: {
+          legacyScopeKey: string;
+          taskId: string;
+          taskVersion: number;
+        }): Promise<void>;
+      };
       await repo.createTask(taskRecord(), taskVersion());
+      expect(repo.putTaskMigrationCrosswalk).toEqual(expect.any(Function));
+      const digestA = "sha256:" + "a".repeat(64);
+      const digestB = "sha256:" + "b".repeat(64);
+      const digestC = "sha256:" + "c".repeat(64);
+      await repo.putTaskMigrationCrosswalk!({
+        legacyScopeKey: `suite-b::v2::t1::${digestB}`,
+        taskId: "task-1",
+        taskVersion: 1,
+      });
+      await repo.putTaskMigrationCrosswalk!({
+        legacyScopeKey: `suite-a::v1::t1::${digestA}`,
+        taskId: "task-1",
+        taskVersion: 1,
+      });
+      await repo.putTaskMigrationCrosswalk!({
+        legacyScopeKey: `suite-c::v3::t9::${digestC}`,
+        taskId: "task-other",
+        taskVersion: 2,
+      });
       const listed = await repo.listTaskMigrationCrosswalks("task-1");
-      expect(Array.isArray(listed)).toBe(true);
-      const keys = listed.map((row) => row.legacyScopeKey);
-      expect(keys).toEqual([...keys].sort((a, b) => a.localeCompare(b)));
-      expect(listed.every((row) => row.taskId === "task-1")).toBe(true);
+      expect(listed.map((row) => row.legacyScopeKey)).toEqual([
+        `suite-a::v1::t1::${digestA}`,
+        `suite-b::v2::t1::${digestB}`,
+      ]);
+      expect(listed.every((row) => row.taskId === "task-1" && row.taskVersion === 1)).toBe(true);
+      expect(await repo.listTaskMigrationCrosswalks("missing")).toEqual([]);
     });
 
 
