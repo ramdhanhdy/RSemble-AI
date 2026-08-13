@@ -25,6 +25,7 @@ import { Routes, Route, Navigate, Link, useParams, useLocation } from "react-rou
 import {
   useEvaluationRepository,
   useFusionStudyRepository,
+  useTaskRepository,
 } from "./lib/persistence/repository-context";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
@@ -60,6 +61,22 @@ const FusionStudyRoute = lazy(() =>
 );
 const ExperimentRoute = lazy(() =>
   import("./workspaces/evaluations/ExperimentRoute").then((m) => ({ default: m.ExperimentRoute })),
+);
+// Canonical Task routes (canonical-tasks spec §7): /tasks, /tasks/new,
+// /tasks/:taskId, /tasks/:taskId/versions/:version. Tasks are a secondary
+// surface — reachable from the command palette and direct links, never from
+// primary navigation.
+const TaskCatalog = lazy(() =>
+  import("./workspaces/tasks/TaskCatalog").then((m) => ({ default: m.TaskCatalog })),
+);
+const TaskNewRoute = lazy(() =>
+  import("./workspaces/tasks/TaskRoute").then((m) => ({ default: m.TaskNewRoute })),
+);
+const TaskDetailRoute = lazy(() =>
+  import("./workspaces/tasks/TaskRoute").then((m) => ({ default: m.TaskDetailRoute })),
+);
+const TaskVersionRoute = lazy(() =>
+  import("./workspaces/tasks/TaskRoute").then((m) => ({ default: m.TaskVersionRoute })),
 );
 
 function RouteFallback() {
@@ -139,6 +156,18 @@ export function AppRoutes({
         />
       </Route>
 
+      {/* Canonical Task routes (canonical-tasks spec §7, plan Task 6).
+          /tasks/new ranks above the dynamic :taskId segment so "new" always
+          resolves to the create shell. Unknown task/version IDs render explicit
+          not-found states — no silent redirects. */}
+      <Route path="/tasks" element={withSuspense(<TaskCatalogRoute />)} />
+      <Route path="/tasks/new" element={withSuspense(<TaskNewRouteWrapper />)} />
+      <Route path="/tasks/:taskId" element={withSuspense(<TaskDetailRouteWrapper />)} />
+      <Route
+        path="/tasks/:taskId/versions/:version"
+        element={withSuspense(<TaskVersionRouteWrapper />)}
+      />
+
       {/* Experiment progress/results — top-level route (spec §5.1). Terminal
           records render results; non-terminal render live progress. */}
       <Route
@@ -170,6 +199,36 @@ function SuiteEditorRoute({ models }: { models: CatalogModel[] }) {
 function FusionStudyRouteWrapper() {
   const fusionRepo = useFusionStudyRepository();
   return <FusionStudyRoute fusionRepo={fusionRepo} />;
+}
+
+/** Task catalog route wrapper — reads the task repository from context; the
+ *  catalog surfaces its own bounded error state when storage is unavailable
+ *  (spec §8) instead of failing the whole route tree. */
+function TaskCatalogRoute() {
+  const repo = useTaskRepository();
+  return <TaskCatalog repo={repo} />;
+}
+
+/** /tasks/new route wrapper. */
+function TaskNewRouteWrapper() {
+  const repo = useTaskRepository();
+  return <TaskNewRoute repo={repo} />;
+}
+
+/** /tasks/:taskId route wrapper. Reads the id from the URL for direct loads. */
+function TaskDetailRouteWrapper() {
+  const repo = useTaskRepository();
+  const { taskId } = useParams<{ taskId: string }>();
+  return <TaskDetailRoute repo={repo} taskId={taskId ?? ""} />;
+}
+
+/** /tasks/:taskId/versions/:version route wrapper. Parses the version param;
+ *  malformed params render the explicit invalid-version state, not a redirect. */
+function TaskVersionRouteWrapper() {
+  const repo = useTaskRepository();
+  const { taskId, version } = useParams<{ taskId: string; version: string }>();
+  const parsed = Number(version);
+  return <TaskVersionRoute repo={repo} taskId={taskId ?? ""} version={parsed} />;
 }
 
 /** RubricList route wrapper — canonical /evaluations/rubrics. Renders the

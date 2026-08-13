@@ -832,9 +832,10 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       expect(page1.map((t) => t.id)).toEqual(["t-c"]);
       const page2 = await repo.listTasks({ search: "report", limit: 1, offset: 1 });
       expect(page2.map((t) => t.id)).toEqual(["t-b"]);
-      // includeArchived surfaces the archived match too, in order.
+      // includeArchived surfaces the archived match too. Archiving bumps
+      // updatedAt, so the archived row sorts first under updatedAt desc.
       const all = await repo.listTasks({ search: "report", includeArchived: true });
-      expect(all.map((t) => t.id)).toEqual(["t-c", "t-b", "t-a"]);
+      expect(all.map((t) => t.id)).toEqual(["t-a", "t-c", "t-b"]);
     });
 
     it("listTasks treats empty/whitespace search as no filter", async () => {

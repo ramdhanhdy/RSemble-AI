@@ -188,9 +188,29 @@ export class InMemoryTaskRepository implements TaskRepository {
   async listTasks(query: TaskListQuery): Promise<TaskRecord[]> {
     const limit = query.limit ?? 50;
     const offset = query.offset ?? 0;
+    const needle = query.search?.trim().toLowerCase() ?? "";
+    // Family filter: taskIds with an active primary assignment (parity with the
+    // Dexie implementation — identical semantics, no I/O).
+    let familyFilter: Set<string> | null = null;
+    if (query.familyId !== undefined) {
+      familyFilter = new Set<string>();
+      for (const a of this.assignments.values()) {
+        if (a.familyId === query.familyId && a.isPrimary && a.archivedAt === null) {
+          familyFilter.add(a.taskId);
+        }
+      }
+    }
     return [...this.tasks.values()]
       .filter((t) => query.origin === undefined || t.origin === query.origin)
       .filter((t) => query.includeArchived === true || t.archivedAt === null)
+      .filter((t) => familyFilter === null || familyFilter.has(t.id))
+      .filter((t) => {
+        if (needle === "") return true;
+        const version = this.versions.get(t.id)?.get(t.latestVersion) ?? null;
+        const title = version?.title.toLowerCase() ?? "";
+        const objective = version?.objective.toLowerCase() ?? "";
+        return title.includes(needle) || objective.includes(needle);
+      })
       .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
       .slice(offset, offset + limit);
   }

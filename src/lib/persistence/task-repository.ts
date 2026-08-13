@@ -53,6 +53,12 @@ import type {
 // --- query types -------------------------------------------------------------
 
 export interface TaskListQuery {
+  /** Case-insensitive substring match over the Task's latest-version title or
+   *  objective (canonical-tasks spec §7.1). Empty/whitespace means no filter. */
+  search?: string;
+  /** Filter to Tasks whose *current* primary family assignment names this
+   *  family (spec §7.1). */
+  familyId?: string;
   /** Filter by origin. */
   origin?: TaskOrigin;
   /** Include archived Tasks (default: false). */
@@ -343,21 +349,43 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
   async function listTasks(query: TaskListQuery): Promise<TaskRecord[]> {
     const limit = query.limit ?? 50;
     const offset = query.offset ?? 0;
+    const needle = query.search?.trim().toLowerCase() ?? "";
     try {
-      const collection = db.tasks.orderBy("updatedAt").reverse();
-      const filtered: TaskRecord[] = [];
-      let skipped = 0;
-      await collection.each((row) => {
-        if (query.origin && row.origin !== query.origin) return;
-        if (!query.includeArchived && row.archivedAt !== null) return;
-        if (skipped < offset) {
-          skipped++;
-          return;
+      // Family filter: taskIds holding an active primary assignment to the
+      // requested family. Resolved up front so the walk below stays a single
+      // deterministic pass (spec §7.1).
+      let familyFilter: Set<string> | null = null;
+      if (query.familyId !== undefined) {
+        familyFilter = new Set<string>();
+        const assignments = await db.taskFamilyAssignments
+          .where("familyId")
+          .equals(query.familyId)
+          .toArray();
+        for (const row of assignments) {
+          if (row.isPrimary === 1 && row.archivedAt === null) familyFilter.add(row.taskId);
         }
-        if (filtered.length >= limit) return;
-        if (isTaskRecord(row.record)) filtered.push(row.record);
-      });
-      return filtered;
+      }
+      // Sort deterministically in memory: fresh `updatedAt` values move rows
+      // between pages and the id tiebreak keeps equal timestamps stable —
+      // deterministic pagination is a spec contract (§11 "Repository").
+      const rows = await db.tasks.toArray();
+      const records: TaskRecord[] = [];
+      for (const row of rows) {
+        if (query.origin && row.origin !== query.origin) continue;
+        if (!query.includeArchived && row.archivedAt !== null) continue;
+        if (familyFilter && !familyFilter.has(row.id)) continue;
+        if (!isTaskRecord(row.record)) continue;
+        if (needle !== "") {
+          const latest = await db.taskVersions.get([row.id, row.latestVersion]);
+          const version = latest && isTaskVersion(latest.version_) ? latest.version_ : null;
+          const title = version?.title.toLowerCase() ?? "";
+          const objective = version?.objective.toLowerCase() ?? "";
+          if (!title.includes(needle) && !objective.includes(needle)) continue;
+        }
+        records.push(row.record);
+      }
+      records.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+      return records.slice(offset, offset + limit);
     } catch (err) {
       throw classifyStorageError(err);
     }

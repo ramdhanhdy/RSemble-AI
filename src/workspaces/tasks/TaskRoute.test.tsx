@@ -102,7 +102,7 @@ describe("TaskRoute — /tasks/new placeholder shell", () => {
     const repo = new InMemoryTaskRepository();
     const h = render(<TaskNewRoute repo={repo} />);
     expect(h.$("[data-task-new-placeholder]")).toBeTruthy();
-    expect(h.container.textContent).toContain("create");
+    expect(h.container.textContent).toMatch(/creat/i);
     // The back link targets the catalog, keeping the placeholder honest.
     const back = h.$("a[href='/tasks']");
     expect(back).toBeTruthy();

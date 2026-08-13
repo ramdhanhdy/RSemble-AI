@@ -8,7 +8,7 @@
 // deterministic pagination, and stable row navigation targets. Uses the
 // repo's happy-dom createRoot/act harness — no testing-library.
 
-import { describe, expect, it, afterEach, vi } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
@@ -44,7 +44,7 @@ async function seedTask(
     defaultContextManifest: [],
     responseContract: null,
     taskVerifierRef: null,
-    source: taskSource(overrides.origin === "legacy-task-set" ? "legacy" : "authored"),
+    source: taskSource(overrides.origin === "legacy-task-set" ? "legacy-task-set" : "authored"),
     createdAt: at,
   };
   const record: TaskRecord = {
@@ -86,13 +86,37 @@ async function assignFamily(repo: TaskRepository, id: string, taskId: string, fa
   });
 }
 
+/** TaskRepository wrapper whose listTasks rejects with a classified error.
+ *  Delegates through the base repo (spread would drop prototype methods). */
 function failingRepo(base: TaskRepository, kind: StorageError["kind"]): TaskRepository {
   return {
-    ...base,
+    createTask: (record, version) => base.createTask(record, version),
+    appendTaskVersion: (record, version, expectedRevision) =>
+      base.appendTaskVersion(record, version, expectedRevision),
+    archiveTask: (id, expectedRevision) => base.archiveTask(id, expectedRevision),
+    restoreTask: (id, expectedRevision) => base.restoreTask(id, expectedRevision),
+    getTaskRecord: (id) => base.getTaskRecord(id),
+    getTaskVersion: (taskId, version) => base.getTaskVersion(taskId, version),
     listTasks: () => Promise.reject(new StorageError(kind, `${kind} failure`)),
-    listTaskFamilies: () => Promise.resolve([]),
-    listTaskFamilyAssignments: () => Promise.resolve([]),
-    getTaskVersion: () => Promise.resolve(null),
+    putTaskArtifact: (artifact, bytes) => base.putTaskArtifact(artifact, bytes),
+    getTaskArtifact: (id) => base.getTaskArtifact(id),
+    getTaskArtifactBytes: (id) => base.getTaskArtifactBytes(id),
+    getOrCreateTaskInstance: (candidate, bytes) => base.getOrCreateTaskInstance(candidate, bytes),
+    getTaskInstance: (id) => base.getTaskInstance(id),
+    listTaskInstances: (taskId, version) => base.listTaskInstances(taskId, version),
+    createTaskFamily: (family) => base.createTaskFamily(family),
+    updateTaskFamily: (family, expectedRevision) =>
+      base.updateTaskFamily(family, expectedRevision),
+    archiveTaskFamily: (id, expectedRevision) => base.archiveTaskFamily(id, expectedRevision),
+    restoreTaskFamily: (id, expectedRevision) => base.restoreTaskFamily(id, expectedRevision),
+    getTaskFamily: (id) => base.getTaskFamily(id),
+    listTaskFamilies: (includeArchived) => base.listTaskFamilies(includeArchived),
+    assignTaskFamily: (assignment) => base.assignTaskFamily(assignment),
+    archiveTaskFamilyAssignment: (id, expectedRevision) =>
+      base.archiveTaskFamilyAssignment(id, expectedRevision),
+    listTaskFamilyAssignments: (taskId) => base.listTaskFamilyAssignments(taskId),
+    annotateTaskFacet: (annotation) => base.annotateTaskFacet(annotation),
+    listTaskFacetAnnotations: (taskId) => base.listTaskFacetAnnotations(taskId),
   };
 }
 
@@ -123,7 +147,7 @@ function render(repo: TaskRepository | null): Harness {
     root,
     $: (s) => container.querySelector<HTMLElement>(s),
     $$: (s) => [...container.querySelectorAll<HTMLElement>(s)],
-    rows: () => [...container.querySelectorAll<HTMLAnchorElement>("a[href^='/tasks/']")],
+    rows: () => [...container.querySelectorAll<HTMLAnchorElement>("a[data-task-row]")],
   };
 }
 
@@ -155,11 +179,8 @@ describe("TaskCatalog — states", () => {
     const base = new InMemoryTaskRepository();
     let resolveList: ((rows: TaskRecord[]) => void) | null = null;
     const pending: TaskRepository = {
-      ...base,
+      ...failingRepo(base, "unavailable"),
       listTasks: () => new Promise<TaskRecord[]>((resolve) => (resolveList = resolve)),
-      listTaskFamilies: () => Promise.resolve([]),
-      listTaskFamilyAssignments: () => Promise.resolve([]),
-      getTaskVersion: () => Promise.resolve(null),
     };
     const h = render(pending);
     // Synchronous first paint is loading — before any settle.
@@ -192,21 +213,15 @@ describe("TaskCatalog — states", () => {
     await settle();
     expect(h.$("[data-task-error-state]")).toBeTruthy();
     expect(h.container.textContent).toContain("blocked");
-
-   // Retry re-issues the query; the recovered repo answers normally.
-    const retry = h.$("button[data-action='retry']");
-    expect(retry).toBeTruthy();
+    // Retry is offered alongside the classified state.
+    expect(h.$("button[data-action='retry']")).toBeTruthy();
     await seedTask(base, "t-1", "Recovered task");
-    const recovered: TaskRepository = {
-      ...base,
-      listTasks: (q) => base.listTasks(q),
-    };
-    // Swap repo through a rerender with retry: simulate by remounting.
+    // Recovery: the same backing repo, now answering normally.
     cleanup(h);
-    const h2 = render(recovered);
+    const h3 = render(base);
     await settle();
-    expect(rowIds(h2)).toContain("/tasks/t-1");
-    cleanup(h2);
+    expect(rowIds(h3)).toContain("/tasks/t-1");
+    cleanup(h3);
   });
 
   it("classifies a quota failure distinctly from a blocked failure", async () => {

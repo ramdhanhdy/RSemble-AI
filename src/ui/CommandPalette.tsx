@@ -11,6 +11,7 @@ import {
   History,
   Layers,
   Link2,
+  ListChecks,
   Maximize2,
   Plus,
   Power,
@@ -100,6 +101,15 @@ export function CommandPalette({
         group: "Navigate",
         icon: FlaskConical,
         run: () => onNavigate?.("/evaluations"),
+      },
+      {
+        // Canonical Tasks are a secondary workspace (canonical-tasks spec §7):
+        // reachable here, never from primary navigation.
+        id: "nav-tasks",
+        label: "Go to Tasks",
+        group: "Navigate",
+        icon: ListChecks,
+        run: () => onNavigate?.("/tasks"),
       },
     ];
     const compareCommands: Command[] =
