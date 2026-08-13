@@ -16,6 +16,7 @@ import { MemoryRouter } from "react-router-dom";
 import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-repository";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
+import { computeInstanceInputDigest } from "../../lib/tasks/task-instance";
 import { TaskNewRoute, TaskDetailRoute, TaskVersionRoute } from "./TaskRoute";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -191,3 +192,71 @@ describe("TaskRoute — /tasks/:taskId/versions/:version shell", () => {
     cleanup(h);
   });
 });
+
+describe("TaskDetailRoute — historical references and origin (spec §7.2)", () => {
+  it("renders a scoped references section with origin disclosure", async () => {
+    const repo = new InMemoryTaskRepository();
+    await seedTask(repo, "t-1", "Referenced task");
+    const h = render(<TaskDetailRoute repo={repo} taskId="t-1" />);
+    await settle();
+    expect(h.$("[data-task-references-section]")).toBeTruthy();
+    expect(h.container.textContent).toMatch(/reference/i);
+    expect(h.container.textContent).toMatch(/origin/i);
+    cleanup(h);
+  });
+
+  it("lists instances with digest abbreviation, source, timestamp, and no secrets", async () => {
+    const repo = new InMemoryTaskRepository();
+    await seedTask(repo, "t-1", "Instanced task");
+    const secret = "sk-live123SECRET_TOKEN";
+    const candidate = {
+      id: "inst-secret",
+      taskId: "t-1",
+      taskVersion: 1,
+      normalizedInput: { text: secret, artifactIds: [] as string[], metadata: {} },
+      contextManifest: [],
+      inputDigest: "",
+      inputCompleteness: "complete" as const,
+      createdAt: NOW,
+      sourceRef: { kind: "authored" as const, legacyScopeKey: null, originId: null },
+    };
+    candidate.inputDigest = computeInstanceInputDigest(candidate);
+    await repo.getOrCreateTaskInstance(candidate, new Map());
+    const h = render(<TaskDetailRoute repo={repo} taskId="t-1" />);
+    await settle();
+    const list = h.$("[data-task-instances]");
+    expect(list).toBeTruthy();
+    expect(list?.textContent).toContain(candidate.inputDigest.slice(7, 15));
+    expect(list?.textContent).toMatch(/authored/i);
+    expect(h.container.textContent).not.toContain(secret);
+    expect(h.container.textContent).not.toContain("sk-live");
+    cleanup(h);
+  });
+
+
+  it("keeps future Compare and Observation sections absent, not placeholders", async () => {
+    const repo = new InMemoryTaskRepository();
+    await seedTask(repo, "t-1", "No future sections");
+    const h = render(<TaskDetailRoute repo={repo} taskId="t-1" />);
+    await settle();
+    expect(h.$("[data-task-compare-section]")).toBeNull();
+    expect(h.$("[data-task-observations-section]")).toBeNull();
+    const text = h.container.textContent ?? "";
+    expect(text).not.toMatch(/coming soon/i);
+    expect(text).not.toMatch(/placeholder/i);
+    cleanup(h);
+  });
+
+  it("direct-loads references on an archived Task without falling back to latest", async () => {
+    const repo = new InMemoryTaskRepository();
+    const rec = await seedTask(repo, "t-1", "Archived referenced");
+    await repo.archiveTask("t-1", rec.revision);
+    const h = render(<TaskDetailRoute repo={repo} taskId="t-1" />);
+    await settle();
+    expect(h.$("[data-task-detail='t-1']")).toBeTruthy();
+    expect(h.$("[data-task-references-section]")).toBeTruthy();
+    expect(h.container.textContent).toContain("Archived");
+    cleanup(h);
+  });
+});
+

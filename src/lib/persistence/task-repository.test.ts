@@ -854,6 +854,31 @@ export function repositorySuite(
       expect(v1Only[0].taskVersion).toBe(1);
     });
 
+    it("lists every stored version for a Task in deterministic version order", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      await repo.appendTaskVersion(
+        { ...taskRecord(), latestVersion: 2, revision: 0 },
+        taskVersion({ version: 2, title: "Summarize a longer report" }),
+        0,
+      );
+      const versions = await repo.listTaskVersions("task-1");
+      expect(versions.map((v) => v.version)).toEqual([1, 2]);
+      expect(versions[1].title).toBe("Summarize a longer report");
+      expect(await repo.listTaskVersions("missing")).toEqual([]);
+    });
+
+    it("lists migration crosswalks for a Task in deterministic key order", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      const listed = await repo.listTaskMigrationCrosswalks("task-1");
+      expect(Array.isArray(listed)).toBe(true);
+      const keys = listed.map((row) => row.legacyScopeKey);
+      expect(keys).toEqual([...keys].sort((a, b) => a.localeCompare(b)));
+      expect(listed.every((row) => row.taskId === "task-1")).toBe(true);
+    });
+
+
     // --- catalog search + family filters (spec §7.1, Task 6) -----------------
 
     it("listTasks search matches the latest-version title (case-insensitive)", async () => {

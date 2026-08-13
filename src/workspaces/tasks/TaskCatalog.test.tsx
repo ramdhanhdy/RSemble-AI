@@ -397,3 +397,29 @@ describe("TaskCatalog — filters and pagination", () => {
     cleanup(h);
   });
 });
+
+describe("TaskCatalog — historical reference counts (spec §7.1)", () => {
+  it("shows a references count on each catalog row", async () => {
+    const repo = new InMemoryTaskRepository();
+    await seedTask(repo, "t-1", "Counted task", { origin: "legacy-task-set" });
+    const h = render(repo);
+    await settle();
+    const count = h.$("[data-task-references='t-1']");
+    expect(count).toBeTruthy();
+    expect(count?.textContent).toMatch(/\d+/);
+    expect(count?.textContent).toMatch(/reference/i);
+    cleanup(h);
+  });
+
+  it("does not invent Compare or Observation placeholders on catalog rows", async () => {
+    const repo = new InMemoryTaskRepository();
+    await seedTask(repo, "t-1", "Plain task");
+    const h = render(repo);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).not.toMatch(/compare/i);
+    expect(text).not.toMatch(/observation/i);
+    cleanup(h);
+  });
+});
+
