@@ -109,9 +109,9 @@ export function TaskVersionSelect({
         onChange={(event) => {
           const next = Number(event.currentTarget.value);
           if (next === latestVersion) {
-            navigate(`/tasks/${taskId}`);
+            void navigate(`/tasks/${taskId}`);
           } else {
-            navigate(`/tasks/${taskId}/versions/${next}`);
+            void navigate(`/tasks/${taskId}/versions/${next}`);
           }
         }}
         className="min-h-[44px] rounded-md border border-edge bg-card px-2 text-sm text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"

@@ -128,7 +128,9 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
         return "Local storage quota is full. Free up space, then retry.";
       case "versionchange":
         return "The database changed in another tab. Reload the page, then retry.";
-      default:
+      case "unavailable":
+      case "validation":
+      case "conflict":
         return "The task catalog query failed.";
     }
   }, [repo, state.error]);
