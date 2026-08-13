@@ -21,14 +21,22 @@ import {
 import { createRunRepository } from "./run-repository";
 import {
   archiveFailureGuidance,
+  ArchiveExportCancelledError,
   buildRunExportMarkdown,
   exportWorkbenchArchive,
+  exportWorkbenchArchiveV2,
   IMPORT_LIMITS,
   importWorkbenchArchive,
   parseWorkbenchArchive,
   validateArchiveBytes,
+  type ArchiveExportProgress,
   type WorkbenchArchiveV1,
 } from "./archive";
+import {
+  computeArchiveV2PayloadDigest,
+  validateArchiveV2,
+} from "./archive-v2-types";
+import * as fx from "./archive-v2-fixtures";
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "./run-types";
 import type {
   EvaluationRubric,
@@ -1226,5 +1234,373 @@ describe("importWorkbenchArchive — preserves revision for subsequent CAS updat
     const got = await repo.get("run-rev");
     expect(got?.revision).toBe(8);
     expect(got?.status).toBe("failed");
+  });
+});
+
+// --- Task 10B: complete deterministic secret-safe v2 export -------------------
+
+/** Seed every canonical Dexie store with one representative entity each (IDs
+ *  ordered so deterministic-ordering assertions are meaningful). Mirrors the
+ *  repository row mapping via the shared fixture builders. */
+async function seedCompleteCorpus(): Promise<void> {
+  const bytes = new TextEncoder().encode("candidate-visible artifact text");
+
+  await db.runSummaries.put(fx.runSummaryRow(fx.makeRunSummary("run-1")));
+  await db.runSummaries.put(fx.runSummaryRow(fx.makeRunSummary("run-2")));
+  await db.runDetails.put(fx.runDetailRow(fx.makeRunDetail("run-1")));
+  await db.runDetails.put(fx.runDetailRow(fx.makeRunDetail("run-2")));
+  await db.profiles.put(fx.profileRow(fx.makeRubricRecord("rubric-1")));
+  await db.profileVersions.put(fx.profileVersionRow(fx.makeRubricVersion("rubric-1", 1)));
+  await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+  await db.experiments.put(fx.experimentRow(fx.makeExperiment("exp-1", "suite-1")));
+
+  await db.fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
+  await db.poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
+  await db.fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
+  await db.fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
+  await db.fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
+  await db.fusionObservations.put(
+    fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
+  );
+  await db.fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
+
+  await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
+  await db.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));
+  await db.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-1", bytes)));
+  await db.taskArtifactBytes.put(fx.taskArtifactBytesRow("art-1", bytes));
+  await db.taskInstances.put(
+    fx.taskInstanceRow(fx.makeTaskInstance("inst-1", "task-1", 1, "art-1")),
+  );
+  await db.taskFamilies.put(fx.taskFamilyRow(fx.makeTaskFamily("fam-1")));
+  await db.taskFamilyAssignments.put(
+    fx.taskFamilyAssignmentRow(fx.makeTaskFamilyAssignment("fa-1", "task-1", 1, "fam-1")),
+  );
+  await db.taskFamilyRelations.put(
+    fx.taskFamilyRelationRow(fx.makeTaskFamilyRelation("rel-1", "fam-1", "fam-1")),
+  );
+  await db.taskFacetAnnotations.put(
+    fx.taskFacetAnnotationRow(fx.makeTaskFacetAnnotation("ann-1", "task-1")),
+  );
+  await db.taskMigrationCrosswalk.put(fx.taskMigrationCrosswalkRow(fx.makeCrosswalk("task-1", 1)));
+
+  // Unrestricted storage metadata must never cross the archive boundary.
+  await db.storageMeta.put({ key: "execution-lease", value: { ownerId: "owner-1" } });
+}
+
+describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
+  it("round-trips every canonical collection through the v2 validator", async () => {
+    await seedCompleteCorpus();
+
+    const archive = await exportWorkbenchArchiveV2(db);
+
+    // Manifest identity.
+    expect(archive.manifest.formatVersion).toBe(2);
+    expect(archive.manifest.storageVersion).toBe(1);
+    expect(typeof archive.manifest.exportedAt).toBe("number");
+    expect(archive.manifest.producer).toBe("rsemble-ai");
+    expect(archive.manifest.disclosure).toEqual({
+      scope: "local",
+      notes: "Local workbench export. No remote transport metadata.",
+    });
+
+    // Every entity exported — exact equality with the seeded source records.
+    expect(archive.runs.summaries.map((s) => s.id)).toEqual(["run-1", "run-2"]);
+    expect(archive.runs.details.map((r) => r.id)).toEqual(["run-1", "run-2"]);
+    expect(archive.rubrics.identities.map((r) => r.id)).toEqual(["rubric-1"]);
+    expect(archive.rubrics.versions.map((r) => r.version)).toEqual([1]);
+    expect(archive.suites.map((s) => s.id)).toEqual(["suite-1"]);
+    expect(archive.experiments.map((e) => e.id)).toEqual(["exp-1"]);
+    expect(archive.fusion.recipes.map((r) => r.id)).toEqual(["recipe-1"]);
+    expect(archive.fusion.poolManifests.map((p) => p.id)).toEqual(["pool-1"]);
+    expect(archive.fusion.studies.map((s) => s.id)).toEqual(["study-1"]);
+    expect(archive.fusion.trials.map((t) => t.id)).toEqual(["trial-1"]);
+    expect(archive.fusion.attempts.map((a) => a.id)).toEqual(["attempt-1"]);
+    expect(archive.fusion.observations.map((o) => o.id)).toEqual(["obs-1"]);
+    expect(archive.fusion.playbooks.map((p) => p.id)).toEqual(["playbook-1"]);
+    expect(archive.tasks.tasks.map((t) => t.id)).toEqual(["task-1"]);
+    expect(archive.tasks.taskVersions.map((v) => v.version)).toEqual([1]);
+    expect(archive.tasks.taskArtifacts.map((a) => a.id)).toEqual(["art-1"]);
+    expect(archive.tasks.taskArtifactBytes.map((b) => b.id)).toEqual(["art-1"]);
+    expect(archive.tasks.taskInstances.map((i) => i.id)).toEqual(["inst-1"]);
+    expect(archive.tasks.taskFamilies.map((f) => f.id)).toEqual(["fam-1"]);
+    expect(archive.tasks.taskFamilyAssignments.map((a) => a.id)).toEqual(["fa-1"]);
+    expect(archive.tasks.taskFamilyRelations.map((r) => r.id)).toEqual(["rel-1"]);
+    expect(archive.tasks.taskFacetAnnotations.map((a) => a.id)).toEqual(["ann-1"]);
+    expect(archive.tasks.taskMigrationCrosswalks.map((c) => c.legacyScopeKey)).toEqual([
+      "legacy:task-1",
+    ]);
+
+    // Source evidence is semantically unchanged: deep equality with the seeded
+    // domain records, and artifact bytes decode byte-equal.
+    expect(archive.tasks.tasks[0]).toEqual(fx.makeTaskRecord("task-1"));
+    expect(archive.fusion.studies[0]).toEqual(fx.makeStudy("study-1"));
+    const decoded = atob(archive.tasks.taskArtifactBytes[0].bytesBase64);
+    expect(new TextDecoder().decode(Uint8Array.from(decoded, (c) => c.charCodeAt(0)))).toBe(
+      "candidate-visible artifact text",
+    );
+
+    // The complete envelope passes the pure v2 validator end-to-end.
+    const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+    expect(check.errors).toEqual([]);
+    expect(check.valid).toBe(true);
+
+    // Fusion claim levels and artifact refs survive the round trip.
+    expect(archive.fusion.studies[0].claimLevel).toBe("exploratory");
+    expect(archive.fusion.playbooks[0].claimLevel).toBe("exploratory");
+    expect(archive.fusion.trials[0].children.synthesisArtifact).toBeNull();
+  });
+
+  it("exports an empty workbench as a valid, count-zero v2 envelope", async () => {
+    const archive = await exportWorkbenchArchiveV2(db);
+    expect(Object.values(archive.manifest.counts)).toEqual(new Array(23).fill(0));
+    const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+    expect(check.valid).toBe(true);
+  });
+
+  it("carries exact per-collection counts and a recomputable integrity digest", async () => {
+    await seedCompleteCorpus();
+    const archive = await exportWorkbenchArchiveV2(db);
+
+    expect(archive.manifest.counts.runSummaries).toBe(2);
+    expect(archive.manifest.counts.runDetails).toBe(2);
+    expect(archive.manifest.counts.rubricIdentities).toBe(1);
+    expect(archive.manifest.counts.rubricVersions).toBe(1);
+    expect(archive.manifest.counts.suites).toBe(1);
+    expect(archive.manifest.counts.experiments).toBe(1);
+    expect(archive.manifest.counts.fusionRecipes).toBe(1);
+    expect(archive.manifest.counts.poolManifests).toBe(1);
+    expect(archive.manifest.counts.fusionStudies).toBe(1);
+    expect(archive.manifest.counts.fusionTrials).toBe(1);
+    expect(archive.manifest.counts.fusionAttempts).toBe(1);
+    expect(archive.manifest.counts.fusionObservations).toBe(1);
+    expect(archive.manifest.counts.fusionPlaybooks).toBe(1);
+    expect(archive.manifest.counts.tasks).toBe(1);
+    expect(archive.manifest.counts.taskVersions).toBe(1);
+    expect(archive.manifest.counts.taskArtifacts).toBe(1);
+    expect(archive.manifest.counts.taskArtifactBytes).toBe(1);
+    expect(archive.manifest.counts.taskInstances).toBe(1);
+    expect(archive.manifest.counts.taskFamilies).toBe(1);
+    expect(archive.manifest.counts.taskFamilyAssignments).toBe(1);
+    expect(archive.manifest.counts.taskFamilyRelations).toBe(1);
+    expect(archive.manifest.counts.taskFacetAnnotations).toBe(1);
+    expect(archive.manifest.counts.taskMigrationCrosswalks).toBe(1);
+
+    expect(archive.manifest.payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(archive.manifest.payloadDigest).toBe(computeArchiveV2PayloadDigest(archive));
+  });
+
+  it("is deterministic: serialization, collection order, and digest are identical across exports", async () => {
+    await seedCompleteCorpus();
+    // Insert in descending ID order so only an explicit deterministic sort
+    // can produce ascending output.
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-b")));
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-a")));
+
+    const a = await exportWorkbenchArchiveV2(db, { now: () => 7777 });
+    const b = await exportWorkbenchArchiveV2(db, { now: () => 7777 });
+
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    expect(a.manifest.payloadDigest).toBe(b.manifest.payloadDigest);
+    // Descending insertion still yields deterministic ascending order.
+    expect(a.suites.map((s) => s.id)).toEqual(["suite-1", "suite-a", "suite-b"]);
+  });
+
+  it("omits disposable storage metadata and never reads storageMeta", async () => {
+    await seedCompleteCorpus();
+    const envelope = JSON.stringify(await exportWorkbenchArchiveV2(db));
+    expect(envelope).not.toContain("execution-lease");
+    expect(envelope).not.toContain("owner-1");
+    // No storageMeta-derived collection key exists in the envelope.
+    expect(JSON.parse(envelope)).not.toHaveProperty("storageMeta");
+  });
+
+  it("excludes guard-failing rows but keeps every guard-passing canonical entity", async () => {
+    await db.taskFamilies.put(fx.taskFamilyRow(fx.makeTaskFamily("fam-good")));
+    const corrupt = fx.makeTaskFamily("fam-bad") as unknown as Record<string, unknown>;
+    corrupt.apiKey = "smuggled-credential-value";
+    await db.taskFamilies.put({
+      id: "fam-bad",
+      family: corrupt,
+      parentFamilyId: null,
+      updatedAt: 1000,
+      archivedAt: null,
+      revision: 1,
+    });
+
+    const archive = await exportWorkbenchArchiveV2(db);
+    expect(archive.tasks.taskFamilies.map((f) => f.id)).toEqual(["fam-good"]);
+    expect(validateArchiveV2(JSON.parse(JSON.stringify(archive))).valid).toBe(true);
+  });
+});
+
+describe("exportWorkbenchArchiveV2 — secret safety", () => {
+  it("blocks an export whose artifact bytes carry credential-shaped material, naming the artifact without echoing the value", async () => {
+    const secretBytes = new TextEncoder().encode("prefix sk-live-1234567890abcdef suffix");
+    await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-secret")));
+    await db.taskVersions.put(
+      fx.taskVersionRow(fx.makeTaskVersion("task-secret", 1, "art-secret")),
+    );
+    await db.taskArtifacts.put(
+      fx.taskArtifactRow(fx.makeTaskArtifact("art-secret", secretBytes)),
+    );
+    await db.taskArtifactBytes.put(fx.taskArtifactBytesRow("art-secret", secretBytes));
+
+    await expect(exportWorkbenchArchiveV2(db)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      // Entity/type diagnostics: names the artifact + byte scan, never the value.
+      expect(message).toContain("tasks.taskArtifactBytes");
+      expect(message).toContain("art-secret");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
+
+  it("blocks an export whose structured collection carries a credential-like value, with redacted diagnostics", async () => {
+    const smuggled = fx.makeStudy("study-secret") as unknown as Record<string, unknown>;
+    smuggled.conclusion = "contact: sk-live-1234567890abcdef";
+    await db.fusionStudies.put({
+      id: "study-secret",
+      study: smuggled,
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      status: "in_progress",
+      updatedAt: 1000,
+    });
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("fusion.studies");
+      expect(message).toContain("study-secret");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
+
+  it("blocks a credential-like value smuggled inside artifact metadata text", async () => {
+    // Structured fields that pass their entity guard but still carry a
+    // credential-shaped string must be caught by the pre-export value scan.
+    const run = fx.makeRunDetail("run-secret");
+    run.task.prompt = "Bearer abc123def456 is the header to use";
+    await db.runDetails.put(fx.runDetailRow(run));
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("runs.details");
+      expect(message).toContain("run-secret");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("Bearer abc123def456");
+    }
+  });
+});
+
+describe("exportWorkbenchArchiveV2 — progress and cancellation", () => {
+  it("reports monotonic per-stage progress covering every collection phase", async () => {
+    await seedCompleteCorpus();
+    const updates: ArchiveExportProgress[] = [];
+    await exportWorkbenchArchiveV2(db, {
+      onProgress: (p) => updates.push({ stage: p.stage, done: p.done, total: p.total }),
+    });
+
+    expect(updates.length).toBeGreaterThan(3);
+    expect(updates[0].done).toBe(0);
+    expect(updates[updates.length - 1]).toEqual(
+      expect.objectContaining({ stage: "finalize", done: expect.any(Number) }),
+    );
+    const total = updates[updates.length - 1].total;
+    expect(total).toBeGreaterThan(0);
+    expect(updates[updates.length - 1].done).toBe(total);
+    // Monotonic completion.
+    for (let i = 1; i < updates.length; i++) {
+      expect(updates[i].done).toBeGreaterThanOrEqual(updates[i - 1].done);
+    }
+    // Every collection phase is named at least once.
+    const stages = new Set(updates.map((u) => u.stage));
+    for (const stage of [
+      "runs",
+      "rubrics",
+      "suites",
+      "experiments",
+      "fusion",
+      "tasks",
+      "artifact-bytes",
+      "scan",
+      "finalize",
+    ]) {
+      expect(stages.has(stage)).toBe(true);
+    }
+  });
+
+  it("cancels before delivery when the signal is aborted mid-export, delivering no archive", async () => {
+    await seedCompleteCorpus();
+    const controller = new AbortController();
+    let sawScanStage = false;
+    const attempt = exportWorkbenchArchiveV2(db, {
+      signal: controller.signal,
+      onProgress: (p) => {
+        if (p.stage === "scan" && !sawScanStage) {
+          sawScanStage = true;
+          controller.abort();
+        }
+      },
+    });
+    await expect(attempt).rejects.toBeInstanceOf(ArchiveExportCancelledError);
+  });
+
+  it("rejects immediately for an already-aborted signal without reading collections", async () => {
+    await seedCompleteCorpus();
+    const controller = new AbortController();
+    controller.abort();
+    const stages: string[] = [];
+    await expect(
+      exportWorkbenchArchiveV2(db, {
+        signal: controller.signal,
+        onProgress: (p) => stages.push(p.stage),
+      }),
+    ).rejects.toBeInstanceOf(ArchiveExportCancelledError);
+    expect(stages).toEqual([]);
+  });
+
+  it("cancellation is classified as a cancellable export failure", () => {
+    expect(archiveFailureGuidance(new ArchiveExportCancelledError())).toBe(
+      "Export was cancelled — no archive was delivered.",
+    );
+  });
+});
+
+// --- Task 10B: v1 adapter stays readable and behaviorally identical ------------
+
+describe("v1 adapter behavior after the v1/v2 refactor", () => {
+  it("v1 export still produces the schemaVersion-1 shape from the same stores", async () => {
+    await seedCompleteCorpus();
+    const v1 = await exportWorkbenchArchive(db);
+    expect(v1.schemaVersion).toBe(1);
+    expect(v1.runs.summaries.map((s) => s.id)).toEqual(["run-1", "run-2"]);
+    expect(v1.runs.details.map((r) => r.id)).toEqual(["run-1", "run-2"]);
+    expect(v1.profiles.identities.map((r) => r.id)).toEqual(["rubric-1"]);
+    expect(v1.suites.map((s) => s.id)).toEqual(["suite-1"]);
+    expect(v1.experiments.map((e) => e.id)).toEqual(["exp-1"]);
+    // v1 never carries Fusion/Task collections.
+    expect(Object.keys(v1).sort()).toEqual([
+      "experiments",
+      "exportedAt",
+      "profiles",
+      "runs",
+      "schemaVersion",
+      "suites",
+    ]);
+    expect(parseWorkbenchArchive(JSON.parse(JSON.stringify(v1))).ok).toBe(true);
   });
 });

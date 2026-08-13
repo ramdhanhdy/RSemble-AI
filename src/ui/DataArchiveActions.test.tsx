@@ -22,6 +22,7 @@ import { RSembleEvaluationDB } from "../lib/persistence/database";
 import { importWorkbenchArchive, type WorkbenchArchiveV1 } from "../lib/persistence/archive";
 import type { EvaluationSuite } from "../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../lib/persistence/run-types";
+import * as fx from "../lib/persistence/archive-v2-fixtures";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -313,5 +314,135 @@ describe("imported Markdown safety invariant (plan 8.1 item 8)", () => {
     expect(h.container.querySelector("img")).toBeNull();
     expect(h.container.textContent).toContain('<script>alert("x")</script>');
     expect(h.container.textContent).toContain("<img src=x onerror=alert(1)>");
+  });
+});
+
+// --- Task 10B: v2 export flow ---------------------------------------------------
+
+/** Seed a complete canonical corpus so the v2 export exercises every stage. */
+async function seedV2Corpus(target: RSembleEvaluationDB): Promise<void> {
+  const bytes = new TextEncoder().encode("candidate-visible artifact text");
+  await target.runSummaries.put(fx.runSummaryRow(fx.makeRunSummary("run-1")));
+  await target.runDetails.put(fx.runDetailRow(fx.makeRunDetail("run-1")));
+  await target.profiles.put(fx.profileRow(fx.makeRubricRecord("rubric-1")));
+  await target.profileVersions.put(fx.profileVersionRow(fx.makeRubricVersion("rubric-1", 1)));
+  await target.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+  await target.experiments.put(fx.experimentRow(fx.makeExperiment("exp-1", "suite-1")));
+  await target.fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
+  await target.poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
+  await target.fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
+  await target.fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
+  await target.fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
+  await target.fusionObservations.put(
+    fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
+  );
+  await target.fusionPlaybooks.put(
+    fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")),
+  );
+  await target.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
+  await target.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));
+  await target.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-1", bytes)));
+  await target.taskArtifactBytes.put(fx.taskArtifactBytesRow("art-1", bytes));
+  await target.taskInstances.put(
+    fx.taskInstanceRow(fx.makeTaskInstance("inst-1", "task-1", 1, "art-1")),
+  );
+  await target.taskFamilies.put(fx.taskFamilyRow(fx.makeTaskFamily("fam-1")));
+  await target.taskFamilyAssignments.put(
+    fx.taskFamilyAssignmentRow(fx.makeTaskFamilyAssignment("fa-1", "task-1", 1, "fam-1")),
+  );
+  await target.taskFamilyRelations.put(
+    fx.taskFamilyRelationRow(fx.makeTaskFamilyRelation("rel-1", "fam-1", "fam-1")),
+  );
+  await target.taskFacetAnnotations.put(
+    fx.taskFacetAnnotationRow(fx.makeTaskFacetAnnotation("ann-1", "task-1")),
+  );
+  await target.taskMigrationCrosswalk.put(
+    fx.taskMigrationCrosswalkRow(fx.makeCrosswalk("task-1", 1)),
+  );
+}
+
+describe("DataArchiveActions — v2 export flow", () => {
+  it("downloads the complete task-first v2 archive and reports the exported entity total", async () => {
+    await seedV2Corpus(db);
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        downloaded.push(this);
+      });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement | null;
+    expect(exportButton).not.toBeNull();
+    await act(async () => {
+      exportButton!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(downloaded.length).toBe(1);
+    expect(downloaded[0].download).toMatch(/^rsemble-archive-v2-\d{8}-\d{6}\.json$/);
+    const status = h.$('[role="status"]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toMatch(/exported/i);
+    clickSpy.mockRestore();
+  });
+
+  it("cancels a running export before delivery — no download, truthful guidance", async () => {
+    await seedV2Corpus(db);
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        downloaded.push(this);
+      });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement;
+    await act(async () => {
+      exportButton.click();
+      await flush();
+    });
+    const cancelButton = h.$('button[data-action="cancel-export"]') as HTMLButtonElement | null;
+    expect(cancelButton).not.toBeNull();
+    await act(async () => {
+      cancelButton!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(downloaded.length).toBe(0);
+    expect(h.container.textContent).toContain(
+      "Export was cancelled — no archive was delivered.",
+    );
+    clickSpy.mockRestore();
+  });
+
+  it("blocks an unsafe export before download with redacted entity/type diagnostics", async () => {
+    const secret = fx.makeRunDetail("run-secret");
+    secret.task.prompt = "Bearer abc123def456 is the header to use";
+    await db.runDetails.put(fx.runDetailRow(secret));
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        downloaded.push(this);
+      });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement;
+    await act(async () => {
+      exportButton.click();
+      await flush();
+    });
+    await settle();
+
+    expect(downloaded.length).toBe(0);
+    const alert = h.$('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain("runs.details");
+    expect(alert!.textContent).toContain("run-secret");
+    expect(alert!.textContent).not.toContain("Bearer abc123def456");
+    clickSpy.mockRestore();
   });
 });
