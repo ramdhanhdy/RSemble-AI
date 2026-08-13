@@ -1,25 +1,16 @@
 // =============================================================================
 // RSemble AI — Canonical Task repository contract tests (Dexie + in-memory)
 //
-// Child 02 (Canonical Tasks) Milestone B — Task 3 (RED first).
+// Child 02 (Canonical Tasks) Milestone B — Task 3 (RED first), extended in
+// Task 6 with catalog query semantics (spec §7.1):
+//   - `search` matches Task latest-version title OR objective
+//     (case-insensitive substring), composed with origin/archive/pagination;
+//   - `familyId` filters Tasks by their primary family assignment;
+//   - combined search + family + pagination stays deterministic.
 //
-// Exercises the public TaskRepository contract against both the Dexie-backed
-// implementation and the in-memory parity implementation through a shared
-// `repositorySuite`. Covers spec §5 repository contracts and §11 validation:
-//   - atomic Task + version 1 creation (no partial on conflict)
-//   - contiguous append version with revision CAS
-//   - archive / restore with revision CAS
-//   - complete-instance byte availability + metadata-only rejection
-//   - exact get-or-create instance reuse under same Task Version
-//   - family / facet assignment
-//   - deterministic paginated queries
-//   - classified storage failures (validation / conflict)
-//   - collision mismatch (digest equal, bytes differ) rejected
-//   - referenced-version protection seam (no delete API exposed)
-//
-// The Dexie suite also exercises clean and legacy database opening/upgrading:
-// a fresh v3 DB opens cleanly, and a DB seeded at v1 then reopened at v3
-// upgrades additively without losing v1 rows.
+// The existing Task 3 coverage (atomic create, CAS append, archive/restore,
+// artifact byte equality, instance reuse, classified errors, and the
+// referenced-version protection seam) is preserved unchanged below.
 // =============================================================================
 
 import "fake-indexeddb/auto";
@@ -702,11 +693,15 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
         taskRecord({ id: "t3", createdAt: 300 }),
         taskVersion({ taskId: "t3" }),
       );
+      await repo.createTask(
+        taskRecord({ id: "t4", createdAt: 400 }),
+        taskVersion({ taskId: "t4" }),
+      );
       const query: TaskListQuery = { limit: 2, offset: 0 };
       const page1 = await repo.listTasks(query);
-      expect(page1.map((t) => t.id)).toEqual(["t3", "t2"]);
+      expect(page1.map((t) => t.id)).toEqual(["t4", "t3"]);
       const page2 = await repo.listTasks({ limit: 2, offset: 2 });
-      expect(page2.map((t) => t.id)).toEqual(["t1"]);
+      expect(page2.map((t) => t.id)).toEqual(["t2", "t1"]);
     });
 
     it("listTasks excludes archived by default and includes them when requested", async () => {
@@ -769,6 +764,149 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       const v1Only = await repo.listTaskInstances("task-1", 1);
       expect(v1Only).toHaveLength(1);
       expect(v1Only[0].taskVersion).toBe(1);
+    });
+
+    // --- catalog search + family filters (spec §7.1, Task 6) -----------------
+
+    it("listTasks search matches the latest-version title (case-insensitive)", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-alpha", createdAt: 100 }),
+        taskVersion({ taskId: "t-alpha", title: "Summarize a quarterly report" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-beta", createdAt: 200 }),
+        taskVersion({ taskId: "t-beta", title: "Draft release notes" }),
+      );
+      const hits = await repo.listTasks({ search: "SUMMARIZE" });
+      expect(hits.map((t) => t.id)).toEqual(["t-alpha"]);
+    });
+
+    it("listTasks search matches the latest-version objective and ignores candidate instruction", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-gamma", createdAt: 100 }),
+        taskVersion({
+          taskId: "t-gamma",
+          title: "Email triage",
+          objective: "Classify inbound customer emails by intent.",
+          candidateInstruction: "You are an email classifier. Read the email body.",
+        }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-delta", createdAt: 200 }),
+        taskVersion({
+          taskId: "t-delta",
+          title: "Meeting notes",
+          objective: "Condense a transcript into action items.",
+          candidateInstruction: "Classify each action item by owner.",
+        }),
+      );
+      // Objective match.
+      const objectiveHits = await repo.listTasks({ search: "action items" });
+      expect(objectiveHits.map((t) => t.id)).toEqual(["t-delta"]);
+      // Candidate-instruction-only text is NOT part of the searchable surface —
+      // search is over the candidate-visible objective/title identity fields.
+      const instructionOnly = await repo.listTasks({ search: "email body" });
+      expect(instructionOnly.map((t) => t.id)).toEqual([]);
+    });
+
+    it("listTasks search composes with archive state and pagination deterministically", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-a", createdAt: 100 }),
+        taskVersion({ taskId: "t-a", title: "Report alpha" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-b", createdAt: 200 }),
+        taskVersion({ taskId: "t-b", title: "Report beta" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-c", createdAt: 300 }),
+        taskVersion({ taskId: "t-c", title: "Report gamma" }),
+      );
+      const first = (await repo.getTaskRecord("t-a"))!;
+      await repo.archiveTask("t-a", first.revision);
+      // Archived task excluded by default even though it matches the search.
+      const page1 = await repo.listTasks({ search: "report", limit: 1, offset: 0 });
+      expect(page1.map((t) => t.id)).toEqual(["t-c"]);
+      const page2 = await repo.listTasks({ search: "report", limit: 1, offset: 1 });
+      expect(page2.map((t) => t.id)).toEqual(["t-b"]);
+      // includeArchived surfaces the archived match too, in order.
+      const all = await repo.listTasks({ search: "report", includeArchived: true });
+      expect(all.map((t) => t.id)).toEqual(["t-c", "t-b", "t-a"]);
+    });
+
+    it("listTasks treats empty/whitespace search as no filter", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-one", createdAt: 100 }),
+        taskVersion({ taskId: "t-one", title: "One" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-two", createdAt: 200 }),
+        taskVersion({ taskId: "t-two", title: "Two" }),
+      );
+      const all = await repo.listTasks({ search: "   " });
+      expect(all.map((t) => t.id)).toEqual(["t-two", "t-one"]);
+    });
+
+    it("listTasks filters by primary familyId assignment", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-1", createdAt: 100 }),
+        taskVersion({ taskId: "t-1" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-2", createdAt: 200 }),
+        taskVersion({ taskId: "t-2" }),
+      );
+      await repo.createTaskFamily(taskFamily({ id: "fam-summaries", name: "Summaries" }));
+      await repo.assignTaskFamily(
+        familyAssignment({ id: "asgn-1", taskId: "t-1", familyId: "fam-summaries" }),
+      );
+      const inFamily = await repo.listTasks({ familyId: "fam-summaries" });
+      expect(inFamily.map((t) => t.id)).toEqual(["t-1"]);
+      // An unknown family id yields nothing.
+      const none = await repo.listTasks({ familyId: "fam-missing" });
+      expect(none).toEqual([]);
+    });
+
+    it("listTasks combines search + familyId + pagination", async () => {
+      const repo = makeRepo();
+      await repo.createTask(
+        taskRecord({ id: "t-1", createdAt: 100 }),
+        taskVersion({ taskId: "t-1", title: "Summarize contracts" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-2", createdAt: 200 }),
+        taskVersion({ taskId: "t-2", title: "Summarize reports" }),
+      );
+      await repo.createTask(
+        taskRecord({ id: "t-3", createdAt: 300 }),
+        taskVersion({ taskId: "t-3", title: "Transcribe calls" }),
+      );
+      await repo.createTaskFamily(taskFamily({ id: "fam-x", name: "X" }));
+      await repo.assignTaskFamily(
+        familyAssignment({ id: "asg-1", taskId: "t-1", familyId: "fam-x" }),
+      );
+      await repo.assignTaskFamily(
+        familyAssignment({ id: "asg-2", taskId: "t-2", familyId: "fam-x" }),
+      );
+      await repo.assignTaskFamily(
+        familyAssignment({ id: "asg-3", taskId: "t-3", familyId: "fam-x" }),
+      );
+      // "summarize" matches t-1/t-2 (t-3 excluded by search); family keeps t-1/t-2/t-3;
+      // combined → t-2, t-1 in updatedAt order; pagination slices after filtering.
+      const page1 = await repo.listTasks({ search: "summarize", familyId: "fam-x", limit: 1 });
+      expect(page1.map((t) => t.id)).toEqual(["t-2"]);
+      const page2 = await repo.listTasks({
+        search: "summarize",
+        familyId: "fam-x",
+        limit: 1,
+        offset: 1,
+      });
+      expect(page2.map((t) => t.id)).toEqual(["t-1"]);
     });
 
     // --- classified storage failures ----------------------------------------

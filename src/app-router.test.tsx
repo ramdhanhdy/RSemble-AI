@@ -29,9 +29,14 @@ import {
 import "./workspaces/EvaluationsWorkspace";
 import "./workspaces/evaluations/RubricList";
 import "./workspaces/evaluations/RubricDetail";
+import "./workspaces/tasks/TaskCatalog";
+import "./workspaces/tasks/TaskRoute";
 import { AppRoutes } from "./app-router";
 import { RepositoryContext } from "./lib/persistence/repository-context";
 import { InMemoryEvaluationRepository } from "./lib/persistence/evaluation-repository";
+import { InMemoryTaskRepository } from "./lib/persistence/in-memory-task-repository";
+import type { TaskRepository } from "./lib/persistence/task-repository";
+import type { TaskRecord, TaskVersion } from "./lib/tasks/task-types";
 import type {
   EvaluationCriterion,
   EvaluationRubric,
@@ -133,6 +138,7 @@ interface Harness {
 interface RenderOptions {
   initialEntries: (string | { pathname: string; state?: unknown })[];
   repo?: InMemoryEvaluationRepository;
+  taskRepo?: TaskRepository | null;
 }
 
 function flush(): Promise<void> {
@@ -153,6 +159,7 @@ async function settle(): Promise<void> {
 
 function renderRouter(opts: RenderOptions): Harness {
   const repo = opts.repo ?? new InMemoryEvaluationRepository();
+  const taskRepo = opts.taskRepo === undefined ? null : opts.taskRepo;
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -181,7 +188,7 @@ function renderRouter(opts: RenderOptions): Harness {
       <MemoryRouter initialEntries={opts.initialEntries}>
         <RepositoryContext.Provider
           value={{
-            taskRepo: null,
+            taskRepo,
             runRepo: null,
             evalRepo: repo,
             fusionRepo: null,
@@ -504,6 +511,120 @@ describe("AppRouter — history compatibility (back/forward, no alias)", () => {
   it("does not invent a /rubrics alias at the top level", async () => {
     const h = await renderRouterAsync({ initialEntries: ["/rubrics"] });
     expect(h.container.textContent).toContain("Not found");
+    cleanup(h);
+  });
+});
+
+// --- Canonical Task routes (canonical-tasks spec §7, plan Task 6) -----------
+
+async function seedCatalogTask(
+  repo: InMemoryTaskRepository,
+  id: string,
+  title: string,
+): Promise<TaskRecord> {
+  const version: TaskVersion = {
+    taskId: id,
+    version: 1,
+    title,
+    objective: `Objective for ${title}.`,
+    candidateInstruction: `Do: ${title}.`,
+    defaultContextManifest: [],
+    responseContract: null,
+    taskVerifierRef: null,
+    source: { kind: "authored", legacyScopeKey: null, note: null },
+    createdAt: Date.now(),
+  };
+  const record: TaskRecord = {
+    id,
+    latestVersion: 1,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    archivedAt: null,
+    origin: "authored",
+    revision: 0,
+  };
+  await repo.createTask(record, version);
+  return record;
+}
+
+describe("AppRouter — canonical Task routes (spec §7)", () => {
+  it("direct-loads /tasks and renders the catalog", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
+    const h = await renderRouterAsync({ initialEntries: ["/tasks"], taskRepo });
+    expect(h.$("[data-task-catalog]")).toBeTruthy();
+    expect(h.container.textContent).toContain("Summarize a report");
+    cleanup(h);
+  });
+
+  it("direct-loads /tasks/new and renders the honest create placeholder", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/new"], taskRepo });
+    expect(h.$("[data-task-new-placeholder]")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("direct-loads /tasks/:taskId and renders the detail shell", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1"], taskRepo });
+    expect(h.$("[data-task-detail='t-1']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("direct-loads /tasks/:taskId/versions/:version and renders the version shell", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/1"], taskRepo });
+    expect(h.$("[data-task-version='t-1@1']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("renders an explicit not-found state for an unknown task id (no silent redirect)", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/no-such-task"], taskRepo });
+    expect(h.$("[data-task-not-found]")).toBeTruthy();
+    // The URL is preserved — unknown IDs surface explicitly, they never bounce
+    // the user back to the catalog silently (spec §7: "work from direct loads").
+    expect(h.loc.current?.pathname).toBe("/tasks/no-such-task");
+    cleanup(h);
+  });
+
+  it("renders an explicit not-found state for an unknown version number", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/99"], taskRepo });
+    expect(h.$("[data-task-not-found]")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("renders an explicit invalid-version state for a malformed version param", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/nope"], taskRepo });
+    expect(h.$("[data-task-invalid-version]")).toBeTruthy();
+    expect(h.loc.current?.pathname).toBe("/tasks/t-1/versions/nope");
+    cleanup(h);
+  });
+
+  it("keeps an archived task routable at its detail route (spec §4.5)", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    const rec = await seedCatalogTask(taskRepo, "t-1", "Old task");
+    await taskRepo.archiveTask("t-1", rec.revision);
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1"], taskRepo });
+    expect(h.$("[data-task-detail='t-1']")).toBeTruthy();
+    expect(h.container.textContent).toContain("Archived");
+    expect(h.$("[data-task-not-found]")).toBeNull();
+    cleanup(h);
+  });
+
+  it("shows a bounded error state when the task repository is unavailable", async () => {
+    // taskRepo: null mirrors the bounded Task-catalog storage failure (spec §8:
+    // "Storage initialization failure preserves current Compare operational
+    // behavior and presents a bounded Task-catalog error").
+    const h = await renderRouterAsync({ initialEntries: ["/tasks"], taskRepo: null });
+    expect(h.$("[data-task-catalog]")).toBeTruthy();
+    expect(h.$("[data-task-error-state]")).toBeTruthy();
     cleanup(h);
   });
 });

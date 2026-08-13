@@ -304,6 +304,35 @@ describe("CommandPalette cmdk interaction contract", () => {
     cleanup(h);
   });
 
+  it("offers Go to Tasks in the Navigate group and routes to /tasks on click", async () => {
+    const { h, spies } = renderPalette();
+    await settle();
+
+    const goTasks = findOption(h, "Go to Tasks");
+    expect(goTasks).toBeTruthy();
+    act(() => {
+      goTasks!.click();
+    });
+    expect(spies.onClose).toHaveBeenCalledTimes(1);
+    expect(spies.onNavigate).toHaveBeenCalledWith("/tasks");
+    cleanup(h);
+  });
+
+  it("Go to Tasks is keyboard-operable: filter + Enter navigates to /tasks", async () => {
+    const { h, spies } = renderPalette();
+    await settle();
+
+    typeQuery(h, "tasks");
+    const input = h.$('input[aria-label="Search commands"]');
+    act(() => {
+      input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+
+    expect(spies.onClose).toHaveBeenCalledTimes(1);
+    expect(spies.onNavigate).toHaveBeenCalledWith("/tasks");
+    cleanup(h);
+  });
+
   it("does not execute disabled commands", async () => {
     const { h, spies } = renderPalette({ canRun: false });
     await settle();
