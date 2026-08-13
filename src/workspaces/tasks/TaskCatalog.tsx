@@ -154,7 +154,11 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-0 flex-1 basis-60">
-          <Search size={16} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <Search
+            size={16}
+            aria-hidden="true"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+          />
           <input
             type="search"
             aria-label="Search tasks"
@@ -207,7 +211,9 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
         >
           <AlertCircle size={20} className="text-error" aria-hidden="true" />
           <p className="text-sm font-medium text-error">
-            {repo === null ? "Task catalog storage is unavailable." : `Failed to load tasks (${errorKind}).`}
+            {repo === null
+              ? "Task catalog storage is unavailable."
+              : `Failed to load tasks (${errorKind}).`}
           </p>
           <p className="text-sm text-text-secondary">{errorMessage}</p>
           {repo !== null && (

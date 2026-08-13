@@ -98,7 +98,10 @@ type DetailState =
   | { kind: "not-found" }
   | { kind: "error"; error: StorageError };
 
-function useTaskRecord(repo: TaskRepository | null, taskId: string): {
+function useTaskRecord(
+  repo: TaskRepository | null,
+  taskId: string,
+): {
   state: DetailState;
   retry: () => void;
 } {
@@ -106,7 +109,10 @@ function useTaskRecord(repo: TaskRepository | null, taskId: string): {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (repo === null) {
-      setState({ kind: "error", error: new StorageError("unavailable", "Task storage unavailable") });
+      setState({
+        kind: "error",
+        error: new StorageError("unavailable", "Task storage unavailable"),
+      });
       return;
     }
     if (taskId === "") {
@@ -152,13 +158,7 @@ export function TaskNewRoute({ repo }: { repo: TaskRepository | null }) {
 
 /** Task detail editor: stable identity header plus the draft/commit surface.
  *  Archived Tasks stay routable here and expose restore (spec §4.5). */
-export function TaskDetailRoute({
-  repo,
-  taskId,
-}: {
-  repo: TaskRepository | null;
-  taskId: string;
-}) {
+export function TaskDetailRoute({ repo, taskId }: { repo: TaskRepository | null; taskId: string }) {
   const { state, retry } = useTaskRecord(repo, taskId);
 
   if (state.kind === "error") {
@@ -184,12 +184,13 @@ export function TaskDetailRoute({
 
   const { record, version } = state;
   return (
-    <div data-task-detail={record.id} className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
+    <div
+      data-task-detail={record.id}
+      className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
+    >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="text-lg font-semibold text-text">
-            {version?.title ?? record.id}
-          </h1>
+          <h1 className="text-lg font-semibold text-text">{version?.title ?? record.id}</h1>
           <p className="flex flex-wrap items-center gap-2 text-sm text-text-secondary">
             <span className="font-mono text-xs">{record.id}</span>
             <span>v{record.latestVersion}</span>

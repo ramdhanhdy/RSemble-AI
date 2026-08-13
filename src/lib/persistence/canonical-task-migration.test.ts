@@ -33,22 +33,46 @@ function task(overrides: Record<string, unknown> = {}) {
 
 function suite(overrides: Record<string, unknown> = {}) {
   return {
-    id: "suite-1", revision: 1, version: 2, name: "Suite", description: "",
-    tasks: [task()], modelSlots: [], defaultJudge: { providerId: "openrouter", model: "judge" },
-    defaultEvaluation: { kind: "holistic" }, createdAt: 10, updatedAt: 20, archivedAt: null,
+    id: "suite-1",
+    revision: 1,
+    version: 2,
+    name: "Suite",
+    description: "",
+    tasks: [task()],
+    modelSlots: [],
+    defaultJudge: { providerId: "openrouter", model: "judge" },
+    defaultEvaluation: { kind: "holistic" },
+    createdAt: 10,
+    updatedAt: 20,
+    archivedAt: null,
     ...overrides,
   };
 }
 
 function experiment(overrides: Record<string, unknown> = {}) {
   const snapshot = {
-    suiteId: "suite-1", suiteVersion: 1, tasks: [task({ prompt: "Older prompt." })],
-    modelSlots: [], defaultJudge: { providerId: "openrouter", model: "judge" },
-    defaultEvaluation: { kind: "holistic" }, profiles: [], protocolFingerprint: "sha256:fp", createdAt: 15,
+    suiteId: "suite-1",
+    suiteVersion: 1,
+    tasks: [task({ prompt: "Older prompt." })],
+    modelSlots: [],
+    defaultJudge: { providerId: "openrouter", model: "judge" },
+    defaultEvaluation: { kind: "holistic" },
+    profiles: [],
+    protocolFingerprint: "sha256:fp",
+    createdAt: 15,
   };
   return {
-    id: "exp-1", revision: 1, suiteId: "suite-1", suiteVersion: 1, protocolFingerprint: "sha256:fp",
-    status: "completed", execution: null, snapshot, tasks: [], createdAt: 15, updatedAt: 15,
+    id: "exp-1",
+    revision: 1,
+    suiteId: "suite-1",
+    suiteVersion: 1,
+    protocolFingerprint: "sha256:fp",
+    status: "completed",
+    execution: null,
+    snapshot,
+    tasks: [],
+    createdAt: 15,
+    updatedAt: 15,
     ...overrides,
   };
 }
@@ -133,17 +157,23 @@ describe("migrateEmbeddedLegacyTasks", () => {
     expect(repeated.complete).toBe(true);
     expect(await db.tasks.count()).toBe(initialTasks);
     expect(await db.taskVersions.count()).toBe(initialVersions);
-    expect((await db.taskMigrationCrosswalk.get(crosswalk.legacyScopeKey))?.taskVersion).not.toBe(999);
+    expect((await db.taskMigrationCrosswalk.get(crosswalk.legacyScopeKey))?.taskVersion).not.toBe(
+      999,
+    );
   });
 
   it("does not merge identical text across suite scopes and leaves unresolved definitions explicit", async () => {
     const db = await makeDb();
     const incomplete = task({ id: "broken", evaluation: { kind: "profile" } });
-    await seed(db, [
-      suite({ id: "suite-a", tasks: [task()] }),
-      suite({ id: "suite-b", tasks: [task()] }),
-      suite({ id: "suite-c", tasks: [incomplete] }),
-    ], []);
+    await seed(
+      db,
+      [
+        suite({ id: "suite-a", tasks: [task()] }),
+        suite({ id: "suite-b", tasks: [task()] }),
+        suite({ id: "suite-c", tasks: [incomplete] }),
+      ],
+      [],
+    );
 
     const result = await migrateEmbeddedLegacyTasks(db);
 
@@ -155,7 +185,8 @@ describe("migrateEmbeddedLegacyTasks", () => {
   });
 
   it("uses suite/version/task/digest crosswalk authority", () => {
-    expect(legacyTaskCrosswalkKey("suite-1", 4, "task-1", "sha256:" + "a".repeat(64)))
-      .not.toBe(legacyTaskCrosswalkKey("suite-2", 4, "task-1", "sha256:" + "a".repeat(64)));
+    expect(legacyTaskCrosswalkKey("suite-1", 4, "task-1", "sha256:" + "a".repeat(64))).not.toBe(
+      legacyTaskCrosswalkKey("suite-2", 4, "task-1", "sha256:" + "a".repeat(64)),
+    );
   });
 });

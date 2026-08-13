@@ -53,7 +53,8 @@ function compareObservations(a: CompleteObservation, b: CompleteObservation): nu
     a.chronology.executedAt !== null &&
     b.chronology.executedAt !== null &&
     a.chronology.executedAt !== b.chronology.executedAt
-  ) return a.chronology.executedAt - b.chronology.executedAt;
+  )
+    return a.chronology.executedAt - b.chronology.executedAt;
   return (a.chronology.experimentId ?? "").localeCompare(b.chronology.experimentId ?? "");
 }
 
@@ -63,8 +64,13 @@ function taskIdForScope(scopeKey: string): string {
 
 function taskRecord(taskId: string, createdAt: number): TaskRecord {
   return {
-    id: taskId, latestVersion: 1, createdAt, updatedAt: createdAt,
-    archivedAt: null, origin: "legacy-task-set", revision: 0,
+    id: taskId,
+    latestVersion: 1,
+    createdAt,
+    updatedAt: createdAt,
+    archivedAt: null,
+    origin: "legacy-task-set",
+    revision: 0,
   };
 }
 
@@ -103,13 +109,20 @@ function taskVersion(
 }
 
 async function inventoryFromDatabase(db: RSembleEvaluationDB) {
-  const [suiteRows, experimentRows] = await Promise.all([db.suites.toArray(), db.experiments.toArray()]);
+  const [suiteRows, experimentRows] = await Promise.all([
+    db.suites.toArray(),
+    db.experiments.toArray(),
+  ]);
   const suites = suiteRows
     .map((row) => row.suite)
     .filter((value): value is EvaluationSuite => {
       if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
       if (!("id" in value) || !("version" in value) || !("tasks" in value)) return false;
-      return typeof value.id === "string" && typeof value.version === "number" && Array.isArray(value.tasks);
+      return (
+        typeof value.id === "string" &&
+        typeof value.version === "number" &&
+        Array.isArray(value.tasks)
+      );
     });
   const experiments = experimentRows
     .map((row) => row.experiment)
@@ -117,8 +130,15 @@ async function inventoryFromDatabase(db: RSembleEvaluationDB) {
       if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
       if (!("id" in value) || !("snapshot" in value)) return false;
       const snapshot = value.snapshot;
-      if (typeof snapshot !== "object" || snapshot === null || Array.isArray(snapshot)) return false;
-      if (!("suiteId" in snapshot) || !("suiteVersion" in snapshot) || !("tasks" in snapshot) || !("createdAt" in snapshot)) return false;
+      if (typeof snapshot !== "object" || snapshot === null || Array.isArray(snapshot))
+        return false;
+      if (
+        !("suiteId" in snapshot) ||
+        !("suiteVersion" in snapshot) ||
+        !("tasks" in snapshot) ||
+        !("createdAt" in snapshot)
+      )
+        return false;
       return (
         typeof value.id === "string" &&
         typeof snapshot.suiteId === "string" &&
@@ -133,9 +153,15 @@ async function inventoryFromDatabase(db: RSembleEvaluationDB) {
 function collectObservations(entries: LegacyInventoryEntry[]): CompleteObservation[] {
   const result: CompleteObservation[] = [];
   for (const entry of entries) {
-    if (entry.status !== "complete" || entry.definition === null || entry.definitionDigest === null) continue;
+    if (entry.status !== "complete" || entry.definition === null || entry.definitionDigest === null)
+      continue;
     for (const chronology of entry.observations) {
-      result.push({ entry, chronology, digest: entry.definitionDigest, definition: entry.definition });
+      result.push({
+        entry,
+        chronology,
+        digest: entry.definitionDigest,
+        definition: entry.definition,
+      });
     }
   }
   return result.sort(compareObservations);
@@ -187,9 +213,14 @@ export async function migrateEmbeddedLegacyTasks(
         if (!task) {
           const record = taskRecord(id, expectedVersions[0].createdAt);
           await db.tasks.put({
-            id: record.id, record, latestVersion: record.latestVersion,
-            createdAt: record.createdAt, updatedAt: record.updatedAt,
-            archivedAt: record.archivedAt, origin: record.origin, revision: record.revision,
+            id: record.id,
+            record,
+            latestVersion: record.latestVersion,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt,
+            archivedAt: record.archivedAt,
+            origin: record.origin,
+            revision: record.revision,
           });
           task = await db.tasks.get(id);
         }
@@ -197,7 +228,10 @@ export async function migrateEmbeddedLegacyTasks(
 
         const existingVersions = await db.taskVersions.where("taskId").equals(id).sortBy("version");
         if (existingVersions.length > expectedVersions.length) {
-          throw new StorageError("validation", "Task migration found an inconsistent version history");
+          throw new StorageError(
+            "validation",
+            "Task migration found an inconsistent version history",
+          );
         }
         for (let index = 0; index < existingVersions.length; index += 1) {
           const expected = expectedVersions[index];
@@ -207,22 +241,35 @@ export async function migrateEmbeddedLegacyTasks(
             actual.source.legacyScopeKey !== scopeKey ||
             actual.source.note !== legacyDefinitionSourceNote(expected)
           ) {
-            throw new StorageError("validation", "Task migration found an inconsistent version history");
+            throw new StorageError(
+              "validation",
+              "Task migration found an inconsistent version history",
+            );
           }
         }
         for (let index = existingVersions.length; index < expectedVersions.length; index += 1) {
           const version = taskVersion(id, index + 1, scopeKey, expectedVersions[index]);
-          await db.taskVersions.put({ taskId: id, version: version.version, version_: version, createdAt: version.createdAt });
+          await db.taskVersions.put({
+            taskId: id,
+            version: version.version,
+            version_: version,
+            createdAt: version.createdAt,
+          });
           createdVersions += 1;
         }
         if (task.latestVersion !== expectedVersions.length) {
           const record = {
-            ...(task.record as TaskRecord), latestVersion: expectedVersions.length,
-            updatedAt: Date.now(), revision: task.revision + 1,
+            ...(task.record as TaskRecord),
+            latestVersion: expectedVersions.length,
+            updatedAt: Date.now(),
+            revision: task.revision + 1,
           };
           await db.tasks.put({
-            ...task, record, latestVersion: record.latestVersion,
-            updatedAt: record.updatedAt, revision: record.revision,
+            ...task,
+            record,
+            latestVersion: record.latestVersion,
+            updatedAt: record.updatedAt,
+            revision: record.revision,
           });
         }
 
@@ -239,7 +286,11 @@ export async function migrateEmbeddedLegacyTasks(
           );
           const crosswalk = await db.taskMigrationCrosswalk.get(key);
           if (!crosswalk || crosswalk.taskId !== id || crosswalk.taskVersion !== version) {
-            await db.taskMigrationCrosswalk.put({ legacyScopeKey: key, taskId: id, taskVersion: version });
+            await db.taskMigrationCrosswalk.put({
+              legacyScopeKey: key,
+              taskId: id,
+              taskVersion: version,
+            });
             crosswalksWritten += 1;
           }
         }
@@ -261,7 +312,9 @@ export async function migrateEmbeddedLegacyTasks(
     await db.storageMeta.put({
       key: canonicalTaskMigrationMarkerKey,
       value: {
-        kind: "canonical-task-migration", version: 1, completedAt: Date.now(),
+        kind: "canonical-task-migration",
+        version: 1,
+        completedAt: Date.now(),
         unresolvedKeys: unresolved.map((entry) => entry.key).sort(),
       },
     });

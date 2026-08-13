@@ -31,12 +31,14 @@ function RepositoryProbe() {
   const storageState = useStorageState();
   const taskMigrationError = useTaskMigrationError();
   activeProviderDatabase = useContext(RepositoryContext).db;
-  return <div
-    data-run={runRepo ? "ready" : "pending"}
-    data-task={taskRepo ? "ready" : "pending"}
-    data-storage={storageState}
-    data-task-error={taskMigrationError?.kind ?? "none"}
-  />;
+  return (
+    <div
+      data-run={runRepo ? "ready" : "pending"}
+      data-task={taskRepo ? "ready" : "pending"}
+      data-storage={storageState}
+      data-task-error={taskMigrationError?.kind ?? "none"}
+    />
+  );
 }
 
 async function waitUntil(predicate: () => boolean) {
@@ -92,7 +94,11 @@ describe("RepositoryProvider initialization", () => {
     const root = createRoot(container);
 
     act(() => {
-      root.render(<RepositoryProvider><RepositoryProbe /></RepositoryProvider>);
+      root.render(
+        <RepositoryProvider>
+          <RepositoryProbe />
+        </RepositoryProvider>,
+      );
     });
 
     const probe = () => container.querySelector("div[data-run]");
@@ -112,7 +118,11 @@ describe("RepositoryProvider initialization", () => {
     const root = createRoot(container);
 
     act(() => {
-      root.render(<RepositoryProvider><RepositoryProbe /></RepositoryProvider>);
+      root.render(
+        <RepositoryProvider>
+          <RepositoryProbe />
+        </RepositoryProvider>,
+      );
     });
 
     const probe = () => container.querySelector("div[data-run]");

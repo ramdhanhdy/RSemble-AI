@@ -109,15 +109,17 @@ function input(
 
 /** Reference digest for the canonical Task-version identity slice. */
 function expectedDigest(task: EvaluationTask): string {
-  return hashArtifactContent(canonicalJsonString({
-    title: task.title,
-    objective: task.prompt,
-    candidateInstruction: task.systemPrompt,
-    defaultContextManifest: [],
-    responseContract: null,
-    taskVerifierRef: task.verification ?? null,
-    evaluation: task.evaluation,
-  }));
+  return hashArtifactContent(
+    canonicalJsonString({
+      title: task.title,
+      objective: task.prompt,
+      candidateInstruction: task.systemPrompt,
+      defaultContextManifest: [],
+      responseContract: null,
+      taskVerifierRef: task.verification ?? null,
+      evaluation: task.evaluation,
+    }),
+  );
 }
 
 // --- suite-level inventory ----------------------------------------------------
@@ -139,8 +141,14 @@ describe("buildLegacyTaskInventory — suite definitions", () => {
   });
 
   it("never merges duplicate text across different suite scopes (§6.2 #7)", () => {
-    const suiteA = makeSuite({ id: "suite-a", tasks: [makeTask({ id: "t1", prompt: "Same text" })] });
-    const suiteB = makeSuite({ id: "suite-b", tasks: [makeTask({ id: "t2", prompt: "Same text" })] });
+    const suiteA = makeSuite({
+      id: "suite-a",
+      tasks: [makeTask({ id: "t1", prompt: "Same text" })],
+    });
+    const suiteB = makeSuite({
+      id: "suite-b",
+      tasks: [makeTask({ id: "t2", prompt: "Same text" })],
+    });
     const result = buildLegacyTaskInventory(input([suiteA, suiteB], []));
 
     expect(result.entries).toHaveLength(2);
@@ -149,8 +157,12 @@ describe("buildLegacyTaskInventory — suite definitions", () => {
       { suiteId: "suite-b", taskId: "t2" },
     ]);
     // Each scope gets its own entry even when the visible text is identical.
-    expect(result.entries[0].definitionDigest).toBe(expectedDigest(makeTask({ prompt: "Same text" })));
-    expect(result.entries[1].definitionDigest).toBe(expectedDigest(makeTask({ prompt: "Same text" })));
+    expect(result.entries[0].definitionDigest).toBe(
+      expectedDigest(makeTask({ prompt: "Same text" })),
+    );
+    expect(result.entries[1].definitionDigest).toBe(
+      expectedDigest(makeTask({ prompt: "Same text" })),
+    );
   });
 });
 
@@ -269,7 +281,12 @@ describe("buildLegacyTaskInventory — experiment snapshots", () => {
     const experiment = makeExperiment({
       suiteId: suite.id,
       suiteVersion: 1,
-      snapshot: { ...makeExperiment().snapshot, suiteId: suite.id, suiteVersion: 1, tasks: [historical] },
+      snapshot: {
+        ...makeExperiment().snapshot,
+        suiteId: suite.id,
+        suiteVersion: 1,
+        tasks: [historical],
+      },
     });
 
     const result = buildLegacyTaskInventory(input([suite], [experiment]));
@@ -420,9 +437,7 @@ describe("buildLegacyTaskInventory — explicit unresolved definitions", () => {
         ...makeExperiment().snapshot,
         suiteId: currentSuite.id,
         suiteVersion: 1,
-        tasks: [
-          { ...presentTask, id: missingTaskId },
-        ],
+        tasks: [{ ...presentTask, id: missingTaskId }],
       },
     });
 
@@ -482,7 +497,9 @@ describe("resolveLegacyDefinitionStatus", () => {
   });
 
   it("returns incomplete when verification is not a valid VerificationKind", () => {
-    const task = makeTask({ verification: { kind: "bad" } as unknown as EvaluationTask["verification"] });
+    const task = makeTask({
+      verification: { kind: "bad" } as unknown as EvaluationTask["verification"],
+    });
     expect(resolveLegacyDefinitionStatus(task)).toBe("incomplete");
   });
 });

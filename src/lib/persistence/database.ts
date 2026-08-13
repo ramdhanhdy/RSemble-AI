@@ -451,7 +451,8 @@ export function createDatabase(name?: string): DatabaseHandle {
     handle.state = s;
   });
 
-  handle.ready = db.open()
+  handle.ready = db
+    .open()
     .then(async () => {
       try {
         await migrateEmbeddedLegacyTasks(db);

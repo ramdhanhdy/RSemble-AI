@@ -295,7 +295,9 @@ describe("TaskDetailRoute — explicit Create version N+1 confirmation (spec §7
     expect(record.revision).toBe(1);
     // Draft re-baselines to the new latest version.
     expect(h.$("[data-editor-status]")?.textContent).toMatch(/saved/i);
-    expect((h.$("input[data-editor-field='title']") as HTMLInputElement).value).toBe("Now different");
+    expect((h.$("input[data-editor-field='title']") as HTMLInputElement).value).toBe(
+      "Now different",
+    );
   });
 
   it("cancelling the Create version confirmation keeps the draft dirty and writes nothing", async () => {
@@ -540,9 +542,7 @@ describe("Task routes — direct loads and unknown IDs (spec §7)", () => {
   });
 
   it("keeps an unknown Task ID an explicit not-found state (no silent redirect)", async () => {
-    const h = render(
-      <TaskDetailRoute repo={new InMemoryTaskRepository()} taskId="no-such-task" />,
-    );
+    const h = render(<TaskDetailRoute repo={new InMemoryTaskRepository()} taskId="no-such-task" />);
     await settle();
     expect(h.$("[data-task-not-found]")).toBeTruthy();
     expect(h.container.textContent).toContain("no-such-task");

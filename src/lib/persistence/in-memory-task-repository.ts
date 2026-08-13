@@ -39,11 +39,7 @@ import type {
   TaskRecord,
   TaskVersion,
 } from "../tasks/task-types";
-import type {
-  GetOrCreateInstanceResult,
-  TaskListQuery,
-  TaskRepository,
-} from "./task-repository";
+import type { GetOrCreateInstanceResult, TaskListQuery, TaskRepository } from "./task-repository";
 
 /** Run a {valid, errors} validator and throw the first error as a StorageError
  *  validation. Mirrors the Dexie implementation so both report the same
@@ -67,7 +63,6 @@ export class InMemoryTaskRepository implements TaskRepository {
   private families = new Map<string, TaskFamily>();
   private assignments = new Map<string, TaskFamilyAssignment>();
   private annotations = new Map<string, TaskFacetAnnotation>();
-
 
   // --- Task + version lifecycle ---------------------------------------------
 
@@ -229,10 +224,7 @@ export class InMemoryTaskRepository implements TaskRepository {
       );
     }
     if (artifact.byteCount !== bytes.byteLength) {
-      throw new StorageError(
-        "validation",
-        "Artifact byteCount does not match the supplied bytes",
-      );
+      throw new StorageError("validation", "Artifact byteCount does not match the supplied bytes");
     }
     const existing = this.artifacts.get(artifact.id);
     if (existing) {
@@ -310,10 +302,7 @@ export class InMemoryTaskRepository implements TaskRepository {
       if (availableArtifactBytes.has(artId)) {
         const available = availableArtifactBytes.get(artId)!;
         if (available.byteLength === 0) {
-          throw new StorageError(
-            "conflict",
-            `Artifact ${artId} available bytes are empty`,
-          );
+          throw new StorageError("conflict", `Artifact ${artId} available bytes are empty`);
         }
         if (!artifactsByteEqual(available, storedBytes)) {
           throw new StorageError(
@@ -483,7 +472,11 @@ export class InMemoryTaskRepository implements TaskRepository {
         if (existing.taskId !== assignment.taskId) continue;
         if (!existing.isPrimary) continue;
         if (existing.archivedAt !== null) continue;
-        this.assignments.set(id, { ...existing, isPrimary: false, revision: existing.revision + 1 });
+        this.assignments.set(id, {
+          ...existing,
+          isPrimary: false,
+          revision: existing.revision + 1,
+        });
       }
     }
     this.assignments.set(assignment.id, assignment);

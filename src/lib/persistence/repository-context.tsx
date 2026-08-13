@@ -152,11 +152,10 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     [repositoriesReady, handle],
   );
   const taskRepo = useMemo(
-    () => (
+    () =>
       repositoriesReady && handle && taskMigrationError === null
         ? createTaskRepository(handle.db)
-        : null
-    ),
+        : null,
     [repositoriesReady, handle, taskMigrationError],
   );
 

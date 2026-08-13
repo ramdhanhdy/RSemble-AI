@@ -265,9 +265,7 @@ function emitAccumulator(
   };
 }
 
-export function buildLegacyTaskInventory(
-  input: LegacyTaskInventoryInput,
-): LegacyTaskInventory {
+export function buildLegacyTaskInventory(input: LegacyTaskInventoryInput): LegacyTaskInventory {
   // Bucket per legacy scope, then per definition digest inside each scope.
   interface ScopeBucket {
     scope: LegacyScope;

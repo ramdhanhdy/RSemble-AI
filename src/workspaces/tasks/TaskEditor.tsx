@@ -36,8 +36,7 @@ import {
 
 // --- shared field styling ---------------------------------------------------
 
-const FIELD_LABEL =
-  "flex flex-col gap-1 text-sm font-medium text-text";
+const FIELD_LABEL = "flex flex-col gap-1 text-sm font-medium text-text";
 const FIELD_INPUT =
   "min-h-[44px] w-full rounded-md border border-edge bg-card px-3 text-sm text-text placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-70";
 const FIELD_AREA =
@@ -164,9 +163,7 @@ export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
       await repo.createTask(record, version);
       setCreated({ id, title: version.title });
     } catch (err) {
-      setError(
-        err instanceof StorageError ? err : new StorageError("unavailable", String(err)),
-      );
+      setError(err instanceof StorageError ? err : new StorageError("unavailable", String(err)));
     } finally {
       setBusy(false);
     }
@@ -199,10 +196,7 @@ export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
   }
 
   return (
-    <div
-      data-task-editor="new"
-      className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
-    >
+    <div data-task-editor="new" className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
       <header className="flex flex-col gap-1">
         <h1 className="text-lg font-semibold text-text">Create task</h1>
         <p className="text-sm text-text-secondary">
@@ -242,7 +236,9 @@ export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
       {error ? (
         <div role="alert" className="flex items-center gap-2 text-sm text-error">
           <AlertCircle size={16} aria-hidden="true" />
-          <span>Failed to create the task ({error.kind}): {error.message}</span>
+          <span>
+            Failed to create the task ({error.kind}): {error.message}
+          </span>
         </div>
       ) : null}
 
@@ -433,9 +429,9 @@ export function TaskDetailEditor({
             This task changed in another tab or window.
           </p>
           <p className="text-sm text-text-secondary">
-            Your working copy references an older revision, so the write was
-            rejected instead of overwriting newer state. Reload to pick up the
-            latest saved version, then re-apply your edits.
+            Your working copy references an older revision, so the write was rejected instead of
+            overwriting newer state. Reload to pick up the latest saved version, then re-apply your
+            edits.
           </p>
           <div>
             <button
@@ -479,9 +475,8 @@ export function TaskDetailEditor({
       {archived ? (
         <div className="flex flex-col gap-3">
           <p className="text-sm text-text-secondary">
-            This task is archived: its versions remain routable and
-            referenceable, but the editing surface is hidden until it is
-            restored.
+            This task is archived: its versions remain routable and referenceable, but the editing
+            surface is hidden until it is restored.
           </p>
           <div className="flex flex-col gap-2 text-sm text-text">
             <p className="font-medium">{latest.title}</p>
@@ -720,9 +715,8 @@ export function TaskVersionView({
       </label>
 
       <p className="text-xs text-text-muted">
-        Committed versions are immutable; this view is always read-only. Edit
-        the latest version from the task detail page to create version{" "}
-        {latestVersion + 1}.
+        Committed versions are immutable; this view is always read-only. Edit the latest version
+        from the task detail page to create version {latestVersion + 1}.
       </p>
     </div>
   );

@@ -18,11 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import Dexie from "dexie";
 
 import { RSembleEvaluationDB } from "./database";
-import {
-  createTaskRepository,
-  type TaskRepository,
-  type TaskListQuery,
-} from "./task-repository";
+import { createTaskRepository, type TaskRepository, type TaskListQuery } from "./task-repository";
 import { InMemoryTaskRepository } from "./in-memory-task-repository";
 
 import {
@@ -71,9 +67,7 @@ function source(overrides: Partial<TaskSource> = {}): TaskSource {
   return { kind: "authored", legacyScopeKey: null, note: null, ...overrides };
 }
 
-function instanceSourceRef(
-  overrides: Partial<TaskInstanceSourceRef> = {},
-): TaskInstanceSourceRef {
+function instanceSourceRef(overrides: Partial<TaskInstanceSourceRef> = {}): TaskInstanceSourceRef {
   return { kind: "authored", legacyScopeKey: null, originId: null, ...overrides };
 }
 
@@ -212,9 +206,9 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
 
     it("rejects createTask when version.version !== 1", async () => {
       const repo = makeRepo();
-      await expect(
-        repo.createTask(taskRecord(), taskVersion({ version: 2 })),
-      ).rejects.toThrow(/version.*1/);
+      await expect(repo.createTask(taskRecord(), taskVersion({ version: 2 }))).rejects.toThrow(
+        /version.*1/,
+      );
     });
 
     it("rejects createTask with an invalid record (validation)", async () => {
@@ -288,7 +282,9 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
         createdAt: 2_000,
         source: source(),
       });
-      await expect(repo.appendTaskVersion(record, nextDraft, 999)).rejects.toThrow(/Stale|conflict/i);
+      await expect(repo.appendTaskVersion(record, nextDraft, 999)).rejects.toThrow(
+        /Stale|conflict/i,
+      );
       // No partial version written.
       expect(await repo.getTaskVersion("task-1", 2)).toBeNull();
       expect((await repo.getTaskRecord("task-1"))!.latestVersion).toBe(1);
@@ -308,9 +304,9 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
     it("rejects append when the Task is missing", async () => {
       const repo = makeRepo();
       const record = taskRecord();
-      await expect(
-        repo.appendTaskVersion(record, taskVersion({ version: 2 }), 0),
-      ).rejects.toThrow(/not found/);
+      await expect(repo.appendTaskVersion(record, taskVersion({ version: 2 }), 0)).rejects.toThrow(
+        /not found/,
+      );
     });
 
     // --- archive / restore with CAS -----------------------------------------
@@ -469,7 +465,10 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       await repo.putTaskArtifact(artifact, TEXT_BYTES);
       const candidate = taskInstance();
       const available = new Map([["art-1", TEXT_BYTES]]);
-      const { instance: created, reused } = await repo.getOrCreateTaskInstance(candidate, available);
+      const { instance: created, reused } = await repo.getOrCreateTaskInstance(
+        candidate,
+        available,
+      );
       expect(reused).toBe(false);
       expect(created.id).toBe("inst-1");
       // Second call with identical input reuses.
@@ -527,7 +526,10 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       await repo.putTaskArtifact(artifact, TEXT_BYTES);
       const candidate = taskInstance({ inputCompleteness: "metadata_only" });
       const available = new Map<string, Uint8Array>(); // empty — no bytes available
-      const { instance: created, reused } = await repo.getOrCreateTaskInstance(candidate, available);
+      const { instance: created, reused } = await repo.getOrCreateTaskInstance(
+        candidate,
+        available,
+      );
       expect(reused).toBe(false);
       expect(created.inputCompleteness).toBe("metadata_only");
       // A second metadata_only call does NOT reuse (metadata_only never establishes identity).
@@ -648,7 +650,9 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       const repo = makeRepo();
       await repo.createTaskFamily(taskFamily());
       const fam = (await repo.getTaskFamily("family-1"))!;
-      await expect(repo.updateTaskFamily({ ...fam, name: "x" }, 999)).rejects.toThrow(/Stale|conflict/i);
+      await expect(repo.updateTaskFamily({ ...fam, name: "x" }, 999)).rejects.toThrow(
+        /Stale|conflict/i,
+      );
     });
 
     it("assigns a family to a Task Version and enforces at most one primary", async () => {
@@ -656,7 +660,9 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       await repo.createTask(taskRecord(), taskVersion());
       await repo.createTaskFamily(taskFamily());
       await repo.createTaskFamily(taskFamily({ id: "family-2", name: "Other" }));
-      await repo.assignTaskFamily(familyAssignment({ id: "a1", familyId: "family-1", isPrimary: true }));
+      await repo.assignTaskFamily(
+        familyAssignment({ id: "a1", familyId: "family-1", isPrimary: true }),
+      );
       // A second primary assignment for the same Task must demote the first.
       await repo.assignTaskFamily(
         familyAssignment({ id: "a2", familyId: "family-2", isPrimary: true }),
@@ -670,16 +676,16 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
     it("rejects family assignment referencing a missing Task, Version, or Family", async () => {
       const repo = makeRepo();
       await repo.createTaskFamily(taskFamily());
-      await expect(
-        repo.assignTaskFamily(familyAssignment({ taskId: "nope" })),
-      ).rejects.toThrow(/not found/);
+      await expect(repo.assignTaskFamily(familyAssignment({ taskId: "nope" }))).rejects.toThrow(
+        /not found/,
+      );
       await repo.createTask(taskRecord(), taskVersion());
-      await expect(
-        repo.assignTaskFamily(familyAssignment({ familyId: "nope" })),
-      ).rejects.toThrow(/not found/);
-      await expect(
-        repo.assignTaskFamily(familyAssignment({ taskVersion: 99 })),
-      ).rejects.toThrow(/not found/);
+      await expect(repo.assignTaskFamily(familyAssignment({ familyId: "nope" }))).rejects.toThrow(
+        /not found/,
+      );
+      await expect(repo.assignTaskFamily(familyAssignment({ taskVersion: 99 }))).rejects.toThrow(
+        /not found/,
+      );
     });
 
     it("annotates and lists task facets", async () => {
@@ -693,20 +699,23 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
 
     it("rejects facet annotation referencing a missing Task or Version", async () => {
       const repo = makeRepo();
-      await expect(
-        repo.annotateTaskFacet(facetAnnotation({ taskId: "nope" })),
-      ).rejects.toThrow(/not found/);
+      await expect(repo.annotateTaskFacet(facetAnnotation({ taskId: "nope" }))).rejects.toThrow(
+        /not found/,
+      );
       await repo.createTask(taskRecord(), taskVersion());
-      await expect(
-        repo.annotateTaskFacet(facetAnnotation({ taskVersion: 99 })),
-      ).rejects.toThrow(/not found/);
+      await expect(repo.annotateTaskFacet(facetAnnotation({ taskVersion: 99 }))).rejects.toThrow(
+        /not found/,
+      );
     });
 
     // --- deterministic paginated queries ------------------------------------
 
     it("lists tasks deterministically by updatedAt desc with pagination", async () => {
       const repo = makeRepo();
-      await repo.createTask(taskRecord({ id: "t1", createdAt: 100 }), taskVersion({ taskId: "t1" }));
+      await repo.createTask(
+        taskRecord({ id: "t1", createdAt: 100 }),
+        taskVersion({ taskId: "t1" }),
+      );
       await repo.createTask(
         taskRecord({ id: "t2", createdAt: 200 }),
         taskVersion({ taskId: "t2" }),
@@ -728,7 +737,10 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
 
     it("listTasks excludes archived by default and includes them when requested", async () => {
       const repo = makeRepo();
-      await repo.createTask(taskRecord({ id: "t1", createdAt: 100 }), taskVersion({ taskId: "t1" }));
+      await repo.createTask(
+        taskRecord({ id: "t1", createdAt: 100 }),
+        taskVersion({ taskId: "t1" }),
+      );
       await repo.createTask(
         taskRecord({ id: "t2", createdAt: 200 }),
         taskVersion({ taskId: "t2" }),
@@ -777,10 +789,7 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       await repo.putTaskArtifact(artifact, TEXT_BYTES);
       const available = new Map([["art-1", TEXT_BYTES]]);
       await repo.getOrCreateTaskInstance(taskInstance({ taskVersion: 1 }), available);
-      await repo.getOrCreateTaskInstance(
-        taskInstance({ id: "inst-2", taskVersion: 2 }),
-        available,
-      );
+      await repo.getOrCreateTaskInstance(taskInstance({ id: "inst-2", taskVersion: 2 }), available);
       const all = await repo.listTaskInstances("task-1");
       expect(all).toHaveLength(2);
       const v1Only = await repo.listTaskInstances("task-1", 1);
@@ -937,7 +946,10 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
     it("rejects invalid inputs with StorageError validation kind", async () => {
       const repo = makeRepo();
       await expect(
-        repo.createTask({ ...taskRecord(), latestVersion: -1 } as unknown as TaskRecord, taskVersion()),
+        repo.createTask(
+          { ...taskRecord(), latestVersion: -1 } as unknown as TaskRecord,
+          taskVersion(),
+        ),
       ).rejects.toMatchObject({ name: "StorageError", kind: "validation" });
     });
 
@@ -976,7 +988,11 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
 
       const sourceRecord = (await repo.getTaskRecord("task-1"))!; // revision advanced
       const now = NOW + 2;
-      const copy = duplicateTaskRecord({ source: sourceRecord, newId: "task-copy", createdAt: now });
+      const copy = duplicateTaskRecord({
+        source: sourceRecord,
+        newId: "task-copy",
+        createdAt: now,
+      });
       // The duplicate version rebinds the latest source content to the new
       // identity at version 1, with explicit authored provenance (spec §7.3:
       // "never becomes a version of the source by implication").
@@ -1026,7 +1042,11 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       const repo = makeRepo();
       await repo.createTask(taskRecord(), taskVersion());
       const sourceRecord = (await repo.getTaskRecord("task-1"))!;
-      const copy = duplicateTaskRecord({ source: sourceRecord, newId: "task-copy", createdAt: NOW + 5 });
+      const copy = duplicateTaskRecord({
+        source: sourceRecord,
+        newId: "task-copy",
+        createdAt: NOW + 5,
+      });
       const sourceV1 = (await repo.getTaskVersion("task-1", 1))!;
       const copyV1: TaskVersion = {
         ...sourceV1,
@@ -1147,7 +1167,8 @@ describe("Dexie task repository schema upgrade", () => {
     // Seed a v1-only database using a plain Dexie instance pinned to v1.
     const v1 = new Dexie(dbName);
     v1.version(1).stores({
-      runSummaries: "id, kind, revision, createdAt, completedAt, status, mode, sourceKind, sourceProtocolFingerprint, sourceExperimentTaskAttemptId, *modelKeys",
+      runSummaries:
+        "id, kind, revision, createdAt, completedAt, status, mode, sourceKind, sourceProtocolFingerprint, sourceExperimentTaskAttemptId, *modelKeys",
       runDetails: "id, revision, createdAt, status",
       profiles: "id, revision, latestVersion, updatedAt, archivedAt",
       profileVersions: "[id+version], id, version, updatedAt",

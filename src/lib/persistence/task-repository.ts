@@ -406,10 +406,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
       );
     }
     if (artifact.byteCount !== bytes.byteLength) {
-      throw new StorageError(
-        "validation",
-        "Artifact byteCount does not match the supplied bytes",
-      );
+      throw new StorageError("validation", "Artifact byteCount does not match the supplied bytes");
     }
     db.assertWritable();
     try {
@@ -507,10 +504,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
           // The Task and Version must exist.
           const taskRow = await db.tasks.get(candidate.taskId);
           if (!taskRow) throw new StorageError("conflict", `Task ${candidate.taskId} not found`);
-          const versionRow = await db.taskVersions.get([
-            candidate.taskId,
-            candidate.taskVersion,
-          ]);
+          const versionRow = await db.taskVersions.get([candidate.taskId, candidate.taskVersion]);
           if (!versionRow) {
             throw new StorageError(
               "conflict",
@@ -539,10 +533,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
             if (availableArtifactBytes.has(artId)) {
               const available = availableArtifactBytes.get(artId)!;
               if (available.byteLength === 0) {
-                throw new StorageError(
-                  "conflict",
-                  `Artifact ${artId} available bytes are empty`,
-                );
+                throw new StorageError("conflict", `Artifact ${artId} available bytes are empty`);
               }
               if (!artifactsByteEqual(available, bytesRow.bytes)) {
                 throw new StorageError(
@@ -632,10 +623,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
     }
   }
 
-  async function listTaskInstances(
-    taskId: string,
-    taskVersion?: number,
-  ): Promise<TaskInstance[]> {
+  async function listTaskInstances(taskId: string, taskVersion?: number): Promise<TaskInstance[]> {
     try {
       let rows;
       if (taskVersion !== undefined) {
@@ -681,10 +669,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
     }
   }
 
-  async function updateTaskFamily(
-    family: TaskFamily,
-    expectedRevision: number,
-  ): Promise<number> {
+  async function updateTaskFamily(family: TaskFamily, expectedRevision: number): Promise<number> {
     assertValid(validateTaskFamily(family), "Invalid task family");
     db.assertWritable();
     const newRevision = expectedRevision + 1;
@@ -830,10 +815,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
           if (!taskRow) {
             throw new StorageError("conflict", `Task ${assignment.taskId} not found`);
           }
-          const versionRow = await db.taskVersions.get([
-            assignment.taskId,
-            assignment.taskVersion,
-          ]);
+          const versionRow = await db.taskVersions.get([assignment.taskId, assignment.taskVersion]);
           if (!versionRow) {
             throw new StorageError(
               "conflict",
@@ -904,9 +886,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
             `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
           );
         }
-        const assignment = isTaskFamilyAssignment(existing.assignment)
-          ? existing.assignment
-          : null;
+        const assignment = isTaskFamilyAssignment(existing.assignment) ? existing.assignment : null;
         if (!assignment) throw new StorageError("validation", "Invalid task family assignment");
         const now = Date.now();
         const updated: TaskFamilyAssignment = {
@@ -946,48 +926,36 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
     assertValid(validateTaskFacetAnnotation(annotation), "Invalid task facet annotation");
     db.assertWritable();
     try {
-      await db.transaction(
-        "rw",
-        db.tasks,
-        db.taskVersions,
-        db.taskFacetAnnotations,
-        async () => {
-          // Referential integrity: Task must exist; Version if specified.
-          const taskRow = await db.tasks.get(annotation.taskId);
-          if (!taskRow) {
-            throw new StorageError("conflict", `Task ${annotation.taskId} not found`);
-          }
-          if (annotation.taskVersion !== null) {
-            const versionRow = await db.taskVersions.get([
-              annotation.taskId,
-              annotation.taskVersion,
-            ]);
-            if (!versionRow) {
-              throw new StorageError(
-                "conflict",
-                `Task version ${annotation.taskId}@${annotation.taskVersion} not found`,
-              );
-            }
-          }
-          // Annotations are append-only by id; a duplicate id is a conflict.
-          const existing = await db.taskFacetAnnotations.get(annotation.id);
-          if (existing) {
+      await db.transaction("rw", db.tasks, db.taskVersions, db.taskFacetAnnotations, async () => {
+        // Referential integrity: Task must exist; Version if specified.
+        const taskRow = await db.tasks.get(annotation.taskId);
+        if (!taskRow) {
+          throw new StorageError("conflict", `Task ${annotation.taskId} not found`);
+        }
+        if (annotation.taskVersion !== null) {
+          const versionRow = await db.taskVersions.get([annotation.taskId, annotation.taskVersion]);
+          if (!versionRow) {
             throw new StorageError(
               "conflict",
-              `Facet annotation ${annotation.id} already exists`,
+              `Task version ${annotation.taskId}@${annotation.taskVersion} not found`,
             );
           }
-          await db.taskFacetAnnotations.put({
-            id: annotation.id,
-            annotation,
-            taskId: annotation.taskId,
-            taskVersion: annotation.taskVersion,
-            facetId: annotation.facetId,
-            valueId: annotation.valueId,
-            createdAt: annotation.createdAt,
-          });
-        },
-      );
+        }
+        // Annotations are append-only by id; a duplicate id is a conflict.
+        const existing = await db.taskFacetAnnotations.get(annotation.id);
+        if (existing) {
+          throw new StorageError("conflict", `Facet annotation ${annotation.id} already exists`);
+        }
+        await db.taskFacetAnnotations.put({
+          id: annotation.id,
+          annotation,
+          taskId: annotation.taskId,
+          taskVersion: annotation.taskVersion,
+          facetId: annotation.facetId,
+          valueId: annotation.valueId,
+          createdAt: annotation.createdAt,
+        });
+      });
     } catch (err) {
       if (err instanceof StorageError) throw err;
       throw classifyStorageError(err);

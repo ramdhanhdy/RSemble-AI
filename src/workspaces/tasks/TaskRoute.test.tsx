@@ -16,11 +16,7 @@ import { MemoryRouter } from "react-router-dom";
 import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-repository";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
-import {
-  TaskNewRoute,
-  TaskDetailRoute,
-  TaskVersionRoute,
-} from "./TaskRoute";
+import { TaskNewRoute, TaskDetailRoute, TaskVersionRoute } from "./TaskRoute";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -67,9 +63,7 @@ function render(node: React.ReactNode): Harness {
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(
-      <MemoryRouter initialEntries={["/tasks"]}>{node}</MemoryRouter>,
-    );
+    root.render(<MemoryRouter initialEntries={["/tasks"]}>{node}</MemoryRouter>);
   });
   return {
     container,
