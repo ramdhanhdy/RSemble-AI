@@ -204,10 +204,24 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
         }
       }
     }
+    // Facet filter (Task 8B, spec §7.1): taskIds carrying an annotation with
+    // the requested dimension+value pair (parity with the Dexie walk).
+    let facetFilter: Set<string> | null = null;
+    if (query.facetId !== undefined && query.facetValueId !== undefined) {
+      facetFilter = new Set<string>();
+      for (const ann of this.annotations.values()) {
+        if (ann.facetId === query.facetId && ann.valueId === query.facetValueId) {
+          facetFilter.add(ann.taskId);
+        }
+      }
+    }
+    const archiveState: "active" | "archived" | "all" =
+      query.archiveState ?? (query.includeArchived === true ? "all" : "active");
     return [...this.tasks.values()]
       .filter((t) => query.origin === undefined || t.origin === query.origin)
-      .filter((t) => query.includeArchived === true || t.archivedAt === null)
+      .filter((t) => archiveState === "all" || (archiveState === "active" ? t.archivedAt === null : t.archivedAt !== null))
       .filter((t) => familyFilter === null || familyFilter.has(t.id))
+      .filter((t) => facetFilter === null || facetFilter.has(t.id))
       .filter((t) => {
         if (needle === "") return true;
         const version = this.versions.get(t.id)?.get(t.latestVersion) ?? null;
@@ -388,7 +402,38 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
     if (this.families.has(family.id)) {
       throw new StorageError("conflict", `Task family ${family.id} already exists`);
     }
+    this.assertParentChainValid(family.id, family.parentFamilyId);
     this.families.set(family.id, family);
+  }
+
+  /** Task 8B (spec §3.5): explicit parent validity — the parent must exist
+   *  (invalid-parent) and the parent chain must not reach the family itself
+   *  (cycle). No hierarchy is inferred beyond the explicit parent link. */
+  private assertParentChainValid(familyId: string, parentFamilyId: string | null): void {
+    if (parentFamilyId === null) return;
+    if (parentFamilyId === familyId) {
+      throw new StorageError(
+        "conflict",
+        `Task family ${familyId} cannot be its own parent (cycle).`,
+      );
+    }
+    let cursor: string | null = parentFamilyId;
+    for (let hops = 0; cursor !== null; hops++) {
+      if (hops > 1000) {
+        throw new StorageError("conflict", "Family parent chain is too deep to validate.");
+      }
+      const parent = this.families.get(cursor);
+      if (!parent) {
+        throw new StorageError("conflict", `Task family ${cursor} not found`);
+      }
+      if (parent.id === familyId) {
+        throw new StorageError(
+          "conflict",
+          `Setting parent ${parentFamilyId} would create a family cycle through ${cursor}.`,
+        );
+      }
+      cursor = parent.parentFamilyId;
+    }
   }
 
   async updateTaskFamily(family: TaskFamily, expectedRevision: number): Promise<number> {
@@ -401,6 +446,7 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
         `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
       );
     }
+    this.assertParentChainValid(family.id, family.parentFamilyId);
     const newRevision = expectedRevision + 1;
     this.families.set(family.id, { ...family, revision: newRevision });
     return newRevision;
@@ -531,6 +577,24 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
         throw new StorageError(
           "conflict",
           `Task version ${annotation.taskId}@${annotation.taskVersion} not found`,
+        );
+      }
+    }
+    // Task 8B (spec §3.6): supersession provenance must reference an existing
+    // annotation of the SAME Task — supersession appends, never crosses Tasks
+    // or points at nothing.
+    if (annotation.supersedesId !== null) {
+      const superseded = this.annotations.get(annotation.supersedesId);
+      if (!superseded) {
+        throw new StorageError(
+          "conflict",
+          `Facet annotation ${annotation.supersedesId} not found`,
+        );
+      }
+      if (superseded.taskId !== annotation.taskId) {
+        throw new StorageError(
+          "conflict",
+          `Supersession must target an annotation of the same task: ${annotation.supersedesId} belongs to ${superseded.taskId}`,
         );
       }
     }

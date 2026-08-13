@@ -17,16 +17,58 @@ import { Link } from "react-router-dom";
 import { AlertCircle, Plus, Search } from "lucide-react";
 import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
-import type { TaskFamily, TaskRecord } from "../../lib/tasks/task-types";
+import type {
+  TaskFacetAnnotation,
+  TaskFamily,
+  TaskRecord,
+} from "../../lib/tasks/task-types";
+import { TASK_FACET_DIMENSIONS, getFacetTaxonomyValues } from "../../lib/tasks/task-validation";
 
 const PAGE_SIZE = 50;
+/** Catalog rows surface a bounded number of key facet chips (spec §7.1). */
+const MAX_ROW_FACET_CHIPS = 3;
 
 type OriginFilter = "all" | "authored" | "legacy-task-set" | "promoted-comparison" | "imported";
+type ArchiveFilter = "all" | "active" | "archived";
 
 interface CatalogState {
   kind: "loading" | "ready" | "error";
   rows: TaskRecord[];
   error: StorageError | null;
+}
+
+/** Resolve a facet (dimension, valueId) pair to its stable taxonomy label;
+ *  unknown/long values stay raw and unabridged. */
+function facetValueLabel(facetId: string, valueId: string): string {
+  const hit = getFacetTaxonomyValues(1).find(
+    (v) => v.facetId === facetId && v.valueId === valueId,
+  );
+  return hit?.label ?? valueId;
+}
+
+/** Effective facet labels for catalog rows: annotations superseded by a newer
+ *  annotation of the same Task are excluded; the newest effective annotation
+ *  per dimension contributes one chip, bounded by MAX_ROW_FACET_CHIPS. */
+function effectiveFacetLabels(annotations: TaskFacetAnnotation[]): string[] {
+  const supersededIds = new Set(
+    annotations.map((a) => a.supersedesId).filter((id): id is string => id !== null),
+  );
+  const byDimension = new Map<string, TaskFacetAnnotation>();
+  for (const annotation of annotations) {
+    if (supersededIds.has(annotation.id)) continue;
+    const current = byDimension.get(annotation.facetId);
+    if (
+      current === undefined ||
+      annotation.createdAt > current.createdAt ||
+      (annotation.createdAt === current.createdAt && annotation.id > current.id)
+    ) {
+      byDimension.set(annotation.facetId, annotation);
+    }
+  }
+  return [...byDimension.values()]
+    .sort((a, b) => a.facetId.localeCompare(b.facetId))
+    .slice(0, MAX_ROW_FACET_CHIPS)
+    .map((annotation) => facetValueLabel(annotation.facetId, annotation.valueId));
 }
 
 interface FamilyOption {
@@ -38,17 +80,23 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
   const [search, setSearch] = useState("");
   const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
   const [familyFilter, setFamilyFilter] = useState<string>("all");
+  const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>("all");
+  const [facetDimension, setFacetDimension] = useState<string>("all");
+  const [facetValue, setFacetValue] = useState<string>("all");
   const [page, setPage] = useState(0);
   const [state, setState] = useState<CatalogState>({ kind: "loading", rows: [], error: null });
   const [hasMore, setHasMore] = useState(false);
   const [rowTitles, setRowTitles] = useState<Map<string, string>>(new Map());
+  const [rowFamilyNames, setRowFamilyNames] = useState<Map<string, string>>(new Map());
+  const [rowFacets, setRowFacets] = useState<Map<string, string[]>>(new Map());
   const [families, setFamilies] = useState<FamilyOption[]>([]);
+  const [familyNames, setFamilyNames] = useState<Map<string, string>>(new Map());
   const [reloadTick, setReloadTick] = useState(0);
 
   // Reset to the first page whenever the query shape changes.
   useEffect(() => {
     setPage(0);
-  }, [search, originFilter, familyFilter]);
+  }, [search, originFilter, familyFilter, archiveFilter, facetDimension, facetValue]);
 
   useEffect(() => {
     if (repo === null) {
@@ -60,10 +108,13 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
     const trimmed = search.trim();
     setState((prev) => ({ kind: "loading", rows: prev.rows, error: null }));
     void repo
-      .listTaskFamilies(false)
+      .listTaskFamilies(true)
       .catch(() => [] as TaskFamily[])
       .then((fams) => {
         if (cancelled) return;
+        const names = new Map<string, string>();
+        for (const f of fams) names.set(f.id, f.name);
+        setFamilyNames(names);
         setFamilies(
           fams
             .filter((f) => f.archivedAt === null)
@@ -78,7 +129,9 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
         search: trimmed === "" ? undefined : trimmed,
         origin: originFilter === "all" ? undefined : originFilter,
         familyId: familyFilter === "all" ? undefined : familyFilter,
-        includeArchived: true,
+        archiveState: archiveFilter === "all" ? "all" : archiveFilter,
+        facetId: facetDimension === "all" ? undefined : facetDimension,
+        facetValueId: facetValue === "all" ? undefined : facetValue,
         limit: PAGE_SIZE + 1,
         offset: page * PAGE_SIZE,
       })
@@ -86,19 +139,33 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
         setHasMore(rows.length > PAGE_SIZE);
         const pageRows = rows.slice(0, PAGE_SIZE);
         // Row content (title/objective, spec §7.1) comes from the immutable
-        // latest version; fetch one read per visible row.
-        const versions = await Promise.all(
-          pageRows.map((row) => repo.getTaskVersion(row.id, row.latestVersion)),
-        );
+        // latest version; family/facet summaries come from the assignment and
+        // annotation seams — one read per visible row.
+        const [versions, assignmentLists, annotationLists] = await Promise.all([
+          Promise.all(pageRows.map((row) => repo.getTaskVersion(row.id, row.latestVersion))),
+          Promise.all(pageRows.map((row) => repo.listTaskFamilyAssignments(row.id))),
+          Promise.all(pageRows.map((row) => repo.listTaskFacetAnnotations(row.id))),
+        ]);
         const titles = new Map<string, string>();
         versions.forEach((version, index) => {
           if (version) titles.set(pageRows[index].id, version.title);
         });
-        return { pageRows, titles };
+        const primaryFamilies = new Map<string, string>();
+        assignmentLists.forEach((assignments, index) => {
+          const primary = assignments.find((a) => a.isPrimary && a.archivedAt === null);
+          if (primary) primaryFamilies.set(pageRows[index].id, primary.familyId);
+        });
+        const facets = new Map<string, string[]>();
+        annotationLists.forEach((annotations, index) => {
+          facets.set(pageRows[index].id, effectiveFacetLabels(annotations));
+        });
+        return { pageRows, titles, primaryFamilies, facets };
       })
-      .then(({ pageRows, titles }) => {
+      .then(({ pageRows, titles, primaryFamilies, facets }) => {
         if (cancelled) return;
         setRowTitles(titles);
+        setRowFamilyNames(primaryFamilies);
+        setRowFacets(facets);
         setState({ kind: "ready", rows: pageRows, error: null });
       })
       .catch((err) => {
@@ -111,7 +178,7 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
     return () => {
       cancelled = true;
     };
-  }, [repo, search, originFilter, familyFilter, page, reloadTick]);
+  }, [repo, search, originFilter, familyFilter, archiveFilter, facetDimension, facetValue, page, reloadTick]);
 
   const retry = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -134,6 +201,22 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
         return "The task catalog query failed.";
     }
   }, [repo, state.error]);
+
+  const facetValueOptions = useMemo(
+    () =>
+      facetDimension === "all"
+        ? []
+        : getFacetTaxonomyValues(1).filter((v) => v.facetId === facetDimension),
+    [facetDimension],
+  );
+
+  const hasActiveFilters =
+    search.trim() !== "" ||
+    originFilter !== "all" ||
+    familyFilter !== "all" ||
+    archiveFilter !== "all" ||
+    facetDimension !== "all" ||
+    facetValue !== "all";
 
   return (
     <div data-task-catalog className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-6">
@@ -203,6 +286,59 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
             ))}
           </select>
         </label>
+        <label className="flex min-h-[44px] items-center gap-2 text-sm text-text-secondary">
+          <span>Archive state</span>
+          <select
+            data-filter="archive-state"
+            aria-label="Filter by archive state"
+            value={archiveFilter}
+            onChange={(event) => setArchiveFilter(event.currentTarget.value as ArchiveFilter)}
+            className="min-h-[44px] rounded-md border border-edge bg-card px-2 text-sm text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            <option value="all">All states</option>
+            <option value="active">Active only</option>
+            <option value="archived">Archived only</option>
+          </select>
+        </label>
+        <label className="flex min-h-[44px] items-center gap-2 text-sm text-text-secondary">
+          <span>Facet</span>
+          <select
+            data-filter="facet-dimension"
+            aria-label="Filter by facet dimension"
+            value={facetDimension}
+            onChange={(event) => {
+              setFacetDimension(event.currentTarget.value);
+              setFacetValue("all");
+            }}
+            className="min-h-[44px] rounded-md border border-edge bg-card px-2 text-sm text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            <option value="all">All facets</option>
+            {TASK_FACET_DIMENSIONS.map((dimension) => (
+              <option key={dimension} value={dimension}>
+                {dimension}
+              </option>
+            ))}
+          </select>
+        </label>
+        {facetDimension !== "all" ? (
+          <label className="flex min-h-[44px] items-center gap-2 text-sm text-text-secondary">
+            <span>Facet value</span>
+            <select
+              data-filter="facet-value"
+              aria-label="Filter by facet value"
+              value={facetValue}
+              onChange={(event) => setFacetValue(event.currentTarget.value)}
+              className="min-h-[44px] rounded-md border border-edge bg-card px-2 text-sm text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              <option value="all">All values</option>
+              {facetValueOptions.map((option) => (
+                <option key={option.valueId} value={option.valueId}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
 
       {errorKind !== null && state.kind !== "loading" ? (
@@ -242,12 +378,12 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
           className="flex flex-col items-center gap-3 rounded-md border border-edge bg-card p-8 text-center"
         >
           <p className="text-sm font-medium text-text">
-            {search.trim() !== "" || originFilter !== "all" || familyFilter !== "all"
+            {hasActiveFilters
               ? "No tasks match the current search and filters."
               : "No tasks yet."}
           </p>
           <p className="text-sm text-text-secondary">
-            {search.trim() !== "" || originFilter !== "all" || familyFilter !== "all"
+            {hasActiveFilters
               ? "Adjust the search or filters to widen the catalog."
               : "Create a task to start building the canonical catalog, or run the legacy migration to import suite tasks."}
           </p>
@@ -277,8 +413,27 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
                     <span className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
                       <span>v{row.latestVersion}</span>
                       <span>{row.origin}</span>
+                      {rowFamilyNames.get(row.id) !== undefined ? (
+                        <span data-row-family={row.id}>
+                          {familyNames.get(rowFamilyNames.get(row.id)!) ??
+                            rowFamilyNames.get(row.id)}
+                        </span>
+                      ) : null}
                       <span>Updated {new Date(row.updatedAt).toLocaleString()}</span>
                     </span>
+                    {(rowFacets.get(row.id)?.length ?? 0) > 0 ? (
+                      <span className="flex flex-wrap items-center gap-1">
+                        {(rowFacets.get(row.id) ?? []).map((label) => (
+                          <span
+                            key={label}
+                            data-facet-chip
+                            className="min-w-0 break-words rounded-sm border border-edge bg-raised px-2 py-0.5 text-xs text-text-secondary"
+                          >
+                            {label}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
                   </div>
                   {row.archivedAt !== null && (
                     <span

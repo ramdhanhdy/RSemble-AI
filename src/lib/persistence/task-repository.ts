@@ -14,7 +14,7 @@
 // (spec §3.4). No delete API is exposed for referenced versions (spec §4.4).
 // =============================================================================
 
-import { type RSembleEvaluationDB, StorageError, classifyStorageError } from "./database";
+import { type RSembleEvaluationDB, type TaskFamilyRow, StorageError, classifyStorageError } from "./database";
 import {
   artifactsByteEqual,
   computeInstanceInputDigest,
@@ -64,8 +64,18 @@ export interface TaskListQuery {
   familyId?: string;
   /** Filter by origin. */
   origin?: TaskOrigin;
-  /** Include archived Tasks (default: false). */
+  /** Include archived Tasks (default: false). `archiveState` takes
+   *  precedence when both are supplied. */
   includeArchived?: boolean;
+  /** Archive-state filter (spec §7.1): "active" (default), "archived" only,
+   *  or "all". Overrides `includeArchived` when set. */
+  archiveState?: "active" | "archived" | "all";
+  /** Filter to Tasks carrying an annotation with this facet dimension.
+   *  Applied together with `facetValueId`. */
+  facetId?: string;
+  /** Filter to Tasks carrying an annotation with this taxonomy value.
+   *  Applied together with `facetId`. */
+  facetValueId?: string;
   /** Page size (default 50). */
   limit?: number;
   /** Page offset (default 0). */
@@ -384,6 +394,24 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
           if (row.isPrimary === 1 && row.archivedAt === null) familyFilter.add(row.taskId);
         }
       }
+      // Facet filter (Task 8B, spec §7.1): taskIds carrying an annotation
+      // with the requested dimension+value pair. Resolved up front like the
+      // family filter so the walk stays one deterministic pass.
+      let facetFilter: Set<string> | null = null;
+      if (query.facetId !== undefined && query.facetValueId !== undefined) {
+        facetFilter = new Set<string>();
+        const annotationRows = await db.taskFacetAnnotations
+          .where("facetId")
+          .equals(query.facetId)
+          .toArray();
+        for (const row of annotationRows) {
+          if (row.valueId === query.facetValueId) facetFilter.add(row.taskId);
+        }
+      }
+      // Archive state: explicit archiveState wins; includeArchived keeps its
+      // legacy meaning ("all") for callers that predate Task 8B.
+      const archiveState: "active" | "archived" | "all" =
+        query.archiveState ?? (query.includeArchived ? "all" : "active");
       // Sort deterministically in memory: fresh `updatedAt` values move rows
       // between pages and the id tiebreak keeps equal timestamps stable —
       // deterministic pagination is a spec contract (§11 "Repository").
@@ -391,8 +419,10 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
       const records: TaskRecord[] = [];
       for (const row of rows) {
         if (query.origin && row.origin !== query.origin) continue;
-        if (!query.includeArchived && row.archivedAt !== null) continue;
+        if (archiveState === "active" && row.archivedAt !== null) continue;
+        if (archiveState === "archived" && row.archivedAt === null) continue;
         if (familyFilter && !familyFilter.has(row.id)) continue;
+        if (facetFilter && !facetFilter.has(row.id)) continue;
         if (!isTaskRecord(row.record)) continue;
         if (needle !== "") {
           const latest = await db.taskVersions.get([row.id, row.latestVersion]);
@@ -664,6 +694,43 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
 
   // --- families -------------------------------------------------------------
 
+  /** Task 8B (spec §3.5): explicit parent validity. A family's parent must
+   *  exist (invalid-parent handling) and walking the parent chain from the
+   *  proposed parent must never reach the family itself (cycle handling).
+   *  Runs inside the caller's transaction so the check and the write are
+   *  atomic. No hierarchy is inferred beyond the explicit parent link. */
+  async function assertParentChainValid(
+    familyId: string,
+    parentFamilyId: string | null,
+  ): Promise<void> {
+    if (parentFamilyId === null) return;
+    if (parentFamilyId === familyId) {
+      throw new StorageError(
+        "conflict",
+        `Task family ${familyId} cannot be its own parent (cycle).`,
+      );
+    }
+    let cursor: string | null = parentFamilyId;
+    for (let hops = 0; cursor !== null; hops++) {
+      if (hops > 1000) {
+        throw new StorageError("conflict", "Family parent chain is too deep to validate.");
+      }
+      const row: TaskFamilyRow | undefined = await db.taskFamilies.get(cursor);
+      if (!row) {
+        throw new StorageError("conflict", `Task family ${cursor} not found`);
+      }
+      const parent: TaskFamily | null = isTaskFamily(row.family) ? row.family : null;
+      if (!parent) throw new StorageError("validation", "Invalid task family");
+      if (parent.id === familyId) {
+        throw new StorageError(
+          "conflict",
+          `Setting parent ${parentFamilyId} would create a family cycle through ${cursor}.`,
+        );
+      }
+      cursor = parent.parentFamilyId;
+    }
+  }
+
   async function createTaskFamily(family: TaskFamily): Promise<void> {
     assertValid(validateTaskFamily(family), "Invalid task family");
     db.assertWritable();
@@ -673,6 +740,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
         if (existing) {
           throw new StorageError("conflict", `Task family ${family.id} already exists`);
         }
+        await assertParentChainValid(family.id, family.parentFamilyId);
         await db.taskFamilies.put({
           id: family.id,
           family,
@@ -702,6 +770,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
             `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
           );
         }
+        await assertParentChainValid(family.id, family.parentFamilyId);
         const updated: TaskFamily = { ...family, revision: newRevision };
         await db.taskFamilies.put({
           id: family.id,
@@ -957,6 +1026,28 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
             throw new StorageError(
               "conflict",
               `Task version ${annotation.taskId}@${annotation.taskVersion} not found`,
+            );
+          }
+        }
+        // Task 8B (spec §3.6): supersession provenance must reference an
+        // existing annotation of the SAME Task — supersession appends, it
+        // never points across Tasks or at nothing.
+        if (annotation.supersedesId !== null) {
+          const supersededRow = await db.taskFacetAnnotations.get(annotation.supersedesId);
+          if (!supersededRow) {
+            throw new StorageError(
+              "conflict",
+              `Facet annotation ${annotation.supersedesId} not found`,
+            );
+          }
+          const superseded = isTaskFacetAnnotation(supersededRow.annotation)
+            ? supersededRow.annotation
+            : null;
+          if (!superseded) throw new StorageError("validation", "Invalid task facet annotation");
+          if (superseded.taskId !== annotation.taskId) {
+            throw new StorageError(
+              "conflict",
+              `Supersession must target an annotation of the same task: ${annotation.supersedesId} belongs to ${superseded.taskId}`,
             );
           }
         }

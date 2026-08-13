@@ -22,6 +22,9 @@ import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import { TaskNewEditor, TaskDetailEditor, TaskVersionView } from "./TaskEditor";
+import { TaskFacetEditor } from "./TaskFacetEditor";
+import { TaskFamilyRegistry } from "./TaskFamilyRegistry";
+import { TaskFamilyAssignmentSection } from "./TaskFamilyAssignment";
 
 function StorageUnavailable() {
   return (
@@ -215,6 +218,43 @@ export function TaskDetailRoute({ repo, taskId }: { repo: TaskRepository | null;
           initialVersion={version}
           onRefresh={retry}
         />
+      ) : null}
+
+      {/* Family and facets are edited separately from Task content, with
+          provenance (spec §7.2). Archived Tasks keep the summaries visible
+          but render every binding control read-only (spec §4.5). */}
+      {version && repo ? (
+        <>
+          <section
+            data-task-family-section
+            className="flex flex-col gap-3 rounded-md border border-edge bg-panel p-4"
+          >
+            <h2 className="text-base font-semibold text-text">Family</h2>
+            <TaskFamilyAssignmentSection
+              repo={repo}
+              taskId={record.id}
+              taskVersion={record.latestVersion}
+              disabled={record.archivedAt !== null}
+            />
+          </section>
+
+          <section className="flex flex-col gap-3 rounded-md border border-edge bg-panel p-4">
+            <h2 className="text-base font-semibold text-text">Families</h2>
+            <TaskFamilyRegistry repo={repo} />
+          </section>
+
+          <section
+            data-task-facets-section
+            className="flex flex-col gap-3 rounded-md border border-edge bg-panel p-4"
+          >
+            <h2 className="text-base font-semibold text-text">Facets</h2>
+            <TaskFacetEditor
+              repo={repo}
+              taskId={record.id}
+              disabled={record.archivedAt !== null}
+            />
+          </section>
+        </>
       ) : null}
     </div>
   );
