@@ -66,9 +66,7 @@ interface FamilyFormState {
 }
 
 type LifecycleDialog =
-  | { kind: "archive"; family: TaskFamily }
-  | { kind: "restore"; family: TaskFamily }
-  | null;
+  { kind: "archive"; family: TaskFamily } | { kind: "restore"; family: TaskFamily } | null;
 
 export function TaskFamilyRegistry({ repo }: { repo: TaskRepository }) {
   const [families, setFamilies] = useState<TaskFamily[] | null>(null);
@@ -96,9 +94,11 @@ export function TaskFamilyRegistry({ repo }: { repo: TaskRepository }) {
       repo.listTaskFamilies(true).catch(() => [] as TaskFamily[]),
       // Relations are an optional seam on the plain TaskRepository interface
       // type; the concrete repository always implements it.
-      ("listTaskFamilyRelations" in repo
-        ? (repo as { listTaskFamilyRelations(): Promise<TaskFamilyRelation[]> }).listTaskFamilyRelations()
-        : Promise.resolve([] as TaskFamilyRelation[])),
+      "listTaskFamilyRelations" in repo
+        ? (
+            repo as { listTaskFamilyRelations(): Promise<TaskFamilyRelation[]> }
+          ).listTaskFamilyRelations()
+        : Promise.resolve([] as TaskFamilyRelation[]),
     ]).then(([familyRows, relationRows]) => {
       if (cancelled) return;
       setFamilies(familyRows);
@@ -168,7 +168,11 @@ export function TaskFamilyRegistry({ repo }: { repo: TaskRepository }) {
   }, [form, families]);
 
   function handleWriteFailure(err: unknown): void {
-    if (err instanceof StorageError && err.kind === "conflict" && /stale revision/i.test(err.message)) {
+    if (
+      err instanceof StorageError &&
+      err.kind === "conflict" &&
+      /stale revision/i.test(err.message)
+    ) {
       setConflict(err);
     } else {
       setActionError(
@@ -275,8 +279,9 @@ export function TaskFamilyRegistry({ repo }: { repo: TaskRepository }) {
         kind: relationKind,
         createdAt: Date.now(),
       };
-      await (repo as { createTaskFamilyRelation(r: TaskFamilyRelation): Promise<void> })
-        .createTaskFamilyRelation(relation);
+      await (
+        repo as { createTaskFamilyRelation(r: TaskFamilyRelation): Promise<void> }
+      ).createTaskFamilyRelation(relation);
       setRelationFrom("");
       setRelationTo("");
       reload();
@@ -328,11 +333,7 @@ export function TaskFamilyRegistry({ repo }: { repo: TaskRepository }) {
       ) : null}
 
       {actionError ? (
-        <div
-          data-family-error
-          role="alert"
-          className="flex items-center gap-2 text-sm text-error"
-        >
+        <div data-family-error role="alert" className="flex items-center gap-2 text-sm text-error">
           <AlertCircle size={16} aria-hidden="true" />
           <span>
             Family action failed ({actionError.kind}): {actionError.message}
@@ -345,7 +346,12 @@ export function TaskFamilyRegistry({ repo }: { repo: TaskRepository }) {
           Families group deliberate Task variants. Relations express typed overlap — never an
           inferred tree.
         </p>
-        <button type="button" data-action="new-family" onClick={openCreate} className={PRIMARY_BUTTON}>
+        <button
+          type="button"
+          data-action="new-family"
+          onClick={openCreate}
+          className={PRIMARY_BUTTON}
+        >
           New family
         </button>
       </div>
@@ -594,9 +600,7 @@ export function TaskFamilyRegistry({ repo }: { repo: TaskRepository }) {
         onOpenChange={(open) => {
           if (!open && !busy) setLifecycleDialog(null);
         }}
-        title={
-          lifecycleDialog?.kind === "restore" ? "Restore family" : "Archive family"
-        }
+        title={lifecycleDialog?.kind === "restore" ? "Restore family" : "Archive family"}
       >
         <div className="flex flex-col gap-4 p-5">
           <h2 className="text-base font-semibold text-text">

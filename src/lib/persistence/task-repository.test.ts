@@ -741,10 +741,7 @@ export function repositorySuite(
     it("rejects a facet annotation superseding an annotation of a different Task", async () => {
       const repo = makeRepo();
       await repo.createTask(taskRecord(), taskVersion());
-      await repo.createTask(
-        taskRecord({ id: "task-2" }),
-        taskVersion({ taskId: "task-2" }),
-      );
+      await repo.createTask(taskRecord({ id: "task-2" }), taskVersion({ taskId: "task-2" }));
       await repo.annotateTaskFacet(facetAnnotation({ id: "ann-other", taskId: "task-2" }));
       await expect(
         repo.annotateTaskFacet(facetAnnotation({ supersedesId: "ann-other" })),
@@ -904,7 +901,6 @@ export function repositorySuite(
       expect(listed.every((row) => row.taskId === "task-1" && row.taskVersion === 1)).toBe(true);
       expect(await repo.listTaskMigrationCrosswalks("missing")).toEqual([]);
     });
-
 
     // --- catalog search + family filters (spec §7.1, Task 6) -----------------
 
@@ -1108,7 +1104,11 @@ export function repositorySuite(
       const recB = (await repo.getTaskRecord("t-b"))!;
       await repo.archiveTask("t-b", recB.revision);
       // Archived t-b is excluded by default even though it matches facet+search.
-      const active = await repo.listTasks({ search: "summarize", facetId: "domain", facetValueId: "nlp" });
+      const active = await repo.listTasks({
+        search: "summarize",
+        facetId: "domain",
+        facetValueId: "nlp",
+      });
       expect(active.map((t) => t.id)).toEqual(["t-a"]);
       // archiveState 'all' brings the archived match back.
       const all = await repo.listTasks({
@@ -1297,12 +1297,8 @@ export function repositorySuite(
       const repo = makeRepo();
       await repo.createTaskFamily(taskFamily({ id: "family-1" }));
       await repo.createTaskFamily(taskFamily({ id: "family-2" }));
-      await repo.createTaskFamilyRelation(
-        familyRelation({ id: "rel-1", createdAt: NOW + 1 }),
-      );
-      await repo.createTaskFamilyRelation(
-        familyRelation({ id: "rel-2", createdAt: NOW }),
-      );
+      await repo.createTaskFamilyRelation(familyRelation({ id: "rel-1", createdAt: NOW + 1 }));
+      await repo.createTaskFamilyRelation(familyRelation({ id: "rel-2", createdAt: NOW }));
       const relations = await repo.listTaskFamilyRelations();
       expect(relations).toHaveLength(2);
       // Deterministic order: createdAt asc, id tiebreak.
@@ -1353,9 +1349,7 @@ export function repositorySuite(
       await repo.createTaskFamily(taskFamily({ id: "family-1" }));
       await repo.createTaskFamily(taskFamily({ id: "family-2" }));
       await expect(
-        repo.createTaskFamilyRelation(
-          familyRelation({ kind: "subset" as never }),
-        ),
+        repo.createTaskFamilyRelation(familyRelation({ kind: "subset" as never })),
       ).rejects.toThrow(/kind|validation/i);
     });
 
@@ -1436,12 +1430,8 @@ export function repositorySuite(
       const repo = makeRepo();
       // The relation seam is explicit and typed only; there is no API that
       // walks a universal family tree or infers hierarchy from relations.
-      expect(
-        (repo as unknown as Record<string, unknown>).listTaskFamilyTree,
-      ).toBeUndefined();
-      expect(
-        (repo as unknown as Record<string, unknown>).inferFamilyTree,
-      ).toBeUndefined();
+      expect((repo as unknown as Record<string, unknown>).listTaskFamilyTree).toBeUndefined();
+      expect((repo as unknown as Record<string, unknown>).inferFamilyTree).toBeUndefined();
     });
   });
 }
@@ -1574,7 +1564,16 @@ describe("Dexie task repository schema upgrade", () => {
     await v3.open();
     await v3.table("taskFamilies").put({
       id: "fam-legacy",
-      family: { id: "fam-legacy", name: "Legacy", description: "", parentFamilyId: null, createdAt: 1, updatedAt: 1, archivedAt: null, revision: 0 },
+      family: {
+        id: "fam-legacy",
+        name: "Legacy",
+        description: "",
+        parentFamilyId: null,
+        createdAt: 1,
+        updatedAt: 1,
+        archivedAt: null,
+        revision: 0,
+      },
       parentFamilyId: null,
       updatedAt: 1,
       archivedAt: null,
@@ -1597,4 +1596,3 @@ describe("Dexie task repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "taskFamilies")).toBe(true);
   });
 });
-

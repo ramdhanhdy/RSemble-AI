@@ -52,7 +52,6 @@ import {
 } from "./task-repository";
 import type { TaskMigrationCrosswalk } from "../tasks/task-references";
 
-
 /** Run a {valid, errors} validator and throw the first error as a StorageError
  *  validation. Mirrors the Dexie implementation so both report the same
  *  prohibited-key / field messages. */
@@ -243,8 +242,14 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
     if (typeof marker.completedAt !== "number" || !Number.isFinite(marker.completedAt)) {
       throw new StorageError("validation", "Invalid canonical task migration marker completedAt");
     }
-    if (!Array.isArray(marker.unresolvedKeys) || marker.unresolvedKeys.some((key) => typeof key !== "string")) {
-      throw new StorageError("validation", "Invalid canonical task migration marker unresolvedKeys");
+    if (
+      !Array.isArray(marker.unresolvedKeys) ||
+      marker.unresolvedKeys.some((key) => typeof key !== "string")
+    ) {
+      throw new StorageError(
+        "validation",
+        "Invalid canonical task migration marker unresolvedKeys",
+      );
     }
     this.migrationMarker = {
       kind: "canonical-task-migration",
@@ -253,8 +258,6 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
       unresolvedKeys: [...marker.unresolvedKeys],
     };
   }
-
-
 
   async listTasks(query: TaskListQuery): Promise<TaskRecord[]> {
     const limit = query.limit ?? 50;
@@ -286,7 +289,11 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
       query.archiveState ?? (query.includeArchived === true ? "all" : "active");
     return [...this.tasks.values()]
       .filter((t) => query.origin === undefined || t.origin === query.origin)
-      .filter((t) => archiveState === "all" || (archiveState === "active" ? t.archivedAt === null : t.archivedAt !== null))
+      .filter(
+        (t) =>
+          archiveState === "all" ||
+          (archiveState === "active" ? t.archivedAt === null : t.archivedAt !== null),
+      )
       .filter((t) => familyFilter === null || familyFilter.has(t.id))
       .filter((t) => facetFilter === null || facetFilter.has(t.id))
       .filter((t) => {
@@ -653,10 +660,7 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
     if (annotation.supersedesId !== null) {
       const superseded = this.annotations.get(annotation.supersedesId);
       if (!superseded) {
-        throw new StorageError(
-          "conflict",
-          `Facet annotation ${annotation.supersedesId} not found`,
-        );
+        throw new StorageError("conflict", `Facet annotation ${annotation.supersedesId} not found`);
       }
       if (superseded.taskId !== annotation.taskId) {
         throw new StorageError(
@@ -684,16 +688,10 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
     assertValid(validateTaskFamilyRelation(relation), "Invalid task family relation");
     // Referential integrity: both endpoint families must exist.
     if (!this.families.has(relation.fromFamilyId)) {
-      throw new StorageError(
-        "conflict",
-        `Task family ${relation.fromFamilyId} not found`,
-      );
+      throw new StorageError("conflict", `Task family ${relation.fromFamilyId} not found`);
     }
     if (!this.families.has(relation.toFamilyId)) {
-      throw new StorageError(
-        "conflict",
-        `Task family ${relation.toFamilyId} not found`,
-      );
+      throw new StorageError("conflict", `Task family ${relation.toFamilyId} not found`);
     }
     // Self-relation is rejected by the validator; defend at the boundary too.
     if (relation.fromFamilyId === relation.toFamilyId) {
@@ -704,10 +702,7 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
     }
     // Duplicate id is a conflict — no silent overwrite.
     if (this.relations.has(relation.id)) {
-      throw new StorageError(
-        "conflict",
-        `Task family relation ${relation.id} already exists`,
-      );
+      throw new StorageError("conflict", `Task family relation ${relation.id} already exists`);
     }
     this.relations.set(relation.id, relation);
   }

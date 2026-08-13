@@ -14,7 +14,12 @@
 // (spec §3.4). No delete API is exposed for referenced versions (spec §4.4).
 // =============================================================================
 
-import { type RSembleEvaluationDB, type TaskFamilyRow, StorageError, classifyStorageError } from "./database";
+import {
+  type RSembleEvaluationDB,
+  type TaskFamilyRow,
+  StorageError,
+  classifyStorageError,
+} from "./database";
 import {
   artifactsByteEqual,
   computeInstanceInputDigest,
@@ -43,7 +48,6 @@ import {
 } from "../tasks/task-validation";
 import type { TaskMigrationCrosswalk } from "../tasks/task-references";
 import { canonicalTaskMigrationMarkerKey } from "./canonical-task-migration";
-
 
 import type {
   TaskArtifact,
@@ -133,7 +137,6 @@ export interface TaskRepository {
   getCanonicalTaskMigrationMarker(): Promise<CanonicalTaskMigrationMarker | null>;
   putCanonicalTaskMigrationMarker(marker: CanonicalTaskMigrationMarker): Promise<void>;
 
-
   // --- families -------------------------------------------------------------
   createTaskFamily(family: TaskFamily): Promise<void>;
   updateTaskFamily(family: TaskFamily, expectedRevision: number): Promise<number>;
@@ -206,7 +209,10 @@ function assertCanonicalTaskMigrationMarker(marker: CanonicalTaskMigrationMarker
   if (typeof marker.completedAt !== "number" || !Number.isFinite(marker.completedAt)) {
     throw new StorageError("validation", "Invalid canonical task migration marker completedAt");
   }
-  if (!Array.isArray(marker.unresolvedKeys) || marker.unresolvedKeys.some((key) => typeof key !== "string")) {
+  if (
+    !Array.isArray(marker.unresolvedKeys) ||
+    marker.unresolvedKeys.some((key) => typeof key !== "string")
+  ) {
     throw new StorageError("validation", "Invalid canonical task migration marker unresolvedKeys");
   }
 }
@@ -227,7 +233,10 @@ export function parseCanonicalTaskMigrationMarker(
   if (rec.kind !== "canonical-task-migration") return null;
   if (typeof rec.version !== "number" || !Number.isFinite(rec.version)) return null;
   if (typeof rec.completedAt !== "number" || !Number.isFinite(rec.completedAt)) return null;
-  if (!Array.isArray(rec.unresolvedKeys) || rec.unresolvedKeys.some((key) => typeof key !== "string")) {
+  if (
+    !Array.isArray(rec.unresolvedKeys) ||
+    rec.unresolvedKeys.some((key) => typeof key !== "string")
+  ) {
     return null;
   }
   return {
@@ -240,7 +249,9 @@ export function parseCanonicalTaskMigrationMarker(
 
 // --- Dexie implementation ----------------------------------------------------
 
-export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & TaskFamilyRelationRepository {
+export function createTaskRepository(
+  db: RSembleEvaluationDB,
+): TaskRepository & TaskFamilyRelationRepository {
   // --- Task + version lifecycle ---------------------------------------------
 
   async function createTask(record: TaskRecord, version: TaskVersion): Promise<void> {
@@ -518,7 +529,6 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
       throw classifyStorageError(err);
     }
   }
-
 
   async function listTasks(query: TaskListQuery): Promise<TaskRecord[]> {
     const limit = query.limit ?? 50;
@@ -1239,17 +1249,11 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
         // Referential integrity: both endpoint families must exist.
         const fromRow = await db.taskFamilies.get(relation.fromFamilyId);
         if (!fromRow) {
-          throw new StorageError(
-            "conflict",
-            `Task family ${relation.fromFamilyId} not found`,
-          );
+          throw new StorageError("conflict", `Task family ${relation.fromFamilyId} not found`);
         }
         const toRow = await db.taskFamilies.get(relation.toFamilyId);
         if (!toRow) {
-          throw new StorageError(
-            "conflict",
-            `Task family ${relation.toFamilyId} not found`,
-          );
+          throw new StorageError("conflict", `Task family ${relation.toFamilyId} not found`);
         }
         // Self-relation is rejected by the validator; defend at the boundary
         // too so a malformed row never lands.
@@ -1262,10 +1266,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
         // Duplicate id is a conflict — no silent overwrite.
         const existing = await db.taskFamilyRelations.get(relation.id);
         if (existing) {
-          throw new StorageError(
-            "conflict",
-            `Task family relation ${relation.id} already exists`,
-          );
+          throw new StorageError("conflict", `Task family relation ${relation.id} already exists`);
         }
         await db.taskFamilyRelations.put({
           id: relation.id,

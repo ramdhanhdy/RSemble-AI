@@ -32,11 +32,7 @@ import {
   type TaskMigrationCrosswalk,
   type TaskReferenceSources,
 } from "./task-references";
-import type {
-  TaskInstance,
-  TaskRecord,
-  TaskVersion,
-} from "./task-types";
+import type { TaskInstance, TaskRecord, TaskVersion } from "./task-types";
 import { legacyTaskCrosswalkKey } from "../persistence/canonical-task-migration";
 
 const NOW = 1_700_000_000_000;
@@ -141,7 +137,11 @@ function taskVersion(overrides: Partial<TaskVersion> = {}): TaskVersion {
     defaultContextManifest: [],
     responseContract: null,
     taskVerifierRef: null,
-    source: { kind: "legacy-task-set", legacyScopeKey: "suite-1::t1", note: "legacy-definition:v1" },
+    source: {
+      kind: "legacy-task-set",
+      legacyScopeKey: "suite-1::t1",
+      note: "legacy-definition:v1",
+    },
     createdAt: NOW - 2_000,
     ...overrides,
   };
@@ -195,7 +195,11 @@ function sources(overrides: Partial<TaskReferenceSources> = {}): TaskReferenceSo
         version: 2,
         objective: current.prompt,
         createdAt: NOW,
-        source: { kind: "legacy-task-set", legacyScopeKey: "suite-1::t1", note: "legacy-definition:v2" },
+        source: {
+          kind: "legacy-task-set",
+          legacyScopeKey: "suite-1::t1",
+          note: "legacy-definition:v2",
+        },
       }),
     ],
     crosswalks: [
@@ -264,7 +268,14 @@ describe("buildTaskReferenceReadModel — exact version selection", () => {
     const model = buildTaskReferenceReadModel(
       sources({
         crosswalks: [
-          crosswalk("suite-1", 1, "t1", makeEvalTask({ prompt: "Older prompt." }), "legacy-task-suite-1-t1", 1),
+          crosswalk(
+            "suite-1",
+            1,
+            "t1",
+            makeEvalTask({ prompt: "Older prompt." }),
+            "legacy-task-suite-1-t1",
+            1,
+          ),
         ],
       }),
     );
@@ -280,14 +291,16 @@ describe("buildTaskReferenceReadModel — exact version selection", () => {
     const model = buildTaskReferenceReadModel(
       sources({
         crosswalks: [
-          crosswalk("suite-1", 1, "t1", makeEvalTask({ prompt: "Older prompt." }), "legacy-task-suite-1-t1", 1),
+          crosswalk(
+            "suite-1",
+            1,
+            "t1",
+            makeEvalTask({ prompt: "Older prompt." }),
+            "legacy-task-suite-1-t1",
+            1,
+          ),
           {
-            legacyScopeKey: legacyTaskCrosswalkKey(
-              "suite-1",
-              2,
-              "t1",
-              executableDigest(current),
-            ),
+            legacyScopeKey: legacyTaskCrosswalkKey("suite-1", 2, "t1", executableDigest(current)),
             taskId: "legacy-task-suite-1-t1",
             taskVersion: 999,
           },
@@ -363,7 +376,10 @@ describe("buildTaskReferenceReadModel — namespacing and archive", () => {
 
 describe("buildTaskReferenceReadModel — unresolved definitions and instances", () => {
   it("keeps an incomplete current-suite definition unresolved without fabricating a version", () => {
-    const broken = makeEvalTask({ id: "t1", evaluation: { kind: "profile" } as EvaluationTask["evaluation"] });
+    const broken = makeEvalTask({
+      id: "t1",
+      evaluation: { kind: "profile" } as EvaluationTask["evaluation"],
+    });
     const model = buildTaskReferenceReadModel(
       sources({
         suites: [makeSuite({ tasks: [broken] })],
@@ -383,7 +399,11 @@ describe("buildTaskReferenceReadModel — unresolved definitions and instances",
     const metadata = instance({
       id: "inst-meta",
       inputCompleteness: "metadata_only",
-      normalizedInput: { text: "", artifactIds: ["missing-art"], metadata: { filename: "notes.txt" } },
+      normalizedInput: {
+        text: "",
+        artifactIds: ["missing-art"],
+        metadata: { filename: "notes.txt" },
+      },
     });
     const incomplete = instance({
       id: "inst-inc",
@@ -437,7 +457,14 @@ describe("buildTaskReferenceReadModel — unresolved definitions and instances",
           crosswalk("suite-a", 1, "t1", task, "legacy-task-suite-1-t1", 1),
           crosswalk("suite-a", 3, "t1", task, "legacy-task-suite-1-t1", 1),
           crosswalk("suite-z", 1, "t1", task, "legacy-task-suite-1-t1", 2),
-          crosswalk("suite-1", 1, "t1", makeEvalTask({ prompt: "Older prompt." }), "legacy-task-suite-1-t1", 1),
+          crosswalk(
+            "suite-1",
+            1,
+            "t1",
+            makeEvalTask({ prompt: "Older prompt." }),
+            "legacy-task-suite-1-t1",
+            1,
+          ),
         ],
       }),
     );

@@ -63,9 +63,7 @@ export function TaskFamilyAssignmentSection({
     ]).then(([familyRows, assignmentRows]) => {
       if (cancelled) return;
       setFamilies(
-        [...familyRows].sort(
-          (a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
-        ),
+        [...familyRows].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
       );
       setAssignments(assignmentRows);
     });
@@ -74,8 +72,7 @@ export function TaskFamilyAssignmentSection({
     };
   }, [repo, taskId, reloadTick]);
 
-  const primary =
-    assignments?.find((a) => a.isPrimary && a.archivedAt === null) ?? null;
+  const primary = assignments?.find((a) => a.isPrimary && a.archivedAt === null) ?? null;
   const familyName = useCallback(
     (id: string): string => families.find((f) => f.id === id)?.name ?? id,
     [families],

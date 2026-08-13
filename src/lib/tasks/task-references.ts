@@ -21,12 +21,7 @@ import {
   type LegacyExecutableDefinition,
 } from "./legacy-task-inventory";
 import { CREDENTIAL_LIKE_VALUE } from "./task-validation";
-import type {
-  TaskInstance,
-  TaskOrigin,
-  TaskRecord,
-  TaskVersion,
-} from "./task-types";
+import type { TaskInstance, TaskOrigin, TaskRecord, TaskVersion } from "./task-types";
 
 /** Stored legacy → canonical crosswalk (spec §6.2). */
 export interface TaskMigrationCrosswalk {
@@ -127,8 +122,7 @@ export interface TaskReferenceSummary {
   unresolved: number;
 }
 
-const CROSSWALK_KEY =
-  /^(.+)::v(\d+)::(.+)::(sha256:[0-9a-f]+)$/i;
+const CROSSWALK_KEY = /^(.+)::v(\d+)::(.+)::(sha256:[0-9a-f]+)$/i;
 const SCOPE_KEY = /^(.+)::(.+)$/;
 const INVENTORY_KEY = /^(.+)::(.+)::v(\d+)$/;
 const UNRECONSTRUCTABLE =
@@ -268,15 +262,15 @@ function compareExperimentRefs(a: TaskExperimentReference, b: TaskExperimentRefe
   return a.experimentId.localeCompare(b.experimentId);
 }
 
-function instanceState(completeness: TaskInstance["inputCompleteness"]): TaskInstanceReferenceState {
+function instanceState(
+  completeness: TaskInstance["inputCompleteness"],
+): TaskInstanceReferenceState {
   if (completeness === "complete") return "resolved";
   return completeness;
 }
 
 /** Deterministic grouped read model. Never falls back to latestVersion. */
-export function buildTaskReferenceReadModel(
-  sources: TaskReferenceSources,
-): TaskReferenceReadModel {
+export function buildTaskReferenceReadModel(sources: TaskReferenceSources): TaskReferenceReadModel {
   const scopes = collectScopes(sources);
   const currentSuites: TaskSuiteReference[] = [];
   const experiments: TaskExperimentReference[] = [];
@@ -306,13 +300,7 @@ export function buildTaskReferenceReadModel(
         continue;
       }
       const digest = computeLegacyExecutableDefinitionDigest(executableDefinition(rawTask));
-      const resolved = resolveExactVersion(
-        sources,
-        suite.id,
-        suite.version,
-        legacyTaskId,
-        digest,
-      );
+      const resolved = resolveExactVersion(sources, suite.id, suite.version, legacyTaskId, digest);
       if (resolved.state === "unresolved") absentOrCorruptCrosswalks += 1;
       currentSuites.push({
         suiteId: suite.id,
@@ -424,8 +412,7 @@ export function buildTaskReferenceReadModel(
     instancesIncomplete,
     unresolvedDefinitions: unresolvedDefinitions.length,
     absentOrCorruptCrosswalks,
-    archivedReferencedVersions:
-      sources.task.archivedAt !== null ? resolvedVersionRefs : 0,
+    archivedReferencedVersions: sources.task.archivedAt !== null ? resolvedVersionRefs : 0,
     total:
       currentSuites.length +
       experiments.length +

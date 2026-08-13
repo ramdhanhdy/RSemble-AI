@@ -264,11 +264,17 @@ describe("isVersionRef", () => {
 describe("isTaskSource", () => {
   it("accepts authored and legacy sources", () => {
     expect(isTaskSource({ kind: "authored", legacyScopeKey: null, note: null })).toBe(true);
-    expect(isTaskSource({ kind: "legacy-task-set", legacyScopeKey: "s1:t1", note: "migrated" })).toBe(true);
+    expect(
+      isTaskSource({ kind: "legacy-task-set", legacyScopeKey: "s1:t1", note: "migrated" }),
+    ).toBe(true);
   });
   it("rejects unknown kind and prohibited keys", () => {
-    expect(isTaskSource({ kind: "promoted-comparison", legacyScopeKey: null, note: null })).toBe(false);
-    expect(isTaskSource({ kind: "authored", legacyScopeKey: null, note: null, secret: "x" })).toBe(false);
+    expect(isTaskSource({ kind: "promoted-comparison", legacyScopeKey: null, note: null })).toBe(
+      false,
+    );
+    expect(isTaskSource({ kind: "authored", legacyScopeKey: null, note: null, secret: "x" })).toBe(
+      false,
+    );
   });
 });
 
@@ -334,21 +340,29 @@ describe("isContextManifestEntry", () => {
 
 describe("isResponseContract", () => {
   it("accepts a well-formed contract", () => {
-    expect(isResponseContract({ format: "markdown", constraints: ["a"], maxLength: null })).toBe(true);
+    expect(isResponseContract({ format: "markdown", constraints: ["a"], maxLength: null })).toBe(
+      true,
+    );
   });
   it("rejects non-string constraints and bad maxLength", () => {
-    expect(isResponseContract({ format: "md", constraints: ["a", 1], maxLength: null })).toBe(false);
+    expect(isResponseContract({ format: "md", constraints: ["a", 1], maxLength: null })).toBe(
+      false,
+    );
     expect(isResponseContract({ format: "md", constraints: [], maxLength: -1 })).toBe(false);
   });
 });
 
 describe("isNormalizedTaskInput", () => {
   it("accepts well-formed input", () => {
-    expect(isNormalizedTaskInput({ text: "hi", artifactIds: ["art-1"], metadata: { k: "v" } })).toBe(true);
+    expect(
+      isNormalizedTaskInput({ text: "hi", artifactIds: ["art-1"], metadata: { k: "v" } }),
+    ).toBe(true);
     expect(isNormalizedTaskInput({ text: "", artifactIds: [], metadata: {} })).toBe(true);
   });
   it("rejects non-string metadata values and bad artifact ids", () => {
-    expect(isNormalizedTaskInput({ text: "hi", artifactIds: ["bad id!"], metadata: {} })).toBe(false);
+    expect(isNormalizedTaskInput({ text: "hi", artifactIds: ["bad id!"], metadata: {} })).toBe(
+      false,
+    );
     expect(isNormalizedTaskInput({ text: "hi", artifactIds: [], metadata: { k: 1 } })).toBe(false);
   });
 });
@@ -360,21 +374,37 @@ describe("isTaskInstanceSourceRef", () => {
     }
   });
   it("rejects unknown kind and bad origin id", () => {
-    expect(isTaskInstanceSourceRef({ kind: "ad-hoc", legacyScopeKey: null, originId: null })).toBe(false);
-    expect(isTaskInstanceSourceRef({ kind: "authored", legacyScopeKey: null, originId: "bad id!" })).toBe(false);
+    expect(isTaskInstanceSourceRef({ kind: "ad-hoc", legacyScopeKey: null, originId: null })).toBe(
+      false,
+    );
+    expect(
+      isTaskInstanceSourceRef({ kind: "authored", legacyScopeKey: null, originId: "bad id!" }),
+    ).toBe(false);
   });
 });
 
 describe("isFacetTaxonomyValue", () => {
   it("accepts a well-formed value", () => {
-    expect(isFacetTaxonomyValue({ facetId: "domain", valueId: "nlp", label: "NLP", taxonomyVersion: 1 })).toBe(true);
+    expect(
+      isFacetTaxonomyValue({ facetId: "domain", valueId: "nlp", label: "NLP", taxonomyVersion: 1 }),
+    ).toBe(true);
   });
   it("rejects secret-shaped identifiers and bad taxonomy version", () => {
     expect(
-      isFacetTaxonomyValue({ facetId: "sk-live123", valueId: "nlp", label: "NLP", taxonomyVersion: 1 }),
+      isFacetTaxonomyValue({
+        facetId: "sk-live123",
+        valueId: "nlp",
+        label: "NLP",
+        taxonomyVersion: 1,
+      }),
     ).toBe(false);
     expect(
-      isFacetTaxonomyValue({ facetId: "domain", valueId: "Bearer x", label: "NLP", taxonomyVersion: 1 }),
+      isFacetTaxonomyValue({
+        facetId: "domain",
+        valueId: "Bearer x",
+        label: "NLP",
+        taxonomyVersion: 1,
+      }),
     ).toBe(false);
     expect(
       isFacetTaxonomyValue({ facetId: "domain", valueId: "nlp", label: "NLP", taxonomyVersion: 0 }),
@@ -384,7 +414,12 @@ describe("isFacetTaxonomyValue", () => {
 
 describe("isTaskRecord", () => {
   it("accepts a valid record across all origins", () => {
-    for (const origin of ["authored", "legacy-task-set", "promoted-comparison", "imported"] as const) {
+    for (const origin of [
+      "authored",
+      "legacy-task-set",
+      "promoted-comparison",
+      "imported",
+    ] as const) {
       expect(isTaskRecord({ ...validTaskRecord(), origin })).toBe(true);
     }
     expect(isTaskRecord({ ...validTaskRecord(), archivedAt: 2_000 })).toBe(true);
@@ -430,7 +465,14 @@ describe("isTaskVersion (immutable)", () => {
       isTaskVersion({
         ...validTaskVersion(),
         defaultContextManifest: [
-          { role: "r", artifactId: null, externalRef: null, metadataDigest: null, mediaType: null, byteCount: null },
+          {
+            role: "r",
+            artifactId: null,
+            externalRef: null,
+            metadataDigest: null,
+            mediaType: null,
+            byteCount: null,
+          },
         ],
       }),
     ).toBe(false);
@@ -470,11 +512,15 @@ describe("isTaskInstance (completeness)", () => {
     }
   });
   it("rejects an unknown completeness value", () => {
-    expect(isTaskInstance({ ...validTaskInstance(), inputCompleteness: "partial" as never })).toBe(false);
+    expect(isTaskInstance({ ...validTaskInstance(), inputCompleteness: "partial" as never })).toBe(
+      false,
+    );
   });
   it("rejects a bad inputDigest and unknown task version ref shape", () => {
     expect(isTaskInstance({ ...validTaskInstance(), inputDigest: "nope" })).toBe(false);
-    expect(isTaskInstance({ ...validTaskInstance(), sourceRef: { kind: "ad-hoc" } as never })).toBe(false);
+    expect(isTaskInstance({ ...validTaskInstance(), sourceRef: { kind: "ad-hoc" } as never })).toBe(
+      false,
+    );
   });
   it("rejects a prohibited key nested in normalizedInput.metadata", () => {
     const inst = validTaskInstance();
@@ -499,15 +545,33 @@ describe("isTaskFamily", () => {
 describe("isTaskFamilyRelation", () => {
   it("accepts a typed relation between distinct families", () => {
     expect(
-      isTaskFamilyRelation({ id: "rel-1", fromFamilyId: "fam-1", toFamilyId: "fam-2", kind: "overlap", createdAt: 1 }),
+      isTaskFamilyRelation({
+        id: "rel-1",
+        fromFamilyId: "fam-1",
+        toFamilyId: "fam-2",
+        kind: "overlap",
+        createdAt: 1,
+      }),
     ).toBe(true);
   });
   it("rejects self-relations and unknown kinds", () => {
     expect(
-      isTaskFamilyRelation({ id: "rel-1", fromFamilyId: "fam-1", toFamilyId: "fam-1", kind: "overlap", createdAt: 1 }),
+      isTaskFamilyRelation({
+        id: "rel-1",
+        fromFamilyId: "fam-1",
+        toFamilyId: "fam-1",
+        kind: "overlap",
+        createdAt: 1,
+      }),
     ).toBe(false);
     expect(
-      isTaskFamilyRelation({ id: "rel-1", fromFamilyId: "fam-1", toFamilyId: "fam-2", kind: "subset" as never, createdAt: 1 }),
+      isTaskFamilyRelation({
+        id: "rel-1",
+        fromFamilyId: "fam-1",
+        toFamilyId: "fam-2",
+        kind: "subset" as never,
+        createdAt: 1,
+      }),
     ).toBe(false);
   });
 });
@@ -518,8 +582,12 @@ describe("isTaskFamilyAssignment", () => {
     expect(isTaskFamilyAssignment({ ...validTaskFamilyAssignment(), isPrimary: false })).toBe(true);
   });
   it("rejects a non-boolean isPrimary and unknown family", () => {
-    expect(isTaskFamilyAssignment({ ...validTaskFamilyAssignment(), isPrimary: "yes" as never })).toBe(false);
-    expect(isTaskFamilyAssignment({ ...validTaskFamilyAssignment(), familyId: "bad id!" })).toBe(false);
+    expect(
+      isTaskFamilyAssignment({ ...validTaskFamilyAssignment(), isPrimary: "yes" as never }),
+    ).toBe(false);
+    expect(isTaskFamilyAssignment({ ...validTaskFamilyAssignment(), familyId: "bad id!" })).toBe(
+      false,
+    );
   });
 });
 
@@ -530,21 +598,35 @@ describe("isTaskFacetAnnotation", () => {
     }
     expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), taskVersion: null })).toBe(true);
     expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), confidence: null })).toBe(true);
-    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), supersedesId: "ann-0" })).toBe(true);
+    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), supersedesId: "ann-0" })).toBe(
+      true,
+    );
   });
   it("rejects secret-shaped facetId/valueId (indexed identifiers)", () => {
-    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), facetId: "sk-live123" })).toBe(false);
-    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), valueId: "Bearer xyz" })).toBe(false);
+    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), facetId: "sk-live123" })).toBe(
+      false,
+    );
+    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), valueId: "Bearer xyz" })).toBe(
+      false,
+    );
   });
   it("rejects out-of-range confidence, bad taxonomy version, bad supersedesId", () => {
     expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), confidence: 1.5 })).toBe(false);
     expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), confidence: -0.1 })).toBe(false);
-    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), taxonomyVersion: 0 })).toBe(false);
-    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), supersedesId: "bad id!" })).toBe(false);
+    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), taxonomyVersion: 0 })).toBe(
+      false,
+    );
+    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), supersedesId: "bad id!" })).toBe(
+      false,
+    );
   });
   it("rejects unknown source/authorKind", () => {
-    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), source: "auto" as never })).toBe(false);
-    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), authorKind: "agent" as never })).toBe(false);
+    expect(isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), source: "auto" as never })).toBe(
+      false,
+    );
+    expect(
+      isTaskFacetAnnotation({ ...validTaskFacetAnnotation(), authorKind: "agent" as never }),
+    ).toBe(false);
   });
 });
 
@@ -573,9 +655,16 @@ describe("validateTaskRecord", () => {
     expect(r.errors).toEqual([]);
   });
   it("collects field-specific errors", () => {
-    const r = validateTaskRecord({ ...validTaskRecord(), id: "bad id!", latestVersion: 0, revision: -1 });
+    const r = validateTaskRecord({
+      ...validTaskRecord(),
+      id: "bad id!",
+      latestVersion: 0,
+      revision: -1,
+    });
     expect(r.valid).toBe(false);
-    expect(r.errors.map((e) => e.field)).toEqual(expect.arrayContaining(["id", "latestVersion", "revision"]));
+    expect(r.errors.map((e) => e.field)).toEqual(
+      expect.arrayContaining(["id", "latestVersion", "revision"]),
+    );
   });
   it("reports prohibited keys", () => {
     const rec = validTaskRecord() as unknown as Record<string, unknown>;
@@ -622,7 +711,10 @@ describe("validateTaskInstance", () => {
     expect(validateTaskInstance(validTaskInstance()).valid).toBe(true);
   });
   it("reports an invalid completeness value", () => {
-    const r = validateTaskInstance({ ...validTaskInstance(), inputCompleteness: "partial" as never });
+    const r = validateTaskInstance({
+      ...validTaskInstance(),
+      inputCompleteness: "partial" as never,
+    });
     expect(r.valid).toBe(false);
     expect(r.errors.some((e) => e.field === "inputCompleteness")).toBe(true);
   });
@@ -767,9 +859,9 @@ describe("validateTaskImport", () => {
     p.taskInstances[0].normalizedInput.artifactIds = ["no-such-art"];
     const r = validateTaskImport(p);
     expect(r.valid).toBe(false);
-    expect(r.errors.some((e) => e.field === "taskInstances[0].normalizedInput.artifactIds[0]")).toBe(
-      true,
-    );
+    expect(
+      r.errors.some((e) => e.field === "taskInstances[0].normalizedInput.artifactIds[0]"),
+    ).toBe(true);
   });
 
   it("rejects a dangling instance contextManifest artifactId", () => {
@@ -806,9 +898,9 @@ describe("validateTaskImport", () => {
     p.taskVersions.push({ ...validTaskVersion(), version: 2, createdAt: 2_000 });
     const r = validateTaskImport(p);
     expect(r.valid).toBe(false);
-    expect(r.errors.some((e) => e.message.includes("exceeds") && e.message.includes("latestVersion"))).toBe(
-      true,
-    );
+    expect(
+      r.errors.some((e) => e.message.includes("exceeds") && e.message.includes("latestVersion")),
+    ).toBe(true);
   });
 
   it("accepts a contiguous 1..latestVersion history independent of array order", () => {
@@ -864,9 +956,9 @@ describe("validateTaskFamilyRelation", () => {
   });
 
   it("rejects a malformed id and missing createdAt", () => {
-    expect(
-      validateTaskFamilyRelation({ ...validTaskFamilyRelation(), id: "bad id!" }).valid,
-    ).toBe(false);
+    expect(validateTaskFamilyRelation({ ...validTaskFamilyRelation(), id: "bad id!" }).valid).toBe(
+      false,
+    );
     expect(
       validateTaskFamilyRelation({ ...validTaskFamilyRelation(), createdAt: "x" as never }).valid,
     ).toBe(false);

@@ -23,10 +23,7 @@ import { AlertCircle } from "lucide-react";
 import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { TaskFacetAnnotation, TaskFacetDimension } from "../../lib/tasks/task-types";
-import {
-  TASK_FACET_DIMENSIONS,
-  getFacetTaxonomyValues,
-} from "../../lib/tasks/task-validation";
+import { TASK_FACET_DIMENSIONS, getFacetTaxonomyValues } from "../../lib/tasks/task-validation";
 
 const SECTION_LABEL = "text-sm font-medium text-text";
 const FIELD_SELECT =
@@ -37,8 +34,7 @@ const PRIMARY_BUTTON =
   "min-h-[44px] rounded-md bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const CONFIRM_BUTTON =
   "min-h-[44px] rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors hover:bg-accent/[0.12] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-const CHIP =
-  "rounded-sm border border-edge bg-raised px-2 py-0.5 text-xs text-text-secondary";
+const CHIP = "rounded-sm border border-edge bg-raised px-2 py-0.5 text-xs text-text-secondary";
 
 const DIMENSION_LABELS: Record<TaskFacetDimension, string> = {
   domain: "Domain",
@@ -62,9 +58,7 @@ function newAnnotationId(): string {
 /** Resolve a taxonomy value to its stable label; unknown/long values render
  *  raw and unabridged (provenance over prettiness). */
 function facetValueLabel(facetId: string, valueId: string): string {
-  const hit = getFacetTaxonomyValues(1).find(
-    (v) => v.facetId === facetId && v.valueId === valueId,
-  );
+  const hit = getFacetTaxonomyValues(1).find((v) => v.facetId === facetId && v.valueId === valueId);
   return hit?.label ?? valueId;
 }
 
@@ -96,7 +90,9 @@ export function TaskFacetEditor({
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof StorageError ? err : new StorageError("unavailable", String(err)));
+          setError(
+            err instanceof StorageError ? err : new StorageError("unavailable", String(err)),
+          );
           setAnnotations([]);
         }
       });
@@ -114,9 +110,7 @@ export function TaskFacetEditor({
   const dimensionRows = useMemo(() => {
     if (annotations === null) return null;
     const supersededIds = new Set(
-      annotations
-        .map((a) => a.supersedesId)
-        .filter((id): id is string => id !== null),
+      annotations.map((a) => a.supersedesId).filter((id): id is string => id !== null),
     );
     return TASK_FACET_DIMENSIONS.map((facetId) => {
       const list = annotations.filter((a) => a.facetId === facetId);
@@ -133,9 +127,7 @@ export function TaskFacetEditor({
 
   const valueOptions = useMemo(
     () =>
-      dimension === ""
-        ? []
-        : getFacetTaxonomyValues(1).filter((v) => v.facetId === dimension),
+      dimension === "" ? [] : getFacetTaxonomyValues(1).filter((v) => v.facetId === dimension),
     [dimension],
   );
 

@@ -1,8 +1,5 @@
 // Load exact Task references from the repository without guessing latest versions.
-import type {
-  EvaluationSuite,
-  ExperimentRecord,
-} from "../../lib/evaluations/evaluation-types";
+import type { EvaluationSuite, ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import {

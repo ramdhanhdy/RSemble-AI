@@ -99,17 +99,42 @@ export const FACET_TAXONOMY_VALUES: readonly FacetTaxonomyValue[] = Object.freez
       { facetId: "domain", valueId: "code", label: "Code & software", taxonomyVersion: 1 },
       { facetId: "domain", valueId: "math", label: "Mathematics & reasoning", taxonomyVersion: 1 },
       { facetId: "domain", valueId: "multimodal", label: "Multimodal", taxonomyVersion: 1 },
-      { facetId: "domain", valueId: "knowledge-retrieval", label: "Knowledge & retrieval", taxonomyVersion: 1 },
+      {
+        facetId: "domain",
+        valueId: "knowledge-retrieval",
+        label: "Knowledge & retrieval",
+        taxonomyVersion: 1,
+      },
       // task-form
       { facetId: "task-form", valueId: "generation", label: "Generation", taxonomyVersion: 1 },
-      { facetId: "task-form", valueId: "summarization", label: "Summarization", taxonomyVersion: 1 },
-      { facetId: "task-form", valueId: "classification", label: "Classification", taxonomyVersion: 1 },
+      {
+        facetId: "task-form",
+        valueId: "summarization",
+        label: "Summarization",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "task-form",
+        valueId: "classification",
+        label: "Classification",
+        taxonomyVersion: 1,
+      },
       { facetId: "task-form", valueId: "extraction", label: "Extraction", taxonomyVersion: 1 },
       { facetId: "task-form", valueId: "translation", label: "Translation", taxonomyVersion: 1 },
       { facetId: "task-form", valueId: "rewriting", label: "Rewriting", taxonomyVersion: 1 },
-      { facetId: "task-form", valueId: "open-ended-q-a", label: "Open-ended Q&A", taxonomyVersion: 1 },
+      {
+        facetId: "task-form",
+        valueId: "open-ended-q-a",
+        label: "Open-ended Q&A",
+        taxonomyVersion: 1,
+      },
       // transformation
-      { facetId: "transformation", valueId: "none", label: "None (direct answer)", taxonomyVersion: 1 },
+      {
+        facetId: "transformation",
+        valueId: "none",
+        label: "None (direct answer)",
+        taxonomyVersion: 1,
+      },
       { facetId: "transformation", valueId: "reformat", label: "Reformat", taxonomyVersion: 1 },
       { facetId: "transformation", valueId: "compress", label: "Compress", taxonomyVersion: 1 },
       { facetId: "transformation", valueId: "expand", label: "Expand", taxonomyVersion: 1 },
@@ -121,26 +146,86 @@ export const FACET_TAXONOMY_VALUES: readonly FacetTaxonomyValue[] = Object.freez
       { facetId: "constraint", valueId: "style", label: "Style bound", taxonomyVersion: 1 },
       { facetId: "constraint", valueId: "safety", label: "Safety bound", taxonomyVersion: 1 },
       // interaction-mode
-      { facetId: "interaction-mode", valueId: "single-turn", label: "Single-turn", taxonomyVersion: 1 },
-      { facetId: "interaction-mode", valueId: "multi-turn", label: "Multi-turn", taxonomyVersion: 1 },
+      {
+        facetId: "interaction-mode",
+        valueId: "single-turn",
+        label: "Single-turn",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "interaction-mode",
+        valueId: "multi-turn",
+        label: "Multi-turn",
+        taxonomyVersion: 1,
+      },
       { facetId: "interaction-mode", valueId: "tool-use", label: "Tool use", taxonomyVersion: 1 },
       { facetId: "interaction-mode", valueId: "agentic", label: "Agentic", taxonomyVersion: 1 },
       // modality
-      { facetId: "modality", valueId: "text-in-text-out", label: "Text → Text", taxonomyVersion: 1 },
-      { facetId: "modality", valueId: "image-in-text-out", label: "Image → Text", taxonomyVersion: 1 },
-      { facetId: "modality", valueId: "text-in-image-out", label: "Text → Image", taxonomyVersion: 1 },
-      { facetId: "modality", valueId: "audio-in-text-out", label: "Audio → Text", taxonomyVersion: 1 },
+      {
+        facetId: "modality",
+        valueId: "text-in-text-out",
+        label: "Text → Text",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "modality",
+        valueId: "image-in-text-out",
+        label: "Image → Text",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "modality",
+        valueId: "text-in-image-out",
+        label: "Text → Image",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "modality",
+        valueId: "audio-in-text-out",
+        label: "Audio → Text",
+        taxonomyVersion: 1,
+      },
       { facetId: "modality", valueId: "multimodal", label: "Multimodal", taxonomyVersion: 1 },
       // evaluation-type
-      { facetId: "evaluation-type", valueId: "human-judgment", label: "Human judgment", taxonomyVersion: 1 },
-      { facetId: "evaluation-type", valueId: "rubric-scored", label: "Rubric-scored", taxonomyVersion: 1 },
-      { facetId: "evaluation-type", valueId: "reference-match", label: "Reference match", taxonomyVersion: 1 },
-      { facetId: "evaluation-type", valueId: "programmatic", label: "Programmatic / verifier", taxonomyVersion: 1 },
-      { facetId: "evaluation-type", valueId: "preference-pair", label: "Preference pair", taxonomyVersion: 1 },
+      {
+        facetId: "evaluation-type",
+        valueId: "human-judgment",
+        label: "Human judgment",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "evaluation-type",
+        valueId: "rubric-scored",
+        label: "Rubric-scored",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "evaluation-type",
+        valueId: "reference-match",
+        label: "Reference match",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "evaluation-type",
+        valueId: "programmatic",
+        label: "Programmatic / verifier",
+        taxonomyVersion: 1,
+      },
+      {
+        facetId: "evaluation-type",
+        valueId: "preference-pair",
+        label: "Preference pair",
+        taxonomyVersion: 1,
+      },
       // setting
       { facetId: "setting", valueId: "research", label: "Research", taxonomyVersion: 1 },
       { facetId: "setting", valueId: "production", label: "Production", taxonomyVersion: 1 },
-      { facetId: "setting", valueId: "evaluation-benchmark", label: "Evaluation benchmark", taxonomyVersion: 1 },
+      {
+        facetId: "setting",
+        valueId: "evaluation-benchmark",
+        label: "Evaluation benchmark",
+        taxonomyVersion: 1,
+      },
       { facetId: "setting", valueId: "safety-audit", label: "Safety audit", taxonomyVersion: 1 },
     ];
     return v1;
@@ -232,12 +317,7 @@ function isNonNegativeInteger(v: unknown): v is number {
 // --- supporting type guards -------------------------------------------------
 
 export function isVersionRef(v: unknown): v is VersionRef {
-  return (
-    isRecord(v) &&
-    isId(v.id) &&
-    isPositiveInteger(v.version) &&
-    !hasProhibitedKeys(v)
-  );
+  return isRecord(v) && isId(v.id) && isPositiveInteger(v.version) && !hasProhibitedKeys(v);
 }
 
 export function isTaskSource(v: unknown): v is TaskSource {
@@ -452,8 +532,10 @@ export function validateTaskRecord(v: unknown): TaskValidationResult {
   if (!isPositiveInteger(v.latestVersion)) {
     errors.push({ field: "latestVersion", message: "latestVersion must be a positive integer." });
   }
-  if (!isNumber(v.createdAt)) errors.push({ field: "createdAt", message: "createdAt must be a number." });
-  if (!isNumber(v.updatedAt)) errors.push({ field: "updatedAt", message: "updatedAt must be a number." });
+  if (!isNumber(v.createdAt))
+    errors.push({ field: "createdAt", message: "createdAt must be a number." });
+  if (!isNumber(v.updatedAt))
+    errors.push({ field: "updatedAt", message: "updatedAt must be a number." });
   if (v.archivedAt !== null && !isNumber(v.archivedAt)) {
     errors.push({ field: "archivedAt", message: "archivedAt must be a number or null." });
   }
@@ -479,17 +561,25 @@ export function validateTaskVersion(v: unknown): TaskValidationResult {
   if (!isRecord(v)) {
     return result([{ field: "", message: "TaskVersion must be an object." }]);
   }
-  if (!isId(v.taskId)) errors.push({ field: "taskId", message: "taskId must match the opaque ID pattern." });
+  if (!isId(v.taskId))
+    errors.push({ field: "taskId", message: "taskId must match the opaque ID pattern." });
   if (!isPositiveInteger(v.version)) {
     errors.push({ field: "version", message: "version must be a positive integer." });
   }
   if (!isNonEmptyString(v.title)) errors.push({ field: "title", message: "title is required." });
-  if (!isNonEmptyString(v.objective)) errors.push({ field: "objective", message: "objective is required." });
+  if (!isNonEmptyString(v.objective))
+    errors.push({ field: "objective", message: "objective is required." });
   if (!isString(v.candidateInstruction)) {
-    errors.push({ field: "candidateInstruction", message: "candidateInstruction must be a string." });
+    errors.push({
+      field: "candidateInstruction",
+      message: "candidateInstruction must be a string.",
+    });
   }
   if (!Array.isArray(v.defaultContextManifest)) {
-    errors.push({ field: "defaultContextManifest", message: "defaultContextManifest must be an array." });
+    errors.push({
+      field: "defaultContextManifest",
+      message: "defaultContextManifest must be an array.",
+    });
   } else {
     v.defaultContextManifest.forEach((e, i) => {
       if (!isContextManifestEntry(e)) {
@@ -504,7 +594,10 @@ export function validateTaskVersion(v: unknown): TaskValidationResult {
     errors.push({ field: "responseContract", message: "responseContract is malformed." });
   }
   if (v.taskVerifierRef !== null && !isVersionRef(v.taskVerifierRef)) {
-    errors.push({ field: "taskVerifierRef", message: "taskVerifierRef must be a VersionRef or null." });
+    errors.push({
+      field: "taskVerifierRef",
+      message: "taskVerifierRef must be a VersionRef or null.",
+    });
   }
   if (!isTaskSource(v.source)) {
     errors.push({ field: "source", message: "source is malformed." });
@@ -513,7 +606,10 @@ export function validateTaskVersion(v: unknown): TaskValidationResult {
     errors.push({ field: "createdAt", message: "createdAt must be a number." });
   }
   if (hasProhibitedKeys(v)) {
-    errors.push({ field: "", message: "TaskVersion carries prohibited credential/transport keys." });
+    errors.push({
+      field: "",
+      message: "TaskVersion carries prohibited credential/transport keys.",
+    });
   }
   return result(errors);
 }
@@ -534,13 +630,19 @@ export function validateTaskArtifact(v: unknown): TaskValidationResult {
     errors.push({ field: "byteCount", message: "byteCount must be a non-negative integer." });
   }
   if (!isSafeIdentifier(v.storageRef)) {
-    errors.push({ field: "storageRef", message: "storageRef is required and must not be credential-shaped." });
+    errors.push({
+      field: "storageRef",
+      message: "storageRef is required and must not be credential-shaped.",
+    });
   }
   if (!isNumber(v.createdAt)) {
     errors.push({ field: "createdAt", message: "createdAt must be a number." });
   }
   if (hasProhibitedKeys(v)) {
-    errors.push({ field: "", message: "TaskArtifact carries prohibited credential/transport keys." });
+    errors.push({
+      field: "",
+      message: "TaskArtifact carries prohibited credential/transport keys.",
+    });
   }
   return result(errors);
 }
@@ -551,7 +653,8 @@ export function validateTaskInstance(v: unknown): TaskValidationResult {
     return result([{ field: "", message: "TaskInstance must be an object." }]);
   }
   if (!isId(v.id)) errors.push({ field: "id", message: "id must match the opaque ID pattern." });
-  if (!isId(v.taskId)) errors.push({ field: "taskId", message: "taskId must match the opaque ID pattern." });
+  if (!isId(v.taskId))
+    errors.push({ field: "taskId", message: "taskId must match the opaque ID pattern." });
   if (!isPositiveInteger(v.taskVersion)) {
     errors.push({ field: "taskVersion", message: "taskVersion must be a positive integer." });
   }
@@ -587,7 +690,10 @@ export function validateTaskInstance(v: unknown): TaskValidationResult {
     errors.push({ field: "sourceRef", message: "sourceRef is malformed." });
   }
   if (hasProhibitedKeys(v)) {
-    errors.push({ field: "", message: "TaskInstance carries prohibited credential/transport keys." });
+    errors.push({
+      field: "",
+      message: "TaskInstance carries prohibited credential/transport keys.",
+    });
   }
   return result(errors);
 }
@@ -599,12 +705,18 @@ export function validateTaskFamily(v: unknown): TaskValidationResult {
   }
   if (!isId(v.id)) errors.push({ field: "id", message: "id must match the opaque ID pattern." });
   if (!isNonEmptyString(v.name)) errors.push({ field: "name", message: "name is required." });
-  if (!isString(v.description)) errors.push({ field: "description", message: "description must be a string." });
+  if (!isString(v.description))
+    errors.push({ field: "description", message: "description must be a string." });
   if (v.parentFamilyId !== null && !isId(v.parentFamilyId)) {
-    errors.push({ field: "parentFamilyId", message: "parentFamilyId must match the ID pattern or be null." });
+    errors.push({
+      field: "parentFamilyId",
+      message: "parentFamilyId must match the ID pattern or be null.",
+    });
   }
-  if (!isNumber(v.createdAt)) errors.push({ field: "createdAt", message: "createdAt must be a number." });
-  if (!isNumber(v.updatedAt)) errors.push({ field: "updatedAt", message: "updatedAt must be a number." });
+  if (!isNumber(v.createdAt))
+    errors.push({ field: "createdAt", message: "createdAt must be a number." });
+  if (!isNumber(v.updatedAt))
+    errors.push({ field: "updatedAt", message: "updatedAt must be a number." });
   if (v.archivedAt !== null && !isNumber(v.archivedAt)) {
     errors.push({ field: "archivedAt", message: "archivedAt must be a number or null." });
   }
@@ -623,13 +735,17 @@ export function validateTaskFamilyAssignment(v: unknown): TaskValidationResult {
     return result([{ field: "", message: "TaskFamilyAssignment must be an object." }]);
   }
   if (!isId(v.id)) errors.push({ field: "id", message: "id must match the opaque ID pattern." });
-  if (!isId(v.taskId)) errors.push({ field: "taskId", message: "taskId must match the opaque ID pattern." });
+  if (!isId(v.taskId))
+    errors.push({ field: "taskId", message: "taskId must match the opaque ID pattern." });
   if (!isPositiveInteger(v.taskVersion)) {
     errors.push({ field: "taskVersion", message: "taskVersion must be a positive integer." });
   }
-  if (!isId(v.familyId)) errors.push({ field: "familyId", message: "familyId must match the opaque ID pattern." });
-  if (!isBoolean(v.isPrimary)) errors.push({ field: "isPrimary", message: "isPrimary must be a boolean." });
-  if (!isNumber(v.createdAt)) errors.push({ field: "createdAt", message: "createdAt must be a number." });
+  if (!isId(v.familyId))
+    errors.push({ field: "familyId", message: "familyId must match the opaque ID pattern." });
+  if (!isBoolean(v.isPrimary))
+    errors.push({ field: "isPrimary", message: "isPrimary must be a boolean." });
+  if (!isNumber(v.createdAt))
+    errors.push({ field: "createdAt", message: "createdAt must be a number." });
   if (!isNonNegativeInteger(v.revision)) {
     errors.push({ field: "revision", message: "revision must be a non-negative integer." });
   }
@@ -637,7 +753,10 @@ export function validateTaskFamilyAssignment(v: unknown): TaskValidationResult {
     errors.push({ field: "archivedAt", message: "archivedAt must be a number or null." });
   }
   if (hasProhibitedKeys(v)) {
-    errors.push({ field: "", message: "TaskFamilyAssignment carries prohibited credential/transport keys." });
+    errors.push({
+      field: "",
+      message: "TaskFamilyAssignment carries prohibited credential/transport keys.",
+    });
   }
   return result(errors);
 }
@@ -648,15 +767,25 @@ export function validateTaskFacetAnnotation(v: unknown): TaskValidationResult {
     return result([{ field: "", message: "TaskFacetAnnotation must be an object." }]);
   }
   if (!isId(v.id)) errors.push({ field: "id", message: "id must match the opaque ID pattern." });
-  if (!isId(v.taskId)) errors.push({ field: "taskId", message: "taskId must match the opaque ID pattern." });
+  if (!isId(v.taskId))
+    errors.push({ field: "taskId", message: "taskId must match the opaque ID pattern." });
   if (v.taskVersion !== null && !isPositiveInteger(v.taskVersion)) {
-    errors.push({ field: "taskVersion", message: "taskVersion must be a positive integer or null." });
+    errors.push({
+      field: "taskVersion",
+      message: "taskVersion must be a positive integer or null.",
+    });
   }
   if (!isSafeIdentifier(v.facetId)) {
-    errors.push({ field: "facetId", message: "facetId is required and must not be credential-shaped." });
+    errors.push({
+      field: "facetId",
+      message: "facetId is required and must not be credential-shaped.",
+    });
   }
   if (!isSafeIdentifier(v.valueId)) {
-    errors.push({ field: "valueId", message: "valueId is required and must not be credential-shaped." });
+    errors.push({
+      field: "valueId",
+      message: "valueId is required and must not be credential-shaped.",
+    });
   }
   if (v.source !== "authored" && v.source !== "imported" && v.source !== "suggested") {
     errors.push({ field: "source", message: "source has an invalid value." });
@@ -670,16 +799,25 @@ export function validateTaskFacetAnnotation(v: unknown): TaskValidationResult {
     }
   }
   if (!isPositiveInteger(v.taxonomyVersion)) {
-    errors.push({ field: "taxonomyVersion", message: "taxonomyVersion must be a positive integer." });
+    errors.push({
+      field: "taxonomyVersion",
+      message: "taxonomyVersion must be a positive integer.",
+    });
   }
   if (!isNumber(v.createdAt)) {
     errors.push({ field: "createdAt", message: "createdAt must be a number." });
   }
   if (v.supersedesId !== null && !isId(v.supersedesId)) {
-    errors.push({ field: "supersedesId", message: "supersedesId must match the ID pattern or be null." });
+    errors.push({
+      field: "supersedesId",
+      message: "supersedesId must match the ID pattern or be null.",
+    });
   }
   if (hasProhibitedKeys(v)) {
-    errors.push({ field: "", message: "TaskFacetAnnotation carries prohibited credential/transport keys." });
+    errors.push({
+      field: "",
+      message: "TaskFacetAnnotation carries prohibited credential/transport keys.",
+    });
   }
   return result(errors);
 }
@@ -691,7 +829,10 @@ export function validateTaskFamilyRelation(v: unknown): TaskValidationResult {
   }
   if (!isId(v.id)) errors.push({ field: "id", message: "id must match the opaque ID pattern." });
   if (!isId(v.fromFamilyId)) {
-    errors.push({ field: "fromFamilyId", message: "fromFamilyId must match the opaque ID pattern." });
+    errors.push({
+      field: "fromFamilyId",
+      message: "fromFamilyId must match the opaque ID pattern.",
+    });
   }
   if (!isId(v.toFamilyId)) {
     errors.push({ field: "toFamilyId", message: "toFamilyId must match the opaque ID pattern." });
@@ -709,7 +850,10 @@ export function validateTaskFamilyRelation(v: unknown): TaskValidationResult {
     errors.push({ field: "createdAt", message: "createdAt must be a number." });
   }
   if (hasProhibitedKeys(v)) {
-    errors.push({ field: "", message: "TaskFamilyRelation carries prohibited credential/transport keys." });
+    errors.push({
+      field: "",
+      message: "TaskFamilyRelation carries prohibited credential/transport keys.",
+    });
   }
   return result(errors);
 }
@@ -760,7 +904,8 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   tasks.forEach((t, i) => {
     const r = validateTaskRecord(t);
     if (!r.valid) {
-      for (const e of r.errors) errors.push({ field: `tasks[${i}].${e.field}`, message: e.message });
+      for (const e of r.errors)
+        errors.push({ field: `tasks[${i}].${e.field}`, message: e.message });
     } else {
       const rec = t as TaskRecord;
       if (taskIds.has(rec.id)) {
@@ -778,7 +923,8 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   versions.forEach((ver, i) => {
     const r = validateTaskVersion(ver);
     if (!r.valid) {
-      for (const e of r.errors) errors.push({ field: `taskVersions[${i}].${e.field}`, message: e.message });
+      for (const e of r.errors)
+        errors.push({ field: `taskVersions[${i}].${e.field}`, message: e.message });
     } else {
       const v = ver as TaskVersion;
       const key = `${v.taskId}@${v.version}`;
@@ -822,7 +968,8 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   artifacts.forEach((a, i) => {
     const r = validateTaskArtifact(a);
     if (!r.valid) {
-      for (const e of r.errors) errors.push({ field: `taskArtifacts[${i}].${e.field}`, message: e.message });
+      for (const e of r.errors)
+        errors.push({ field: `taskArtifacts[${i}].${e.field}`, message: e.message });
     } else {
       const id = (a as TaskArtifact).id;
       if (artifactIds.has(id)) {
@@ -848,7 +995,8 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   instances.forEach((inst, i) => {
     const r = validateTaskInstance(inst);
     if (!r.valid) {
-      for (const e of r.errors) errors.push({ field: `taskInstances[${i}].${e.field}`, message: e.message });
+      for (const e of r.errors)
+        errors.push({ field: `taskInstances[${i}].${e.field}`, message: e.message });
     } else {
       const x = inst as TaskInstance;
       if (instanceIds.has(x.id)) {
@@ -891,7 +1039,8 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   families.forEach((f, i) => {
     const r = validateTaskFamily(f);
     if (!r.valid) {
-      for (const e of r.errors) errors.push({ field: `taskFamilies[${i}].${e.field}`, message: e.message });
+      for (const e of r.errors)
+        errors.push({ field: `taskFamilies[${i}].${e.field}`, message: e.message });
     } else {
       const id = (f as TaskFamily).id;
       if (familyIds.has(id)) {
@@ -906,7 +1055,10 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
       const fam = f as TaskFamily;
       if (fam.parentFamilyId !== null) {
         if (fam.parentFamilyId === fam.id) {
-          errors.push({ field: `taskFamilies[${i}].parentFamilyId`, message: "family cannot be its own parent." });
+          errors.push({
+            field: `taskFamilies[${i}].parentFamilyId`,
+            message: "family cannot be its own parent.",
+          });
         } else if (!familyIds.has(fam.parentFamilyId)) {
           errors.push({
             field: `taskFamilies[${i}].parentFamilyId`,
@@ -920,7 +1072,8 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   assignments.forEach((a, i) => {
     const r = validateTaskFamilyAssignment(a);
     if (!r.valid) {
-      for (const e of r.errors) errors.push({ field: `taskFamilyAssignments[${i}].${e.field}`, message: e.message });
+      for (const e of r.errors)
+        errors.push({ field: `taskFamilyAssignments[${i}].${e.field}`, message: e.message });
     } else {
       const x = a as TaskFamilyAssignment;
       if (!taskIds.has(x.taskId)) {
@@ -948,11 +1101,15 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   relations.forEach((rel, i) => {
     const r = validateTaskFamilyRelation(rel);
     if (!r.valid) {
-      for (const e of r.errors) errors.push({ field: `taskFamilyRelations[${i}].${e.field}`, message: e.message });
+      for (const e of r.errors)
+        errors.push({ field: `taskFamilyRelations[${i}].${e.field}`, message: e.message });
     } else {
       const x = rel as TaskFamilyRelation;
       if (relationIds.has(x.id)) {
-        errors.push({ field: `taskFamilyRelations[${i}].id`, message: `duplicate relation id ${x.id}.` });
+        errors.push({
+          field: `taskFamilyRelations[${i}].id`,
+          message: `duplicate relation id ${x.id}.`,
+        });
       } else {
         relationIds.add(x.id);
       }
@@ -982,11 +1139,15 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   annotations.forEach((a, i) => {
     const r = validateTaskFacetAnnotation(a);
     if (!r.valid) {
-      for (const e of r.errors) errors.push({ field: `taskFacetAnnotations[${i}].${e.field}`, message: e.message });
+      for (const e of r.errors)
+        errors.push({ field: `taskFacetAnnotations[${i}].${e.field}`, message: e.message });
     } else {
       const x = a as TaskFacetAnnotation;
       if (annotationIds.has(x.id)) {
-        errors.push({ field: `taskFacetAnnotations[${i}].id`, message: `duplicate annotation id ${x.id}.` });
+        errors.push({
+          field: `taskFacetAnnotations[${i}].id`,
+          message: `duplicate annotation id ${x.id}.`,
+        });
       } else {
         annotationIds.add(x.id);
         validAnnotations.push({ i, x });

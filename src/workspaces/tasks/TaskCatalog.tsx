@@ -19,14 +19,9 @@ import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import { useEvaluationRepository } from "../../lib/persistence/repository-context";
 
-import type {
-  TaskFacetAnnotation,
-  TaskFamily,
-  TaskRecord,
-} from "../../lib/tasks/task-types";
+import type { TaskFacetAnnotation, TaskFamily, TaskRecord } from "../../lib/tasks/task-types";
 import { TASK_FACET_DIMENSIONS, getFacetTaxonomyValues } from "../../lib/tasks/task-validation";
 import { loadTaskReferenceSummary } from "./task-reference-load";
-
 
 const PAGE_SIZE = 50;
 /** Catalog rows surface a bounded number of key facet chips (spec §7.1). */
@@ -44,9 +39,7 @@ interface CatalogState {
 /** Resolve a facet (dimension, valueId) pair to its stable taxonomy label;
  *  unknown/long values stay raw and unabridged. */
 function facetValueLabel(facetId: string, valueId: string): string {
-  const hit = getFacetTaxonomyValues(1).find(
-    (v) => v.facetId === facetId && v.valueId === valueId,
-  );
+  const hit = getFacetTaxonomyValues(1).find((v) => v.facetId === facetId && v.valueId === valueId);
   return hit?.label ?? valueId;
 }
 
@@ -154,7 +147,6 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
           Promise.all(pageRows.map((row) => repo.listTaskFamilyAssignments(row.id))),
           Promise.all(pageRows.map((row) => repo.listTaskFacetAnnotations(row.id))),
           Promise.all(pageRows.map((row) => loadTaskReferenceSummary(repo, row, evalRepo))),
-
         ]);
         const titles = new Map<string, string>();
         versions.forEach((version, index) => {
@@ -174,7 +166,6 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
           references.set(pageRows[index].id, summary.total);
         });
         return { pageRows, titles, primaryFamilies, facets, references };
-
       })
       .then(({ pageRows, titles, primaryFamilies, facets, references }) => {
         if (cancelled) return;
@@ -195,8 +186,18 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
     return () => {
       cancelled = true;
     };
-  }, [repo, evalRepo, search, originFilter, familyFilter, archiveFilter, facetDimension, facetValue, page, reloadTick]);
-
+  }, [
+    repo,
+    evalRepo,
+    search,
+    originFilter,
+    familyFilter,
+    archiveFilter,
+    facetDimension,
+    facetValue,
+    page,
+    reloadTick,
+  ]);
 
   const retry = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -396,9 +397,7 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
           className="flex flex-col items-center gap-3 rounded-md border border-edge bg-card p-8 text-center"
         >
           <p className="text-sm font-medium text-text">
-            {hasActiveFilters
-              ? "No tasks match the current search and filters."
-              : "No tasks yet."}
+            {hasActiveFilters ? "No tasks match the current search and filters." : "No tasks yet."}
           </p>
           <p className="text-sm text-text-secondary">
             {hasActiveFilters
@@ -441,7 +440,6 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
                       <span data-task-references={row.id}>
                         {rowReferenceCounts.get(row.id) ?? 0} references
                       </span>
-
                     </span>
                     {(rowFacets.get(row.id)?.length ?? 0) > 0 ? (
                       <span className="flex flex-wrap items-center gap-1">

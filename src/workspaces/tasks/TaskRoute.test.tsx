@@ -233,7 +233,6 @@ describe("TaskDetailRoute — historical references and origin (spec §7.2)", ()
     cleanup(h);
   });
 
-
   it("keeps future Compare and Observation sections absent, not placeholders", async () => {
     const repo = new InMemoryTaskRepository();
     await seedTask(repo, "t-1", "No future sections");
@@ -259,4 +258,3 @@ describe("TaskDetailRoute — historical references and origin (spec §7.2)", ()
     cleanup(h);
   });
 });
-

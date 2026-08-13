@@ -81,11 +81,7 @@ interface Harness {
   $$: (s: string) => HTMLElement[];
 }
 
-function renderEditor(
-  repo: InMemoryTaskRepository,
-  taskId = "t-1",
-  disabled = false,
-): Harness {
+function renderEditor(repo: InMemoryTaskRepository, taskId = "t-1", disabled = false): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -185,9 +181,7 @@ describe("TaskFacetEditor — provenance display (spec §3.6)", () => {
     await settle();
     const domainRow = h.$("[data-facet-row='domain']");
     expect(domainRow?.textContent).toContain("Code & software");
-    expect(domainRow?.querySelector("[data-facet-supersedes]")?.textContent).toMatch(
-      /supersedes/i,
-    );
+    expect(domainRow?.querySelector("[data-facet-supersedes]")?.textContent).toMatch(/supersedes/i);
     // History keeps the superseded annotation — never mutated or removed.
     const history = h.$$("[data-facet-history-row]");
     expect(history.length).toBeGreaterThanOrEqual(1);
@@ -324,13 +318,15 @@ describe("TaskFacetEditor — suggested annotation acceptance (spec §3.6)", () 
     click(h.$("button[data-action='accept-suggestion']"));
     await settle();
     // Confirmation boundary: nothing accepted yet.
-    expect((await repo.listTaskFacetAnnotations("t-1")).filter((a) => a.source === "authored"))
-      .toHaveLength(0);
+    expect(
+      (await repo.listTaskFacetAnnotations("t-1")).filter((a) => a.source === "authored"),
+    ).toHaveLength(0);
     expect(h.$("button[data-action='confirm-accept-suggestion']")).toBeTruthy();
     click(h.$("button[data-action='cancel-accept-suggestion']"));
     await settle();
-    expect((await repo.listTaskFacetAnnotations("t-1")).filter((a) => a.source === "authored"))
-      .toHaveLength(0);
+    expect(
+      (await repo.listTaskFacetAnnotations("t-1")).filter((a) => a.source === "authored"),
+    ).toHaveLength(0);
     // The suggestion is still pending.
     expect(h.$("button[data-action='accept-suggestion']")).toBeTruthy();
     cleanup(h);
@@ -370,8 +366,9 @@ describe("TaskFacetEditor — suggested annotation acceptance (spec §3.6)", () 
     expect(suggestion.supersedesId).toBeNull();
     // The pending Accept action is gone — the effective value is now authored.
     expect(h.$("button[data-action='accept-suggestion']")).toBeNull();
-    expect(h.$("[data-facet-row='setting']")?.querySelector("[data-facet-source]")?.textContent)
-      .toMatch(/authored/i);
+    expect(
+      h.$("[data-facet-row='setting']")?.querySelector("[data-facet-source]")?.textContent,
+    ).toMatch(/authored/i);
     cleanup(h);
   });
 });

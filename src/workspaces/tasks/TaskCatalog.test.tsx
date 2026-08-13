@@ -428,4 +428,3 @@ describe("TaskCatalog — historical reference counts (spec §7.1)", () => {
     cleanup(h);
   });
 });
-

@@ -29,7 +29,6 @@ import { TaskFamilyRegistry } from "./TaskFamilyRegistry";
 import { TaskFamilyAssignmentSection } from "./TaskFamilyAssignment";
 import { TaskReferencesSection } from "./TaskReferencesSection";
 
-
 function StorageUnavailable() {
   return (
     <div
@@ -254,16 +253,10 @@ export function TaskDetailRoute({ repo, taskId }: { repo: TaskRepository | null;
             className="flex flex-col gap-3 rounded-md border border-edge bg-panel p-4"
           >
             <h2 className="text-base font-semibold text-text">Facets</h2>
-            <TaskFacetEditor
-              repo={repo}
-              taskId={record.id}
-              disabled={record.archivedAt !== null}
-            />
+            <TaskFacetEditor repo={repo} taskId={record.id} disabled={record.archivedAt !== null} />
           </section>
 
           <TaskReferencesSection taskRepo={repo} evalRepo={evalRepo} task={record} />
-
-
         </>
       ) : null}
     </div>
