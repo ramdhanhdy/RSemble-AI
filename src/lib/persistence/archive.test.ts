@@ -1646,9 +1646,31 @@ function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
     taskFacetAnnotations: [],
     taskMigrationCrosswalks: [],
   };
-  archive.manifest.counts = Object.fromEntries(
-    Object.entries(archive.manifest.counts).map(([key]) => [key, 0]),
-  ) as typeof archive.manifest.counts;
+  archive.manifest.counts = {
+    runSummaries: 0,
+    runDetails: 0,
+    rubricIdentities: 0,
+    rubricVersions: 0,
+    suites: 0,
+    experiments: 0,
+    fusionRecipes: 0,
+    poolManifests: 0,
+    fusionStudies: 0,
+    fusionTrials: 0,
+    fusionAttempts: 0,
+    fusionObservations: 0,
+    fusionPlaybooks: 0,
+    tasks: 0,
+    taskVersions: 0,
+    taskArtifacts: 0,
+    taskArtifactBytes: 0,
+    taskInstances: 0,
+    taskFamilies: 0,
+    taskFamilyAssignments: 0,
+    taskFamilyRelations: 0,
+    taskFacetAnnotations: 0,
+    taskMigrationCrosswalks: 0,
+  };
   archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
   return archive;
 }
@@ -1720,7 +1742,7 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
     expect(preview.invalid.length).toBe(0);
     expect(preview.collisions.map((c) => c.key)).toEqual([]);
     // Exactly the pre-existing suite is reusable.
-    expect(preview.reuse.map((e) => e.key)).toEqual(["suites/suite-1"]);
+    expect(preview.reuse.map((e) => `${e.collection}/${e.key}`)).toEqual(["suites/suite-1"]);
     expect(preview.create.length).toBe(20);
     // One artifact is pre-materialized so the commit can verify bytes.
     expect(preview.artifactBytes.length).toBe(1);
@@ -1735,9 +1757,8 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
     expect(await db.runDetails.count()).toBe(0);
   });
 
-  it("reports invalid/corrupt/unsupported entities without aborting the preview", async () => {
+  it("reports guard-failing/corrupt entities without aborting the preview", async () => {
     const validBytes = new TextEncoder().encode("valid artifact text");
-    const tamperedBytes = new TextEncoder().encode("tampered artifact text");
     const artifactSummary = fx.makeTaskArtifact("art-1", validBytes);
 
     const archive = makeEmptyV2();
@@ -1746,13 +1767,14 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
     detail.status = "not-a-real-status"; // guard-failing → invalid entity
     archive.suites = [fx.makeSuite("suite-1") as unknown as EvaluationSuite];
     delete (archive.suites[0] as unknown as Record<string, unknown>).id; // corrupt → invalid
+    // A consistent artifact pair keeps the envelope validator satisfied; only
+    // the corrupt structured entities exercise the preview invalid bucket.
     archive.tasks.taskArtifacts = [artifactSummary];
-    archive.tasks.taskArtifactBytes = [{ id: "art-1", bytesBase64: fx.bytesToBase64(tamperedBytes) }];
-    // Manifest claims the entity counts; keep validator happy on structure but
-    // the payload digest is recomputed over the actual (corrupt) payload by the
-    // caller, so mark it consistent by recomputing. Instead: leave digest wrong
-    // → envelope digest is validated at parse time; for pure preview the
-    // envelope parse must still pass, so recompute the digest here.
+    archive.tasks.taskArtifactBytes = [{ id: "art-1", bytesBase64: fx.bytesToBase64(validBytes) }];
+    archive.manifest.counts.runDetails = 1;
+    archive.manifest.counts.suites = 1;
+    archive.manifest.counts.taskArtifacts = 1;
+    archive.manifest.counts.taskArtifactBytes = 1;
     archive.manifest.counts.tasks = 0;
     archive.manifest.counts.taskVersions = 0;
     archive.manifest.counts.taskInstances = 0;
@@ -1766,13 +1788,34 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
 
     expect(preview.format).toBe("v2");
-    expect(preview.invalid.map((e) => e.key).sort()).toEqual([
+    expect(preview.invalid.map((e) => `${e.collection}/${e.key}`).sort()).toEqual([
       "runs.details/run-corrupt",
       "suites/",
-      "tasks.taskArtifacts/art-1", // byte digest mismatch → invalid
     ]);
-    expect(preview.create.map((e) => e.key)).toEqual([]);
+    // The consistent artifact pair is still classified normally.
+    expect(preview.create.map((e) => `${e.collection}/${e.key}`)).toEqual([
+      "tasks.taskArtifacts/art-1",
+    ]);
     expect(await db.suites.count()).toBe(0);
+  });
+
+  it("rejects a digest/byte-mismatched artifact at envelope validation before any classification", async () => {
+    const validBytes = new TextEncoder().encode("valid artifact text");
+    const tamperedBytes = new TextEncoder().encode("tampered artifact text");
+    const archive = makeEmptyV2();
+    archive.tasks.taskArtifacts = [fx.makeTaskArtifact("art-1", validBytes)];
+    archive.tasks.taskArtifactBytes = [{ id: "art-1", bytesBase64: fx.bytesToBase64(tamperedBytes) }];
+    archive.manifest.counts.taskArtifacts = 1;
+    archive.manifest.counts.taskArtifactBytes = 1;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    await expect(
+      previewWorkbenchArchive(db, archive, { sourceLabel: "memory" }),
+    ).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    expect(await db.taskArtifacts.count()).toBe(0);
   });
 });
 
@@ -1835,7 +1878,7 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
-    expect(preview.collisions.map((c) => c.key)).toEqual(["suites/suite-1"]);
+    expect(preview.collisions.map((c) => `${c.collection}/${c.key}`)).toEqual(["suites/suite-1"]);
 
     await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
       name: "StorageError",
@@ -1918,7 +1961,7 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
-    expect(preview.invalid.map((e) => e.key)).toEqual(["runs.details/run-bad"]);
+    expect(preview.invalid.map((e) => `${e.collection}/${e.key}`)).toEqual(["runs.details/run-bad"]);
 
     await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
       name: "StorageError",
@@ -1935,6 +1978,7 @@ describe("importWorkbenchArchiveAuto — adapter dispatch", () => {
     // A v1 payload has no manifest; the auto path must not force v2 validation.
     const result = await importWorkbenchArchiveAuto(db, v1 as unknown as never);
     expect(result.format).toBe("v1");
+    if (result.format !== "v1") throw new Error("expected v1 dispatch");
     expect(result.v1.created.length).toBeGreaterThan(0);
     expect(await db.suites.count()).toBe(1);
   });

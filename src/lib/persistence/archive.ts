@@ -66,10 +66,13 @@ import {
 } from "../evaluations/evaluation-rubric";
 import { REDACTED } from "./error-redaction";
 import { inputUsageLabel } from "../cost";
+import { computeArtifactDigest } from "../tasks/task-instance";
 import {
   ARCHIVE_V2_FORMAT_VERSION,
   ARCHIVE_V2_STORAGE_VERSION,
   computeArchiveV2PayloadDigest,
+  isWorkbenchArchiveV2,
+  validateArchiveV2,
   type ArchiveV2TaskArtifactBytes,
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
@@ -637,6 +640,9 @@ export function archiveFailureGuidance(err: unknown): string {
   if (err instanceof ArchiveExportCancelledError) {
     return "Export was cancelled — no archive was delivered.";
   }
+  if (err instanceof ArchiveImportCancelledError) {
+    return "Import was cancelled — nothing was imported.";
+  }
   if (err instanceof StorageError) {
     switch (err.kind) {
       case "quota":
@@ -994,13 +1000,14 @@ function v2SortByLegacyScopeKey<T extends { legacyScopeKey: string }>(items: T[]
 }
 
 /**
- * Export-time allowlist guard for task family relations. This is deliberately
- * NOT the canonical write guard (`isTaskFamilyRelation`): the domain
- * no-self-relation rule constrains what may be CREATED, not what may be
- * reported. Persisted legacy self-relations are real entities and must
- * round-trip through the archive faithfully — export omits only
- * structurally unsafe rows (bad identifiers, unknown kind, prohibited
- * credential/transport keys), mirroring the v1 allowlist construction.
+ * Archive-boundary allowlist guard for task family relations, shared by the
+ * v2 export and the v2 import preview/commit. This is deliberately NOT the
+ * canonical authoring guard (`isTaskFamilyRelation`): the domain
+ * no-self-relation rule constrains what may be AUTHORED, not what may be
+ * reported or restored. Persisted legacy self-relations are real entities and
+ * must round-trip through the archive faithfully — only structurally unsafe
+ * rows (bad identifiers, unknown kind, prohibited credential/transport keys)
+ * are excluded, mirroring the v1 allowlist construction.
  */
 function isExportableTaskFamilyRelation(v: unknown): v is TaskFamilyRelation {
   if (!isRecord(v)) return false;
@@ -1414,4 +1421,1277 @@ export async function exportWorkbenchArchiveV2(
     if (err instanceof StorageError) throw err;
     throw classifyStorageError(err);
   }
+}
+
+// =============================================================================
+// Archive v2 import adapter (Child 02 Task 10C)
+//
+// Preview-first, collision-safe, cancellation-safe, atomic import for both
+// archive formats:
+//
+//  - `previewWorkbenchArchive` classifies EVERY importable entity
+//    (create/reuse/collision/invalid) against the current database with
+//    deterministic, sorted output. It never writes. Validation runs over the
+//    complete v2 payload — manifest counts, payload digest, references,
+//    prohibited content, and artifact bytes — before the preview classifies
+//    anything. Corrupt/guard-failing entities and digest-mismatched artifact
+//    bytes are reported as `invalid` preview rows (never committed) instead of
+//    aborting the read-only preview. Artifact bytes are decoded once during
+//    preview and carried into the commit so and digest re-verification happens
+//    against the exact bytes that were previewed.
+//
+//  - `commitPreviewWorkbenchArchiveV2` commit a v2 preview meter-by-meter in
+//    ONE Dexie transaction spanning every touched store. Canonically identical
+//    records are reused; ANY non-identical ID collision aborts the commit
+//    BEFORE the transaction opens (no remap, no overwrite before Child 09);
+//    any injected failure/quota/cancellation rolls the whole commit back —
+//    source and target stay unchanged. Artifact bytes are re-hashed at commit
+//    and written only for newly created artifacts; reused artifact IDs assert
+//    byte-identical existing payloads (byte equality guards reuse per §3.3).
+//
+//  - `importWorkbenchArchiveAuto` dispatches a decoded JSON value through the
+//    v1 adapter (preserved verbatim) or the v2 adapter behind the complete
+//    payload validator. This is the single-shot path used by legacy callers;
+//    interactive UI composes preview + confirm explicitly.
+// =============================================================================
+
+/** Stable identity of one previewed entity across both formats. */
+export interface ArchivePreviewEntity {
+  /** Top-level collection label (e.g. "suites", "runs.details",
+   *  "tasks.taskVersions") or the schemaVersion-1 label for the legacy shape:
+   *  v1 "profiles" groups are surfaced as their v2 names. */
+  collection: string;
+  /** Deterministic per-collection key (id, or id@version composite). */
+  key: string;
+}
+
+/** A non-identical same-ID record reported during preview. */
+export interface ArchivePreviewCollision extends ArchivePreviewEntity {
+  /** Explanatory classification only — record CONTENT is never echoed. */
+  reason: "content-differs" | "artifact-bytes-differ";
+}
+
+/** An entity that failed its record guard, or artifact bytes whose decoded
+ *  digest no longer matches their summary. Never committed. */
+export interface ArchivePreviewInvalid extends ArchivePreviewEntity {
+  reason: "guard" | "artifact-digest" | "artifact-missing-bytes" | "prohibited-content";
+}
+
+/** Deterministic per-collection preview counts, sorted by collection name. */
+export interface ArchivePreviewCollectionCount {
+  collection: string;
+  total: number;
+  create: number;
+  reuse: number;
+  collision: number;
+  invalid: number;
+}
+
+/** Decoded artifact bytes materialized during preview; commit re-verifies the
+ *  digest against the artifact summary before writing. */
+export interface ArchivePreviewArtifactBytes {
+  id: string;
+  bytes: Uint8Array;
+}
+
+/** The complete, write-free import preview consumed by confirmation UI and
+ *  the atomic commit. */
+export interface ArchiveImportPreview {
+  format: "v1" | "v2";
+  /** Human-facing source label (file name or adapter tag); sanitized — never
+   *  archive content. */
+  sourceLabel: string;
+  totalEntities: number;
+  counts: ArchivePreviewCollectionCount[];
+  create: ArchivePreviewEntity[];
+  reuse: ArchivePreviewEntity[];
+  collisions: ArchivePreviewCollision[];
+  invalid: ArchivePreviewInvalid[];
+  artifactBytes: ArchivePreviewArtifactBytes[];
+  /** The validated, decoded payload the commit consumes. Internal: not part of
+   *  the observable preview counts and never rendered. */
+  payload: unknown;
+}
+
+/** Options for the preview stage. */
+export interface ArchiveImportPreviewOptions {
+  /** Label reported back on the preview (file name, adapter tag). */
+  sourceLabel?: string;
+  /** Abort during the preview scan; the preview is read-only so cancellation
+   *  is naturally immediate. */
+  signal?: AbortSignal;
+}
+
+/** Outcome of an atomic v2 commit. `created`/`reused` carry preview keys;
+ *  `skipped` reports commit-pass no-ops (a record re-seeded to the same value
+ *  by a racing writer). */
+export interface ArchiveImportCommitResult {
+  created: string[];
+  reused: string[];
+  skipped: string[];
+  collisions: string[];
+}
+
+/** Options for the commit stage. */
+export interface ArchiveImportCommitOptions {
+  signal?: AbortSignal;
+}
+
+/** Single-shot auto-dispatch outcome. */
+export type ImportAutoResult =
+  | { format: "v1"; v1: ArchiveImportResult }
+  | { format: "v2"; v2: ArchiveImportCommitResult };
+
+/** Rejection raised when an import is cancelled before its commit begins.
+ *  Distinct from StorageError so callers can classify cancellation. */
+export class ArchiveImportCancelledError extends Error {
+  constructor() {
+    super("Import was cancelled — nothing was imported.");
+    this.name = "ArchiveImportCancelledError";
+  }
+}
+
+/** Label an entity key for counting/reporting. Entity CONTENT never crosses
+ *  this boundary — only the collection name and the deterministic key. */
+function previewKey(collection: string, key: string): ArchivePreviewEntity {
+  return { collection, key };
+}
+
+function byCollectionThenKey(
+  a: { collection: string; key: string },
+  b: { collection: string; key: string },
+): number {
+  if (a.collection !== b.collection) return a.collection < b.collection ? -1 : 1;
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+}
+
+function versionKey(id: string, version: number): string {
+  return `${id}@${version}`;
+}
+
+/** Canonical byte equality over logical ranges (mirrors task artifact reuse). */
+function bytesMatch(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+function decodeBase64Bytes(encoded: string): Uint8Array | null {
+  try {
+    const raw = atob(encoded);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+interface PreviewBucketState {
+  create: ArchivePreviewEntity[];
+  reuse: ArchivePreviewEntity[];
+  collisions: ArchivePreviewCollision[];
+  invalid: ArchivePreviewInvalid[];
+  artifactBytes: ArchivePreviewArtifactBytes[];
+}
+
+function emptyPreviewBuckets(): PreviewBucketState {
+  return { create: [], reuse: [], collisions: [], invalid: [], artifactBytes: [] };
+}
+
+/**
+ * Preview one collection of same-key records against a getter that resolves
+ * the existing persisted domain value. Returns nothing — pushes into buckets.
+ * `guarded` is pre-filtered to guard-passing records; the collection label is
+ * the v2 reporting name.
+ */
+async function previewSameKeyCollection<T>(
+  collection: string,
+  guarded: T[],
+  keyOf: (value: T) => string,
+  getExisting: (key: string) => Promise<unknown | undefined>,
+  extractExisting: (existing: unknown) => unknown,
+  buckets: PreviewBucketState,
+): Promise<void> {
+  for (const incoming of guarded) {
+    const key = keyOf(incoming);
+    const existing = await getExisting(key);
+    if (existing === undefined) {
+      buckets.create.push(previewKey(collection, key));
+    } else if (canon(extractExisting(existing)) === canon(incoming)) {
+      buckets.reuse.push(previewKey(collection, key));
+    } else {
+      buckets.collisions.push({ collection, key, reason: "content-differs" });
+    }
+  }
+}
+
+/** Sort every preview bucket and derive the deterministic per-collection
+ *  counts (alphabetical). */
+function finalizePreview(
+  format: "v1" | "v2",
+  sourceLabel: string,
+  payload: unknown,
+  buckets: PreviewBucketState,
+): ArchiveImportPreview {
+  buckets.create.sort(byCollectionThenKey);
+  buckets.reuse.sort(byCollectionThenKey);
+  buckets.collisions.sort(byCollectionThenKey);
+  buckets.invalid.sort(byCollectionThenKey);
+  buckets.artifactBytes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  const byCollection = new Map<string, ArchivePreviewCollectionCount>();
+  const tally = (
+    list: ReadonlyArray<{ collection: string }>,
+    field: "create" | "reuse" | "collision" | "invalid",
+  ) => {
+    for (const entry of list) {
+      let row = byCollection.get(entry.collection);
+      if (row === undefined) {
+        row = { collection: entry.collection, total: 0, create: 0, reuse: 0, collision: 0, invalid: 0 };
+        byCollection.set(entry.collection, row);
+      }
+      row.total += 1;
+      row[field] += 1;
+    }
+  };
+  tally(buckets.create, "create");
+  tally(buckets.reuse, "reuse");
+  tally(buckets.collisions, "collision");
+  tally(buckets.invalid, "invalid");
+  const counts = [...byCollection.values()].sort((a, b) =>
+    a.collection < b.collection ? -1 : a.collection > b.collection ? 1 : 0,
+  );
+
+  return {
+    format,
+    sourceLabel,
+    totalEntities:
+      buckets.create.length +
+      buckets.reuse.length +
+      buckets.collisions.length +
+      buckets.invalid.length,
+    counts,
+    create: buckets.create,
+    reuse: buckets.reuse,
+    collisions: buckets.collisions,
+    invalid: buckets.invalid,
+    artifactBytes: buckets.artifactBytes,
+    payload,
+  };
+}
+
+// --- v2 collection grouping --------------------------------------------------
+
+/** Guard a record list into (guard-passing records, invalid preview keys). */
+function partitionGuarded<T>(
+  collection: string,
+  records: readonly T[],
+  keyOf: (value: T) => string,
+  guard: (value: unknown) => boolean,
+): { guarded: T[]; invalid: ArchivePreviewInvalid[] } {
+  const guarded: T[] = [];
+  const invalid: ArchivePreviewInvalid[] = [];
+  for (const record of records) {
+    if (guard(record)) {
+      guarded.push(record);
+      continue;
+    }
+    // Corrupt entities may lack the fields a key extractor reads; a failed or
+    // empty extraction still surfaces the entity as invalid (never crashes).
+    let key = "";
+    try {
+      const extracted: unknown = keyOf(record);
+      if (typeof extracted === "string") key = extracted;
+    } catch {
+      key = "";
+    }
+    invalid.push({ collection, key, reason: "guard" });
+  }
+  return { guarded, invalid };
+}
+
+async function previewV2(
+  db: RSembleEvaluationDB,
+  archive: WorkbenchArchiveV2,
+  options: ArchiveImportPreviewOptions,
+): Promise<ArchiveImportPreview> {
+  const buckets = emptyPreviewBuckets();
+  const signal = options.signal;
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+  throwIfAborted();
+
+  // --- runs.summaries / runs.details -----------------------------------------
+  // Full summaries are committed together with their same-ID detail so a run
+  // pair appears once in the preview: they are classified inside runs.details.
+  // Only legacy summaries are classified standalone here.
+  {
+    const part = partitionGuarded("runs.summaries", archive.runs.summaries, (s) => s.id, (v) =>
+      isRunSummary(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const legacy: LegacyRunSummary[] = [];
+    for (const s of part.guarded) {
+      if (isLegacyRunSummary(s)) legacy.push(s);
+    }
+    await previewSameKeyCollection(
+      "runs.summaries",
+      legacy,
+      (s) => s.id,
+      (k) => db.runSummaries.get(k).then((r) => (r === undefined ? undefined : r.summary)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded("runs.details", archive.runs.details, (d) => d.id, (v) => {
+      return repairRunRecordForCompatibility(v) !== null || isRunRecordV2(v);
+    });
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const fullById = new Map<string, FullRunSummaryV2>();
+    for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById.set(s.id, s);
+    for (const record of part.guarded) {
+      const compatible =
+        repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+      if (compatible === null) continue;
+      const incomingSummary = fullById.get(record.id);
+      const existingDetail = await db.runDetails.get(record.id);
+      const existingSummary =
+        incomingSummary !== undefined ? await db.runSummaries.get(record.id) : undefined;
+      // The stored row may predate the compatibility repair; compare the
+      // incoming canonical form against the stored row's repaired form so a
+      // re-imported legacy pair is reused rather than reported conflicting.
+      const existingCompatible =
+        existingDetail === undefined
+          ? null
+          : (repairRunRecordForCompatibility(existingDetail.record) ??
+            (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null));
+      const detailSame =
+        existingCompatible !== null && canon(existingCompatible) === canon(compatible);
+      const summarySame =
+        existingSummary === undefined
+          ? incomingSummary === undefined
+          : incomingSummary !== undefined &&
+            isFullRunSummaryV2(existingSummary.summary) &&
+            canon(existingSummary.summary) === canon(incomingSummary);
+      if (existingDetail === undefined && existingSummary === undefined) {
+        buckets.create.push(previewKey("runs.details", record.id));
+      } else if (detailSame && summarySame) {
+        buckets.reuse.push(previewKey("runs.details", record.id));
+      } else {
+        buckets.collisions.push({
+          collection: "runs.details",
+          key: record.id,
+          reason: "content-differs",
+        });
+      }
+    }
+  }
+
+  // --- rubrics ---------------------------------------------------------------
+  {
+    const part = partitionGuarded("rubrics.identities", archive.rubrics.identities, (r) => r.id, (v) =>
+      isRubricRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    await previewSameKeyCollection(
+      "rubrics.identities",
+      part.guarded,
+      (r) => r.id,
+      (k) => db.profiles.get(k).then((r) => (r === undefined ? undefined : r.record)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "rubrics.versions",
+      archive.rubrics.versions,
+      (r) => versionKey(r.id, r.version),
+      (v) => isEvaluationRubric(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "rubrics.versions",
+      part.guarded,
+      (r) => versionKey(r.id, r.version),
+      (k) => {
+        const [id, v] = splitVersionKey(k);
+        return db.profileVersions
+          .get([id, v])
+          .then((r) => (r === undefined ? undefined : r.profile));
+      },
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- suites / experiments --------------------------------------------------
+  {
+    const part = partitionGuarded("suites", archive.suites, (s) => s.id, (v) => isEvaluationSuite(v));
+    buckets.invalid.push(...part.invalid);
+    await previewSameKeyCollection(
+      "suites",
+      part.guarded,
+      (s) => s.id,
+      (k) => db.suites.get(k).then((r) => (r === undefined ? undefined : r.suite)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded("experiments", archive.experiments, (e) => e.id, (v) =>
+      isExperimentRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "experiments",
+      part.guarded,
+      (e) => e.id,
+      (k) => db.experiments.get(k).then((r) => (r === undefined ? undefined : r.experiment)),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- fusion (seven stores) ---------------------------------------------------
+  const fusion = archive.fusion;
+  const fusionSpecs: Array<[
+    string,
+    readonly unknown[],
+    (v: unknown) => boolean,
+    (v: never) => string,
+    (key: string) => Promise<unknown | undefined>,
+  ]> = [
+    ["fusion.recipes", fusion.recipes, isFusionRecipeVersion, (r: FusionRecipeVersion) => versionKey(r.id, r.version), async (k) => {
+      const [id, v] = splitVersionKey(k);
+      const row = await db.fusionRecipes.get([id, v]);
+      return row === undefined ? undefined : row.recipe;
+    }],
+    ["fusion.poolManifests", fusion.poolManifests, isPoolManifestVersion, (p: PoolManifestVersion) => versionKey(p.id, p.version), async (k) => {
+      const [id, v] = splitVersionKey(k);
+      const row = await db.poolManifests.get([id, v]);
+      return row === undefined ? undefined : row.manifest;
+    }],
+    ["fusion.studies", fusion.studies, isFusionStudy, (s: FusionStudy) => s.id, async (k) => {
+      const row = await db.fusionStudies.get(k);
+      return row === undefined ? undefined : row.study;
+    }],
+    ["fusion.trials", fusion.trials, isFusionTrial, (t: FusionTrial) => t.id, async (k) => {
+      const row = await db.fusionTrials.get(k);
+      return row === undefined ? undefined : row.trial;
+    }],
+    ["fusion.attempts", fusion.attempts, isFusionAttempt, (a: FusionAttempt) => a.id, async (k) => {
+      const row = await db.fusionAttempts.get(k);
+      return row === undefined ? undefined : row.attempt;
+    }],
+    ["fusion.observations", fusion.observations, isEvaluationObservation, (o: EvaluationObservation) => o.id, async (k) => {
+      const row = await db.fusionObservations.get(k);
+      return row === undefined ? undefined : row.observation;
+    }],
+    ["fusion.playbooks", fusion.playbooks, isFusionPlaybook, (p: FusionPlaybook) => p.id, async (k) => {
+      const row = await db.fusionPlaybooks.get(k);
+      return row === undefined ? undefined : row.playbook;
+    }],
+  ];
+  for (const [collection, records, guard, keyOf, getter] of fusionSpecs) {
+    const part = partitionGuarded(collection, records, keyOf as (v: unknown) => string, guard);
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      collection,
+      part.guarded as unknown[],
+      keyOf as (v: unknown) => string,
+      getter,
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- tasks (every canonical collection) --------------------------------------
+  const tasks = archive.tasks;
+  const taskSpecs: Array<[
+    string,
+    readonly unknown[],
+    (v: unknown) => boolean,
+    (v: never) => string,
+  ]> = [
+    ["tasks.tasks", tasks.tasks, isTaskRecord, (t: TaskRecord) => t.id],
+    ["tasks.taskVersions", tasks.taskVersions, isTaskVersion, (v: TaskVersion) => versionKey(v.taskId, v.version)],
+    ["tasks.taskInstances", tasks.taskInstances, isTaskInstance, (i: TaskInstance) => i.id],
+    ["tasks.taskFamilies", tasks.taskFamilies, isTaskFamily, (f: TaskFamily) => f.id],
+    ["tasks.taskFamilyAssignments", tasks.taskFamilyAssignments, isTaskFamilyAssignment, (a: TaskFamilyAssignment) => a.id],
+    ["tasks.taskFamilyRelations", tasks.taskFamilyRelations, isExportableTaskFamilyRelation, (r: TaskFamilyRelation) => r.id],
+    ["tasks.taskFacetAnnotations", tasks.taskFacetAnnotations, isTaskFacetAnnotation, (a: TaskFacetAnnotation) => a.id],
+  ];
+  for (const [collection, records, guard, keyOf] of taskSpecs) {
+    const part = partitionGuarded(collection, records, keyOf as (v: unknown) => string, guard);
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const getter = collection === "tasks.taskVersions"
+      ? async (k: string) => {
+          const [id, v] = splitVersionKey(k);
+          const row = await db.taskVersions.get([id, v]);
+          return row === undefined ? undefined : row.version_;
+        }
+      : collection === "tasks.tasks"
+        ? async (k: string) => (await db.tasks.get(k))?.record
+        : collection === "tasks.taskInstances"
+          ? async (k: string) => (await db.taskInstances.get(k))?.instance
+          : collection === "tasks.taskFamilies"
+            ? async (k: string) => (await db.taskFamilies.get(k))?.family
+            : collection === "tasks.taskFamilyAssignments"
+              ? async (k: string) => (await db.taskFamilyAssignments.get(k))?.assignment
+              : collection === "tasks.taskFamilyRelations"
+                ? async (k: string) => (await db.taskFamilyRelations.get(k))?.relation
+                : async (k: string) => (await db.taskFacetAnnotations.get(k))?.annotation;
+    await previewSameKeyCollection(
+      collection,
+      part.guarded as unknown[],
+      keyOf as (v: unknown) => string,
+      getter,
+      (v) => (v === undefined ? undefined : v),
+      buckets,
+    );
+  }
+
+  // --- tasks.taskArtifacts + bytes ---------------------------------------------
+  {
+    const part = partitionGuarded("tasks.taskArtifacts", tasks.taskArtifacts, (a) => a.id, (v) =>
+      isTaskArtifact(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const bytesById = new Map<string, ArchiveV2TaskArtifactBytes>();
+    for (const entry of tasks.taskArtifactBytes) bytesById.set(entry.id, entry);
+    for (const artifact of part.guarded) {
+      const byteEntry = bytesById.get(artifact.id);
+      let invalidReason: ArchivePreviewInvalid["reason"] | null = null;
+      let decoded: Uint8Array | null = null;
+      if (byteEntry === undefined) {
+        invalidReason = "artifact-missing-bytes";
+      } else {
+        decoded = decodeBase64Bytes(byteEntry.bytesBase64);
+        if (decoded === null) {
+          invalidReason = "artifact-digest";
+        } else {
+          const recomputed = computeArtifactDigest(decoded);
+          if (decoded.length !== artifact.byteCount || recomputed !== artifact.contentDigest) {
+            invalidReason = "artifact-digest";
+            decoded = null;
+          }
+        }
+      }
+      if (invalidReason !== null) {
+        buckets.invalid.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: invalidReason,
+        });
+        continue;
+      }
+      buckets.artifactBytes.push({ id: artifact.id, bytes: decoded! });
+      const existing = await db.taskArtifacts.get(artifact.id);
+      if (existing === undefined) {
+        buckets.create.push(previewKey("tasks.taskArtifacts", artifact.id));
+        continue;
+      }
+      const summarySame = canon(existing) === canon(artifact);
+      if (!summarySame) {
+        buckets.collisions.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: "content-differs",
+        });
+        continue;
+      }
+      const existingBytesRow = await db.taskArtifactBytes.get(artifact.id);
+      const byteSame =
+        existingBytesRow !== undefined && bytesMatch(existingBytesRow.bytes, decoded!);
+      if (byteSame) {
+        buckets.reuse.push(previewKey("tasks.taskArtifacts", artifact.id));
+      } else {
+        buckets.collisions.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: "artifact-bytes-differ",
+        });
+      }
+    }
+  }
+
+  // --- tasks.taskMigrationCrosswalks ---------------------------------------------
+  {
+    for (const cw of tasks.taskMigrationCrosswalks) {
+      throwIfAborted();
+      const key = cw.legacyScopeKey;
+      const existing = await db.taskMigrationCrosswalk.get(key);
+      if (existing === undefined) {
+        buckets.create.push(previewKey("tasks.taskMigrationCrosswalks", key));
+      } else if (
+        existing.taskId === cw.taskId &&
+        existing.taskVersion === cw.taskVersion
+      ) {
+        buckets.reuse.push(previewKey("tasks.taskMigrationCrosswalks", key));
+      } else {
+        buckets.collisions.push({
+          collection: "tasks.taskMigrationCrosswalks",
+          key,
+          reason: "content-differs",
+        });
+      }
+    }
+  }
+
+  throwIfAborted();
+  return finalizePreview("v2", options.sourceLabel ?? "archive", archive, buckets);
+}
+
+/** Split a `<id>@<version>` composite key produced by versionKey. The ID
+ *  pattern never contains "@" so the first "@" is the separator. */
+function splitVersionKey(key: string): [string, number] {
+  const at = key.indexOf("@");
+  return [key.slice(0, at), Number(key.slice(at + 1))];
+}
+
+// --- Row mappings for the v2 commit (mirror the repository writers) -------------
+
+function taskRowFor(record: TaskRecord) {
+  return {
+    id: record.id,
+    record,
+    latestVersion: record.latestVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    archivedAt: record.archivedAt,
+    origin: record.origin,
+    revision: record.revision,
+  };
+}
+
+function taskVersionRowFor(version: TaskVersion) {
+  return {
+    taskId: version.taskId,
+    version: version.version,
+    version_: version,
+    createdAt: version.createdAt,
+  };
+}
+
+function taskInstanceRowFor(instance: TaskInstance) {
+  return {
+    id: instance.id,
+    instance,
+    taskId: instance.taskId,
+    taskVersion: instance.taskVersion,
+    inputDigest: instance.inputDigest,
+    inputCompleteness: instance.inputCompleteness,
+    createdAt: instance.createdAt,
+  };
+}
+
+function familyRowFor(family: TaskFamily) {
+  return {
+    id: family.id,
+    family,
+    parentFamilyId: family.parentFamilyId,
+    updatedAt: family.updatedAt,
+    archivedAt: family.archivedAt,
+    revision: family.revision,
+  };
+}
+
+function assignmentRowFor(assignment: TaskFamilyAssignment) {
+  return {
+    id: assignment.id,
+    assignment,
+    taskId: assignment.taskId,
+    taskVersion: assignment.taskVersion,
+    familyId: assignment.familyId,
+    isPrimary: assignment.isPrimary ? 1 : 0,
+    createdAt: assignment.createdAt,
+    revision: assignment.revision,
+    archivedAt: assignment.archivedAt,
+  };
+}
+
+function relationRowFor(relation: TaskFamilyRelation) {
+  return {
+    id: relation.id,
+    relation,
+    fromFamilyId: relation.fromFamilyId,
+    toFamilyId: relation.toFamilyId,
+    kind: relation.kind,
+    createdAt: relation.createdAt,
+  };
+}
+
+function annotationRowFor(annotation: TaskFacetAnnotation) {
+  return {
+    id: annotation.id,
+    annotation,
+    taskId: annotation.taskId,
+    taskVersion: annotation.taskVersion,
+    facetId: annotation.facetId,
+    valueId: annotation.valueId,
+    createdAt: annotation.createdAt,
+  };
+}
+
+/**
+ * Preview an import before any write. Both formats route through here: the v1
+ * preview classifies identities deterministically and defers the final
+ * skip/conflict decision to the preserved v1 adapter (its conflict-tolerant
+ * semantics are unchanged); the v2 preview is the commit contract — a v2
+ * commit NEVER tolerates collisions, never remaps, never overwrites.
+ */
+export async function previewWorkbenchArchive(
+  db: RSembleEvaluationDB,
+  payload: unknown,
+  options: ArchiveImportPreviewOptions = {},
+): Promise<ArchiveImportPreview> {
+  const sourceLabel = options.sourceLabel ?? "archive";
+  if (isWorkbenchArchiveV2(payload)) {
+    const check = validateArchiveV2(payload);
+    if (!check.valid) {
+      const first = check.errors[0];
+      throw new StorageError(
+        "validation",
+        `The archive is invalid — nothing was imported. ${first ? `${first.field}: ${first.message}` : ""}`.trim(),
+      );
+    }
+    return previewV2(db, payload, options);
+  }
+  const v1 = parseWorkbenchArchive(payload);
+  if (!v1.ok) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${v1.errors[0] ?? ""}`.trim(),
+    );
+  }
+  return previewV1(db, v1.archive, sourceLabel, options.signal);
+}
+
+async function previewV1(
+  db: RSembleEvaluationDB,
+  archive: WorkbenchArchiveV1,
+  sourceLabel: string,
+  signal?: AbortSignal,
+): Promise<ArchiveImportPreview> {
+  const buckets = emptyPreviewBuckets();
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+  throwIfAborted();
+
+  const fullById = new Map<string, FullRunSummaryV2>();
+  const legacy: LegacyRunSummary[] = [];
+  for (const s of archive.runs.summaries) {
+    if (isFullRunSummaryV2(s)) fullById.set(s.id, s);
+    else if (isLegacyRunSummary(s)) legacy.push(s);
+  }
+  for (const record of archive.runs.details) {
+    throwIfAborted();
+    const compatible =
+      repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+    if (compatible === null) {
+      buckets.invalid.push({ collection: "runs.details", key: record.id, reason: "guard" });
+      continue;
+    }
+    const existingDetail = await db.runDetails.get(record.id);
+    const incomingSummary = fullById.get(record.id);
+    const existingSummary =
+      incomingSummary !== undefined ? await db.runSummaries.get(record.id) : undefined;
+    const existingCompatible =
+      existingDetail === undefined
+        ? null
+        : (repairRunRecordForCompatibility(existingDetail.record) ??
+          (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null));
+    const detailSame =
+      existingCompatible !== null && canon(existingCompatible) === canon(compatible);
+    const summarySame =
+      existingSummary === undefined
+        ? incomingSummary === undefined
+        : incomingSummary !== undefined &&
+          isFullRunSummaryV2(existingSummary.summary) &&
+          canon(existingSummary.summary) === canon(incomingSummary);
+    if (existingDetail === undefined && existingSummary === undefined) {
+      buckets.create.push(previewKey("runs.details", record.id));
+    } else if (detailSame && summarySame) {
+      buckets.reuse.push(previewKey("runs.details", record.id));
+    } else {
+      buckets.collisions.push({
+        collection: "runs.details",
+        key: record.id,
+        reason: "content-differs",
+      });
+    }
+  }
+  for (const s of legacy) {
+    throwIfAborted();
+    const existing = await db.runSummaries.get(s.id);
+    if (existing === undefined) {
+      buckets.create.push(previewKey("runs.summaries", s.id));
+    } else if (canon(existing.summary) === canon(s)) {
+      buckets.reuse.push(previewKey("runs.summaries", s.id));
+    } else {
+      buckets.collisions.push({
+        collection: "runs.summaries",
+        key: s.id,
+        reason: "content-differs",
+      });
+    }
+  }
+  for (const r of archive.profiles.identities) {
+    throwIfAborted();
+    const existing = await db.profiles.get(r.id);
+    if (existing === undefined) buckets.create.push(previewKey("rubrics.identities", r.id));
+    else if (canon(existing.record) === canon(r)) buckets.reuse.push(previewKey("rubrics.identities", r.id));
+    else buckets.collisions.push({ collection: "rubrics.identities", key: r.id, reason: "content-differs" });
+  }
+  for (const v of archive.profiles.versions) {
+    throwIfAborted();
+    const key = versionKey(v.id, v.version);
+    const existing = await db.profileVersions.get([v.id, v.version]);
+    if (existing === undefined) buckets.create.push(previewKey("rubrics.versions", key));
+    else if (canon(existing.profile) === canon(v)) buckets.reuse.push(previewKey("rubrics.versions", key));
+    else buckets.collisions.push({ collection: "rubrics.versions", key, reason: "content-differs" });
+  }
+  for (const suite of archive.suites) {
+    throwIfAborted();
+    const existing = await db.suites.get(suite.id);
+    if (existing === undefined) buckets.create.push(previewKey("suites", suite.id));
+    else if (canon(existing.suite) === canon(suite)) buckets.reuse.push(previewKey("suites", suite.id));
+    else buckets.collisions.push({ collection: "suites", key: suite.id, reason: "content-differs" });
+  }
+  for (const experiment of archive.experiments) {
+    throwIfAborted();
+    const existing = await db.experiments.get(experiment.id);
+    if (existing === undefined) buckets.create.push(previewKey("experiments", experiment.id));
+    else if (canon(existing.experiment) === canon(experiment)) buckets.reuse.push(previewKey("experiments", experiment.id));
+    else buckets.collisions.push({ collection: "experiments", key: experiment.id, reason: "content-differs" });
+  }
+  throwIfAborted();
+  const preview = finalizePreview("v1", sourceLabel, archive, buckets);
+  // The v1 preview payload carries the validated archive for the preserved
+  // adapter — commit is not performed here.
+  return { ...preview, payload: archive };
+}
+
+/**
+ * Commit a v2 preview atomically: ONE Dexie transaction spanning every touched
+ * store. Identical records are reused; ANY collision aborts before writes;
+ * injected failure/quota/cancellation rolls the whole commit back.
+ */
+export async function commitPreviewWorkbenchArchiveV2(
+  db: RSembleEvaluationDB,
+  preview: ArchiveImportPreview,
+  options: ArchiveImportCommitOptions = {},
+): Promise<ArchiveImportCommitResult> {
+  if (preview.format !== "v2") {
+    throw new StorageError(
+      "validation",
+      "commitPreviewWorkbenchArchiveV2 requires a v2 preview — v1 commits use importWorkbenchArchive.",
+    );
+  }
+  if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+  if (preview.collisions.length > 0) {
+    throw new StorageError(
+      "conflict",
+      `Import aborted: ${preview.collisions.length} collision${preview.collisions.length === 1 ? "" : "s"} — colliding records were left unchanged.`,
+    );
+  }
+  if (preview.invalid.length > 0) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${preview.invalid.length} invalid ${preview.invalid.length === 1 ? "entity" : "entities"}.`,
+    );
+  }
+  db.assertWritable();
+  const archive = preview.payload as WorkbenchArchiveV2;
+  const artifactBytesById = new Map(preview.artifactBytes.map((b) => [b.id, b.bytes]));
+  // Re-hash the preview-materialized bytes exactly once at commit so the
+  // bytes that hit the database are the bytes that passed preview validation.
+  for (const artifact of archive.tasks.taskArtifacts) {
+    const bytes = artifactBytesById.get(artifact.id);
+    if (bytes === undefined) continue; // artifact not preview-materialized (e.g. reuse-only)
+    const digest = computeArtifactDigest(bytes);
+    if (bytes.length !== artifact.byteCount || digest !== artifact.contentDigest) {
+      throw new StorageError(
+        "validation",
+        `tasks.taskArtifacts[${artifact.id}] digest no longer matches the previewed bytes.`,
+      );
+    }
+  }
+
+  const createByCollection = new Map<string, Set<string>>();
+  for (const entry of preview.create) {
+    let set = createByCollection.get(entry.collection);
+    if (set === undefined) {
+      set = new Set();
+      createByCollection.set(entry.collection, set);
+    }
+    set.add(entry.key);
+  }
+  const isCreated = (collection: string, key: string) =>
+    createByCollection.get(collection)?.has(key) === true;
+
+  const created: string[] = [];
+  const reused: string[] = [];
+  const skipped: string[] = [];
+  if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+  const fullById = new Map<string, FullRunSummaryV2>();
+  for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById.set(s.id, s);
+
+  try {
+    await db.transaction(
+      "rw",
+      [
+        db.runSummaries,
+        db.runDetails,
+        db.profiles,
+        db.profileVersions,
+        db.suites,
+        db.experiments,
+        db.fusionRecipes,
+        db.poolManifests,
+        db.fusionStudies,
+        db.fusionTrials,
+        db.fusionAttempts,
+        db.fusionObservations,
+        db.fusionPlaybooks,
+        db.tasks,
+        db.taskVersions,
+        db.taskArtifacts,
+        db.taskArtifactBytes,
+        db.taskInstances,
+        db.taskFamilies,
+        db.taskFamilyAssignments,
+        db.taskFamilyRelations,
+        db.taskFacetAnnotations,
+        db.taskMigrationCrosswalk,
+      ],
+      async () => {
+        if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+        // --- runs.details (paired full summaries committed first) -------------
+        for (const record of archive.runs.details) {
+          const key = record.id;
+          const compatible =
+            repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+          if (compatible === null) continue; // invalid → excluded from commit set
+          const incomingSummary = fullById.get(record.id);
+          if (isCreated("runs.details", key)) {
+            if (incomingSummary !== undefined) {
+              await db.runSummaries.put(summaryRowFor(incomingSummary));
+            }
+            await db.runDetails.put(detailRowFor(compatible));
+            created.push(key);
+          } else {
+            reused.push(key);
+          }
+        }
+        // Standalone full summaries with a detail count as part of their run
+        // pair (committed above). Remaining summaries are legacy-only.
+        for (const s of archive.runs.summaries) {
+          if (isFullRunSummaryV2(s)) continue; // handled with details
+          if (!isLegacyRunSummary(s)) continue; // invalid → excluded
+          const key = s.id;
+          if (isCreated("runs.summaries", key)) {
+            await db.runSummaries.put(summaryRowFor(s));
+            created.push(key);
+          } else {
+            reused.push(key);
+          }
+        }
+
+        // --- rubrics / suites / experiments -----------------------------------
+        for (const r of archive.rubrics.identities) {
+          if (!isRubricRecord(r)) continue;
+          if (isCreated("rubrics.identities", r.id)) {
+            await db.profiles.put({
+              id: r.id,
+              record: r,
+              revision: 1,
+              latestVersion: r.latestVersion,
+              updatedAt: r.updatedAt,
+              archivedAt: r.archivedAt,
+            });
+            created.push(r.id);
+          } else reused.push(r.id);
+        }
+        for (const v of archive.rubrics.versions) {
+          if (!isEvaluationRubric(v)) continue;
+          const key = versionKey(v.id, v.version);
+          if (isCreated("rubrics.versions", key)) {
+            await db.profileVersions.put({
+              id: v.id,
+              version: v.version,
+              profile: v,
+              updatedAt: v.updatedAt,
+            });
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const suite of archive.suites) {
+          if (!isEvaluationSuite(suite)) continue;
+          if (isCreated("suites", suite.id)) {
+            await db.suites.put({
+              id: suite.id,
+              suite,
+              revision: 1,
+              version: suite.version,
+              updatedAt: suite.updatedAt,
+              archivedAt: suite.archivedAt,
+            });
+            created.push(suite.id);
+          } else reused.push(suite.id);
+        }
+        for (const experiment of archive.experiments) {
+          if (!isExperimentRecord(experiment)) continue;
+          if (isCreated("experiments", experiment.id)) {
+            await db.experiments.put({
+              id: experiment.id,
+              experiment,
+              revision: 1,
+              suiteId: experiment.suiteId,
+              suiteVersion: experiment.suiteVersion,
+              protocolFingerprint: experiment.protocolFingerprint,
+              createdAt: experiment.createdAt,
+              status: experiment.status,
+            });
+            created.push(experiment.id);
+          } else reused.push(experiment.id);
+        }
+        if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+        // --- fusion (seven stores) ---------------------------------------------
+        for (const r of archive.fusion.recipes) {
+          if (!isFusionRecipeVersion(r)) continue;
+          const key = versionKey(r.id, r.version);
+          if (isCreated("fusion.recipes", key)) {
+            await db.fusionRecipes.put({
+              id: r.id,
+              version: r.version,
+              recipe: r,
+              createdAt: 0,
+            });
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const p of archive.fusion.poolManifests) {
+          if (!isPoolManifestVersion(p)) continue;
+          const key = versionKey(p.id, p.version);
+          if (isCreated("fusion.poolManifests", key)) {
+            await db.poolManifests.put({
+              id: p.id,
+              version: p.version,
+              manifest: p,
+              createdAt: p.createdAt,
+            });
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const s of archive.fusion.studies) {
+          if (!isFusionStudy(s)) continue;
+          if (isCreated("fusion.studies", s.id)) {
+            await db.fusionStudies.put({
+              id: s.id,
+              study: s,
+              revision: s.revision,
+              suiteId: s.suiteRef.suiteId,
+              suiteVersion: s.suiteRef.suiteVersion,
+              status: s.status,
+              updatedAt: s.updatedAt,
+            });
+            created.push(s.id);
+          } else reused.push(s.id);
+        }
+        for (const t of archive.fusion.trials) {
+          if (!isFusionTrial(t)) continue;
+          if (isCreated("fusion.trials", t.id)) {
+            await db.fusionTrials.put({
+              id: t.id,
+              trial: t,
+              revision: t.revision,
+              studyId: t.studyId,
+              stage: t.stage,
+              status: t.status,
+              createdAt: t.createdAt,
+            });
+            created.push(t.id);
+          } else reused.push(t.id);
+        }
+        for (const a of archive.fusion.attempts) {
+          if (!isFusionAttempt(a)) continue;
+          if (isCreated("fusion.attempts", a.id)) {
+            await db.fusionAttempts.put({
+              id: a.id,
+              attempt: a,
+              studyId: a.studyId,
+              createdAt: a.createdAt,
+            });
+            created.push(a.id);
+          } else reused.push(a.id);
+        }
+        for (const o of archive.fusion.observations) {
+          if (!isEvaluationObservation(o)) continue;
+          if (isCreated("fusion.observations", o.id)) {
+            await db.fusionObservations.put({
+              id: o.id,
+              observation: o,
+              trialId: o.trialId,
+              createdAt: o.finishedAt,
+            });
+            created.push(o.id);
+          } else reused.push(o.id);
+        }
+        for (const p of archive.fusion.playbooks) {
+          if (!isFusionPlaybook(p)) continue;
+          if (isCreated("fusion.playbooks", p.id)) {
+            await db.fusionPlaybooks.put({
+              id: p.id,
+              playbook: p,
+              studyId: p.studyId,
+              createdAt: p.createdAt,
+            });
+            created.push(p.id);
+          } else reused.push(p.id);
+        }
+        if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+        // --- tasks -----------------------------------------------------------------
+        for (const t of archive.tasks.tasks) {
+          if (!isTaskRecord(t)) continue;
+          if (isCreated("tasks.tasks", t.id)) {
+            await db.tasks.put(taskRowFor(t));
+            created.push(t.id);
+          } else reused.push(t.id);
+        }
+        for (const v of archive.tasks.taskVersions) {
+          if (!isTaskVersion(v)) continue;
+          const key = versionKey(v.taskId, v.version);
+          if (isCreated("tasks.taskVersions", key)) {
+            await db.taskVersions.put(taskVersionRowFor(v));
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const artifact of archive.tasks.taskArtifacts) {
+          if (!isTaskArtifact(artifact)) continue;
+          if (isCreated("tasks.taskArtifacts", artifact.id)) {
+            const bytes = artifactBytesById.get(artifact.id);
+            if (bytes === undefined) {
+              throw new StorageError(
+                "validation",
+                `tasks.taskArtifacts[${artifact.id}] is missing bytes payload.`,
+              );
+            }
+            await db.taskArtifacts.put({
+              id: artifact.id,
+              contentDigest: artifact.contentDigest,
+              mediaType: artifact.mediaType,
+              byteCount: artifact.byteCount,
+              storageRef: artifact.storageRef,
+              createdAt: artifact.createdAt,
+            });
+            await db.taskArtifactBytes.put({ id: artifact.id, bytes });
+            created.push(artifact.id);
+          } else reused.push(artifact.id);
+        }
+        for (const i of archive.tasks.taskInstances) {
+          if (!isTaskInstance(i)) continue;
+          if (isCreated("tasks.taskInstances", i.id)) {
+            await db.taskInstances.put(taskInstanceRowFor(i));
+            created.push(i.id);
+          } else reused.push(i.id);
+        }
+        for (const f of archive.tasks.taskFamilies) {
+          if (!isTaskFamily(f)) continue;
+          if (isCreated("tasks.taskFamilies", f.id)) {
+            await db.taskFamilies.put(familyRowFor(f));
+            created.push(f.id);
+          } else reused.push(f.id);
+        }
+        for (const a of archive.tasks.taskFamilyAssignments) {
+          if (!isTaskFamilyAssignment(a)) continue;
+          if (isCreated("tasks.taskFamilyAssignments", a.id)) {
+            await db.taskFamilyAssignments.put(assignmentRowFor(a));
+            created.push(a.id);
+          } else reused.push(a.id);
+        }
+        for (const r of archive.tasks.taskFamilyRelations) {
+          if (!isExportableTaskFamilyRelation(r)) continue;
+          if (isCreated("tasks.taskFamilyRelations", r.id)) {
+            await db.taskFamilyRelations.put(relationRowFor(r));
+            created.push(r.id);
+          } else reused.push(r.id);
+        }
+        for (const a of archive.tasks.taskFacetAnnotations) {
+          if (!isTaskFacetAnnotation(a)) continue;
+          if (isCreated("tasks.taskFacetAnnotations", a.id)) {
+            await db.taskFacetAnnotations.put(annotationRowFor(a));
+            created.push(a.id);
+          } else reused.push(a.id);
+        }
+        for (const cw of archive.tasks.taskMigrationCrosswalks) {
+          if (isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) {
+            await db.taskMigrationCrosswalk.put({
+              legacyScopeKey: cw.legacyScopeKey,
+              taskId: cw.taskId,
+              taskVersion: cw.taskVersion,
+            });
+            created.push(cw.legacyScopeKey);
+          } else reused.push(cw.legacyScopeKey);
+        }
+        // `skipped` is a commit-pass no-op channel — currently empty by design
+        // (preview classifies every persisted state; a racing same-value write
+        // is indistinguishable from reuse and stays `reused`).
+        void skipped;
+      },
+    );
+  } catch (err) {
+    if (err instanceof ArchiveImportCancelledError) throw err;
+    if (err instanceof StorageError) throw err;
+    throw classifyStorageError(err);
+  }
+
+  return {
+    created,
+    reused,
+    skipped,
+    collisions: preview.collisions.map((c) => c.key),
+  };
+}
+
+/**
+ * Single-shot import dispatch: decode/validate the payload, route v1 through
+ * the preserved adapter and v2 through preview + atomic commit. Used by
+ * legacy callers; interactive UI composes `previewWorkbenchArchive` +
+ * `commitPreviewWorkbenchArchiveV2` explicitly behind a confirmation.
+ */
+export async function importWorkbenchArchiveAuto(
+  db: RSembleEvaluationDB,
+  payload: unknown,
+  options: { signal?: AbortSignal; sourceLabel?: string } = {},
+): Promise<ImportAutoResult> {
+  if (isWorkbenchArchiveV2(payload)) {
+    const preview = await previewWorkbenchArchive(db, payload, options);
+    return { format: "v2", v2: await commitPreviewWorkbenchArchiveV2(db, preview) };
+  }
+  const check = parseWorkbenchArchive(payload);
+  if (!check.ok) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${check.errors[0] ?? ""}`.trim(),
+    );
+  }
+  return { format: "v1", v1: await importWorkbenchArchive(db, check.archive) };
 }

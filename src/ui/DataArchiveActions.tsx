@@ -1,12 +1,16 @@
 // =============================================================================
-// RSemble AI — Data archive actions (plan 8.1, spec §13/§14/§18/§20)
+// RSemble AI — Data archive actions (plan 8.1, spec §13/§14/§18/§20;
+// Child 02 Task 10C)
 //
 // Export/import controls for the whole workbench. Export downloads the
-// allowlisted archive JSON; import validates file bytes BEFORE decoding,
-// validates every limit before any mutation, and reports Created/Skipped/
-// Conflicts counts plus conflicting IDs. Storage failures surface classified
-// recovery guidance; blocked/versionchange/unavailable storage disables the
-// controls with the same guidance.
+// allowlisted archive JSON. Import is preview-first (Task 10C): selecting a
+// file validates bytes BEFORE decoding, validates the complete payload, and
+// renders a deterministic preview (format, per-collection create/reuse/
+// collision counts, conflicting IDs). Nothing is written until the user
+// explicitly confirms. Cancel closes the preview without writes and restores
+// focus to the Import trigger. Commit is atomic — any non-identical ID
+// collision aborts the whole import and errors are surfaced without echoing
+// archive content.
 // =============================================================================
 
 import { useContext, useRef, useState, type ReactElement } from "react";
@@ -16,13 +20,15 @@ import { StorageError } from "../lib/persistence/database";
 import {
   archiveFailureGuidance,
   ArchiveExportCancelledError,
+  ArchiveImportCancelledError,
+  commitPreviewWorkbenchArchiveV2,
   exportWorkbenchArchive,
   exportWorkbenchArchiveV2,
   importWorkbenchArchive,
-  parseWorkbenchArchive,
+  previewWorkbenchArchive,
   validateArchiveBytes,
   type ArchiveExportProgress,
-  type ArchiveImportResult,
+  type ArchiveImportPreview,
 } from "../lib/persistence/archive";
 
 const INVALID_ARCHIVE_MESSAGE = "The archive is invalid — nothing was imported.";
@@ -52,12 +58,14 @@ export function serializeWorkbenchArchiveV2(archive: unknown): string {
 export function DataArchiveActions(): ReactElement | null {
   const { db, storageState } = useContext(RepositoryContext);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const importTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportV2Busy, setExportV2Busy] = useState(false);
   const [exportV2Progress, setExportV2Progress] = useState<ArchiveExportProgress | null>(null);
   const [exportV2Total, setExportV2Total] = useState<number | null>(null);
   const exportV2AbortRef = useRef<AbortController | null>(null);
-  const [report, setReport] = useState<ArchiveImportResult | null>(null);
+  const [preview, setPreview] = useState<ArchiveImportPreview | null>(null);
+  const [result, setResult] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -69,10 +77,15 @@ export function DataArchiveActions(): ReactElement | null {
   const exportV2Disabled = controlsDisabled || exportV2Busy;
 
   const resetFeedback = () => {
-    setReport(null);
+    setResult(null);
     setErrors([]);
     setFailure(null);
   };
+
+  /** Return focus to the Import data trigger after the flow closes. */
+  function restoreImportFocus() {
+    importTriggerRef.current?.focus();
+  }
 
   /** Deliver the serialized archive as a download. */
   function deliverArchive(filename: string, text: string) {
@@ -143,10 +156,12 @@ export function DataArchiveActions(): ReactElement | null {
     }
   }
 
+  /** Read, validate, and PREVIEW the selected archive — no writes happen here. */
   async function onFileChosen(file: File) {
     if (db === null) return;
     setBusy(true);
     resetFeedback();
+    setPreview(null);
     try {
       // Validate bytes BEFORE reading/decoding the file.
       const sizeError = validateArchiveBytes(file.size);
@@ -162,19 +177,68 @@ export function DataArchiveActions(): ReactElement | null {
         setErrors([INVALID_ARCHIVE_MESSAGE]);
         return;
       }
-      const check = parseWorkbenchArchive(parsed);
-      if (!check.ok) {
-        setErrors(check.errors.length > 0 ? check.errors : [INVALID_ARCHIVE_MESSAGE]);
-        return;
-      }
       try {
-        setReport(await importWorkbenchArchive(db, check.archive));
+        setPreview(await previewWorkbenchArchive(db, parsed, { sourceLabel: file.name }));
       } catch (err) {
-        setFailure(archiveFailureGuidance(err));
+        if (
+          err instanceof StorageError &&
+          (err.kind === "validation" || err.kind === "conflict")
+        ) {
+          // Surface the classified message only — archive CONTENT never
+          // crosses into the UI (validators emit path/ID labels, not values).
+          setErrors([err.message]);
+        } else {
+          setFailure(archiveFailureGuidance(err));
+        }
       }
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Confirm the current preview: v1 routes through the preserved adapter,
+   *  v2 through the collision-safe atomic commit. Focus is restored to the
+   *  Import trigger in every outcome. */
+  async function onConfirmImport() {
+    if (db === null || preview === null) return;
+    const confirmed = preview;
+    setBusy(true);
+    resetFeedback();
+    try {
+      if (confirmed.format === "v1") {
+        const report = await importWorkbenchArchive(db, confirmed.payload as never);
+        setResult(
+          `Imported ${report.created.length} records — ${report.skipped.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
+        );
+      } else {
+        const commit = await commitPreviewWorkbenchArchiveV2(db, confirmed);
+        setResult(
+          `Imported ${commit.created.length} records — ${commit.reused.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
+        );
+      }
+    } catch (err) {
+      if (err instanceof ArchiveImportCancelledError) {
+        setFailure(archiveFailureGuidance(err));
+      } else if (
+        err instanceof StorageError &&
+        (err.kind === "validation" || err.kind === "conflict")
+      ) {
+        setErrors([err.message]);
+      } else {
+        setFailure(archiveFailureGuidance(err));
+      }
+    } finally {
+      setPreview(null);
+      setBusy(false);
+      restoreImportFocus();
+    }
+  }
+
+  /** Cancel the preview: close it without writes and restore focus. */
+  function onCancelImport() {
+    setPreview(null);
+    resetFeedback();
+    restoreImportFocus();
   }
 
   const buttonClass =
@@ -198,6 +262,7 @@ export function DataArchiveActions(): ReactElement | null {
         <button
           type="button"
           data-action="import"
+          ref={importTriggerRef}
           className={buttonClass}
           disabled={controlsDisabled}
           onClick={() => fileRef.current?.click()}
@@ -268,21 +333,74 @@ export function DataArchiveActions(): ReactElement | null {
         </p>
       )}
 
-      {report !== null && (
-        <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
-          <p>
-            Created {report.created.length} · Skipped {report.skipped.length} · Conflicts{" "}
-            {report.conflicting.length}
+      {preview !== null && (
+        <div
+          role="status"
+          className="flex flex-col gap-2 rounded border border-edge bg-card p-3 text-xs text-text-secondary"
+        >
+          <p className="text-text">
+            Import preview ({JSON.stringify(preview.sourceLabel)}) — format {preview.format},{" "}
+            {preview.totalEntities}{" "}
+            {preview.totalEntities === 1 ? "record" : "records"}: {preview.create.length} to
+            create, {preview.reuse.length} to reuse, {preview.collisions.length}{" "}
+            {preview.collisions.length === 1 ? "collision" : "collisions"}
+            {preview.invalid.length > 0
+              ? `, ${preview.invalid.length} invalid (will not import)`
+              : ""}
+            .
           </p>
-          {report.conflicting.length > 0 && (
-            <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto scroll-thin">
-              {report.conflicting.map((id) => (
-                <li key={id} className="max-w-full truncate font-mono text-text-secondary">
-                  {id}
-                </li>
-              ))}
-            </ul>
+          <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto scroll-thin">
+            {preview.counts.map((c) => (
+              <li key={c.collection} className="max-w-full truncate font-mono text-text-secondary">
+                {c.collection}: {c.total}
+                {c.create > 0 ? ` · ${c.create} new` : ""}
+                {c.reuse > 0 ? ` · ${c.reuse} reused` : ""}
+                {c.collision > 0 ? ` · ${c.collision} collision` : ""}
+                {c.invalid > 0 ? ` · ${c.invalid} invalid` : ""}
+              </li>
+            ))}
+          </ul>
+          {preview.collisions.length > 0 && (
+            <p className="text-text">
+              Colliding records will be left unchanged:{" "}
+              {preview.collisions
+                .slice(0, MAX_LISTED_ERRORS)
+                .map((c) => `${c.collection}/${c.key}`)
+                .join(", ")}
+              {preview.collisions.length > MAX_LISTED_ERRORS
+                ? `, and ${preview.collisions.length - MAX_LISTED_ERRORS} more`
+                : ""}
+              .
+            </p>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-action="confirm-import"
+              className={buttonClass}
+              disabled={busy}
+              onClick={() => {
+                void onConfirmImport();
+              }}
+            >
+              Confirm import
+            </button>
+            <button
+              type="button"
+              data-action="cancel-import"
+              className={buttonClass}
+              disabled={busy}
+              onClick={onCancelImport}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {result !== null && (
+        <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
+          <p>{result}</p>
         </div>
       )}
 
