@@ -97,13 +97,15 @@ afterEach(() => {
 
 // --- Tests --------------------------------------------------------------------
 
-describe("TaskRoute — /tasks/new placeholder shell", () => {
-  it("renders an explicit create placeholder that links back to the catalog", () => {
+describe("TaskRoute — /tasks/new create editor", () => {
+  it("renders the create editor with a catalog escape", () => {
     const repo = new InMemoryTaskRepository();
     const h = render(<TaskNewRoute repo={repo} />);
-    expect(h.$("[data-task-new-placeholder]")).toBeTruthy();
+    // The Task 7 editor replaces the Task 6 placeholder.
+    expect(h.$("[data-task-new-placeholder]")).toBeNull();
+    expect(h.$("[data-task-editor='new']")).toBeTruthy();
     expect(h.container.textContent).toMatch(/creat/i);
-    // The back link targets the catalog, keeping the placeholder honest.
+    // The back link targets the catalog, keeping the route honest.
     const back = h.$("a[href='/tasks']");
     expect(back).toBeTruthy();
     cleanup(h);

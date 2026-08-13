@@ -1,18 +1,18 @@
 // =============================================================================
-// RSemble AI — Task route shells (canonical-tasks spec §7)
+// RSemble AI — Task routes (canonical-tasks spec §7)
 //
-// Child 02 (Canonical Tasks) Milestone D, Task 6.
+// Child 02 (Canonical Tasks) Milestone D, Tasks 6-7.
 //
-// Honest route shells for the canonical Task routes:
-//   /tasks/new                     → create placeholder (create flow ships in
-//                                    Task 7; this shell is explicit, not inert)
-//   /tasks/:taskId                 → stable identity header for direct loads;
+//   /tasks/new                     → atomic Task + version 1 create editor
+//   /tasks/:taskId                 → detail editor: draft latest version with
+//                                    dirty/saved state, explicit version N+1,
+//                                    duplicate identity, archive/restore CAS;
 //                                    archived Tasks stay routable (§4.5)
-//   /tasks/:taskId/versions/:v    → specific immutable version for direct loads
+//   /tasks/:taskId/versions/:v    → immutable read-only version view
 //
 // Unknown task IDs, unknown version numbers, and malformed version params
 // render explicit not-found / invalid states — never a silent redirect back to
-// the catalog. Full create/edit/draft behavior lands with Task 7.
+// the catalog.
 // =============================================================================
 
 import { useEffect, useState } from "react";
@@ -21,6 +21,7 @@ import { AlertCircle, ArrowLeft } from "lucide-react";
 import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
+import { TaskNewEditor, TaskDetailEditor, TaskVersionView } from "./TaskEditor";
 
 function StorageUnavailable() {
   return (
@@ -141,33 +142,16 @@ function useTaskRecord(repo: TaskRepository | null, taskId: string): {
 
 // --- /tasks/new --------------------------------------------------------------
 
-/** Honest placeholder for the Task-7 create flow. Explicit about what ships
- *  next; never a dead end — links back to the catalog. */
+/** Atomic Task + version 1 create editor (spec §7.3). */
 export function TaskNewRoute({ repo }: { repo: TaskRepository | null }) {
   if (repo === null) return <StorageUnavailable />;
-  return (
-    <div
-      data-task-new-placeholder
-      className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-12"
-    >
-      <h1 className="text-lg font-semibold text-text">Create task</h1>
-      <p className="text-sm text-text-secondary">
-        Task creation is landing next in this workbench. Once available, creating a task commits
-        the Task record and version 1 atomically — until then this page stays an explicit
-        placeholder rather than a dead form.
-      </p>
-      <div>
-        <BackToCatalog />
-      </div>
-    </div>
-  );
+  return <TaskNewEditor repo={repo} />;
 }
 
 // --- /tasks/:taskId ----------------------------------------------------------
 
-/** Task detail shell: stable identity header for direct loads. Full edit /
- *  draft / version-append flows land in Task 7; archived Tasks stay routable
- *  here (spec §4.5). */
+/** Task detail editor: stable identity header plus the draft/commit surface.
+ *  Archived Tasks stay routable here and expose restore (spec §4.5). */
 export function TaskDetailRoute({
   repo,
   taskId,
@@ -219,13 +203,18 @@ export function TaskDetailRoute({
         </div>
         <BackToCatalog />
       </header>
-      {version?.objective ? (
-        <p className="text-sm text-text-secondary">{version.objective}</p>
+      {/* The route hook exposes the repository through props so the editor
+          never couples to the storage context directly. `version` exists
+          whenever the record loads; a missing latest row would be corrupt
+          state and falls back to the identity header alone. */}
+      {version && repo ? (
+        <TaskDetailEditor
+          repo={repo}
+          initialRecord={record}
+          initialVersion={version}
+          onRefresh={retry}
+        />
       ) : null}
-      <p className="text-xs text-text-muted">
-        Full edit, draft, and version-append controls land in the next workbench step; this route
-        already supports direct loads and archive visibility.
-      </p>
     </div>
   );
 }
@@ -310,6 +299,7 @@ export function TaskVersionRoute({
   }
 
   const v = versionState.version;
+  const latestVersion = state.kind === "ready" ? state.record.latestVersion : v.version;
   return (
     <div
       data-task-version={`${taskId}@${version}`}
@@ -325,10 +315,7 @@ export function TaskVersionRoute({
         </div>
         <BackToCatalog />
       </header>
-      <p className="text-sm text-text-secondary">{v.objective}</p>
-      <p className="text-xs text-text-muted">
-        Committed versions are immutable; this view is always read-only.
-      </p>
+      <TaskVersionView version={v} latestVersion={latestVersion} />
     </div>
   );
 }
