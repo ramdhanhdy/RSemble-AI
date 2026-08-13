@@ -1,0 +1,868 @@
+// =============================================================================
+// RSemble AI — Archive v2 contract: envelope, collections, validators
+//
+// Child 02 (Canonical Tasks) Task 10A.
+//
+// Defines the extensible, task-first archive v2 envelope that round-trips the
+// exact current Run and Experiment evidence, all seven Fusion Study stores
+// (`fusionRecipes`, `poolManifests`, `fusionStudies`, `fusionTrials`,
+// `fusionAttempts`, `fusionObservations`, `fusionPlaybooks`), canonical
+// Rubrics, and every canonical Task collection available in this child —
+// including artifact bytes and legacy migration crosswalks.
+//
+// V1 (`WorkbenchArchiveV1` in `./archive.ts`) remains a distinct, readable
+// shape. V2 is deterministic and integrity-checked: an explicit manifest
+// carries format/storage versions, per-collection entity counts, a payload
+// digest over canonical JSON, and a local-scope disclosure. Pure validation
+// runs BEFORE any write and covers unknown versions, duplicate IDs, missing
+// references/artifacts, byte count/digest mismatch, prohibited credential/auth
+// content, deterministic ordering, and complete reference-graph validity.
+//
+// This module is types + pure validators only. No database mutation, no schema
+// migration, no UI, no provider calls. Disposable caches/indexes and
+// unrestricted `storageMeta` are intentionally omitted.
+// =============================================================================
+
+import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
+import { computeArtifactDigest } from "../tasks/task-instance";
+import {
+  CREDENTIAL_LIKE_VALUE,
+  hasProhibitedKeys,
+  PROHIBITED_KEYS,
+} from "../tasks/task-validation";
+import type {
+  TaskArtifact,
+  TaskFacetAnnotation,
+  TaskFamily,
+  TaskFamilyAssignment,
+  TaskFamilyRelation,
+  TaskInstance,
+  TaskRecord,
+  TaskVersion,
+} from "../tasks/task-types";
+import type { TaskMigrationCrosswalk } from "../tasks/task-references";
+import type {
+  EvaluationRubric,
+  EvaluationSuite,
+  ExperimentRecord,
+  RubricRecord,
+} from "../evaluations/evaluation-types";
+import type {
+  EvaluationObservation,
+  FusionAttempt,
+  FusionPlaybook,
+  FusionRecipeVersion,
+  FusionStudy,
+  FusionTrial,
+  PoolManifestVersion,
+} from "../evaluations/fusion-study-types";
+import { isRecord, type RunRecordV2, type RunSummary } from "./run-types";
+
+// --- Versions ----------------------------------------------------------------
+
+/** Envelope format version. Bumped only when the envelope structure changes in
+ *  a way older readers cannot parse. Distinct from v1's `schemaVersion: 1`. */
+export const ARCHIVE_V2_FORMAT_VERSION = 2;
+
+/** Storage schema version captured by this envelope (the Dexie schema version
+ *  the producer wrote against). Validators reject an unknown storage version so
+ *  a future schema cannot be silently partially imported. */
+export const ARCHIVE_V2_STORAGE_VERSION = 1;
+
+// --- Manifest / disclosure ---------------------------------------------------
+
+/** Local-scope disclosure. Archives are local-only artifacts; they never carry
+ *  remote/cloud transport metadata or credentials. */
+export interface ArchiveV2Disclosure {
+  scope: "local";
+  /** Sanitized, human-readable note. Never credentials or auth material. */
+  notes: string | null;
+}
+
+/** Deterministic per-collection entity counts. Every collection key in
+ *  `WorkbenchArchiveV2` has a matching count; validators reject a mismatch so a
+ *  truncated/padded payload cannot masquerade as complete. */
+export interface ArchiveV2EntityCounts {
+  runSummaries: number;
+  runDetails: number;
+  rubricIdentities: number;
+  rubricVersions: number;
+  suites: number;
+  experiments: number;
+  fusionRecipes: number;
+  poolManifests: number;
+  fusionStudies: number;
+  fusionTrials: number;
+  fusionAttempts: number;
+  fusionObservations: number;
+  fusionPlaybooks: number;
+  tasks: number;
+  taskVersions: number;
+  taskArtifacts: number;
+  taskArtifactBytes: number;
+  taskInstances: number;
+  taskFamilies: number;
+  taskFamilyAssignments: number;
+  taskFamilyRelations: number;
+  taskFacetAnnotations: number;
+  taskMigrationCrosswalks: number;
+}
+
+/** Extensible v2 manifest. Future additive fields must keep older validators
+ *  functional; `formatVersion` is the break-glass discriminator. */
+export interface ArchiveV2Manifest {
+  formatVersion: number;
+  storageVersion: number;
+  exportedAt: number;
+  producer: string;
+  counts: ArchiveV2EntityCounts;
+  /** Integrity digest (`sha256:<hex>`) over the canonical JSON of the data
+   *  payload (every collection except this manifest). */
+  payloadDigest: string;
+  disclosure: ArchiveV2Disclosure;
+}
+
+// --- Artifact bytes ----------------------------------------------------------
+
+/** Opaque artifact byte payload, carried alongside the artifact summary so a v2
+ *  archive is self-contained. Bytes are base64-encoded so the envelope is
+ *  JSON-serializable; validators decode and verify byte count + digest. */
+export interface ArchiveV2TaskArtifactBytes {
+  id: string;
+  bytesBase64: string;
+}
+
+// --- Envelope ----------------------------------------------------------------
+
+/** All seven Fusion Study stores (spec §8.5). */
+export interface ArchiveV2FusionPayload {
+  recipes: FusionRecipeVersion[];
+  poolManifests: PoolManifestVersion[];
+  studies: FusionStudy[];
+  trials: FusionTrial[];
+  attempts: FusionAttempt[];
+  observations: EvaluationObservation[];
+  playbooks: FusionPlaybook[];
+}
+
+/** Every canonical Task collection available in Child 02, including artifact
+ *  bytes and legacy migration crosswalks. Disposable caches/indexes are
+ *  omitted. */
+export interface ArchiveV2TaskPayload {
+  tasks: TaskRecord[];
+  taskVersions: TaskVersion[];
+  taskArtifacts: TaskArtifact[];
+  taskArtifactBytes: ArchiveV2TaskArtifactBytes[];
+  taskInstances: TaskInstance[];
+  taskFamilies: TaskFamily[];
+  taskFamilyAssignments: TaskFamilyAssignment[];
+  taskFamilyRelations: TaskFamilyRelation[];
+  taskFacetAnnotations: TaskFacetAnnotation[];
+  taskMigrationCrosswalks: TaskMigrationCrosswalk[];
+}
+
+/** The complete, task-first archive v2 envelope. Structurally distinct from
+ *  `WorkbenchArchiveV1`: a manifest with format/storage versions, integrity
+ *  digest, and local-scope disclosure; Fusion and Task collections are
+ *  first-class; artifact bytes travel with the archive. */
+export interface WorkbenchArchiveV2 {
+  manifest: ArchiveV2Manifest;
+  runs: { summaries: RunSummary[]; details: RunRecordV2[] };
+  rubrics: { identities: RubricRecord[]; versions: EvaluationRubric[] };
+  suites: EvaluationSuite[];
+  experiments: ExperimentRecord[];
+  fusion: ArchiveV2FusionPayload;
+  tasks: ArchiveV2TaskPayload;
+}
+
+/** Top-level collection keys, in deterministic declaration order. Used by
+ *  fixtures and tests; validators check each is present and array-typed. */
+export const ARCHIVE_V2_COLLECTION_KEYS = [
+  "manifest",
+  "runs",
+  "rubrics",
+  "suites",
+  "experiments",
+  "fusion",
+  "tasks",
+] as const;
+
+// --- Validation result -------------------------------------------------------
+
+export interface ArchiveV2ValidationError {
+  field: string;
+  message: string;
+}
+
+export interface ArchiveV2ValidationResult {
+  valid: boolean;
+  errors: ArchiveV2ValidationError[];
+}
+
+function fail(errors: ArchiveV2ValidationError[]): ArchiveV2ValidationResult {
+  return { valid: false, errors };
+}
+
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === "string" && v.length > 0;
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+// --- Payload digest ----------------------------------------------------------
+
+/** The data payload over which the integrity digest is computed — every
+ *  collection except the manifest (which carries the digest itself). Key order
+ *  is deterministic so the digest is stable. */
+function payloadForDigest(archive: WorkbenchArchiveV2): Record<string, unknown> {
+  return {
+    runs: archive.runs,
+    rubrics: archive.rubrics,
+    suites: archive.suites,
+    experiments: archive.experiments,
+    fusion: archive.fusion,
+    tasks: archive.tasks,
+  };
+}
+
+/** Recompute the integrity digest (`sha256:<hex>`) over the canonical JSON of
+ *  the data payload. Deterministic: recursive key sort, stable collection key
+ *  order, base64 artifact bytes. */
+export function computeArchiveV2PayloadDigest(archive: WorkbenchArchiveV2): string {
+  const canonical = canonicalJsonString(payloadForDigest(archive));
+  const bytes = new TextEncoder().encode(canonical);
+  return computeArtifactDigest(bytes);
+}
+
+// --- Type guard --------------------------------------------------------------
+
+/** Lightweight structural guard: an object with a v2 manifest and every
+ *  top-level collection key. Full validation is `validateArchiveV2`. */
+export function isWorkbenchArchiveV2(value: unknown): value is WorkbenchArchiveV2 {
+  if (!isRecord(value)) return false;
+  const manifest = value.manifest;
+  if (!isRecord(manifest)) return false;
+  if (manifest.formatVersion !== ARCHIVE_V2_FORMAT_VERSION) return false;
+  for (const key of ARCHIVE_V2_COLLECTION_KEYS) {
+    if (!(key in value)) return false;
+  }
+  return true;
+}
+
+// --- Prohibited content scan -------------------------------------------------
+
+/** Deep-scan a value for a credential-like string (`sk-`, `AIza`, `Bearer ` at
+ *  start) or a prohibited credential/transport key. Returns true on the first
+ *  hit. Never echoes the offending value. */
+function hasProhibitedContent(value: unknown): boolean {
+  if (typeof value === "string") return CREDENTIAL_LIKE_VALUE.test(value);
+  if (Array.isArray(value)) {
+    for (const item of value) if (hasProhibitedContent(item)) return true;
+    return false;
+  }
+  if (isRecord(value)) {
+    for (const key of Object.keys(value)) {
+      if (PROHIBITED_KEYS.has(key)) return true;
+      if (hasProhibitedContent(value[key])) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/** Scan every collection for prohibited credential/auth content. Returns the
+ *  first human-readable violation label, or null. */
+function scanProhibitedContent(archive: WorkbenchArchiveV2): string | null {
+  const collections: Array<[string, unknown]> = [
+    ["runs", archive.runs],
+    ["rubrics", archive.rubrics],
+    ["suites", archive.suites],
+    ["experiments", archive.experiments],
+    ["fusion", archive.fusion],
+    ["tasks", archive.tasks],
+  ];
+  for (const [label, value] of collections) {
+    if (hasProhibitedKeys(value)) return `prohibited credential/transport key in ${label}`;
+    if (hasProhibitedContent(value)) return `credential-like value in ${label}`;
+  }
+  return null;
+}
+
+// --- Ordering + duplicate key extractors -------------------------------------
+
+function byId(item: { id: string }): string {
+  return item.id;
+}
+
+function byIdVersion(item: { id: string; version: number }): string {
+  return `${item.id}\u0000${item.version.toString().padStart(10, "0")}`;
+}
+
+function byTaskIdVersion(item: { taskId: string; version: number }): string {
+  return `${item.taskId}\u0000${item.version.toString().padStart(10, "0")}`;
+}
+
+function byLegacyScopeKey(item: { legacyScopeKey: string }): string {
+  return item.legacyScopeKey;
+}
+
+interface OrderingSpec<T> {
+  field: string;
+  items: T[];
+  key: (item: T) => string;
+}
+
+/** Verify a collection is sorted ascending by its deterministic key. */
+function checkOrdering<T>(spec: OrderingSpec<T>, errors: ArchiveV2ValidationError[]): void {
+  const { field, items, key } = spec;
+  for (let i = 1; i < items.length; i++) {
+    if (key(items[i - 1]) > key(items[i])) {
+      errors.push({
+        field,
+        message: `${field} is not in deterministic order at index ${i}.`,
+      });
+      return;
+    }
+  }
+}
+
+/** Record duplicate-key errors for a collection. */
+function checkDuplicates<T>(
+  field: string,
+  items: T[],
+  key: (item: T) => string,
+  errors: ArchiveV2ValidationError[],
+): void {
+  const seen = new Set<string>();
+  items.forEach((item, i) => {
+    const k = key(item);
+    if (seen.has(k)) {
+      errors.push({ field: `${field}[${i}]`, message: `duplicate ${field} key ${k}.` });
+    } else {
+      seen.add(k);
+    }
+  });
+}
+
+// --- Structural validators ---------------------------------------------------
+
+
+function requireArrays(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationError[]): void {
+  // Container collections (`runs`, `rubrics`, `fusion`, `tasks`) must be objects
+  // before their inner arrays can be read; a missing/malformed container is
+  // reported once and the inner arrays are skipped so validation never crashes.
+  const checks: Array<[string, unknown]> = [
+    ["suites", archive.suites],
+    ["experiments", archive.experiments],
+  ];
+  const runs = archive.runs;
+  if (isRecord(runs)) {
+    checks.push(["runs.summaries", runs.summaries], ["runs.details", runs.details]);
+  } else {
+    errors.push({ field: "runs", message: "runs must be an object." });
+  }
+  const rubrics = archive.rubrics;
+  if (isRecord(rubrics)) {
+    checks.push(
+      ["rubrics.identities", rubrics.identities],
+      ["rubrics.versions", rubrics.versions],
+    );
+  } else {
+    errors.push({ field: "rubrics", message: "rubrics must be an object." });
+  }
+  const fusion = archive.fusion;
+  if (isRecord(fusion)) {
+    checks.push(
+      ["fusion.recipes", fusion.recipes],
+      ["fusion.poolManifests", fusion.poolManifests],
+      ["fusion.studies", fusion.studies],
+      ["fusion.trials", fusion.trials],
+      ["fusion.attempts", fusion.attempts],
+      ["fusion.observations", fusion.observations],
+      ["fusion.playbooks", fusion.playbooks],
+    );
+  } else {
+    errors.push({ field: "fusion", message: "fusion must be an object." });
+  }
+  const tasks = archive.tasks;
+  if (isRecord(tasks)) {
+    checks.push(
+      ["tasks.tasks", tasks.tasks],
+      ["tasks.taskVersions", tasks.taskVersions],
+      ["tasks.taskArtifacts", tasks.taskArtifacts],
+      ["tasks.taskArtifactBytes", tasks.taskArtifactBytes],
+      ["tasks.taskInstances", tasks.taskInstances],
+      ["tasks.taskFamilies", tasks.taskFamilies],
+      ["tasks.taskFamilyAssignments", tasks.taskFamilyAssignments],
+      ["tasks.taskFamilyRelations", tasks.taskFamilyRelations],
+      ["tasks.taskFacetAnnotations", tasks.taskFacetAnnotations],
+      ["tasks.taskMigrationCrosswalks", tasks.taskMigrationCrosswalks],
+    );
+  } else {
+    errors.push({ field: "tasks", message: "tasks must be an object." });
+  }
+  for (const [field, value] of checks) {
+    if (!Array.isArray(value)) {
+      errors.push({ field, message: `${field} must be an array.` });
+    }
+  }
+}
+
+function validateManifest(
+  archive: WorkbenchArchiveV2,
+  errors: ArchiveV2ValidationError[],
+): void {
+  const m = archive.manifest;
+  if (!isRecord(m)) {
+    errors.push({ field: "manifest", message: "manifest must be an object." });
+    return;
+  }
+  if (m.formatVersion !== ARCHIVE_V2_FORMAT_VERSION) {
+    errors.push({
+      field: "manifest.formatVersion",
+      message: `unknown formatVersion ${String(m.formatVersion)}; expected ${ARCHIVE_V2_FORMAT_VERSION}.`,
+    });
+  }
+  if (!isFiniteNumber(m.storageVersion) || m.storageVersion !== ARCHIVE_V2_STORAGE_VERSION) {
+    errors.push({
+      field: "manifest.storageVersion",
+      message: `unknown storageVersion ${String(m.storageVersion)}; expected ${ARCHIVE_V2_STORAGE_VERSION}.`,
+    });
+  }
+  if (!isRecord(m.disclosure) || m.disclosure.scope !== "local") {
+    errors.push({
+      field: "manifest.disclosure.scope",
+      message: "disclosure.scope must be 'local'.",
+    });
+  }
+  if (!isNonEmptyString(m.payloadDigest) || !/^sha256:[0-9a-f]{64}$/.test(m.payloadDigest)) {
+    errors.push({
+      field: "manifest.payloadDigest",
+      message: "payloadDigest must be a sha256:<hex> digest.",
+    });
+  }
+  const c = m.counts;
+  if (!isRecord(c)) {
+    errors.push({ field: "manifest.counts", message: "manifest.counts must be an object." });
+    return;
+  }
+  const expected: Array<[keyof ArchiveV2EntityCounts, number]> = [
+    ["runSummaries", archive.runs.summaries.length],
+    ["runDetails", archive.runs.details.length],
+    ["rubricIdentities", archive.rubrics.identities.length],
+    ["rubricVersions", archive.rubrics.versions.length],
+    ["suites", archive.suites.length],
+    ["experiments", archive.experiments.length],
+    ["fusionRecipes", archive.fusion.recipes.length],
+    ["poolManifests", archive.fusion.poolManifests.length],
+    ["fusionStudies", archive.fusion.studies.length],
+    ["fusionTrials", archive.fusion.trials.length],
+    ["fusionAttempts", archive.fusion.attempts.length],
+    ["fusionObservations", archive.fusion.observations.length],
+    ["fusionPlaybooks", archive.fusion.playbooks.length],
+    ["tasks", archive.tasks.tasks.length],
+    ["taskVersions", archive.tasks.taskVersions.length],
+    ["taskArtifacts", archive.tasks.taskArtifacts.length],
+    ["taskArtifactBytes", archive.tasks.taskArtifactBytes.length],
+    ["taskInstances", archive.tasks.taskInstances.length],
+    ["taskFamilies", archive.tasks.taskFamilies.length],
+    ["taskFamilyAssignments", archive.tasks.taskFamilyAssignments.length],
+    ["taskFamilyRelations", archive.tasks.taskFamilyRelations.length],
+    ["taskFacetAnnotations", archive.tasks.taskFacetAnnotations.length],
+    ["taskMigrationCrosswalks", archive.tasks.taskMigrationCrosswalks.length],
+  ];
+  for (const [key, actual] of expected) {
+    if (!isFiniteNumber(c[key]) || (c[key] as number) !== actual) {
+      errors.push({
+        field: `manifest.counts.${key}`,
+        message: `count mismatch for ${key}: manifest ${String(c[key])} vs actual ${actual}.`,
+      });
+    }
+  }
+  if (isNonEmptyString(m.payloadDigest) && /^sha256:[0-9a-f]{64}$/.test(m.payloadDigest)) {
+    const recomputed = computeArchiveV2PayloadDigest(archive);
+    if (recomputed !== m.payloadDigest) {
+      errors.push({
+        field: "manifest.payloadDigest",
+        message: "payload digest does not match the recomputed integrity digest.",
+      });
+    }
+  }
+}
+
+function validateReferenceGraph(
+  archive: WorkbenchArchiveV2,
+  errors: ArchiveV2ValidationError[],
+): void {
+  const rubricIds = new Set(archive.rubrics.identities.map((r) => r.id));
+  archive.rubrics.versions.forEach((v, i) => {
+    if (!rubricIds.has(v.id)) {
+      errors.push({
+        field: `rubrics.versions[${i}].id`,
+        message: `rubric version references unknown rubric identity ${v.id}.`,
+      });
+    }
+  });
+
+  const taskIds = new Set(archive.tasks.tasks.map((t) => t.id));
+  const taskLatest = new Map<string, number>();
+  archive.tasks.tasks.forEach((t) => taskLatest.set(t.id, t.latestVersion));
+  const versionKeys = new Set<string>();
+  archive.tasks.taskVersions.forEach((v, i) => {
+    versionKeys.add(`${v.taskId}@${v.version}`);
+    if (!taskIds.has(v.taskId)) {
+      errors.push({
+        field: `tasks.taskVersions[${i}].taskId`,
+        message: `version references unknown task ${v.taskId}.`,
+      });
+    }
+    const latest = taskLatest.get(v.taskId);
+    if (latest !== undefined && v.version > latest) {
+      errors.push({
+        field: `tasks.taskVersions[${i}].version`,
+        message: `version ${v.version} exceeds latestVersion ${latest} for task ${v.taskId}.`,
+      });
+    }
+  });
+  for (const [taskId, latest] of taskLatest) {
+    for (let n = 1; n <= latest; n++) {
+      if (!versionKeys.has(`${taskId}@${n}`)) {
+        errors.push({
+          field: "tasks.taskVersions",
+          message: `task ${taskId} is missing version ${n}.`,
+        });
+      }
+    }
+  }
+
+  const artifactIds = new Set(archive.tasks.taskArtifacts.map((a) => a.id));
+  archive.tasks.taskInstances.forEach((inst, i) => {
+    if (!versionKeys.has(`${inst.taskId}@${inst.taskVersion}`)) {
+      errors.push({
+        field: `tasks.taskInstances[${i}]`,
+        message: `instance references unknown task version ${inst.taskId}@${inst.taskVersion}.`,
+      });
+    }
+    for (const aid of inst.normalizedInput.artifactIds) {
+      if (!artifactIds.has(aid)) {
+        errors.push({
+          field: `tasks.taskInstances[${i}].normalizedInput.artifactIds`,
+          message: `instance references unknown artifact ${aid}.`,
+        });
+      }
+    }
+    for (const entry of inst.contextManifest) {
+      if (entry.artifactId !== null && !artifactIds.has(entry.artifactId)) {
+        errors.push({
+          field: `tasks.taskInstances[${i}].contextManifest`,
+          message: `instance context manifest references unknown artifact ${entry.artifactId}.`,
+        });
+      }
+    }
+  });
+
+  archive.tasks.taskVersions.forEach((v, i) => {
+    for (const entry of v.defaultContextManifest) {
+      if (entry.artifactId !== null && !artifactIds.has(entry.artifactId)) {
+        errors.push({
+          field: `tasks.taskVersions[${i}].defaultContextManifest`,
+          message: `context manifest references unknown artifact ${entry.artifactId}.`,
+        });
+      }
+    }
+  });
+
+  const familyIds = new Set(archive.tasks.taskFamilies.map((f) => f.id));
+  archive.tasks.taskFamilyAssignments.forEach((a, i) => {
+    if (!versionKeys.has(`${a.taskId}@${a.taskVersion}`)) {
+      errors.push({
+        field: `tasks.taskFamilyAssignments[${i}]`,
+        message: `assignment references unknown task version ${a.taskId}@${a.taskVersion}.`,
+      });
+    }
+    if (!familyIds.has(a.familyId)) {
+      errors.push({
+        field: `tasks.taskFamilyAssignments[${i}].familyId`,
+        message: `assignment references unknown family ${a.familyId}.`,
+      });
+    }
+  });
+
+  archive.tasks.taskFamilyRelations.forEach((r, i) => {
+    if (!familyIds.has(r.fromFamilyId)) {
+      errors.push({
+        field: `tasks.taskFamilyRelations[${i}].fromFamilyId`,
+        message: `relation references unknown family ${r.fromFamilyId}.`,
+      });
+    }
+    if (!familyIds.has(r.toFamilyId)) {
+      errors.push({
+        field: `tasks.taskFamilyRelations[${i}].toFamilyId`,
+        message: `relation references unknown family ${r.toFamilyId}.`,
+      });
+    }
+  });
+
+  const annotationIds = new Set(archive.tasks.taskFacetAnnotations.map((a) => a.id));
+  archive.tasks.taskFacetAnnotations.forEach((a, i) => {
+    if (!taskIds.has(a.taskId)) {
+      errors.push({
+        field: `tasks.taskFacetAnnotations[${i}].taskId`,
+        message: `annotation references unknown task ${a.taskId}.`,
+      });
+    }
+    if (a.supersedesId !== null && !annotationIds.has(a.supersedesId)) {
+      errors.push({
+        field: `tasks.taskFacetAnnotations[${i}].supersedesId`,
+        message: `annotation supersedes unknown annotation ${a.supersedesId}.`,
+      });
+    }
+  });
+
+  archive.tasks.taskMigrationCrosswalks.forEach((cw, i) => {
+    if (!versionKeys.has(`${cw.taskId}@${cw.taskVersion}`)) {
+      errors.push({
+        field: `tasks.taskMigrationCrosswalks[${i}]`,
+        message: `crosswalk references unknown task version ${cw.taskId}@${cw.taskVersion}.`,
+      });
+    }
+  });
+
+  const studyIds = new Set(archive.fusion.studies.map((s) => s.id));
+  const trialIds = new Set(archive.fusion.trials.map((t) => t.id));
+  archive.fusion.trials.forEach((t, i) => {
+    if (!studyIds.has(t.studyId)) {
+      errors.push({
+        field: `fusion.trials[${i}].studyId`,
+        message: `trial references unknown study ${t.studyId}.`,
+      });
+    }
+  });
+  archive.fusion.attempts.forEach((a, i) => {
+    if (!studyIds.has(a.studyId)) {
+      errors.push({
+        field: `fusion.attempts[${i}].studyId`,
+        message: `attempt references unknown study ${a.studyId}.`,
+      });
+    }
+  });
+  archive.fusion.observations.forEach((o, i) => {
+    if (!trialIds.has(o.trialId)) {
+      errors.push({
+        field: `fusion.observations[${i}].trialId`,
+        message: `observation references unknown trial ${o.trialId}.`,
+      });
+    }
+  });
+  archive.fusion.playbooks.forEach((p, i) => {
+    if (!studyIds.has(p.studyId)) {
+      errors.push({
+        field: `fusion.playbooks[${i}].studyId`,
+        message: `playbook references unknown study ${p.studyId}.`,
+      });
+    }
+  });
+}
+
+function validateArtifactBytes(
+  archive: WorkbenchArchiveV2,
+  errors: ArchiveV2ValidationError[],
+): void {
+  const summaryIds = new Set(archive.tasks.taskArtifacts.map((a) => a.id));
+  const bytesById = new Map<string, ArchiveV2TaskArtifactBytes>();
+  archive.tasks.taskArtifactBytes.forEach((b, i) => {
+    if (!summaryIds.has(b.id)) {
+      errors.push({
+        field: `tasks.taskArtifactBytes[${i}].id`,
+        message: `orphan artifact bytes ${b.id} with no matching artifact summary.`,
+      });
+    } else {
+      bytesById.set(b.id, b);
+    }
+  });
+  archive.tasks.taskArtifacts.forEach((a, i) => {
+    const bytes = bytesById.get(a.id);
+    if (!bytes) {
+      errors.push({
+        field: `tasks.taskArtifacts[${i}].id`,
+        message: `artifact ${a.id} is missing bytes payload.`,
+      });
+      return;
+    }
+    let decoded: Uint8Array;
+    try {
+      const raw = atob(bytes.bytesBase64);
+      decoded = new Uint8Array(raw.length);
+      for (let j = 0; j < raw.length; j++) decoded[j] = raw.charCodeAt(j);
+    } catch {
+      errors.push({
+        field: `tasks.taskArtifactBytes`,
+        message: `artifact ${a.id} bytes are not valid base64.`,
+      });
+      return;
+    }
+    if (decoded.length !== a.byteCount) {
+      errors.push({
+        field: `tasks.taskArtifacts[${i}].byteCount`,
+        message: `byte count mismatch for ${a.id}: summary ${a.byteCount} vs bytes ${decoded.length}.`,
+      });
+    }
+    const digest = computeArtifactDigest(decoded);
+    if (digest !== a.contentDigest) {
+      errors.push({
+        field: `tasks.taskArtifacts[${i}].contentDigest`,
+        message: `content digest mismatch for ${a.id}: summary ${a.contentDigest} vs computed ${digest}.`,
+      });
+    }
+  });
+}
+
+function validateOrdering(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationError[]): void {
+  checkOrdering({ field: "runs.summaries", items: archive.runs.summaries, key: byId }, errors);
+  checkOrdering({ field: "runs.details", items: archive.runs.details, key: byId }, errors);
+  checkOrdering(
+    { field: "rubrics.identities", items: archive.rubrics.identities, key: byId },
+    errors,
+  );
+  checkOrdering(
+    { field: "rubrics.versions", items: archive.rubrics.versions, key: byIdVersion },
+    errors,
+  );
+  checkOrdering({ field: "suites", items: archive.suites, key: byId }, errors);
+  checkOrdering({ field: "experiments", items: archive.experiments, key: byId }, errors);
+  checkOrdering(
+    { field: "fusion.recipes", items: archive.fusion.recipes, key: byIdVersion },
+    errors,
+  );
+  checkOrdering(
+    { field: "fusion.poolManifests", items: archive.fusion.poolManifests, key: byIdVersion },
+    errors,
+  );
+  checkOrdering({ field: "fusion.studies", items: archive.fusion.studies, key: byId }, errors);
+  checkOrdering({ field: "fusion.trials", items: archive.fusion.trials, key: byId }, errors);
+  checkOrdering({ field: "fusion.attempts", items: archive.fusion.attempts, key: byId }, errors);
+  checkOrdering(
+    { field: "fusion.observations", items: archive.fusion.observations, key: byId },
+    errors,
+  );
+  checkOrdering({ field: "fusion.playbooks", items: archive.fusion.playbooks, key: byId }, errors);
+  checkOrdering({ field: "tasks.tasks", items: archive.tasks.tasks, key: byId }, errors);
+  checkOrdering(
+    { field: "tasks.taskVersions", items: archive.tasks.taskVersions, key: byTaskIdVersion },
+    errors,
+  );
+  checkOrdering(
+    { field: "tasks.taskArtifacts", items: archive.tasks.taskArtifacts, key: byId },
+    errors,
+  );
+  checkOrdering(
+    { field: "tasks.taskArtifactBytes", items: archive.tasks.taskArtifactBytes, key: byId },
+    errors,
+  );
+  checkOrdering(
+    { field: "tasks.taskInstances", items: archive.tasks.taskInstances, key: byId },
+    errors,
+  );
+  checkOrdering(
+    { field: "tasks.taskFamilies", items: archive.tasks.taskFamilies, key: byId },
+    errors,
+  );
+  checkOrdering(
+    { field: "tasks.taskFamilyAssignments", items: archive.tasks.taskFamilyAssignments, key: byId },
+    errors,
+  );
+  checkOrdering(
+    { field: "tasks.taskFamilyRelations", items: archive.tasks.taskFamilyRelations, key: byId },
+    errors,
+  );
+  checkOrdering(
+    { field: "tasks.taskFacetAnnotations", items: archive.tasks.taskFacetAnnotations, key: byId },
+    errors,
+  );
+  checkOrdering(
+    {
+      field: "tasks.taskMigrationCrosswalks",
+      items: archive.tasks.taskMigrationCrosswalks,
+      key: byLegacyScopeKey,
+    },
+    errors,
+  );
+}
+
+function validateDuplicates(
+  archive: WorkbenchArchiveV2,
+  errors: ArchiveV2ValidationError[],
+): void {
+  checkDuplicates("runs.summaries", archive.runs.summaries, byId, errors);
+  checkDuplicates("runs.details", archive.runs.details, byId, errors);
+  checkDuplicates("rubrics.identities", archive.rubrics.identities, byId, errors);
+  checkDuplicates("rubrics.versions", archive.rubrics.versions, byIdVersion, errors);
+  checkDuplicates("suites", archive.suites, byId, errors);
+  checkDuplicates("experiments", archive.experiments, byId, errors);
+  checkDuplicates("fusion.recipes", archive.fusion.recipes, byIdVersion, errors);
+  checkDuplicates("fusion.poolManifests", archive.fusion.poolManifests, byIdVersion, errors);
+  checkDuplicates("fusion.studies", archive.fusion.studies, byId, errors);
+  checkDuplicates("fusion.trials", archive.fusion.trials, byId, errors);
+  checkDuplicates("fusion.attempts", archive.fusion.attempts, byId, errors);
+  checkDuplicates("fusion.observations", archive.fusion.observations, byId, errors);
+  checkDuplicates("fusion.playbooks", archive.fusion.playbooks, byId, errors);
+  checkDuplicates("tasks.tasks", archive.tasks.tasks, byId, errors);
+  checkDuplicates("tasks.taskVersions", archive.tasks.taskVersions, byTaskIdVersion, errors);
+  checkDuplicates("tasks.taskArtifacts", archive.tasks.taskArtifacts, byId, errors);
+  checkDuplicates("tasks.taskArtifactBytes", archive.tasks.taskArtifactBytes, byId, errors);
+  checkDuplicates("tasks.taskInstances", archive.tasks.taskInstances, byId, errors);
+  checkDuplicates("tasks.taskFamilies", archive.tasks.taskFamilies, byId, errors);
+  checkDuplicates("tasks.taskFamilyAssignments", archive.tasks.taskFamilyAssignments, byId, errors);
+  checkDuplicates("tasks.taskFamilyRelations", archive.tasks.taskFamilyRelations, byId, errors);
+  checkDuplicates("tasks.taskFacetAnnotations", archive.tasks.taskFacetAnnotations, byId, errors);
+  checkDuplicates(
+    "tasks.taskMigrationCrosswalks",
+    archive.tasks.taskMigrationCrosswalks,
+    byLegacyScopeKey,
+    errors,
+  );
+}
+
+// --- Public validator --------------------------------------------------------
+
+/** Validate a complete archive v2 envelope BEFORE any write. Pure: no side
+ *  effects, no database. Covers unknown versions, missing collections,
+ *  duplicate IDs, missing references/artifacts, byte count/digest mismatch,
+ *  prohibited credential/auth content, deterministic ordering, manifest count
+ *  and payload-digest integrity, and complete reference-graph validity. */
+export function validateArchiveV2(value: unknown): ArchiveV2ValidationResult {
+  if (!isRecord(value)) {
+    return fail([{ field: "", message: "archive v2 must be an object." }]);
+  }
+  // Boundary assertion: isRecord proved object shape; assert the named envelope
+  // type once at the validation boundary (rule-sanctioned), not per field.
+  const archive = value as unknown as WorkbenchArchiveV2;
+  const errors: ArchiveV2ValidationError[] = [];
+
+  for (const key of ARCHIVE_V2_COLLECTION_KEYS) {
+    if (!(key in archive)) {
+      errors.push({ field: key, message: `archive v2 is missing top-level collection ${key}.` });
+    }
+  }
+  if (!isRecord(archive.manifest)) {
+    errors.push({ field: "manifest", message: "manifest must be an object." });
+  }
+  requireArrays(archive, errors);
+  // Stop early if structure is broken so downstream validators do not crash.
+  if (errors.length > 0) return fail(errors);
+
+  validateManifest(archive, errors);
+  validateDuplicates(archive, errors);
+  validateOrdering(archive, errors);
+  validateReferenceGraph(archive, errors);
+  validateArtifactBytes(archive, errors);
+
+  const prohibited = scanProhibitedContent(archive);
+  if (prohibited !== null) {
+    errors.push({ field: "payload", message: prohibited });
+  }
+
+  return errors.length === 0 ? { valid: true, errors: [] } : fail(errors);
+}
