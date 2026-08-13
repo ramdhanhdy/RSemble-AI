@@ -9,8 +9,8 @@
 //   - latest suite definition included even when never executed (§6.2 #6)
 //   - historical definitions sorted by explicit execution/suite chronology
 //     with deterministic tie-breaks (§6.2 #3)
-//   - verifier differences are part of the digest contract; evaluation and
-//     judge instruction are execution protocol, not Task identity
+//   - verifier and evaluation differences are part of the digest contract;
+//     judge instruction is execution protocol, not Task identity
 //   - never auto-merged across different suite scopes (§6.2 #7)
 //   - missing/corrupt definitions stay explicit; nothing is fabricated
 //     into a complete Task (§6.4)
@@ -116,6 +116,7 @@ function expectedDigest(task: EvaluationTask): string {
     defaultContextManifest: [],
     responseContract: null,
     taskVerifierRef: task.verification ?? null,
+    evaluation: task.evaluation,
   }));
 }
 
@@ -237,7 +238,7 @@ describe("buildLegacyTaskInventory — experiment snapshots", () => {
     ]);
   });
 
-  it("does not split entries when evaluation selection changes but the Task definition is stable", () => {
+  it("splits entries when evaluation selection changes even if prose is unchanged", () => {
     const inherit = makeTask({ prompt: "P", evaluation: { kind: "inherit" } });
     const holistic = makeTask({ prompt: "P", evaluation: { kind: "holistic" } });
 
@@ -254,8 +255,11 @@ describe("buildLegacyTaskInventory — experiment snapshots", () => {
     });
 
     const result = buildLegacyTaskInventory(input([currentSuite], [experiment]));
-    expect(result.entries).toHaveLength(1);
-    expect(result.entries[0].definitionDigest).toBe(expectedDigest(inherit));
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries.map((entry) => entry.definitionDigest)).toEqual([
+      expectedDigest(inherit),
+      expectedDigest(holistic),
+    ]);
   });
 
   it("does not split entries for judge-instruction-only protocol edits", () => {

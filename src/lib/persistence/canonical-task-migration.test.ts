@@ -100,6 +100,10 @@ describe("migrateEmbeddedLegacyTasks", () => {
     expect(await db.tasks.count()).toBe(1);
     expect(await db.taskVersions.count()).toBe(2);
     expect(await db.taskMigrationCrosswalk.count()).toBe(2);
+    const latestVersion = (await db.taskVersions.get([(
+      await db.tasks.toArray()
+    )[0].id, 2]))!.version_;
+    expect(latestVersion.source.note).toContain('legacy-evaluation:{"kind":"inherit"}');
     expect(await db.storageMeta.get(canonicalTaskMigrationMarkerKey)).toBeDefined();
     expect(JSON.stringify({ sourceSuite, sourceExperiment })).toBe(before);
     expect((await db.suites.get("suite-1"))?.suite).toEqual(sourceSuite);
