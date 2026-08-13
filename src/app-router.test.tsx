@@ -557,10 +557,37 @@ describe("AppRouter — canonical Task routes (spec §7)", () => {
     cleanup(h);
   });
 
-  it("direct-loads /tasks/new and renders the honest create placeholder", async () => {
+  it("direct-loads /tasks/new and renders the real create editor (spec §7.3)", async () => {
     const taskRepo = new InMemoryTaskRepository();
     const h = await renderRouterAsync({ initialEntries: ["/tasks/new"], taskRepo });
-    expect(h.$("[data-task-new-placeholder]")).toBeTruthy();
+    // The Task 6 placeholder is gone; a functional create form takes its place.
+    expect(h.$("[data-task-new-placeholder]")).toBeNull();
+    expect(h.$("[data-task-editor='new']")).toBeTruthy();
+    expect(h.$("input[data-editor-field='title']")).toBeTruthy();
+    expect(h.$("button[data-action='create-task']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("direct-loads /tasks/:taskId into the editing surface with dirty/saved state", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1"], taskRepo });
+    // The detail surface is the functional Task 7 editor, not the Task 6 shell.
+    expect(h.$("[data-task-detail='t-1']")).toBeTruthy();
+    expect(h.$("input[data-editor-field='title']")).toBeTruthy();
+    expect(h.$("[data-editor-status]")?.textContent).toMatch(/saved/i);
+    expect(h.$("button[data-action='create-version']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("direct-loads /tasks/:taskId/versions/:version as a read-only version view", async () => {
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
+    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/1"], taskRepo });
+    expect(h.$("[data-task-version='t-1@1']")).toBeTruthy();
+    const title = h.$("input[data-editor-field='title']") as HTMLInputElement | null;
+    expect(title?.disabled).toBe(true);
+    expect(title?.value).toBe("Summarize a report");
     cleanup(h);
   });
 

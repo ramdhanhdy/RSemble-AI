@@ -34,6 +34,7 @@ import {
 import {
   buildInitialTaskRecord,
   buildNextVersion,
+  duplicateTaskRecord,
 } from "../tasks/task-versioning";
 import type {
   ContextManifestEntry,
@@ -229,6 +230,27 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       const repo = makeRepo();
       const bad = { ...taskRecord(), apiKey: "sk-leak" } as unknown as TaskRecord;
       await expect(repo.createTask(bad, taskVersion())).rejects.toThrow(/prohibited|validation/i);
+    });
+
+    // --- Task 7: long fields survive intact through create -----------------
+
+    it("persists very long title/objective/instruction fields without truncation", async () => {
+      const repo = makeRepo();
+      const longTitle = `Long ${"T".repeat(8000)}`;
+      const longObjective = `Even longer ${"O".repeat(32000)}`;
+      const longInstruction = `Instruction ${"I".repeat(16000)}`;
+      await repo.createTask(
+        taskRecord(),
+        taskVersion({
+          title: longTitle,
+          objective: longObjective,
+          candidateInstruction: longInstruction,
+        }),
+      );
+      const got = await repo.getTaskVersion("task-1", 1);
+      expect(got?.title).toBe(longTitle);
+      expect(got?.objective).toBe(longObjective);
+      expect(got?.candidateInstruction).toBe(longInstruction);
     });
 
     // --- contiguous append with CAS -----------------------------------------
@@ -927,6 +949,136 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
         .catch((e) => e as { name: string; kind: string }))!;
       expect(err.name).toBe("StorageError");
       expect(err.kind).toBe("conflict");
+    });
+
+    // --- Task 7: duplicate as a new authored identity (spec §7.3) -----------
+    //
+    // Duplicate is a pure-repository concern: the always-auth builders
+    // produce a brand-new TaskRecord + version 1, and createTask persists
+    // them as an independent identity — never an implied version of the
+    // source and never carrying the source's lineage.
+
+    it("duplicates a Task as a new authored identity with its own version 1", async () => {
+      const repo = makeRepo();
+      // Source with two versions so "implied version of the source" is
+      // distinguishable from a fresh lineage.
+      await repo.createTask(taskRecord(), taskVersion());
+      const record = (await repo.getTaskRecord("task-1"))!;
+      const v1 = (await repo.getTaskVersion("task-1", 1))!;
+      const v2 = buildNextVersion({
+        latestVersion: 1,
+        taskId: "task-1",
+        draft: { ...v1, title: "Second cut" },
+        createdAt: NOW + 1,
+        source: source(),
+      });
+      await repo.appendTaskVersion(record, v2, record.revision);
+
+      const sourceRecord = (await repo.getTaskRecord("task-1"))!; // revision advanced
+      const now = NOW + 2;
+      const copy = duplicateTaskRecord({ source: sourceRecord, newId: "task-copy", createdAt: now });
+      // The duplicate version rebinds the latest source content to the new
+      // identity at version 1, with explicit authored provenance (spec §7.3:
+      // "never becomes a version of the source by implication").
+      const copyV1: TaskVersion = {
+        ...v2,
+        taskId: "task-copy",
+        version: 1,
+        createdAt: now,
+        defaultContextManifest: v2.defaultContextManifest.map((entry) => ({ ...entry })),
+        responseContract: v2.responseContract
+          ? { ...v2.responseContract, constraints: [...v2.responseContract.constraints] }
+          : null,
+        taskVerifierRef: v2.taskVerifierRef ? { ...v2.taskVerifierRef } : null,
+        source: { kind: "authored", legacyScopeKey: null, note: "Duplicated from task-1" },
+      };
+      await repo.createTask(copy, copyV1);
+
+      const gotRecord = (await repo.getTaskRecord("task-copy"))!;
+      expect(gotRecord.origin).toBe("authored");
+      expect(gotRecord.latestVersion).toBe(1);
+      expect(gotRecord.revision).toBe(0);
+      expect(gotRecord.archivedAt).toBeNull();
+      const gotV1 = (await repo.getTaskVersion("task-copy", 1))!;
+      expect(gotV1.title).toBe("Second cut");
+      expect(gotV1.taskId).toBe("task-copy");
+      expect(gotV1.source.kind).toBe("authored");
+      // The copy's lineage ends at its own version 1: the source's version 2
+      // is not addressable under the new identity.
+      expect(await repo.getTaskVersion("task-copy", 2)).toBeNull();
+      // And the source is untouched.
+      expect((await repo.getTaskRecord("task-1"))!.latestVersion).toBe(2);
+    });
+
+    it("duplicateTaskRecord does not mutate the source record and origin stays authored", async () => {
+      const original = { ...taskRecord({ id: "task-src" }), revision: 7, latestVersion: 3 };
+      const copy = duplicateTaskRecord({ source: original, newId: "task-dup", createdAt: NOW });
+      expect(copy.id).toBe("task-dup");
+      expect(copy.latestVersion).toBe(1);
+      expect(copy.revision).toBe(0);
+      // Pure: the source record is unchanged.
+      expect(original.revision).toBe(7);
+      expect(original.latestVersion).toBe(3);
+      expect(original.id).toBe("task-src");
+    });
+
+    it("committing a new version on the duplicate never touches the source lineage", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      const sourceRecord = (await repo.getTaskRecord("task-1"))!;
+      const copy = duplicateTaskRecord({ source: sourceRecord, newId: "task-copy", createdAt: NOW + 5 });
+      const sourceV1 = (await repo.getTaskVersion("task-1", 1))!;
+      const copyV1: TaskVersion = {
+        ...sourceV1,
+        taskId: "task-copy",
+        version: 1,
+        createdAt: NOW + 5,
+        defaultContextManifest: sourceV1.defaultContextManifest.map((entry) => ({ ...entry })),
+        source: source(),
+      };
+      await repo.createTask(copy, copyV1);
+      // The duplicate evolves independently: appending its own version 2 must
+      // not leak into the source's history or versions.
+      const appended = buildNextVersion({
+        latestVersion: 1,
+        taskId: "task-copy",
+        draft: { ...copyV1, title: "copy v2" },
+        createdAt: NOW + 6,
+        source: source(),
+      });
+      await repo.appendTaskVersion(copy, appended, copy.revision);
+      expect((await repo.getTaskRecord("task-copy"))!.latestVersion).toBe(2);
+      expect((await repo.getTaskRecord("task-1"))!.latestVersion).toBe(1);
+      expect((await repo.getTaskVersion("task-1", 1))!.title).toBe(sourceV1.title);
+    });
+
+    // --- Task 7: archive/restore revision CAS rounds -----------------------
+
+    it("alternating archive/restore rounds keep revisions monotonic", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      const r1 = await repo.archiveTask("task-1", 0);
+      expect(r1).toBe(1);
+      const r2 = await repo.restoreTask("task-1", r1);
+      expect(r2).toBe(2);
+      const r3 = await repo.archiveTask("task-1", r2);
+      expect(r3).toBe(3);
+      const r4 = await repo.restoreTask("task-1", r3);
+      expect(r4).toBe(4);
+      const got = (await repo.getTaskRecord("task-1"))!;
+      expect(got.archivedAt).toBeNull();
+      expect(got.revision).toBe(4);
+    });
+
+    it("rejects a stale restore revision as a conflict", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      await repo.archiveTask("task-1", 0);
+      await expect(repo.restoreTask("task-1", 999)).rejects.toThrow(/Stale|conflict/i);
+      // Nothing half-restored.
+      const got = (await repo.getTaskRecord("task-1"))!;
+      expect(got.archivedAt).not.toBeNull();
+      expect(got.revision).toBe(1);
     });
 
     // --- referenced-version protection seam ---------------------------------
