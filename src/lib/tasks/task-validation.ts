@@ -68,6 +68,93 @@ export const TASK_INPUT_COMPLETENESS_VALUES: readonly TaskInputCompleteness[] = 
   "incomplete",
 ];
 
+// --- Facet taxonomy allowlist seam (spec §3.6) -----------------------------
+//
+// A stable, read-only allowlist over the eight specification dimensions and
+// the taxonomy versions needed by Task 8 UI. This is a query seam only: it
+// does not invent automatic classification, does not own a mutable global
+// taxonomy, and does not infer a universal capability tree. Task 8 UI reads
+// the allowlist to render facet choices; annotations still record their own
+// `taxonomyVersion` and `facetId`/`valueId` identity.
+
+/** Taxonomy versions shipped by this child. Additive only — a new version
+ *  never rewrites an older value's identity. */
+export const FACET_TAXONOMY_VERSIONS: readonly number[] = Object.freeze([1]);
+
+/** A single allowlisted taxonomy value. */
+interface FacetTaxonomySeedValue {
+  facetId: string;
+  valueId: string;
+  label: string;
+  taxonomyVersion: number;
+}
+
+/** The full allowlisted facet taxonomy across all shipped versions. Frozen so
+ *  callers cannot mutate global taxonomy ownership through the seam. */
+export const FACET_TAXONOMY_VALUES: readonly FacetTaxonomyValue[] = Object.freeze(
+  ((): FacetTaxonomySeedValue[] => {
+    const v1: FacetTaxonomySeedValue[] = [
+      // domain
+      { facetId: "domain", valueId: "nlp", label: "Natural language", taxonomyVersion: 1 },
+      { facetId: "domain", valueId: "code", label: "Code & software", taxonomyVersion: 1 },
+      { facetId: "domain", valueId: "math", label: "Mathematics & reasoning", taxonomyVersion: 1 },
+      { facetId: "domain", valueId: "multimodal", label: "Multimodal", taxonomyVersion: 1 },
+      { facetId: "domain", valueId: "knowledge-retrieval", label: "Knowledge & retrieval", taxonomyVersion: 1 },
+      // task-form
+      { facetId: "task-form", valueId: "generation", label: "Generation", taxonomyVersion: 1 },
+      { facetId: "task-form", valueId: "summarization", label: "Summarization", taxonomyVersion: 1 },
+      { facetId: "task-form", valueId: "classification", label: "Classification", taxonomyVersion: 1 },
+      { facetId: "task-form", valueId: "extraction", label: "Extraction", taxonomyVersion: 1 },
+      { facetId: "task-form", valueId: "translation", label: "Translation", taxonomyVersion: 1 },
+      { facetId: "task-form", valueId: "rewriting", label: "Rewriting", taxonomyVersion: 1 },
+      { facetId: "task-form", valueId: "open-ended-q-a", label: "Open-ended Q&A", taxonomyVersion: 1 },
+      // transformation
+      { facetId: "transformation", valueId: "none", label: "None (direct answer)", taxonomyVersion: 1 },
+      { facetId: "transformation", valueId: "reformat", label: "Reformat", taxonomyVersion: 1 },
+      { facetId: "transformation", valueId: "compress", label: "Compress", taxonomyVersion: 1 },
+      { facetId: "transformation", valueId: "expand", label: "Expand", taxonomyVersion: 1 },
+      { facetId: "transformation", valueId: "reorder", label: "Reorder", taxonomyVersion: 1 },
+      // constraint
+      { facetId: "constraint", valueId: "none", label: "None", taxonomyVersion: 1 },
+      { facetId: "constraint", valueId: "length", label: "Length bound", taxonomyVersion: 1 },
+      { facetId: "constraint", valueId: "format", label: "Format bound", taxonomyVersion: 1 },
+      { facetId: "constraint", valueId: "style", label: "Style bound", taxonomyVersion: 1 },
+      { facetId: "constraint", valueId: "safety", label: "Safety bound", taxonomyVersion: 1 },
+      // interaction-mode
+      { facetId: "interaction-mode", valueId: "single-turn", label: "Single-turn", taxonomyVersion: 1 },
+      { facetId: "interaction-mode", valueId: "multi-turn", label: "Multi-turn", taxonomyVersion: 1 },
+      { facetId: "interaction-mode", valueId: "tool-use", label: "Tool use", taxonomyVersion: 1 },
+      { facetId: "interaction-mode", valueId: "agentic", label: "Agentic", taxonomyVersion: 1 },
+      // modality
+      { facetId: "modality", valueId: "text-in-text-out", label: "Text → Text", taxonomyVersion: 1 },
+      { facetId: "modality", valueId: "image-in-text-out", label: "Image → Text", taxonomyVersion: 1 },
+      { facetId: "modality", valueId: "text-in-image-out", label: "Text → Image", taxonomyVersion: 1 },
+      { facetId: "modality", valueId: "audio-in-text-out", label: "Audio → Text", taxonomyVersion: 1 },
+      { facetId: "modality", valueId: "multimodal", label: "Multimodal", taxonomyVersion: 1 },
+      // evaluation-type
+      { facetId: "evaluation-type", valueId: "human-judgment", label: "Human judgment", taxonomyVersion: 1 },
+      { facetId: "evaluation-type", valueId: "rubric-scored", label: "Rubric-scored", taxonomyVersion: 1 },
+      { facetId: "evaluation-type", valueId: "reference-match", label: "Reference match", taxonomyVersion: 1 },
+      { facetId: "evaluation-type", valueId: "programmatic", label: "Programmatic / verifier", taxonomyVersion: 1 },
+      { facetId: "evaluation-type", valueId: "preference-pair", label: "Preference pair", taxonomyVersion: 1 },
+      // setting
+      { facetId: "setting", valueId: "research", label: "Research", taxonomyVersion: 1 },
+      { facetId: "setting", valueId: "production", label: "Production", taxonomyVersion: 1 },
+      { facetId: "setting", valueId: "evaluation-benchmark", label: "Evaluation benchmark", taxonomyVersion: 1 },
+      { facetId: "setting", valueId: "safety-audit", label: "Safety audit", taxonomyVersion: 1 },
+    ];
+    return v1;
+  })(),
+);
+
+/** Read-only query: return the allowlisted taxonomy values for a version.
+ *  Returns `[]` for an unknown version — the seam never infers values for a
+ *  version it does not ship. */
+export function getFacetTaxonomyValues(taxonomyVersion: number): readonly FacetTaxonomyValue[] {
+  if (!Number.isInteger(taxonomyVersion) || taxonomyVersion <= 0) return [];
+  return FACET_TAXONOMY_VALUES.filter((v) => v.taxonomyVersion === taxonomyVersion);
+}
+
 export interface TaskValidationError {
   field: string;
   message: string;
@@ -597,6 +684,36 @@ export function validateTaskFacetAnnotation(v: unknown): TaskValidationResult {
   return result(errors);
 }
 
+export function validateTaskFamilyRelation(v: unknown): TaskValidationResult {
+  const errors: TaskValidationError[] = [];
+  if (!isRecord(v)) {
+    return result([{ field: "", message: "TaskFamilyRelation must be an object." }]);
+  }
+  if (!isId(v.id)) errors.push({ field: "id", message: "id must match the opaque ID pattern." });
+  if (!isId(v.fromFamilyId)) {
+    errors.push({ field: "fromFamilyId", message: "fromFamilyId must match the opaque ID pattern." });
+  }
+  if (!isId(v.toFamilyId)) {
+    errors.push({ field: "toFamilyId", message: "toFamilyId must match the opaque ID pattern." });
+  }
+  if (v.kind !== "overlap" && v.kind !== "parent" && v.kind !== "derivative") {
+    errors.push({ field: "kind", message: "kind must be 'overlap' | 'parent' | 'derivative'." });
+  }
+  if (isId(v.fromFamilyId) && isId(v.toFamilyId) && v.fromFamilyId === v.toFamilyId) {
+    errors.push({
+      field: "fromFamilyId",
+      message: "A family relation cannot reference itself (no self-relation).",
+    });
+  }
+  if (!isNumber(v.createdAt)) {
+    errors.push({ field: "createdAt", message: "createdAt must be a number." });
+  }
+  if (hasProhibitedKeys(v)) {
+    errors.push({ field: "", message: "TaskFamilyRelation carries prohibited credential/transport keys." });
+  }
+  return result(errors);
+}
+
 // --- import payload validation ----------------------------------------------
 
 /** Validate a Task import payload as a whole: structural validity of every
@@ -619,6 +736,7 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
     "taskInstances",
     "taskFamilies",
     "taskFamilyAssignments",
+    "taskFamilyRelations",
     "taskFacetAnnotations",
   ] as const) {
     if (!Array.isArray(payload[key])) {
@@ -633,6 +751,7 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
   const instances = payload.taskInstances as unknown[];
   const families = payload.taskFamilies as unknown[];
   const assignments = payload.taskFamilyAssignments as unknown[];
+  const relations = payload.taskFamilyRelations as unknown[];
   const annotations = payload.taskFacetAnnotations as unknown[];
 
   const taskIds = new Set<string>();
@@ -820,6 +939,39 @@ export function validateTaskImport(payload: unknown): TaskValidationResult {
         errors.push({
           field: `taskFamilyAssignments[${i}].familyId`,
           message: `assignment references unknown family ${x.familyId}.`,
+        });
+      }
+    }
+  });
+
+  const relationIds = new Set<string>();
+  relations.forEach((rel, i) => {
+    const r = validateTaskFamilyRelation(rel);
+    if (!r.valid) {
+      for (const e of r.errors) errors.push({ field: `taskFamilyRelations[${i}].${e.field}`, message: e.message });
+    } else {
+      const x = rel as TaskFamilyRelation;
+      if (relationIds.has(x.id)) {
+        errors.push({ field: `taskFamilyRelations[${i}].id`, message: `duplicate relation id ${x.id}.` });
+      } else {
+        relationIds.add(x.id);
+      }
+      if (!familyIds.has(x.fromFamilyId)) {
+        errors.push({
+          field: `taskFamilyRelations[${i}].fromFamilyId`,
+          message: `relation references unknown family ${x.fromFamilyId}.`,
+        });
+      }
+      if (!familyIds.has(x.toFamilyId)) {
+        errors.push({
+          field: `taskFamilyRelations[${i}].toFamilyId`,
+          message: `relation references unknown family ${x.toFamilyId}.`,
+        });
+      }
+      if (x.fromFamilyId === x.toFamilyId) {
+        errors.push({
+          field: `taskFamilyRelations[${i}].fromFamilyId`,
+          message: "relation cannot reference the same family on both ends (self-relation).",
         });
       }
     }

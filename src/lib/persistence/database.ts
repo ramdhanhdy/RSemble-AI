@@ -13,6 +13,7 @@
 //   v3 — additive canonical Task tables (8 tables): tasks, taskVersions,
 //        taskArtifacts, taskInstances, taskFamilies, taskFamilyAssignments,
 //        taskFacetAnnotations, taskMigrationCrosswalk.
+//   v4 — additive typed cross-family relations (1 table): taskFamilyRelations.
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
@@ -230,6 +231,16 @@ export interface TaskFacetAnnotationRow {
   createdAt: number;
 }
 
+/** Typed cross-family relation row (spec §3.5, schema v4 additive). */
+export interface TaskFamilyRelationRow {
+  id: string;
+  relation: unknown;
+  fromFamilyId: string;
+  toFamilyId: string;
+  kind: string;
+  createdAt: number;
+}
+
 /** Legacy → canonical migration crosswalk row (spec §6.2). */
 export interface TaskMigrationCrosswalkRow {
   legacyScopeKey: string;
@@ -310,6 +321,7 @@ export class RSembleEvaluationDB extends Dexie {
   taskFamilyAssignments!: Table<TaskFamilyAssignmentRow, string>;
   taskFacetAnnotations!: Table<TaskFacetAnnotationRow, string>;
   taskMigrationCrosswalk!: Table<TaskMigrationCrosswalkRow, string>;
+  taskFamilyRelations!: Table<TaskFamilyRelationRow, string>;
 
   /** Current storage lifecycle state. */
   private _storageState: StorageState = "ready";
@@ -358,6 +370,14 @@ export class RSembleEvaluationDB extends Dexie {
       taskFamilyAssignments: "id, taskId, taskVersion, familyId, isPrimary, createdAt, archivedAt",
       taskFacetAnnotations: "id, taskId, [taskId+taskVersion], facetId, valueId, createdAt",
       taskMigrationCrosswalk: "legacyScopeKey, taskId, taskVersion",
+    });
+
+    // v4: additive typed cross-family relations (spec §3.5). No existing
+    // v1/v2/v3 table is redefined — this block only adds the new
+    // `taskFamilyRelations` store. Relations are explicit and typed; they do
+    // not imply a universal family tree.
+    this.version(4).stores({
+      taskFamilyRelations: "id, fromFamilyId, toFamilyId, kind, createdAt",
     });
 
     this.on("blocked", () => {

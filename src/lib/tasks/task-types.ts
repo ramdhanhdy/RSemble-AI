@@ -227,5 +227,8 @@ export interface TaskImportPayload {
   taskInstances: TaskInstance[];
   taskFamilies: TaskFamily[];
   taskFamilyAssignments: TaskFamilyAssignment[];
+  /** Typed cross-family relations (spec §3.5). Task 10 consumes this
+   *  collection in archive v2; this child validates it referentially. */
+  taskFamilyRelations: TaskFamilyRelation[];
   taskFacetAnnotations: TaskFacetAnnotation[];
 }

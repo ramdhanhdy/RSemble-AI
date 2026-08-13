@@ -21,11 +21,13 @@ import { validateContiguousAppend } from "../tasks/task-versioning";
 import {
   isTaskArtifact,
   isTaskFamily,
+  isTaskFamilyRelation,
   isTaskInstance,
   validateTaskArtifact,
   validateTaskFacetAnnotation,
   validateTaskFamily,
   validateTaskFamilyAssignment,
+  validateTaskFamilyRelation,
   validateTaskInstance,
   validateTaskRecord,
   validateTaskVersion,
@@ -35,11 +37,17 @@ import type {
   TaskFacetAnnotation,
   TaskFamily,
   TaskFamilyAssignment,
+  TaskFamilyRelation,
   TaskInstance,
   TaskRecord,
   TaskVersion,
 } from "../tasks/task-types";
-import type { GetOrCreateInstanceResult, TaskListQuery, TaskRepository } from "./task-repository";
+import type {
+  GetOrCreateInstanceResult,
+  TaskFamilyRelationRepository,
+  TaskListQuery,
+  TaskRepository,
+} from "./task-repository";
 
 /** Run a {valid, errors} validator and throw the first error as a StorageError
  *  validation. Mirrors the Dexie implementation so both report the same
@@ -54,7 +62,7 @@ function assertValid(
   }
 }
 
-export class InMemoryTaskRepository implements TaskRepository {
+export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelationRepository {
   private tasks = new Map<string, TaskRecord>();
   private versions = new Map<string, Map<number, TaskVersion>>();
   private artifacts = new Map<string, TaskArtifact>();
@@ -63,6 +71,7 @@ export class InMemoryTaskRepository implements TaskRepository {
   private families = new Map<string, TaskFamily>();
   private assignments = new Map<string, TaskFamilyAssignment>();
   private annotations = new Map<string, TaskFacetAnnotation>();
+  private relations = new Map<string, TaskFamilyRelation>();
 
   // --- Task + version lifecycle ---------------------------------------------
 
@@ -535,6 +544,46 @@ export class InMemoryTaskRepository implements TaskRepository {
   async listTaskFacetAnnotations(taskId: string): Promise<TaskFacetAnnotation[]> {
     return [...this.annotations.values()]
       .filter((a) => a.taskId === taskId)
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  }
+
+  // --- typed family relations (spec §3.5, Task 8A) -----------------------
+
+  async createTaskFamilyRelation(relation: TaskFamilyRelation): Promise<void> {
+    assertValid(validateTaskFamilyRelation(relation), "Invalid task family relation");
+    // Referential integrity: both endpoint families must exist.
+    if (!this.families.has(relation.fromFamilyId)) {
+      throw new StorageError(
+        "conflict",
+        `Task family ${relation.fromFamilyId} not found`,
+      );
+    }
+    if (!this.families.has(relation.toFamilyId)) {
+      throw new StorageError(
+        "conflict",
+        `Task family ${relation.toFamilyId} not found`,
+      );
+    }
+    // Self-relation is rejected by the validator; defend at the boundary too.
+    if (relation.fromFamilyId === relation.toFamilyId) {
+      throw new StorageError(
+        "validation",
+        "A family relation cannot reference itself (no self-relation).",
+      );
+    }
+    // Duplicate id is a conflict — no silent overwrite.
+    if (this.relations.has(relation.id)) {
+      throw new StorageError(
+        "conflict",
+        `Task family relation ${relation.id} already exists`,
+      );
+    }
+    this.relations.set(relation.id, relation);
+  }
+
+  async listTaskFamilyRelations(): Promise<TaskFamilyRelation[]> {
+    return [...this.relations.values()]
+      .filter((r): r is TaskFamilyRelation => isTaskFamilyRelation(r))
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   }
 }

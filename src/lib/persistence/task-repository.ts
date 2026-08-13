@@ -28,6 +28,7 @@ import {
   isTaskFacetAnnotation,
   isTaskFamily,
   isTaskFamilyAssignment,
+  isTaskFamilyRelation,
   isTaskInstance,
   isTaskRecord,
   isTaskVersion,
@@ -35,6 +36,7 @@ import {
   validateTaskFacetAnnotation,
   validateTaskFamily,
   validateTaskFamilyAssignment,
+  validateTaskFamilyRelation,
   validateTaskInstance,
   validateTaskRecord,
   validateTaskVersion,
@@ -44,6 +46,7 @@ import type {
   TaskFacetAnnotation,
   TaskFamily,
   TaskFamilyAssignment,
+  TaskFamilyRelation,
   TaskInstance,
   TaskOrigin,
   TaskRecord,
@@ -122,6 +125,22 @@ export interface TaskRepository {
   listTaskFacetAnnotations(taskId: string): Promise<TaskFacetAnnotation[]>;
 }
 
+/** Typed cross-family relation repository seam (spec §3.5, Task 8A).
+ *  Kept as a separate interface from `TaskRepository` so existing consumers
+ *  that only need the core Task contract stay source-compatible, while the
+ *  shared contract suite types its repo as `TaskRepository &
+ *  TaskFamilyRelationRepository`. Relations are explicit and typed only —
+ *  there is no universal-tree inference API. */
+export interface TaskFamilyRelationRepository {
+  /** Persist a typed relation between two distinct, existing families.
+   *  Enforces referential integrity (both families must exist), rejects
+   *  self-relations, unknown kinds, duplicate ids, and prohibited keys. */
+  createTaskFamilyRelation(relation: TaskFamilyRelation): Promise<void>;
+  /** List all stored relations in deterministic order (createdAt asc, id
+   *  tiebreak). Does not infer hierarchy. */
+  listTaskFamilyRelations(): Promise<TaskFamilyRelation[]>;
+}
+
 /** Run a {valid, errors} validator and throw the first error as a StorageError
  *  validation. Validator messages name the failing field and the prohibited-
  *  key violation, so callers see "prohibited credential/transport keys" rather
@@ -138,7 +157,7 @@ function assertValid(
 
 // --- Dexie implementation ----------------------------------------------------
 
-export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
+export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & TaskFamilyRelationRepository {
   // --- Task + version lifecycle ---------------------------------------------
 
   async function createTask(record: TaskRecord, version: TaskVersion): Promise<void> {
@@ -974,6 +993,71 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
     }
   }
 
+  // --- typed family relations (spec §3.5, Task 8A) -----------------------
+
+  async function createTaskFamilyRelation(relation: TaskFamilyRelation): Promise<void> {
+    assertValid(validateTaskFamilyRelation(relation), "Invalid task family relation");
+    db.assertWritable();
+    try {
+      await db.transaction("rw", db.taskFamilies, db.taskFamilyRelations, async () => {
+        // Referential integrity: both endpoint families must exist.
+        const fromRow = await db.taskFamilies.get(relation.fromFamilyId);
+        if (!fromRow) {
+          throw new StorageError(
+            "conflict",
+            `Task family ${relation.fromFamilyId} not found`,
+          );
+        }
+        const toRow = await db.taskFamilies.get(relation.toFamilyId);
+        if (!toRow) {
+          throw new StorageError(
+            "conflict",
+            `Task family ${relation.toFamilyId} not found`,
+          );
+        }
+        // Self-relation is rejected by the validator; defend at the boundary
+        // too so a malformed row never lands.
+        if (relation.fromFamilyId === relation.toFamilyId) {
+          throw new StorageError(
+            "validation",
+            "A family relation cannot reference itself (no self-relation).",
+          );
+        }
+        // Duplicate id is a conflict — no silent overwrite.
+        const existing = await db.taskFamilyRelations.get(relation.id);
+        if (existing) {
+          throw new StorageError(
+            "conflict",
+            `Task family relation ${relation.id} already exists`,
+          );
+        }
+        await db.taskFamilyRelations.put({
+          id: relation.id,
+          relation,
+          fromFamilyId: relation.fromFamilyId,
+          toFamilyId: relation.toFamilyId,
+          kind: relation.kind,
+          createdAt: relation.createdAt,
+        });
+      });
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function listTaskFamilyRelations(): Promise<TaskFamilyRelation[]> {
+    try {
+      const rows = await db.taskFamilyRelations.toArray();
+      return rows
+        .map((r) => r.relation)
+        .filter((r): r is TaskFamilyRelation => isTaskFamilyRelation(r))
+        .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
   return {
     createTask,
     appendTaskVersion,
@@ -999,5 +1083,7 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository {
     listTaskFamilyAssignments,
     annotateTaskFacet,
     listTaskFacetAnnotations,
+    createTaskFamilyRelation,
+    listTaskFamilyRelations,
   };
 }
