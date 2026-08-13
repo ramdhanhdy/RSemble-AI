@@ -77,11 +77,12 @@ export function useStorageState(): StorageState {
 export function RepositoryProvider({ children }: { children: ReactNode }) {
   const [handle, setHandle] = useState<DatabaseHandle | null>(null);
   const [storageState, setStorageState] = useState<StorageState>("ready");
-
+  const [repositoriesReady, setRepositoriesReady] = useState(false);
   const initialize = useCallback(() => {
     const h = createDatabase();
     setHandle(h);
     setStorageState(h.state);
+    setRepositoriesReady(false);
 
     h.db.onStateChange((s) => {
       setStorageState(s);
@@ -89,9 +90,11 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
 
     h.ready
       .then(() => {
+        setRepositoriesReady(true);
         setStorageState(h.state);
       })
       .catch(() => {
+        setRepositoriesReady(false);
         setStorageState("unavailable");
       });
   }, []);
@@ -112,11 +115,11 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       return null;
     });
     setStorageState("ready");
+    setRepositoriesReady(false);
     // Reinitialize on next tick.
     setTimeout(initialize, 0);
   }, [initialize]);
 
-  const repositoriesReady = handle !== null && storageState === "ready";
   const runRepo = useMemo(
     () => (repositoriesReady && handle ? createRunRepository(handle.db) : null),
     [repositoriesReady, handle],
