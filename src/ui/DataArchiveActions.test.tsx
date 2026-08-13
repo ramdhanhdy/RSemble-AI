@@ -20,6 +20,7 @@ import {
 } from "../lib/persistence/repository-context";
 import { RSembleEvaluationDB } from "../lib/persistence/database";
 import { importWorkbenchArchive, type WorkbenchArchiveV1 } from "../lib/persistence/archive";
+import { computeArchiveV2PayloadDigest } from "../lib/persistence/archive-v2-types";
 import type { EvaluationSuite } from "../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../lib/persistence/run-types";
 import * as fx from "../lib/persistence/archive-v2-fixtures";
@@ -237,37 +238,142 @@ describe("DataArchiveActions — disabled states", () => {
   });
 });
 
-describe("DataArchiveActions — import flow", () => {
-  it("imports a crafted archive file and reports Created/Skipped/Conflicts", async () => {
+describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
+  it("previews rather than importing on selection: shows counts and requires explicit confirmation", async () => {
     const h = renderActions(contextValue(db, "ready"));
+    const importButton = h.$('button[data-action="import"]') as HTMLButtonElement;
+    importButton.focus();
     const archive = archiveWithSuites([makeSuite("suite-a"), makeSuite("suite-b")]);
     const file = new File([JSON.stringify(archive)], "archive.json", {
       type: "application/json",
     });
     await chooseFile(h, file);
 
-    const status = h.$('[role="status"]');
-    expect(status).not.toBeNull();
-    expect(status!.textContent).toContain("Created 2 · Skipped 0 · Conflicts 0");
+    // Selection previewed: zero writes before explicit confirmation.
+    expect(await db.suites.count()).toBe(0);
+    const status = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    expect(status).toContain("Import preview");
+    expect(status).toContain("2 to create");
+    expect(status).toContain("format v1");
+    const confirm = h.$('button[data-action="confirm-import"]') as HTMLButtonElement | null;
+    const cancel = h.$('button[data-action="cancel-import"]') as HTMLButtonElement | null;
+    expect(confirm).not.toBeNull();
+    expect(cancel).not.toBeNull();
+
+    await act(async () => {
+      confirm!.click();
+      await flush();
+    });
+    await settle();
+
     expect(await db.suites.count()).toBe(2);
+    const result = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    expect(result).toContain('Imported 2 records — 0 reused ("archive.json")');
+    // Focus returns to the Import data trigger after the flow completes.
+    expect(document.activeElement).toBe(h.$('button[data-action="import"]'));
   });
 
-  it("reports conflicting IDs without overwriting existing data", async () => {
-    await importWorkbenchArchive(db, archiveWithSuites([makeSuite("suite-a", "Original")]));
+  it("cancel closes the preview, writes nothing, and restores focus to the import button", async () => {
     const h = renderActions(contextValue(db, "ready"));
-    const archive = archiveWithSuites([makeSuite("suite-a", "Changed")]);
+    const importButton = h.$('button[data-action="import"]') as HTMLButtonElement;
+    importButton.focus();
+    const archive = archiveWithSuites([makeSuite("suite-keep-out")]);
     const file = new File([JSON.stringify(archive)], "archive.json", {
       type: "application/json",
     });
     await chooseFile(h, file);
+    expect(h.$('button[data-action="cancel-import"]')).not.toBeNull();
 
-    const status = h.$('[role="status"]');
-    expect(status!.textContent).toContain("Created 0 · Skipped 0 · Conflicts 1");
-    expect(status!.textContent).toContain("suite-a");
-    const row = await db.suites.get("suite-a");
-    expect((row?.suite as EvaluationSuite).name).toBe("Original");
+    await act(async () => {
+      (h.$('button[data-action="cancel-import"]') as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+    expect(await db.suites.count()).toBe(0);
+    expect(document.activeElement).toBe(h.$('button[data-action="import"]'));
   });
 
+  it("a v2 archive previews all collections and confirms atomically", async () => {
+    const h = renderActions(contextValue(db, "ready"));
+    const archive = fx.buildValidArchiveV2Fixture();
+    const file = new File([JSON.stringify(archive)], "v2.json", { type: "application/json" });
+    await chooseFile(h, file);
+
+    // No writes during preview.
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+    const status = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    expect(status).toContain("format v2");
+    expect(status).toContain("21 to create");
+    expect(status).toContain("suites: 1");
+
+    await act(async () => {
+      (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+
+    expect(await db.suites.count()).toBe(1);
+    expect(await db.fusionStudies.count()).toBe(1);
+    expect(await db.taskArtifactBytes.count()).toBe(1);
+    const result = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    expect(result).toContain('Imported 21 records — 0 reused ("v2.json")');
+  });
+
+  it("a non-identical collision is previewed with IDs and the commit aborts without any write", async () => {
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+    const incoming = fx.buildValidArchiveV2Fixture();
+    incoming.suites[0] = { ...incoming.suites[0], name: "changed" };
+    incoming.manifest.payloadDigest = computeArchiveV2PayloadDigest(incoming);
+    const h = renderActions(contextValue(db, "ready"));
+    const file = new File([JSON.stringify(incoming)], "v2.json", { type: "application/json" });
+    await chooseFile(h, file);
+
+    const status = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    expect(status).toContain("1 collision");
+    expect(status).toContain("suites/suite-1");
+
+    await act(async () => {
+      (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+
+    const alertText = h.$$('[role="alert"]').map((el) => el.textContent ?? "").join("\n");
+    expect(alertText).toContain(
+      "Import aborted: 1 collision — colliding records were left unchanged.",
+    );
+    // Nothing was written anywhere; the pre-existing suite is untouched.
+    expect((await db.suites.get("suite-1"))?.suite).toMatchObject({ name: "Suite suite-1" });
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+    // The preview is cleared with the abort.
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+  });
+
+  it("surfaces v2 validation failure without echoing prohibited content and writes nothing", async () => {
+    const secret = "sk-ant-oat01-not-a-real-key";
+    const poisoned = fx.buildValidArchiveV2Fixture();
+    (poisoned.suites[0] as unknown as Record<string, unknown>).notes = secret;
+    poisoned.manifest.payloadDigest = computeArchiveV2PayloadDigest(poisoned);
+
+    const h = renderActions(contextValue(db, "ready"));
+    const file = new File([JSON.stringify(poisoned)], "poisoned.json", {
+      type: "application/json",
+    });
+    await chooseFile(h, file);
+
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+    const alertText = h.$$('[role="alert"]').map((el) => el.textContent ?? "").join("\n");
+    expect(alertText).toContain("The archive is invalid — nothing was imported.");
+    expect(alertText).not.toContain(secret);
+    expect(await db.suites.count()).toBe(0);
+  });
+});
+
+describe("DataArchiveActions — legacy import error handling (preview path, no writes)", () => {
   it("shows an invalid-archive line for malformed JSON without importing", async () => {
     const h = renderActions(contextValue(db, "ready"));
     const file = new File(["{not json"], "archive.json", { type: "application/json" });
@@ -277,6 +383,7 @@ describe("DataArchiveActions — import flow", () => {
     expect(alert).not.toBeNull();
     expect(alert!.textContent).toContain("The archive is invalid — nothing was imported.");
     expect(await db.suites.count()).toBe(0);
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
   });
 
   it("lists validation errors for a schema-mismatched archive", async () => {
@@ -290,6 +397,7 @@ describe("DataArchiveActions — import flow", () => {
     expect(alert).not.toBeNull();
     expect(alert!.textContent).toMatch(/schema/i);
     expect(await db.suites.count()).toBe(0);
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
   });
 });
 

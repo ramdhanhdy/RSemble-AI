@@ -3,7 +3,13 @@
 //
 // Covers export completeness, allowlisted construction, centralized import
 // limits, skip/conflict/rollback import semantics, run Markdown export from the
-// persisted record, and classified failure guidance.
+// persisted record, and classified failure guidance. Child 02 Task 10C adds
+// the preview-first, collision-safe, cancellation-safe, atomic v1/v2 import:
+// preview classifies every entity (create/reuse/collision) BEFORE any write,
+// invalid/corrupt archives are committed as preview "invalid" entities rather
+// than aborting the read-only preview, any non-identical ID collision aborts
+// commit before writes, and injected failure/quota/cancellation leaves source
+// and target unchanged.
 // =============================================================================
 
 import "fake-indexeddb/auto";
@@ -20,14 +26,18 @@ import {
 } from "./database";
 import { createRunRepository } from "./run-repository";
 import {
+  ArchiveImportCancelledError,
   archiveFailureGuidance,
   ArchiveExportCancelledError,
   buildRunExportMarkdown,
+  commitPreviewWorkbenchArchiveV2,
   exportWorkbenchArchive,
   exportWorkbenchArchiveV2,
   IMPORT_LIMITS,
   importWorkbenchArchive,
+  importWorkbenchArchiveAuto,
   parseWorkbenchArchive,
+  previewWorkbenchArchive,
   validateArchiveBytes,
   type ArchiveExportProgress,
   type WorkbenchArchiveV1,
@@ -35,6 +45,7 @@ import {
 import {
   computeArchiveV2PayloadDigest,
   validateArchiveV2,
+  type WorkbenchArchiveV2,
 } from "./archive-v2-types";
 import * as fx from "./archive-v2-fixtures";
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "./run-types";
@@ -1604,3 +1615,356 @@ describe("v1 adapter behavior after the v1/v2 refactor", () => {
     expect(parseWorkbenchArchive(JSON.parse(JSON.stringify(v1))).ok).toBe(true);
   });
 });
+
+// --- Task 10C: preview-first, collision-safe, cancellation-safe atomic import -----
+
+function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
+  const archive = fx.buildValidArchiveV2Fixture();
+  archive.manifest.exportedAt = exportedAt;
+  archive.runs = { summaries: [], details: [] };
+  archive.rubrics = { identities: [], versions: [] };
+  archive.suites = [];
+  archive.experiments = [];
+  archive.fusion = {
+    recipes: [],
+    poolManifests: [],
+    studies: [],
+    trials: [],
+    attempts: [],
+    observations: [],
+    playbooks: [],
+  };
+  archive.tasks = {
+    tasks: [],
+    taskVersions: [],
+    taskArtifacts: [],
+    taskArtifactBytes: [],
+    taskInstances: [],
+    taskFamilies: [],
+    taskFamilyAssignments: [],
+    taskFamilyRelations: [],
+    taskFacetAnnotations: [],
+    taskMigrationCrosswalks: [],
+  };
+  archive.manifest.counts = Object.fromEntries(
+    Object.entries(archive.manifest.counts).map(([key]) => [key, 0]),
+  ) as typeof archive.manifest.counts;
+  archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+  return archive;
+}
+
+describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
+  it("classifies every v2 entity as create/reuse/collision/invalid with deterministic counts and no writes", async () => {
+    const artifactBytes = new TextEncoder().encode("reuse-me");
+    // Pre-seed ONE canonically identical suite so the preview exercises reuse.
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+
+    const archive = makeEmptyV2();
+    archive.runs.summaries = [fx.makeRunSummary("run-pre")];
+    archive.runs.details = [fx.makeRunDetail("run-pre")];
+    archive.rubrics.identities = [fx.makeRubricRecord("rubric-1")];
+    archive.rubrics.versions = [fx.makeRubricVersion("rubric-1", 1)];
+    archive.suites = [fx.makeSuite("suite-1")]; // canonically identical → reuse
+    archive.experiments = [fx.makeExperiment("exp-1", "suite-1")];
+    archive.fusion.recipes = [fx.makeRecipe("recipe-1", 1)];
+    archive.fusion.poolManifests = [fx.makePoolManifest("pool-1", 1)];
+    archive.fusion.studies = [fx.makeStudy("study-1")];
+    archive.fusion.trials = [fx.makeTrial("trial-1", "study-1")];
+    archive.fusion.attempts = [fx.makeAttempt("attempt-1", "study-1")];
+    archive.fusion.observations = [fx.makeObservation("obs-1", "trial-1")];
+    archive.fusion.playbooks = [fx.makePlaybook("playbook-1", "study-1")];
+    archive.tasks.tasks = [fx.makeTaskRecord("task-1")];
+    archive.tasks.taskVersions = [fx.makeTaskVersion("task-1", 1, "art-1")];
+    archive.tasks.taskArtifacts = [fx.makeTaskArtifact("art-1", artifactBytes)];
+    archive.tasks.taskArtifactBytes = [fx.makeArtifactBytes("art-1", artifactBytes)];
+    archive.tasks.taskInstances = [fx.makeTaskInstance("inst-1", "task-1", 1, "art-1")];
+    archive.tasks.taskFamilies = [fx.makeTaskFamily("fam-1")];
+    archive.tasks.taskFamilyAssignments = [
+      fx.makeTaskFamilyAssignment("fa-1", "task-1", 1, "fam-1"),
+    ];
+    archive.tasks.taskFamilyRelations = [fx.makeTaskFamilyRelation("rel-1", "fam-1", "fam-1")];
+    archive.tasks.taskFacetAnnotations = [fx.makeTaskFacetAnnotation("ann-1", "task-1")];
+    archive.tasks.taskMigrationCrosswalks = [fx.makeCrosswalk("task-1", 1)];
+    archive.manifest.counts = {
+      runSummaries: 1,
+      runDetails: 1,
+      rubricIdentities: 1,
+      rubricVersions: 1,
+      suites: 1,
+      experiments: 1,
+      fusionRecipes: 1,
+      poolManifests: 1,
+      fusionStudies: 1,
+      fusionTrials: 1,
+      fusionAttempts: 1,
+      fusionObservations: 1,
+      fusionPlaybooks: 1,
+      tasks: 1,
+      taskVersions: 1,
+      taskArtifacts: 1,
+      taskArtifactBytes: 1,
+      taskInstances: 1,
+      taskFamilies: 1,
+      taskFamilyAssignments: 1,
+      taskFamilyRelations: 1,
+      taskFacetAnnotations: 1,
+      taskMigrationCrosswalks: 1,
+    };
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+
+    expect(preview.format).toBe("v2");
+    // 21 importable collections carry exactly one entity.
+    expect(preview.totalEntities).toBe(21);
+    expect(preview.invalid.length).toBe(0);
+    expect(preview.collisions.map((c) => c.key)).toEqual([]);
+    // Exactly the pre-existing suite is reusable.
+    expect(preview.reuse.map((e) => e.key)).toEqual(["suites/suite-1"]);
+    expect(preview.create.length).toBe(20);
+    // One artifact is pre-materialized so the commit can verify bytes.
+    expect(preview.artifactBytes.length).toBe(1);
+    expect(preview.artifactBytes[0].id).toBe("art-1");
+    expect([...preview.artifactBytes[0].bytes]).toEqual([...artifactBytes]);
+    // Deterministic collection order + sorted counts.
+    expect(preview.counts[0]).toEqual({ collection: "experiments", total: 1, create: 1, reuse: 0, collision: 0, invalid: 0 });
+    expect(preview.counts.map((c) => c.collection)).toEqual([...preview.counts.map((c) => c.collection)].sort());
+    expect(preview.counts.find((c) => c.collection === "suites")).toEqual({ collection: "suites", total: 1, create: 0, reuse: 1, collision: 0, invalid: 0 });
+    // Preview is read-only.
+    expect(await db.suites.count()).toBe(1);
+    expect(await db.runDetails.count()).toBe(0);
+  });
+
+  it("reports invalid/corrupt/unsupported entities without aborting the preview", async () => {
+    const validBytes = new TextEncoder().encode("valid artifact text");
+    const tamperedBytes = new TextEncoder().encode("tampered artifact text");
+    const artifactSummary = fx.makeTaskArtifact("art-1", validBytes);
+
+    const archive = makeEmptyV2();
+    archive.runs.details = [fx.makeRunDetail("run-corrupt")];
+    const detail = archive.runs.details[0] as unknown as Record<string, unknown>;
+    detail.status = "not-a-real-status"; // guard-failing → invalid entity
+    archive.suites = [fx.makeSuite("suite-1") as unknown as EvaluationSuite];
+    delete (archive.suites[0] as unknown as Record<string, unknown>).id; // corrupt → invalid
+    archive.tasks.taskArtifacts = [artifactSummary];
+    archive.tasks.taskArtifactBytes = [{ id: "art-1", bytesBase64: fx.bytesToBase64(tamperedBytes) }];
+    // Manifest claims the entity counts; keep validator happy on structure but
+    // the payload digest is recomputed over the actual (corrupt) payload by the
+    // caller, so mark it consistent by recomputing. Instead: leave digest wrong
+    // → envelope digest is validated at parse time; for pure preview the
+    // envelope parse must still pass, so recompute the digest here.
+    archive.manifest.counts.tasks = 0;
+    archive.manifest.counts.taskVersions = 0;
+    archive.manifest.counts.taskInstances = 0;
+    archive.manifest.counts.taskFamilies = 0;
+    archive.manifest.counts.taskFamilyAssignments = 0;
+    archive.manifest.counts.taskFamilyRelations = 0;
+    archive.manifest.counts.taskFacetAnnotations = 0;
+    archive.manifest.counts.taskMigrationCrosswalks = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+
+    expect(preview.format).toBe("v2");
+    expect(preview.invalid.map((e) => e.key).sort()).toEqual([
+      "runs.details/run-corrupt",
+      "suites/",
+      "tasks.taskArtifacts/art-1", // byte digest mismatch → invalid
+    ]);
+    expect(preview.create.map((e) => e.key)).toEqual([]);
+    expect(await db.suites.count()).toBe(0);
+  });
+});
+
+describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, cancellation", () => {
+  it("imports the complete fixture into an empty database atomically with exact source Run/Experiment/Fusion evidence", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.format).toBe("v2");
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+
+    const result = await commitPreviewWorkbenchArchiveV2(db, preview);
+
+    expect(result.created.length).toBe(preview.create.length);
+    expect(result.reused).toEqual([]);
+    expect(result.skipped).toEqual([]);
+    // Every imported entity appears exactly once across the whole store README.
+    expect(await db.runSummaries.count()).toBe(1);
+    expect(await db.runDetails.count()).toBe(1);
+    expect(await db.profiles.count()).toBe(1);
+    expect(await db.profileVersions.count()).toBe(1);
+    expect(await db.suites.count()).toBe(1);
+    expect(await db.experiments.count()).toBe(1);
+    expect(await db.fusionRecipes.count()).toBe(1);
+    expect(await db.poolManifests.count()).toBe(1);
+    expect(await db.fusionStudies.count()).toBe(1);
+    expect(await db.fusionTrials.count()).toBe(1);
+    expect(await db.fusionAttempts.count()).toBe(1);
+    expect(await db.fusionObservations.count()).toBe(1);
+    expect(await db.fusionPlaybooks.count()).toBe(1);
+    expect(await db.tasks.count()).toBe(1);
+    expect(await db.taskVersions.count()).toBe(1);
+    expect(await db.taskArtifacts.count()).toBe(1);
+    expect(await db.taskArtifactBytes.count()).toBe(1);
+    expect(await db.taskInstances.count()).toBe(1);
+    expect(await db.taskFamilies.count()).toBe(1);
+    expect(await db.taskFamilyAssignments.count()).toBe(1);
+    expect(await db.taskFamilyRelations.count()).toBe(1);
+    expect(await db.taskFacetAnnotations.count()).toBe(1);
+    expect(await db.taskMigrationCrosswalk.count()).toBe(1);
+    // Exact source evidence is semantically unchanged.
+    const importedStudy = await db.fusionStudies.get("study-1");
+    expect((importedStudy?.study as Record<string, unknown>).claimLevel).toBe("exploratory");
+    const importedRun = await db.runDetails.get("run-1");
+    expect((importedRun?.record as RunRecordV2).status).toBe("completed");
+    const importedExperiment = await db.experiments.get("exp-1");
+    expect((importedExperiment?.experiment as ExperimentRecord).protocolFingerprint).toBe(
+      "sha256:abc",
+    );
+    // Round-trip: re-export the imported database and compare canonically.
+    const reexported = await exportWorkbenchArchiveV2(db);
+    expect(reexported.manifest.counts).toEqual(archive.manifest.counts);
+  });
+
+  it("a non-identical ID collision aborts the whole commit BEFORE any write (no remap, no overwrite)", async () => {
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+    // Rewrite the incoming suite content so the same ID is NOT canonically identical.
+    const archive = fx.buildValidArchiveV2Fixture();
+    archive.suites[0] = { ...archive.suites[0], name: "suite-1 — renamed" };
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.collisions.map((c) => c.key)).toEqual(["suites/suite-1"]);
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    // Nothing was written: the pre-existing suite is untouched, and no new
+    // entity leaked into any other store.
+    const kept = await db.suites.get("suite-1");
+    expect((kept?.suite as EvaluationSuite).name).toBe("Suite suite-1");
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.fusionStudies.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+  });
+
+  it("repeated import is idempotent: second commit reuses/skips everything and writes nothing", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    const first = await commitPreviewWorkbenchArchiveV2(
+      db,
+      await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" }),
+    );
+    expect(first.created.length).toBeGreaterThan(0);
+
+    const secondPreview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(secondPreview.create).toEqual([]);
+    expect(secondPreview.collisions).toEqual([]);
+    expect(secondPreview.invalid).toEqual([]);
+    expect(secondPreview.totalEntities).toBe(21);
+
+    const second = await commitPreviewWorkbenchArchiveV2(db, secondPreview);
+    expect(second.created).toEqual([]);
+    expect(second.reused.length).toBe(21);
+    expect(second.skipped).toEqual([]);
+    // No duplicate rows from a second pass.
+    expect(await db.suites.count()).toBe(1);
+    expect(await db.tasks.count()).toBe(1);
+  });
+
+  it("cancellation before commit leaves source and target unchanged and throws the cancellation error", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      commitPreviewWorkbenchArchiveV2(db, preview, { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(ArchiveImportCancelledError);
+    // Target unchanged.
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+  });
+
+  it("an injected mid-commit failure rolls the transaction back — nothing is written", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    vi.spyOn(db.experiments, "put").mockRejectedValueOnce(new Error("boom"));
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+    });
+    // Rollback: zero entities in every touched store.
+    expect(await db.runSummaries.count()).toBe(0);
+    expect(await db.experiments.count()).toBe(0);
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+    expect(await db.fusionStudies.count()).toBe(0);
+  });
+
+  it("a preview carrying invalid entities never commits them — commit raises a validation StorageError", async () => {
+    const artifactBytes = new TextEncoder().encode("valid artifact text");
+    const archive = makeEmptyV2();
+    const detail = fx.makeRunDetail("run-bad") as unknown as Record<string, unknown>;
+    detail.status = "corrupt";
+    archive.runs.details = [detail as unknown as RunRecordV2];
+    const artifact = fx.makeTaskArtifact("art-1", artifactBytes);
+    archive.tasks.taskArtifacts = [artifact];
+    archive.tasks.taskArtifactBytes = [{ id: "art-1", bytesBase64: fx.bytesToBase64(artifactBytes) }];
+    archive.manifest.counts.runDetails = 1;
+    archive.manifest.counts.taskArtifacts = 1;
+    archive.manifest.counts.taskArtifactBytes = 1;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.invalid.map((e) => e.key)).toEqual(["runs.details/run-bad"]);
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.taskArtifacts.count()).toBe(0);
+  });
+});
+
+describe("importWorkbenchArchiveAuto — adapter dispatch", () => {
+  it("dispatches a v1 payload through the preserved v1 adapter (no v2 validation required)", async () => {
+    const v1 = populatedArchive();
+    // A v1 payload has no manifest; the auto path must not force v2 validation.
+    const result = await importWorkbenchArchiveAuto(db, v1 as unknown as never);
+    expect(result.format).toBe("v1");
+    expect(result.v1.created.length).toBeGreaterThan(0);
+    expect(await db.suites.count()).toBe(1);
+  });
+
+  it("dispatches a v2 payload through the v2 adapter and validates the complete payload BEFORE any write", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    // Break the digest AFTER building: payload mutated, digest stale.
+    archive.suites[0] = { ...archive.suites[0], name: "digest-broken" };
+
+    await expect(importWorkbenchArchiveAuto(db, archive)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    // Nothing written.
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.runDetails.count()).toBe(0);
+  });
+
+  it("rejects an unknown payload shape", async () => {
+    await expect(importWorkbenchArchiveAuto(db, { hello: "world" })).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+  });
+});
+
+describe("archiveFailureGuidance — import cancellation", () => {
+  it("classifies ArchiveImportCancelledError without leaking content", () => {
+    const guidance = archiveFailureGuidance(new ArchiveImportCancelledError());
+    expect(guidance).toContain("cancel");
+  });
+});
+
