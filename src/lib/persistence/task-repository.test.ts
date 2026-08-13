@@ -18,7 +18,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import Dexie from "dexie";
 
 import { RSembleEvaluationDB } from "./database";
-import { createTaskRepository, type TaskRepository, type TaskListQuery } from "./task-repository";
+import {
+  createTaskRepository,
+  type TaskRepository,
+  type TaskFamilyRelationRepository,
+  type TaskListQuery,
+} from "./task-repository";
 import { InMemoryTaskRepository } from "./in-memory-task-repository";
 
 import {
@@ -38,6 +43,7 @@ import type {
   TaskArtifact,
   TaskFamily,
   TaskFamilyAssignment,
+  TaskFamilyRelation,
   TaskFacetAnnotation,
   TaskInstance,
   TaskInstanceSourceRef,
@@ -169,11 +175,25 @@ function facetAnnotation(overrides: Partial<TaskFacetAnnotation> = {}): TaskFace
   };
 }
 
+function familyRelation(overrides: Partial<TaskFamilyRelation> = {}): TaskFamilyRelation {
+  return {
+    id: "rel-1",
+    fromFamilyId: "family-1",
+    toFamilyId: "family-2",
+    kind: "overlap",
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
 const TEXT_BYTES = new TextEncoder().encode("hello world");
 
 // --- shared contract suite ---------------------------------------------------
 
-export function repositorySuite(name: string, makeRepo: () => TaskRepository & object) {
+export function repositorySuite(
+  name: string,
+  makeRepo: () => TaskRepository & TaskFamilyRelationRepository & object,
+) {
   describe(name, () => {
     // --- atomic Task + v1 creation -------------------------------------------
 
@@ -1111,6 +1131,94 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       expect((repo as unknown as Record<string, unknown>).deleteTaskVersion).toBeUndefined();
       expect((repo as unknown as Record<string, unknown>).deleteTask).toBeUndefined();
     });
+
+    // --- Task 8A: typed family relations (spec §3.5) -----------------------
+
+    it("creates and lists a typed family relation with deterministic order", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "family-1" }));
+      await repo.createTaskFamily(taskFamily({ id: "family-2" }));
+      await repo.createTaskFamilyRelation(
+        familyRelation({ id: "rel-1", createdAt: NOW + 1 }),
+      );
+      await repo.createTaskFamilyRelation(
+        familyRelation({ id: "rel-2", createdAt: NOW }),
+      );
+      const relations = await repo.listTaskFamilyRelations();
+      expect(relations).toHaveLength(2);
+      // Deterministic order: createdAt asc, id tiebreak.
+      expect(relations.map((r) => r.id)).toEqual(["rel-2", "rel-1"]);
+    });
+
+    it("rejects creating a relation with a duplicate id (no silent overwrite)", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "family-1" }));
+      await repo.createTaskFamily(taskFamily({ id: "family-2" }));
+      await repo.createTaskFamilyRelation(familyRelation({ id: "rel-1" }));
+      await expect(repo.createTaskFamilyRelation(familyRelation({ id: "rel-1" }))).rejects.toThrow(
+        /already exists|conflict/i,
+      );
+      // The original relation is untouched.
+      const relations = await repo.listTaskFamilyRelations();
+      expect(relations).toHaveLength(1);
+    });
+
+    it("rejects a relation referencing an unknown fromFamilyId", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "family-2" }));
+      await expect(
+        repo.createTaskFamilyRelation(familyRelation({ fromFamilyId: "no-such-family" })),
+      ).rejects.toThrow(/not found/);
+    });
+
+    it("rejects a relation referencing an unknown toFamilyId", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "family-1" }));
+      await expect(
+        repo.createTaskFamilyRelation(familyRelation({ toFamilyId: "no-such-family" })),
+      ).rejects.toThrow(/not found/);
+    });
+
+    it("rejects a self-relation (fromFamilyId === toFamilyId)", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "family-1" }));
+      await expect(
+        repo.createTaskFamilyRelation(
+          familyRelation({ fromFamilyId: "family-1", toFamilyId: "family-1" }),
+        ),
+      ).rejects.toThrow(/self|validation/i);
+    });
+
+    it("rejects a relation with an unknown kind", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "family-1" }));
+      await repo.createTaskFamily(taskFamily({ id: "family-2" }));
+      await expect(
+        repo.createTaskFamilyRelation(
+          familyRelation({ kind: "subset" as never }),
+        ),
+      ).rejects.toThrow(/kind|validation/i);
+    });
+
+    it("rejects a relation carrying prohibited credential keys", async () => {
+      const repo = makeRepo();
+      await repo.createTaskFamily(taskFamily({ id: "family-1" }));
+      await repo.createTaskFamily(taskFamily({ id: "family-2" }));
+      const bad = { ...familyRelation(), apiKey: "sk-leak" } as unknown as TaskFamilyRelation;
+      await expect(repo.createTaskFamilyRelation(bad)).rejects.toThrow(/prohibited|validation/i);
+    });
+
+    it("does not infer a universal tree from relations (no parent/child API)", () => {
+      const repo = makeRepo();
+      // The relation seam is explicit and typed only; there is no API that
+      // walks a universal family tree or infers hierarchy from relations.
+      expect(
+        (repo as unknown as Record<string, unknown>).listTaskFamilyTree,
+      ).toBeUndefined();
+      expect(
+        (repo as unknown as Record<string, unknown>).inferFamilyTree,
+      ).toBeUndefined();
+    });
   });
 }
 
@@ -1156,7 +1264,7 @@ describe("Dexie task repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "taskFamilies")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskFamilyAssignments")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskFacetAnnotations")).toBe(true);
-    expect(db.tables.some((t) => t.name === "taskMigrationCrosswalk")).toBe(true);
+    expect(db.tables.some((t) => t.name === "taskFamilyRelations")).toBe(true);
     // v1/v2 stores still present.
     expect(db.tables.some((t) => t.name === "runSummaries")).toBe(true);
     expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(true);
@@ -1204,4 +1312,65 @@ describe("Dexie task repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "tasks")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskMigrationCrosswalk")).toBe(true);
   });
+
+  it("upgrades a v3-seeded database to v4 additively without losing v3 rows", async () => {
+    const dbName = `task-v3-legacy-${crypto.randomUUID()}`;
+    // Seed a v3-only database (no taskFamilyRelations store) using a plain
+    // Dexie instance pinned to v3 with the v3 schema declaration.
+    const v3 = new Dexie(dbName);
+    v3.version(1).stores({
+      runSummaries: "id",
+      runDetails: "id",
+      profiles: "id",
+      profileVersions: "[id+version]",
+      suites: "id",
+      experiments: "id",
+      storageMeta: "key",
+    });
+    v3.version(2).stores({
+      fusionRecipes: "[id+version]",
+      poolManifests: "[id+version]",
+      fusionStudies: "id",
+      fusionTrials: "id",
+      fusionAttempts: "id",
+      fusionObservations: "id",
+      fusionPlaybooks: "id",
+    });
+    v3.version(3).stores({
+      tasks: "id, updatedAt, archivedAt, origin",
+      taskVersions: "[taskId+version], taskId, createdAt",
+      taskArtifacts: "id, contentDigest, mediaType, byteCount, createdAt",
+      taskArtifactBytes: "id",
+      taskInstances: "id, [taskId+taskVersion], inputDigest, inputCompleteness, createdAt",
+      taskFamilies: "id, parentFamilyId, updatedAt, archivedAt",
+      taskFamilyAssignments: "id, taskId, taskVersion, familyId, isPrimary, createdAt, archivedAt",
+      taskFacetAnnotations: "id, taskId, [taskId+taskVersion], facetId, valueId, createdAt",
+      taskMigrationCrosswalk: "legacyScopeKey, taskId, taskVersion",
+    });
+    await v3.open();
+    await v3.table("taskFamilies").put({
+      id: "fam-legacy",
+      family: { id: "fam-legacy", name: "Legacy", description: "", parentFamilyId: null, createdAt: 1, updatedAt: 1, archivedAt: null, revision: 0 },
+      parentFamilyId: null,
+      updatedAt: 1,
+      archivedAt: null,
+      revision: 0,
+    });
+    v3.close();
+
+    // Reopen with the full RSembleEvaluationDB (declares v1..v4).
+    const db = new RSembleEvaluationDB(dbName);
+    dbs.push(db);
+    await db.open();
+    // v3 row survived the additive v4 upgrade.
+    const row = await db.taskFamilies.get("fam-legacy");
+    expect(row?.id).toBe("fam-legacy");
+    // v4 Task relation store is now present.
+    expect(db.tables.some((t) => t.name === "taskFamilyRelations")).toBe(true);
+    // v1/v2/v3 stores still present.
+    expect(db.tables.some((t) => t.name === "runSummaries")).toBe(true);
+    expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(true);
+    expect(db.tables.some((t) => t.name === "taskFamilies")).toBe(true);
+  });
 });
+

@@ -19,6 +19,9 @@ import {
   PROHIBITED_KEYS,
   TASK_FACET_DIMENSIONS,
   TASK_INPUT_COMPLETENESS_VALUES,
+  FACET_TAXONOMY_VERSIONS,
+  FACET_TAXONOMY_VALUES,
+  getFacetTaxonomyValues,
   hasProhibitedKeys,
   isContextManifestEntry,
   isFacetTaxonomyValue,
@@ -38,6 +41,7 @@ import {
   validateTaskArtifact,
   validateTaskFamily,
   validateTaskFamilyAssignment,
+  validateTaskFamilyRelation,
   validateTaskFacetAnnotation,
   validateTaskImport,
   validateTaskInstance,
@@ -49,6 +53,7 @@ import type {
   TaskFacetAnnotation,
   TaskFamily,
   TaskFamilyAssignment,
+  TaskFamilyRelation,
   TaskImportPayload,
   TaskInstance,
   TaskRecord,
@@ -160,6 +165,16 @@ function validTaskFamilyAssignment(): TaskFamilyAssignment {
   };
 }
 
+function validTaskFamilyRelation(): TaskFamilyRelation {
+  return {
+    id: "rel-1",
+    fromFamilyId: "fam-1",
+    toFamilyId: "fam-2",
+    kind: "overlap",
+    createdAt: 1_000,
+  };
+}
+
 function validTaskFacetAnnotation(): TaskFacetAnnotation {
   return {
     id: "ann-1",
@@ -182,8 +197,9 @@ function validImportPayload(): TaskImportPayload {
     taskVersions: [validTaskVersion()],
     taskArtifacts: [validTaskArtifact()],
     taskInstances: [validTaskInstance()],
-    taskFamilies: [validTaskFamily()],
+    taskFamilies: [validTaskFamily(), { ...validTaskFamily(), id: "fam-2", name: "Reasoning" }],
     taskFamilyAssignments: [validTaskFamilyAssignment()],
+    taskFamilyRelations: [validTaskFamilyRelation()],
     taskFacetAnnotations: [validTaskFacetAnnotation()],
   };
 }
@@ -817,5 +833,163 @@ describe("validateTaskImport", () => {
     p.taskArtifacts[0].contentDigest = VALID_DIGEST_B;
     p.taskInstances[0].inputDigest = VALID_DIGEST_B;
     expect(validateTaskImport(p).valid).toBe(true);
+  });
+});
+
+// --- Task 8A: typed family relations, facet taxonomy seam ------------------
+
+describe("validateTaskFamilyRelation", () => {
+  it("returns valid:true for a well-formed relation between distinct families", () => {
+    const r = validateTaskFamilyRelation(validTaskFamilyRelation());
+    expect(r.valid).toBe(true);
+    expect(r.errors).toEqual([]);
+  });
+
+  it("rejects a self-relation (fromFamilyId === toFamilyId)", () => {
+    const r = validateTaskFamilyRelation({
+      ...validTaskFamilyRelation(),
+      toFamilyId: validTaskFamilyRelation().fromFamilyId,
+    });
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field === "fromFamilyId" || e.field === "toFamilyId")).toBe(true);
+  });
+
+  it("rejects an unknown relation kind", () => {
+    const r = validateTaskFamilyRelation({
+      ...validTaskFamilyRelation(),
+      kind: "subset" as never,
+    });
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field === "kind")).toBe(true);
+  });
+
+  it("rejects a malformed id and missing createdAt", () => {
+    expect(
+      validateTaskFamilyRelation({ ...validTaskFamilyRelation(), id: "bad id!" }).valid,
+    ).toBe(false);
+    expect(
+      validateTaskFamilyRelation({ ...validTaskFamilyRelation(), createdAt: "x" as never }).valid,
+    ).toBe(false);
+  });
+
+  it("rejects a prohibited key nested in the relation", () => {
+    const rel = validTaskFamilyRelation() as unknown as Record<string, unknown>;
+    rel.secret = "leak";
+    expect(validateTaskFamilyRelation(rel).valid).toBe(false);
+  });
+});
+
+describe("validateTaskImport — taskFamilyRelations collection", () => {
+  it("accepts a payload that includes a coherent taskFamilyRelations collection", () => {
+    expect(validateTaskImport(validImportPayload()).valid).toBe(true);
+  });
+
+  it("rejects a payload missing the taskFamilyRelations array", () => {
+    const p = validImportPayload() as unknown as Record<string, unknown>;
+    delete p.taskFamilyRelations;
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field === "taskFamilyRelations")).toBe(true);
+  });
+
+  it("rejects duplicate relation ids", () => {
+    const p = validImportPayload();
+    p.taskFamilyRelations.push({ ...validTaskFamilyRelation() });
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.message.includes("duplicate relation id"))).toBe(true);
+  });
+
+  it("rejects a relation whose fromFamilyId is unknown", () => {
+    const p = validImportPayload();
+    p.taskFamilyRelations[0].fromFamilyId = "no-such-family";
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field === "taskFamilyRelations[0].fromFamilyId")).toBe(true);
+  });
+
+  it("rejects a relation whose toFamilyId is unknown", () => {
+    const p = validImportPayload();
+    p.taskFamilyRelations[0].toFamilyId = "no-such-family";
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field === "taskFamilyRelations[0].toFamilyId")).toBe(true);
+  });
+
+  it("rejects a self-relation inside the import collection", () => {
+    const p = validImportPayload();
+    p.taskFamilies = [validTaskFamily()]; // single family
+    p.taskFamilyRelations[0] = {
+      ...validTaskFamilyRelation(),
+      fromFamilyId: "fam-1",
+      toFamilyId: "fam-1",
+    };
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.message.includes("self"))).toBe(true);
+  });
+
+  it("rejects a relation with an unknown kind inside the import collection", () => {
+    const p = validImportPayload();
+    p.taskFamilyRelations[0] = {
+      ...validTaskFamilyRelation(),
+      kind: "subset" as never,
+    };
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field === "taskFamilyRelations[0].kind")).toBe(true);
+  });
+
+  it("rejects a prohibited key nested in any relation", () => {
+    const p = validImportPayload();
+    (p.taskFamilyRelations[0] as unknown as Record<string, unknown>).authorization = "leak";
+    const r = validateTaskImport(p);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.field.startsWith("taskFamilyRelations[0]"))).toBe(true);
+  });
+});
+
+describe("facet taxonomy allowlist seam", () => {
+  it("exposes a stable taxonomy version set with at least one version", () => {
+    expect(FACET_TAXONOMY_VERSIONS.length).toBeGreaterThan(0);
+    // Versions are positive integers and sorted ascending.
+    for (const v of FACET_TAXONOMY_VERSIONS) {
+      expect(Number.isInteger(v)).toBe(true);
+      expect(v).toBeGreaterThan(0);
+    }
+    const sorted = [...FACET_TAXONOMY_VERSIONS].sort((a, b) => a - b);
+    expect(FACET_TAXONOMY_VERSIONS).toEqual(sorted);
+  });
+
+  it("FACET_TAXONOMY_VALUES covers exactly the eight spec dimensions", () => {
+    const dims = new Set(FACET_TAXONOMY_VALUES.map((v) => v.facetId));
+    expect(dims).toEqual(new Set(TASK_FACET_DIMENSIONS));
+  });
+
+  it("every taxonomy value has a stable identity and positive taxonomy version", () => {
+    for (const v of FACET_TAXONOMY_VALUES) {
+      expect(isFacetTaxonomyValue(v)).toBe(true);
+      expect(v.taxonomyVersion).toBeGreaterThan(0);
+    }
+  });
+
+  it("getFacetTaxonomyValues returns the allowlist for a known version", () => {
+    const v = FACET_TAXONOMY_VERSIONS[0];
+    const values = getFacetTaxonomyValues(v);
+    expect(values.length).toBeGreaterThan(0);
+    for (const val of values) {
+      expect(val.taxonomyVersion).toBe(v);
+    }
+  });
+
+  it("getFacetTaxonomyValues returns [] for an unknown version (no inference)", () => {
+    expect(getFacetTaxonomyValues(999_999)).toEqual([]);
+  });
+
+  it("does not invent automatic classification or mutable global taxonomy ownership", () => {
+    // The seam is a read-only allowlist: no setter, no classifier, no mutation
+    // surface. The exported shape is a frozen readonly list and a pure getter.
+    expect(Object.isFrozen(FACET_TAXONOMY_VALUES)).toBe(true);
+    expect(Object.isFrozen(FACET_TAXONOMY_VERSIONS)).toBe(true);
   });
 });
