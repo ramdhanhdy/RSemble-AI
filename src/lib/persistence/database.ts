@@ -16,6 +16,7 @@
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
+import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
 
 // Indexed row shapes — a search/summary row is the stored summary plus the
 // indexes Dexie needs to filter and paginate without loading detail records.
@@ -441,13 +442,15 @@ export function createDatabase(name?: string): DatabaseHandle {
     handle.state = s;
   });
 
-  handle.ready = db.open().then(
-    () => undefined,
-    (err: unknown) => {
-      db.setState("unavailable");
-      throw classifyStorageError(err);
-    },
-  );
+  handle.ready = db.open()
+    .then(() => migrateEmbeddedLegacyTasks(db))
+    .then(
+      () => undefined,
+      (err: unknown) => {
+        db.setState("unavailable");
+        throw classifyStorageError(err);
+      },
+    );
 
   return handle;
 }

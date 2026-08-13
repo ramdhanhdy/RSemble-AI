@@ -116,18 +116,25 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     setTimeout(initialize, 0);
   }, [initialize]);
 
-  const runRepo = useMemo(() => (handle ? createRunRepository(handle.db) : null), [handle]);
+  const repositoriesReady = handle !== null && storageState === "ready";
+  const runRepo = useMemo(
+    () => (repositoriesReady && handle ? createRunRepository(handle.db) : null),
+    [repositoriesReady, handle],
+  );
   const evalRepo = useMemo(
-    () => (handle && runRepo ? createEvaluationRepository(handle.db, runRepo) : null),
-    [handle, runRepo],
+    () =>
+      repositoriesReady && handle && runRepo
+        ? createEvaluationRepository(handle.db, runRepo)
+        : null,
+    [repositoriesReady, handle, runRepo],
   );
   const fusionRepo = useMemo(
-    () => (handle ? createFusionStudyRepository(handle.db) : null),
-    [handle],
+    () => (repositoriesReady && handle ? createFusionStudyRepository(handle.db) : null),
+    [repositoriesReady, handle],
   );
   const taskRepo = useMemo(
-    () => (handle ? createTaskRepository(handle.db) : null),
-    [handle],
+    () => (repositoriesReady && handle ? createTaskRepository(handle.db) : null),
+    [repositoriesReady, handle],
   );
 
   const value = useMemo<RepositoryContextValue>(

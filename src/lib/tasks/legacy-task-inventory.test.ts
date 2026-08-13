@@ -9,9 +9,8 @@
 //   - latest suite definition included even when never executed (§6.2 #6)
 //   - historical definitions sorted by explicit execution/suite chronology
 //     with deterministic tie-breaks (§6.2 #3)
-//   - verifier/evaluation differences are part of the digest contract
-//     (§6.1: verifier/evaluation task definitions required to reconstruct
-//     executable meaning)
+//   - verifier differences are part of the digest contract; evaluation and
+//     judge instruction are execution protocol, not Task identity
 //   - never auto-merged across different suite scopes (§6.2 #7)
 //   - missing/corrupt definitions stay explicit; nothing is fabricated
 //     into a complete Task (§6.4)
@@ -108,7 +107,7 @@ function input(
 
 // --- expected helpers ---------------------------------------------------------
 
-/** Reference digest for a complete executable-definition slice. */
+/** Reference digest for the canonical Task-version identity slice. */
 function expectedDigest(task: EvaluationTask): string {
   return hashArtifactContent(canonicalJsonString({
     title: task.title,
@@ -117,8 +116,6 @@ function expectedDigest(task: EvaluationTask): string {
     defaultContextManifest: [],
     responseContract: null,
     taskVerifierRef: task.verification ?? null,
-    evaluation: task.evaluation,
-    judgeInstructionOverride: task.judgeInstructionOverride,
   }));
 }
 
@@ -240,7 +237,7 @@ describe("buildLegacyTaskInventory — experiment snapshots", () => {
     ]);
   });
 
-  it("splits entries when evaluation selection changes even if prose is unchanged", () => {
+  it("does not split entries when evaluation selection changes but the Task definition is stable", () => {
     const inherit = makeTask({ prompt: "P", evaluation: { kind: "inherit" } });
     const holistic = makeTask({ prompt: "P", evaluation: { kind: "holistic" } });
 
@@ -257,11 +254,23 @@ describe("buildLegacyTaskInventory — experiment snapshots", () => {
     });
 
     const result = buildLegacyTaskInventory(input([currentSuite], [experiment]));
-    expect(result.entries).toHaveLength(2);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].definitionDigest).toBe(expectedDigest(inherit));
+  });
 
-    const digests = new Set(result.entries.map((e) => e.definitionDigest));
-    expect(digests).toContain(expectedDigest(inherit));
-    expect(digests).toContain(expectedDigest(holistic));
+  it("does not split entries for judge-instruction-only protocol edits", () => {
+    const historical = makeTask({ prompt: "P", judgeInstructionOverride: "Judge for brevity." });
+    const current = makeTask({ prompt: "P", judgeInstructionOverride: "Judge for citations." });
+    const suite = makeSuite({ version: 2, tasks: [current] });
+    const experiment = makeExperiment({
+      suiteId: suite.id,
+      suiteVersion: 1,
+      snapshot: { ...makeExperiment().snapshot, suiteId: suite.id, suiteVersion: 1, tasks: [historical] },
+    });
+
+    const result = buildLegacyTaskInventory(input([suite], [experiment]));
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].definitionDigest).toBe(expectedDigest(current));
   });
 
   it("sorts multiple historical snapshots by explicit suite chronology with deterministic tie-breaks", () => {
@@ -383,6 +392,16 @@ describe("buildLegacyTaskInventory — explicit unresolved definitions", () => {
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0].status).toBe("incomplete");
     expect(result.entries[0].definitionDigest).toBeNull();
+  });
+
+  it.each([
+    { kind: "profile" },
+    { kind: "profile", profile: {} },
+    { kind: "profile", profile: { id: "", version: 1 } },
+    { kind: "profile", profile: { id: "rubric-1", version: Number.NaN } },
+  ])("marks corrupt profile evaluation %o as incomplete", (evaluation) => {
+    const corruptProfileTask = { ...makeTask({ id: "t-bad-profile" }), evaluation };
+    expect(resolveLegacyDefinitionStatus(corruptProfileTask)).toBe("incomplete");
   });
 
   it("marks missing snapshot task references as explicit failed entries when the current suite no longer has the task", () => {

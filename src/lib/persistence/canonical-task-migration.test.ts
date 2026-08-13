@@ -51,18 +51,34 @@ function experiment(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-
-async function seed(db: RSembleEvaluationDB, suites: unknown[], experiments: unknown[]) {
-  for (const value of suites) {
-    const item = value as ReturnType<typeof suite>;
-    await db.suites.put({ id: item.id as string, suite: item, revision: 1, version: item.version as number, updatedAt: 20, archivedAt: null });
+async function seed(
+  db: RSembleEvaluationDB,
+  suites: Array<Record<string, unknown>>,
+  experiments: Array<Record<string, unknown>>,
+) {
+  for (const item of suites) {
+    await db.suites.put({
+      id: item.id as string,
+      suite: item,
+      revision: 1,
+      version: item.version as number,
+      updatedAt: 20,
+      archivedAt: null,
+    });
   }
-  for (const value of experiments) {
-    const item = value as ReturnType<typeof experiment>;
-    await db.experiments.put({ id: item.id as string, experiment: item, revision: 1, suiteId: item.suiteId as string, suiteVersion: item.suiteVersion as number, protocolFingerprint: "sha256:fp", createdAt: 15, status: "completed" });
+  for (const item of experiments) {
+    await db.experiments.put({
+      id: item.id as string,
+      experiment: item,
+      revision: 1,
+      suiteId: item.suiteId as string,
+      suiteVersion: item.suiteVersion as number,
+      protocolFingerprint: "sha256:fp",
+      createdAt: 15,
+      status: "completed",
+    });
   }
 }
-
 async function makeDb() {
   const db = new RSembleEvaluationDB(`canonical-migration-${crypto.randomUUID()}`);
   dbs.push(db);

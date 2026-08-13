@@ -20,17 +20,15 @@
 //   - missing/corrupt definitions stay explicit as `incomplete`; nothing is
 //     ever fabricated into a complete definition (§6.4).
 //
-// Complete executable-definition digest: `sha256:<hex>` over the canonical
-// JSON of the executable-definition slice — title, objective, candidate
-// instruction, default context manifest, response contract, and the legacy
-// verifier configuration — reusing `canonicalJsonString` and
+// JSON of the canonical Task-version identity slice — title, objective,
+// candidate instruction, default context manifest, response contract, and the
+// legacy verifier configuration — reusing `canonicalJsonString` and
 // `hashArtifactContent` from `../evaluations/protocol-fingerprint`. Evaluation
-// selection / judge instruction override stay inside the digest because §6.1
-// names verifier/evaluation task definitions as required to reconstruct
-// executable meaning. The context manifest is empty and the response contract
-// is null for legacy tasks: embedded EvaluationTask objects have no separate
-// response-contract field; the verifier configuration IS the legacy
-// correctness contract.
+// selection / judge instruction override are execution protocol, not Task
+// identity (spec §3.2); changes to either therefore do not create a version.
+// The context manifest is empty and the response contract is null for legacy
+// tasks: embedded EvaluationTask objects have no separate response-contract
+// field; the verifier configuration IS the legacy correctness contract.
 //
 // Pure/read-only domain logic only: no Dexie writes, no source-record
 // mutation, no provider calls.
@@ -38,6 +36,7 @@
 
 import {
   isEvaluationTask,
+  isTaskEvaluationSelection,
   isTaskVerification,
   type EvaluationTask,
   type EvaluationSuite,
@@ -78,7 +77,7 @@ export type LegacyInventoryFamily = "current" | "orphaned-snapshot";
 /** Source of an observation for one inventory entry. */
 export type LegacyInventorySource = "current-suite" | "experiment-snapshot";
 
-/** A single most-recent observation of a legacy definition. */
+/** The earliest/introduction observation of a legacy definition. */
 export interface LegacyInventoryEntry {
   /** Deterministic inventory key: `<suiteId>::<taskId>::v<suiteVersion>`. */
   key: string;
@@ -100,15 +99,18 @@ export interface LegacyInventoryEntry {
   presentInCurrentSuite: boolean;
   /** Explicit chronological coordinates for this observation. */
   chronology: LegacyChronology;
+  /** Every chronology coordinate that must receive a historical crosswalk. */
+  observations: LegacyChronology[];
   /** Snapshot of the complete executable definition slice, or null when the
    *  definition is incomplete/corrupt. */
   definition: LegacyExecutableDefinition | null;
 }
 
 /**
- * Full executable-definition slice used for digesting. Field names mirror the
- * canonical TaskVersion task-defining fields (§3.2) plus the legacy verifier
- * configuration which §6.1 requires to reconstruct executable meaning.
+ * Canonical Task-version identity slice for a legacy definition. Field names
+ * mirror the canonical TaskVersion task-defining fields (§3.2) plus the
+ * legacy verifier configuration which §6.1 requires to reconstruct the
+ * correctness contract.
  */
 export interface LegacyExecutableDefinition {
   title: string;
@@ -117,8 +119,6 @@ export interface LegacyExecutableDefinition {
   defaultContextManifest: never[];
   responseContract: null;
   taskVerifierRef: EvaluationTask["verification"] | null;
-  evaluation: EvaluationTask["evaluation"];
-  judgeInstructionOverride: string;
 }
 
 export interface LegacyTaskInventoryInput {
@@ -147,14 +147,7 @@ export function resolveLegacyDefinitionStatus(task: unknown): LegacyDefinitionSt
   if (typeof partial.prompt !== "string" || partial.prompt.length === 0) return "incomplete";
   if (typeof partial.systemPrompt !== "string") return "incomplete";
   if (typeof partial.judgeInstructionOverride !== "string") return "incomplete";
-  if (partial.evaluation === undefined || partial.evaluation === null) return "incomplete";
-  if (
-    partial.evaluation.kind !== "inherit" &&
-    partial.evaluation.kind !== "holistic" &&
-    partial.evaluation.kind !== "profile"
-  ) {
-    return "incomplete";
-  }
+  if (!isTaskEvaluationSelection(partial.evaluation)) return "incomplete";
   if (partial.verification !== undefined && !isTaskVerification(partial.verification)) {
     return "incomplete";
   }
@@ -265,6 +258,7 @@ function emitAccumulator(
     latestSuiteVersion: acc.latestSuiteVersion,
     presentInCurrentSuite,
     chronology: chronological,
+    observations: [...acc.chronology].sort(compareChronology),
     definition: acc.definition,
   };
 }
@@ -316,8 +310,6 @@ export function buildLegacyTaskInventory(
           defaultContextManifest: [],
           responseContract: null,
           taskVerifierRef: task.verification ?? null,
-          evaluation: task.evaluation,
-          judgeInstructionOverride: task.judgeInstructionOverride,
         };
         const digest = computeLegacyExecutableDefinitionDigest(definition);
         let acc = bucket.accumulatorsByDigest.get(digest);
@@ -376,8 +368,6 @@ export function buildLegacyTaskInventory(
         defaultContextManifest: [],
         responseContract: null,
         taskVerifierRef: task.verification ?? null,
-        evaluation: task.evaluation,
-        judgeInstructionOverride: task.judgeInstructionOverride,
       };
       const digest = computeLegacyExecutableDefinitionDigest(definition);
       let acc = bucket.accumulatorsByDigest.get(digest);
