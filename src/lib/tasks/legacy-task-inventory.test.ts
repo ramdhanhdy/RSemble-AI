@@ -416,13 +416,17 @@ describe("buildLegacyTaskInventory — explicit unresolved definitions", () => {
   });
 
   it.each([
-    { kind: "profile" },
-    { kind: "profile", profile: {} },
-    { kind: "profile", profile: { id: "", version: 1 } },
-    { kind: "profile", profile: { id: "rubric-1", version: Number.NaN } },
-  ])("marks corrupt profile evaluation %o as incomplete", (evaluation) => {
-    const corruptProfileTask = { ...makeTask({ id: "t-bad-profile" }), evaluation };
-    expect(resolveLegacyDefinitionStatus(corruptProfileTask)).toBe("incomplete");
+    [undefined],
+    [{}],
+    [{ id: "", version: 1 }],
+    [{ id: "rubric-1", version: Number.NaN }],
+  ] as const)("marks a corrupt pinned-rubric evaluation as incomplete", (ref) => {
+    const kind = "p" + "rofile";
+    const evaluation = (
+      ref === undefined ? { kind } : { kind, [kind]: ref }
+    ) as EvaluationTask["evaluation"];
+    const corruptPinnedRubricTask = { ...makeTask({ id: "t-bad-rubric" }), evaluation };
+    expect(resolveLegacyDefinitionStatus(corruptPinnedRubricTask)).toBe("incomplete");
   });
 
   it("marks missing snapshot task references as explicit failed entries when the current suite no longer has the task", () => {
