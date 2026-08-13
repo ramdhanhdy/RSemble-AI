@@ -28,7 +28,8 @@ function renderWithRouter(initialEntry = "/runs", repo: InMemoryRunRepository): 
     root.render(
       <RepositoryContext.Provider
         value={{
-          runRepo: repo,
+        taskRepo: null,
+        runRepo: repo,
           evalRepo: null,
           fusionRepo: null,
           db: null,

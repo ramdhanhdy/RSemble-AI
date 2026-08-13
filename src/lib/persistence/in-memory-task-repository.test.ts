@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import { InMemoryTaskRepository } from "./in-memory-task-repository";
 import { repositorySuite } from "./task-repository.test";
 
-import { buildTaskArtifact } from "../tasks/task-instance";
+import { buildTaskArtifact, computeInstanceInputDigest } from "../tasks/task-instance";
 import { buildInitialTaskRecord, buildNextVersion } from "../tasks/task-versioning";
 import type { TaskRecord, TaskVersion } from "../tasks/task-types";
 
@@ -74,11 +74,12 @@ describe("InMemoryTaskRepository additional parity edge cases", () => {
       taskVersion: 1,
       normalizedInput: { text: "x", artifactIds: ["art-1"], metadata: {} },
       contextManifest: [],
-      inputDigest: "sha256:" + "0".repeat(64),
+      inputDigest: "sha256:" + "0".repeat(64), // placeholder; recomputed below
       inputCompleteness: "complete" as const,
       createdAt: NOW,
       sourceRef: { kind: "authored" as const, legacyScopeKey: null, originId: null },
     };
+    candidate.inputDigest = computeInstanceInputDigest(candidate);
     const { instance } = await repo.getOrCreateTaskInstance(
       candidate,
       new Map<string, Uint8Array>(),

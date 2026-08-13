@@ -168,6 +168,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     await blockingLease.acquire({ kind: "compare", executionId: "live-run" });
 
     const value: RepositoryContextValue = {
+      taskRepo: null,
       runRepo,
       evalRepo,
       fusionRepo: null,
@@ -214,6 +215,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     expect((await runRepo.get("run-stuck"))?.status).toBe("running");
 
     const value: RepositoryContextValue = {
+      taskRepo: null,
       runRepo,
       evalRepo,
       fusionRepo: null,
@@ -258,6 +260,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     const evalRepo = createEvaluationRepository(db, runRepo);
 
     const value: RepositoryContextValue = {
+      taskRepo: null,
       runRepo,
       evalRepo,
       fusionRepo: null,

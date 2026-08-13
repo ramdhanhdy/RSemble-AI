@@ -39,13 +39,10 @@ import {
   buildTaskArtifact,
   computeArtifactDigest,
   computeInstanceInputDigest,
-  resolveInstanceCompleteness,
 } from "../tasks/task-instance";
 import {
-  archiveTaskRecord,
   buildInitialTaskRecord,
   buildNextVersion,
-  restoreTaskRecord,
 } from "../tasks/task-versioning";
 import type {
   ContextManifestEntry,
@@ -123,18 +120,22 @@ function normalizedInput(overrides: Partial<NormalizedTaskInput> = {}): Normaliz
 }
 
 function taskInstance(overrides: Partial<TaskInstance> = {}): TaskInstance {
-  return {
+  const base: TaskInstance = {
     id: "inst-1",
     taskId: "task-1",
     taskVersion: 1,
     normalizedInput: normalizedInput(),
     contextManifest: [manifestEntry()],
-    inputDigest: DIGEST_A,
+    inputDigest: DIGEST_A, // placeholder; recomputed below
     inputCompleteness: "complete",
     createdAt: NOW,
     sourceRef: instanceSourceRef(),
-    ...overrides,
   };
+  const merged = { ...base, ...overrides };
+  // Recompute the real input digest so the repository's integrity check passes
+  // (the repo recomputes from the input and rejects a mismatched caller digest).
+  merged.inputDigest = overrides.inputDigest ?? computeInstanceInputDigest(merged);
+  return merged;
 }
 
 function taskFamily(overrides: Partial<TaskFamily> = {}): TaskFamily {
@@ -226,9 +227,11 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
 
     it("rejects createTask with an invalid record (validation)", async () => {
       const repo = makeRepo();
-      await expect(
-        repo.createTask({ ...taskRecord(), id: "" }, taskVersion()),
-      ).rejects.toThrow(/validation/i);
+      const err = (await repo
+        .createTask({ ...taskRecord(), id: "" }, taskVersion())
+        .catch((e) => e as { name: string; kind: string }))!;
+      expect(err.name).toBe("StorageError");
+      expect(err.kind).toBe("validation");
     });
 
     it("rejects createTask carrying prohibited credential keys", async () => {
@@ -499,9 +502,18 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
     it("getOrCreateTaskInstance rejects metadata_only input as not reusable (no complete upgrade)", async () => {
       const repo = makeRepo();
       await repo.createTask(taskRecord(), taskVersion());
-      // No artifact bytes available → metadata_only.
+      // The artifact exists (referential integrity) but no bytes are available
+      // in this call → the instance is metadata_only and never reused.
+      const artifact = buildTaskArtifact({
+        id: "art-1",
+        bytes: TEXT_BYTES,
+        mediaType: "text/plain",
+        storageRef: "blob://art-1",
+        createdAt: NOW,
+      });
+      await repo.putTaskArtifact(artifact, TEXT_BYTES);
       const candidate = taskInstance({ inputCompleteness: "metadata_only" });
-      const available = new Map<string, Uint8Array>(); // empty
+      const available = new Map<string, Uint8Array>(); // empty — no bytes available
       const { instance: created, reused } = await repo.getOrCreateTaskInstance(candidate, available);
       expect(reused).toBe(false);
       expect(created.inputCompleteness).toBe("metadata_only");
@@ -526,7 +538,47 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
       await repo.createTask(taskRecord(), taskVersion());
       const candidate = taskInstance();
       const available = new Map<string, Uint8Array>(); // missing art-1 bytes
-      await expect(repo.getOrCreateTaskInstance(candidate, available)).rejects.toThrow(/artifact/);
+      await expect(repo.getOrCreateTaskInstance(candidate, available)).rejects.toThrow(/artifact/i);
+    });
+
+    it("getOrCreateTaskInstance rejects empty available bytes for a referenced artifact", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      const artifact = buildTaskArtifact({
+        id: "art-1",
+        bytes: TEXT_BYTES,
+        mediaType: "text/plain",
+        storageRef: "blob://art-1",
+        createdAt: NOW,
+      });
+      await repo.putTaskArtifact(artifact, TEXT_BYTES);
+      const candidate = taskInstance();
+      // Caller supplies an empty Uint8Array for art-1 — must be rejected, not
+      // silently treated as "complete".
+      const emptyMap = new Map<string, Uint8Array>([["art-1", new Uint8Array(0)]]);
+      await expect(repo.getOrCreateTaskInstance(candidate, emptyMap)).rejects.toThrow(
+        /available bytes are empty/,
+      );
+    });
+
+    it("getOrCreateTaskInstance rejects wrong available bytes for a referenced artifact", async () => {
+      const repo = makeRepo();
+      await repo.createTask(taskRecord(), taskVersion());
+      const artifact = buildTaskArtifact({
+        id: "art-1",
+        bytes: TEXT_BYTES,
+        mediaType: "text/plain",
+        storageRef: "blob://art-1",
+        createdAt: NOW,
+      });
+      await repo.putTaskArtifact(artifact, TEXT_BYTES);
+      const candidate = taskInstance();
+      // Caller supplies wrong bytes (different content) — must be rejected.
+      const wrongBytes = new TextEncoder().encode("totally different content");
+      const wrongMap = new Map<string, Uint8Array>([["art-1", wrongBytes]]);
+      await expect(repo.getOrCreateTaskInstance(candidate, wrongMap)).rejects.toThrow(
+        /available bytes do not match/,
+      );
     });
 
     it("getOrCreateTaskInstance rejects a digest collision (same inputDigest, different input)", async () => {
@@ -731,9 +783,9 @@ export function repositorySuite(name: string, makeRepo: () => TaskRepository & o
     it("rejects conflicts with StorageError conflict kind", async () => {
       const repo = makeRepo();
       await repo.createTask(taskRecord(), taskVersion());
-      const err = await repo
+      const err = (await repo
         .createTask(taskRecord(), taskVersion())
-        .catch((e) => e as { name: string; kind: string });
+        .catch((e) => e as { name: string; kind: string }))!;
       expect(err.name).toBe("StorageError");
       expect(err.kind).toBe("conflict");
     });

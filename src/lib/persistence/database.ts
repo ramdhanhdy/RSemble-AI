@@ -2,10 +2,17 @@
 // RSemble AI — Dexie persistence database
 //
 // Single IndexedDB database hosting the run, evaluation rubric, suite,
-// experiment, and storage-meta tables. Version 1 schema. Owns the storage
-// lifecycle: classified StorageError for quota/unavailable/blocked states and a
-// StorageState surface so React providers can react when the database is
-// blocked by another tab or upgraded out from under it.
+// experiment, storage-meta, Fusion Study, and canonical Task tables. Owns the
+// storage lifecycle: classified StorageError for quota/unavailable/blocked
+// states and a StorageState surface so React providers can react when the
+// database is blocked by another tab or upgraded out from under it.
+//
+// Schema versions:
+//   v1 — run/evaluation/suite/experiment/storage-meta (7 tables).
+//   v2 — additive Fusion Study tables (7 tables).
+//   v3 — additive canonical Task tables (8 tables): tasks, taskVersions,
+//        taskArtifacts, taskInstances, taskFamilies, taskFamilyAssignments,
+//        taskFacetAnnotations, taskMigrationCrosswalk.
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
@@ -134,6 +141,101 @@ export interface StorageMetaRow {
   value: unknown;
 }
 
+// --- Canonical Task rows (schema v3) ------------------------------------------
+//
+// Artifact bytes live OUTSIDE indexed rows via `storageRef` indirection (spec
+// §3.3, §8). No Dexie Blob/ArrayBuffer columns; the `taskArtifactBytes` table
+// holds opaque byte payloads keyed by artifact id, kept separate from the
+// indexable `taskArtifacts` summary rows. Heavy bytes are never indexed.
+
+/** Canonical Task record row (spec §3.1). Mutable metadata only via CAS. */
+export interface TaskRecordRow {
+  id: string;
+  record: unknown;
+  latestVersion: number;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt: number | null;
+  origin: string;
+  revision: number;
+}
+
+/** Immutable Task Version row (spec §3.2). Compound [taskId+version] key. */
+export interface TaskVersionRow {
+  taskId: string;
+  version: number;
+  version_: unknown;
+  createdAt: number;
+}
+
+/** Immutable Task Artifact summary row (spec §3.3). Bytes live separately. */
+export interface TaskArtifactRow {
+  id: string;
+  contentDigest: string;
+  mediaType: string;
+  byteCount: number;
+  storageRef: string;
+  createdAt: number;
+}
+
+/** Opaque artifact byte payload, kept out of indexed summary rows. */
+export interface TaskArtifactBytesRow {
+  id: string;
+  bytes: Uint8Array;
+}
+
+/** Concrete Task Instance row (spec §3.4). */
+export interface TaskInstanceRow {
+  id: string;
+  instance: unknown;
+  taskId: string;
+  taskVersion: number;
+  inputDigest: string;
+  inputCompleteness: string;
+  createdAt: number;
+}
+
+/** Task Family row (spec §3.5). Mutable metadata only via CAS. */
+export interface TaskFamilyRow {
+  id: string;
+  family: unknown;
+  parentFamilyId: string | null;
+  updatedAt: number;
+  archivedAt: number | null;
+  revision: number;
+}
+
+/** Versioned family assignment row (spec §3.5). */
+export interface TaskFamilyAssignmentRow {
+  id: string;
+  assignment: unknown;
+  taskId: string;
+  taskVersion: number;
+  familyId: string;
+  isPrimary: number; // 0 | 1 — Dexie indexes booleans poorly; store as int.
+  createdAt: number;
+  revision: number;
+  archivedAt: number | null;
+}
+
+/** Versioned facet annotation row (spec §3.6). */
+export interface TaskFacetAnnotationRow {
+  id: string;
+  annotation: unknown;
+  taskId: string;
+  taskVersion: number | null;
+  facetId: string;
+  valueId: string;
+  createdAt: number;
+}
+
+/** Legacy → canonical migration crosswalk row (spec §6.2). */
+export interface TaskMigrationCrosswalkRow {
+  legacyScopeKey: string;
+  taskId: string;
+  taskVersion: number;
+}
+
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -197,6 +299,16 @@ export class RSembleEvaluationDB extends Dexie {
   fusionAttempts!: Table<FusionAttemptRow, string>;
   fusionObservations!: Table<FusionObservationRow, string>;
   fusionPlaybooks!: Table<FusionPlaybookRow, string>;
+  // Canonical Task tables (schema v3)
+  tasks!: Table<TaskRecordRow, string>;
+  taskVersions!: Table<TaskVersionRow, [string, number]>;
+  taskArtifacts!: Table<TaskArtifactRow, string>;
+  taskArtifactBytes!: Table<TaskArtifactBytesRow, string>;
+  taskInstances!: Table<TaskInstanceRow, string>;
+  taskFamilies!: Table<TaskFamilyRow, string>;
+  taskFamilyAssignments!: Table<TaskFamilyAssignmentRow, string>;
+  taskFacetAnnotations!: Table<TaskFacetAnnotationRow, string>;
+  taskMigrationCrosswalk!: Table<TaskMigrationCrosswalkRow, string>;
 
   /** Current storage lifecycle state. */
   private _storageState: StorageState = "ready";
@@ -227,6 +339,24 @@ export class RSembleEvaluationDB extends Dexie {
       fusionAttempts: "id, studyId, createdAt",
       fusionObservations: "id, trialId, createdAt",
       fusionPlaybooks: "id, studyId, createdAt",
+    });
+
+    // v3: additive canonical Task tables (spec §5). No existing v1/v2 table is
+    // redefined — this block only adds new stores. Artifact bytes live in a
+    // separate `taskArtifactBytes` table (no indexed heavy bytes); the
+    // `taskArtifacts` summary row carries only digest/mediaType/byteCount/
+    // storageRef. `isPrimary` is stored as 0|1 because Dexie does not index
+    // boolean values reliably.
+    this.version(3).stores({
+      tasks: "id, updatedAt, archivedAt, origin",
+      taskVersions: "[taskId+version], taskId, createdAt",
+      taskArtifacts: "id, contentDigest, mediaType, byteCount, createdAt",
+      taskArtifactBytes: "id",
+      taskInstances: "id, [taskId+taskVersion], inputDigest, inputCompleteness, createdAt",
+      taskFamilies: "id, parentFamilyId, updatedAt, archivedAt",
+      taskFamilyAssignments: "id, taskId, taskVersion, familyId, isPrimary, createdAt, archivedAt",
+      taskFacetAnnotations: "id, taskId, [taskId+taskVersion], facetId, valueId, createdAt",
+      taskMigrationCrosswalk: "legacyScopeKey, taskId, taskVersion",
     });
 
     this.on("blocked", () => {

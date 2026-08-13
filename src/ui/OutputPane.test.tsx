@@ -592,6 +592,7 @@ describe("OutputPane recent runs", () => {
       root.render(
         <RepositoryContext.Provider
           value={{
+            taskRepo: null,
             runRepo: repo,
             evalRepo: null,
             fusionRepo: null,
@@ -627,6 +628,7 @@ describe("OutputPane recent runs", () => {
       root.render(
         <RepositoryContext.Provider
           value={{
+            taskRepo: null,
             runRepo: repo,
             evalRepo: null,
             fusionRepo: null,

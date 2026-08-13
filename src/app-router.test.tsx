@@ -181,6 +181,7 @@ function renderRouter(opts: RenderOptions): Harness {
       <MemoryRouter initialEntries={opts.initialEntries}>
         <RepositoryContext.Provider
           value={{
+            taskRepo: null,
             runRepo: null,
             evalRepo: repo,
             fusionRepo: null,

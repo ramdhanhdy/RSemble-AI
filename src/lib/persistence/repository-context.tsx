@@ -4,6 +4,11 @@
 // Initializes the Dexie database and exposes repository instances to the React
 // tree. Handles initialization failure gracefully: Compare stays operational,
 // Runs/Evaluations show a blocking storage error with Retry.
+//
+// Child 02 (Canonical Tasks) Milestone B — Task 3: composes the Task
+// repository beside run → eval → fusion. When storage initialization fails,
+// `taskRepo` is null alongside the other repositories, preserving the current
+// Compare fallback behavior (spec §8).
 // =============================================================================
 
 import {
@@ -24,11 +29,13 @@ import {
 import { createRunRepository, type RunRepository } from "./run-repository";
 import { createEvaluationRepository, type EvaluationRepository } from "./evaluation-repository";
 import { createFusionStudyRepository, type FusionStudyRepository } from "./fusion-study-repository";
+import { createTaskRepository, type TaskRepository } from "./task-repository";
 
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
   fusionRepo: FusionStudyRepository | null;
+  taskRepo: TaskRepository | null;
   /** Raw Dexie handle for infrastructure that composes repositories (execution
    *  lease, experiment unit of work). Null while storage is unavailable. */
   db: RSembleEvaluationDB | null;
@@ -41,6 +48,7 @@ export const RepositoryContext = createContext<RepositoryContextValue>({
   runRepo: null,
   evalRepo: null,
   fusionRepo: null,
+  taskRepo: null,
   db: null,
   storageState: "unavailable",
   retry: () => undefined,
@@ -56,6 +64,10 @@ export function useEvaluationRepository(): EvaluationRepository | null {
 
 export function useFusionStudyRepository(): FusionStudyRepository | null {
   return useContext(RepositoryContext).fusionRepo;
+}
+
+export function useTaskRepository(): TaskRepository | null {
+  return useContext(RepositoryContext).taskRepo;
 }
 
 export function useStorageState(): StorageState {
@@ -113,10 +125,22 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     () => (handle ? createFusionStudyRepository(handle.db) : null),
     [handle],
   );
+  const taskRepo = useMemo(
+    () => (handle ? createTaskRepository(handle.db) : null),
+    [handle],
+  );
 
   const value = useMemo<RepositoryContextValue>(
-    () => ({ runRepo, evalRepo, fusionRepo, db: handle?.db ?? null, storageState, retry }),
-    [runRepo, evalRepo, fusionRepo, handle, storageState, retry],
+    () => ({
+      runRepo,
+      evalRepo,
+      fusionRepo,
+      taskRepo,
+      db: handle?.db ?? null,
+      storageState,
+      retry,
+    }),
+    [runRepo, evalRepo, fusionRepo, taskRepo, handle, storageState, retry],
   );
 
   return <RepositoryContext.Provider value={value}>{children}</RepositoryContext.Provider>;

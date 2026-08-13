@@ -168,6 +168,7 @@ function contextValue(
   storageState: RepositoryContextValue["storageState"],
 ): RepositoryContextValue {
   return {
+    taskRepo: null,
     runRepo: null,
     evalRepo: null,
     fusionRepo: null,

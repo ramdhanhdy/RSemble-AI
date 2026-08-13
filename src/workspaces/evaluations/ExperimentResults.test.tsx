@@ -1588,6 +1588,7 @@ describe("ExperimentResults — add model (roster extension)", () => {
     const h = renderWithRouter(
       <RepositoryContext.Provider
         value={{
+          taskRepo: null,
           runRepo: null,
           evalRepo: evalRepo as never,
           fusionRepo: null,
@@ -1679,6 +1680,7 @@ describe("ExperimentResults — add model (roster extension)", () => {
     const h = renderWithRouter(
       <RepositoryContext.Provider
         value={{
+          taskRepo: null,
           runRepo: null,
           evalRepo: evalRepo as never,
           fusionRepo: null,
@@ -1749,6 +1751,7 @@ describe("ExperimentResults — add model (roster extension)", () => {
     const h = renderWithRouter(
       <RepositoryContext.Provider
         value={{
+          taskRepo: null,
           runRepo: null,
           evalRepo: evalRepo as never,
           fusionRepo: null,
