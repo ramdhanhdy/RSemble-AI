@@ -104,6 +104,9 @@ function failingRepo(base: TaskRepository, kind: StorageError["kind"]): TaskRepo
     getOrCreateTaskInstance: (candidate, bytes) => base.getOrCreateTaskInstance(candidate, bytes),
     getTaskInstance: (id) => base.getTaskInstance(id),
     listTaskInstances: (taskId, version) => base.listTaskInstances(taskId, version),
+    listTaskVersions: (taskId) => base.listTaskVersions(taskId),
+    listTaskMigrationCrosswalks: (taskId) => base.listTaskMigrationCrosswalks(taskId),
+
     createTaskFamily: (family) => base.createTaskFamily(family),
     updateTaskFamily: (family, expectedRevision) => base.updateTaskFamily(family, expectedRevision),
     archiveTaskFamily: (id, expectedRevision) => base.archiveTaskFamily(id, expectedRevision),

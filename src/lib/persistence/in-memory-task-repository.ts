@@ -48,6 +48,8 @@ import type {
   TaskListQuery,
   TaskRepository,
 } from "./task-repository";
+import type { TaskMigrationCrosswalk } from "../tasks/task-references";
+
 
 /** Run a {valid, errors} validator and throw the first error as a StorageError
  *  validation. Mirrors the Dexie implementation so both report the same
@@ -188,6 +190,18 @@ export class InMemoryTaskRepository implements TaskRepository, TaskFamilyRelatio
   async getTaskVersion(taskId: string, version: number): Promise<TaskVersion | null> {
     return this.versions.get(taskId)?.get(version) ?? null;
   }
+
+  async listTaskVersions(taskId: string): Promise<TaskVersion[]> {
+    const versions = this.versions.get(taskId);
+    if (!versions) return [];
+    return [...versions.values()].sort((a, b) => a.version - b.version);
+  }
+
+  async listTaskMigrationCrosswalks(taskId: string): Promise<TaskMigrationCrosswalk[]> {
+    void taskId;
+    return [];
+  }
+
 
   async listTasks(query: TaskListQuery): Promise<TaskRecord[]> {
     const limit = query.limit ?? 50;

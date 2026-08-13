@@ -17,12 +17,16 @@ import { Link } from "react-router-dom";
 import { AlertCircle, Plus, Search } from "lucide-react";
 import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
+import { useEvaluationRepository } from "../../lib/persistence/repository-context";
+
 import type {
   TaskFacetAnnotation,
   TaskFamily,
   TaskRecord,
 } from "../../lib/tasks/task-types";
 import { TASK_FACET_DIMENSIONS, getFacetTaxonomyValues } from "../../lib/tasks/task-validation";
+import { loadTaskReferenceSummary } from "./task-reference-load";
+
 
 const PAGE_SIZE = 50;
 /** Catalog rows surface a bounded number of key facet chips (spec §7.1). */
@@ -77,6 +81,8 @@ interface FamilyOption {
 }
 
 export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
+  const evalRepo = useEvaluationRepository();
+
   const [search, setSearch] = useState("");
   const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
   const [familyFilter, setFamilyFilter] = useState<string>("all");
@@ -89,6 +95,8 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
   const [rowTitles, setRowTitles] = useState<Map<string, string>>(new Map());
   const [rowFamilyNames, setRowFamilyNames] = useState<Map<string, string>>(new Map());
   const [rowFacets, setRowFacets] = useState<Map<string, string[]>>(new Map());
+  const [rowReferenceCounts, setRowReferenceCounts] = useState<Map<string, number>>(new Map());
+
   const [families, setFamilies] = useState<FamilyOption[]>([]);
   const [familyNames, setFamilyNames] = useState<Map<string, string>>(new Map());
   const [reloadTick, setReloadTick] = useState(0);
@@ -141,10 +149,12 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
         // Row content (title/objective, spec §7.1) comes from the immutable
         // latest version; family/facet summaries come from the assignment and
         // annotation seams — one read per visible row.
-        const [versions, assignmentLists, annotationLists] = await Promise.all([
+        const [versions, assignmentLists, annotationLists, referenceSummaries] = await Promise.all([
           Promise.all(pageRows.map((row) => repo.getTaskVersion(row.id, row.latestVersion))),
           Promise.all(pageRows.map((row) => repo.listTaskFamilyAssignments(row.id))),
           Promise.all(pageRows.map((row) => repo.listTaskFacetAnnotations(row.id))),
+          Promise.all(pageRows.map((row) => loadTaskReferenceSummary(repo, row, evalRepo))),
+
         ]);
         const titles = new Map<string, string>();
         versions.forEach((version, index) => {
@@ -159,15 +169,22 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
         annotationLists.forEach((annotations, index) => {
           facets.set(pageRows[index].id, effectiveFacetLabels(annotations));
         });
-        return { pageRows, titles, primaryFamilies, facets };
+        const references = new Map<string, number>();
+        referenceSummaries.forEach((summary, index) => {
+          references.set(pageRows[index].id, summary.total);
+        });
+        return { pageRows, titles, primaryFamilies, facets, references };
+
       })
-      .then(({ pageRows, titles, primaryFamilies, facets }) => {
+      .then(({ pageRows, titles, primaryFamilies, facets, references }) => {
         if (cancelled) return;
         setRowTitles(titles);
         setRowFamilyNames(primaryFamilies);
         setRowFacets(facets);
+        setRowReferenceCounts(references);
         setState({ kind: "ready", rows: pageRows, error: null });
       })
+
       .catch((err) => {
         if (cancelled) return;
         const classified =
@@ -178,7 +195,8 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
     return () => {
       cancelled = true;
     };
-  }, [repo, search, originFilter, familyFilter, archiveFilter, facetDimension, facetValue, page, reloadTick]);
+  }, [repo, evalRepo, search, originFilter, familyFilter, archiveFilter, facetDimension, facetValue, page, reloadTick]);
+
 
   const retry = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -420,6 +438,10 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
                         </span>
                       ) : null}
                       <span>Updated {new Date(row.updatedAt).toLocaleString()}</span>
+                      <span data-task-references={row.id}>
+                        {rowReferenceCounts.get(row.id) ?? 0} references
+                      </span>
+
                     </span>
                     {(rowFacets.get(row.id)?.length ?? 0) > 0 ? (
                       <span className="flex flex-wrap items-center gap-1">

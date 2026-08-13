@@ -20,11 +20,15 @@ import { Link } from "react-router-dom";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
+import { useEvaluationRepository } from "../../lib/persistence/repository-context";
+
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import { TaskNewEditor, TaskDetailEditor, TaskVersionView } from "./TaskEditor";
 import { TaskFacetEditor } from "./TaskFacetEditor";
 import { TaskFamilyRegistry } from "./TaskFamilyRegistry";
 import { TaskFamilyAssignmentSection } from "./TaskFamilyAssignment";
+import { TaskReferencesSection } from "./TaskReferencesSection";
+
 
 function StorageUnavailable() {
   return (
@@ -162,6 +166,8 @@ export function TaskNewRoute({ repo }: { repo: TaskRepository | null }) {
 /** Task detail editor: stable identity header plus the draft/commit surface.
  *  Archived Tasks stay routable here and expose restore (spec §4.5). */
 export function TaskDetailRoute({ repo, taskId }: { repo: TaskRepository | null; taskId: string }) {
+  const evalRepo = useEvaluationRepository();
+
   const { state, retry } = useTaskRecord(repo, taskId);
 
   if (state.kind === "error") {
@@ -254,6 +260,10 @@ export function TaskDetailRoute({ repo, taskId }: { repo: TaskRepository | null;
               disabled={record.archivedAt !== null}
             />
           </section>
+
+          <TaskReferencesSection taskRepo={repo} evalRepo={evalRepo} task={record} />
+
+
         </>
       ) : null}
     </div>

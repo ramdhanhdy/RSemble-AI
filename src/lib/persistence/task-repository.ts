@@ -41,6 +41,8 @@ import {
   validateTaskRecord,
   validateTaskVersion,
 } from "../tasks/task-validation";
+import type { TaskMigrationCrosswalk } from "../tasks/task-references";
+
 import type {
   TaskArtifact,
   TaskFacetAnnotation,
@@ -116,6 +118,9 @@ export interface TaskRepository {
   ): Promise<GetOrCreateInstanceResult>;
   getTaskInstance(id: string): Promise<TaskInstance | null>;
   listTaskInstances(taskId: string, taskVersion?: number): Promise<TaskInstance[]>;
+  listTaskVersions(taskId: string): Promise<TaskVersion[]>;
+  listTaskMigrationCrosswalks(taskId: string): Promise<TaskMigrationCrosswalk[]>;
+
 
   // --- families -------------------------------------------------------------
   createTaskFamily(family: TaskFamily): Promise<void>;
@@ -374,6 +379,33 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
       throw classifyStorageError(err);
     }
   }
+
+  async function listTaskVersions(taskId: string): Promise<TaskVersion[]> {
+    try {
+      const rows = await db.taskVersions.where("taskId").equals(taskId).sortBy("version");
+      return rows
+        .map((row) => row.version_)
+        .filter((version): version is TaskVersion => isTaskVersion(version));
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function listTaskMigrationCrosswalks(taskId: string): Promise<TaskMigrationCrosswalk[]> {
+    try {
+      const rows = await db.taskMigrationCrosswalk.where("taskId").equals(taskId).toArray();
+      return rows
+        .map((row) => ({
+          legacyScopeKey: row.legacyScopeKey,
+          taskId: row.taskId,
+          taskVersion: row.taskVersion,
+        }))
+        .sort((a, b) => a.legacyScopeKey.localeCompare(b.legacyScopeKey));
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
 
   async function listTasks(query: TaskListQuery): Promise<TaskRecord[]> {
     const limit = query.limit ?? 50;
@@ -1156,6 +1188,9 @@ export function createTaskRepository(db: RSembleEvaluationDB): TaskRepository & 
     restoreTask,
     getTaskRecord,
     getTaskVersion,
+    listTaskVersions,
+    listTaskMigrationCrosswalks,
+
     listTasks,
     putTaskArtifact,
     getTaskArtifact,
