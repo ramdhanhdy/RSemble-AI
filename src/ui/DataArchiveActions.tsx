@@ -180,10 +180,7 @@ export function DataArchiveActions(): ReactElement | null {
       try {
         setPreview(await previewWorkbenchArchive(db, parsed, { sourceLabel: file.name }));
       } catch (err) {
-        if (
-          err instanceof StorageError &&
-          (err.kind === "validation" || err.kind === "conflict")
-        ) {
+        if (err instanceof StorageError && (err.kind === "validation" || err.kind === "conflict")) {
           // Surface the classified message only — archive CONTENT never
           // crosses into the UI (validators emit path/ID labels, not values).
           setErrors([err.message]);
@@ -340,9 +337,9 @@ export function DataArchiveActions(): ReactElement | null {
         >
           <p className="text-text">
             Import preview ({JSON.stringify(preview.sourceLabel)}) — format {preview.format},{" "}
-            {preview.totalEntities}{" "}
-            {preview.totalEntities === 1 ? "record" : "records"}: {preview.create.length} to
-            create, {preview.reuse.length} to reuse, {preview.collisions.length}{" "}
+            {preview.totalEntities} {preview.totalEntities === 1 ? "record" : "records"}:{" "}
+            {preview.create.length} to create, {preview.reuse.length} to reuse,{" "}
+            {preview.collisions.length}{" "}
             {preview.collisions.length === 1 ? "collision" : "collisions"}
             {preview.invalid.length > 0
               ? `, ${preview.invalid.length} invalid (will not import)`

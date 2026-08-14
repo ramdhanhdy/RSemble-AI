@@ -37,7 +37,6 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const GATE_NAME = "qa-canonical-tasks";
@@ -361,9 +360,13 @@ function runClosureGate() {
   if (stderr) process.stderr.write(stderr);
 
   if (exitCode === 0) {
-    process.stdout.write(`\n${GATE_NAME}: PASS — Child 02 archive/repository closure invariants hold.\n`);
+    process.stdout.write(
+      `\n${GATE_NAME}: PASS — Child 02 archive/repository closure invariants hold.\n`,
+    );
   } else {
-    process.stderr.write(`\n${GATE_NAME}: FAIL — closure invariants did not hold (exit ${exitCode}).\n`);
+    process.stderr.write(
+      `\n${GATE_NAME}: FAIL — closure invariants did not hold (exit ${exitCode}).\n`,
+    );
   }
   process.exit(exitCode);
 }
@@ -449,7 +452,16 @@ async function runBrowserMatrix() {
   const viteBin = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
   const vite = spawn(
     process.execPath,
-    [viteBin, "--port", String(BROWSER_PORT), "--host", "127.0.0.1", "--strictPort", "--logLevel", "info"],
+    [
+      viteBin,
+      "--port",
+      String(BROWSER_PORT),
+      "--host",
+      "127.0.0.1",
+      "--strictPort",
+      "--logLevel",
+      "info",
+    ],
     { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } },
   );
   let viteStderr = "";
@@ -608,13 +620,18 @@ async function runBrowserMatrix() {
       }
     };
     const exceptionHandler = (params) => {
-      results.pageErrors.push(params.exceptionDetails?.exception?.description ?? params.exceptionDetails?.text ?? "exception");
+      results.pageErrors.push(
+        params.exceptionDetails?.exception?.description ??
+          params.exceptionDetails?.text ??
+          "exception",
+      );
     };
     const requestHandler = (params) => {
       const url = params.request?.url ?? "";
       if (!url) return;
       // Ignore dev-server / sourcemap / data: noise.
-      if (url.startsWith(BROWSER_BASE) || url.startsWith("data:") || url.startsWith("blob:")) return;
+      if (url.startsWith(BROWSER_BASE) || url.startsWith("data:") || url.startsWith("blob:"))
+        return;
       results.networkRequests.push(url);
       if (PROVIDER_HOST_PATTERNS.some((re) => re.test(url))) {
         results.providerCalls.push(url);
@@ -802,7 +819,10 @@ async function runBrowserMatrix() {
     if (seeded?.__seedError) throw new Error(`Seed failed: ${seeded.__seedError}`);
     // Reload so RepositoryProvider re-opens and migration runs.
     await send("Page.navigate", { url: BROWSER_BASE });
-    await waitFor("Boolean(document.querySelector('main, [role=main], #root > *'))", "shell after reload");
+    await waitFor(
+      "Boolean(document.querySelector('main, [role=main], #root > *'))",
+      "shell after reload",
+    );
     await wait(800);
 
     // Helper: wait for the task catalog to settle (ready rows OR empty state),
@@ -921,7 +941,8 @@ async function runBrowserMatrix() {
         d390.longTruncates === true &&
         d390.longOverflow === false &&
         d390.smallTargets.length === 0,
-      reason: "390px mobile/touch: catalog holds without overflow, long title truncates, all touch targets ≥44px",
+      reason:
+        "390px mobile/touch: catalog holds without overflow, long title truncates, all touch targets ≥44px",
     });
     await screenshot("qa-catalog-390");
 
@@ -939,7 +960,8 @@ async function runBrowserMatrix() {
         zoom.longTruncates === true &&
         zoom.longOverflow === false &&
         zoom.smallTargets.length === 0,
-      reason: "200% effective CSS viewport (720px): catalog legible without overflow, targets ≥44px",
+      reason:
+        "200% effective CSS viewport (720px): catalog legible without overflow, targets ≥44px",
     });
     await screenshot("qa-catalog-zoom-200");
 
@@ -965,10 +987,7 @@ async function runBrowserMatrix() {
 })()`);
     record("catalog-reduced-motion", {
       ...reduced,
-      pass:
-        reduced.spinnerAnimation === "none" &&
-        !reduced.overflowX &&
-        reduced.rowCount >= 4,
+      pass: reduced.spinnerAnimation === "none" && !reduced.overflowX && reduced.rowCount >= 4,
       reason: "reduced motion removes spinner rotation, catalog renders without overflow",
     });
     await screenshot("qa-catalog-reduced-motion");
@@ -995,7 +1014,10 @@ async function runBrowserMatrix() {
       `(() => { const b = document.querySelector('button[data-action="create-task"]'); return Boolean(b) && !b.disabled; })()`,
     );
     await evaluate(`document.querySelector('button[data-action="create-task"]').click()`);
-    await waitFor("Boolean(document.querySelector('[data-action=\"open-created-task\"]'))", "create success");
+    await waitFor(
+      "Boolean(document.querySelector('[data-action=\"open-created-task\"]'))",
+      "create success",
+    );
     const createdInfo = await evaluate(String.raw`
 (() => {
   const link = document.querySelector('[data-action="open-created-task"]');
@@ -1013,7 +1035,10 @@ async function runBrowserMatrix() {
     });
     const createdId = createdInfo.href.replace(/^#?\/?tasks\//, "");
     await navigateTo(`#/tasks/${createdId}`);
-    await waitFor(`Boolean(document.querySelector('[data-task-detail="${createdId}"]'))`, "created detail");
+    await waitFor(
+      `Boolean(document.querySelector('[data-task-detail="${createdId}"]'))`,
+      "created detail",
+    );
     const createdDetail = await evaluate(String.raw`
 (() => {
   const body = document.body.innerText;
@@ -1027,7 +1052,10 @@ async function runBrowserMatrix() {
 
     // --- Version (1440) ------------------------------------------------------
     await navigateTo("#/tasks/task-authored");
-    await waitFor("Boolean(document.querySelector('[data-task-detail=\"task-authored\"]'))", "authored detail");
+    await waitFor(
+      "Boolean(document.querySelector('[data-task-detail=\"task-authored\"]'))",
+      "authored detail",
+    );
     await evaluate(String.raw`
 (() => {
   const setVal = (sel, v) => {
@@ -1044,9 +1072,15 @@ async function runBrowserMatrix() {
       `Boolean(document.querySelector('[data-editor-status]')?.textContent.includes('Unsaved'))`,
     );
     await evaluate(`document.querySelector('button[data-action="create-version"]').click()`);
-    await waitFor("Boolean(document.querySelector('button[data-action=\"confirm-version\"]'))", "version confirm");
+    await waitFor(
+      "Boolean(document.querySelector('button[data-action=\"confirm-version\"]'))",
+      "version confirm",
+    );
     await evaluate(`document.querySelector('button[data-action="confirm-version"]').click()`);
-    await waitFor(`Boolean([...document.querySelectorAll('[data-task-detail="task-authored"] p')].some((p) => p.textContent.includes('v2')))`, "v2 header");
+    await waitFor(
+      `Boolean([...document.querySelectorAll('[data-task-detail="task-authored"] p')].some((p) => p.textContent.includes('v2')))`,
+      "v2 header",
+    );
     const versionInfo = await evaluate(String.raw`
 (() => {
   const body = document.body.innerText;
@@ -1056,11 +1090,15 @@ async function runBrowserMatrix() {
     record("version-append", {
       ...versionInfo,
       pass: dirty && versionInfo.v2 && versionInfo.selectValue === "2",
-      reason: "dirty draft → explicit Create version 2 confirmation → header and selector reflect v2",
+      reason:
+        "dirty draft → explicit Create version 2 confirmation → header and selector reflect v2",
     });
     // Direct version load (read-only).
     await navigateTo("#/tasks/task-authored/versions/2");
-    await waitFor("Boolean(document.querySelector('[data-task-version=\"task-authored@2\"]'))", "v2 route");
+    await waitFor(
+      "Boolean(document.querySelector('[data-task-version=\"task-authored@2\"]'))",
+      "v2 route",
+    );
     const v2View = await evaluate(String.raw`
 (() => {
   const body = document.body.innerText;
@@ -1070,10 +1108,14 @@ async function runBrowserMatrix() {
     record("version-direct-load", {
       ...v2View,
       pass: v2View.readOnly && v2View.titleV2 && v2View.titleDisabled === true && v2View.noCreate,
-      reason: "/tasks/:id/versions/2 direct-loads the immutable read-only version (disabled fields, no create action)",
+      reason:
+        "/tasks/:id/versions/2 direct-loads the immutable read-only version (disabled fields, no create action)",
     });
     await navigateTo("#/tasks/task-authored/versions/1");
-    await waitFor("Boolean(document.querySelector('[data-task-version=\"task-authored@1\"]'))", "v1 route");
+    await waitFor(
+      "Boolean(document.querySelector('[data-task-version=\"task-authored@1\"]'))",
+      "v1 route",
+    );
     const v1View = await evaluate(
       `(() => ({ readOnly: document.body.innerText.includes("read-only"), title: document.body.innerText.includes("Summarize a report") }))()`,
     );
@@ -1085,9 +1127,15 @@ async function runBrowserMatrix() {
 
     // --- Duplicate (1440) ----------------------------------------------------
     await navigateTo("#/tasks/task-authored");
-    await waitFor("Boolean(document.querySelector('[data-task-detail=\"task-authored\"]'))", "authored detail");
+    await waitFor(
+      "Boolean(document.querySelector('[data-task-detail=\"task-authored\"]'))",
+      "authored detail",
+    );
     await evaluate(`document.querySelector('button[data-action="duplicate-task"]').click()`);
-    await waitFor("Boolean(document.querySelector('[data-action=\"open-duplicate\"]'))", "duplicate success");
+    await waitFor(
+      "Boolean(document.querySelector('[data-action=\"open-duplicate\"]'))",
+      "duplicate success",
+    );
     const dupInfo = await evaluate(String.raw`
 (() => {
   const link = document.querySelector('[data-action="open-duplicate"]');
@@ -1095,7 +1143,10 @@ async function runBrowserMatrix() {
 })()`);
     const dupId = dupInfo.href.replace(/^#?\/?tasks\//, "");
     await navigateTo(`#/tasks/${dupId}`);
-    await waitFor(`Boolean(document.querySelector('[data-task-detail="${dupId}"]'))`, "duplicate detail");
+    await waitFor(
+      `Boolean(document.querySelector('[data-task-detail="${dupId}"]'))`,
+      "duplicate detail",
+    );
     const dupDetail = await evaluate(String.raw`
 (() => {
   const body = document.body.innerText;
@@ -1109,16 +1160,26 @@ async function runBrowserMatrix() {
         dupDetail.authored &&
         dupDetail.v1 &&
         dupDetail.title,
-      reason: "duplicate creates a new authored identity at v1 with copied content — never an implied version",
+      reason:
+        "duplicate creates a new authored identity at v1 with copied content — never an implied version",
     });
 
     // --- Archive / Restore (1440) -------------------------------------------
     await navigateTo("#/tasks/task-authored");
-    await waitFor("Boolean(document.querySelector('[data-task-detail=\"task-authored\"]'))", "authored detail");
+    await waitFor(
+      "Boolean(document.querySelector('[data-task-detail=\"task-authored\"]'))",
+      "authored detail",
+    );
     await evaluate(`document.querySelector('button[data-action="archive-task"]').click()`);
-    await waitFor("Boolean(document.querySelector('button[data-action=\"confirm-archive\"]'))", "archive confirm");
+    await waitFor(
+      "Boolean(document.querySelector('button[data-action=\"confirm-archive\"]'))",
+      "archive confirm",
+    );
     await evaluate(`document.querySelector('button[data-action="confirm-archive"]').click()`);
-    await waitFor("Boolean(document.querySelector('button[data-action=\"restore-task\"]'))", "archived state");
+    await waitFor(
+      "Boolean(document.querySelector('button[data-action=\"restore-task\"]'))",
+      "archived state",
+    );
     const archivedState = await evaluate(String.raw`
 (() => {
   const body = document.body.innerText;
@@ -1130,7 +1191,10 @@ async function runBrowserMatrix() {
       reason: "archive confirmation → archived badge + restore action, edit surface hidden",
     });
     await evaluate(`document.querySelector('button[data-action="restore-task"]').click()`);
-    await waitFor("Boolean(document.querySelector('button[data-action=\"archive-task\"]'))", "restored state");
+    await waitFor(
+      "Boolean(document.querySelector('button[data-action=\"archive-task\"]'))",
+      "restored state",
+    );
     const restoredState = await evaluate(String.raw`
 (() => {
   const body = document.body.innerText;
@@ -1144,10 +1208,16 @@ async function runBrowserMatrix() {
 
     // --- Families / relations / facets / provenance (1440) -------------------
     await navigateTo("#/tasks/task-authored");
-    await waitFor("Boolean(document.querySelector('[data-task-detail=\"task-authored\"]'))", "authored detail");
+    await waitFor(
+      "Boolean(document.querySelector('[data-task-detail=\"task-authored\"]'))",
+      "authored detail",
+    );
     // Create a second family.
     await evaluate(`document.querySelector('button[data-action="new-family"]').click()`);
-    await waitFor("Boolean(document.querySelector('[data-family-form=\"create\"]'))", "family create form");
+    await waitFor(
+      "Boolean(document.querySelector('[data-family-form=\"create\"]'))",
+      "family create form",
+    );
     await evaluate(String.raw`
 (() => {
   const setVal = (sel, v) => {
@@ -1225,7 +1295,10 @@ async function runBrowserMatrix() {
   btn.click();
   return { activeAtClick: document.activeElement ? document.activeElement.getAttribute('data-action') : null };
 })()`);
-    await waitFor("Boolean(document.querySelector('[data-dialog-backdrop]'))", "family dialog open");
+    await waitFor(
+      "Boolean(document.querySelector('[data-dialog-backdrop]'))",
+      "family dialog open",
+    );
     await wait(250);
     const dialogFocus = await evaluate(String.raw`
 (() => {
@@ -1245,11 +1318,22 @@ async function runBrowserMatrix() {
         dialogFocus.dialogOpen &&
         dialogFocus.insideDialog &&
         dialogFocus.outsideAriaHidden === true,
-      reason: "family lifecycle dialog moves focus into the popup and marks the background aria-hidden (inert from AT); Tab cycling stays trapped (separate probe)",
+      reason:
+        "family lifecycle dialog moves focus into the popup and marks the background aria-hidden (inert from AT); Tab cycling stays trapped (separate probe)",
     });
     // Tab cycling stays inside the dialog.
-    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
-    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+    await send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Tab",
+      code: "Tab",
+      windowsVirtualKeyCode: 9,
+    });
+    await send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Tab",
+      code: "Tab",
+      windowsVirtualKeyCode: 9,
+    });
     await wait(120);
     const tabTrapped = await evaluate(
       `(() => { const popup = document.querySelector('[role="dialog"]'); return popup ? popup.contains(document.activeElement) : false; })()`,
@@ -1301,10 +1385,7 @@ async function runBrowserMatrix() {
 })()`);
     await wait(100);
     await evaluate(`document.querySelector('button[data-action="add-facet"]').click()`);
-    await waitFor(
-      "Boolean(document.querySelector('[data-facet-row=\"task-form\"]'))",
-      "facet row",
-    );
+    await waitFor("Boolean(document.querySelector('[data-facet-row=\"task-form\"]'))", "facet row");
     const facetInfo = await evaluate(String.raw`
 (() => {
   const row = document.querySelector('[data-facet-row="task-form"]');
@@ -1327,7 +1408,8 @@ async function runBrowserMatrix() {
         facetInfo.taxonomy &&
         facetInfo.domainValue &&
         facetInfo.domainProvenance,
-      reason: "add-facet commits a task-form annotation with source/author/taxonomy provenance chips; existing domain facet keeps its provenance",
+      reason:
+        "add-facet commits a task-form annotation with source/author/taxonomy provenance chips; existing domain facet keeps its provenance",
     });
 
     // --- Migration origin / references (1440) -------------------------------
@@ -1341,7 +1423,10 @@ async function runBrowserMatrix() {
   return legacy ? legacy.getAttribute('data-task-row') : null;
 })()`);
     await navigateTo(`#/tasks/${legacyId}`);
-    await waitFor(`Boolean(document.querySelector('[data-task-detail="${legacyId}"]'))`, "legacy detail");
+    await waitFor(
+      `Boolean(document.querySelector('[data-task-detail="${legacyId}"]'))`,
+      "legacy detail",
+    );
     const legacyDetail = await evaluate(String.raw`
 (() => {
   const body = document.body.innerText;
@@ -1362,11 +1447,15 @@ async function runBrowserMatrix() {
         legacyDetail.origin &&
         legacyDetail.refsSection &&
         legacyDetail.instancesSection,
-      reason: "startup-migrated legacy task shows origin legacy-task-set, a references section, and the task instances list",
+      reason:
+        "startup-migrated legacy task shows origin legacy-task-set, a references section, and the task instances list",
     });
     // Direct version load for the migrated task.
     await navigateTo(`#/tasks/${legacyId}/versions/1`);
-    await waitFor(`Boolean(document.querySelector('[data-task-version="${legacyId}@1"]'))`, "legacy v1 route");
+    await waitFor(
+      `Boolean(document.querySelector('[data-task-version="${legacyId}@1"]'))`,
+      "legacy v1 route",
+    );
     const legacyV1 = await evaluate(
       `(() => ({ readOnly: document.body.innerText.includes("read-only") }))()`,
     );
@@ -1397,14 +1486,18 @@ async function runBrowserMatrix() {
       reason: "unknown version number renders the explicit not-found state",
     });
     await navigateTo("#/tasks/task-authored/versions/abc");
-    await waitFor("Boolean(document.querySelector('[data-task-invalid-version]'))", "invalid version");
+    await waitFor(
+      "Boolean(document.querySelector('[data-task-invalid-version]'))",
+      "invalid version",
+    );
     const invalidVersion = await evaluate(
       `(() => ({ invalid: Boolean(document.querySelector('[data-task-invalid-version]')) }))()`,
     );
     record("route-invalid-version", {
       ...invalidVersion,
       pass: invalidVersion.invalid,
-      reason: "malformed (non-integer) version param renders the explicit invalid-version state, no redirect",
+      reason:
+        "malformed (non-integer) version param renders the explicit invalid-version state, no redirect",
     });
 
     // --- Keyboard-only operation (1440) -------------------------------------
@@ -1429,8 +1522,18 @@ async function runBrowserMatrix() {
   return true;
 })()`);
     await wait(80);
-    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "ArrowDown", code: "ArrowDown", windowsVirtualKeyCode: 40 });
-    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "ArrowDown", code: "ArrowDown", windowsVirtualKeyCode: 40 });
+    await send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "ArrowDown",
+      code: "ArrowDown",
+      windowsVirtualKeyCode: 40,
+    });
+    await send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "ArrowDown",
+      code: "ArrowDown",
+      windowsVirtualKeyCode: 40,
+    });
     await wait(200);
     const kbFilter = await evaluate(String.raw`
 (() => {
@@ -1453,13 +1556,17 @@ async function runBrowserMatrix() {
         kbFilter.value === "authored" &&
         kbFilter.allAuthored &&
         kbFilter.anyLegacy === false,
-      reason: "keyboard-only: search input is focusable with a visible focus ring; ArrowDown on the origin select changes the filter to authored and the catalog re-queries to authored-origin rows only",
+      reason:
+        "keyboard-only: search input is focusable with a visible focus ring; ArrowDown on the origin select changes the filter to authored and the catalog re-queries to authored-origin rows only",
     });
     await screenshot("qa-keyboard-catalog");
 
     // --- Archive export / preview / cancel / collision / success (1440) -----
     await navigateTo("#/runs");
-    await waitFor("Boolean(document.querySelector('button[data-action=\"export-v2\"]'))", "archive actions");
+    await waitFor(
+      "Boolean(document.querySelector('button[data-action=\"export-v2\"]'))",
+      "archive actions",
+    );
     await wait(400);
     // Install a click override to capture the exported archive blob text.
     await evaluate(String.raw`
@@ -1477,7 +1584,10 @@ async function runBrowserMatrix() {
 })()`);
     // Export v2.
     await evaluate(`document.querySelector('button[data-action="export-v2"]').click()`);
-    await waitFor("Boolean(document.querySelector('[role=status]')?.textContent.includes('Exported complete v2 archive'))", "v2 export done");
+    await waitFor(
+      "Boolean(document.querySelector('[role=status]')?.textContent.includes('Exported complete v2 archive'))",
+      "v2 export done",
+    );
     const exportInfo = await evaluate(String.raw`
 (() => {
   const status = [...document.querySelectorAll('[role=status]')].map((s) => s.textContent).join(' | ');
@@ -1490,9 +1600,10 @@ async function runBrowserMatrix() {
         exportInfo.status.includes("Exported complete v2 archive") &&
         exportInfo.capturedCount === 1 &&
         exportInfo.hasArchive,
-      reason: "v2 export completes and reports the exported entity total; the archive blob is captured for downstream probes",
+      reason:
+        "v2 export completes and reports the exported entity total; the archive blob is captured for downstream probes",
     });
-    const capturedArchiveText = (await evaluate(`window.__capturedArchives[0]?.text ?? null`));
+    const capturedArchiveText = await evaluate(`window.__capturedArchives[0]?.text ?? null`);
     if (!capturedArchiveText) throw new Error("archive export did not capture a blob");
 
     // Cancel a fresh export mid-flight.
@@ -1575,7 +1686,8 @@ async function runBrowserMatrix() {
         previewInfo.totalMentioned &&
         previewInfo.hasConfirm &&
         previewInfo.hasCancel,
-      reason: "import previews the validated archive (format v2, record count) with explicit confirm/cancel controls — nothing written yet",
+      reason:
+        "import previews the validated archive (format v2, record count) with explicit confirm/cancel controls — nothing written yet",
     });
 
     // Cancel import → focus restored to the import trigger, no result.
@@ -1591,8 +1703,10 @@ async function runBrowserMatrix() {
 })()`);
     record("archive-import-cancel", {
       ...cancelImportInfo,
-      pass: cancelImportInfo.previewGone && cancelImportInfo.focusRestored && cancelImportInfo.noResult,
-      reason: "cancel-import closes the preview without writes and restores focus to the Import trigger; no result is reported",
+      pass:
+        cancelImportInfo.previewGone && cancelImportInfo.focusRestored && cancelImportInfo.noResult,
+      reason:
+        "cancel-import closes the preview without writes and restores focus to the Import trigger; no result is reported",
     });
 
     // Collision: mutate the captured archive (rename task-authored v2 title),
@@ -1641,7 +1755,8 @@ async function runBrowserMatrix() {
     record("archive-import-collision", {
       ...collisionInfo,
       pass: collisionInfo.hasPreview && collisionInfo.hasCollision,
-      reason: "non-identical ID collision (mutated content, valid digest) is reported in the preview before any write — never overwrites",
+      reason:
+        "non-identical ID collision (mutated content, valid digest) is reported in the preview before any write — never overwrites",
     });
     // Cancel the collision preview.
     await evaluate(`document.querySelector('button[data-action="cancel-import"]').click()`);
@@ -1668,7 +1783,8 @@ async function runBrowserMatrix() {
     record("archive-import-success", {
       ...successInfo,
       pass: successInfo.imported,
-      reason: "confirming the identical-reuse preview commits atomically and reports 'Imported N records — M reused' (idempotent reuse, no writes)",
+      reason:
+        "confirming the identical-reuse preview commits atomically and reports 'Imported N records — M reused' (idempotent reuse, no writes)",
     });
 
     // --- Secret-shaped content / no-echo probe (1440) -----------------------
@@ -1715,7 +1831,8 @@ async function runBrowserMatrix() {
     record("archive-secret-no-echo", {
       ...secretInfo,
       pass: secretInfo.hasError && secretInfo.leaked === false && secretInfo.noPreview,
-      reason: "archive carrying a prohibited credential key is rejected with a classified error that never echoes the secret-shaped value; no preview is offered",
+      reason:
+        "archive carrying a prohibited credential key is rejected with a classified error that never echoes the secret-shaped value; no preview is offered",
     });
 
     // --- Console / page error / provider-call verdicts ----------------------

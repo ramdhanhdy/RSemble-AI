@@ -104,7 +104,9 @@ describe("computeArtifactDigest", () => {
 
   it("is consistent for identical UTF-8 text bytes", () => {
     const enc = new TextEncoder();
-    expect(computeArtifactDigest(enc.encode("café"))).toBe(computeArtifactDigest(enc.encode("café")));
+    expect(computeArtifactDigest(enc.encode("café"))).toBe(
+      computeArtifactDigest(enc.encode("café")),
+    );
   });
 
   it("for a pure-text artifact equals the shipped string hashArtifactContent of that text", () => {

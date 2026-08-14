@@ -348,7 +348,6 @@ function checkDuplicates<T>(
 
 // --- Structural validators ---------------------------------------------------
 
-
 function requireArrays(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationError[]): void {
   // Container collections (`runs`, `rubrics`, `fusion`, `tasks`) must be objects
   // before their inner arrays can be read; a missing/malformed container is
@@ -365,10 +364,7 @@ function requireArrays(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationE
   }
   const rubrics = archive.rubrics;
   if (isRecord(rubrics)) {
-    checks.push(
-      ["rubrics.identities", rubrics.identities],
-      ["rubrics.versions", rubrics.versions],
-    );
+    checks.push(["rubrics.identities", rubrics.identities], ["rubrics.versions", rubrics.versions]);
   } else {
     errors.push({ field: "rubrics", message: "rubrics must be an object." });
   }
@@ -410,10 +406,7 @@ function requireArrays(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationE
   }
 }
 
-function validateManifest(
-  archive: WorkbenchArchiveV2,
-  errors: ArchiveV2ValidationError[],
-): void {
+function validateManifest(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationError[]): void {
   const m = archive.manifest;
   if (!isRecord(m)) {
     errors.push({ field: "manifest", message: "manifest must be an object." });
@@ -638,12 +631,8 @@ function validateReferenceGraph(
 
   const studyIds = new Set(archive.fusion.studies.map((s) => s.id));
   const trialIds = new Set(archive.fusion.trials.map((t) => t.id));
-  const recipeVersionKeys = new Set(
-    archive.fusion.recipes.map((r) => `${r.id}@${r.version}`),
-  );
-  const poolVersionKeys = new Set(
-    archive.fusion.poolManifests.map((p) => `${p.id}@${p.version}`),
-  );
+  const recipeVersionKeys = new Set(archive.fusion.recipes.map((r) => `${r.id}@${r.version}`));
+  const poolVersionKeys = new Set(archive.fusion.poolManifests.map((p) => `${p.id}@${p.version}`));
   const observationIds = new Set(archive.fusion.observations.map((o) => o.id));
   const playbookIds = new Set(archive.fusion.playbooks.map((p) => p.id));
 
@@ -862,10 +851,7 @@ function validateOrdering(archive: WorkbenchArchiveV2, errors: ArchiveV2Validati
   );
 }
 
-function validateDuplicates(
-  archive: WorkbenchArchiveV2,
-  errors: ArchiveV2ValidationError[],
-): void {
+function validateDuplicates(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationError[]): void {
   checkDuplicates("runs.summaries", archive.runs.summaries, byId, errors);
   checkDuplicates("runs.details", archive.runs.details, byId, errors);
   checkDuplicates("rubrics.identities", archive.rubrics.identities, byId, errors);

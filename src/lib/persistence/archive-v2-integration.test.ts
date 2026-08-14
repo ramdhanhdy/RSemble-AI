@@ -29,15 +29,13 @@ import {
   importWorkbenchArchiveAuto,
   previewWorkbenchArchive,
 } from "./archive";
-import { computeArchiveV2PayloadDigest, validateArchiveV2 } from "./archive-v2-types";
+import { computeArchiveV2PayloadDigest, validateArchiveV2, type WorkbenchArchiveV2  } from "./archive-v2-types";
 import * as fx from "./archive-v2-fixtures";
 import {
   canonicalTaskMigrationMarkerKey,
   migrateEmbeddedLegacyTasks,
 } from "./canonical-task-migration";
-import type { WorkbenchArchiveV2 } from "./archive-v2-types";
 import type { EvaluationSuite, ExperimentRecord } from "../evaluations/evaluation-types";
-
 
 const dbs: RSembleEvaluationDB[] = [];
 
@@ -78,9 +76,7 @@ async function seedCompleteCorpus(db: RSembleEvaluationDB): Promise<void> {
   await db.fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
   await db.fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
   await db.fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
-  await db.fusionObservations.put(
-    fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
-  );
+  await db.fusionObservations.put(fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")));
   await db.fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
 
   await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
@@ -378,9 +374,9 @@ describe("archive v2 integration — case matrix", () => {
     recomputeDigest(archive);
     const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
     expect(check.valid).toBe(false);
-    expect(check.errors.some((e) => /crosswalk references unknown task version/.test(e.message))).toBe(
-      true,
-    );
+    expect(
+      check.errors.some((e) => /crosswalk references unknown task version/.test(e.message)),
+    ).toBe(true);
     await expect(previewWorkbenchArchive(target, archive)).rejects.toMatchObject({
       name: "StorageError",
       kind: "validation",
@@ -649,7 +645,6 @@ async function snapshotCounts(db: RSembleEvaluationDB): Promise<CountSnapshot> {
   };
 }
 
-
 function emptyCounts(): CountSnapshot {
   return {
     runSummaries: 0,
@@ -665,4 +660,3 @@ function emptyCounts(): CountSnapshot {
     taskMigrationCrosswalk: 0,
   };
 }
-

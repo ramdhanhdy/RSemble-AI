@@ -1249,7 +1249,13 @@ export async function exportWorkbenchArchiveV2(
     const taskVersions: TaskVersion[] = [];
     await db.taskVersions.orderBy("taskId").each((row) => {
       if (isTaskVersion(row.version_)) taskVersions.push(row.version_);
-      else recordGuardFailure("tasks.taskVersions", `${row.taskId}@${row.version}`, "taskVersions", guardViolations);
+      else
+        recordGuardFailure(
+          "tasks.taskVersions",
+          `${row.taskId}@${row.version}`,
+          "taskVersions",
+          guardViolations,
+        );
     });
     const taskArtifacts: TaskArtifact[] = [];
     const artifactIdsValid = new Set<string>();
@@ -1259,7 +1265,12 @@ export async function exportWorkbenchArchiveV2(
         taskArtifacts.push(artifact);
         artifactIdsValid.add(artifact.id);
       } else {
-        recordGuardFailure("tasks.taskArtifacts", (row as { id?: string }).id ?? "", "taskArtifacts", guardViolations);
+        recordGuardFailure(
+          "tasks.taskArtifacts",
+          (row as { id?: string }).id ?? "",
+          "taskArtifacts",
+          guardViolations,
+        );
       }
     });
     const taskInstances: TaskInstance[] = [];
@@ -1275,17 +1286,35 @@ export async function exportWorkbenchArchiveV2(
     const taskFamilyAssignments: TaskFamilyAssignment[] = [];
     await db.taskFamilyAssignments.orderBy("id").each((row) => {
       if (isTaskFamilyAssignment(row.assignment)) taskFamilyAssignments.push(row.assignment);
-      else recordGuardFailure("tasks.taskFamilyAssignments", row.id, "taskFamilyAssignments", guardViolations);
+      else
+        recordGuardFailure(
+          "tasks.taskFamilyAssignments",
+          row.id,
+          "taskFamilyAssignments",
+          guardViolations,
+        );
     });
     const taskFamilyRelations: TaskFamilyRelation[] = [];
     await db.taskFamilyRelations.orderBy("id").each((row) => {
       if (isExportableTaskFamilyRelation(row.relation)) taskFamilyRelations.push(row.relation);
-      else recordGuardFailure("tasks.taskFamilyRelations", row.id, "taskFamilyRelations", guardViolations);
+      else
+        recordGuardFailure(
+          "tasks.taskFamilyRelations",
+          row.id,
+          "taskFamilyRelations",
+          guardViolations,
+        );
     });
     const taskFacetAnnotations: TaskFacetAnnotation[] = [];
     await db.taskFacetAnnotations.orderBy("id").each((row) => {
       if (isTaskFacetAnnotation(row.annotation)) taskFacetAnnotations.push(row.annotation);
-      else recordGuardFailure("tasks.taskFacetAnnotations", row.id, "taskFacetAnnotations", guardViolations);
+      else
+        recordGuardFailure(
+          "tasks.taskFacetAnnotations",
+          row.id,
+          "taskFacetAnnotations",
+          guardViolations,
+        );
     });
     const taskRecordsById = new Map(taskRecords.map((t) => [t.id, t]));
     const taskMigrationCrosswalks: TaskMigrationCrosswalk[] = [];
@@ -1359,12 +1388,10 @@ export async function exportWorkbenchArchiveV2(
     for (const s of summaries) scanStructured("runs.summaries", s.id, s);
     for (const d of details) scanStructured("runs.details", d.id, d);
     for (const r of identities) scanStructured("rubrics.identities", r.id, r);
-    for (const r of versions)
-      scanStructured("rubrics.versions", `${r.id}@${r.version}`, r);
+    for (const r of versions) scanStructured("rubrics.versions", `${r.id}@${r.version}`, r);
     for (const s of suites) scanStructured("suites", s.id, s);
     for (const e of experiments) scanStructured("experiments", e.id, e);
-    for (const r of recipes)
-      scanStructured("fusion.recipes", `${r.id}@${r.version}`, r);
+    for (const r of recipes) scanStructured("fusion.recipes", `${r.id}@${r.version}`, r);
     for (const p of poolManifests)
       scanStructured("fusion.poolManifests", `${p.id}@${p.version}`, p);
     for (const s of studies) scanStructured("fusion.studies", s.id, s);
@@ -1378,12 +1405,9 @@ export async function exportWorkbenchArchiveV2(
     for (const a of taskArtifacts) scanStructured("tasks.taskArtifacts", a.id, a);
     for (const i of taskInstances) scanStructured("tasks.taskInstances", i.id, i);
     for (const f of taskFamilies) scanStructured("tasks.taskFamilies", f.id, f);
-    for (const a of taskFamilyAssignments)
-      scanStructured("tasks.taskFamilyAssignments", a.id, a);
-    for (const r of taskFamilyRelations)
-      scanStructured("tasks.taskFamilyRelations", r.id, r);
-    for (const a of taskFacetAnnotations)
-      scanStructured("tasks.taskFacetAnnotations", a.id, a);
+    for (const a of taskFamilyAssignments) scanStructured("tasks.taskFamilyAssignments", a.id, a);
+    for (const r of taskFamilyRelations) scanStructured("tasks.taskFamilyRelations", r.id, r);
+    for (const a of taskFacetAnnotations) scanStructured("tasks.taskFacetAnnotations", a.id, a);
     for (const c of taskMigrationCrosswalks)
       scanStructured("tasks.taskMigrationCrosswalks", c.legacyScopeKey, c);
 
@@ -1594,8 +1618,7 @@ export interface ArchiveImportCommitOptions {
 
 /** Single-shot auto-dispatch outcome. */
 export type ImportAutoResult =
-  | { format: "v1"; v1: ArchiveImportResult }
-  | { format: "v2"; v2: ArchiveImportCommitResult };
+  { format: "v1"; v1: ArchiveImportResult } | { format: "v2"; v2: ArchiveImportCommitResult };
 
 /** Rejection raised when an import is cancelled before its commit begins.
  *  Distinct from StorageError so callers can classify cancellation. */
@@ -1704,7 +1727,14 @@ function finalizePreview(
     for (const entry of list) {
       let row = byCollection.get(entry.collection);
       if (row === undefined) {
-        row = { collection: entry.collection, total: 0, create: 0, reuse: 0, collision: 0, invalid: 0 };
+        row = {
+          collection: entry.collection,
+          total: 0,
+          create: 0,
+          reuse: 0,
+          collision: 0,
+          invalid: 0,
+        };
         byCollection.set(entry.collection, row);
       }
       row.total += 1;
@@ -1784,8 +1814,11 @@ async function previewV2(
   // pair appears once in the preview: they are classified inside runs.details.
   // Only legacy summaries are classified standalone here.
   {
-    const part = partitionGuarded("runs.summaries", archive.runs.summaries, (s) => s.id, (v) =>
-      isRunSummary(v),
+    const part = partitionGuarded(
+      "runs.summaries",
+      archive.runs.summaries,
+      (s) => s.id,
+      (v) => isRunSummary(v),
     );
     buckets.invalid.push(...part.invalid);
     throwIfAborted();
@@ -1803,9 +1836,14 @@ async function previewV2(
     );
   }
   {
-    const part = partitionGuarded("runs.details", archive.runs.details, (d) => d.id, (v) => {
-      return repairRunRecordForCompatibility(v) !== null || isRunRecordV2(v);
-    });
+    const part = partitionGuarded(
+      "runs.details",
+      archive.runs.details,
+      (d) => d.id,
+      (v) => {
+        return repairRunRecordForCompatibility(v) !== null || isRunRecordV2(v);
+      },
+    );
     buckets.invalid.push(...part.invalid);
     throwIfAborted();
     const fullById = new Map<string, FullRunSummaryV2>();
@@ -1850,8 +1888,11 @@ async function previewV2(
 
   // --- rubrics ---------------------------------------------------------------
   {
-    const part = partitionGuarded("rubrics.identities", archive.rubrics.identities, (r) => r.id, (v) =>
-      isRubricRecord(v),
+    const part = partitionGuarded(
+      "rubrics.identities",
+      archive.rubrics.identities,
+      (r) => r.id,
+      (v) => isRubricRecord(v),
     );
     buckets.invalid.push(...part.invalid);
     await previewSameKeyCollection(
@@ -1889,7 +1930,12 @@ async function previewV2(
 
   // --- suites / experiments --------------------------------------------------
   {
-    const part = partitionGuarded("suites", archive.suites, (s) => s.id, (v) => isEvaluationSuite(v));
+    const part = partitionGuarded(
+      "suites",
+      archive.suites,
+      (s) => s.id,
+      (v) => isEvaluationSuite(v),
+    );
     buckets.invalid.push(...part.invalid);
     await previewSameKeyCollection(
       "suites",
@@ -1901,8 +1947,11 @@ async function previewV2(
     );
   }
   {
-    const part = partitionGuarded("experiments", archive.experiments, (e) => e.id, (v) =>
-      isExperimentRecord(v),
+    const part = partitionGuarded(
+      "experiments",
+      archive.experiments,
+      (e) => e.id,
+      (v) => isExperimentRecord(v),
     );
     buckets.invalid.push(...part.invalid);
     throwIfAborted();
@@ -1918,43 +1967,87 @@ async function previewV2(
 
   // --- fusion (seven stores) ---------------------------------------------------
   const fusion = archive.fusion;
-  const fusionSpecs: Array<[
-    string,
-    readonly unknown[],
-    (v: unknown) => boolean,
-    (v: never) => string,
-    (key: string) => Promise<unknown | undefined>,
-  ]> = [
-    ["fusion.recipes", fusion.recipes, isFusionRecipeVersion, (r: FusionRecipeVersion) => versionKey(r.id, r.version), async (k) => {
-      const [id, v] = splitVersionKey(k);
-      const row = await db.fusionRecipes.get([id, v]);
-      return row === undefined ? undefined : row.recipe;
-    }],
-    ["fusion.poolManifests", fusion.poolManifests, isPoolManifestVersion, (p: PoolManifestVersion) => versionKey(p.id, p.version), async (k) => {
-      const [id, v] = splitVersionKey(k);
-      const row = await db.poolManifests.get([id, v]);
-      return row === undefined ? undefined : row.manifest;
-    }],
-    ["fusion.studies", fusion.studies, isFusionStudy, (s: FusionStudy) => s.id, async (k) => {
-      const row = await db.fusionStudies.get(k);
-      return row === undefined ? undefined : row.study;
-    }],
-    ["fusion.trials", fusion.trials, isFusionTrial, (t: FusionTrial) => t.id, async (k) => {
-      const row = await db.fusionTrials.get(k);
-      return row === undefined ? undefined : row.trial;
-    }],
-    ["fusion.attempts", fusion.attempts, isFusionAttempt, (a: FusionAttempt) => a.id, async (k) => {
-      const row = await db.fusionAttempts.get(k);
-      return row === undefined ? undefined : row.attempt;
-    }],
-    ["fusion.observations", fusion.observations, isEvaluationObservation, (o: EvaluationObservation) => o.id, async (k) => {
-      const row = await db.fusionObservations.get(k);
-      return row === undefined ? undefined : row.observation;
-    }],
-    ["fusion.playbooks", fusion.playbooks, isFusionPlaybook, (p: FusionPlaybook) => p.id, async (k) => {
-      const row = await db.fusionPlaybooks.get(k);
-      return row === undefined ? undefined : row.playbook;
-    }],
+  const fusionSpecs: Array<
+    [
+      string,
+      readonly unknown[],
+      (v: unknown) => boolean,
+      (v: never) => string,
+      (key: string) => Promise<unknown | undefined>,
+    ]
+  > = [
+    [
+      "fusion.recipes",
+      fusion.recipes,
+      isFusionRecipeVersion,
+      (r: FusionRecipeVersion) => versionKey(r.id, r.version),
+      async (k) => {
+        const [id, v] = splitVersionKey(k);
+        const row = await db.fusionRecipes.get([id, v]);
+        return row === undefined ? undefined : row.recipe;
+      },
+    ],
+    [
+      "fusion.poolManifests",
+      fusion.poolManifests,
+      isPoolManifestVersion,
+      (p: PoolManifestVersion) => versionKey(p.id, p.version),
+      async (k) => {
+        const [id, v] = splitVersionKey(k);
+        const row = await db.poolManifests.get([id, v]);
+        return row === undefined ? undefined : row.manifest;
+      },
+    ],
+    [
+      "fusion.studies",
+      fusion.studies,
+      isFusionStudy,
+      (s: FusionStudy) => s.id,
+      async (k) => {
+        const row = await db.fusionStudies.get(k);
+        return row === undefined ? undefined : row.study;
+      },
+    ],
+    [
+      "fusion.trials",
+      fusion.trials,
+      isFusionTrial,
+      (t: FusionTrial) => t.id,
+      async (k) => {
+        const row = await db.fusionTrials.get(k);
+        return row === undefined ? undefined : row.trial;
+      },
+    ],
+    [
+      "fusion.attempts",
+      fusion.attempts,
+      isFusionAttempt,
+      (a: FusionAttempt) => a.id,
+      async (k) => {
+        const row = await db.fusionAttempts.get(k);
+        return row === undefined ? undefined : row.attempt;
+      },
+    ],
+    [
+      "fusion.observations",
+      fusion.observations,
+      isEvaluationObservation,
+      (o: EvaluationObservation) => o.id,
+      async (k) => {
+        const row = await db.fusionObservations.get(k);
+        return row === undefined ? undefined : row.observation;
+      },
+    ],
+    [
+      "fusion.playbooks",
+      fusion.playbooks,
+      isFusionPlaybook,
+      (p: FusionPlaybook) => p.id,
+      async (k) => {
+        const row = await db.fusionPlaybooks.get(k);
+        return row === undefined ? undefined : row.playbook;
+      },
+    ],
   ];
   for (const [collection, records, guard, keyOf, getter] of fusionSpecs) {
     const part = partitionGuarded(collection, records, keyOf as (v: unknown) => string, guard);
@@ -1972,41 +2065,59 @@ async function previewV2(
 
   // --- tasks (every canonical collection) --------------------------------------
   const tasks = archive.tasks;
-  const taskSpecs: Array<[
-    string,
-    readonly unknown[],
-    (v: unknown) => boolean,
-    (v: never) => string,
-  ]> = [
+  const taskSpecs: Array<
+    [string, readonly unknown[], (v: unknown) => boolean, (v: never) => string]
+  > = [
     ["tasks.tasks", tasks.tasks, isTaskRecord, (t: TaskRecord) => t.id],
-    ["tasks.taskVersions", tasks.taskVersions, isTaskVersion, (v: TaskVersion) => versionKey(v.taskId, v.version)],
+    [
+      "tasks.taskVersions",
+      tasks.taskVersions,
+      isTaskVersion,
+      (v: TaskVersion) => versionKey(v.taskId, v.version),
+    ],
     ["tasks.taskInstances", tasks.taskInstances, isTaskInstance, (i: TaskInstance) => i.id],
     ["tasks.taskFamilies", tasks.taskFamilies, isTaskFamily, (f: TaskFamily) => f.id],
-    ["tasks.taskFamilyAssignments", tasks.taskFamilyAssignments, isTaskFamilyAssignment, (a: TaskFamilyAssignment) => a.id],
-    ["tasks.taskFamilyRelations", tasks.taskFamilyRelations, isExportableTaskFamilyRelation, (r: TaskFamilyRelation) => r.id],
-    ["tasks.taskFacetAnnotations", tasks.taskFacetAnnotations, isTaskFacetAnnotation, (a: TaskFacetAnnotation) => a.id],
+    [
+      "tasks.taskFamilyAssignments",
+      tasks.taskFamilyAssignments,
+      isTaskFamilyAssignment,
+      (a: TaskFamilyAssignment) => a.id,
+    ],
+    [
+      "tasks.taskFamilyRelations",
+      tasks.taskFamilyRelations,
+      isExportableTaskFamilyRelation,
+      (r: TaskFamilyRelation) => r.id,
+    ],
+    [
+      "tasks.taskFacetAnnotations",
+      tasks.taskFacetAnnotations,
+      isTaskFacetAnnotation,
+      (a: TaskFacetAnnotation) => a.id,
+    ],
   ];
   for (const [collection, records, guard, keyOf] of taskSpecs) {
     const part = partitionGuarded(collection, records, keyOf as (v: unknown) => string, guard);
     buckets.invalid.push(...part.invalid);
     throwIfAborted();
-    const getter = collection === "tasks.taskVersions"
-      ? async (k: string) => {
-          const [id, v] = splitVersionKey(k);
-          const row = await db.taskVersions.get([id, v]);
-          return row === undefined ? undefined : row.version_;
-        }
-      : collection === "tasks.tasks"
-        ? async (k: string) => (await db.tasks.get(k))?.record
-        : collection === "tasks.taskInstances"
-          ? async (k: string) => (await db.taskInstances.get(k))?.instance
-          : collection === "tasks.taskFamilies"
-            ? async (k: string) => (await db.taskFamilies.get(k))?.family
-            : collection === "tasks.taskFamilyAssignments"
-              ? async (k: string) => (await db.taskFamilyAssignments.get(k))?.assignment
-              : collection === "tasks.taskFamilyRelations"
-                ? async (k: string) => (await db.taskFamilyRelations.get(k))?.relation
-                : async (k: string) => (await db.taskFacetAnnotations.get(k))?.annotation;
+    const getter =
+      collection === "tasks.taskVersions"
+        ? async (k: string) => {
+            const [id, v] = splitVersionKey(k);
+            const row = await db.taskVersions.get([id, v]);
+            return row === undefined ? undefined : row.version_;
+          }
+        : collection === "tasks.tasks"
+          ? async (k: string) => (await db.tasks.get(k))?.record
+          : collection === "tasks.taskInstances"
+            ? async (k: string) => (await db.taskInstances.get(k))?.instance
+            : collection === "tasks.taskFamilies"
+              ? async (k: string) => (await db.taskFamilies.get(k))?.family
+              : collection === "tasks.taskFamilyAssignments"
+                ? async (k: string) => (await db.taskFamilyAssignments.get(k))?.assignment
+                : collection === "tasks.taskFamilyRelations"
+                  ? async (k: string) => (await db.taskFamilyRelations.get(k))?.relation
+                  : async (k: string) => (await db.taskFacetAnnotations.get(k))?.annotation;
     await previewSameKeyCollection(
       collection,
       part.guarded as unknown[],
@@ -2019,8 +2130,11 @@ async function previewV2(
 
   // --- tasks.taskArtifacts + bytes ---------------------------------------------
   {
-    const part = partitionGuarded("tasks.taskArtifacts", tasks.taskArtifacts, (a) => a.id, (v) =>
-      isTaskArtifact(v),
+    const part = partitionGuarded(
+      "tasks.taskArtifacts",
+      tasks.taskArtifacts,
+      (a) => a.id,
+      (v) => isTaskArtifact(v),
     );
     buckets.invalid.push(...part.invalid);
     throwIfAborted();
@@ -2090,10 +2204,7 @@ async function previewV2(
       const existing = await db.taskMigrationCrosswalk.get(key);
       if (existing === undefined) {
         buckets.create.push(previewKey("tasks.taskMigrationCrosswalks", key));
-      } else if (
-        existing.taskId === cw.taskId &&
-        existing.taskVersion === cw.taskVersion
-      ) {
+      } else if (existing.taskId === cw.taskId && existing.taskVersion === cw.taskVersion) {
         buckets.reuse.push(previewKey("tasks.taskMigrationCrosswalks", key));
       } else {
         buckets.collisions.push({
@@ -2308,30 +2419,46 @@ async function previewV1(
     throwIfAborted();
     const existing = await db.profiles.get(r.id);
     if (existing === undefined) buckets.create.push(previewKey("rubrics.identities", r.id));
-    else if (canon(existing.record) === canon(r)) buckets.reuse.push(previewKey("rubrics.identities", r.id));
-    else buckets.collisions.push({ collection: "rubrics.identities", key: r.id, reason: "content-differs" });
+    else if (canon(existing.record) === canon(r))
+      buckets.reuse.push(previewKey("rubrics.identities", r.id));
+    else
+      buckets.collisions.push({
+        collection: "rubrics.identities",
+        key: r.id,
+        reason: "content-differs",
+      });
   }
   for (const v of archive.profiles.versions) {
     throwIfAborted();
     const key = versionKey(v.id, v.version);
     const existing = await db.profileVersions.get([v.id, v.version]);
     if (existing === undefined) buckets.create.push(previewKey("rubrics.versions", key));
-    else if (canon(existing.profile) === canon(v)) buckets.reuse.push(previewKey("rubrics.versions", key));
-    else buckets.collisions.push({ collection: "rubrics.versions", key, reason: "content-differs" });
+    else if (canon(existing.profile) === canon(v))
+      buckets.reuse.push(previewKey("rubrics.versions", key));
+    else
+      buckets.collisions.push({ collection: "rubrics.versions", key, reason: "content-differs" });
   }
   for (const suite of archive.suites) {
     throwIfAborted();
     const existing = await db.suites.get(suite.id);
     if (existing === undefined) buckets.create.push(previewKey("suites", suite.id));
-    else if (canon(existing.suite) === canon(suite)) buckets.reuse.push(previewKey("suites", suite.id));
-    else buckets.collisions.push({ collection: "suites", key: suite.id, reason: "content-differs" });
+    else if (canon(existing.suite) === canon(suite))
+      buckets.reuse.push(previewKey("suites", suite.id));
+    else
+      buckets.collisions.push({ collection: "suites", key: suite.id, reason: "content-differs" });
   }
   for (const experiment of archive.experiments) {
     throwIfAborted();
     const existing = await db.experiments.get(experiment.id);
     if (existing === undefined) buckets.create.push(previewKey("experiments", experiment.id));
-    else if (canon(existing.experiment) === canon(experiment)) buckets.reuse.push(previewKey("experiments", experiment.id));
-    else buckets.collisions.push({ collection: "experiments", key: experiment.id, reason: "content-differs" });
+    else if (canon(existing.experiment) === canon(experiment))
+      buckets.reuse.push(previewKey("experiments", experiment.id));
+    else
+      buckets.collisions.push({
+        collection: "experiments",
+        key: experiment.id,
+        reason: "content-differs",
+      });
   }
   throwIfAborted();
   const preview = finalizePreview("v1", sourceLabel, archive, buckets);
@@ -2478,17 +2605,19 @@ export async function commitPreviewWorkbenchArchiveV2(
         for (const record of archive.runs.details) {
           if (!isCreated("runs.details", record.id)) continue;
           const compatible =
-            repairRunRecordForCompatibility(record) ??
-            (isRunRecordV2(record) ? record : null);
+            repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
           if (compatible === null) continue;
           const existingDetail = await db.runDetails.get(record.id);
           const incomingSummary = fullById2.get(record.id);
           if (existingDetail !== undefined) {
             const existingCompatible =
               repairRunRecordForCompatibility(existingDetail.record) ??
-              (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null);
+              (isRunRecordV2(existingDetail.record)
+                ? (existingDetail.record as RunRecordV2)
+                : null);
             const detailSame =
-              existingCompatible !== null && canonical(existingCompatible) === canonical(compatible);
+              existingCompatible !== null &&
+              canonical(existingCompatible) === canonical(compatible);
             const summarySame =
               incomingSummary === undefined ||
               ((await db.runSummaries.get(record.id))?.summary !== undefined &&
@@ -2543,10 +2672,7 @@ export async function commitPreviewWorkbenchArchiveV2(
         for (const experiment of archive.experiments) {
           if (!isCreated("experiments", experiment.id)) continue;
           const existing = await db.experiments.get(experiment.id);
-          if (
-            existing !== undefined &&
-            canonical(existing.experiment) !== canonical(experiment)
-          ) {
+          if (existing !== undefined && canonical(existing.experiment) !== canonical(experiment)) {
             conflict("experiments", experiment.id);
           }
         }

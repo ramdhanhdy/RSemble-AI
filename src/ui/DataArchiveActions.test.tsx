@@ -251,7 +251,10 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
 
     // Selection previewed: zero writes before explicit confirmation.
     expect(await db.suites.count()).toBe(0);
-    const status = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    const status = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
     expect(status).toContain("Import preview");
     expect(status).toContain("2 to create");
     expect(status).toContain("format v1");
@@ -267,7 +270,10 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     await settle();
 
     expect(await db.suites.count()).toBe(2);
-    const result = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    const result = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
     expect(result).toContain('Imported 2 records — 0 reused ("archive.json")');
     // Focus returns to the Import data trigger after the flow completes.
     expect(document.activeElement).toBe(h.$('button[data-action="import"]'));
@@ -304,7 +310,10 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     // No writes during preview.
     expect(await db.suites.count()).toBe(0);
     expect(await db.tasks.count()).toBe(0);
-    const status = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    const status = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
     expect(status).toContain("format v2");
     expect(status).toContain("21 to create");
     expect(status).toContain("suites: 1");
@@ -318,7 +327,10 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     expect(await db.suites.count()).toBe(1);
     expect(await db.fusionStudies.count()).toBe(1);
     expect(await db.taskArtifactBytes.count()).toBe(1);
-    const result = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    const result = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
     expect(result).toContain('Imported 21 records — 0 reused ("v2.json")');
   });
 
@@ -331,7 +343,10 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     const file = new File([JSON.stringify(incoming)], "v2.json", { type: "application/json" });
     await chooseFile(h, file);
 
-    const status = h.$$('[role="status"]').map((el) => el.textContent ?? "").join("\n");
+    const status = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
     expect(status).toContain("1 collision");
     expect(status).toContain("suites/suite-1");
 
@@ -341,7 +356,10 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     });
     await settle();
 
-    const alertText = h.$$('[role="alert"]').map((el) => el.textContent ?? "").join("\n");
+    const alertText = h
+      .$$('[role="alert"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
     expect(alertText).toContain(
       "Import aborted: 1 collision — colliding records were left unchanged.",
     );
@@ -366,7 +384,10 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     await chooseFile(h, file);
 
     expect(h.$('button[data-action="confirm-import"]')).toBeNull();
-    const alertText = h.$$('[role="alert"]').map((el) => el.textContent ?? "").join("\n");
+    const alertText = h
+      .$$('[role="alert"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
     expect(alertText).toContain("The archive is invalid — nothing was imported.");
     expect(alertText).not.toContain(secret);
     expect(await db.suites.count()).toBe(0);
@@ -444,9 +465,7 @@ async function seedV2Corpus(target: RSembleEvaluationDB): Promise<void> {
   await target.fusionObservations.put(
     fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
   );
-  await target.fusionPlaybooks.put(
-    fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")),
-  );
+  await target.fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
   await target.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
   await target.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));
   await target.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-1", bytes)));
@@ -473,11 +492,11 @@ describe("DataArchiveActions — v2 export flow", () => {
   it("downloads the complete task-first v2 archive and reports the exported entity total", async () => {
     await seedV2Corpus(db);
     const downloaded: HTMLAnchorElement[] = [];
-    const clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(function (this: HTMLAnchorElement) {
-        downloaded.push(this);
-      });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
 
     const h = renderActions(contextValue(db, "ready"));
     const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement | null;
@@ -499,11 +518,11 @@ describe("DataArchiveActions — v2 export flow", () => {
   it("cancels a running export before delivery — no download, truthful guidance", async () => {
     await seedV2Corpus(db);
     const downloaded: HTMLAnchorElement[] = [];
-    const clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(function (this: HTMLAnchorElement) {
-        downloaded.push(this);
-      });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
 
     const h = renderActions(contextValue(db, "ready"));
     const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement;
@@ -520,9 +539,7 @@ describe("DataArchiveActions — v2 export flow", () => {
     await settle();
 
     expect(downloaded.length).toBe(0);
-    expect(h.container.textContent).toContain(
-      "Export was cancelled — no archive was delivered.",
-    );
+    expect(h.container.textContent).toContain("Export was cancelled — no archive was delivered.");
     clickSpy.mockRestore();
   });
 
@@ -531,11 +548,11 @@ describe("DataArchiveActions — v2 export flow", () => {
     secret.task.prompt = "Bearer abc123def456 is the header to use";
     await db.runDetails.put(fx.runDetailRow(secret));
     const downloaded: HTMLAnchorElement[] = [];
-    const clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(function (this: HTMLAnchorElement) {
-        downloaded.push(this);
-      });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
 
     const h = renderActions(contextValue(db, "ready"));
     const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement;

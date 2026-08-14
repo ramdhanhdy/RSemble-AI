@@ -82,8 +82,14 @@ function sha256Bytes(data: Uint8Array): string {
       const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
       W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
     }
-    let a = H[0], b = H[1], c = H[2], d = H[3];
-    let e = H[4], f = H[5], g = H[6], hh = H[7];
+    let a = H[0],
+      b = H[1],
+      c = H[2],
+      d = H[3];
+    let e = H[4],
+      f = H[5],
+      g = H[6],
+      hh = H[7];
     for (let i = 0; i < 64; i++) {
       const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
       const ch = (e & f) ^ (~e & g);
@@ -91,8 +97,14 @@ function sha256Bytes(data: Uint8Array): string {
       const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const t2 = (S0 + maj) >>> 0;
-      hh = g; g = f; f = e; e = (d + t1) >>> 0;
-      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) >>> 0;
     }
     H[0] = (H[0] + a) >>> 0;
     H[1] = (H[1] + b) >>> 0;
@@ -185,7 +197,10 @@ export function buildTaskArtifact(input: BuildTaskArtifactInput): TaskArtifact {
  * fields (`id`, `taskId`, `taskVersion`, `createdAt`, `sourceRef`) and the
  * computed `inputDigest`/`inputCompleteness`.
  */
-export type NormalizedNormalizedTaskInput = Pick<NormalizedTaskInput, "text" | "artifactIds" | "metadata">;
+export type NormalizedNormalizedTaskInput = Pick<
+  NormalizedTaskInput,
+  "text" | "artifactIds" | "metadata"
+>;
 
 /** Strip identity/computed fields, keeping the input slice only. */
 export function normalizeNormalizedInputForDigest(

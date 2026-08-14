@@ -19,11 +19,7 @@
 import { describe, expect, it } from "vitest";
 
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
-import type {
-  TaskRecord,
-  TaskSource,
-  TaskVersion,
-} from "./task-types";
+import type { TaskRecord, TaskSource, TaskVersion } from "./task-types";
 import {
   archiveTaskRecord,
   buildInitialTaskRecord,
@@ -175,13 +171,11 @@ describe("isTaskDefiningChange", () => {
   });
 
   it("detects a responseContract null <-> non-null transition as task-defining", () => {
-    expect(
-      isTaskDefiningChange({ previous: v1(), next: v1({ responseContract: null }) }),
-    ).toBe(true);
+    expect(isTaskDefiningChange({ previous: v1(), next: v1({ responseContract: null }) })).toBe(
+      true,
+    );
     const withNull = v1({ responseContract: null });
-    expect(
-      isTaskDefiningChange({ previous: withNull, next: v1() }),
-    ).toBe(true);
+    expect(isTaskDefiningChange({ previous: withNull, next: v1() })).toBe(true);
   });
 
   it("detects a taskVerifierRef change as task-defining", () => {
@@ -190,9 +184,9 @@ describe("isTaskDefiningChange", () => {
   });
 
   it("detects a taskVerifierRef null <-> non-null transition as task-defining", () => {
-    expect(
-      isTaskDefiningChange({ previous: v1(), next: v1({ taskVerifierRef: null }) }),
-    ).toBe(true);
+    expect(isTaskDefiningChange({ previous: v1(), next: v1({ taskVerifierRef: null }) })).toBe(
+      true,
+    );
   });
 
   it("does NOT flag a source-only (provenance) change as task-defining", () => {
@@ -267,7 +261,12 @@ describe("computeDefinitionDigest", () => {
 
   it("is stable across identical versions with different taskId/version/createdAt/source", () => {
     const a = v1();
-    const b = v1({ taskId: "task-999", version: 7, createdAt: 9_999, source: { kind: "imported", legacyScopeKey: null, note: "x" } });
+    const b = v1({
+      taskId: "task-999",
+      version: 7,
+      createdAt: 9_999,
+      source: { kind: "imported", legacyScopeKey: null, note: "x" },
+    });
     expect(computeDefinitionDigest(a)).toBe(computeDefinitionDigest(b));
   });
 
@@ -292,9 +291,7 @@ describe("computeDefinitionDigest", () => {
   it("changes when defaultContextManifest content changes", () => {
     const a = v1();
     const b = v1({
-      defaultContextManifest: [
-        { ...v1().defaultContextManifest[0], byteCount: 43 },
-      ],
+      defaultContextManifest: [{ ...v1().defaultContextManifest[0], byteCount: 43 }],
     });
     expect(computeDefinitionDigest(a)).not.toBe(computeDefinitionDigest(b));
   });
@@ -533,7 +530,13 @@ describe("archiveTaskRecord / restoreTaskRecord", () => {
 
 describe("duplicateTaskRecord", () => {
   it("creates a new Task identity with origin authored, revision 0, latestVersion 1, not archived", () => {
-    const source = record({ id: "task-1", revision: 5, latestVersion: 4, origin: "legacy-task-set", archivedAt: 1_000 });
+    const source = record({
+      id: "task-1",
+      revision: 5,
+      latestVersion: 4,
+      origin: "legacy-task-set",
+      archivedAt: 1_000,
+    });
     const dup = duplicateTaskRecord({ source, newId: "task-2", createdAt: 9_000 });
     expect(dup.id).toBe("task-2");
     expect(dup.origin).toBe("authored");
@@ -591,7 +594,12 @@ describe("attempt count never creates versions", () => {
 describe("definition digest collision requires deep equality of task-defining fields", () => {
   it("two versions with equal digests have deeply equal task-defining fields", () => {
     const a = v1();
-    const b = v1({ taskId: "task-999", version: 9, createdAt: 9_999, source: { kind: "imported", legacyScopeKey: null, note: "z" } });
+    const b = v1({
+      taskId: "task-999",
+      version: 9,
+      createdAt: 9_999,
+      source: { kind: "imported", legacyScopeKey: null, note: "z" },
+    });
     expect(computeDefinitionDigest(a)).toBe(computeDefinitionDigest(b));
     // The normalized forms (task-defining fields only) must be deeply equal.
     expect(canonicalJsonString(normalizeVersionForDigest(a))).toBe(

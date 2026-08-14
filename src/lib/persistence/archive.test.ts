@@ -1270,9 +1270,7 @@ async function seedCompleteCorpus(): Promise<void> {
   await db.fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
   await db.fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
   await db.fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
-  await db.fusionObservations.put(
-    fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
-  );
+  await db.fusionObservations.put(fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")));
   await db.fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
 
   await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
@@ -1486,9 +1484,7 @@ describe("exportWorkbenchArchiveV2 — secret safety", () => {
     await db.taskVersions.put(
       fx.taskVersionRow(fx.makeTaskVersion("task-secret", 1, "art-secret")),
     );
-    await db.taskArtifacts.put(
-      fx.taskArtifactRow(fx.makeTaskArtifact("art-secret", secretBytes)),
-    );
+    await db.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-secret", secretBytes)));
     await db.taskArtifactBytes.put(fx.taskArtifactBytesRow("art-secret", secretBytes));
 
     await expect(exportWorkbenchArchiveV2(db)).rejects.toMatchObject({
@@ -1784,9 +1780,25 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
     expect(preview.artifactBytes[0].id).toBe("art-1");
     expect([...preview.artifactBytes[0].bytes]).toEqual([...artifactBytes]);
     // Deterministic collection order + sorted counts.
-    expect(preview.counts[0]).toEqual({ collection: "experiments", total: 1, create: 1, reuse: 0, collision: 0, invalid: 0 });
-    expect(preview.counts.map((c) => c.collection)).toEqual([...preview.counts.map((c) => c.collection)].sort());
-    expect(preview.counts.find((c) => c.collection === "suites")).toEqual({ collection: "suites", total: 1, create: 0, reuse: 1, collision: 0, invalid: 0 });
+    expect(preview.counts[0]).toEqual({
+      collection: "experiments",
+      total: 1,
+      create: 1,
+      reuse: 0,
+      collision: 0,
+      invalid: 0,
+    });
+    expect(preview.counts.map((c) => c.collection)).toEqual(
+      [...preview.counts.map((c) => c.collection)].sort(),
+    );
+    expect(preview.counts.find((c) => c.collection === "suites")).toEqual({
+      collection: "suites",
+      total: 1,
+      create: 0,
+      reuse: 1,
+      collision: 0,
+      invalid: 0,
+    });
     // Preview is read-only.
     expect(await db.suites.count()).toBe(1);
     expect(await db.runDetails.count()).toBe(0);
@@ -1839,7 +1851,9 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
     const tamperedBytes = new TextEncoder().encode("tampered artifact text");
     const archive = makeEmptyV2();
     archive.tasks.taskArtifacts = [fx.makeTaskArtifact("art-1", validBytes)];
-    archive.tasks.taskArtifactBytes = [{ id: "art-1", bytesBase64: fx.bytesToBase64(tamperedBytes) }];
+    archive.tasks.taskArtifactBytes = [
+      { id: "art-1", bytesBase64: fx.bytesToBase64(tamperedBytes) },
+    ];
     archive.manifest.counts.taskArtifacts = 1;
     archive.manifest.counts.taskArtifactBytes = 1;
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
@@ -1989,14 +2003,18 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     archive.runs.details = [detail as unknown as RunRecordV2];
     const artifact = fx.makeTaskArtifact("art-1", artifactBytes);
     archive.tasks.taskArtifacts = [artifact];
-    archive.tasks.taskArtifactBytes = [{ id: "art-1", bytesBase64: fx.bytesToBase64(artifactBytes) }];
+    archive.tasks.taskArtifactBytes = [
+      { id: "art-1", bytesBase64: fx.bytesToBase64(artifactBytes) },
+    ];
     archive.manifest.counts.runDetails = 1;
     archive.manifest.counts.taskArtifacts = 1;
     archive.manifest.counts.taskArtifactBytes = 1;
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
-    expect(preview.invalid.map((e) => `${e.collection}/${e.key}`)).toEqual(["runs.details/run-bad"]);
+    expect(preview.invalid.map((e) => `${e.collection}/${e.key}`)).toEqual([
+      "runs.details/run-bad",
+    ]);
 
     await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
       name: "StorageError",
@@ -2010,9 +2028,7 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     const archive = fx.buildValidArchiveV2Fixture();
     // Preview against an EMPTY DB → suites.suite-1 is classified as create.
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
-    expect(preview.create.some((c) => c.collection === "suites" && c.key === "suite-1")).toBe(
-      true,
-    );
+    expect(preview.create.some((c) => c.collection === "suites" && c.key === "suite-1")).toBe(true);
     expect(preview.collisions).toEqual([]);
 
     // RACE: a different-content suite with the same ID lands AFTER the preview
@@ -2099,4 +2115,3 @@ describe("archiveFailureGuidance — import cancellation", () => {
     expect(guidance).toContain("cancel");
   });
 });
-

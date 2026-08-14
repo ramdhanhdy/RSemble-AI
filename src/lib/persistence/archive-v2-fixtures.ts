@@ -380,7 +380,12 @@ export function makePlaybook(id: string, studyId: string): FusionPlaybook {
         confidence: "medium",
       },
     ],
-    recommendation: { kind: "adopt", policy: "fuse", configuration: "B + C → Synth", rationale: "ok" },
+    recommendation: {
+      kind: "adopt",
+      policy: "fuse",
+      configuration: "B + C → Synth",
+      rationale: "ok",
+    },
     poolAdequacy: { probed: true, outcome: "confirmed", challengerKeys: [], note: "ok" },
     claimLevel: "exploratory",
     conclusion: "fuse helps",
@@ -441,7 +446,12 @@ export function makeArtifactBytes(id: string, bytes: Uint8Array): ArchiveV2TaskA
   return { id, bytesBase64: bytesToBase64(bytes) };
 }
 
-export function makeTaskInstance(id: string, taskId: string, version: number, artifactId: string): TaskInstance {
+export function makeTaskInstance(
+  id: string,
+  taskId: string,
+  version: number,
+  artifactId: string,
+): TaskInstance {
   return {
     id,
     taskId,
@@ -477,7 +487,12 @@ export function makeTaskFamily(id: string): TaskFamily {
   };
 }
 
-export function makeTaskFamilyAssignment(id: string, taskId: string, version: number, familyId: string): TaskFamilyAssignment {
+export function makeTaskFamilyAssignment(
+  id: string,
+  taskId: string,
+  version: number,
+  familyId: string,
+): TaskFamilyAssignment {
   return {
     id,
     taskId,
@@ -490,7 +505,11 @@ export function makeTaskFamilyAssignment(id: string, taskId: string, version: nu
   };
 }
 
-export function makeTaskFamilyRelation(id: string, fromFamilyId: string, toFamilyId: string): TaskFamilyRelation {
+export function makeTaskFamilyRelation(
+  id: string,
+  fromFamilyId: string,
+  toFamilyId: string,
+): TaskFamilyRelation {
   return {
     id,
     fromFamilyId,
@@ -762,7 +781,9 @@ export function taskFacetAnnotationRow(annotation: TaskFacetAnnotation): TaskFac
   };
 }
 
-export function taskMigrationCrosswalkRow(crosswalk: TaskMigrationCrosswalk): TaskMigrationCrosswalkRow {
+export function taskMigrationCrosswalkRow(
+  crosswalk: TaskMigrationCrosswalk,
+): TaskMigrationCrosswalkRow {
   return {
     legacyScopeKey: crosswalk.legacyScopeKey,
     taskId: crosswalk.taskId,

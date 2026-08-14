@@ -18,12 +18,7 @@
 // =============================================================================
 
 import { canonicalJsonString, hashArtifactContent } from "../evaluations/protocol-fingerprint";
-import type {
-  TaskOrigin,
-  TaskRecord,
-  TaskSource,
-  TaskVersion,
-} from "./task-types";
+import type { TaskOrigin, TaskRecord, TaskSource, TaskVersion } from "./task-types";
 
 // --- task-defining fields (spec §3.2) ---------------------------------------
 
