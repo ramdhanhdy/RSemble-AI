@@ -1,6 +1,6 @@
 {
   "gate": "qa-canonical-tasks --browser",
-  "generatedAt": "2026-08-14T16:43:45.399Z",
+  "generatedAt": "2026-08-14T16:50:33.218Z",
   "baseUrl": "http://127.0.0.1:5183/",
   "probes": [
     {
@@ -98,7 +98,7 @@
     },
     {
       "name": "create-task",
-      "href": "#/tasks/4dc8a43d-0db3-4700-b6d7-453e9fa52e8e",
+      "href": "#/tasks/c56c4b52-4ff4-44d3-b6b9-1417e3f5f0eb",
       "pass": true,
       "reason": "create commits Task+v1 atomically and offers an Open link to the new identity"
     },
@@ -135,7 +135,7 @@
     },
     {
       "name": "duplicate-task",
-      "dupId": "fa7f1a4c-be16-4f37-adbc-f37137aa2dc2",
+      "dupId": "4d1af1bc-e643-42b8-82a6-82a31832b847",
       "pass": true,
       "reason": "duplicate creates a new authored identity at v1 with copied content — never an implied version"
     },
