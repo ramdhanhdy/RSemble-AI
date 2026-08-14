@@ -17,6 +17,16 @@ This document records architectural decisions made for RSemble AI.
 > serialized field names (`evaluationProfileId`, `evaluationProfileVersion`)
 > remain physical implementation details behind canonical Rubric adapters.
 > The word "profile" is reserved for the future model evidence profile.
+>
+> **Reconciliation note (Child 02, 2026-08-14):** Canonical Tasks, immutable
+> Task Versions, concrete Task Instances, Task Families, versioned Facet
+> annotations, conservative legacy-suite migration, and the extensible archive v2
+> envelope are shipped (spec: `docs/specs/archive/02-canonical-tasks/`). Tasks are
+> a secondary `/tasks` catalog, not a fourth primary workspace. Historical
+> decisions below remain authoritative; nothing in this child rewrites Run,
+> Experiment, or Fusion Study evidence. Task Set editor migration, comparison
+> task promotion, observations, and model evidence profiles remain future
+> children. See Decision #13 for the load-bearing contract.
 
 ---
 
@@ -166,3 +176,18 @@ This document records architectural decisions made for RSemble AI.
   - **Compliance-only exception (spec §16.3):** a profile with **no graded criteria** has no `Q` and therefore derives **no `rankValue`/`rankScore`**; it ranks on the weighted compliance share `C` in the 0–1 / 0–100% compliance domain. Display and export render such values as C-labeled percentages — never as a floored `1.0*` rank score with a `/5` suffix. Historical records remain authoritative snapshots and are never re-scored or retyped.
 - **Deferred (not shipped v1):** binary 1/5 pseudo-scoring, `W_bin` as author control, MEAN groups, member weights, Hard Gates / gate eligibility / consensus gate judging, `δ=0.10` closeness band, min-cost "binary-decided" heuristic, "Compliance changed the winner" badge, duplication lint, automatic historical binary detection, and historical re-scoring. `kind:"gate"` is rejected by validation with an actionable message.
 - **Rationale:** rankValue is the single authoritative ranking quantity derived from a validated criterion vector (`Q − λ(1−C)`); rankScore prevents the display floor from causing false ties (a floored 0.8 must outrank a floored 0.4). Requirement Groups pin a requirement's influence to its group weight, so decomposition (1 check vs 5 subchecks) does not inflate influence, and λ bounds total binary influence.
+
+---
+
+## Decision #13: Canonical Tasks, Immutable Versions, and Archive v2 Base
+- **Date:** 2026-08-14
+- **Context:** Evaluation Suite tasks had stable IDs only inside an embedded suite document. Experiment snapshots preserved task definitions and run records preserved exact messages, but there was no global Task identity, immutable Task Version repository, concrete Task Instance repository, family registry, or versioned facet annotation. Repeated attempts and near-duplicate prompts could masquerade as broad task coverage, and the archive format had no envelope for canonical Task/Rubric entities. Spec: `docs/specs/archive/02-canonical-tasks/canonical-tasks-spec.md`; plan: `docs/specs/archive/02-canonical-tasks/implementation-plan.md`.
+- **Decision:** Ship canonical Tasks as a secondary surface with the following load-bearing choices:
+  - **(a) Opaque identity, immutable versions.** A Task has opaque identity; digests do not define semantic identity. Versions are positive, contiguous, and append-only. A change to candidate-visible instruction, task-defining context, expected response contract, or correctness contract creates the next version; metadata, family, and facet edits never mutate a version. A referenced version cannot be deleted.
+  - **(b) Concrete instances with digest-gated reuse.** A Task Instance captures concrete normalized input and is reused only under the same Task Version and exact complete input/context/artifact digest, with byte-equality verification. Metadata-only historical attachments are never upgraded to complete without real bytes; migration never fabricates an artifact.
+  - **(c) Explicit families and facets, no inference.** A Task has at most one primary family at a time through a versioned assignment; typed cross-family relations may express overlap without a universal tree. Facets are orthogonal authored dimensions; suggestions never become accepted annotations without explicit user confirmation. No automatic semantic deduplication or taxonomy inference.
+  - **(d) Conservative legacy migration.** Migration inspects latest embedded suite tasks and immutable historical ExperimentRecord snapshots, creates one canonical Task per deterministic `(legacySuiteId, legacyTaskId)` scope with origin `legacy-task-set`, appends a version only when the executable-definition digest changes, and writes a crosswalk. It is deterministic and idempotent across repeated startup, never merges across suite scopes, and never modifies RunRecordV2, ExperimentRecord snapshots, selected attempt IDs, protocol fingerprints, costs, judge evidence, or failures.
+  - **(e) Secondary surface, not primary nav.** Tasks live on `/tasks`, `/tasks/new`, `/tasks/:taskId`, and `/tasks/:taskId/versions/:version`, reachable through the command palette and contextual links. Tasks are not a primary workspace; primary navigation remains Compare · Runs · Evaluations.
+  - **(f) Archive v2 base.** The extensible v2 envelope round-trips exact current Run and Experiment evidence, all seven Fusion Study stores, and canonical Rubrics, Tasks, Task Versions, Task Artifacts, Task Instances, families/facets, annotations, and migration crosswalks; disposable indexes are omitted. Archive v1 remains importable. V2 import validates the complete payload and referenced artifacts before writes; until a later child adds full collision remapping, a non-identical ID collision is reported in preview and aborts without mutation — it never overwrites or partially imports. Artifact bytes are scanned for prohibited credential/auth content before export; an unsafe export is blocked without echoing the value.
+- **Authority changes:** `PRODUCT.md` and this file amended to describe canonical Tasks, immutable versions, instances, families/facets, conservative migration, and archive v2 as shipped. Existing Run/Experiment/Fusion evidence and the fanout → Judge → Rank/Fuse spine are unchanged.
+- **Rationale:** Global, immutable task identity is the prerequisite for Task Set ownership (next child), observations, contextual Compare results, and model evidence profiles. Pinning opaque identity, digest-gated instance reuse, conservative no-rewrite migration, and a collision-aborting v2 envelope now prevents later children from accidentally merging across scopes, inflating coverage with near-duplicates, or overwriting evidence on import.

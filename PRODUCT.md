@@ -1,7 +1,7 @@
 # PRODUCT.md — RSemble AI Product Specification
 
-> Status: Implemented (three workspaces, hardening contracts D1–D6 live, Rubric terminology shipped)
-> Last reconciled: 2026-08-12 at commit `7335830` (Child 01 — Rubric terminology)
+> Status: Implemented (three workspaces, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped)
+> Last reconciled: 2026-08-14 at commit `f8668ba` (Child 02 — Canonical Tasks)
 >
 > **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
 > "Profiles" are now "Rubrics" in all user-facing surfaces, domain code, routes,
@@ -12,6 +12,24 @@
 > above those boundaries. Historical decisions in `DECISIONS.md` preserve the
 > original "Profile" terminology for provenance. The word "profile" is reserved
 > for the future model evidence profile (Child 06).
+>
+> **Reconciliation note (Child 02, 2026-08-14):** Canonical Tasks now exist
+> independently of any comparison or Task Set. A Task has opaque identity, an
+> append-only sequence of immutable Task Versions (a candidate-visible
+> instruction/context/contract change creates the next version), concrete Task
+> Instances deduplicated by exact normalized input digest, explicit Task Families
+> with a primary assignment, and a versioned Facet taxonomy with authored and
+> suggested annotations. A conservative, idempotent legacy-suite migration
+> creates `legacy-task-set` Tasks through deterministic crosswalks without
+> rewriting Run/Experiment/Fusion source evidence. Tasks live on a secondary
+> `/tasks` catalog reachable via the command palette and contextual links — not
+> as a fourth primary workspace. This child also introduces the extensible
+> archive v2 envelope, which round-trips exact current Run, Experiment, and all
+> seven Fusion Study stores plus canonical Rubrics and Task entities; archive v1
+> remains importable, and a non-identical ID collision is reported in preview and
+> aborts before any write. Task Set editor migration, comparison task promotion,
+> observations, and model evidence profiles remain future children (spec:
+> `docs/specs/archive/02-canonical-tasks/`).
 
 > **The source of truth for what RSemble AI is and is not.**
 > Authority: PRODUCT.md defines *what the product is*. `PROVIDERS.md` defines *how models are reached*.
@@ -32,6 +50,8 @@ The product has three top-level workspaces:
 - **Evaluations** — an audit surface grouping several tasks into a versioned local suite, executing the same comparison pipeline per task, and presenting a model-by-task result matrix.
 
 These are navigation destinations, not pipeline modes. Rank/Fuse remains the per-task finish choice and is shown only where it is relevant (Compare). The evaluation feature is local-first and single-user: it introduces no hosted backend, accounts, collaboration, public benchmark publishing, or general workflow canvas.
+
+Canonical Tasks — versioned, immutable task definitions with concrete instances, families, and facets — exist as a secondary catalog (`/tasks`) independent of any one comparison or Task Set, reachable through the command palette rather than primary navigation.
 
 ---
 
@@ -76,6 +96,7 @@ Task → Evaluation → Compare (N models in parallel) → Judge
 - **Auditable cost provenance**: Every paid stage (candidate, Judge, Fusion) persists provider-reported usage/cost when the provider exposes it, a clearly labeled catalog estimate when only exact pricing is known, or Unknown otherwise. Costs render from the pricing snapshot captured at execution time, never today's catalog. Reused evidence is never double-charged.
 - **Fusion Study (policy discovery on a suite)**: An Evaluations experiment type attached to a suite version that discovers, empirically, which execution policy — best-fixed single model, Rank over a pair, Fuse under a versioned recipe, or rubric-aware refine-the-winner — gives the best quality/cost tradeoff for that suite. Policies are compared **blocked** on shared candidate generations and development-judge evidence; a separate holdout judge evaluates policy outputs blind (development/holdout separation is mandatory). Fusion recipes are versioned artifacts with explicit `rubricAccess` and verification flags; candidates always reach the synthesizer anonymized — blindness is an invariant, never an experimental variable. Studies proceed by elimination (recipes) and a predeclared shortlist rule (pairs), report the complete screened-pair table, and produce a per-suite **playbook** with two visibly different claim levels — **Exploratory** (best observed configuration under this pool and protocol) and **Confirmed** (the preselected configuration held on a fresh suite version without re-selection). **"Do not fuse" is a first-class playbook verdict**, not a failure state.
 - **Structured workspaces vs. exploratory semantic intelligence**: The three workspaces (Compare, Runs, Evaluations) are committed, structured audit and working surfaces with explicit data contracts. Embedding search, semantic clustering, "Ask history," and automatic benchmark generation remain exploratory roadmap phases that require the structured history to exist first; they are not part of the current approved scope and must not be implied by the workspace UI.
+- **Canonical Tasks (independent task identity)**: Tasks exist independently of any comparison or Task Set with opaque identity, append-only immutable Task Versions (candidate-visible instruction/context/contract changes create the next version), concrete Task Instances deduplicated by exact normalized input digest, explicit Task Families with a primary assignment, and a versioned Facet taxonomy with authored/suggested annotations and provenance. A conservative, idempotent legacy-suite migration creates `legacy-task-set` Tasks through deterministic crosswalks without rewriting Run/Experiment/Fusion source evidence. Tasks are a secondary `/tasks` catalog reachable via the command palette and contextual links — not a fourth primary workspace. The extensible archive v2 envelope round-trips exact current Run, Experiment, and all seven Fusion Study stores plus canonical Rubrics and Task entities; archive v1 remains importable, and a non-identical ID collision aborts in preview before any write (full collision remapping is deferred to a later child).
 
 ### OUT Scope (§5 Scope Fence)
 - **Python backend / SQLite / public REST API**: Out of scope.

@@ -1,7 +1,7 @@
 # Canonical Tasks, Versions, Instances, Families, and Facets Specification
 
-**Status:** Pending
-**Parent:** [`../task-first-evidence-workbench-spec.md`](../task-first-evidence-workbench-spec.md)
+**Status:** Shipped (2026-08-14)
+**Parent:** [`../../pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md`](../../pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md)
 **Order:** 02
 **Dependencies:** Parent contract and child 01 (canonical Rubric adapters/terminology)
 
