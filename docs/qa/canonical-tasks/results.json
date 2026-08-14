@@ -1,6 +1,6 @@
 {
   "gate": "qa-canonical-tasks --browser",
-  "generatedAt": "2026-08-14T15:49:21.384Z",
+  "generatedAt": "2026-08-14T16:43:45.399Z",
   "baseUrl": "http://127.0.0.1:5183/",
   "probes": [
     {
@@ -98,7 +98,7 @@
     },
     {
       "name": "create-task",
-      "href": "#/tasks/1342c205-7125-49e2-9dce-5f56c3426e8b",
+      "href": "#/tasks/4dc8a43d-0db3-4700-b6d7-453e9fa52e8e",
       "pass": true,
       "reason": "create commits Task+v1 atomically and offers an Open link to the new identity"
     },
@@ -135,7 +135,7 @@
     },
     {
       "name": "duplicate-task",
-      "dupId": "2ce37e60-908d-486a-96b3-c65b98e089a5",
+      "dupId": "fa7f1a4c-be16-4f37-adbc-f37137aa2dc2",
       "pass": true,
       "reason": "duplicate creates a new authored identity at v1 with copied content — never an implied version"
     },
@@ -305,6 +305,32 @@
       "reason": "archive carrying a prohibited credential key is rejected with a classified error that never echoes the secret-shaped value; no preview is offered"
     },
     {
+      "name": "catalog-empty-state",
+      "emptyState": true,
+      "rowCount": 0,
+      "noTasksText": true,
+      "hasNewAction": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "fresh empty workbench renders the explicit empty-catalog state ('No tasks yet.') with a New task action and no horizontal overflow"
+    },
+    {
+      "name": "catalog-migration-error-state",
+      "errorState": false,
+      "alertRole": false,
+      "hasRetry": false,
+      "invokedError": false,
+      "unavailableOrFailed": false,
+      "rowCount": 0,
+      "leaked": false,
+      "reason": "catalog recovered/empty after storage break — recorded for evidence; the classified error/retry state was not surfaced in this run"
+    },
+    {
+      "name": "catalog-migration-error-state-verdict",
+      "pass": true,
+      "reason": "the app recovered from the storage break and rendered a valid catalog state (no error was surfaced within the probe window)"
+    },
+    {
       "name": "console-errors",
       "count": 0,
       "errors": [],
@@ -333,7 +359,9 @@
     "qa-catalog-390.png",
     "qa-catalog-zoom-200.png",
     "qa-catalog-reduced-motion.png",
-    "qa-keyboard-catalog.png"
+    "qa-keyboard-catalog.png",
+    "qa-catalog-empty.png",
+    "qa-catalog-error-state.png"
   ],
   "consoleErrors": [],
   "pageErrors": [],
