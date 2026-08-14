@@ -2045,8 +2045,7 @@ async function runBrowserMatrix() {
         await waitFor("Boolean(window.indexedDB)", "indexedDB");
       }
     }
-    if (corrupted?.__corruptError)
-      throw new Error(`Corrupt failed: ${corrupted.__corruptError}`);
+    if (corrupted?.__corruptError) throw new Error(`Corrupt failed: ${corrupted.__corruptError}`);
     // Reload: migration re-runs, finds the inconsistent version, throws
     // StorageError("validation") → taskMigrationError → taskRepo = null →
     // the catalog must surface data-task-error-state (alert role, Retry,
@@ -2081,7 +2080,11 @@ async function runBrowserMatrix() {
     record("catalog-migration-error-state", {
       ...loadError,
       reason:
-        loadError.errorState && loadError.alertRole && loadError.hasRetry && loadError.unavailableOrFailed && !loadError.leaked
+        loadError.errorState &&
+        loadError.alertRole &&
+        loadError.hasRetry &&
+        loadError.unavailableOrFailed &&
+        !loadError.leaked
           ? "deterministic migration-error surfaces the classified load/error state (alert role, Retry action, unavailable text) and never echoes secret-shaped content"
           : "migration-error state was not surfaced — the catalog recovered or went blank instead of showing the required error UI",
     });
