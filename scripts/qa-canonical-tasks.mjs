@@ -1895,31 +1895,104 @@ async function runBrowserMatrix() {
     await screenshot("qa-catalog-empty");
 
     // --- Migration / load-error state (spec: empty/archived/migration-error) ---
-    // Drop the `tasks` object store via IndexedDB upgrade so the repository's
-    // schema mismatch makes storage unavailable; reload must surface the
-    // explicit `data-task-error-state` (alert role, Retry action, "storage is
-    // unavailable") rather than a silent blank or partial catalog.
+    // Deterministically trigger the bounded canonical-Task migration-error
+    // path: seed a legacy suite + experiment (so startup migration has one
+    // complete scope to process), plus a pre-existing Task + version for that
+    // scope whose `source.legacyScopeKey` is inconsistent. On reload the
+    // migration's version-history consistency check throws
+    // StorageError("validation"), which `createDatabase` bounds to
+    // `taskMigrationError` — `taskRepo` stays null and the catalog must
+    // surface the explicit `data-task-error-state` (alert role, Retry action,
+    // "storage is unavailable") rather than recovering or going blank.
     await evaluate(String.raw`
 (async () => {
   const DB = "rsemble-evaluation";
-  const deleteStore = () => new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, Date.now());
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (db.objectStoreNames.contains("tasks")) db.deleteObjectStore("tasks");
-    };
-    req.onsuccess = () => { req.result.close(); resolve(true); };
+  const openDb = () => new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB);
+    req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error("open blocked by app connection"));
+    req.onblocked = () => reject(new Error("open blocked"));
   });
-  // Close any open app connections by navigating to about:blank first is not
-  // possible here; rely on the single connected tab. Try delete; ignore blocked.
-  return await deleteStore().catch(() => false);
-})().catch((e) => ({ __seedError: (e && (e.message || String(e))) }))`);
+  const put = (db, store, value) => new Promise((resolve, reject) => {
+    const r = db.transaction(store, "readwrite").objectStore(store).put(value);
+    r.onsuccess = () => resolve();
+    r.onerror = () => reject(r.error);
+  });
+  const db = await openDb();
+  const NOW = 1700000000000;
+
+  // Legacy suite + experiment giving migration one complete scope:
+  // (suiteId="suite-err", taskId="t1").
+  const legacyTask = {
+    id: "t1", title: "Error probe", prompt: "Summarize.",
+    systemPrompt: "Bullets.", evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "", order: 0,
+  };
+  const suite = {
+    id: "suite-err", revision: 1, version: 1, name: "Error Suite",
+    description: "", tasks: [legacyTask], modelSlots: [],
+    defaultJudge: { providerId: "openrouter", model: "judge" },
+    defaultEvaluation: { kind: "holistic" },
+    createdAt: NOW, updatedAt: NOW, archivedAt: null,
+  };
+  await put(db, "suites", {
+    id: suite.id, suite, revision: 1, version: suite.version,
+    updatedAt: NOW, archivedAt: null,
+  });
+  const experiment = {
+    id: "exp-err", revision: 1, suiteId: "suite-err", suiteVersion: 1,
+    protocolFingerprint: "sha256:err", status: "completed", execution: null,
+    snapshot: {
+      suiteId: "suite-err", suiteVersion: 1, tasks: [legacyTask], modelSlots: [],
+      defaultJudge: suite.defaultJudge, defaultEvaluation: suite.defaultEvaluation,
+      profiles: [], protocolFingerprint: "sha256:err", createdAt: NOW,
+    },
+    tasks: [], createdAt: NOW, updatedAt: NOW,
+  };
+  await put(db, "experiments", {
+    id: experiment.id, experiment, revision: 1, suiteId: experiment.suiteId,
+    suiteVersion: experiment.suiteVersion, protocolFingerprint: experiment.protocolFingerprint,
+    createdAt: NOW, status: experiment.status,
+  });
+
+  // Compute taskIdForScope("suite-err::t1") exactly as the product does:
+  //   legacy-task-${sha256Hex(scopeKey).slice(0, 23)}
+  const scopeKey = "suite-err::t1";
+  const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(scopeKey));
+  const hashHex = [...new Uint8Array(hashBuf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const taskId = "legacy-task-" + hashHex.slice(0, 23);
+
+  // Pre-seed a Task + version for that scope with an INCONSISTENT
+  // source.legacyScopeKey so the migration's consistency check throws.
+  await put(db, "tasks", {
+    id: taskId, record: {
+      id: taskId, latestVersion: 1, createdAt: NOW, updatedAt: NOW,
+      archivedAt: null, origin: "legacy-task-set", revision: 0,
+    },
+    latestVersion: 1, createdAt: NOW, updatedAt: NOW, archivedAt: null,
+    origin: "legacy-task-set", revision: 0,
+  });
+  await put(db, "taskVersions", {
+    taskId, version: 1, createdAt: NOW,
+    version_: {
+      taskId, version: 1, title: "Error probe", objective: "",
+      candidateInstruction: "", defaultContextManifest: [],
+      responseContract: null, taskVerifierRef: null,
+      source: {
+        kind: "legacy-task-set",
+        legacyScopeKey: "CORRUPTED-SCOPE",
+        note: "legacy-definition:corrupted",
+      },
+    },
+  });
+
+  db.close();
+  return { taskId, ok: true };
+})().catch((e) => ({ __seedError: (e && (e.name ? e.name + ": " : "") + (e.message || String(e))) }))`);
     await send("Page.navigate", { url: `${BROWSER_BASE}#/tasks` });
     await waitFor(
-      "Boolean(document.querySelector('[data-task-error-state]')) || Boolean(document.querySelector('a[data-task-row]')) || Boolean(document.querySelector('[data-task-empty]'))",
-      "load error or recovery",
+      "Boolean(document.querySelector('[data-task-error-state]'))",
+      "migration error state",
       120,
     );
     await wait(300);
@@ -1932,7 +2005,6 @@ async function runBrowserMatrix() {
     errorState: Boolean(err),
     alertRole: Boolean(err && err.getAttribute('role') === 'alert'),
     hasRetry: Boolean(retry),
-    invokedError: Boolean(err),
     unavailableOrFailed: err ? /unavailable|Failed to load/i.test(err.textContent) : false,
     rowCount: document.querySelectorAll('a[data-task-row]').length,
     leaked: body.includes("smuggled"),
@@ -1941,24 +2013,22 @@ async function runBrowserMatrix() {
     record("catalog-migration-error-state", {
       ...loadError,
       reason:
-        loadError.errorState && loadError.alertRole && loadError.hasRetry && !loadError.leaked
-          ? "storage schema break surfaces the explicit classified load/error state (alert role, Retry action) and never echoes secret-shaped content"
-          : "catalog recovered/empty after storage break — recorded for evidence; the classified error/retry state was not surfaced in this run",
+        loadError.errorState && loadError.alertRole && loadError.hasRetry && loadError.unavailableOrFailed && !loadError.leaked
+          ? "deterministic migration-error surfaces the classified load/error state (alert role, Retry action, unavailable text) and never echoes secret-shaped content"
+          : "migration-error state was not surfaced — the catalog recovered or went blank instead of showing the required error UI",
     });
-    // Only require the error state when it actually renders (the app may
-    // recover on the next open). The pass gate below is strict only if the
-    // error state appeared at all.
+    // Strict verdict: the error state MUST appear with all required affordances.
+    // Recovery, empty, or rows are NOT acceptable for this probe.
     record("catalog-migration-error-state-verdict", {
       pass:
-        !loadError.errorState ||
-        (loadError.errorState &&
-          loadError.alertRole &&
-          loadError.hasRetry &&
-          loadError.unavailableOrFailed &&
-          !loadError.leaked),
+        loadError.errorState &&
+        loadError.alertRole &&
+        loadError.hasRetry &&
+        loadError.unavailableOrFailed &&
+        !loadError.leaked,
       reason: loadError.errorState
-        ? "classified storage error state renders with alert role + Retry, no secret echo"
-        : "the app recovered from the storage break and rendered a valid catalog state (no error was surfaced within the probe window)",
+        ? "classified migration-error state renders with alert role + Retry + unavailable/failed text, no secret echo"
+        : "the migration-error state was not surfaced (recovery or blank) — FAIL",
     });
     await screenshot("qa-catalog-error-state");
 
