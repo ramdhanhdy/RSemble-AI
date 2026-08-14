@@ -999,6 +999,24 @@ function v2SortByLegacyScopeKey<T extends { legacyScopeKey: string }>(items: T[]
   return [...items].sort((a, b) => v2OrderingKeyString(a.legacyScopeKey, b.legacyScopeKey));
 }
 
+/** Collects export guard-failing rows so the export can abort with redacted
+ *  diagnostics. Dexie's `Collection.each()` does not propagate a synchronous
+ *  throw from its callback; the violation is recorded here and a single
+ *  StorageError is thrown after all reads complete. The diagnostic names the
+ *  entity/collection + deterministic ID (when extractable) and never echoes a
+ *  matched secret-shaped value. */
+function recordGuardFailure(
+  label: string,
+  id: string,
+  collection: string,
+  violations: string[],
+): void {
+  const where = id === "" ? `${label}` : `${label}[${id}]`;
+  violations.push(
+    `Export blocked: ${where} (collection ${collection}) failed its record guard and could not be safely archived. No archive was delivered.`,
+  );
+}
+
 /**
  * Archive-boundary allowlist guard for task family relations, shared by the
  * v2 export and the v2 import preview/commit. This is deliberately NOT the
@@ -1083,9 +1101,10 @@ function v2ScanForCredentialValue(value: unknown): boolean {
  * Export the complete canonical workbench as a v2 envelope.
  *
  * Behavior contract (fixed by the RED tests):
- *  - Reads every Child 02 canonical collection; keeps ONLY guard-passing
- *    domain records (allowlisted by construction — never silently drops a
- *    valid entity, never reads `storageMeta`).
+ *  - Reads every Child 02 canonical collection and requires EVERY persisted
+ *    canonical row to pass its guard. A guard-failing or corrupt row ABORTS
+ *    the export with a redacted validation diagnostic (never silently
+ *    dropped, never a partial/omitted archive presented as complete).
  *  - Deterministic: explicit ascending sort per collection, exact 23-key
  *    counts, recomputable payload digest.
  *  - Secret-safe: scans structured fields AND decoded artifact bytes for
@@ -1123,12 +1142,16 @@ export async function exportWorkbenchArchiveV2(
   };
 
   try {
+    // Guard violations from read stages; a single validation StorageError is
+    // thrown after reads so exact store coverage is guaranteed.
+    const guardViolations: string[] = [];
     // --- runs ---
     emit("runs");
     throwIfAborted();
     const summaries: RunSummary[] = [];
     await db.runSummaries.orderBy("id").each((row) => {
       if (isRunSummary(row.summary)) summaries.push(row.summary);
+      else recordGuardFailure("runs.summaries", row.id, "runSummaries", guardViolations);
     });
     const details: RunRecordV2[] = [];
     await db.runDetails.orderBy("id").each((row) => {
@@ -1136,6 +1159,7 @@ export async function exportWorkbenchArchiveV2(
         repairRunRecordForCompatibility(row.record) ??
         (isRunRecordV2(row.record) ? row.record : null);
       if (compatible) details.push(compatible);
+      else recordGuardFailure("runs.details", row.id, "runDetails", guardViolations);
     });
     completeStage("runs");
 
@@ -1145,10 +1169,12 @@ export async function exportWorkbenchArchiveV2(
     const identities: RubricRecord[] = [];
     await db.profiles.orderBy("id").each((row) => {
       if (isRubricRecord(row.record)) identities.push(row.record);
+      else recordGuardFailure("rubrics.identities", row.id, "profiles", guardViolations);
     });
     const versions: EvaluationRubric[] = [];
     await db.profileVersions.orderBy("id").each((row) => {
       if (isEvaluationRubric(row.profile)) versions.push(row.profile);
+      else recordGuardFailure("rubrics.versions", row.id, "profileVersions", guardViolations);
     });
     completeStage("rubrics");
 
@@ -1158,6 +1184,7 @@ export async function exportWorkbenchArchiveV2(
     const suites: EvaluationSuite[] = [];
     await db.suites.orderBy("id").each((row) => {
       if (isEvaluationSuite(row.suite)) suites.push(row.suite);
+      else recordGuardFailure("suites", row.id, "suites", guardViolations);
     });
     completeStage("suites");
 
@@ -1167,6 +1194,7 @@ export async function exportWorkbenchArchiveV2(
     const experiments: ExperimentRecord[] = [];
     await db.experiments.orderBy("id").each((row) => {
       if (isExperimentRecord(row.experiment)) experiments.push(row.experiment);
+      else recordGuardFailure("experiments", row.id, "experiments", guardViolations);
     });
     completeStage("experiments");
 
@@ -1176,30 +1204,37 @@ export async function exportWorkbenchArchiveV2(
     const recipes: FusionRecipeVersion[] = [];
     await db.fusionRecipes.orderBy("id").each((row) => {
       if (isFusionRecipeVersion(row.recipe)) recipes.push(row.recipe);
+      else recordGuardFailure("fusion.recipes", row.id, "fusionRecipes", guardViolations);
     });
     const poolManifests: PoolManifestVersion[] = [];
     await db.poolManifests.orderBy("id").each((row) => {
       if (isPoolManifestVersion(row.manifest)) poolManifests.push(row.manifest);
+      else recordGuardFailure("fusion.poolManifests", row.id, "poolManifests", guardViolations);
     });
     const studies: FusionStudy[] = [];
     await db.fusionStudies.orderBy("id").each((row) => {
       if (isFusionStudy(row.study)) studies.push(row.study);
+      else recordGuardFailure("fusion.studies", row.id, "fusionStudies", guardViolations);
     });
     const trials: FusionTrial[] = [];
     await db.fusionTrials.orderBy("id").each((row) => {
       if (isFusionTrial(row.trial)) trials.push(row.trial);
+      else recordGuardFailure("fusion.trials", row.id, "fusionTrials", guardViolations);
     });
     const attempts: FusionAttempt[] = [];
     await db.fusionAttempts.orderBy("id").each((row) => {
       if (isFusionAttempt(row.attempt)) attempts.push(row.attempt);
+      else recordGuardFailure("fusion.attempts", row.id, "fusionAttempts", guardViolations);
     });
     const observations: EvaluationObservation[] = [];
     await db.fusionObservations.orderBy("id").each((row) => {
       if (isEvaluationObservation(row.observation)) observations.push(row.observation);
+      else recordGuardFailure("fusion.observations", row.id, "fusionObservations", guardViolations);
     });
     const playbooks: FusionPlaybook[] = [];
     await db.fusionPlaybooks.orderBy("id").each((row) => {
       if (isFusionPlaybook(row.playbook)) playbooks.push(row.playbook);
+      else recordGuardFailure("fusion.playbooks", row.id, "fusionPlaybooks", guardViolations);
     });
     completeStage("fusion");
 
@@ -1209,38 +1244,48 @@ export async function exportWorkbenchArchiveV2(
     const taskRecords: TaskRecord[] = [];
     await db.tasks.orderBy("id").each((row) => {
       if (isTaskRecord(row.record)) taskRecords.push(row.record);
+      else recordGuardFailure("tasks.tasks", row.id, "tasks", guardViolations);
     });
     const taskVersions: TaskVersion[] = [];
     await db.taskVersions.orderBy("taskId").each((row) => {
       if (isTaskVersion(row.version_)) taskVersions.push(row.version_);
+      else recordGuardFailure("tasks.taskVersions", `${row.taskId}@${row.version}`, "taskVersions", guardViolations);
     });
     const taskArtifacts: TaskArtifact[] = [];
     const artifactIdsValid = new Set<string>();
     await db.taskArtifacts.orderBy("id").each((row) => {
-      if (isTaskArtifact(row)) {
-        taskArtifacts.push(row);
-        artifactIdsValid.add(row.id);
+      const artifact: unknown = row;
+      if (isTaskArtifact(artifact)) {
+        taskArtifacts.push(artifact);
+        artifactIdsValid.add(artifact.id);
+      } else {
+        recordGuardFailure("tasks.taskArtifacts", (row as { id?: string }).id ?? "", "taskArtifacts", guardViolations);
       }
     });
     const taskInstances: TaskInstance[] = [];
     await db.taskInstances.orderBy("id").each((row) => {
       if (isTaskInstance(row.instance)) taskInstances.push(row.instance);
+      else recordGuardFailure("tasks.taskInstances", row.id, "taskInstances", guardViolations);
     });
     const taskFamilies: TaskFamily[] = [];
     await db.taskFamilies.orderBy("id").each((row) => {
       if (isTaskFamily(row.family)) taskFamilies.push(row.family);
+      else recordGuardFailure("tasks.taskFamilies", row.id, "taskFamilies", guardViolations);
     });
     const taskFamilyAssignments: TaskFamilyAssignment[] = [];
     await db.taskFamilyAssignments.orderBy("id").each((row) => {
       if (isTaskFamilyAssignment(row.assignment)) taskFamilyAssignments.push(row.assignment);
+      else recordGuardFailure("tasks.taskFamilyAssignments", row.id, "taskFamilyAssignments", guardViolations);
     });
     const taskFamilyRelations: TaskFamilyRelation[] = [];
     await db.taskFamilyRelations.orderBy("id").each((row) => {
       if (isExportableTaskFamilyRelation(row.relation)) taskFamilyRelations.push(row.relation);
+      else recordGuardFailure("tasks.taskFamilyRelations", row.id, "taskFamilyRelations", guardViolations);
     });
     const taskFacetAnnotations: TaskFacetAnnotation[] = [];
     await db.taskFacetAnnotations.orderBy("id").each((row) => {
       if (isTaskFacetAnnotation(row.annotation)) taskFacetAnnotations.push(row.annotation);
+      else recordGuardFailure("tasks.taskFacetAnnotations", row.id, "taskFacetAnnotations", guardViolations);
     });
     const taskRecordsById = new Map(taskRecords.map((t) => [t.id, t]));
     const taskMigrationCrosswalks: TaskMigrationCrosswalk[] = [];
@@ -1252,13 +1297,23 @@ export async function exportWorkbenchArchiveV2(
       };
       // Keep only crosswalks that reference a guard-passing canonical
       // task/version — a dangling crosswalk is a disposable index, not a
-      // canonical entity.
+      // canonical entity (its removal is a reference-integrity filter, not the
+      // silent dropping of a guard-failing row).
       const record = taskRecordsById.get(cw.taskId);
       if (record !== undefined && cw.taskVersion <= record.latestVersion) {
         taskMigrationCrosswalks.push(cw);
       }
     });
     completeStage("tasks");
+
+    // Exact store coverage: any persisted canononical row that fails its
+    // record guard blocks the whole export. Dexie `.each()` swallows a
+    // synchronous callback throw, so violations are collected during reads and
+    // converted to a single redacted validation StorageError here, before any
+    // artifact-bytes encoding. No archive is delivered.
+    if (guardViolations.length > 0) {
+      throw new StorageError("validation", guardViolations.join("; "));
+    }
 
     // --- artifact bytes (encoded alongside the canonical task payload) ---
     emit("artifact-bytes");
@@ -2317,6 +2372,22 @@ export async function commitPreviewWorkbenchArchiveV2(
   db.assertWritable();
   const archive = preview.payload as WorkbenchArchiveV2;
   const artifactBytesById = new Map(preview.artifactBytes.map((b) => [b.id, b.bytes]));
+  // Re-validate the COMPLETE payload immediately before the transaction. A
+  // valid v2 preview may be mutated after preview (stale/colliding/invalid
+  // classifications), so the commit re-runs the full envelope validation —
+  // manifest counts, payload digest (recomputed over the canonical payload),
+  // reference graph, prohibited content, and artifact bytes — exactly like
+  // `previewWorkbenchArchive`. The deep clone mirrors the serialization
+  // boundary (a real commit receives a JSON-decoded value) and means a
+  // mutation after preview can never be written under a stale digest.
+  const revalidated = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+  if (!revalidated.valid) {
+    const first = revalidated.errors[0];
+    throw new StorageError(
+      "validation",
+      `The archive changed after preview — nothing was imported. ${first ? `${first.field}: ${first.message}` : "validation failed"}`.trim(),
+    );
+  }
   // Re-hash the preview-materialized bytes exactly once at commit so the
   // bytes that hit the database are the bytes that passed preview validation.
   for (const artifact of archive.tasks.taskArtifacts) {
@@ -2381,6 +2452,224 @@ export async function commitPreviewWorkbenchArchiveV2(
       ],
       async () => {
         if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+        // --- F1: re-check every CREATE destination inside the transaction ---
+        // The preview's create/reuse classification is stale by the time the
+        // commit runs: a racing writer may have inserted (or replaced) a row
+        // under a key this commit plans to create. Before ANY put, re-read
+        // every destination key this commit will write and, if a row exists,
+        // canonically compare it to the incoming payload. An identical race is
+        // reused (no write); any non-identical race aborts the whole commit
+        // BEFORE a write — preserving the no-overwrite/no-partial-mutation
+        // contract. Reads inside the transaction see the committed state, so
+        // this closes the TOCTOU hole.
+        const canonical = (v: unknown) => canonicalJsonString(v);
+        const conflict = (collection: string, key: string) => {
+          throw new StorageError(
+            "conflict",
+            `Import aborted: ${collection}[${key}] was changed after the preview — colliding records were left unchanged.`,
+          );
+        };
+
+        // runs.details (paired summaries): reuse iff the stored detail+summary
+        // are identical to the incoming pair.
+        const fullById2 = new Map<string, FullRunSummaryV2>();
+        for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById2.set(s.id, s);
+        for (const record of archive.runs.details) {
+          if (!isCreated("runs.details", record.id)) continue;
+          const compatible =
+            repairRunRecordForCompatibility(record) ??
+            (isRunRecordV2(record) ? record : null);
+          if (compatible === null) continue;
+          const existingDetail = await db.runDetails.get(record.id);
+          const incomingSummary = fullById2.get(record.id);
+          if (existingDetail !== undefined) {
+            const existingCompatible =
+              repairRunRecordForCompatibility(existingDetail.record) ??
+              (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null);
+            const detailSame =
+              existingCompatible !== null && canonical(existingCompatible) === canonical(compatible);
+            const summarySame =
+              incomingSummary === undefined ||
+              ((await db.runSummaries.get(record.id))?.summary !== undefined &&
+                canonical((await db.runSummaries.get(record.id))!.summary) ===
+                  canonical(incomingSummary));
+            if (!detailSame || !summarySame) conflict("runs.details", record.id);
+          } else if (incomingSummary !== undefined) {
+            const existingSummary = await db.runSummaries.get(record.id);
+            if (
+              existingSummary !== undefined &&
+              canonical(existingSummary.summary) !== canonical(incomingSummary)
+            ) {
+              conflict("runs.summaries", record.id);
+            }
+          }
+        }
+        // Standalone (legacy) summaries.
+        for (const s of archive.runs.summaries) {
+          if (isFullRunSummaryV2(s)) continue;
+          if (!isLegacyRunSummary(s)) continue;
+          if (!isCreated("runs.summaries", s.id)) continue;
+          const existing = await db.runSummaries.get(s.id);
+          if (existing !== undefined && canonical(existing.summary) !== canonical(s)) {
+            conflict("runs.summaries", s.id);
+          }
+        }
+        // rubrics.identities / rubrics.versions.
+        for (const r of archive.rubrics.identities) {
+          if (!isCreated("rubrics.identities", r.id)) continue;
+          const existing = await db.profiles.get(r.id);
+          if (existing !== undefined && canonical(existing.record) !== canonical(r)) {
+            conflict("rubrics.identities", r.id);
+          }
+        }
+        for (const v of archive.rubrics.versions) {
+          const key = versionKey(v.id, v.version);
+          if (!isCreated("rubrics.versions", key)) continue;
+          const existing = await db.profileVersions.get([v.id, v.version]);
+          if (existing !== undefined && canonical(existing.profile) !== canonical(v)) {
+            conflict("rubrics.versions", key);
+          }
+        }
+        // suites.
+        for (const suite of archive.suites) {
+          if (!isCreated("suites", suite.id)) continue;
+          const existing = await db.suites.get(suite.id);
+          if (existing !== undefined && canonical(existing.suite) !== canonical(suite)) {
+            conflict("suites", suite.id);
+          }
+        }
+        // experiments.
+        for (const experiment of archive.experiments) {
+          if (!isCreated("experiments", experiment.id)) continue;
+          const existing = await db.experiments.get(experiment.id);
+          if (
+            existing !== undefined &&
+            canonical(existing.experiment) !== canonical(experiment)
+          ) {
+            conflict("experiments", experiment.id);
+          }
+        }
+        // fusion (seven stores).
+        for (const r of archive.fusion.recipes) {
+          const key = versionKey(r.id, r.version);
+          if (!isCreated("fusion.recipes", key)) continue;
+          const existing = await db.fusionRecipes.get([r.id, r.version]);
+          if (existing !== undefined && canonical(existing.recipe) !== canonical(r)) {
+            conflict("fusion.recipes", key);
+          }
+        }
+        for (const p of archive.fusion.poolManifests) {
+          const key = versionKey(p.id, p.version);
+          if (!isCreated("fusion.poolManifests", key)) continue;
+          const existing = await db.poolManifests.get([p.id, p.version]);
+          if (existing !== undefined && canonical(existing.manifest) !== canonical(p)) {
+            conflict("fusion.poolManifests", key);
+          }
+        }
+        for (const s of archive.fusion.studies) {
+          if (!isCreated("fusion.studies", s.id)) continue;
+          const existing = await db.fusionStudies.get(s.id);
+          if (existing !== undefined && canonical(existing.study) !== canonical(s)) {
+            conflict("fusion.studies", s.id);
+          }
+        }
+        for (const t of archive.fusion.trials) {
+          if (!isCreated("fusion.trials", t.id)) continue;
+          const existing = await db.fusionTrials.get(t.id);
+          if (existing !== undefined && canonical(existing.trial) !== canonical(t)) {
+            conflict("fusion.trials", t.id);
+          }
+        }
+        for (const a of archive.fusion.attempts) {
+          if (!isCreated("fusion.attempts", a.id)) continue;
+          const existing = await db.fusionAttempts.get(a.id);
+          if (existing !== undefined && canonical(existing.attempt) !== canonical(a)) {
+            conflict("fusion.attempts", a.id);
+          }
+        }
+        for (const o of archive.fusion.observations) {
+          if (!isCreated("fusion.observations", o.id)) continue;
+          const existing = await db.fusionObservations.get(o.id);
+          if (existing !== undefined && canonical(existing.observation) !== canonical(o)) {
+            conflict("fusion.observations", o.id);
+          }
+        }
+        for (const p of archive.fusion.playbooks) {
+          if (!isCreated("fusion.playbooks", p.id)) continue;
+          const existing = await db.fusionPlaybooks.get(p.id);
+          if (existing !== undefined && canonical(existing.playbook) !== canonical(p)) {
+            conflict("fusion.playbooks", p.id);
+          }
+        }
+        // tasks.
+        for (const t of archive.tasks.tasks) {
+          if (!isCreated("tasks.tasks", t.id)) continue;
+          const existing = await db.tasks.get(t.id);
+          if (existing !== undefined && canonical(existing.record) !== canonical(t)) {
+            conflict("tasks.tasks", t.id);
+          }
+        }
+        for (const v of archive.tasks.taskVersions) {
+          const key = versionKey(v.taskId, v.version);
+          if (!isCreated("tasks.taskVersions", key)) continue;
+          const existing = await db.taskVersions.get([v.taskId, v.version]);
+          if (existing !== undefined && canonical(existing.version_) !== canonical(v)) {
+            conflict("tasks.taskVersions", key);
+          }
+        }
+        for (const artifact of archive.tasks.taskArtifacts) {
+          if (!isCreated("tasks.taskArtifacts", artifact.id)) continue;
+          const existing = await db.taskArtifacts.get(artifact.id);
+          if (existing !== undefined && canonical(existing) !== canonical(artifact)) {
+            conflict("tasks.taskArtifacts", artifact.id);
+          }
+        }
+        for (const i of archive.tasks.taskInstances) {
+          if (!isCreated("tasks.taskInstances", i.id)) continue;
+          const existing = await db.taskInstances.get(i.id);
+          if (existing !== undefined && canonical(existing.instance) !== canonical(i)) {
+            conflict("tasks.taskInstances", i.id);
+          }
+        }
+        for (const f of archive.tasks.taskFamilies) {
+          if (!isCreated("tasks.taskFamilies", f.id)) continue;
+          const existing = await db.taskFamilies.get(f.id);
+          if (existing !== undefined && canonical(existing.family) !== canonical(f)) {
+            conflict("tasks.taskFamilies", f.id);
+          }
+        }
+        for (const a of archive.tasks.taskFamilyAssignments) {
+          if (!isCreated("tasks.taskFamilyAssignments", a.id)) continue;
+          const existing = await db.taskFamilyAssignments.get(a.id);
+          if (existing !== undefined && canonical(existing.assignment) !== canonical(a)) {
+            conflict("tasks.taskFamilyAssignments", a.id);
+          }
+        }
+        for (const r of archive.tasks.taskFamilyRelations) {
+          if (!isCreated("tasks.taskFamilyRelations", r.id)) continue;
+          const existing = await db.taskFamilyRelations.get(r.id);
+          if (existing !== undefined && canonical(existing.relation) !== canonical(r)) {
+            conflict("tasks.taskFamilyRelations", r.id);
+          }
+        }
+        for (const a of archive.tasks.taskFacetAnnotations) {
+          if (!isCreated("tasks.taskFacetAnnotations", a.id)) continue;
+          const existing = await db.taskFacetAnnotations.get(a.id);
+          if (existing !== undefined && canonical(existing.annotation) !== canonical(a)) {
+            conflict("tasks.taskFacetAnnotations", a.id);
+          }
+        }
+        for (const cw of archive.tasks.taskMigrationCrosswalks) {
+          if (!isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) continue;
+          const existing = await db.taskMigrationCrosswalk.get(cw.legacyScopeKey);
+          if (
+            existing !== undefined &&
+            (existing.taskId !== cw.taskId || existing.taskVersion !== cw.taskVersion)
+          ) {
+            conflict("tasks.taskMigrationCrosswalks", cw.legacyScopeKey);
+          }
+        }
 
         // --- runs.details (paired full summaries committed first) -------------
         for (const record of archive.runs.details) {

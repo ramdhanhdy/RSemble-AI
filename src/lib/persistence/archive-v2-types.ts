@@ -613,6 +613,12 @@ function validateReferenceGraph(
         message: `annotation references unknown task ${a.taskId}.`,
       });
     }
+    if (a.taskVersion !== null && !versionKeys.has(`${a.taskId}@${a.taskVersion}`)) {
+      errors.push({
+        field: `tasks.taskFacetAnnotations[${i}].taskVersion`,
+        message: `annotation references unknown task version ${a.taskId}@${a.taskVersion}.`,
+      });
+    }
     if (a.supersedesId !== null && !annotationIds.has(a.supersedesId)) {
       errors.push({
         field: `tasks.taskFacetAnnotations[${i}].supersedesId`,
@@ -632,6 +638,49 @@ function validateReferenceGraph(
 
   const studyIds = new Set(archive.fusion.studies.map((s) => s.id));
   const trialIds = new Set(archive.fusion.trials.map((t) => t.id));
+  const recipeVersionKeys = new Set(
+    archive.fusion.recipes.map((r) => `${r.id}@${r.version}`),
+  );
+  const poolVersionKeys = new Set(
+    archive.fusion.poolManifests.map((p) => `${p.id}@${p.version}`),
+  );
+  const observationIds = new Set(archive.fusion.observations.map((o) => o.id));
+  const playbookIds = new Set(archive.fusion.playbooks.map((p) => p.id));
+
+  const requireRecipeVersion = (ref: { id: string; version: number }, path: string) => {
+    if (!recipeVersionKeys.has(`${ref.id}@${ref.version}`)) {
+      errors.push({
+        field: path,
+        message: `reference references unknown recipe ${ref.id}@${ref.version}.`,
+      });
+    }
+  };
+  const requirePoolVersion = (ref: { id: string; version: number }, path: string) => {
+    if (!poolVersionKeys.has(`${ref.id}@${ref.version}`)) {
+      errors.push({
+        field: path,
+        message: `reference references unknown pool ${ref.id}@${ref.version}.`,
+      });
+    }
+  };
+  archive.fusion.studies.forEach((s, i) => {
+    if (s.poolRef) requirePoolVersion(s.poolRef, `fusion.studies[${i}].poolRef`);
+    s.recipeRefs.forEach((r, j) =>
+      requireRecipeVersion(r, `fusion.studies[${i}].recipeRefs[${j}]`),
+    );
+    if (s.playbookRef !== null && !playbookIds.has(s.playbookRef)) {
+      errors.push({
+        field: `fusion.studies[${i}].playbookRef`,
+        message: `study references unknown playbook ${s.playbookRef}.`,
+      });
+    }
+    if (s.confirmationOf !== null && !studyIds.has(s.confirmationOf)) {
+      errors.push({
+        field: `fusion.studies[${i}].confirmationOf`,
+        message: `study references unknown study ${s.confirmationOf}.`,
+      });
+    }
+  });
   archive.fusion.trials.forEach((t, i) => {
     if (!studyIds.has(t.studyId)) {
       errors.push({
@@ -639,12 +688,34 @@ function validateReferenceGraph(
         message: `trial references unknown study ${t.studyId}.`,
       });
     }
+    if (t.poolRef) requirePoolVersion(t.poolRef, `fusion.trials[${i}].poolRef`);
+    if (t.recipe !== null) requireRecipeVersion(t.recipe, `fusion.trials[${i}].recipe`);
+    t.observationIds.forEach((oid, j) => {
+      if (!observationIds.has(oid)) {
+        errors.push({
+          field: `fusion.trials[${i}].observationIds[${j}]`,
+          message: `trial references unknown observation ${oid}.`,
+        });
+      }
+    });
   });
   archive.fusion.attempts.forEach((a, i) => {
     if (!studyIds.has(a.studyId)) {
       errors.push({
         field: `fusion.attempts[${i}].studyId`,
         message: `attempt references unknown study ${a.studyId}.`,
+      });
+    }
+    if (!trialIds.has(a.fromTrialId)) {
+      errors.push({
+        field: `fusion.attempts[${i}].fromTrialId`,
+        message: `attempt fromTrialId references unknown trial ${a.fromTrialId}.`,
+      });
+    }
+    if (!trialIds.has(a.toTrialId)) {
+      errors.push({
+        field: `fusion.attempts[${i}].toTrialId`,
+        message: `attempt toTrialId references unknown trial ${a.toTrialId}.`,
       });
     }
   });
