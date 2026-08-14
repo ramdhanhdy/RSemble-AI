@@ -492,7 +492,7 @@ async function runBrowserMatrix() {
         "--disable-gpu",
         "--no-sandbox",
         `--remote-debugging-port=${CDP_PORT}`,
-        `--user-data-dir=${join(os.tmpdir(), `rsemble-tasks-qa-${Date.now()}`)}`,
+        `--user-data-dir=${join(SCRATCH_DIR, `chrome-${Date.now()}`)}`,
         "--no-first-run",
         "--no-default-browser-check",
         "about:blank",
@@ -1896,15 +1896,23 @@ async function runBrowserMatrix() {
 
     // --- Migration / load-error state (spec: empty/archived/migration-error) ---
     // Deterministically trigger the bounded canonical-Task migration-error
-    // path: seed a legacy suite + experiment (so startup migration has one
-    // complete scope to process), plus a pre-existing Task + version for that
-    // scope whose `source.legacyScopeKey` is inconsistent. On reload the
-    // migration's version-history consistency check throws
-    // StorageError("validation"), which `createDatabase` bounds to
-    // `taskMigrationError` — `taskRepo` stays null and the catalog must
-    // surface the explicit `data-task-error-state` (alert role, Retry action,
-    // "storage is unavailable") rather than recovering or going blank.
-    await evaluate(String.raw`
+    // path. Two phases:
+    //   1. Seed a legacy suite + experiment, reload → migration creates the
+    //      canonical legacy Task + version for scope (suite-err, t1).
+    //   2. Corrupt that version's source.legacyScopeKey, delete the migration
+    //      marker, reload → migration's consistency check throws
+    //      StorageError("validation") → taskMigrationError → taskRepo = null
+    //      → catalog must surface data-task-error-state (alert role, Retry,
+    //      "storage is unavailable") rather than recovering or going blank.
+
+    // --- Phase 1: seed legacy suite + experiment ---
+    await send("Page.navigate", { url: BROWSER_BASE });
+    await waitFor(
+      "Boolean(document.querySelector('main, [role=main], #root > *'))",
+      "shell before seed",
+    );
+    await waitFor("Boolean(window.indexedDB)", "indexedDB");
+    const SEED_LEGACY = String.raw`
 (async () => {
   const DB = "rsemble-evaluation";
   const openDb = () => new Promise((resolve, reject) => {
@@ -1920,9 +1928,6 @@ async function runBrowserMatrix() {
   });
   const db = await openDb();
   const NOW = 1700000000000;
-
-  // Legacy suite + experiment giving migration one complete scope:
-  // (suiteId="suite-err", taskId="t1").
   const legacyTask = {
     id: "t1", title: "Error probe", prompt: "Summarize.",
     systemPrompt: "Bullets.", evaluation: { kind: "inherit" },
@@ -1954,41 +1959,104 @@ async function runBrowserMatrix() {
     suiteVersion: experiment.suiteVersion, protocolFingerprint: experiment.protocolFingerprint,
     createdAt: NOW, status: experiment.status,
   });
-
-  // Compute taskIdForScope("suite-err::t1") exactly as the product does:
-  //   legacy-task-${sha256Hex(scopeKey).slice(0, 23)}
-  const scopeKey = "suite-err::t1";
-  const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(scopeKey));
-  const hashHex = [...new Uint8Array(hashBuf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  const taskId = "legacy-task-" + hashHex.slice(0, 23);
-
-  // Pre-seed a Task + version for that scope with an INCONSISTENT
-  // source.legacyScopeKey so the migration's consistency check throws.
-  await put(db, "tasks", {
-    id: taskId, record: {
-      id: taskId, latestVersion: 1, createdAt: NOW, updatedAt: NOW,
-      archivedAt: null, origin: "legacy-task-set", revision: 0,
-    },
-    latestVersion: 1, createdAt: NOW, updatedAt: NOW, archivedAt: null,
-    origin: "legacy-task-set", revision: 0,
-  });
-  await put(db, "taskVersions", {
-    taskId, version: 1, createdAt: NOW,
-    version_: {
-      taskId, version: 1, title: "Error probe", objective: "",
-      candidateInstruction: "", defaultContextManifest: [],
-      responseContract: null, taskVerifierRef: null,
-      source: {
-        kind: "legacy-task-set",
-        legacyScopeKey: "CORRUPTED-SCOPE",
-        note: "legacy-definition:corrupted",
-      },
-    },
-  });
-
   db.close();
-  return { taskId, ok: true };
-})().catch((e) => ({ __seedError: (e && (e.name ? e.name + ": " : "") + (e.message || String(e))) }))`);
+  return true;
+})().catch((e) => ({ __seedError: (e && (e.name ? e.name + ": " : "") + (e.message || String(e))) }))`;
+    let seededLegacy = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      seededLegacy = await evaluate(SEED_LEGACY);
+      if (!seededLegacy?.__seedError) break;
+      if (attempt < 2) {
+        await wait(300);
+        await send("Page.navigate", { url: BROWSER_BASE });
+        await waitFor("Boolean(window.indexedDB)", "indexedDB");
+      }
+    }
+    if (seededLegacy?.__seedError)
+      throw new Error(`Legacy seed failed: ${seededLegacy.__seedError}`);
+    // Reload so startup migration consumes the legacy suite and creates the
+    // canonical Task + version for scope (suite-err, t1).
+    await send("Page.navigate", { url: BROWSER_BASE });
+    await waitFor(
+      "Boolean(document.querySelector('main, [role=main], #root > *'))",
+      "shell after migration reload",
+    );
+    await wait(800);
+    await send("Page.navigate", { url: `${BROWSER_BASE}#/tasks` });
+    await waitFor(
+      "Boolean(document.querySelector('a[data-task-row]')) || Boolean(document.querySelector('[data-task-empty]')) || Boolean(document.querySelector('[data-task-error-state]'))",
+      "catalog settled after migration",
+      120,
+    );
+    await wait(300);
+
+    // --- Phase 2: corrupt the migrated Task version ---
+    await send("Page.navigate", { url: BROWSER_BASE });
+    await waitFor("Boolean(window.indexedDB)", "indexedDB");
+    const CORRUPT = String.raw`
+(async () => {
+  const DB = "rsemble-evaluation";
+  const openDb = () => new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("open blocked"));
+  });
+  const db = await openDb();
+  const tasks = await new Promise((resolve, reject) => {
+    const r = db.transaction("tasks", "readonly").objectStore("tasks").getAll();
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+  const legacy = tasks.find((t) => t.origin === "legacy-task-set");
+  if (!legacy) throw new Error("no legacy task found to corrupt");
+  const versions = await new Promise((resolve, reject) => {
+    const idx = db.transaction("taskVersions", "readonly").objectStore("taskVersions").index("taskId");
+    const r = idx.getAll(legacy.id);
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+  if (versions.length === 0) throw new Error("no versions for legacy task");
+  for (const v of versions) {
+    const corrupted = { ...v };
+    corrupted.version_ = { ...v.version_ };
+    corrupted.version_.source = { ...v.version_.source, legacyScopeKey: "CORRUPTED-SCOPE" };
+    await new Promise((resolve, reject) => {
+      const r = db.transaction("taskVersions", "readwrite").objectStore("taskVersions").put(corrupted);
+      r.onsuccess = () => resolve();
+      r.onerror = () => reject(r.error);
+    });
+  }
+  await new Promise((resolve, reject) => {
+    const r = db.transaction("storageMeta", "readwrite").objectStore("storageMeta").delete("canonical-task-migration:v1");
+    r.onsuccess = () => resolve();
+    r.onerror = () => reject(r.error);
+  });
+  db.close();
+  return { corrupted: versions.length, taskId: legacy.id };
+})().catch((e) => ({ __corruptError: (e && (e.name ? e.name + ": " : "") + (e.message || String(e))) }))`;
+    let corrupted = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      corrupted = await evaluate(CORRUPT);
+      if (!corrupted?.__corruptError) break;
+      if (attempt < 2) {
+        await wait(300);
+        await send("Page.navigate", { url: BROWSER_BASE });
+        await waitFor("Boolean(window.indexedDB)", "indexedDB");
+      }
+    }
+    if (corrupted?.__corruptError)
+      throw new Error(`Corrupt failed: ${corrupted.__corruptError}`);
+    // Reload: migration re-runs, finds the inconsistent version, throws
+    // StorageError("validation") → taskMigrationError → taskRepo = null →
+    // the catalog must surface data-task-error-state (alert role, Retry,
+    // "storage is unavailable") rather than recovering or going blank.
+    await send("Page.navigate", { url: BROWSER_BASE });
+    await waitFor(
+      "Boolean(document.querySelector('main, [role=main], #root > *'))",
+      "shell after error reload",
+    );
+    await wait(800);
     await send("Page.navigate", { url: `${BROWSER_BASE}#/tasks` });
     await waitFor(
       "Boolean(document.querySelector('[data-task-error-state]'))",
