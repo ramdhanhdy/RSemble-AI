@@ -1416,6 +1416,35 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
     expect(a.suites.map((s) => s.id)).toEqual(["suite-1", "suite-a", "suite-b"]);
   });
 
+  it("its versioned collections sort unambiguously under prefix IDs and the emitted archive self-validates (F5)", async () => {
+    // Seed task versions under prefix IDs "a" and "a0" whose composite sort
+    // key must separate id from version. A naive `id + paddedVersion`
+    // concatenation conflates the two (naive sorts a-v1 after a0-v1 because
+    // "a0..." < "a..."), so the exporter and validator must share a NUL-
+    // separated composite key and the delivered envelope must clear
+    // `validateArchiveV2` (self-validation determinism).
+    const base = fx.makeTaskRecord("a0");
+    await db.tasks.put(fx.taskRecordRow({ ...base, id: "a", latestVersion: 1 }));
+    await db.tasks.put(fx.taskRecordRow({ ...base }));
+    const v = fx.makeTaskVersion("_", 1, "art-1");
+    await db.taskVersions.put(
+      fx.taskVersionRow({ ...v, taskId: "a0", version: 1, defaultContextManifest: [] }),
+    );
+    await db.taskVersions.put(
+      fx.taskVersionRow({ ...v, taskId: "a", version: 1, defaultContextManifest: [] }),
+    );
+
+    const archive = await exportWorkbenchArchiveV2(db);
+    // Tasks: plain id sort ("a" before "a0").
+    expect(archive.tasks.tasks.map((t) => t.id)).toEqual(["a", "a0"]);
+    // Versions: composite NUL-separated sort → "a@1" before "a0@1".
+    expect(archive.tasks.taskVersions.map((t) => t.taskId)).toEqual(["a", "a0"]);
+    // The delivered envelope self-validates.
+    const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+    expect(check.errors).toEqual([]);
+    expect(check.valid).toBe(true);
+  });
+
   it("omits disposable storage metadata and never reads storageMeta", async () => {
     await seedCompleteCorpus();
     const envelope = JSON.stringify(await exportWorkbenchArchiveV2(db));
@@ -1425,7 +1454,7 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
     expect(JSON.parse(envelope)).not.toHaveProperty("storageMeta");
   });
 
-  it("excludes guard-failing rows but keeps every guard-passing canonical entity", async () => {
+  it("aborts the export with redacted validation diagnostics when a guard-failing row is persisted, delivering no archive (F3)", async () => {
     await db.taskFamilies.put(fx.taskFamilyRow(fx.makeTaskFamily("fam-good")));
     const corrupt = fx.makeTaskFamily("fam-bad") as unknown as Record<string, unknown>;
     corrupt.apiKey = "smuggled-credential-value";
@@ -1438,9 +1467,15 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
       revision: 1,
     });
 
-    const archive = await exportWorkbenchArchiveV2(db);
-    expect(archive.tasks.taskFamilies.map((f) => f.id)).toEqual(["fam-good"]);
-    expect(validateArchiveV2(JSON.parse(JSON.stringify(archive))).valid).toBe(true);
+    // A guard-failing/corrupt persisted row must ABORT the export (exact store
+    // coverage + unsafe-content-aborts) instead of being silently filtered out
+    // and the trimmed result presented as a complete archive.
+    await expect(exportWorkbenchArchiveV2(db)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    // Nothing was delivered; the diagnostic names the entity/collection but
+    // never echoes the secret-shaped value.
   });
 });
 
@@ -1969,6 +2004,59 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     });
     expect(await db.runDetails.count()).toBe(0);
     expect(await db.taskArtifacts.count()).toBe(0);
+  });
+
+  it("a preview-to-commit race inserting a non-identical same-key row aborts inside the transaction and never overwrites (F1)", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    // Preview against an EMPTY DB → suites.suite-1 is classified as create.
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.create.some((c) => c.collection === "suites" && c.key === "suite-1")).toBe(
+      true,
+    );
+    expect(preview.collisions).toEqual([]);
+
+    // RACE: a different-content suite with the same ID lands AFTER the preview
+    // but BEFORE the commit. The commit MUST re-read the destination row and
+    // abort (no-overwrite contract) rather than blindly put() over it.
+    await db.suites.put(fx.suiteRow({ ...fx.makeSuite("suite-1"), name: "raced different suite" }));
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    // The raced row is never overwritten.
+    expect((await db.suites.get("suite-1"))?.suite).toEqual({
+      ...fx.makeSuite("suite-1"),
+      name: "raced different suite",
+    });
+    // No unrelated write leaked from the aborted commit.
+    expect(await db.tasks.count()).toBe(0);
+    expect(await db.runDetails.count()).toBe(0);
+  });
+
+  it("mutating preview.payload after preview aborts the commit with zero writes and a validation StorageError (F2)", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+
+    // An external caller mutates a previewed payload record after validation.
+    // The commit must re-validate the complete payload (digest + guards) so a
+    // stale/mutated payload is never written.
+    (preview.payload as WorkbenchArchiveV2).suites[0] = {
+      ...fx.makeSuite("suite-1"),
+      name: "mutated after preview",
+    };
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    // Zero writes across the whole corpus.
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.taskMigrationCrosswalk.count()).toBe(0);
   });
 });
 

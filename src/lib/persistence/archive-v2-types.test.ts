@@ -234,6 +234,86 @@ describe("archive v2 missing references", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => /unknown artifact/i.test(e.message))).toBe(true);
   });
+
+  it("rejects a facet annotation with a non-null taskVersion pointing at an unknown task version", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.tasks.taskFacetAnnotations[0].taskVersion = 99;
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown task version/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a fusion attempt pointing at an unknown fromTrialId", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.attempts[0].fromTrialId = "no-such-trial";
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /fromTrialId.*unknown trial/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a fusion attempt pointing at an unknown toTrialId", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.attempts[0].toTrialId = "no-such-trial";
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /toTrialId.*unknown trial/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a study recipe ref pointing at an unknown recipe version", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.studies[0].recipeRefs = [{ id: "no-such-recipe", version: 1 }];
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown recipe/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a study pool ref pointing at an unknown pool manifest version", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.studies[0].poolRef = { id: "no-such-pool", version: 1 };
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown pool/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a trial recipe ref pointing at an unknown recipe version", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.trials[0].recipe = { id: "no-such-recipe", version: 1 };
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown recipe/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a trial pool ref pointing at an unknown pool manifest version", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.trials[0].poolRef = { id: "no-such-pool", version: 1 };
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown pool/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a study playbookRef pointing at an unknown playbook", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.studies[0].playbookRef = "no-such-playbook";
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown playbook/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a study confirmationOf pointing at an unknown study", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.studies[0].confirmationOf = "no-such-study";
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown study/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a trial observationIds entry pointing at an unknown observation", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.fusion.trials[0].observationIds = ["no-such-observation"];
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown observation/i.test(e.message))).toBe(true);
+  });
 });
 
 // --- Missing artifacts / bytes ----------------------------------------------
