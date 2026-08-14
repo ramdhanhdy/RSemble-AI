@@ -12,12 +12,12 @@
 // from the command palette, absent from primary navigation.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertCircle, Plus, Search } from "lucide-react";
 import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
-import { useEvaluationRepository } from "../../lib/persistence/repository-context";
+import { RepositoryContext, useEvaluationRepository } from "../../lib/persistence/repository-context";
 
 import type { TaskFacetAnnotation, TaskFamily, TaskRecord } from "../../lib/tasks/task-types";
 import { TASK_FACET_DIMENSIONS, getFacetTaxonomyValues } from "../../lib/tasks/task-validation";
@@ -75,6 +75,10 @@ interface FamilyOption {
 
 export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
   const evalRepo = useEvaluationRepository();
+  // DB-level retry (re-initializes storage) for the bounded migration-error
+  // state where `repo === null` — the catalog-level retry only re-queries,
+  // which is a no-op when the repository was never published.
+  const { retry: retryStorage } = useContext(RepositoryContext);
 
   const [search, setSearch] = useState("");
   const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
@@ -373,11 +377,20 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
               : `Failed to load tasks (${errorKind}).`}
           </p>
           <p className="text-sm text-text-secondary">{errorMessage}</p>
-          {repo !== null && (
+          {repo !== null ? (
             <button
               type="button"
               data-action="retry"
               onClick={retry}
+              className="min-h-[44px] min-w-[44px] rounded-md border border-edge bg-card px-4 text-sm text-text transition-colors hover:bg-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              Retry
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-action="retry"
+              onClick={retryStorage}
               className="min-h-[44px] min-w-[44px] rounded-md border border-edge bg-card px-4 text-sm text-text transition-colors hover:bg-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Retry
