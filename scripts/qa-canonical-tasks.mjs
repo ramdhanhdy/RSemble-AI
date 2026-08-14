@@ -377,7 +377,6 @@ function runClosureGate() {
 
 import fs from "node:fs";
 import http from "node:http";
-import os from "node:os";
 
 const BROWSER_PORT = 5183;
 const BROWSER_BASE = `http://127.0.0.1:${BROWSER_PORT}/`;
