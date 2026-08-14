@@ -117,6 +117,9 @@ const PROFILES_TOKEN_FILES: Record<string, true> = {
   // (spec §4) and the route tests that exercise them.
   "app-router.tsx": true,
   "app-router.test.tsx": true,
+  // Child 02 archive test corpus asserting the frozen v1 archive/import
+  // envelope `profiles` payload field (same frozen surface as archive.ts).
+  "lib/persistence/archive.test.ts": true,
 };
 
 /**

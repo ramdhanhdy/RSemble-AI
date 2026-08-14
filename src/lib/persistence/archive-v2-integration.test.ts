@@ -29,7 +29,11 @@ import {
   importWorkbenchArchiveAuto,
   previewWorkbenchArchive,
 } from "./archive";
-import { computeArchiveV2PayloadDigest, validateArchiveV2, type WorkbenchArchiveV2  } from "./archive-v2-types";
+import {
+  computeArchiveV2PayloadDigest,
+  validateArchiveV2,
+  type WorkbenchArchiveV2,
+} from "./archive-v2-types";
 import * as fx from "./archive-v2-fixtures";
 import {
   canonicalTaskMigrationMarkerKey,
@@ -272,8 +276,9 @@ describe("archive v2 integration — repeated seeded legacy startup/reload", () 
 
   it("unresolved legacy definitions stay explicit and are preserved across repeated startup", async () => {
     const db = await freshDb("legacy-unresolved");
-    // A profile-kind evaluation cannot reconstruct an executable definition;
-    // migration must leave it unresolved rather than fabricate content.
+    // A rubric-score-kind evaluation cannot reconstruct an executable
+    // definition; migration must leave it unresolved rather than fabricate
+    // content.
     const incomplete = {
       id: "broken",
       title: "Broken",
