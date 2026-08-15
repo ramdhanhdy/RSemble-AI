@@ -46,10 +46,6 @@ import {
   validateTaskSetVersion,
   validateTaskSetVersionRefs,
   type JudgeSnapshot,
-  type MissingnessPolicy,
-  type ProtocolDefaults,
-  type RepeatPolicy,
-  type TaskExecutionOverrides,
   type TaskSetMember,
   type TaskSetMemberRole,
   type TaskSetOrigin,
@@ -315,7 +311,7 @@ describe("isTaskSetMember", () => {
       false,
     );
     expect(isTaskSetMember(makeMember({ stratum: 5 as unknown as string }))).toBe(false);
-    expect(isTaskSetMember(makeMember({ apiKey: "x" }))).toBe(false);
+    expect(isTaskSetMember(makeMember({ apiKey: "x" } as unknown as Partial<TaskSetMember>))).toBe(false);
   });
 });
 
@@ -334,15 +330,29 @@ describe("isTaskSetVersion (immutable)", () => {
     expect(isTaskSetVersion(makeVersion({ members: [] }))).toBe(false);
     expect(isTaskSetVersion(makeVersion({ taskSetId: "bad id!" }))).toBe(false);
     expect(isTaskSetVersion(makeVersion({ version: 0 }))).toBe(false);
-    expect(isTaskSetVersion(makeVersion({ defaultJudge: { providerId: "openrouter" } }))).toBe(
-      false,
-    );
-    expect(isTaskSetVersion(makeVersion({ defaultModelSlots: "x" }))).toBe(false);
-    expect(isTaskSetVersion(makeVersion({ repeatPolicy: { kind: "always" } }))).toBe(false);
-    expect(isTaskSetVersion(makeVersion({ missingnessPolicy: { kind: "skip" } }))).toBe(false);
-    expect(isTaskSetVersion(makeVersion({ protocolDefaults: { reasoningPolicy: {} } }))).toBe(
-      false,
-    );
+    expect(
+      isTaskSetVersion(
+        makeVersion({ defaultJudge: { providerId: "openrouter" } } as unknown as Partial<TaskSetVersion>),
+      ),
+    ).toBe(false);
+    expect(
+      isTaskSetVersion(makeVersion({ defaultModelSlots: "x" } as unknown as Partial<TaskSetVersion>)),
+    ).toBe(false);
+    expect(
+      isTaskSetVersion(makeVersion({ repeatPolicy: { kind: "always" } } as unknown as Partial<TaskSetVersion>)),
+    ).toBe(false);
+    expect(
+      isTaskSetVersion(
+        makeVersion({ missingnessPolicy: { kind: "skip" } } as unknown as Partial<TaskSetVersion>),
+      ),
+    ).toBe(false);
+    expect(
+      isTaskSetVersion(
+        makeVersion(
+          { protocolDefaults: { reasoningPolicy: {} } } as unknown as Partial<TaskSetVersion>,
+        ),
+      ),
+    ).toBe(false);
     expect(isTaskSetVersion(makeVersion({ defaultRubricRef: { id: "x", version: 0 } }))).toBe(
       false,
     );
@@ -433,7 +443,7 @@ describe("validateTaskSetVersion", () => {
           makeMember({ id: "m1", order: 0 }),
         ],
         defaultRubricRef: { id: "x", version: 0 },
-        defaultJudge: { providerId: "openrouter" },
+        defaultJudge: { providerId: "openrouter" } as unknown as JudgeSnapshot,
       }),
     );
     expect(out.valid).toBe(false);
