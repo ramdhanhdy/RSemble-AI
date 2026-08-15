@@ -10,7 +10,7 @@
 // + claim levels, unresolved owners, partial migration + repeat startup, and
 // unresolved child-02 crosswalk.
 //
-// Source evidence (suites, experiments, profiles/profileVersions, child-02
+// Source evidence (suites, experiments, Rubric records/versions, child-02
 // Task stores, every Fusion collection) is never mutated by the migration.
 // =============================================================================
 
@@ -444,7 +444,7 @@ async function seedFusionFull(
 
 async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
   const [
-    suites, experiments, profiles, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
+    suites, experiments, rubrics, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
     fusionRecipes, poolManifests, fusionStudies, fusionTrials, fusionAttempts, fusionObservations, fusionPlaybooks,
   ] = await Promise.all([
     db.suites.toArray(), db.experiments.toArray(), db.profiles.toArray(), db.profileVersions.toArray(),
@@ -453,7 +453,7 @@ async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
     db.fusionTrials.toArray(), db.fusionAttempts.toArray(), db.fusionObservations.toArray(), db.fusionPlaybooks.toArray(),
   ]);
   return canonicalJsonString({
-    suites, experiments, profiles, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
+    suites, experiments, rubrics, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
     fusionRecipes, poolManifests, fusionStudies, fusionTrials, fusionAttempts, fusionObservations, fusionPlaybooks,
   });
 }
@@ -615,9 +615,9 @@ describe("migrateSuitesToTaskSets", () => {
     expect(await snapshotAllSources(db)).toBe(before);
   });
 
-  // --- legacy-rubric-profile-refs -------------------------------------------
+  // --- legacy-rubric-refs ---------------------------------------------------
 
-  it("legacy-rubric-profile-refs: exact refs and embedded Rubric meaning preserved; missing exact Rubric is unresolved and blocks execution", async () => {
+  it("legacy-rubric-refs: exact refs and embedded Rubric meaning preserved; missing exact Rubric is unresolved and blocks execution", async () => {
     const db = await makeDb();
     const r1 = rubric({ id: "rubric-1", version: 1 });
     const r2 = rubric({ id: "rubric-2", version: 1, name: "Other" });

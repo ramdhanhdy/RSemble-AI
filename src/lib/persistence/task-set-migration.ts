@@ -7,7 +7,7 @@
 // crosswalks. Spec §8.1/§8.2, §10; implementation plan Task 4.
 //
 // Hard rules (spec §8, implementation plan STOP conditions):
-//  - Source evidence is read-only. Suites, experiments, profiles/profileVersions,
+//  - Source evidence is read-only. Suites, experiments, Rubric records/versions,
 //    child-02 Task stores, and every Fusion collection are never included in a
 //    write transaction; their persisted payloads are byte/semantic unchanged.
 //  - One Task Set per Suite (taskSetId = suiteId); one Task Set Version only
@@ -211,7 +211,7 @@ function collectReferencedRubricRefs(view: {
 
 function resolveRubrics(
   refs: Array<{ id: string; version: number }>,
-  profileVersionMap: Map<string, EvaluationRubric>,
+  rubricVersionMap: Map<string, EvaluationRubric>,
   embedded: EvaluationRubric[],
 ): EvaluationRubric[] {
   const byKey = new Map<string, EvaluationRubric>();
@@ -219,7 +219,7 @@ function resolveRubrics(
   const out: EvaluationRubric[] = [];
   for (const ref of refs) {
     const key = `${ref.id}::v${ref.version}`;
-    const resolved = byKey.get(key) ?? profileVersionMap.get(key);
+    const resolved = byKey.get(key) ?? rubricVersionMap.get(key);
     if (resolved) out.push(resolved);
   }
   out.sort((a, b) => (a.id !== b.id ? compareOrdinal(a.id, b.id) : a.version - b.version));
@@ -347,10 +347,10 @@ function isExperimentRecord(v: unknown): v is ExperimentRecord {
 
 function buildViewFromSuite(
   suite: EvaluationSuite,
-  profileVersionMap: Map<string, EvaluationRubric>,
+  rubricVersionMap: Map<string, EvaluationRubric>,
 ): LegacyWorkloadView {
   const refs = collectReferencedRubricRefs(suite);
-  const rubrics = resolveRubrics(refs, profileVersionMap, []);
+  const rubrics = resolveRubrics(refs, rubricVersionMap, []);
   return {
     suiteId: suite.id,
     suiteVersion: suite.version,
@@ -496,7 +496,7 @@ async function buildPlan(
   db: RSembleEvaluationDB,
   crosswalkMap: Map<string, { taskId: string; taskVersion: number }>,
   taskVersionSet: Set<string>,
-  profileVersionMap: Map<string, EvaluationRubric>,
+  rubricVersionMap: Map<string, EvaluationRubric>,
 ): Promise<MigrationPlan> {
   const [suiteRows, experimentRows, fusionStudyRows, fusionTrialRows, fusionPlaybookRows] = await Promise.all([
     db.suites.toArray(),
@@ -549,7 +549,7 @@ async function buildPlan(
       });
     }
     // Current suite (latest, possibly unexecuted) — ordered after history.
-    const currentView = buildViewFromSuite(suite, profileVersionMap);
+    const currentView = buildViewFromSuite(suite, rubricVersionMap);
     const { members: currentMembers, unresolvedMemberIds: currentUnresolved } = resolveMembers(
       currentView,
       crosswalkMap,
@@ -911,7 +911,7 @@ async function writeFusionOwners(
 
 async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
   const [
-    suites, experiments, profiles, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
+    suites, experiments, rubrics, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
     fusionRecipes, poolManifests, fusionStudies, fusionTrials, fusionAttempts, fusionObservations, fusionPlaybooks,
   ] = await Promise.all([
     db.suites.toArray(), db.experiments.toArray(), db.profiles.toArray(), db.profileVersions.toArray(),
@@ -920,7 +920,7 @@ async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
     db.fusionTrials.toArray(), db.fusionAttempts.toArray(), db.fusionObservations.toArray(), db.fusionPlaybooks.toArray(),
   ]);
   return canonicalJsonString({
-    suites, experiments, profiles, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
+    suites, experiments, rubrics, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
     fusionRecipes, poolManifests, fusionStudies, fusionTrials, fusionAttempts, fusionObservations, fusionPlaybooks,
   });
 }
@@ -1004,7 +1004,7 @@ export async function migrateSuitesToTaskSets(db: RSembleEvaluationDB): Promise<
     const beforeSnapshot = await snapshotAllSources(db);
 
     // Read-only authority catalogs.
-    const [crosswalkRows, taskVersionRows, profileVersionRows] = await Promise.all([
+    const [crosswalkRows, taskVersionRows, rubricVersionRows] = await Promise.all([
       db.taskMigrationCrosswalk.toArray(),
       db.taskVersions.toArray(),
       db.profileVersions.toArray(),
@@ -1013,18 +1013,18 @@ export async function migrateSuitesToTaskSets(db: RSembleEvaluationDB): Promise<
     for (const r of crosswalkRows) crosswalkMap.set(r.legacyScopeKey, { taskId: r.taskId, taskVersion: r.taskVersion });
     const taskVersionSet = new Set<string>();
     for (const r of taskVersionRows) taskVersionSet.add(`${r.taskId}::v${r.version}`);
-    const profileVersionMap = new Map<string, EvaluationRubric>();
-    for (const r of profileVersionRows) {
-      const profile = r.profile;
-      if (profile && typeof profile === "object" && "id" in profile && "version" in profile) {
-        profileVersionMap.set(
-          `${(profile as { id: string }).id}::v${(profile as { version: number }).version}`,
-          profile as EvaluationRubric,
+    const rubricVersionMap = new Map<string, EvaluationRubric>();
+    for (const r of rubricVersionRows) {
+      const rubric = r.profile;
+      if (rubric && typeof rubric === "object" && "id" in rubric && "version" in rubric) {
+        rubricVersionMap.set(
+          `${(rubric as { id: string }).id}::v${(rubric as { version: number }).version}`,
+          rubric as EvaluationRubric,
         );
       }
     }
 
-    const plan = await buildPlan(db, crosswalkMap, taskVersionSet, profileVersionMap);
+    const plan = await buildPlan(db, crosswalkMap, taskVersionSet, rubricVersionMap);
 
     const counts = { createdVersions: 0, crosswalksWritten: 0 };
     for (const sp of plan.suitePlans) {

@@ -130,7 +130,7 @@ export function AppRoutes({
         <Route index element={<EvaluationsIndexRedirect />} />
 
         {/* Canonical Task Set routes (task-sets spec §4). Static `sets` ranks
-            above reserved rubric/profile segments and the leftover dynamic
+            above reserved rubric/profiles segments and the leftover dynamic
             :suiteId compatibility routes. */}
         <Route path="sets" element={withSuspense(<TaskSetListRoute />)} />
         <Route path="sets/new" element={withSuspense(<TaskSetNewRoute />)} />
