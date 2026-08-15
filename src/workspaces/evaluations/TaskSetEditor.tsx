@@ -186,13 +186,14 @@ export function TaskSetEditor({
   }, [load]);
 
   // Load canonical task metadata when draft.tasks change
+  const draftTasks = draft?.tasks;
   useEffect(() => {
-    if (!taskRepo || !draft) return;
+    if (!taskRepo || !draftTasks) return;
     let cancelled = false;
 
     const taskIds = Array.from(
       new Set(
-        draft.tasks.map((t) => {
+        draftTasks.map((t) => {
           const tData = t as TaskSetMemberData;
           return tData.taskVersionRef?.taskId || t.id;
         }),
@@ -204,7 +205,7 @@ export function TaskSetEditor({
       return;
     }
 
-    Promise.all(
+    void Promise.all(
       taskIds.map(async (taskId) => {
         try {
           const [rec, vers] = await Promise.all([
@@ -225,7 +226,7 @@ export function TaskSetEditor({
     return () => {
       cancelled = true;
     };
-  }, [taskRepo, draft?.tasks]);
+  }, [taskRepo, draftTasks]);
 
   // Latest experiment for the header "Latest results" entry
   useEffect(() => {
@@ -1299,6 +1300,10 @@ function friendlyStorageError(err: StorageError): string {
       return `Validation failed: ${err.message}`;
     case "blocked":
       return "Storage is blocked. Close other tabs using this workspace and try again.";
+    case "versionchange":
+      return "Close other RSemble tabs to finish the storage upgrade, then retry.";
+    case "unavailable":
+      return "Storage is unavailable — retry; your existing data was not modified.";
     case "quota":
       return "Storage quota exceeded. Free up disk space to save.";
     default:
