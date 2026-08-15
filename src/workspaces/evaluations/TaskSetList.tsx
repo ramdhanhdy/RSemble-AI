@@ -1,12 +1,12 @@
 // =============================================================================
-// SuiteList — the evaluation-suite index (spec §10.1).
+// TaskSetList — the Task Set index (task-sets spec §4, plan Task 5).
 //
-// Lists saved suites with name, version, task count, model count, and latest
-// experiment status. Rows route to /evaluations/:suiteId via RecordRow. Empty
-// state explains what a suite is and offers Create. Duplicate creates a distinct
-// draft. Archive requires confirmation and removes from the default list; an
-// archived filter restores discoverability. A storage error never claims a
-// suite was saved.
+// Lists saved task sets with name, version, task count, model count, and latest
+// experiment status. Rows route to /evaluations/sets/:taskSetId via RecordRow.
+// Empty state explains what a task set is and offers Create. Duplicate creates
+// a distinct draft. Archive requires confirmation and removes from the default
+// list; an archived filter restores discoverability. Frozen EvaluationSuite
+// fields stay named suiteId/suiteVersion on persisted records.
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,11 +30,11 @@ import {
   validateSuitePackageBytes,
 } from "../../lib/evaluations/suite-package";
 
-interface SuiteListProps {
+interface TaskSetListProps {
   repo: EvaluationRepository | null;
 }
 
-interface SuiteListState {
+interface TaskSetListState {
   suites: EvaluationSuite[];
   loading: boolean;
   error: string | null;
@@ -58,7 +58,7 @@ function blankSuite(): EvaluationSuite {
     id: generateId("suite"),
     revision: 0,
     version: 1,
-    name: "Untitled suite",
+    name: "Untitled task set",
     description: "",
     tasks: [
       {
@@ -97,8 +97,8 @@ function blankSuite(): EvaluationSuite {
   };
 }
 
-export function SuiteList({ repo }: SuiteListProps) {
-  const [state, setState] = useState<SuiteListState>({
+export function TaskSetList({ repo }: TaskSetListProps) {
+  const [state, setState] = useState<TaskSetListState>({
     suites: [],
     loading: true,
     error: null,
@@ -173,7 +173,7 @@ export function SuiteList({ repo }: SuiteListProps) {
         setState({
           suites: [],
           loading: false,
-          error: err instanceof Error ? err.message : "Failed to load suites.",
+          error: err instanceof Error ? err.message : "Failed to load task sets.",
           rubrics: new Map(),
           latestExperiment: new Map(),
         });
@@ -192,17 +192,17 @@ export function SuiteList({ repo }: SuiteListProps) {
     try {
       const draft = blankSuite();
       await repo.saveSuite(draft, 0);
-      // Reload to surface the persisted row, then navigate to the new suite.
+      // Reload to surface the persisted row, then navigate to the new task set.
       await load();
-      window.location.hash = `#/evaluations/${draft.id}`;
+      window.location.hash = `#/evaluations/sets/${draft.id}`;
     } catch (err: unknown) {
-      // Storage error never claims a suite was saved.
+      // Storage error never claims a task set was saved.
       const msg =
         err instanceof StorageError
           ? friendlyStorageError(err)
           : err instanceof Error
             ? err.message
-            : "Could not save the suite.";
+            : "Could not save the task set.";
       setCreateError(msg);
     } finally {
       setCreating(false);
@@ -251,14 +251,14 @@ export function SuiteList({ repo }: SuiteListProps) {
         ...normalized.result.notes,
       ]);
       await load();
-      window.location.hash = `#/evaluations/${result.suiteId}`;
+      window.location.hash = `#/evaluations/sets/${result.suiteId}`;
     } catch (err: unknown) {
       const msg =
         err instanceof StorageError
           ? friendlyStorageError(err)
           : err instanceof Error
             ? err.message
-            : "Could not import the suite package.";
+            : "Could not import the task set package.";
       setImportErrors([msg]);
     } finally {
       setImporting(false);
@@ -282,14 +282,14 @@ export function SuiteList({ repo }: SuiteListProps) {
       };
       await repo.saveSuite(copy, 0);
       await load();
-      window.location.hash = `#/evaluations/${copy.id}`;
+      window.location.hash = `#/evaluations/sets/${copy.id}`;
     } catch (err: unknown) {
       const msg =
         err instanceof StorageError
           ? friendlyStorageError(err)
           : err instanceof Error
             ? err.message
-            : "Could not duplicate the suite.";
+            : "Could not duplicate the task set.";
       setActionError(msg);
     }
   }
@@ -307,7 +307,7 @@ export function SuiteList({ repo }: SuiteListProps) {
           ? friendlyStorageError(err)
           : err instanceof Error
             ? err.message
-            : "Could not archive the suite.";
+            : "Could not archive the task set.";
       setActionError(msg);
     }
   }
@@ -318,7 +318,7 @@ export function SuiteList({ repo }: SuiteListProps) {
     return (
       <div className="flex min-h-[120px] items-center justify-center gap-2 text-sm text-text-muted">
         <Loader2 size={14} className="animate-spin-ease" aria-hidden="true" />
-        <span>Loading suites…</span>
+        <span>Loading task sets…</span>
       </div>
     );
   }
@@ -327,7 +327,7 @@ export function SuiteList({ repo }: SuiteListProps) {
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center">
         <AlertCircle size={16} className="text-error" aria-hidden="true" />
-        <p className="text-sm text-error">Failed to load suites.</p>
+        <p className="text-sm text-error">Failed to load task sets.</p>
         <p className="text-sm text-text-muted">{state.error}</p>
         <button
           type="button"
@@ -352,21 +352,21 @@ export function SuiteList({ repo }: SuiteListProps) {
           type="file"
           accept=".json,application/json"
           className="hidden"
-          aria-label="Import suite package"
+          aria-label="Import task set package"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void handleImportFile(file);
           }}
         />
         <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-text-muted">
-          No evaluation suites yet
+          No evaluation task sets yet
         </h2>
         <p className="max-w-md text-sm text-text-secondary">
-          An evaluation suite groups several tasks into a versioned set, executed one at a time
-          through the comparison pipeline. Build a suite to compare models across a shared workload
+          A task set groups several tasks into a versioned set, executed one at a time
+          through the comparison pipeline. Build a task set to compare models across a shared workload
           with a consistent judge and evaluation rubric.
         </p>
-        {/* Identity spec §5.4: teach the split from the suite side. */}
+        {/* Identity spec §5.4: teach the split from the task-set side. */}
         <p className="max-w-md text-sm text-text-muted">
           Judging rules live in{" "}
           <Link
@@ -375,19 +375,19 @@ export function SuiteList({ repo }: SuiteListProps) {
           >
             Rubrics
           </Link>
-          ; suites pin them.
+          ; task sets pin them.
         </p>
         {createError && <p className="text-sm text-error">{createError}</p>}
         <div className="flex items-center gap-2">
           <button
             type="button"
-            data-action="create-suite"
+            data-action="create-task-set"
             onClick={handleCreate}
             disabled={creating}
             className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
           >
             <Plus size={15} aria-hidden="true" />
-            {creating ? "Creating…" : "Create suite"}
+            {creating ? "Creating…" : "Create task set"}
           </button>
           <button
             type="button"
@@ -397,13 +397,13 @@ export function SuiteList({ repo }: SuiteListProps) {
             className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
           >
             <Upload size={15} aria-hidden="true" />
-            {importing ? "Importing…" : "Import suite"}
+            {importing ? "Importing…" : "Import task set"}
           </button>
         </div>
         {importErrors.length > 0 && (
           <ul
             className="flex max-w-md flex-col gap-0.5 text-left text-sm text-error"
-            data-testid="suite-import-errors"
+            data-testid="task-set-import-errors"
           >
             {importErrors.slice(0, 5).map((e) => (
               <li key={e}>{e}</li>
@@ -413,7 +413,7 @@ export function SuiteList({ repo }: SuiteListProps) {
         {importNotes.length > 0 && (
           <ul
             className="flex max-w-md flex-col gap-0.5 text-left text-sm text-text-secondary"
-            data-testid="suite-import-notes"
+            data-testid="task-set-import-notes"
           >
             {importNotes.map((n) => (
               <li key={n}>{n}</li>
@@ -443,7 +443,7 @@ export function SuiteList({ repo }: SuiteListProps) {
         type="file"
         accept=".json,application/json"
         className="hidden"
-        aria-label="Import suite package"
+        aria-label="Import task set package"
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) void handleImportFile(file);
@@ -451,7 +451,7 @@ export function SuiteList({ repo }: SuiteListProps) {
       />
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-muted">
-          {visible.length} suite{visible.length === 1 ? "" : "s"}
+          {visible.length} task set{visible.length === 1 ? "" : "s"}
         </span>
         <div className="flex items-center gap-2">
           {archivedCount > 0 && (
@@ -477,13 +477,13 @@ export function SuiteList({ repo }: SuiteListProps) {
           </button>
           <button
             type="button"
-            data-action="create-suite"
+            data-action="create-task-set"
             onClick={handleCreate}
             disabled={creating}
             className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
           >
             <Plus size={15} aria-hidden="true" />
-            {creating ? "Creating…" : "New suite"}
+            {creating ? "Creating…" : "New task set"}
           </button>
         </div>
       </div>
@@ -491,7 +491,7 @@ export function SuiteList({ repo }: SuiteListProps) {
       {createError && <p className="text-sm text-error">{createError}</p>}
       {actionError && <p className="text-sm text-error">{actionError}</p>}
       {importErrors.length > 0 && (
-        <ul className="flex flex-col gap-0.5 text-sm text-error" data-testid="suite-import-errors">
+        <ul className="flex flex-col gap-0.5 text-sm text-error" data-testid="task-set-import-errors">
           {importErrors.slice(0, 5).map((e) => (
             <li key={e}>{e}</li>
           ))}
@@ -500,7 +500,7 @@ export function SuiteList({ repo }: SuiteListProps) {
       {importNotes.length > 0 && (
         <ul
           className="flex flex-col gap-0.5 text-sm text-text-secondary"
-          data-testid="suite-import-notes"
+          data-testid="task-set-import-notes"
         >
           {importNotes.map((n) => (
             <li key={n}>{n}</li>
@@ -532,7 +532,7 @@ export function SuiteList({ repo }: SuiteListProps) {
               <RecordRow
                 variant="list"
                 id={suite.id}
-                title={suite.name || "Untitled suite"}
+                title={suite.name || "Untitled task set"}
                 status={isArchived ? "aborted" : "ready"}
                 timestamp={suite.updatedAt}
                 kind={<KindEyebrow kind="suite" />}
@@ -552,7 +552,7 @@ export function SuiteList({ repo }: SuiteListProps) {
                   ) : undefined
                 }
                 provenance={`v${suite.version}`}
-                href={`/evaluations/${suite.id}`}
+                href={`/evaluations/sets/${suite.id}`}
               >
                 <div className="flex items-center gap-0.5">
                   {/* The pin chip lives in the trailing cluster rather than
@@ -560,7 +560,7 @@ export function SuiteList({ repo }: SuiteListProps) {
                   {evalChip}
                   <button
                     type="button"
-                    aria-label={`Duplicate suite ${suite.name || "Untitled suite"}`}
+                    aria-label={`Duplicate task set ${suite.name || "Untitled task set"}`}
                     title="Duplicate"
                     onClick={(e) => {
                       e.preventDefault();
@@ -576,7 +576,7 @@ export function SuiteList({ repo }: SuiteListProps) {
                       state — "Archive?" (~88px) + gap + cancel (44px) — so
                       arming never shifts the row's action cluster. */}
                   <span
-                    data-geometry="suite-archive-slot"
+                    data-geometry="task-set-archive-slot"
                     className="flex min-w-0 items-center justify-end sm:min-w-[136px]"
                   >
                     {confirmArchiveId === suite.id ? (
@@ -584,7 +584,7 @@ export function SuiteList({ repo }: SuiteListProps) {
                         <button
                           type="button"
                           data-action="confirm-archive"
-                          aria-label={`Confirm archive suite ${suite.name || "Untitled suite"}`}
+                          aria-label={`Confirm archive task set ${suite.name || "Untitled task set"}`}
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -613,7 +613,7 @@ export function SuiteList({ repo }: SuiteListProps) {
                     ) : (
                       <button
                         type="button"
-                        aria-label={`Archive suite ${suite.name || "Untitled suite"}`}
+                        aria-label={`Archive task set ${suite.name || "Untitled task set"}`}
                         title="Archive"
                         onClick={(e) => {
                           e.preventDefault();
@@ -635,7 +635,7 @@ export function SuiteList({ repo }: SuiteListProps) {
 
       {includeArchived && (
         <p className="pt-2 text-xs text-text-muted">
-          Archived suites are hidden by default and excluded from new experiments. They remain
+          Archived task sets are hidden by default and excluded from new experiments. They remain
           readable and their pinned experiments are intact.
         </p>
       )}

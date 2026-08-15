@@ -20,18 +20,21 @@
 // surfaces are both canonical.
 // =============================================================================
 
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useContext, useEffect, useState } from "react";
 import { Routes, Route, Navigate, Link, useParams, useLocation } from "react-router-dom";
 import {
+  RepositoryContext,
   useEvaluationRepository,
   useFusionStudyRepository,
   useTaskRepository,
 } from "./lib/persistence/repository-context";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
+import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
+import { ModelProbeProvider } from "./ui/ModelProbeContext";
 
 // Route-level code splitting: Compare is the default surface and stays in the
-// main chunk; Runs, Evaluations (suites, rubrics, fusion study), and
+// main chunk; Runs, Evaluations (task sets, rubrics, fusion study), and
 // experiment results load on first navigation to them.
 const RunsWorkspace = lazy(() =>
   import("./workspaces/RunsWorkspace").then((m) => ({ default: m.RunsWorkspace })),
@@ -39,11 +42,11 @@ const RunsWorkspace = lazy(() =>
 const EvaluationsWorkspace = lazy(() =>
   import("./workspaces/EvaluationsWorkspace").then((m) => ({ default: m.EvaluationsWorkspace })),
 );
-const SuiteList = lazy(() =>
-  import("./workspaces/evaluations/SuiteList").then((m) => ({ default: m.SuiteList })),
+const TaskSetList = lazy(() =>
+  import("./workspaces/evaluations/TaskSetList").then((m) => ({ default: m.TaskSetList })),
 );
-const SuiteEditor = lazy(() =>
-  import("./workspaces/evaluations/SuiteEditor").then((m) => ({ default: m.SuiteEditor })),
+const TaskSetEditor = lazy(() =>
+  import("./workspaces/evaluations/TaskSetEditor").then((m) => ({ default: m.TaskSetEditor })),
 );
 const SuiteTaskEditorRoute = lazy(() =>
   import("./workspaces/evaluations/SuiteTaskEditorRoute").then((m) => ({
@@ -120,39 +123,51 @@ export function AppRoutes({
         element={withSuspense(<RunsWorkspace onOpenInCompare={onOpenInCompare} />)}
       />
 
-      {/* Evaluations workspace — segmented nav (Suites | Rubrics) + Outlet.
+      {/* Evaluations workspace — segmented nav (Task sets | Rubrics) + Outlet.
           EvaluationContext is provided by EvaluationsWorkspace so child routes
           can call useEvaluationRepository() from evaluation-context.tsx. */}
       <Route path="/evaluations" element={withSuspense(<EvaluationsWorkspace />)}>
-        <Route index element={withSuspense(<SuiteListRoute />)} />
+        <Route index element={<EvaluationsIndexRedirect />} />
 
-        {/* Canonical Rubric routes (rubric-terminology spec §4). Static
-            segments rank above the dynamic :suiteId route below, so
-            /evaluations/rubrics and /evaluations/rubrics/:rubricId always
-            resolve to the rubric surfaces, never to a suite editor. */}
+        {/* Canonical Task Set routes (task-sets spec §4). Static `sets` ranks
+            above reserved rubric/profile segments and the leftover dynamic
+            :suiteId compatibility routes. */}
+        <Route path="sets" element={withSuspense(<TaskSetListRoute />)} />
+        <Route path="sets/new" element={withSuspense(<TaskSetNewRoute />)} />
+        <Route
+          path="sets/:taskSetId"
+          element={withSuspense(<TaskSetEditorRoute models={models} />)}
+        />
+        <Route
+          path="sets/:taskSetId/versions/:version"
+          element={withSuspense(<TaskSetVersionRoute models={models} />)}
+        />
+        <Route
+          path="sets/:taskSetId/tasks/:taskId"
+          element={withSuspense(<SuiteTaskEditorRouteWrapper models={models} />)}
+        />
+        <Route
+          path="sets/:taskSetId/fusion/:studyId"
+          element={withSuspense(<FusionStudyRouteWrapper />)}
+        />
+
+        {/* Canonical Rubric routes (rubric-terminology spec §4). */}
         <Route path="rubrics" element={withSuspense(<RubricListRoute />)} />
         <Route path="rubrics/:rubricId" element={withSuspense(<RubricDetailRoute />)} />
         <Route
           path="rubrics/:rubricId/versions/:version"
           element={withSuspense(<RubricVersionRoute />)}
         />
-        {/* Compatibility redirects — real baseline /evaluations/profiles
-            links redirect to the canonical Rubric routes, preserving the
-            entity id and any location state (return location / historical
-            version state) without an invented /rubrics/* alias (spec §4).
-            The legacy profiles segment is a frozen compatibility boundary;
-            the entity id param is the canonical rubricId. */}
         <Route path="profiles" element={<RubricListRedirect />} />
         <Route path="profiles/:rubricId" element={<RubricDetailRedirect />} />
 
-        <Route path=":suiteId" element={withSuspense(<SuiteEditorRoute models={models} />)} />
+        {/* Real baseline legacy suite/fusion links. Fusion redirects only after
+            exact ownership crosswalk resolution (spec §4 / §8.2). */}
+        <Route path=":suiteId/fusion/:studyId" element={<LegacyFusionRedirect />} />
+        <Route path=":suiteId" element={<LegacySuiteRedirect />} />
         <Route
           path=":suiteId/tasks/:taskId"
           element={withSuspense(<SuiteTaskEditorRouteWrapper models={models} />)}
-        />
-        <Route
-          path=":suiteId/fusion/:studyId"
-          element={withSuspense(<FusionStudyRouteWrapper />)}
         />
       </Route>
 
@@ -182,23 +197,128 @@ export function AppRoutes({
   );
 }
 
-/** SuiteList route wrapper — pulls the repo from RepositoryContext and passes
- *  it as a prop so SuiteList stays test-friendly (matches RunList's pattern). */
-function SuiteListRoute() {
+function TaskSetListRoute() {
   const repo = useEvaluationRepository();
-  return <SuiteList repo={repo} />;
+  return <TaskSetList repo={repo} />;
 }
 
-/** SuiteEditor route wrapper. */
-function SuiteEditorRoute({ models }: { models: CatalogModel[] }) {
+function TaskSetEditorRoute({ models }: { models: CatalogModel[] }) {
   const repo = useEvaluationRepository();
-  return <SuiteEditor repo={repo} models={models} />;
+  return (
+    <ExecutionOwnerProvider>
+      <ModelProbeProvider>
+        <TaskSetEditor repo={repo} models={models} />
+      </ModelProbeProvider>
+    </ExecutionOwnerProvider>
+  );
 }
 
-/** Fusion Study route wrapper — under the suite, inside Evaluations (spec §9). */
+function TaskSetVersionRoute({ models }: { models: CatalogModel[] }) {
+  return <TaskSetEditorRoute models={models} />;
+}
+
+function TaskSetNewRoute() {
+  const repo = useEvaluationRepository();
+  return <TaskSetList repo={repo} />;
+}
+function EvaluationsIndexRedirect() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{ pathname: "/evaluations/sets", search: location.search }}
+      replace
+      state={location.state}
+    />
+  );
+}
+
+const RESERVED_EVALUATION_SEGMENTS = new Set(["sets", "rubrics", "profiles"]);
+
+function LegacySuiteRedirect() {
+  const { suiteId } = useParams<{ suiteId: string }>();
+  const location = useLocation();
+  if (!suiteId || RESERVED_EVALUATION_SEGMENTS.has(suiteId)) {
+    return <Navigate to="/evaluations/sets" replace />;
+  }
+  return (
+    <Navigate
+      to={{ pathname: `/evaluations/sets/${suiteId}`, search: location.search }}
+      replace
+      state={location.state}
+    />
+  );
+}
+
+function LegacyFusionRedirect() {
+  const { studyId } = useParams<{ suiteId: string; studyId: string }>();
+  const location = useLocation();
+  const { db } = useContext(RepositoryContext);
+  const [resolution, setResolution] = useState<"pending" | "resolved" | "unresolved">("pending");
+  const [resolvedTaskSetId, setResolvedTaskSetId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!studyId || !db?.taskSetOwnershipCrosswalk) {
+      setResolution("unresolved");
+      return;
+    }
+    void db.taskSetOwnershipCrosswalk.get(`ts-xwalk:fusion:${studyId}`)
+      .then((row) => {
+        if (cancelled) return;
+        if (isResolvedFusionOwner(row)) {
+          setResolvedTaskSetId(row.taskSetId);
+          setResolution("resolved");
+          return;
+        }
+        setResolution("unresolved");
+      })
+      .catch(() => {
+        if (!cancelled) setResolution("unresolved");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [db, studyId]);
+
+  if (resolution === "resolved" && resolvedTaskSetId) {
+    return (
+      <Navigate
+        to={{
+          pathname: `/evaluations/sets/${resolvedTaskSetId}/fusion/${studyId ?? ""}`,
+          search: location.search,
+        }}
+        replace
+        state={location.state}
+      />
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+      {resolution === "unresolved" ? (
+        <p className="text-sm text-warning" data-unresolved-owner="">
+          Unresolved Fusion owner — this study stays on its legacy route because
+          the Suite→Task Set crosswalk did not resolve exactly.
+        </p>
+      ) : (
+        <p className="text-sm text-text-muted">Resolving Fusion owner…</p>
+      )}
+      <FusionStudyRouteWrapper />
+    </div>
+  );
+}
+
 function FusionStudyRouteWrapper() {
   const fusionRepo = useFusionStudyRepository();
   return <FusionStudyRoute fusionRepo={fusionRepo} />;
+}
+
+function isResolvedFusionOwner(
+  row: unknown,
+): row is { status: "resolved"; taskSetId: string } {
+  if (!row || typeof row !== "object") return false;
+  if (!("status" in row) || !("taskSetId" in row)) return false;
+  return row.status === "resolved" && typeof row.taskSetId === "string";
 }
 
 /** Task catalog route wrapper — reads the task repository from context; the

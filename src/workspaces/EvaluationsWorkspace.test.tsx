@@ -50,7 +50,7 @@ afterEach(() => {
 
 describe("EvaluationsWorkspace — segmented nav identity (spec §5.4)", () => {
   it("shows both workspace links with aria-current on the active one", () => {
-    const h = renderAt("/evaluations");
+    const h = renderAt("/evaluations/sets");
     const links = h.$$("nav[aria-label='Evaluations'] a");
     expect(links.length).toBe(2);
     const active = links.filter((l) => l.getAttribute("aria-current") === "page");
@@ -60,7 +60,7 @@ describe("EvaluationsWorkspace — segmented nav identity (spec §5.4)", () => {
   });
 
   it("shows 'workloads you run' under active Task sets, hidden under Rubrics", () => {
-    const h = renderAt("/evaluations");
+    const h = renderAt("/evaluations/sets");
     const links = h.$$("nav[aria-label='Evaluations'] a");
     const taskSets = links.find((l) => l.textContent?.includes("Task sets"));
     const rubrics = links.find((l) => l.textContent?.includes("Rubrics"));

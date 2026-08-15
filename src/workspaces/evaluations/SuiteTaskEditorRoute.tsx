@@ -26,7 +26,12 @@ interface SuiteTaskEditorRouteProps {
 }
 
 export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps) {
-  const { suiteId, taskId } = useParams<{ suiteId: string; taskId: string }>();
+  const { suiteId, taskSetId, taskId } = useParams<{
+    suiteId?: string;
+    taskSetId?: string;
+    taskId: string;
+  }>();
+  const ownerId = taskSetId ?? suiteId;
   const navigate = useNavigate();
 
   const [suite, setSuite] = useState<EvaluationSuite | null>(null);
@@ -35,7 +40,7 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
   const [rubricRecords, setRubricRecords] = useState<RubricRecord[]>([]);
 
   const load = useCallback(async () => {
-    if (!repo || !suiteId) {
+    if (!repo || !ownerId) {
       setSuite(null);
       setLoading(false);
       return;
@@ -43,20 +48,20 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
     setLoading(true);
     setError(null);
     try {
-      const [s, rubrics] = await Promise.all([repo.getSuite(suiteId), repo.listRubrics(true)]);
+      const [s, rubrics] = await Promise.all([repo.getSuite(ownerId), repo.listRubrics(true)]);
       if (!s) {
         setSuite(null);
-        setError("Suite not found.");
+        setError("Task set not found.");
       } else {
         setSuite(s);
       }
       setRubricRecords(rubrics.filter((p) => !p.archivedAt));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load suite.");
+      setError(err instanceof Error ? err.message : "Failed to load task set.");
     } finally {
       setLoading(false);
     }
-  }, [repo, suiteId]);
+  }, [repo, ownerId]);
 
   useEffect(() => {
     void load();
@@ -110,12 +115,12 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center">
         <AlertCircle size={16} className="text-error" aria-hidden="true" />
-        <p className="text-sm text-error">{error ?? "Suite not found."}</p>
+        <p className="text-sm text-error">{error ?? "Task set not found."}</p>
         <Link
-          to="/evaluations"
+          to="/evaluations/sets"
           className="mt-2 flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
         >
-          Back to suites
+          Back to task sets
         </Link>
       </div>
     );
@@ -124,13 +129,13 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
   if (!task) {
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 p-4 text-center">
-        <p className="text-sm text-text-muted">Task not found in this suite.</p>
+        <p className="text-sm text-text-muted">Task not found in this task set.</p>
         <button
           type="button"
-          onClick={() => navigate(`/evaluations/${suiteId}`)}
+          onClick={() => navigate(`/evaluations/sets/${ownerId}`)}
           className="mt-2 flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
         >
-          Back to suite
+          Back to task set
         </button>
       </div>
     );
@@ -140,12 +145,12 @@ export function SuiteTaskEditorRoute({ repo, models }: SuiteTaskEditorRouteProps
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-edge p-2">
         <Link
-          to={`/evaluations/${suiteId}`}
-          aria-label="Back to suite"
+          to={`/evaluations/sets/${ownerId}`}
+          aria-label="Back to task set"
           className="flex min-h-[44px] items-center gap-1.5 rounded-md px-2 text-sm text-text-secondary transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <ArrowLeft size={15} aria-hidden="true" />
-          <span className="truncate">{suite.name || "Untitled suite"}</span>
+          <span className="truncate">{suite.name || "Untitled task set"}</span>
         </Link>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-2">

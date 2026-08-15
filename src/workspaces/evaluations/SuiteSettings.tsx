@@ -100,20 +100,20 @@ export function SuiteSettings({
       {/* Name + description */}
       <div className="space-y-2">
         <label
-          htmlFor="suite-name"
+          htmlFor="task-set-name"
           className="block font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
         >
-          Suite name
+          Task set name
         </label>
         <input
-          id="suite-name"
+          id="task-set-name"
           type="text"
           value={suite.name}
           onChange={(e) => onChange({ name: e.target.value })}
           aria-invalid={!suite.name.trim()}
           className="min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
-        {!suite.name.trim() && <p className="text-xs text-error">Suite name is required.</p>}
+        {!suite.name.trim() && <p className="text-xs text-error">Task set name is required.</p>}
 
         <label
           htmlFor="suite-description"

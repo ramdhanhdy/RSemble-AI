@@ -29,8 +29,8 @@ import {
 import "./workspaces/EvaluationsWorkspace";
 import "./workspaces/evaluations/RubricList";
 import "./workspaces/evaluations/RubricDetail";
-import "./workspaces/evaluations/SuiteList";
-import "./workspaces/evaluations/SuiteEditor";
+import "./workspaces/evaluations/TaskSetList";
+import "./workspaces/evaluations/TaskSetEditor";
 import "./workspaces/evaluations/FusionStudyView";
 import "./workspaces/tasks/TaskCatalog";
 import "./workspaces/tasks/TaskRoute";

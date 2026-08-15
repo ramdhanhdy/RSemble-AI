@@ -55,11 +55,16 @@ export function ClaimBadge({ level }: { level: "exploratory" | "confirmed" }) {
 // --- Route wrapper ------------------------------------------------------------------
 
 export function FusionStudyRoute({ fusionRepo }: { fusionRepo: FusionStudyRepository | null }) {
-  const { suiteId, studyId } = useParams<{ suiteId: string; studyId: string }>();
-  if (!suiteId || !studyId) {
-    return <div className="text-sm text-text-muted">Missing suite or study id.</div>;
+  const { suiteId, taskSetId, studyId } = useParams<{
+    suiteId?: string;
+    taskSetId?: string;
+    studyId: string;
+  }>();
+  const ownerId = taskSetId ?? suiteId;
+  if (!ownerId || !studyId) {
+    return <div className="text-sm text-text-muted">Missing task set or study id.</div>;
   }
-  return <FusionStudyView fusionRepo={fusionRepo} suiteId={suiteId} studyId={studyId} />;
+  return <FusionStudyView fusionRepo={fusionRepo} suiteId={ownerId} studyId={studyId} />;
 }
 
 // --- Main view -----------------------------------------------------------------------

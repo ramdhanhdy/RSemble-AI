@@ -1,24 +1,11 @@
 // =============================================================================
-// SuiteEditor — two-pane suite authoring surface (spec §10.3).
+// TaskSetEditor — two-pane Task Set authoring surface (spec §4–§5, plan Task 5).
 //
 // Desktop: two-pane split (task list | selected task editor). Header shows
-// suite name, persisted version, dirty/save state, suite settings disclosure,
-// and Run evaluation button. Save and Run are distinct controls. While dirty
-// the header says "Unsaved changes · next version vN+1" and Run is disabled
-// with "Save this suite before running". After save, Run states "Run vN" and
-// snapshots that exact persisted version. Run is disabled until the persisted
-// suite passes execution validation (validateSuiteForExecution).
-//
-// At <1024px the task list and task editor are separate route states. This
-// component handles the desktop split; the mobile routes render SuiteTaskEditor
-// directly via the router.
-//
-// Run evaluation starts a real experiment through the ExperimentController
-// context and navigates to /experiments/:experimentId on success. Run is also
-// gated on controller availability (storage), the in-tab execution owner, and
-// archive state. The `controller` and `executionOwner` optional props are test
-// seams: when undefined they resolve from context; pass them explicitly to
-// inject fakes without mounting provider trees.
+// task set name, persisted version, dirty/save state, settings disclosure,
+// and Run evaluation button. Save and Run are distinct controls. Historical
+// versions at /evaluations/sets/:taskSetId/versions/:version are read-only.
+// Frozen EvaluationSuite fields stay named suiteId/suiteVersion on records.
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -54,7 +41,7 @@ import { SuiteTaskEditor } from "./SuiteTaskEditor";
 import { SuiteSettings } from "./SuiteSettings";
 import { RubricRefChip } from "../../ui/RubricRefChip";
 
-interface SuiteEditorProps {
+interface TaskSetEditorProps {
   repo: EvaluationRepository | null;
   /** Catalog models from provider probes (may be empty). */
   models: CatalogModel[];
@@ -69,13 +56,21 @@ function generateTaskId(): string {
   return `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function SuiteEditor({
+export function TaskSetEditor({
   repo,
   models,
   controller: controllerProp,
   executionOwner: ownerProp,
-}: SuiteEditorProps) {
-  const { suiteId } = useParams<{ suiteId: string }>();
+}: TaskSetEditorProps) {
+  const { taskSetId, suiteId: legacySuiteId, version: versionParam } = useParams<{
+    taskSetId?: string;
+    suiteId?: string;
+    version?: string;
+  }>();
+  const taskSetIdResolved = taskSetId ?? legacySuiteId;
+  const requestedVersion = Number(versionParam);
+  const historical =
+    Number.isFinite(requestedVersion) && requestedVersion > 0 ? requestedVersion : null;
   const navigate = useNavigate();
 
   // Context resolution with prop overrides (test seams — see file header).
@@ -101,7 +96,7 @@ export function SuiteEditor({
 
   // --- Load suite + rubric records ---
   const load = useCallback(async () => {
-    if (!repo || !suiteId) {
+    if (!repo || !taskSetIdResolved) {
       setPersisted(null);
       setDraft(null);
       setLoading(false);
@@ -111,26 +106,28 @@ export function SuiteEditor({
     setLoading(true);
     setLoadError(null);
     try {
-      const [suite, rubrics] = await Promise.all([repo.getSuite(suiteId), repo.listRubrics(true)]);
+      const [suite, rubrics] = await Promise.all([
+        repo.getSuite(taskSetIdResolved),
+        repo.listRubrics(true),
+      ]);
       if (id !== requestIdRef.current) return;
       if (!suite) {
         setPersisted(null);
         setDraft(null);
-        setLoadError("Suite not found.");
+        setLoadError("Task set not found.");
       } else {
         setPersisted(suite);
         setDraft(structuredClone(suite));
-        // Auto-select first task if none selected.
         setSelectedTaskId((prev) => prev ?? suite.tasks[0]?.id ?? null);
       }
       setRubricRecords(rubrics.filter((p) => !p.archivedAt));
       setLoading(false);
     } catch (err: unknown) {
       if (id !== requestIdRef.current) return;
-      setLoadError(err instanceof Error ? err.message : "Failed to load suite.");
+      setLoadError(err instanceof Error ? err.message : "Failed to load task set.");
       setLoading(false);
     }
-  }, [repo, suiteId]);
+  }, [repo, taskSetIdResolved]);
 
   useEffect(() => {
     void load();
@@ -282,7 +279,7 @@ export function SuiteEditor({
     if (!repo || !draft || !persisted || saving) return;
     const saveValidation = validateSuiteForSave(draft);
     if (!saveValidation.valid) {
-      setSaveError(saveValidation.errors[0]?.message ?? "Suite failed validation.");
+      setSaveError(saveValidation.errors[0]?.message ?? "Task set failed validation.");
       return;
     }
     setSaving(true);
@@ -292,7 +289,6 @@ export function SuiteEditor({
         { ...draft, version: draft.version, revision: persisted.revision },
         persisted.revision,
       );
-      // Reload persisted state to reflect the saved revision.
       const fresh = await repo.getSuite(draft.id);
       if (fresh) {
         setPersisted({ ...fresh, revision: newRevision });
@@ -304,7 +300,7 @@ export function SuiteEditor({
           ? friendlyStorageError(err)
           : err instanceof Error
             ? err.message
-            : "Could not save the suite.";
+            : "Could not save the task set.";
       setSaveError(msg);
     } finally {
       setSaving(false);
@@ -323,7 +319,6 @@ export function SuiteEditor({
     }
   }, [controller, persisted, navigate]);
 
-  // --- Suite model preflight (spec §8.5) — one unconditional hook, map lookups. ---
   const probeContext = useModelProbe();
   const enabledCandidates = draft?.modelSlots.filter((s) => s.enabled) ?? [];
   const candidateEntries: SuitePreflightEntry[] = enabledCandidates.map((s) => {
@@ -346,16 +341,15 @@ export function SuiteEditor({
     await handleRun();
   }, [handleRun]);
 
-  // --- States ---
-  if (!suiteId) {
-    return <NoSuiteSelected />;
+  if (!taskSetIdResolved) {
+    return <NoTaskSetSelected />;
   }
 
   if (loading) {
     return (
       <div className="flex min-h-[120px] items-center justify-center gap-2 text-sm text-text-muted">
         <Loader2 size={14} className="animate-spin-ease" aria-hidden="true" />
-        <span>Loading suite…</span>
+        <span>Loading task set…</span>
       </div>
     );
   }
@@ -364,47 +358,49 @@ export function SuiteEditor({
     return (
       <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center">
         <AlertCircle size={16} className="text-error" aria-hidden="true" />
-        <p className="text-sm text-error">{loadError ?? "Suite not found."}</p>
+        <p className="text-sm text-error">{loadError ?? "Task set not found."}</p>
         <button
           type="button"
-          onClick={() => navigate("/evaluations")}
+          onClick={() => navigate("/evaluations/sets")}
           className="mt-2 flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          Back to suites
+          Back to task sets
         </button>
       </div>
     );
   }
 
   const selectedTask = draft.tasks.find((t) => t.id === selectedTaskId) ?? null;
-  const runDisabledReason = dirty
-    ? "Save this suite before running"
-    : !execValidation.valid
-      ? (execValidation.errors[0]?.message ?? "Suite is not ready to run.")
-      : !controller
-        ? "Storage unavailable — cannot start an experiment"
-        : executionOwner
-          ? "Another execution is active"
-          : persisted.archivedAt != null
-            ? "Archived suites cannot run"
-            : null;
+  const isHistorical = historical !== null && historical !== persisted.version;
+  const runDisabledReason = isHistorical
+    ? "Historical versions are read-only"
+    : dirty
+      ? "Save this task set before running"
+      : !execValidation.valid
+        ? (execValidation.errors[0]?.message ?? "Task set is not ready to run.")
+        : !controller
+          ? "Storage unavailable — cannot start an experiment"
+          : executionOwner
+            ? "Another execution is active"
+            : persisted.archivedAt != null
+              ? "Archived task sets cannot run"
+              : null;
   const canRun = runDisabledReason === null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header */}
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      data-task-set-editor={taskSetIdResolved === "new" ? "new" : ""}
+    >
       <header className="flex flex-col gap-2 border-b border-edge p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <h1 className="min-w-0 truncate text-base text-text">
-              {draft.name || "Untitled suite"}
+              {draft.name || "Untitled task set"}
             </h1>
             <span className="shrink-0 rounded-sm border border-edge px-1.5 py-0.5 font-mono text-xs text-text-secondary tabular-nums">
-              v{persisted.version}
+              v{isHistorical ? historical : persisted.version}
             </span>
-            {/* Identity spec §5.3: name the pinned rubric where the suite is
-                configured. Rendered outside the row-link pattern — the header
-                has no nesting constraint. */}
             {persisted.defaultEvaluation.kind === "profile" && pinnedRubricLoaded ? (
               pinnedRubric ? (
                 <RubricRefChip
@@ -424,7 +420,7 @@ export function SuiteEditor({
               <Link
                 to={`/experiments/${latestExperiment.id}`}
                 data-testid="latest-results-link"
-                title="View the latest experiment results for this suite"
+                title="View the latest experiment results for this task set"
                 className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Trophy size={14} aria-hidden="true" />
@@ -452,9 +448,9 @@ export function SuiteEditor({
             </button>
             <button
               type="button"
-              data-action="save-suite"
+              data-action="save-task-set"
               onClick={handleSave}
-              disabled={!dirty || saving}
+              disabled={!dirty || saving || isHistorical}
               className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Save size={14} aria-hidden="true" />
@@ -462,11 +458,8 @@ export function SuiteEditor({
             </button>
             <button
               type="button"
-              data-action="run-suite"
+              data-action="run-task-set"
               onClick={() => {
-                // Run snaps the exact persisted version inside the controller;
-                // success navigates to the live experiment progress route.
-                // Preflight confirmation summarizes model test state first (§8.5).
                 if (canRun) {
                   setPreflightOpen(true);
                 }
@@ -476,14 +469,17 @@ export function SuiteEditor({
               className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Play size={14} aria-hidden="true" />
-              {dirty ? "Run" : `Run v${persisted.version}`}
+              {dirty || isHistorical ? "Run" : `Run v${persisted.version}`}
             </button>
           </div>
         </div>
 
-        {/* Dirty / validation state line */}
         <div className="flex items-center gap-3 text-xs">
-          {dirty ? (
+          {isHistorical ? (
+            <span className="text-text-secondary">
+              v{historical} · latest v{persisted.version} · read-only
+            </span>
+          ) : dirty ? (
             <span className="text-warning">Unsaved changes · next version v{nextVersion}</span>
           ) : (
             <span className="text-success">Saved · v{persisted.version}</span>
@@ -503,7 +499,6 @@ export function SuiteEditor({
         )}
       </header>
 
-      {/* Settings disclosure (in-page, not a permanent third pane) */}
       {settingsOpen && (
         <div
           id="suite-settings-disclosure"
@@ -512,7 +507,7 @@ export function SuiteEditor({
         >
           <SuiteSettings
             suite={draft}
-            onChange={patchDraft}
+            onChange={isHistorical ? () => undefined : patchDraft}
             models={models}
             rubricRecords={rubricRecords}
             resolveRubricLabel={resolveRubricLabel}
@@ -520,7 +515,6 @@ export function SuiteEditor({
         </div>
       )}
 
-      {/* Two-pane split: task list | task editor */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-3 lg:flex-row">
         <section
           aria-label="Task list"
@@ -531,14 +525,13 @@ export function SuiteEditor({
             selectedTaskId={selectedTaskId}
             onSelect={(id) => {
               setSelectedTaskId(id);
-              // On mobile, navigate to the task route for deep-linking.
-              if (suiteId && !window.matchMedia("(min-width: 1024px)").matches) {
-                void navigate(`/evaluations/${suiteId}/tasks/${id}`);
+              if (taskSetIdResolved && !window.matchMedia("(min-width: 1024px)").matches) {
+                void navigate(`/evaluations/sets/${taskSetIdResolved}/tasks/${id}`);
               }
             }}
-            onAdd={addTask}
-            onMove={moveTask}
-            onDelete={deleteTask}
+            onAdd={isHistorical ? () => undefined : addTask}
+            onMove={isHistorical ? () => undefined : moveTask}
+            onDelete={isHistorical ? () => undefined : deleteTask}
           />
           <div className="mt-3 min-w-0 border-t border-edge pt-3">
             <SuiteExperimentHistory repo={repo} suiteId={persisted.id} />
@@ -558,7 +551,9 @@ export function SuiteEditor({
             <SuiteTaskEditor
               task={selectedTask}
               suiteDefaultEvaluation={draft.defaultEvaluation}
-              onChange={(patch) => patchTask(selectedTask.id, patch)}
+              onChange={(patch) => {
+                if (!isHistorical) patchTask(selectedTask.id, patch);
+              }}
               rubricRecords={rubricRecords}
               resolveRubricLabel={resolveRubricLabel}
             />
@@ -570,7 +565,6 @@ export function SuiteEditor({
         </section>
       </div>
 
-      {/* Suite model preflight confirmation (spec §8.5) */}
       <SuitePreflightDialog
         open={preflightOpen}
         onOpenChange={setPreflightOpen}
@@ -582,10 +576,10 @@ export function SuiteEditor({
   );
 }
 
-function NoSuiteSelected() {
+function NoTaskSetSelected() {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
-      <p className="text-sm text-text-muted">Select a suite from the list.</p>
+      <p className="text-sm text-text-muted">Select a task set from the list.</p>
     </div>
   );
 }
@@ -595,9 +589,9 @@ function friendlyStorageError(err: StorageError): string {
     case "quota":
       return "Storage is full — free space or remove unused data before saving.";
     case "conflict":
-      return "This suite was modified elsewhere. Reload and retry.";
+      return "This task set was modified elsewhere. Reload and retry.";
     case "validation":
-      return "The suite could not be saved — a field failed validation.";
+      return "The task set could not be saved — a field failed validation.";
     case "blocked":
     case "versionchange":
       return "Storage is blocked by another tab. Close it and retry.";
