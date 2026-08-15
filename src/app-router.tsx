@@ -444,11 +444,7 @@ function ExperimentRouteWrapper({
   models: CatalogModel[];
   availableProviderIds: ProviderId[];
 }) {
-  return (
-    <ExecutionOwnerProvider>
-      <ExperimentRoute models={models} availableProviderIds={availableProviderIds} />
-    </ExecutionOwnerProvider>
-  );
+  return <ExperimentRoute models={models} availableProviderIds={availableProviderIds} />;
 }
 
 function CompareSlot({ children }: { children: React.ReactNode }) {

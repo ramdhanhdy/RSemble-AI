@@ -1309,9 +1309,7 @@ describe("AppRouter — Evaluation execution results routes (spec §5.1, §4)", 
       repo,
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-replace-1");
-    await act(async () => {
-      h.nav.current?.(-1);
-    });
+    void act(() => h.nav.current!(-1));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/sets");
     cleanup(h);
@@ -1388,19 +1386,13 @@ describe("AppRouter — Evaluation execution results routes (spec §5.1, §4)", 
       repo,
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/sets/set-1");
-    await act(async () => {
-      h.nav.current?.("/evaluations/results/exp-nav-1");
-    });
+    void act(() => h.nav.current!("/evaluations/results/exp-nav-1"));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-nav-1");
-    await act(async () => {
-      h.nav.current?.(-1);
-    });
+    void act(() => h.nav.current!(-1));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/sets/set-1");
-    await act(async () => {
-      h.nav.current?.(1);
-    });
+    void act(() => h.nav.current!(1));
     await settle();
     expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-nav-1");
     cleanup(h);
