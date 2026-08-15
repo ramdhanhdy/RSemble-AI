@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ModelSlot } from "../../studio-data";
-import type { EvaluationRubric, EvaluationSelection, GradedEvaluationCriterion } from "./evaluation-types";
+import type { EvaluationRubric, GradedEvaluationCriterion } from "./evaluation-types";
 import type {
   JudgeSnapshot,
   MissingnessPolicy,
@@ -13,14 +13,10 @@ import type {
   RepeatPolicy,
   TaskExecutionOverrides,
   TaskSetMember,
-  TaskSetRecord,
   TaskSetVersion,
   TaskVersionRef,
 } from "./task-set-types";
 import type {
-  ContextManifestEntry,
-  ResponseContract,
-  TaskRecord,
   TaskVersion,
   VersionRef,
 } from "../tasks/task-types";
@@ -32,25 +28,10 @@ import {
   computeWorkloadManifestFingerprint,
   materializeWorkloadManifest,
   validateWorkloadForExecution,
-  type MaterializedTask,
-  type MaterializedWorkloadSnapshot,
   type WorkloadCatalogResolvers,
 } from "./workload-manifest";
 
 // --- Fixtures & Helpers ------------------------------------------------------
-
-function makeTaskRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
-  return {
-    id: "task-1",
-    latestVersion: 1,
-    createdAt: 1000,
-    updatedAt: 1000,
-    archivedAt: null,
-    origin: "authored",
-    revision: 1,
-    ...overrides,
-  };
-}
 
 function makeTaskVersion(overrides: Partial<TaskVersion> = {}): TaskVersion {
   return {
@@ -100,24 +81,24 @@ function makeRubric(overrides: Partial<EvaluationRubric> = {}): EvaluationRubric
 const DEFAULT_SLOTS: ModelSlot[] = [
   {
     id: "slot-1",
-    providerId: "openai",
-    provider: "OpenAI",
+    providerId: "openrouter",
+    provider: "OpenRouter",
     model: "gpt-4o",
     slug: "gpt-4o",
     enabled: true,
   },
   {
     id: "slot-2",
-    providerId: "anthropic",
-    provider: "Anthropic",
-    model: "claude-3-5-sonnet",
-    slug: "claude-3-5-sonnet",
+    providerId: "gemini",
+    provider: "Gemini",
+    model: "gemini-1.5-pro",
+    slug: "gemini-1.5-pro",
     enabled: true,
   },
 ];
 
 const DEFAULT_JUDGE: JudgeSnapshot = {
-  providerId: "openai",
+  providerId: "openrouter",
   model: "gpt-4o",
 };
 
@@ -125,8 +106,8 @@ const DEFAULT_REPEAT_POLICY: RepeatPolicy = { kind: "none" };
 const DEFAULT_MISSINGNESS_POLICY: MissingnessPolicy = { kind: "allow-repair" };
 const DEFAULT_PROTOCOL_DEFAULTS: ProtocolDefaults = {
   reasoningPolicy: {
-    candidate: { effort: "none" },
-    judge: { effort: "low" },
+    candidates: "provider-default",
+    judge: "low",
   },
 };
 
@@ -407,8 +388,8 @@ describe("Workload Manifest Materialization: Immutable Snapshot", () => {
     });
     const slot: ModelSlot = {
       id: "s1",
-      providerId: "openai",
-      provider: "OpenAI",
+      providerId: "openrouter",
+      provider: "OpenRouter",
       model: "gpt-4o",
       slug: "gpt-4o",
       enabled: true,
@@ -698,8 +679,8 @@ describe("Workload Manifest Materialization: Policies & Metadata", () => {
 
     const protocolDefaults: ProtocolDefaults = {
       reasoningPolicy: {
-        candidate: { effort: "high" },
-        judge: { effort: "medium" },
+        candidates: "high",
+        judge: "medium",
       },
     };
 
@@ -855,7 +836,7 @@ describe("Workload Manifest Fingerprint: Semantic Sensitivity & Invariance", () 
     const snapA = materializeWorkloadManifest(makeTaskSetVersion(), resolvers);
     const snapB = materializeWorkloadManifest(
       makeTaskSetVersion({
-        defaultJudge: { providerId: "anthropic", model: "claude-3-5-sonnet" },
+        defaultJudge: { providerId: "gemini", model: "gemini-1.5-pro" },
       }),
       resolvers,
     );
@@ -864,8 +845,8 @@ describe("Workload Manifest Fingerprint: Semantic Sensitivity & Invariance", () 
       makeTaskSetVersion({
         protocolDefaults: {
           reasoningPolicy: {
-            candidate: { effort: "high" },
-            judge: { effort: "high" },
+            candidates: "high",
+            judge: "high",
           },
         },
       }),
@@ -905,7 +886,7 @@ describe("Workload Manifest Fingerprint: Semantic Sensitivity & Invariance", () 
         taskSetId: "set-1",
         createdAt: 1000,
         defaultModelSlots: [
-          { id: "slot-A", providerId: "openai", provider: "OpenAI Display", model: "gpt-4o", slug: "gpt-4o", enabled: true },
+          { id: "slot-A", providerId: "openrouter", provider: "OpenRouter Display", model: "gpt-4o", slug: "gpt-4o", enabled: true },
         ],
         members: [
           makeTaskSetMember({ id: "mem-uuid-1", order: 0 }),
@@ -920,7 +901,7 @@ describe("Workload Manifest Fingerprint: Semantic Sensitivity & Invariance", () 
         taskSetId: "set-DIFFERENT-ID",
         createdAt: 99999,
         defaultModelSlots: [
-          { id: "slot-DIFFERENT-ID", providerId: "openai", provider: "Custom Label", model: "gpt-4o", slug: "gpt-4o", enabled: true },
+          { id: "slot-DIFFERENT-ID", providerId: "openrouter", provider: "Custom Label", model: "gpt-4o", slug: "gpt-4o", enabled: true },
         ],
         members: [
           makeTaskSetMember({ id: "mem-uuid-DIFFERENT", order: 0 }),
@@ -931,5 +912,42 @@ describe("Workload Manifest Fingerprint: Semantic Sensitivity & Invariance", () 
     );
 
     expect(base.protocolFingerprint).toBe(cosmeticVariant.protocolFingerprint);
+  });
+
+  it("buildWorkloadFingerprintInput extracts semantic fields only", () => {
+    const task = makeTaskVersion();
+    const rubric = makeRubric();
+    const resolvers = makeCatalogResolvers([task], [rubric]);
+    const snapshot = materializeWorkloadManifest(makeTaskSetVersion(), resolvers);
+
+    const input = buildWorkloadFingerprintInput(snapshot) as Record<string, unknown>;
+    expect(input).toHaveProperty("tasks");
+    expect(input).toHaveProperty("modelSlots");
+    expect(input).toHaveProperty("defaultJudge");
+    expect(input).toHaveProperty("defaultRubricRef");
+    expect(input).toHaveProperty("repeatPolicy");
+    expect(input).toHaveProperty("missingnessPolicy");
+    expect(input).toHaveProperty("protocolDefaults");
+    expect(input).toHaveProperty("rubrics");
+    expect(input).toHaveProperty("aggregationPolicy", "equal-task");
+    expect(input).toHaveProperty("trialsPerTask", 1);
+
+    // Does not have non-semantic top-level fields
+    expect(input).not.toHaveProperty("taskSetId");
+    expect(input).not.toHaveProperty("createdAt");
+    expect(input).not.toHaveProperty("protocolFingerprint");
+  });
+
+  it("computeWorkloadManifestFingerprint computes deterministic sha256 hash", () => {
+    const task = makeTaskVersion();
+    const rubric = makeRubric();
+    const resolvers = makeCatalogResolvers([task], [rubric]);
+    const snapshot = materializeWorkloadManifest(makeTaskSetVersion(), resolvers);
+
+    const hash1 = computeWorkloadManifestFingerprint(snapshot);
+    const hash2 = computeWorkloadManifestFingerprint(snapshot);
+
+    expect(hash1).toBe(snapshot.protocolFingerprint);
+    expect(hash1).toBe(hash2);
   });
 });
