@@ -29,6 +29,7 @@ import { createExecutionHeartbeat, type ExecutionHeartbeat } from "../execution-
 import type { ExecutionOwnerRegistry } from "../execution-owner";
 import type { RunExecutor, RunExecutorEvents } from "../run-executor";
 import {
+  isEvaluationSuite,
   type EvaluationSuite,
   type EvaluationTask,
   type RubricSnapshot,
@@ -39,6 +40,7 @@ import {
   type ExperimentRepairPlan,
   type ExperimentTaskExecutionPlan,
 } from "./evaluation-types";
+import type { MaterializedWorkloadSnapshot } from "./workload-manifest";
 import {
   createExperimentEngine,
   createExperimentRecord,
@@ -142,6 +144,49 @@ function pinnedSuiteFromSnapshot(record: ExperimentRecord): EvaluationSuite {
     archivedAt: null,
   };
 }
+
+/**
+ * Project one durable Task Set materialization into the EvaluationSuite +
+ * rubric snapshots that createExperimentRecord already consumes. Execution
+ * content comes only from the frozen snapshot — never a later live Suite.
+ */
+function projectMaterializationToSuite(snapshot: MaterializedWorkloadSnapshot): EvaluationSuite {
+  const tasks: EvaluationTask[] = snapshot.tasks.map((member) => ({
+    id: member.memberId,
+    title: member.task.title,
+    prompt: member.task.candidateInstruction,
+    systemPrompt: "",
+    evaluation: member.evaluation,
+    judgeInstructionOverride: member.judgeInstructionOverride ?? "",
+    order: member.order,
+    ...(member.verification ? { verification: { ...member.verification } } : {}),
+    taskVersionRef: { ...member.taskVersionRef },
+    source: { ...member.task.source },
+  }));
+  return {
+    id: snapshot.taskSetId,
+    revision: 0,
+    version: snapshot.taskSetVersion,
+    name: `Task Set ${snapshot.taskSetId}`,
+    description: "",
+    tasks,
+    modelSlots: snapshot.defaultModelSlots.map((slot) => ({ ...slot })),
+    defaultJudge: {
+      providerId: snapshot.defaultJudge.providerId,
+      model: snapshot.defaultJudge.model,
+    },
+    defaultEvaluation: snapshot.defaultRubricRef
+      ? { kind: "profile", profile: { ...snapshot.defaultRubricRef } }
+      : { kind: "holistic" },
+    ...(snapshot.protocolDefaults.reasoningPolicy
+      ? { reasoningPolicy: { ...snapshot.protocolDefaults.reasoningPolicy } }
+      : {}),
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.createdAt,
+    archivedAt: null,
+  };
+}
+
 
 /** Resolve a task's evaluation selection to an AdHocEvaluationConfig for the
  *  executor. Inherits the suite default when the task says "inherit". */
@@ -770,15 +815,50 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
   // --- Public API -------------------------------------------------------------
 
-  async function start(suiteId: string): Promise<StartResult> {
-    // Load suite.
-    const loadedSuite = await evalRepo.getSuite(suiteId);
-    if (!loadedSuite) return { ok: false, error: `Suite ${suiteId} not found` };
+  async function start(materializationId: string): Promise<StartResult> {
+    const loaded = await evalRepo.getTaskSetMaterialization(materializationId);
+    if (!loaded) {
+      return { ok: false, error: `Materialization ${materializationId} not found` };
+    }
+    if (
+      loaded.snapshot.taskSetId !== loaded.taskSetId ||
+      loaded.snapshot.taskSetVersion !== loaded.taskSetVersion ||
+      loaded.snapshot.protocolFingerprint !== loaded.protocolFingerprint
+    ) {
+      return { ok: false, error: `Materialization ${materializationId} is corrupt or mismatched` };
+    }
 
-    // Acquire cross-tab lease.
+    const existing = await evalRepo.listExperiments();
+    if (existing.some((experiment) => experiment.materializationId === materializationId)) {
+      return { ok: false, error: `Materialization ${materializationId} has already been used` };
+    }
+
+    const projected = projectMaterializationToSuite(loaded.snapshot);
+    const rubrics: RubricSnapshot[] = loaded.snapshot.rubrics.map((rubric) => ({ ...rubric }));
+    if (
+      !isEvaluationSuite(projected) ||
+      projected.id !== loaded.taskSetId ||
+      projected.version !== loaded.taskSetVersion
+    ) {
+      return { ok: false, error: `Materialization ${materializationId} projected an invalid suite` };
+    }
+
+    const id = `exp-${generateId()}`;
+    const draft: ExperimentRecord = {
+      ...createExperimentRecord({ id, suite: projected, rubrics, now: now() }),
+      materializationId,
+    };
+    if (draft.suiteId !== loaded.taskSetId || draft.suiteVersion !== loaded.taskSetVersion) {
+      return { ok: false, error: `Materialization ${materializationId} projected a mismatched suite` };
+    }
+
+    // Acquire cross-tab lease keyed by Task Set identity, not materialization id.
     let leaseInfo: LeaseInfo;
     try {
-      leaseInfo = await lease.acquire({ kind: "experiment", executionId: suiteId });
+      leaseInfo = await lease.acquire({
+        kind: "experiment",
+        executionId: loaded.snapshot.taskSetId,
+      });
       activeLease = leaseInfo;
     } catch (err) {
       if (err instanceof LeaseError) {
@@ -787,33 +867,8 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       throw err;
     }
 
-    // Create experiment record.
-    const id = `exp-${generateId()}`;
-    const rubrics: RubricSnapshot[] = [];
-    // Resolve pinned rubrics from the suite's tasks.
-    for (const task of loadedSuite.tasks) {
-      if (task.evaluation.kind === "profile") {
-        const p = await evalRepo.getRubricVersion(
-          task.evaluation.profile.id,
-          task.evaluation.profile.version,
-        );
-        if (p && !rubrics.find((x) => x.id === p.id && x.version === p.version)) {
-          rubrics.push(p);
-        }
-      }
-    }
-    // Also resolve the suite default if it's a rubric.
-    if (loadedSuite.defaultEvaluation.kind === "profile") {
-      const ref = loadedSuite.defaultEvaluation.profile;
-      const p = await evalRepo.getRubricVersion(ref.id, ref.version);
-      if (p && !rubrics.find((x) => x.id === p.id && x.version === p.version)) {
-        rubrics.push(p);
-      }
-    }
-
-    const record = createExperimentRecord({ id, suite: loadedSuite, rubrics, now: now() });
-    await evalRepo.createExperiment(record);
-    persistedExperimentRevision = record.revision;
+    await evalRepo.createExperiment(draft);
+    persistedExperimentRevision = draft.revision;
 
     // Acquire in-tab ownership.
     if (!owner.tryAcquire({ kind: "experiment", id })) {
@@ -822,9 +877,9 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     }
 
     // Initialize engine.
-    engine = createExperimentEngine(record);
+    engine = createExperimentEngine(draft);
     experimentId = id;
-    suite = loadedSuite;
+    suite = projected;
 
     // Start the engine.
     const fence: ExecutionFence = {
@@ -1523,7 +1578,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 }
 
 export interface ExperimentController {
-  start(suiteId: string): Promise<StartResult>;
+  start(materializationId: string): Promise<StartResult>;
   requestPause(): Promise<void>;
   resume(): Promise<SimpleResult>;
   abort(): Promise<void>;

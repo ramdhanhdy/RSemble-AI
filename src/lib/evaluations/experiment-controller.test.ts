@@ -350,8 +350,10 @@ function makeHarness(
   };
 }
 
-async function seedSuite(h: Harness, suite: EvaluationSuite): Promise<void> {
+async function seedSuite(h: Harness, suite: EvaluationSuite): Promise<string> {
   await h.evalRepo.saveSuite(suite, 0);
+  const record = await persistMaterialization(h, suite, { id: `mat-${suite.id}` });
+  return record.id;
 }
 function makeTaskVersionFromEvalTask(task: EvaluationTask, createdAt: number): TaskVersion {
   return {
@@ -434,7 +436,6 @@ function makeMaterializedSnapshot(
       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     createdAt: suite.createdAt,
     ...overrides,
-    tasks: overrides.tasks ?? tasks,
   };
 }
 
@@ -502,7 +503,7 @@ describe("experiment-controller — sequential execution", () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1", "t2", "t3"]));
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -569,7 +570,7 @@ describe("experiment-controller — sequential execution", () => {
   it("candidate fanout stays parallel within the active task (single executeTask call per task)", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    await h.controller.start("suite-1");
+    await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     // One executeTask per task — the executor's internal Promise.all owns
     // candidate parallelism; the controller never serializes candidates.
@@ -585,7 +586,7 @@ describe("experiment-controller — sequential execution", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2", "t3"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -624,7 +625,7 @@ describe("experiment-controller — persistence failure", () => {
       return originalCommit(fn);
     };
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -653,7 +654,7 @@ describe("experiment-controller — persistence failure", () => {
       return originalCommit(fn);
     };
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -682,7 +683,7 @@ describe("experiment-controller — pause / resume / abort", () => {
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -708,7 +709,7 @@ describe("experiment-controller — pause / resume / abort", () => {
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
     expect(h.executor.calls).toHaveLength(1);
@@ -740,7 +741,7 @@ describe("experiment-controller — pause / resume / abort", () => {
     (h.executor as { abortedSignals?: AbortSignal[] }).abortedSignals = abortedSignals;
 
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -773,7 +774,7 @@ describe("experiment-controller — retry incomplete tasks", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -825,7 +826,7 @@ describe("experiment-controller — retry incomplete tasks", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -860,7 +861,7 @@ describe("experiment-controller — retry incomplete tasks", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -918,7 +919,7 @@ describe("experiment-controller — execution ownership", () => {
     });
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    await h.controller.start("suite-1");
+    await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
 
     // Paused experiment still owns in-app execution → Compare cannot start.
@@ -930,7 +931,7 @@ describe("experiment-controller — execution ownership", () => {
     await seedSuite(h, makeSuite(["t1"]));
     expect(h.owner.tryAcquire({ kind: "compare", id: "run-x" })).toBe(true);
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/active/i);
     expect(h.executor.calls).toHaveLength(0);
@@ -959,7 +960,7 @@ describe("experiment-controller — execution ownership", () => {
       heartbeatMs: 0,
     });
 
-    const started = await controllerB.start("suite-1");
+    const started = await controllerB.start("mat-suite-1");
     expect(started.ok).toBe(false);
     if (!started.ok) expect(started.error).toMatch(/another tab/i);
     expect(h.executor.calls).toHaveLength(0);
@@ -995,7 +996,7 @@ describe("experiment-controller — reload and recovery", () => {
     await seedSuite(h, makeSuite(["t1", "t2"]));
 
     // Simulate a crash: experiment "running" with a running attempt + running run.
-    const started = await h.controller.start("suite-1");
+    const started = await h.controller.start("mat-suite-1");
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     // Let task 1 begin but intercept before commit: use a blocking executor on a
@@ -1445,7 +1446,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     const h = makeHarness();
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1470,7 +1471,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     });
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1508,7 +1509,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     controllerRef = h.controller;
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1538,7 +1539,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     });
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
     const callsBefore = h.executor.calls.length;
@@ -1575,7 +1576,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     });
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1619,7 +1620,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("executes only the added model per task and reuses accepted outputs (compound)", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1", "t2", "t3"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
     const original = await h.evalRepo.getExperiment(expId);
@@ -1689,7 +1690,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("retries a failed added-model run with the same targeted extension plan", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1746,7 +1747,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1788,7 +1789,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("rejects duplicates, non-terminal records, invalid slots, and ownership conflicts before any paid call", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
     const callsBefore = h.executor.calls.length;
@@ -1874,7 +1875,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     });
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1914,7 +1915,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     });
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1943,7 +1944,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("a persistence failure during extension stops before another paid task", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
     const callsBefore = h.executor.calls.length;

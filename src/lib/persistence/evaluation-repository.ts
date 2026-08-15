@@ -115,6 +115,7 @@ export interface EvaluationRepository {
   saveSuiteAndTaskSetVersion(input: AtomicTaskSetSaveInput): Promise<AtomicTaskSetSaveResult>;
   persistTaskSetMaterialization(record: TaskSetMaterializationRecord): Promise<void>;
   listTaskSetMaterializations(taskSetId: string): Promise<TaskSetMaterializationRecord[]>;
+  getTaskSetMaterialization(id: string): Promise<TaskSetMaterializationRecord | null>;
   archiveSuite(id: string): Promise<void>;
 
   // --- Canonical Rubric repository API (spec §5.1) -------------------------
@@ -349,6 +350,18 @@ export function createEvaluationRepository(
         .filter(isTaskSetMaterializationRecord)
         .map((row) => structuredClone(row))
         .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function getTaskSetMaterialization(
+    id: string,
+  ): Promise<TaskSetMaterializationRecord | null> {
+    try {
+      const row = await db.taskSetMaterializations.get(id);
+      if (!row || !isTaskSetMaterializationRecord(row)) return null;
+      return structuredClone(row);
     } catch (err) {
       throw classifyStorageError(err);
     }
@@ -770,6 +783,7 @@ export function createEvaluationRepository(
     saveSuiteAndTaskSetVersion,
     persistTaskSetMaterialization,
     listTaskSetMaterializations,
+    getTaskSetMaterialization,
     archiveSuite,
     listRubrics,
     getRubricRecord,
@@ -864,6 +878,12 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
       .filter((record) => record.taskSetId === taskSetId)
       .map((record) => structuredClone(record))
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  }
+
+  async getTaskSetMaterialization(id: string): Promise<TaskSetMaterializationRecord | null> {
+    const row = this.taskSetMaterializations.get(id);
+    if (!row || !isTaskSetMaterializationRecord(row)) return null;
+    return structuredClone(row);
   }
   constructor(shared?: { experiments?: Map<string, ExperimentRecord> }) {
     this.experiments = shared?.experiments ?? new Map<string, ExperimentRecord>();

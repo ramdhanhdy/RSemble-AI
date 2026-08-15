@@ -513,9 +513,7 @@ export function TaskSetEditor({
           cleanSuite,
         );
         setRunState("running");
-        // Task 8 hand-off: make controller.start consume materialized.record.id.
-        // Task 7 guarantees the immutable row is durable before this boundary.
-        const result = await controller.start(materialized.suite.id);
+        const result = await controller.start(materialized.record.id);
         if (result.ok) {
           void navigate(`/experiments/${result.experimentId}`);
         } else {

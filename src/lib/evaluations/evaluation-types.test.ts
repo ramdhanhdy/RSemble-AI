@@ -230,6 +230,11 @@ describe("isExperimentRecord — rosterExtensions history", () => {
     expect(isExperimentRecord(makeRecord({ rosterExtensions: [] }))).toBe(true);
   });
 
+  it("still validates records with an optional materializationId", () => {
+    expect(isExperimentRecord(makeRecord({ materializationId: "mat-1" }))).toBe(true);
+    expect(isExperimentRecord(makeRecord({ materializationId: "" }))).toBe(false);
+  });
+
   it("validates a record with one extension history entry", () => {
     expect(isExperimentRecord(makeRecord({ rosterExtensions: [makeExtension()] }))).toBe(true);
   });

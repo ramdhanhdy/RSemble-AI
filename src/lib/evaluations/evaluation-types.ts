@@ -318,6 +318,9 @@ export interface ExperimentRecord {
   /** Append-only model-addition history (spec §6.5); absent for records
    *  created before roster extension existed. */
   rosterExtensions?: ExperimentRosterExtension[];
+  /** Durable Task Set materialization this experiment was created from.
+   *  Written at create time only; used for fail-closed replay detection. */
+  materializationId?: string;
 }
 
 // --- Experiment task orchestration inputs -------------------------------------
@@ -892,6 +895,7 @@ export function isExperimentRecord(v: unknown): v is ExperimentRecord {
   if (!isNumber(v.updatedAt)) return false;
   if (v.rosterExtensions !== undefined && !hasValidRosterExtensionHistory(v.rosterExtensions))
     return false;
+  if (v.materializationId !== undefined && !isNonEmptyString(v.materializationId)) return false;
   if (hasProhibitedKeys(v)) return false;
   return true;
 }

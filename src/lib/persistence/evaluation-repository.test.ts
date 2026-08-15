@@ -18,6 +18,7 @@ import {
   createEvaluationRepository,
   InMemoryEvaluationRepository,
   type EvaluationRepository,
+  type TaskSetMaterializationRecord,
 } from "./evaluation-repository";
 import type {
   EvaluationRubric,
@@ -27,6 +28,7 @@ import type {
 } from "../evaluations/evaluation-types";
 import { validateSuiteForExecution } from "../evaluations/suite-validation";
 import type { FullRunSummaryV2, RunRecordV2 } from "./run-types";
+import type { MaterializedWorkloadSnapshot } from "../evaluations/workload-manifest";
 
 // --- Valid baselines ----------------------------------------------------------
 
@@ -135,6 +137,25 @@ function makeExperiment(id: string, suiteId: string): ExperimentRecord {
     ],
     createdAt: 1000,
     updatedAt: 1000,
+  };
+}
+
+function makeMaterialization(id: string, taskSetId = "set-1"): TaskSetMaterializationRecord {
+  const protocolFingerprint = "sha256:materialization-identity";
+  // Persist only checks envelope/snapshot identity alignment, not the full
+  // workload graph — lookup tests need a valid row, not a complete snapshot.
+  const snapshot = {
+    taskSetId,
+    taskSetVersion: 1,
+    protocolFingerprint,
+  } as MaterializedWorkloadSnapshot;
+  return {
+    id,
+    taskSetId,
+    taskSetVersion: 1,
+    protocolFingerprint,
+    snapshot,
+    createdAt: 1000,
   };
 }
 
@@ -485,6 +506,15 @@ describe("EvaluationRepository (Dexie-backed)", () => {
     });
   });
 
+  describe("Task Set materialization lookup", () => {
+    it("gets a persisted materialization by id and returns null when missing", async () => {
+      const record = makeMaterialization("mat-1");
+      await evalRepo.persistTaskSetMaterialization(record);
+      expect(await evalRepo.getTaskSetMaterialization("mat-1")).toEqual(record);
+      expect(await evalRepo.getTaskSetMaterialization("mat-missing")).toBeNull();
+    });
+  });
+
   describe("Deprecated Profile adapter surface", () => {
     it("listProfiles forwards to listRubrics", async () => {
       await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
@@ -789,5 +819,12 @@ describe("EvaluationRepository (In-memory)", () => {
     const bad = makeSuite("bad");
     (bad.tasks[0] as unknown as Record<string, unknown>).order = "zero";
     await expect(evalRepo.saveSuite(bad, 0)).rejects.toThrow(/invalid suite/i);
+  });
+
+  it("gets a persisted materialization by id and returns null when missing", async () => {
+    const record = makeMaterialization("mat-mem-1");
+    await evalRepo.persistTaskSetMaterialization(record);
+    expect(await evalRepo.getTaskSetMaterialization("mat-mem-1")).toEqual(record);
+    expect(await evalRepo.getTaskSetMaterialization("mat-missing")).toBeNull();
   });
 });
