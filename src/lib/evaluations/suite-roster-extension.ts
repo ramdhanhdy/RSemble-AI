@@ -15,7 +15,9 @@
 // =============================================================================
 
 import type { EvaluationRepository } from "../persistence/evaluation-repository";
+import type { TaskSetRepository } from "../persistence/task-set-repository";
 import { StorageError } from "../persistence/database";
+import { suiteToTaskSetRecord } from "./suite-compat";
 import type { EvaluationSuite } from "./evaluation-types";
 import type { ModelSlot } from "../../studio-data";
 
@@ -41,7 +43,12 @@ function modelKeyOf(slot: Pick<ModelSlot, "providerId" | "slug">): string {
  */
 export async function appendModelToSuite(
   repo: EvaluationRepository,
-  input: { suiteId: string; slot: ModelSlot; now: number },
+  input: {
+    suiteId: string;
+    slot: ModelSlot;
+    now: number;
+    taskSetRepository?: TaskSetRepository | null;
+  },
 ): Promise<SuiteRosterExtensionResult> {
   let suite: EvaluationSuite | null;
   try {
@@ -77,6 +84,61 @@ export async function appendModelToSuite(
     };
   }
 
+  // When the Task Set is canonical (a TaskSetRecord exists), the optional sync
+  // appends a new Task Set Version in addition to the legacy Suite write
+  // (spec §7.9). The two writes are atomic; the sync stays separate from the
+  // experiment extension and never changes its success semantics.
+  const taskSetRepo = input.taskSetRepository ?? null;
+  if (taskSetRepo) {
+    const currentTaskSet = await taskSetRepo.getTaskSetRecord(input.suiteId);
+    if (currentTaskSet) {
+      const latest = await taskSetRepo.getTaskSetVersion(
+        input.suiteId,
+        currentTaskSet.latestVersion,
+      );
+      if (latest) {
+        const nextVersionNumber = currentTaskSet.latestVersion + 1;
+        const canonicalUpdated: EvaluationSuite = {
+          ...suite,
+          modelSlots: [...suite.modelSlots, { ...input.slot }],
+          version: nextVersionNumber,
+          updatedAt: input.now,
+        };
+        const taskSetRecord = suiteToTaskSetRecord({
+          ...canonicalUpdated,
+          revision: currentTaskSet.revision,
+        });
+        const nextVersion = {
+          ...latest,
+          version: nextVersionNumber,
+          defaultModelSlots: [...latest.defaultModelSlots, { ...input.slot }],
+          createdAt: input.now,
+        };
+        try {
+          await repo.saveSuiteAndTaskSetVersion({
+            suite: canonicalUpdated,
+            expectedSuiteRevision: suite.revision,
+            taskSetRecord,
+            taskSetVersion: nextVersion,
+            expectedTaskSetRevision: currentTaskSet.revision,
+            taskSetRepository: taskSetRepo,
+          });
+          return { ok: true, suiteVersion: nextVersionNumber };
+        } catch (err) {
+          if (err instanceof StorageError && err.kind === "conflict") {
+            return {
+              ok: false,
+              code: "conflict",
+              message: "Suite was modified elsewhere — the model was added to these results only.",
+            };
+          }
+          return { ok: false, code: "storage", message: suiteStorageMessage(err) };
+        }
+      }
+    }
+  }
+
+  // Legacy Suite compatibility write (no canonical Task Set).
   const updated: EvaluationSuite = {
     ...suite,
     modelSlots: [...suite.modelSlots, { ...input.slot }],

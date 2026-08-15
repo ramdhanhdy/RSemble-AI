@@ -43,6 +43,7 @@ vi.mock("../../lib/execution-owner-context", () => ({
 vi.mock("../../lib/persistence/repository-context", () => ({
   useEvaluationRepository: () => mockEvalRepo,
   useRunRepository: () => mockRunRepo,
+  useTaskSetRepository: () => null,
 }));
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;

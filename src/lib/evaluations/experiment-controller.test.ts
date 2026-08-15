@@ -41,7 +41,7 @@ import {
   type LeaseInfo,
 } from "../execution-lease";
 import { ExecutionOwnerRegistry } from "../execution-owner";
-import { RSembleEvaluationDB } from "../persistence/database";
+import { RSembleEvaluationDB, StorageError } from "../persistence/database";
 import type {
   EvaluationRubric,
   EvaluationSuite,
@@ -52,12 +52,10 @@ import type { FullRunSummaryV2, RunRecordV2, RunSummary } from "../persistence/r
 import type { RunExecutor, RunExecutorEvents, RunRequest } from "../run-executor";
 import { candidateIdForSlot } from "../pipeline";
 import { type JudgeReport, type ModelSlot } from "../../studio-data";
-import { StorageError } from "../persistence/database";
 import { rotateExperimentRoster } from "./experiment-roster-extension";
 import { createExperimentRecord } from "./experiment-engine";
 import type { MaterializedTask, MaterializedWorkloadSnapshot } from "./workload-manifest";
 import type { TaskVersion } from "../tasks/task-types";
-
 
 // --- Fixtures -------------------------------------------------------------------
 
@@ -443,8 +441,7 @@ function makeMaterializedSnapshot(
     protocolDefaults: suite.reasoningPolicy
       ? { reasoningPolicy: { ...suite.reasoningPolicy } }
       : {},
-    protocolFingerprint:
-      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    protocolFingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     createdAt: suite.createdAt,
     ...overrides,
   };
@@ -483,14 +480,12 @@ type InMemoryMaterializationStore = {
   taskSetMaterializations: Map<string, TaskSetMaterializationRecord>;
 };
 
-
 function storedMaterializations(h: Harness): Map<string, TaskSetMaterializationRecord> {
   // In-memory repo keeps the append-only map private; tests mutate the stored
   // clone to inject corrupt rows the public persist API refuses.
   const store = h.evalRepo as unknown as InMemoryMaterializationStore;
   return store.taskSetMaterializations;
 }
-
 
 async function expectZeroExecutionSideEffects(h: Harness): Promise<void> {
   expect(h.leaseStore.lease).toBeNull();
@@ -499,7 +494,6 @@ async function expectZeroExecutionSideEffects(h: Harness): Promise<void> {
   expect(h.executor.calls).toHaveLength(0);
   expect(h.store.runDetails.size).toBe(0);
 }
-
 
 function taskIds(executor: FakeExecutor): string[] {
   return executor.calls.map((c) => (c.source.kind === "experiment" ? c.source.taskId : "adhoc"));
@@ -2161,7 +2155,8 @@ describe("experiment-controller — frozen Task Set materialization start", () =
     });
 
     const storedLive = await h.evalRepo.getSuite("suite-1");
-    if (storedLive) storedLive.tasks[0] = { ...storedLive.tasks[0], prompt: "EVEN NEWER LIVE PROMPT" };
+    if (storedLive)
+      storedLive.tasks[0] = { ...storedLive.tasks[0], prompt: "EVEN NEWER LIVE PROMPT" };
 
     const acquire = vi.spyOn(h.lease, "acquire");
     const getSuite = vi.spyOn(h.evalRepo, "getSuite");
@@ -2205,9 +2200,11 @@ describe("experiment-controller — frozen Task Set materialization start", () =
       kind: "profile",
       profile: frozenRubric,
     });
-    const run = await h.runRepo.get(h.executor.calls[0].source.kind === "experiment"
-      ? experiment!.tasks[0].attempts[0].runId!
-      : "");
+    const run = await h.runRepo.get(
+      h.executor.calls[0].source.kind === "experiment"
+        ? experiment!.tasks[0].attempts[0].runId!
+        : "",
+    );
     expect(run).not.toBeNull();
     if (run && run.source.kind === "experiment") {
       expect(run.source.protocolFingerprint).toBe(experiment!.protocolFingerprint);
@@ -2329,7 +2326,7 @@ describe("experiment-controller — frozen Task Set materialization start", () =
     expect(repaired.ok).toBe(false);
   });
 
-  it("unresolved profile selection fails closed before lease and does not fall through to holistic", async () => {
+  it("unresolved rubric selection fails closed before lease and does not fall through to holistic", async () => {
     const h = makeHarness();
     const frozen = makeSuite(["t1"]);
     frozen.tasks[0] = {
@@ -2338,15 +2335,19 @@ describe("experiment-controller — frozen Task Set materialization start", () =
     };
     frozen.defaultEvaluation = { kind: "profile", profile: { id: "rubric-missing", version: 1 } };
     await persistMaterialization(h, frozen, {
-      id: "mat-unresolved-profile-1",
-      snapshot: { rubrics: [], defaultRubric: null, defaultRubricRef: { id: "rubric-missing", version: 1 } },
+      id: "mat-unresolved-rubric-1",
+      snapshot: {
+        rubrics: [],
+        defaultRubric: null,
+        defaultRubricRef: { id: "rubric-missing", version: 1 },
+      },
     });
 
     const acquire = vi.spyOn(h.lease, "acquire");
-    const result = await h.controller.start("mat-unresolved-profile-1");
+    const result = await h.controller.start("mat-unresolved-rubric-1");
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/unresolved|rubric|profile|materialization/i);
+      expect(result.error).toMatch(/unresolved|rubric|materialization/i);
       expect(result.error).not.toMatch(/holistic/i);
     }
     expect(acquire).not.toHaveBeenCalled();
@@ -2383,7 +2384,6 @@ describe("experiment-controller — frozen Task Set materialization start", () =
     expect(acquire).not.toHaveBeenCalled();
     await expectZeroExecutionSideEffects(h);
   });
-
 });
 
 describe("experiment-controller — start/retry/resume persistence-failure reliability (Milestone D)", () => {
@@ -2577,4 +2577,3 @@ describe("experiment-controller — Dexie persist to start ordering", () => {
     await db.delete();
   });
 });
-

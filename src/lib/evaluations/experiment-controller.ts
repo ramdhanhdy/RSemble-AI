@@ -187,8 +187,7 @@ function projectMaterializationToSuite(snapshot: MaterializedWorkloadSnapshot): 
   };
 }
 
-
-function profileSelectionHasSnapshot(
+function rubricSelectionHasSnapshot(
   selection: EvaluationSelection,
   rubrics: RubricSnapshot[],
 ): boolean {
@@ -198,15 +197,15 @@ function profileSelectionHasSnapshot(
   );
 }
 
-function projectedProfileSelectionsResolve(
+function projectedRubricSelectionsResolve(
   suite: EvaluationSuite,
   rubrics: RubricSnapshot[],
 ): boolean {
-  if (!profileSelectionHasSnapshot(suite.defaultEvaluation, rubrics)) return false;
+  if (!rubricSelectionHasSnapshot(suite.defaultEvaluation, rubrics)) return false;
   return suite.tasks.every((task) => {
     const selection: EvaluationSelection =
       task.evaluation.kind === "inherit" ? suite.defaultEvaluation : task.evaluation;
-    return profileSelectionHasSnapshot(selection, rubrics);
+    return rubricSelectionHasSnapshot(selection, rubrics);
   });
 }
 
@@ -868,12 +867,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       projected.id !== loaded.taskSetId ||
       projected.version !== loaded.taskSetVersion
     ) {
-      return { ok: false, error: `Materialization ${materializationId} projected an invalid suite` };
-    }
-    if (!projectedProfileSelectionsResolve(projected, rubrics)) {
       return {
         ok: false,
-        error: `Materialization ${materializationId} has an unresolved profile selection`,
+        error: `Materialization ${materializationId} projected an invalid suite`,
+      };
+    }
+    if (!projectedRubricSelectionsResolve(projected, rubrics)) {
+      return {
+        ok: false,
+        error: `Materialization ${materializationId} has an unresolved rubric selection`,
       };
     }
 
@@ -883,7 +885,10 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       materializationId,
     };
     if (draft.suiteId !== loaded.taskSetId || draft.suiteVersion !== loaded.taskSetVersion) {
-      return { ok: false, error: `Materialization ${materializationId} projected a mismatched suite` };
+      return {
+        ok: false,
+        error: `Materialization ${materializationId} projected a mismatched suite`,
+      };
     }
 
     // Acquire cross-tab lease keyed by Task Set identity, not materialization id.
@@ -901,43 +906,54 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       throw err;
     }
 
-    await evalRepo.createExperiment(draft);
-    persistedExperimentRevision = draft.revision;
-
-    // Acquire in-tab ownership.
+    // Acquire in-tab ownership BEFORE any persisted side effect: an owner-busy
+    // start must never write a draft experiment or burn the materialization.
     if (!owner.tryAcquire({ kind: "experiment", id })) {
       await releaseLeaseToken();
       return { ok: false, error: "Another execution is active" };
     }
 
-    // Initialize engine.
-    engine = createExperimentEngine(draft);
     experimentId = id;
-    suite = projected;
 
-    // Start the engine.
-    const fence: ExecutionFence = {
-      ownerId: leaseInfo.ownerId,
-      fence: leaseInfo.fence,
-      ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
-    };
-    const startResult = engine.start(fence, now());
-    if (!startResult.ok) {
-      releaseExecution();
-      engine = null;
-      experimentId = null;
-      suite = null;
-      return { ok: false, error: startResult.reason ?? "Failed to start" };
+    let transferredToRunLoop = false;
+    try {
+      await evalRepo.createExperiment(draft);
+      persistedExperimentRevision = draft.revision;
+
+      // Initialize engine.
+      engine = createExperimentEngine(draft);
+      suite = projected;
+
+      // Start the engine.
+      const fence: ExecutionFence = {
+        ownerId: leaseInfo.ownerId,
+        fence: leaseInfo.fence,
+        ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
+      };
+      const startResult = engine.start(fence, now());
+      if (!startResult.ok) {
+        return { ok: false, error: startResult.reason ?? "Failed to start" };
+      }
+
+      // Persist the running status.
+      await syncExperimentStatus(persistedExperimentRevision);
+
+      // Start heartbeat and task loop.
+      startHeartbeat();
+      transferredToRunLoop = true;
+      void runLoop(fence);
+
+      return { ok: true, experimentId: id };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (!transferredToRunLoop) {
+        releaseExecution();
+        engine = null;
+        experimentId = null;
+        suite = null;
+      }
     }
-
-    // Persist the running status.
-    await syncExperimentStatus(persistedExperimentRevision);
-
-    // Start heartbeat and task loop.
-    startHeartbeat();
-    void runLoop(fence);
-
-    return { ok: true, experimentId: id };
   }
 
   async function requestPause(): Promise<void> {
@@ -982,10 +998,23 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       return { ok: false, error: result.reason ?? "Failed to resume" };
     }
 
-    await syncExperimentStatus(persistedExperimentRevision);
-    startHeartbeat();
-    void runLoop(fence);
-    return { ok: true };
+    let transferredToRunLoop = false;
+    try {
+      await syncExperimentStatus(persistedExperimentRevision);
+      startHeartbeat();
+      transferredToRunLoop = true;
+      void runLoop(fence);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (!transferredToRunLoop) {
+        releaseExecution();
+        engine = null;
+        experimentId = null;
+        suite = null;
+      }
+    }
   }
 
   async function abort(): Promise<void> {
@@ -1041,10 +1070,23 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       return { ok: false, error: result.reason ?? "Failed to retry" };
     }
 
-    await syncExperimentStatus(persistedExperimentRevision);
-    startHeartbeat();
-    void runLoop(fence);
-    return { ok: true };
+    let transferredToRunLoop = false;
+    try {
+      await syncExperimentStatus(persistedExperimentRevision);
+      startHeartbeat();
+      transferredToRunLoop = true;
+      void runLoop(fence);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (!transferredToRunLoop) {
+        releaseExecution();
+        engine = null;
+        experimentId = null;
+        suite = null;
+      }
+    }
   }
 
   // --- Recovery ---------------------------------------------------------------

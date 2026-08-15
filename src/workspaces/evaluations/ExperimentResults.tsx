@@ -14,7 +14,10 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Crown } from "lucide-react";
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
-import { useEvaluationRepository } from "../../lib/persistence/repository-context";
+import {
+  useEvaluationRepository,
+  useTaskSetRepository,
+} from "../../lib/persistence/repository-context";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
 import type { ModelSlot } from "../../studio-data";
@@ -102,9 +105,12 @@ export function ExperimentResults({
 }: ExperimentResultsProps): ReactElement {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const evalRepo = useEvaluationRepository();
+  const taskSetRepo = useTaskSetRepository();
   const [searchParams, setSearchParams] = useSearchParams();
   const [runRecords, setRunRecords] = useState<ReadonlyMap<string, RunRecordV2> | null>(null);
-  const [suiteName, setSuiteName] = useState<string | null>(taskSetNameProp ?? suiteNameProp ?? null);
+  const [suiteName, setSuiteName] = useState<string | null>(
+    taskSetNameProp ?? suiteNameProp ?? null,
+  );
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
@@ -274,6 +280,7 @@ export function ExperimentResults({
         suiteId: experiment.suiteId,
         slot,
         now: Date.now(),
+        taskSetRepository: taskSetRepo,
       });
       if (!suiteResult.ok) suiteWarning = suiteResult.message;
     }
@@ -307,6 +314,7 @@ export function ExperimentResults({
     addModelBusy,
     addModelSync,
     evalRepo,
+    taskSetRepo,
     experiment.suiteId,
     experimentId,
   ]);
