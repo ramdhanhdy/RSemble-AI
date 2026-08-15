@@ -20,6 +20,12 @@ import type {
   ExperimentRecord,
 } from "../../lib/evaluations/evaluation-types";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
+import { InMemoryTaskSetRepository } from "../../lib/persistence/in-memory-task-set-repository";
+import {
+  suiteToTaskSetRecord,
+  suiteToTaskSetVersion,
+} from "../../lib/evaluations/suite-compat";
+import { StorageError } from "../../lib/persistence/database";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -273,6 +279,54 @@ function makeStubController(overrides: Partial<ExperimentController> = {}): Expe
   };
 }
 
+
+/** Crosswalk every suite task id to taskId + v1. */
+function identityCrosswalk(task: EvaluationTask) {
+  const data = task as { taskVersionRef?: { taskId: string; version: number } };
+  if (data.taskVersionRef && data.taskVersionRef.taskId && data.taskVersionRef.version > 0) {
+    return { taskId: data.taskVersionRef.taskId, version: data.taskVersionRef.version };
+  }
+  return { taskId: task.id, version: 1 };
+}
+
+/** Persist a canonical Task Set Version for a saved suite with an explicit revision. */
+async function seedTaskSetVersion(
+  taskSetRepo: InMemoryTaskSetRepository,
+  suite: EvaluationSuite,
+  expectedRevision: number,
+): Promise<number> {
+  const record = suiteToTaskSetRecord(suite);
+  const { version } = suiteToTaskSetVersion(suite, identityCrosswalk);
+  const existing = await taskSetRepo.getTaskSetRecord(suite.id);
+  if (!existing) {
+    await taskSetRepo.createTaskSet(
+      { ...record, latestVersion: version.version },
+      version,
+    );
+    return 1;
+  }
+  return taskSetRepo.appendTaskSetVersion(record, version, expectedRevision);
+}
+
+/** In-memory tracking repository that records materialization reads in order. */
+class TrackingTaskSetRepository extends InMemoryTaskSetRepository {
+  constructor(private readonly onMaterialize: () => void) {
+    super();
+  }
+  override async getTaskSetVersion(taskSetId: string, version: number) {
+    const stored = await super.getTaskSetVersion(taskSetId, version);
+    this.onMaterialize();
+    return stored;
+  }
+}
+
+/** Task Set repository whose materialization always fails (persistence failure seam). */
+class FailingTaskSetRepository extends InMemoryTaskSetRepository {
+  override async materializeTaskSetVersion() {
+    throw new StorageError("quota", "disk full");
+  }
+}
+
 describe("TaskSetEditor — loading & not found", () => {
   it("shows loading state", async () => {
     const repo = new InMemoryEvaluationRepository();
@@ -324,10 +378,11 @@ describe("TaskSetEditor — header & dirty state", () => {
     cleanup(h);
   });
 
-  it("Run is disabled while dirty with save-first message", async () => {
+  it("dirty Run presents explicit Save a new version, Discard draft, and Cancel choices", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 2 }));
-    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await seedSuite(repo, makeValidSuite("s1"));
+    const controller = makeStubController();
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} controller={controller} />);
     await settle();
     const settingsBtn = h.$("button[aria-expanded='false']");
     await act(async () => {
@@ -335,11 +390,22 @@ describe("TaskSetEditor — header & dirty state", () => {
     });
     await settle();
     const nameInput = h.$("#task-set-name") as HTMLInputElement;
-    typeInto(nameInput, "Edited");
+    typeInto(nameInput, "Dirty Suite");
     await settle();
+
     const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
-    expect(runBtn.disabled).toBe(true);
-    expect(h.container.textContent).toMatch(/save this task set before running/i);
+    expect(runBtn.disabled).toBe(false);
+    await act(async () => {
+      runBtn.click();
+      await flush();
+    });
+    await settle();
+
+    expect(h.$("[data-dirty-run-dialog]")).toBeTruthy();
+    expect(h.container.textContent).toContain("Save a new version");
+    expect(h.container.textContent).toContain("Discard draft");
+    expect(h.container.textContent).toContain("Cancel");
+    expect(controller.start).not.toHaveBeenCalled();
     cleanup(h);
   });
 });
@@ -1015,6 +1081,372 @@ describe("TaskSetEditor — keyboard reordering", () => {
     cleanup(h);
   });
 });
+
+describe("TaskSetEditor — safe Save versus Run boundary", () => {
+  it("Discard draft resets to the stored revision, waits on materialization, and runs it once", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    await seedCanonicalTask(taskRepo, "canon-t", "Canonical Task", {
+      instruction: "Solve this candidate problem.",
+    });
+    const suite = makeValidSuite("s1");
+    suite.tasks = [
+      {
+        ...makeTask("t1"),
+        title: "Canonical Task",
+        prompt: "Solve this candidate problem.",
+        taskVersionRef: { taskId: "canon-t", version: 1 },
+      } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+    ];
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+
+    const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
+    const controller = makeStubController({ start: runCall });
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+        controller={controller}
+      />,
+    );
+    await settle();
+
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => { settingsBtn!.click(); });
+    await settle();
+    const nameInput = h.$("#task-set-name") as HTMLInputElement;
+    typeInto(nameInput, "Dirty Draft");
+    await settle();
+
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    await act(async () => { runBtn.click(); await flush(); });
+    await settle();
+    const discard = h.$("button[data-action='dirty-run-discard']") as HTMLButtonElement;
+    expect(discard).toBeTruthy();
+    await act(async () => { discard.click(); await flush(); });
+    await settle();
+
+    const preflightRun = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Run task set",
+    );
+    await act(async () => { preflightRun?.click(); await flush(); });
+    await settle();
+
+    expect(runCall).toHaveBeenCalledTimes(1);
+    expect(runCall).toHaveBeenCalledWith("s1");
+    expect(h.$("[data-route='experiment-progress']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("Cancel makes no provider call, keeps the dirty draft, and does not navigate", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    await seedCanonicalTask(taskRepo, "canon-t", "Canonical Task", {
+      instruction: "Solve this candidate problem.",
+    });
+    const suite = makeValidSuite("s1");
+    suite.tasks = [
+      {
+        ...makeTask("t1"),
+        taskVersionRef: { taskId: "canon-t", version: 1 },
+      } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+    ];
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+
+    const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
+    const controller = makeStubController({ start: runCall });
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+        controller={controller}
+      />,
+    );
+    await settle();
+
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => { settingsBtn!.click(); });
+    await settle();
+    const nameInput = h.$("#task-set-name") as HTMLInputElement;
+    typeInto(nameInput, "Never Commit");
+    await settle();
+
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    await act(async () => { runBtn.click(); await flush(); });
+    await settle();
+    const cancel = h.$("button[data-action='dirty-run-cancel']") as HTMLButtonElement;
+    expect(cancel).toBeTruthy();
+    await act(async () => { cancel.click(); await flush(); });
+    expect(runCall).not.toHaveBeenCalled();
+    expect(h.container.textContent).toMatch(/unsaved changes/i);
+    expect(h.container.textContent).toContain("Never Commit");
+    expect(h.$("[data-route='experiment-progress']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("stale CAS blocks Save a new version and Run with zero provider calls", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    await seedCanonicalTask(taskRepo, "canon-t", "Canonical Task", {
+      instruction: "Solve this candidate problem.",
+    });
+    const suite = makeValidSuite("s1");
+    suite.tasks = [
+      {
+        ...makeTask("t1"),
+        taskVersionRef: { taskId: "canon-t", version: 1 },
+      } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+    ];
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+
+    const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
+    const controller = makeStubController({ start: runCall });
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+        controller={controller}
+      />,
+    );
+    await settle();
+
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => { settingsBtn!.click(); });
+    await settle();
+    const nameInput = h.$("#task-set-name") as HTMLInputElement;
+    typeInto(nameInput, "Stale Save");
+    await settle();
+
+    // Another tab wins the suite save first: the save surface reports a stale
+    // revision conflict before any paid work can begin.
+    await repo.saveSuite({ ...suite, name: "Another Tab Won" }, suite.revision);
+
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    await act(async () => { runBtn.click(); await flush(); });
+    await settle();
+    const saveAndRun = h.$("button[data-action='dirty-run-save']") as HTMLButtonElement;
+    expect(saveAndRun).toBeTruthy();
+    await act(async () => { saveAndRun.click(); await flush(); });
+    await settle();
+
+    expect(h.$("[role='alert']")?.textContent).toMatch(/stale|conflict/i);
+    expect(runCall).not.toHaveBeenCalled();
+    expect(h.$("[data-route='experiment-progress']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("failed workload validation blocks Run with zero provider calls", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    // No enabled candidates -> workload validation fails before any call.
+    const suite = makeValidSuite("s1");
+    suite.modelSlots = suite.modelSlots.map((s) => ({ ...s, enabled: false }));
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+
+    const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
+    const controller = makeStubController({ start: runCall });
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+        controller={controller}
+      />,
+    );
+    await settle();
+
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    expect(runBtn?.disabled ?? true).toBe(true);
+    expect(runCall).not.toHaveBeenCalled();
+    cleanup(h);
+  });
+
+  it("unresolved refs block Run and archived-ref rejection blocks Run, both with zero provider calls", async () => {
+    // --- Unresolved refs ---
+    {
+      const repo = new InMemoryEvaluationRepository();
+      const taskRepo = new InMemoryTaskRepository();
+      const taskSetRepo = new InMemoryTaskSetRepository();
+      const suite = makeValidSuite("s1");
+      suite.tasks = [
+        {
+          ...makeTask("t1"),
+          taskVersionRef: { taskId: "missing-task", version: 9 },
+        } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+      ];
+      await seedSuite(repo, suite);
+      await seedTaskSetVersion(taskSetRepo, suite, 0);
+
+      const controller = makeStubController();
+      const h = renderWithRouter(
+        <TaskSetEditor repo={repo} taskRepo={taskRepo} taskSetRepo={taskSetRepo} models={[]} controller={controller} />,
+      );
+      await settle();
+      const runBtn = h.$("button[data-action='run-task-set']");
+      expect(runBtn?.disabled ?? true).toBe(false);
+      await act(async () => { runBtn?.click(); await flush(); });
+      await settle();
+      const confirm = [...document.body.querySelectorAll("button")].find(
+        (b) => b.textContent?.trim() === "Run task set",
+      );
+      await act(async () => { confirm?.click(); await flush(); });
+      await settle();
+      expect(h.$("[role='alert']")?.textContent).toMatch(/unresolved/i);
+      expect(controller.start).not.toHaveBeenCalled();
+      expect(h.$("[data-route='experiment-progress']")).toBeNull();
+      cleanup(h);
+    }
+
+    // --- Archived-ref rejection ---
+    {
+      const repo = new InMemoryEvaluationRepository();
+      const taskRepo = new InMemoryTaskRepository();
+      const taskSetRepo = new InMemoryTaskSetRepository();
+      await seedCanonicalTask(taskRepo, "arch-t", "Archived Task", { archived: true });
+      const suite = makeValidSuite("s1");
+      await seedSuite(repo, suite);
+      // Force an archived ref on the pinned workload.
+      const record = suiteToTaskSetRecord(suite);
+      const { version } = suiteToTaskSetVersion(suite, () => ({ taskId: "arch-t", version: 1 }));
+      await taskSetRepo.createTaskSet({ ...record, latestVersion: version.version }, version);
+
+      const controller = makeStubController();
+      const h = renderWithRouter(
+        <TaskSetEditor repo={repo} taskRepo={taskRepo} taskSetRepo={taskSetRepo} models={[]} controller={controller} />,
+      );
+      await settle();
+      const runBtn = h.$("button[data-action='run-task-set']");
+      expect(runBtn?.disabled ?? true).toBe(false);
+      await act(async () => { runBtn?.click(); await flush(); });
+      await settle();
+      const confirm = [...document.body.querySelectorAll("button")].find(
+        (b) => b.textContent?.trim() === "Run task set",
+      );
+      await act(async () => { confirm?.click(); await flush(); });
+      await settle();
+      expect(h.$("[role='alert']")?.textContent).toMatch(/archived/i);
+      expect(controller.start).not.toHaveBeenCalled();
+      expect(h.$("[data-route='experiment-progress']")).toBeNull();
+      cleanup(h);
+    }
+  });
+
+  it("persistence failure blocks materialization with zero provider calls", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+
+    const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
+    const controller = makeStubController({ start: runCall });
+    const failingRepo = new FailingTaskSetRepository();
+
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={failingRepo}
+        models={[]}
+        controller={controller}
+      />,
+    );
+    await settle();
+
+    const runBtn = h.$("button[data-action='run-task-set']");
+    expect(runBtn?.disabled ?? true).toBe(false);
+    await act(async () => { runBtn?.click(); await flush(); });
+    await settle();
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Run task set",
+    );
+    await act(async () => { confirm?.click(); await flush(); });
+    await settle();
+    expect(h.$("[role='alert']")?.textContent).toMatch(/disk full|quota/i);
+    expect(runCall).not.toHaveBeenCalled();
+    expect(h.$("[data-route='experiment-progress']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("durably materializes before lease acquisition, attempt creation, controller work, and provider call", async () => {
+    const order: string[] = [];
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCanonicalTask(taskRepo, "canon-t", "Canonical Task", {
+      instruction: "Solve this candidate problem.",
+    });
+    const suite = makeValidSuite("s1");
+    suite.tasks = [
+      {
+        ...makeTask("t1"),
+        taskVersionRef: { taskId: "canon-t", version: 1 },
+      } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+    ];
+    await seedSuite(repo, suite);
+
+    // Deterministic fake observes the exact boundary order the editor must honor.
+    const orderedController = {
+      ...makeStubController(),
+      start: vi.fn(async () => {
+        order.push("lease-acquire");
+        order.push("attempt-create");
+        order.push("controller-paid-work");
+        order.push("provider-call");
+        return { ok: true as const, experimentId: "exp-1" };
+      }),
+    };
+    const trackingRepo = new TrackingTaskSetRepository(() => order.push("materialize"));
+    await seedTaskSetVersion(trackingRepo, suite, 0);
+
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={trackingRepo}
+        models={[]}
+        controller={orderedController}
+      />,
+    );
+    await settle();
+
+    const runBtn = h.$("button[data-action='run-task-set']");
+    expect(runBtn?.disabled ?? true).toBe(false);
+    await act(async () => { runBtn?.click(); await flush(); });
+    await settle();
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Run task set",
+    );
+    await act(async () => { confirm?.click(); await flush(); });
+    await settle();
+
+    const mat = order.indexOf("materialize");
+    const lease = order.indexOf("lease-acquire");
+    const attempt = order.indexOf("attempt-create");
+    const paid = order.indexOf("controller-paid-work");
+    const provider = order.indexOf("provider-call");
+    expect(mat).toBeGreaterThanOrEqual(0);
+    expect(lease).toBeGreaterThan(mat);
+    expect(attempt).toBeGreaterThan(lease);
+    expect(paid).toBeGreaterThan(attempt);
+    expect(provider).toBeGreaterThan(paid);
+    cleanup(h);
+  });
+});
+
 
 describe("TaskSetEditor — accessibility", () => {
   it("all interactive controls meet 44px target size", async () => {
