@@ -38,7 +38,10 @@ import { AppRoutes } from "./app-router";
 import { RepositoryContext } from "./lib/persistence/repository-context";
 import { InMemoryEvaluationRepository } from "./lib/persistence/evaluation-repository";
 import { InMemoryTaskRepository } from "./lib/persistence/in-memory-task-repository";
-import { InMemoryFusionStudyRepository, type FusionStudyRepository } from "./lib/persistence/fusion-study-repository";
+import {
+  InMemoryFusionStudyRepository,
+  type FusionStudyRepository,
+} from "./lib/persistence/fusion-study-repository";
 import type { TaskRepository } from "./lib/persistence/task-repository";
 import type { TaskRecord, TaskVersion } from "./lib/tasks/task-types";
 import type {
