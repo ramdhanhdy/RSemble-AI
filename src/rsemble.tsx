@@ -730,7 +730,7 @@ export default function RSemble() {
           onNavigate={(path) => navigate(path)}
           activeExperimentId={activeExperimentId}
           onViewExperiment={() =>
-            activeExperimentId && navigate(`/experiments/${activeExperimentId}`)
+            activeExperimentId && navigate(`/evaluations/results/${activeExperimentId}`)
           }
           onAbortExperiment={() => {
             void experimentController?.abort();

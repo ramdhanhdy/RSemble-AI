@@ -482,12 +482,12 @@ function ProvenanceSection({ section }: { section: Record<string, unknown> }) {
       aria-label="Experiment provenance"
       className="flex flex-wrap items-center gap-1.5 py-4 text-sm"
     >
-      <Link to={`/experiments/${experimentId}`} className={linkCls}>
-        Experiment
+      <Link to={`/evaluations/results/${experimentId}`} className={linkCls}>
+        Evaluation
       </Link>
       <span className="text-text-muted">·</span>
-      <Link to={`/evaluations/${suiteId}`} className={linkCls}>
-        Suite v{suiteVersion}
+      <Link to={`/evaluations/sets/${suiteId}`} className={linkCls}>
+        Task Set v{suiteVersion}
       </Link>
       <span className="text-text-muted">·</span>
       <span className="inline-flex min-h-[44px] items-center font-mono text-text-secondary">
@@ -498,8 +498,8 @@ function ProvenanceSection({ section }: { section: Record<string, unknown> }) {
         {boundAttempt ? `${attemptId.slice(0, 8)}…` : attemptId}
         <span className="sr-only">{attemptId}</span>
       </span>
-      <Link to={`/experiments/${experimentId}`} className={`${linkCls} ml-auto`}>
-        Back to experiment
+      <Link to={`/evaluations/results/${experimentId}`} className={`${linkCls} ml-auto`}>
+        Back to evaluation
       </Link>
     </nav>
   );

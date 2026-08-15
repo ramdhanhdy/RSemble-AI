@@ -38,7 +38,7 @@ import { useModelProbe } from "../../ui/ModelProbeContext";
 import { SuitePreflightDialog, type SuitePreflightEntry } from "./SuitePreflightDialog";
 import { useExecutionOwner } from "../../lib/execution-owner-context";
 import type { ExecutionOwner } from "../../lib/execution-owner";
-import { SuiteExperimentHistory } from "./SuiteExperimentHistory";
+import { TaskSetExecutionHistory } from "./TaskSetExecutionHistory";
 import { FusionStudyPanel } from "./FusionStudyPanel";
 import {
   useFusionStudyRepository,
@@ -515,7 +515,7 @@ export function TaskSetEditor({
         setRunState("running");
         const result = await controller.start(materialized.record.id);
         if (result.ok) {
-          void navigate(`/experiments/${result.experimentId}`);
+          void navigate(`/evaluations/results/${result.experimentId}`);
         } else {
           setRunError(result.error);
         }
@@ -678,9 +678,9 @@ export function TaskSetEditor({
           <div className="flex shrink-0 items-center gap-2">
             {latestExperiment ? (
               <Link
-                to={`/experiments/${latestExperiment.id}`}
+                to={`/evaluations/results/${latestExperiment.id}`}
                 data-testid="latest-results-link"
-                title="View the latest experiment results for this task set"
+                title="View the latest evaluation results for this task set"
                 className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Trophy size={14} aria-hidden="true" />
@@ -802,7 +802,7 @@ export function TaskSetEditor({
             resolveTaskInfo={resolveTaskInfo}
           />
           <div className="mt-3 min-w-0 border-t border-edge pt-3">
-            <SuiteExperimentHistory repo={repo} suiteId={persisted.id} />
+            <TaskSetExecutionHistory repo={repo} taskSetId={persisted.id} />
           </div>
           <div className="mt-3 min-w-0 border-t border-edge pt-3">
             <FusionStudyPanel

@@ -60,6 +60,8 @@ export interface ExperimentResultsProps {
    *  AND no other in-tab execution owns the registry. Gates both recovery and
    *  add-model actions; cross-tab races still resolve via the controller lease. */
   executionActionsEnabled?: boolean;
+  taskSetName?: string;
+  suiteName?: string;
 }
 
 /** Which recovery action the shared dialog currently drives (spec §11.1). */
@@ -91,16 +93,18 @@ function useMediaQuery(query: string): boolean {
 export function ExperimentResults({
   experiment,
   resolveRunRecord,
-  controller,
+  controller = null,
   models = [],
   availableProviderIds = [],
   executionActionsEnabled = true,
+  taskSetName: taskSetNameProp,
+  suiteName: suiteNameProp,
 }: ExperimentResultsProps): ReactElement {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const evalRepo = useEvaluationRepository();
   const [searchParams, setSearchParams] = useSearchParams();
   const [runRecords, setRunRecords] = useState<ReadonlyMap<string, RunRecordV2> | null>(null);
-  const [suiteName, setSuiteName] = useState<string | null>(null);
+  const [suiteName, setSuiteName] = useState<string | null>(taskSetNameProp ?? suiteNameProp ?? null);
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
@@ -554,22 +558,22 @@ export function ExperimentResults({
       <header className="flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <h1 className="truncate text-lg font-semibold text-text">
-            {suiteName ?? experiment.suiteId}
+            {taskSetNameProp ?? suiteName ?? experiment.suiteId}
           </h1>
           <StatusMark status={experiment.status} />
         </div>
         <p className="text-sm text-text-secondary">
-          Experiment results · Suite v{experiment.suiteVersion} · {startedText} ·{" "}
+          Evaluation results · Task Set v{experiment.suiteVersion} · {startedText} ·{" "}
           <span className="font-mono text-xs text-text-muted">{experiment.id}</span>
         </p>
-        {/* Header action row — Back to suite + Add model (roster spec F3).
+        {/* Header action row — Back to task set + Add model (roster spec F3).
             Add model never appears in or adjacent to the recovery toolbar. */}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Link
-            to={`/evaluations/${experiment.suiteId}`}
+            to={`/evaluations/sets/${experiment.suiteId}`}
             className="inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            Back to suite
+            Back to task set
           </Link>
           {recoveryEnabled && availableProviderIds.length > 0 ? (
             <button
@@ -917,12 +921,15 @@ export function ExperimentResults({
         models={models}
         availableProviderIds={availableProviderIds}
         takenKeys={addModelTakenKeys}
+        taskSetName={taskSetNameProp ?? suiteName ?? experiment.suiteId}
         suiteName={suiteName ?? experiment.suiteId}
         selectedSlot={addModelSlot}
         onSelectSlot={selectAddModelSlot}
         plan={addModelPlan}
         planError={addModelPlanError}
+        syncToTaskSet={addModelSync}
         syncToSuite={addModelSync}
+        onSyncToTaskSetChange={setAddModelSync}
         onSyncToSuiteChange={setAddModelSync}
         busy={addModelBusy}
         message={addModelMessage}

@@ -238,7 +238,7 @@ describe("ExperimentResults — header and task set backlink", () => {
     await settle();
 
     const text = h.container.textContent ?? "";
-    expect(text).toContain("Evaluation results · Task Set v3");
+    expect(text).toContain(`Evaluation results · Task Set v${experiment.suiteVersion}`);
     const back = h.$(`a[href="/evaluations/sets/${experiment.suiteId}"]`);
     expect(back).toBeTruthy();
     expect(back?.textContent).toContain("Back to task set");

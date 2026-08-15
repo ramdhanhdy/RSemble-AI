@@ -739,8 +739,8 @@ describe("ExperimentResults — summary (plan 7.2 #13)", () => {
     const runLink = h.$$("a").find((a) => a.getAttribute("href") === "/runs/run-f1");
     expect(runLink).not.toBeUndefined();
     // summary chrome
-    expect(h.container.textContent).toContain("Suite v2");
-    const backLink = h.$$("a").find((a) => a.getAttribute("href") === "/evaluations/suite-1");
+    expect(h.container.textContent).toContain("Task Set v2");
+    const backLink = h.$$("a").find((a) => a.getAttribute("href") === "/evaluations/sets/suite-1");
     expect(backLink).not.toBeUndefined();
     cleanup(h);
   });

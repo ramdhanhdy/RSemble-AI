@@ -147,6 +147,7 @@ interface Harness {
 
 interface RenderOptions {
   initialEntries: (string | { pathname: string; search?: string; state?: unknown })[];
+  initialIndex?: number;
   repo?: InMemoryEvaluationRepository;
   taskRepo?: TaskRepository | null;
   fusionRepo?: FusionStudyRepository | null;
@@ -199,7 +200,7 @@ function renderRouter(opts: RenderOptions): Harness {
 
   act(() => {
     root.render(
-      <MemoryRouter initialEntries={opts.initialEntries}>
+      <MemoryRouter initialEntries={opts.initialEntries} initialIndex={opts.initialIndex}>
         <RepositoryContext.Provider
           value={{
             taskRepo,

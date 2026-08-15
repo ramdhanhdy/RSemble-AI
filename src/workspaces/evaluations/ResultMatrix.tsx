@@ -283,7 +283,7 @@ export function ResultMatrix({
       >
         <table className="min-w-full border-collapse text-left text-sm">
           <caption className="px-3 py-2 text-left text-xs text-text-muted">
-            Experiment results — task scores by model
+            Evaluation results — task scores by model
           </caption>
           <thead>
             <tr className="border-b border-edge">

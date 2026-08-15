@@ -56,6 +56,10 @@ function renderWithRouter(node: React.ReactNode, initialPath = "/evaluations/set
                 element={<div data-route="task-version" />}
               />
               <Route
+                path="/evaluations/results/:evaluationExecutionId"
+                element={<div data-route="experiment-progress" />}
+              />
+              <Route
                 path="/experiments/:experimentId"
                 element={<div data-route="experiment-progress" />}
               />
@@ -759,7 +763,7 @@ describe("TaskSetEditor — run execution", () => {
     await settle();
     const link = h.$('[data-testid="latest-results-link"]');
     expect(link).not.toBeNull();
-    expect(link?.getAttribute("href")).toBe("/experiments/exp-1");
+    expect(link?.getAttribute("href")).toBe("/evaluations/results/exp-1");
     cleanup(h);
   });
 

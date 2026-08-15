@@ -361,7 +361,7 @@ export function FusionStudyPanel({
               className="flex items-center justify-between gap-2 rounded-md border border-edge/60 px-2 py-1.5"
             >
               <Link
-                to={`/evaluations/${suite.id}/fusion/${study.id}`}
+                to={`/evaluations/sets/${suite.id}/fusion/${study.id}`}
                 className="flex min-w-0 items-center gap-2 text-sm text-text hover:text-accent"
               >
                 <span className="truncate">Study · pool v{study.poolRef.version}</span>

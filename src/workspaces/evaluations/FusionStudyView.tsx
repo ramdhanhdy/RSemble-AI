@@ -61,10 +61,18 @@ export function FusionStudyRoute({ fusionRepo }: { fusionRepo: FusionStudyReposi
     studyId: string;
   }>();
   const ownerId = taskSetId ?? suiteId;
+  const isCanonical = Boolean(taskSetId);
   if (!ownerId || !studyId) {
     return <div className="text-sm text-text-muted">Missing task set or study id.</div>;
   }
-  return <FusionStudyView fusionRepo={fusionRepo} suiteId={ownerId} studyId={studyId} />;
+  return (
+    <FusionStudyView
+      fusionRepo={fusionRepo}
+      suiteId={ownerId}
+      studyId={studyId}
+      isCanonical={isCanonical}
+    />
+  );
 }
 
 // --- Main view -----------------------------------------------------------------------
@@ -73,9 +81,15 @@ export interface FusionStudyViewProps {
   fusionRepo: FusionStudyRepository | null;
   suiteId: string;
   studyId: string;
+  isCanonical?: boolean;
 }
 
-export function FusionStudyView({ fusionRepo, suiteId, studyId }: FusionStudyViewProps) {
+export function FusionStudyView({
+  fusionRepo,
+  suiteId,
+  studyId,
+  isCanonical = true,
+}: FusionStudyViewProps) {
   const [study, setStudy] = useState<FusionStudy | null>(null);
   const [trials, setTrials] = useState<FusionTrial[]>([]);
   const [playbook, setPlaybook] = useState<FusionPlaybook | null>(null);
@@ -136,8 +150,11 @@ export function FusionStudyView({ fusionRepo, suiteId, studyId }: FusionStudyVie
       {/* Header */}
       <header className="flex min-w-0 flex-col gap-1">
         <div className="flex items-center gap-2 text-sm text-text-muted">
-          <Link to={`/evaluations/${suiteId}`} className="text-accent hover:underline">
-            Suite
+          <Link
+            to={isCanonical ? `/evaluations/sets/${suiteId}` : `/evaluations/${suiteId}`}
+            className="text-accent hover:underline"
+          >
+            {isCanonical ? "Task Set" : "Suite"}
           </Link>
           <span>/</span>
           <span>Fusion Study</span>

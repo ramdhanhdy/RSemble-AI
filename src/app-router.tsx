@@ -161,6 +161,17 @@ export function AppRoutes({
         <Route path="profiles" element={<RubricListRedirect />} />
         <Route path="profiles/:rubricId" element={<RubricDetailRedirect />} />
 
+
+        {/* Canonical Evaluation execution results routes (spec §5.1). */}
+        <Route
+          path="results/:evaluationExecutionId"
+          element={withSuspense(
+            <ExperimentRouteWrapper
+              models={models}
+              availableProviderIds={availableProviderIds ?? []}
+            />,
+          )}
+        />
         {/* Real baseline legacy suite/fusion links. Fusion redirects only after
             exact ownership crosswalk resolution (spec §4 / §8.2). */}
         <Route path=":suiteId/fusion/:studyId" element={<LegacyFusionRedirect />} />
@@ -183,14 +194,8 @@ export function AppRoutes({
         element={withSuspense(<TaskVersionRouteWrapper />)}
       />
 
-      {/* Experiment progress/results — top-level route (spec §5.1). Terminal
-          records render results; non-terminal render live progress. */}
-      <Route
-        path="/experiments/:experimentId"
-        element={withSuspense(
-          <ExperimentRoute models={models} availableProviderIds={availableProviderIds ?? []} />,
-        )}
-      />
+      {/* Legacy Experiment redirect — preserves query parameters and state (spec §5.1, plan Task 9). */}
+      <Route path="/experiments/:experimentId" element={<LegacyExperimentRedirect />} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
@@ -232,7 +237,7 @@ function EvaluationsIndexRedirect() {
   );
 }
 
-const RESERVED_EVALUATION_SEGMENTS = new Set(["sets", "rubrics", "profiles"]);
+const RESERVED_EVALUATION_SEGMENTS = new Set(["sets", "rubrics", "profiles", "results"]);
 
 function LegacySuiteRedirect() {
   const { suiteId } = useParams<{ suiteId: string }>();
@@ -243,6 +248,18 @@ function LegacySuiteRedirect() {
   return (
     <Navigate
       to={{ pathname: `/evaluations/sets/${suiteId}`, search: location.search }}
+      replace
+      state={location.state}
+    />
+  );
+}
+
+function LegacyExperimentRedirect() {
+  const { experimentId } = useParams<{ experimentId: string }>();
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{ pathname: `/evaluations/results/${experimentId ?? ""}`, search: location.search }}
       replace
       state={location.state}
     />
@@ -418,6 +435,20 @@ function RubricDetailRedirect() {
 function SuiteTaskEditorRouteWrapper({ models }: { models: CatalogModel[] }) {
   const repo = useEvaluationRepository();
   return <SuiteTaskEditorRoute repo={repo} models={models} />;
+}
+
+function ExperimentRouteWrapper({
+  models,
+  availableProviderIds,
+}: {
+  models: CatalogModel[];
+  availableProviderIds: ProviderId[];
+}) {
+  return (
+    <ExecutionOwnerProvider>
+      <ExperimentRoute models={models} availableProviderIds={availableProviderIds} />
+    </ExecutionOwnerProvider>
+  );
 }
 
 function CompareSlot({ children }: { children: React.ReactNode }) {

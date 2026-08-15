@@ -3,7 +3,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { SuiteExperimentHistory as TaskSetExecutionHistory, experimentCoverage } from "./SuiteExperimentHistory";
+import { TaskSetExecutionHistory, experimentCoverage } from "./TaskSetExecutionHistory";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type {
   ExperimentRecord,

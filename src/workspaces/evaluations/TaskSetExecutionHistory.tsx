@@ -1,12 +1,12 @@
 // =============================================================================
-// SuiteExperimentHistory — compact experiment history for one suite (spec §10.4).
+// TaskSetExecutionHistory — compact execution history for one task set (spec §10.4).
 //
-// Lists every experiment for the suite newest first — completed,
-// completed_with_failures, aborted, and interrupted alike — below the suite
+// Lists every experiment for the task set newest first — completed,
+// completed_with_failures, aborted, and interrupted alike — below the task set
 // editor's task list. Rows use the shared RecordRow family; each row links to
-// /experiments/:experimentId and carries an exact localized start timestamp
-// with timezone beneath the row (RecordRow itself shows relative time).
-// Pagination begins after 20 rows and applies after suite filtering.
+// /evaluations/results/:evaluationExecutionId and carries an exact localized start
+// timestamp with timezone beneath the row (RecordRow itself shows relative time).
+// Pagination begins after 20 rows and applies after filtering.
 // =============================================================================
 
 import { useEffect, useState } from "react";
@@ -14,10 +14,13 @@ import type { EvaluationRepository } from "../../lib/persistence/evaluation-repo
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import { RecordRow } from "../../ui/RecordRow";
 
-export interface SuiteExperimentHistoryProps {
+export interface TaskSetExecutionHistoryProps {
   repo: EvaluationRepository | null;
-  suiteId: string;
+  taskSetId?: string;
+  suiteId?: string;
 }
+
+export type SuiteExperimentHistoryProps = TaskSetExecutionHistoryProps;
 
 const PAGE_SIZE = 20;
 
@@ -29,7 +32,12 @@ export function experimentCoverage(exp: ExperimentRecord): { completed: number; 
   };
 }
 
-export function SuiteExperimentHistory({ repo, suiteId }: SuiteExperimentHistoryProps) {
+export function TaskSetExecutionHistory({
+  repo,
+  taskSetId,
+  suiteId,
+}: TaskSetExecutionHistoryProps) {
+  const effectiveId = taskSetId ?? suiteId ?? "";
   const [experiments, setExperiments] = useState<ExperimentRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -45,7 +53,7 @@ export function SuiteExperimentHistory({ repo, suiteId }: SuiteExperimentHistory
     setExperiments(null);
     setError(null);
     repo
-      .listExperiments(suiteId)
+      .listExperiments(effectiveId)
       .then((list) => {
         if (cancelled) return;
         // Sort defensively newest first even if the repository already orders.
@@ -59,22 +67,22 @@ export function SuiteExperimentHistory({ repo, suiteId }: SuiteExperimentHistory
     return () => {
       cancelled = true;
     };
-  }, [repo, suiteId]);
+  }, [repo, effectiveId]);
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   return (
-    <section aria-label="Experiments" className="flex min-w-0 flex-col gap-2">
-      <h2 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Experiments</h2>
+    <section aria-label="Evaluations" className="flex min-w-0 flex-col gap-2">
+      <h2 className="font-mono text-sm uppercase tracking-[0.1em] text-text-muted">Evaluations</h2>
       {experiments === null ? (
         <p role="status" className="text-sm text-text-muted">
-          Loading experiments…
+          Loading evaluations…
         </p>
       ) : error ? (
         <p className="text-sm text-text-secondary">{error}</p>
       ) : experiments.length === 0 ? (
         <p className="text-sm text-text-muted">
-          No experiments yet — run this suite to create one.
+          No evaluations yet — run this task set to create one.
         </p>
       ) : (
         <>
@@ -89,8 +97,8 @@ export function SuiteExperimentHistory({ repo, suiteId }: SuiteExperimentHistory
                     title={exp.id}
                     status={exp.status}
                     timestamp={exp.createdAt}
-                    summary={`Suite v${exp.suiteVersion} · ${coverage.completed}/${coverage.total} tasks · ${exp.snapshot.modelSlots.length} models`}
-                    href={`/experiments/${exp.id}`}
+                    summary={`Task Set v${exp.suiteVersion} · ${coverage.completed}/${coverage.total} tasks · ${exp.snapshot.modelSlots.length} models`}
+                    href={`/evaluations/results/${exp.id}`}
                   />
                   <p className="mt-0.5 min-w-0 truncate text-xs text-text-muted tabular-nums">
                     {new Date(exp.createdAt).toLocaleString()} ({timeZone})
@@ -118,3 +126,5 @@ export function SuiteExperimentHistory({ repo, suiteId }: SuiteExperimentHistory
     </section>
   );
 }
+
+export { TaskSetExecutionHistory as SuiteExperimentHistory };
