@@ -13,10 +13,10 @@
 
 import "fake-indexeddb/auto";
 import Dexie from "dexie";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelSlot } from "../../studio-data";
-import type { EvaluationRubric } from "../evaluations/evaluation-types";
+import type { EvaluationRubric, EvaluationSuite } from "../evaluations/evaluation-types";
 import type {
   JudgeSnapshot,
   TaskSetMember,
@@ -31,6 +31,8 @@ import {
 import { RSembleEvaluationDB, StorageError } from "./database";
 import { InMemoryTaskSetRepository } from "./in-memory-task-set-repository";
 import { createTaskSetRepository, type TaskSetRepository } from "./task-set-repository";
+import { createEvaluationRepository } from "./evaluation-repository";
+import { InMemoryRunRepository } from "./run-repository";
 
 // --- fixtures ----------------------------------------------------------------
 
@@ -143,6 +145,40 @@ function makeRubric(overrides: Partial<EvaluationRubric> = {}): EvaluationRubric
     ],
     createdAt: NOW,
     updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+function makeAtomicSuite(overrides: Partial<EvaluationSuite> = {}): EvaluationSuite {
+  return {
+    id: "set-1",
+    revision: 0,
+    version: 1,
+    name: "My Task Set",
+    description: "A canonical task set.",
+    tasks: [
+      {
+        id: "mem-1",
+        title: "Task One",
+        prompt: "Solve problem X using method Y.",
+        systemPrompt: "",
+        evaluation: { kind: "inherit" },
+        judgeInstructionOverride: "",
+        order: 0,
+        taskVersionRef: { taskId: "task-1", version: 1 },
+      } as EvaluationSuite["tasks"][number] & {
+        taskVersionRef: { taskId: string; version: number };
+      },
+    ],
+    modelSlots: [makeSlot("s1", "m1"), makeSlot("s2", "m2")],
+    defaultJudge: makeJudge(),
+    defaultEvaluation: {
+      kind: "profile",
+      profile: { id: "rubric-1", version: 1 },
+    },
+    createdAt: NOW,
+    updatedAt: NOW,
+    archivedAt: null,
     ...overrides,
   };
 }
@@ -653,24 +689,141 @@ repositorySuite("Dexie task set repository", () => {
   return createTaskSetRepository(db);
 });
 
+describe("Dexie atomic Suite + Task Set save seam", () => {
+  it("commits the compatibility Suite and canonical N+1 together", async () => {
+    const db = new RSembleEvaluationDB(`task-set-atomic-success-${crypto.randomUUID()}`);
+    await db.open();
+    dbs.push(db);
+    const taskSetRepo = createTaskSetRepository(db);
+    const evalRepo = createEvaluationRepository(db, new InMemoryRunRepository());
+    await taskSetRepo.createTaskSet(makeRecord(), makeVersion());
+    const initialSuite = makeAtomicSuite();
+    await db.suites.put({
+      id: initialSuite.id,
+      suite: initialSuite,
+      revision: initialSuite.revision,
+      version: initialSuite.version,
+      updatedAt: initialSuite.updatedAt,
+      archivedAt: initialSuite.archivedAt,
+    });
+    const candidate = makeAtomicSuite({ version: 2, name: "Version Two" });
+    const nextVersion = makeVersion({ version: 2, createdAt: 2_000 });
+
+    const result = await evalRepo.saveSuiteAndTaskSetVersion({
+      suite: candidate,
+      expectedSuiteRevision: 0,
+      taskSetRecord: makeRecord({ name: "Version Two" }),
+      taskSetVersion: nextVersion,
+      expectedTaskSetRevision: 0,
+      taskSetRepository: taskSetRepo,
+    });
+
+    expect(result).toEqual({ suiteRevision: 1, taskSetRevision: 1 });
+    expect(await evalRepo.getSuite("set-1")).toMatchObject({
+      name: "Version Two",
+      version: 2,
+      revision: 1,
+    });
+    expect(await taskSetRepo.getTaskSetRecord("set-1")).toMatchObject({
+      name: "Version Two",
+      latestVersion: 2,
+      revision: 1,
+    });
+    expect(await taskSetRepo.getTaskSetVersion("set-1", 2)).toMatchObject({ version: 2 });
+  });
+
+  it("rolls canonical staging back when the final Suite write fails", async () => {
+    const db = new RSembleEvaluationDB(`task-set-atomic-rollback-${crypto.randomUUID()}`);
+    await db.open();
+    dbs.push(db);
+    const taskSetRepo = createTaskSetRepository(db);
+    const evalRepo = createEvaluationRepository(db, new InMemoryRunRepository());
+    await taskSetRepo.createTaskSet(makeRecord(), makeVersion());
+    const initialSuite = makeAtomicSuite();
+    await db.suites.put({
+      id: initialSuite.id,
+      suite: initialSuite,
+      revision: initialSuite.revision,
+      version: initialSuite.version,
+      updatedAt: initialSuite.updatedAt,
+      archivedAt: initialSuite.archivedAt,
+    });
+    vi.spyOn(db.suites, "put").mockRejectedValueOnce(
+      new DOMException("Suite compatibility quota failure", "QuotaExceededError"),
+    );
+
+    await expect(
+      evalRepo.saveSuiteAndTaskSetVersion({
+        suite: makeAtomicSuite({ version: 2, name: "Must Roll Back" }),
+        expectedSuiteRevision: 0,
+        taskSetRecord: makeRecord({ name: "Must Roll Back" }),
+        taskSetVersion: makeVersion({ version: 2, createdAt: 2_000 }),
+        expectedTaskSetRevision: 0,
+        taskSetRepository: taskSetRepo,
+      }),
+    ).rejects.toMatchObject({ kind: "quota" });
+
+    expect(await evalRepo.getSuite("set-1")).toEqual(initialSuite);
+    expect(await taskSetRepo.getTaskSetRecord("set-1")).toMatchObject({
+      name: "My Task Set",
+      latestVersion: 1,
+      revision: 0,
+    });
+    expect(await taskSetRepo.getTaskSetVersion("set-1", 2)).toBeNull();
+  });
+
+  it("persists append-only materialization rows with exact identity and snapshot", async () => {
+    const db = new RSembleEvaluationDB(`task-set-materialization-${crypto.randomUUID()}`);
+    await db.open();
+    dbs.push(db);
+    const taskSetRepo = createTaskSetRepository(db);
+    const evalRepo = createEvaluationRepository(db, new InMemoryRunRepository());
+    await taskSetRepo.createTaskSet(makeRecord(), makeVersion());
+    const snapshot = await taskSetRepo.materializeTaskSetVersion(
+      "set-1",
+      1,
+      makeCatalogResolvers(),
+    );
+    const first = {
+      id: "mat-1",
+      taskSetId: snapshot.taskSetId,
+      taskSetVersion: snapshot.taskSetVersion,
+      protocolFingerprint: snapshot.protocolFingerprint,
+      snapshot,
+      createdAt: 1_000,
+    };
+    await evalRepo.persistTaskSetMaterialization(first);
+    await evalRepo.persistTaskSetMaterialization({ ...first, id: "mat-2", createdAt: 2_000 });
+
+    await expect(evalRepo.persistTaskSetMaterialization(first)).rejects.toMatchObject({
+      kind: "conflict",
+    });
+    const rows = await evalRepo.listTaskSetMaterializations("set-1");
+    expect(rows.map((row) => row.id)).toEqual(["mat-1", "mat-2"]);
+    expect(rows[0]).toEqual(first);
+    expect(rows[1]?.snapshot.protocolFingerprint).toBe(snapshot.protocolFingerprint);
+  });
+});
+
 // --- clean + legacy database open/upgrade coverage (Dexie-only) --------------
 
 describe("Dexie task set repository schema upgrade", () => {
-  it("opens a fresh database with additive v5 Task Set stores and every v1-v4 table", async () => {
+  it("opens a fresh database with additive v7 materializations and every prior table", async () => {
     const db = new RSembleEvaluationDB(`task-set-clean-${crypto.randomUUID()}`);
     dbs.push(db);
     await db.open();
     expect(db.tables.some((t) => t.name === "taskSets")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskSetVersions")).toBe(true);
+    expect(db.tables.some((t) => t.name === "taskSetMaterializations")).toBe(true);
     expect(db.tables.some((t) => t.name === "suites")).toBe(true);
     expect(db.tables.some((t) => t.name === "runSummaries")).toBe(true);
     expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(true);
     expect(db.tables.some((t) => t.name === "tasks")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskFamilyRelations")).toBe(true);
-    expect(db.verno).toBe(6);
+    expect(db.verno).toBe(7);
   });
 
-  it("upgrades a v4-seeded database to v5 additively without losing v1-v4 rows", async () => {
+  it("upgrades a v4-seeded database through v7 additively without losing prior rows", async () => {
     const dbName = `task-set-v4-legacy-${crypto.randomUUID()}`;
     const v4 = new Dexie(dbName);
     v4.version(1).stores({
@@ -756,8 +909,9 @@ describe("Dexie task set repository schema upgrade", () => {
     expect((await db.taskFamilies.get("fam-legacy"))?.id).toBe("fam-legacy");
     expect(db.tables.some((t) => t.name === "taskSets")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskSetVersions")).toBe(true);
+    expect(db.tables.some((t) => t.name === "taskSetMaterializations")).toBe(true);
     expect(db.tables.some((t) => t.name === "suites")).toBe(true);
-    expect(db.verno).toBe(6);
+    expect(db.verno).toBe(7);
   });
 
   it("does not write Task Set rows into the legacy Suite table", async () => {

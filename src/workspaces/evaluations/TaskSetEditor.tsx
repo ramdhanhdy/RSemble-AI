@@ -27,7 +27,10 @@ import {
   Trophy,
   ExternalLink,
 } from "lucide-react";
-import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
+import type {
+  EvaluationRepository,
+  TaskSetMaterializationRecord,
+} from "../../lib/persistence/evaluation-repository";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import { useExperimentController } from "../../lib/evaluations/experiment-controller-hooks";
@@ -48,7 +51,6 @@ import {
   ArchivedTaskExecutionError,
   InvalidWorkloadForExecutionError,
   UnresolvedWorkloadRefError,
-  type MaterializedWorkloadSnapshot,
   type WorkloadCatalogResolvers,
 } from "../../lib/evaluations/workload-manifest";
 import {
@@ -183,11 +185,7 @@ export function TaskSetEditor({
         setPersisted(null);
         setDraft(null);
         setLoadError("Task set not found.");
-      } else if (
-        historical !== null &&
-        (!taskSetRepo || !historicalVersion || !taskSetRecord) &&
-        historical !== latestSuite.version
-      ) {
+      } else if (historical !== null && (!taskSetRepo || !historicalVersion || !taskSetRecord)) {
         setPersisted(null);
         setDraft(null);
         setLoadError(
@@ -448,6 +446,7 @@ export function TaskSetEditor({
     setSaveError(null);
     try {
       let candidate = { ...draft, version: persisted.version };
+      let newRevision: number;
       if (taskSetRepo) {
         const [currentSuite, currentTaskSet] = await Promise.all([
           repo.getSuite(draft.id),
@@ -460,9 +459,23 @@ export function TaskSetEditor({
           throw new StorageError("conflict", `Task Set ${draft.id} not found`);
         }
         candidate = { ...candidate, version: currentTaskSet.latestVersion + 1 };
-        await persistTaskSetVersion(taskSetRepo, candidate, currentTaskSet.revision);
+        const taskSetRecord = suiteToTaskSetRecord({
+          ...candidate,
+          revision: currentTaskSet.revision,
+        });
+        const { version: taskSetVersion } = projectTaskSetVersion(candidate);
+        const saved = await repo.saveSuiteAndTaskSetVersion({
+          suite: candidate,
+          expectedSuiteRevision: persisted.revision,
+          taskSetRecord,
+          taskSetVersion,
+          expectedTaskSetRevision: currentTaskSet.revision,
+          taskSetRepository: taskSetRepo,
+        });
+        newRevision = saved.suiteRevision;
+      } else {
+        newRevision = await repo.saveSuite(candidate, persisted.revision);
       }
-      const newRevision = await repo.saveSuite(candidate, persisted.revision);
       const fresh = await repo.getSuite(draft.id);
       const settled = fresh
         ? { ...fresh, revision: newRevision }
@@ -493,14 +506,16 @@ export function TaskSetEditor({
       setPreflightOpen(false);
       setRunState("materializing");
       try {
-        const materializedSuite = await materializeWorkloadBeforeRun(
+        const materialized = await materializeWorkloadBeforeRun(
           repo,
           taskRepo,
           taskSetRepo,
           cleanSuite,
         );
         setRunState("running");
-        const result = await controller.start(materializedSuite.id);
+        // Task 8 hand-off: make controller.start consume materialized.record.id.
+        // Task 7 guarantees the immutable row is durable before this boundary.
+        const result = await controller.start(materialized.suite.id);
         if (result.ok) {
           void navigate(`/experiments/${result.experimentId}`);
         } else {
@@ -1320,29 +1335,9 @@ function projectTaskSetVersion(suite: EvaluationSuite) {
   });
 }
 
-/** Append (or create) the immutable Task Set Version before updating the Suite compatibility row. */
-async function persistTaskSetVersion(
-  taskSetRepo: TaskSetRepository,
-  candidate: EvaluationSuite,
-  expectedRevision: number,
-): Promise<number> {
-  const record = suiteToTaskSetRecord({ ...candidate, revision: expectedRevision });
-  const { version } = projectTaskSetVersion(candidate);
-  const existing = await taskSetRepo.getTaskSetRecord(candidate.id);
-  if (!existing) {
-    await taskSetRepo.createTaskSet({ ...record, latestVersion: version.version }, version);
-    return record.revision;
-  }
-  return taskSetRepo.appendTaskSetVersion(record, version, expectedRevision);
-}
-
-type MaterializedSuite = EvaluationSuite & {
-  materializedTaskSetRef: {
-    taskSetId: string;
-    taskSetVersion: number;
-    protocolFingerprint: string;
-  };
-  materializedWorkloadSnapshot: MaterializedWorkloadSnapshot;
+type MaterializedExecutionInput = {
+  suite: EvaluationSuite;
+  record: TaskSetMaterializationRecord;
 };
 
 /** Resolve and durably persist the frozen workload before any controller side effect. */
@@ -1351,7 +1346,7 @@ async function materializeWorkloadBeforeRun(
   taskRepo: TaskRepository | null,
   taskSetRepo: TaskSetRepository | null,
   suite: EvaluationSuite,
-): Promise<MaterializedSuite> {
+): Promise<MaterializedExecutionInput> {
   if (!taskSetRepo || !taskRepo) {
     throw new StorageError("validation", "Storage unavailable for workload materialization.");
   }
@@ -1408,17 +1403,16 @@ async function materializeWorkloadBeforeRun(
       isDirty: false,
     },
   );
-  const durable: MaterializedSuite = {
-    ...suite,
-    materializedTaskSetRef: {
-      taskSetId: snapshot.taskSetId,
-      taskSetVersion: snapshot.taskSetVersion,
-      protocolFingerprint: snapshot.protocolFingerprint,
-    },
-    materializedWorkloadSnapshot: snapshot,
+  const materialization: TaskSetMaterializationRecord = {
+    id: crypto.randomUUID(),
+    taskSetId: snapshot.taskSetId,
+    taskSetVersion: snapshot.taskSetVersion,
+    protocolFingerprint: snapshot.protocolFingerprint,
+    snapshot,
+    createdAt: Date.now(),
   };
-  const revision = await repo.saveSuite(durable, suite.revision);
-  return { ...durable, revision };
+  await repo.persistTaskSetMaterialization(materialization);
+  return { suite, record: materialization };
 }
 
 function friendlyRunError(err: unknown): string {

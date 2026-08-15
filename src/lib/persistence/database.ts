@@ -20,7 +20,8 @@
 //   v6 — additive legacy ownership crosswalk (1 table):
 //        taskSetOwnershipCrosswalk (child 03 Task 4). Maps reconstructed
 //        Suite/Experiment/Fusion-owner coordinates to exact Task Set Versions.
-// =============================================================================
+//   v7 — additive immutable Task Set execution materializations (1 table):
+//        taskSetMaterializations.
 
 import Dexie, { type Table } from "dexie";
 import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
@@ -306,6 +307,18 @@ export interface TaskSetOwnershipCrosswalkRow {
   updatedAt: number;
 }
 
+/** Immutable materialized execution input persisted before controller start
+ *  (schema v7, child 03 Task 7). The snapshot is stored in full in the row;
+ *  identity fields are duplicated only for exact indexed lookup. */
+export interface TaskSetMaterializationRow {
+  id: string;
+  taskSetId: string;
+  taskSetVersion: number;
+  protocolFingerprint: string;
+  snapshot: unknown;
+  createdAt: number;
+}
+
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -385,6 +398,8 @@ export class RSembleEvaluationDB extends Dexie {
   taskSetVersions!: Table<TaskSetVersionRow, [string, number]>;
   // Legacy ownership crosswalk (schema v6, child 03 Task 4)
   taskSetOwnershipCrosswalk!: Table<TaskSetOwnershipCrosswalkRow, string>;
+  // Immutable execution materializations (schema v7, child 03 Task 7)
+  taskSetMaterializations!: Table<TaskSetMaterializationRow, string>;
   /** Current storage lifecycle state. */
   private _storageState: StorageState = "ready";
   private stateListeners = new Set<StateListener>();
@@ -456,6 +471,14 @@ export class RSembleEvaluationDB extends Dexie {
     // (or explicit unresolved states). No existing table is redefined.
     this.version(6).stores({
       taskSetOwnershipCrosswalk: "key, kind, taskSetId",
+    });
+
+    // v7: additive immutable Task Set materializations (child 03 Task 7).
+    // Each execution input is a new row; no Suite or prior materialization is
+    // overwritten. Controller consumption of this identity is Task 8.
+    this.version(7).stores({
+      taskSetMaterializations:
+        "id, taskSetId, [taskSetId+taskSetVersion], protocolFingerprint, createdAt",
     });
 
     this.on("blocked", () => {

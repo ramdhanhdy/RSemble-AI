@@ -558,10 +558,9 @@ describe("TaskSetEditor — save", () => {
     await seedTaskSetVersion(taskSetRepo, suite, 0);
     const suiteBefore = structuredClone(await repo.getSuite("s1"));
     const taskSetBefore = structuredClone(await taskSetRepo.getTaskSetRecord("s1"));
-    vi.spyOn(repo, "saveSuite").mockRejectedValueOnce(
-      new StorageError("quota", "Suite compatibility write failed"),
+    vi.spyOn(repo, "saveSuiteAndTaskSetVersion").mockRejectedValueOnce(
+      new StorageError("quota", "Suite compatibility write failed after append staging"),
     );
-
     const h = renderWithRouter(<TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />);
     await settle();
     await act(async () => {
@@ -1777,9 +1776,7 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
       start: vi.fn(async () => {
         const materializations = await (
           repo as InMemoryEvaluationRepository & {
-            listTaskSetMaterializations: (
-              taskSetId: string,
-            ) => Promise<
+            listTaskSetMaterializations: (taskSetId: string) => Promise<
               Array<{
                 taskSetId: string;
                 taskSetVersion: number;
@@ -1793,7 +1790,7 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
             >;
           }
         ).listTaskSetMaterializations("s1");
-        const persistedAtStart = materializations.at(-1);
+        const persistedAtStart = materializations[materializations.length - 1];
         if (
           persistedAtStart?.taskSetId === "s1" &&
           persistedAtStart.taskSetVersion === 1 &&

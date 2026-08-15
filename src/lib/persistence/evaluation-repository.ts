@@ -42,15 +42,79 @@ import {
   type ProfileRecord,
 } from "../evaluations/evaluation-types";
 import {
+  validateTaskSetRecord,
+  validateTaskSetVersion,
+  type TaskSetRecord,
+  type TaskSetVersion,
+} from "../evaluations/task-set-types";
+import type { MaterializedWorkloadSnapshot } from "../evaluations/workload-manifest";
+import type { TaskSetRepository } from "./task-set-repository";
+import { validateContiguousAppend } from "../tasks/task-versioning";
+import {
   importSuitePackage as persistSuitePackage,
   type SuitePackageImportResult,
 } from "./suite-package-import";
 import type { ImportedSuitePackage } from "../evaluations/suite-package";
 
+export interface AtomicTaskSetSaveInput {
+  suite: EvaluationSuite;
+  expectedSuiteRevision: number;
+  taskSetRecord: TaskSetRecord;
+  taskSetVersion: TaskSetVersion;
+  expectedTaskSetRevision: number;
+  /** Used by the in-memory test repository; Dexie writes its own canonical
+   *  stores in the same physical transaction as `suites`. */
+  taskSetRepository: TaskSetRepository;
+}
+
+export interface AtomicTaskSetSaveResult {
+  suiteRevision: number;
+  taskSetRevision: number;
+}
+
+export interface TaskSetMaterializationRecord {
+  id: string;
+  taskSetId: string;
+  taskSetVersion: number;
+  protocolFingerprint: string;
+  snapshot: MaterializedWorkloadSnapshot;
+  createdAt: number;
+}
+
+function isTaskSetMaterializationRecord(value: unknown): value is TaskSetMaterializationRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<TaskSetMaterializationRecord>;
+  const snapshot = record.snapshot as Partial<MaterializedWorkloadSnapshot> | undefined;
+  return (
+    typeof record.id === "string" &&
+    record.id.length > 0 &&
+    typeof record.taskSetId === "string" &&
+    record.taskSetId.length > 0 &&
+    Number.isInteger(record.taskSetVersion) &&
+    (record.taskSetVersion ?? 0) > 0 &&
+    typeof record.protocolFingerprint === "string" &&
+    record.protocolFingerprint.length > 0 &&
+    typeof record.createdAt === "number" &&
+    Number.isFinite(record.createdAt) &&
+    snapshot !== undefined &&
+    snapshot.taskSetId === record.taskSetId &&
+    snapshot.taskSetVersion === record.taskSetVersion &&
+    snapshot.protocolFingerprint === record.protocolFingerprint
+  );
+}
+
+function assertTaskSetMaterialization(record: TaskSetMaterializationRecord): void {
+  if (!isTaskSetMaterializationRecord(record)) {
+    throw new StorageError("validation", "Invalid Task Set materialization");
+  }
+}
 export interface EvaluationRepository {
   listSuites(includeArchived?: boolean): Promise<EvaluationSuite[]>;
   getSuite(id: string): Promise<EvaluationSuite | null>;
   saveSuite(suite: EvaluationSuite, expectedRevision: number): Promise<number>;
+  saveSuiteAndTaskSetVersion(input: AtomicTaskSetSaveInput): Promise<AtomicTaskSetSaveResult>;
+  persistTaskSetMaterialization(record: TaskSetMaterializationRecord): Promise<void>;
+  listTaskSetMaterializations(taskSetId: string): Promise<TaskSetMaterializationRecord[]>;
   archiveSuite(id: string): Promise<void>;
 
   // --- Canonical Rubric repository API (spec §5.1) -------------------------
@@ -162,6 +226,130 @@ export function createEvaluationRepository(
       return newRevision;
     } catch (err) {
       if (err instanceof StorageError) throw err;
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function saveSuiteAndTaskSetVersion(
+    input: AtomicTaskSetSaveInput,
+  ): Promise<AtomicTaskSetSaveResult> {
+    const { suite, expectedSuiteRevision, taskSetRecord, taskSetVersion, expectedTaskSetRevision } =
+      input;
+    if (!isEvaluationSuite(suite)) throw new StorageError("validation", "Invalid suite");
+    const recordValidation = validateTaskSetRecord(taskSetRecord);
+    if (!recordValidation.valid) {
+      throw new StorageError(
+        "validation",
+        recordValidation.errors[0]?.message ?? "Invalid task set record",
+      );
+    }
+    const versionValidation = validateTaskSetVersion(taskSetVersion);
+    if (!versionValidation.valid) {
+      throw new StorageError(
+        "validation",
+        versionValidation.errors[0]?.message ?? "Invalid task set version",
+      );
+    }
+    if (
+      suite.id !== taskSetRecord.id ||
+      taskSetRecord.id !== taskSetVersion.taskSetId ||
+      suite.version !== taskSetVersion.version
+    ) {
+      throw new StorageError("validation", "Suite and Task Set identity mismatch");
+    }
+    db.assertWritable();
+    const suiteRevision = expectedSuiteRevision + 1;
+    const taskSetRevision = expectedTaskSetRevision + 1;
+    try {
+      await db.transaction("rw", db.suites, db.taskSets, db.taskSetVersions, async () => {
+        const [suiteRow, taskSetRow, immutableVersion] = await Promise.all([
+          db.suites.get(suite.id),
+          db.taskSets.get(taskSetRecord.id),
+          db.taskSetVersions.get([taskSetVersion.taskSetId, taskSetVersion.version]),
+        ]);
+        if (!suiteRow || suiteRow.revision !== expectedSuiteRevision) {
+          throw new StorageError("conflict", "Task set was modified in another tab.");
+        }
+        if (!taskSetRow || taskSetRow.revision !== expectedTaskSetRevision) {
+          throw new StorageError("conflict", "Canonical Task Set was modified in another tab.");
+        }
+        const appendCheck = validateContiguousAppend(
+          { latestVersion: taskSetRow.latestVersion },
+          { version: taskSetVersion.version },
+        );
+        if (!appendCheck.ok) {
+          throw new StorageError("conflict", appendCheck.reason ?? "Non-contiguous version");
+        }
+        if (immutableVersion) {
+          throw new StorageError(
+            "conflict",
+            `Task Set version ${taskSetVersion.taskSetId}@${taskSetVersion.version} already exists`,
+          );
+        }
+        const updatedAt = Date.now();
+        const updatedRecord: TaskSetRecord = {
+          ...taskSetRecord,
+          revision: taskSetRevision,
+          latestVersion: taskSetVersion.version,
+          updatedAt,
+        };
+        await db.taskSetVersions.add({
+          taskSetId: taskSetVersion.taskSetId,
+          version: taskSetVersion.version,
+          version_: taskSetVersion,
+          createdAt: taskSetVersion.createdAt,
+        });
+        await db.taskSets.put({
+          ...taskSetRow,
+          record: updatedRecord,
+          latestVersion: updatedRecord.latestVersion,
+          updatedAt,
+          revision: taskSetRevision,
+        });
+        await db.suites.put({
+          id: suite.id,
+          suite: { ...suite, revision: suiteRevision },
+          revision: suiteRevision,
+          version: suite.version,
+          updatedAt: suite.updatedAt,
+          archivedAt: suite.archivedAt,
+        });
+      });
+      return { suiteRevision, taskSetRevision };
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function persistTaskSetMaterialization(
+    record: TaskSetMaterializationRecord,
+  ): Promise<void> {
+    assertTaskSetMaterialization(record);
+    db.assertWritable();
+    try {
+      await db.transaction("rw", db.taskSetMaterializations, async () => {
+        if (await db.taskSetMaterializations.get(record.id)) {
+          throw new StorageError("conflict", `Materialization ${record.id} already exists`);
+        }
+        await db.taskSetMaterializations.add(structuredClone(record));
+      });
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function listTaskSetMaterializations(
+    taskSetId: string,
+  ): Promise<TaskSetMaterializationRecord[]> {
+    try {
+      const rows = await db.taskSetMaterializations.where("taskSetId").equals(taskSetId).toArray();
+      return rows
+        .filter(isTaskSetMaterializationRecord)
+        .map((row) => structuredClone(row))
+        .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+    } catch (err) {
       throw classifyStorageError(err);
     }
   }
@@ -579,6 +767,9 @@ export function createEvaluationRepository(
     listSuites,
     getSuite,
     saveSuite,
+    saveSuiteAndTaskSetVersion,
+    persistTaskSetMaterialization,
+    listTaskSetMaterializations,
     archiveSuite,
     listRubrics,
     getRubricRecord,
@@ -611,10 +802,69 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
   private rubricVersions = new Map<string, Map<number, EvaluationRubric>>();
   private experiments: Map<string, ExperimentRecord>;
   private readonly experimentUow: ExperimentUnitOfWork;
+  private taskSetMaterializations = new Map<string, TaskSetMaterializationRecord>();
 
   /** Optional shared experiments map lets a test harness back this repository
    *  and an external InMemoryExperimentStore with one table — mirroring the
    *  single-Dexie-DB production wiring. */
+  async saveSuiteAndTaskSetVersion(
+    input: AtomicTaskSetSaveInput,
+  ): Promise<AtomicTaskSetSaveResult> {
+    const {
+      suite,
+      expectedSuiteRevision,
+      taskSetRecord,
+      taskSetVersion,
+      expectedTaskSetRevision,
+      taskSetRepository,
+    } = input;
+    if (!isEvaluationSuite(suite)) throw new StorageError("validation", "Invalid suite");
+    const [currentSuite, currentTaskSet, existingVersion] = await Promise.all([
+      this.getSuite(suite.id),
+      taskSetRepository.getTaskSetRecord(taskSetRecord.id),
+      taskSetRepository.getTaskSetVersion(taskSetVersion.taskSetId, taskSetVersion.version),
+    ]);
+    if (!currentSuite || currentSuite.revision !== expectedSuiteRevision) {
+      throw new StorageError("conflict", "Task set was modified in another tab.");
+    }
+    if (!currentTaskSet || currentTaskSet.revision !== expectedTaskSetRevision) {
+      throw new StorageError("conflict", "Canonical Task Set was modified in another tab.");
+    }
+    const appendCheck = validateContiguousAppend(
+      { latestVersion: currentTaskSet.latestVersion },
+      { version: taskSetVersion.version },
+    );
+    if (!appendCheck.ok || existingVersion) {
+      throw new StorageError(
+        "conflict",
+        appendCheck.reason ?? `Task Set version ${taskSetVersion.version} already exists`,
+      );
+    }
+
+    const suiteRevision = expectedSuiteRevision + 1;
+    const taskSetRevision = await taskSetRepository.appendTaskSetVersion(
+      taskSetRecord,
+      taskSetVersion,
+      expectedTaskSetRevision,
+    );
+    this.suites.set(suite.id, structuredClone({ ...suite, revision: suiteRevision }));
+    return { suiteRevision, taskSetRevision };
+  }
+
+  async persistTaskSetMaterialization(record: TaskSetMaterializationRecord): Promise<void> {
+    assertTaskSetMaterialization(record);
+    if (this.taskSetMaterializations.has(record.id)) {
+      throw new StorageError("conflict", `Materialization ${record.id} already exists`);
+    }
+    this.taskSetMaterializations.set(record.id, structuredClone(record));
+  }
+
+  async listTaskSetMaterializations(taskSetId: string): Promise<TaskSetMaterializationRecord[]> {
+    return [...this.taskSetMaterializations.values()]
+      .filter((record) => record.taskSetId === taskSetId)
+      .map((record) => structuredClone(record))
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  }
   constructor(shared?: { experiments?: Map<string, ExperimentRecord> }) {
     this.experiments = shared?.experiments ?? new Map<string, ExperimentRecord>();
     this.experimentUow = createExperimentUnitOfWork(
