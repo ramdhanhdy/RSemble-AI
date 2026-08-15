@@ -322,7 +322,9 @@ describe("TaskSetExecutionHistory", () => {
     const repo = new InMemoryEvaluationRepository();
     const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
-    expect(h.container.textContent).toContain("No evaluations yet — run this task set to create one.");
+    expect(h.container.textContent).toContain(
+      "No evaluations yet — run this task set to create one.",
+    );
     expect(h.$$("[data-record-row]")).toHaveLength(0);
     cleanup(h);
   });

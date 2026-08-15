@@ -378,12 +378,7 @@ describe("FusionStudyView", () => {
     const repo = new InMemoryFusionStudyRepository();
     await repo.createStudy(makeStudy());
     const h1 = render(
-      <FusionStudyView
-        fusionRepo={repo}
-        suiteId="suite-1"
-        studyId="study-1"
-        isCanonical={true}
-      />,
+      <FusionStudyView fusionRepo={repo} suiteId="suite-1" studyId="study-1" isCanonical={true} />,
     );
     await settle();
     const link1 = h1.$('a[href="/evaluations/sets/suite-1"]');
@@ -392,12 +387,7 @@ describe("FusionStudyView", () => {
     h1.unmount();
 
     const h2 = render(
-      <FusionStudyView
-        fusionRepo={repo}
-        suiteId="suite-1"
-        studyId="study-1"
-        isCanonical={false}
-      />,
+      <FusionStudyView fusionRepo={repo} suiteId="suite-1" studyId="study-1" isCanonical={false} />,
     );
     await settle();
     const link2 = h2.$('a[href="/evaluations/suite-1"]');

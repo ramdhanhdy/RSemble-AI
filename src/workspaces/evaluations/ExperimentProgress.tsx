@@ -86,7 +86,9 @@ export function ExperimentProgress({
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="max-w-[18rem] truncate font-mono text-sm text-text">{experiment.id}</h1>
-          <span className="text-xs text-text-muted">Task Set v{experiment.snapshot.suiteVersion}</span>
+          <span className="text-xs text-text-muted">
+            Task Set v{experiment.snapshot.suiteVersion}
+          </span>
           <StatusMark status={experiment.status} />
         </div>
         <p className="text-xs text-text-muted">

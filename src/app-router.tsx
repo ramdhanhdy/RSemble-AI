@@ -161,7 +161,6 @@ export function AppRoutes({
         <Route path="profiles" element={<RubricListRedirect />} />
         <Route path="profiles/:rubricId" element={<RubricDetailRedirect />} />
 
-
         {/* Canonical Evaluation execution results routes (spec §5.1). */}
         <Route
           path="results/:evaluationExecutionId"

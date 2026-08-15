@@ -90,7 +90,8 @@ export function ExperimentAddModelDialog({
   const initialProvider = availableProviderIds[0] ?? "openrouter";
   const confirmDisabled = busy || selectedSlot === null || plan === null;
   const displayName = taskSetName ?? suiteName ?? "task set";
-  const syncChecked = syncToTaskSet !== undefined ? syncToTaskSet : syncToSuite !== undefined ? syncToSuite : true;
+  const syncChecked =
+    syncToTaskSet !== undefined ? syncToTaskSet : syncToSuite !== undefined ? syncToSuite : true;
   const handleSyncChange = onSyncToTaskSetChange ?? onSyncToSuiteChange ?? (() => {});
 
   return (

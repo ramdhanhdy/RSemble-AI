@@ -347,7 +347,10 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
       abort: vi.fn(async () => {}),
       retryIncomplete: vi.fn(async (): Promise<SimpleResult> => retryResult),
       repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
-      addModelAndRun: vi.fn(async (): Promise<StartResult> => ({ ok: true, experimentId: "exp-1" })),
+      addModelAndRun: vi.fn(async (): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
       whenIdle: vi.fn(async () => {}),
@@ -487,7 +490,10 @@ describe("ExperimentResults — recovery controls (Task 12)", () => {
       abort: vi.fn(async () => {}),
       retryIncomplete: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
       repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
-      addModelAndRun: vi.fn(async (): Promise<StartResult> => ({ ok: true, experimentId: "exp-1" })),
+      addModelAndRun: vi.fn(async (): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
       whenIdle: vi.fn(async () => {}),

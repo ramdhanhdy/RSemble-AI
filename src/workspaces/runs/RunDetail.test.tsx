@@ -571,7 +571,9 @@ describe("RunDetail", () => {
     expect(provenance).toBeTruthy();
     const text = provenance?.textContent ?? "";
     // "Evaluation" links to the canonical evaluation results route
-    const experimentLinks = [...provenance!.querySelectorAll("a[href='/evaluations/results/exp-1']")];
+    const experimentLinks = [
+      ...provenance!.querySelectorAll("a[href='/evaluations/results/exp-1']"),
+    ];
     expect(experimentLinks.some((a) => a.textContent?.trim() === "Evaluation")).toBe(true);
     // Task Set part links to the task set route with its version
     const suiteLink = provenance!.querySelector("a[href='/evaluations/sets/suite-1']");
