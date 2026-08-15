@@ -669,7 +669,6 @@ describe("AppRouter — canonical Task routes (spec §7)", () => {
 
 // --- Canonical Task Set routes (task-sets spec §4, plan Task 5) -------------
 
-
 function makeRoutedSuite(id: string, name: string): EvaluationSuite {
   const now = Date.now();
   return {
@@ -715,7 +714,10 @@ function makeRoutedSuite(id: string, name: string): EvaluationSuite {
   };
 }
 
-async function seedSuite(repo: InMemoryEvaluationRepository, suite: EvaluationSuite): Promise<void> {
+async function seedSuite(
+  repo: InMemoryEvaluationRepository,
+  suite: EvaluationSuite,
+): Promise<void> {
   await repo.saveSuite(suite, 0);
 }
 
@@ -758,7 +760,9 @@ describe("AppRouter — canonical Task Set routes (spec §4)", () => {
     const repo = new InMemoryEvaluationRepository();
     const h = await renderRouterAsync({ initialEntries: ["/evaluations/sets/new"], repo });
     expect(h.loc.current?.pathname).toBe("/evaluations/sets/new");
-    expect(h.$("[data-task-set-editor='new']") ?? h.$("button[data-action='create-task-set']")).toBeTruthy();
+    expect(
+      h.$("[data-task-set-editor='new']") ?? h.$("button[data-action='create-task-set']"),
+    ).toBeTruthy();
     cleanup(h);
   });
 

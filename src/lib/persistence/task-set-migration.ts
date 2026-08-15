@@ -30,7 +30,11 @@
 //    valid marker performs no writes.
 // =============================================================================
 
-import { canonicalJsonString, computeProtocolFingerprint, hashArtifactContent } from "../evaluations/protocol-fingerprint";
+import {
+  canonicalJsonString,
+  computeProtocolFingerprint,
+  hashArtifactContent,
+} from "../evaluations/protocol-fingerprint";
 import { legacyTaskCrosswalkKey } from "./canonical-task-migration";
 import {
   computeLegacyExecutableDefinitionDigest,
@@ -57,7 +61,12 @@ import type {
   TaskSetVersion,
   TaskVersionRef,
 } from "../evaluations/task-set-types";
-import type { FusionPlaybook, FusionStudy, FusionTrial, SuiteSnapshotRef } from "../evaluations/fusion-study-types";
+import type {
+  FusionPlaybook,
+  FusionStudy,
+  FusionTrial,
+  SuiteSnapshotRef,
+} from "../evaluations/fusion-study-types";
 import {
   type RSembleEvaluationDB,
   type TaskSetOwnershipCrosswalkRow,
@@ -153,7 +162,9 @@ interface SuitePlan {
 
 // --- projection helpers (pure, mirror suite-compat without mutating source) --
 
-function rubricRefFromEvaluation(sel: EvaluationSelection | TaskEvaluationSelection): { id: string; version: number } | null {
+function rubricRefFromEvaluation(
+  sel: EvaluationSelection | TaskEvaluationSelection,
+): { id: string; version: number } | null {
   if (sel.kind === "profile") return { id: sel.profile.id, version: sel.profile.version };
   return null;
 }
@@ -180,7 +191,9 @@ function judgeSnapshotFromCritic(ref: CriticRef): JudgeSnapshot {
 
 function protocolDefaultsFromReasoningPolicy(reasoningPolicy?: ReasoningPolicy): ProtocolDefaults {
   if (!reasoningPolicy) return {};
-  return { reasoningPolicy: { candidates: reasoningPolicy.candidates, judge: reasoningPolicy.judge } };
+  return {
+    reasoningPolicy: { candidates: reasoningPolicy.candidates, judge: reasoningPolicy.judge },
+  };
 }
 
 /** Locale-independent code-unit ordinal comparator for string identifiers.
@@ -332,7 +345,12 @@ function isEvaluationSuite(v: unknown): v is EvaluationSuite {
 function isExperimentRecord(v: unknown): v is ExperimentRecord {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const o = v as Record<string, unknown>;
-  if (typeof o.id !== "string" || typeof o.suiteId !== "string" || typeof o.suiteVersion !== "number") return false;
+  if (
+    typeof o.id !== "string" ||
+    typeof o.suiteId !== "string" ||
+    typeof o.suiteVersion !== "number"
+  )
+    return false;
   const snap = o.snapshot;
   if (typeof snap !== "object" || snap === null || Array.isArray(snap)) return false;
   const s = snap as Record<string, unknown>;
@@ -439,7 +457,11 @@ function buildTaskSetRecord(suite: EvaluationSuite, latestVersion: number): Task
   };
 }
 
-function buildTaskSetVersion(taskSetId: string, canonicalVersion: number, obs: Observation): TaskSetVersion {
+function buildTaskSetVersion(
+  taskSetId: string,
+  canonicalVersion: number,
+  obs: Observation,
+): TaskSetVersion {
   const members: TaskSetMember[] = obs.members.map((m) => ({
     id: m.task.id,
     taskVersionRef: m.resolved ?? { taskId: "", version: 0 },
@@ -498,13 +520,14 @@ async function buildPlan(
   taskVersionSet: Set<string>,
   rubricVersionMap: Map<string, EvaluationRubric>,
 ): Promise<MigrationPlan> {
-  const [suiteRows, experimentRows, fusionStudyRows, fusionTrialRows, fusionPlaybookRows] = await Promise.all([
-    db.suites.toArray(),
-    db.experiments.toArray(),
-    db.fusionStudies.toArray(),
-    db.fusionTrials.toArray(),
-    db.fusionPlaybooks.toArray(),
-  ]);
+  const [suiteRows, experimentRows, fusionStudyRows, fusionTrialRows, fusionPlaybookRows] =
+    await Promise.all([
+      db.suites.toArray(),
+      db.experiments.toArray(),
+      db.fusionStudies.toArray(),
+      db.fusionTrials.toArray(),
+      db.fusionPlaybooks.toArray(),
+    ]);
 
   const suites = suiteRows.map((r) => r.suite).filter(isEvaluationSuite);
   const experiments = experimentRows.map((r) => r.experiment).filter(isExperimentRecord);
@@ -791,74 +814,83 @@ async function writeSuite(
 ): Promise<void> {
   const taskSetId = plan.suite.id;
   const expectedRecord = buildTaskSetRecord(plan.suite, plan.versions.length);
-  await db.transaction("rw", db.taskSets, db.taskSetVersions, db.taskSetOwnershipCrosswalk, async () => {
-    // TaskSetRecord — reuse identical, fail on non-identical collision.
-    const existingRecord = await db.taskSets.get(taskSetId);
-    if (existingRecord) {
-      const existingRecordValue = existingRecord.record as TaskSetRecord;
-      if (
-        !sameJson(existingRecordValue, expectedRecord) ||
-        existingRecord.latestVersion !== expectedRecord.latestVersion ||
-        existingRecord.origin !== expectedRecord.origin ||
-        existingRecord.revision !== expectedRecord.revision ||
-        existingRecord.archivedAt !== expectedRecord.archivedAt
-      ) {
-        throw new StorageError(
-          "conflict",
-          `Task Set migration found a non-identical record collision for ${taskSetId}`,
-        );
-      }
-    } else {
-      await db.taskSets.put({
-        id: expectedRecord.id,
-        record: expectedRecord,
-        latestVersion: expectedRecord.latestVersion,
-        createdAt: expectedRecord.createdAt,
-        updatedAt: expectedRecord.updatedAt,
-        archivedAt: expectedRecord.archivedAt,
-        origin: expectedRecord.origin,
-        revision: expectedRecord.revision,
-      });
-    }
-
-    // TaskSetVersions — reuse identical, write missing, fail on collision.
-    for (const v of plan.versions) {
-      const expectedVersion = buildTaskSetVersion(taskSetId, v.version, v.representative);
-      const existing = await db.taskSetVersions.get([taskSetId, v.version]);
-      if (existing) {
-        if (!sameJson(existing.version_, expectedVersion) || existing.createdAt !== expectedVersion.createdAt) {
+  await db.transaction(
+    "rw",
+    db.taskSets,
+    db.taskSetVersions,
+    db.taskSetOwnershipCrosswalk,
+    async () => {
+      // TaskSetRecord — reuse identical, fail on non-identical collision.
+      const existingRecord = await db.taskSets.get(taskSetId);
+      if (existingRecord) {
+        const existingRecordValue = existingRecord.record as TaskSetRecord;
+        if (
+          !sameJson(existingRecordValue, expectedRecord) ||
+          existingRecord.latestVersion !== expectedRecord.latestVersion ||
+          existingRecord.origin !== expectedRecord.origin ||
+          existingRecord.revision !== expectedRecord.revision ||
+          existingRecord.archivedAt !== expectedRecord.archivedAt
+        ) {
           throw new StorageError(
             "conflict",
-            `Task Set migration found a non-identical version collision for ${taskSetId}@${v.version}`,
+            `Task Set migration found a non-identical record collision for ${taskSetId}`,
           );
         }
       } else {
-        await db.taskSetVersions.put({
-          taskSetId,
-          version: expectedVersion.version,
-          version_: expectedVersion,
-          createdAt: expectedVersion.createdAt,
+        await db.taskSets.put({
+          id: expectedRecord.id,
+          record: expectedRecord,
+          latestVersion: expectedRecord.latestVersion,
+          createdAt: expectedRecord.createdAt,
+          updatedAt: expectedRecord.updatedAt,
+          archivedAt: expectedRecord.archivedAt,
+          origin: expectedRecord.origin,
+          revision: expectedRecord.revision,
         });
-        counts.createdVersions += 1;
       }
-    }
 
-    // suite-manifest crosswalk rows — reuse identical, write missing, fail on collision.
-    for (const row of suiteManifestRows) {
-      const existing = await db.taskSetOwnershipCrosswalk.get(row.key);
-      if (existing) {
-        if (!sameJson(existing, row)) {
-          throw new StorageError(
-            "conflict",
-            `Task Set migration found a non-identical suite-manifest crosswalk collision for ${row.key}`,
-          );
+      // TaskSetVersions — reuse identical, write missing, fail on collision.
+      for (const v of plan.versions) {
+        const expectedVersion = buildTaskSetVersion(taskSetId, v.version, v.representative);
+        const existing = await db.taskSetVersions.get([taskSetId, v.version]);
+        if (existing) {
+          if (
+            !sameJson(existing.version_, expectedVersion) ||
+            existing.createdAt !== expectedVersion.createdAt
+          ) {
+            throw new StorageError(
+              "conflict",
+              `Task Set migration found a non-identical version collision for ${taskSetId}@${v.version}`,
+            );
+          }
+        } else {
+          await db.taskSetVersions.put({
+            taskSetId,
+            version: expectedVersion.version,
+            version_: expectedVersion,
+            createdAt: expectedVersion.createdAt,
+          });
+          counts.createdVersions += 1;
         }
-      } else {
-        await db.taskSetOwnershipCrosswalk.put(row);
-        counts.crosswalksWritten += 1;
       }
-    }
-  });
+
+      // suite-manifest crosswalk rows — reuse identical, write missing, fail on collision.
+      for (const row of suiteManifestRows) {
+        const existing = await db.taskSetOwnershipCrosswalk.get(row.key);
+        if (existing) {
+          if (!sameJson(existing, row)) {
+            throw new StorageError(
+              "conflict",
+              `Task Set migration found a non-identical suite-manifest crosswalk collision for ${row.key}`,
+            );
+          }
+        } else {
+          await db.taskSetOwnershipCrosswalk.put(row);
+          counts.crosswalksWritten += 1;
+        }
+      }
+    },
+  );
 }
 
 async function writeExperimentOwners(
@@ -911,17 +943,51 @@ async function writeFusionOwners(
 
 async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
   const [
-    suites, experiments, rubrics, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
-    fusionRecipes, poolManifests, fusionStudies, fusionTrials, fusionAttempts, fusionObservations, fusionPlaybooks,
+    suites,
+    experiments,
+    rubrics,
+    profileVersions,
+    tasks,
+    taskVersions,
+    taskMigrationCrosswalk,
+    fusionRecipes,
+    poolManifests,
+    fusionStudies,
+    fusionTrials,
+    fusionAttempts,
+    fusionObservations,
+    fusionPlaybooks,
   ] = await Promise.all([
-    db.suites.toArray(), db.experiments.toArray(), db.profiles.toArray(), db.profileVersions.toArray(),
-    db.tasks.toArray(), db.taskVersions.toArray(), db.taskMigrationCrosswalk.toArray(),
-    db.fusionRecipes.toArray(), db.poolManifests.toArray(), db.fusionStudies.toArray(),
-    db.fusionTrials.toArray(), db.fusionAttempts.toArray(), db.fusionObservations.toArray(), db.fusionPlaybooks.toArray(),
+    db.suites.toArray(),
+    db.experiments.toArray(),
+    db.profiles.toArray(),
+    db.profileVersions.toArray(),
+    db.tasks.toArray(),
+    db.taskVersions.toArray(),
+    db.taskMigrationCrosswalk.toArray(),
+    db.fusionRecipes.toArray(),
+    db.poolManifests.toArray(),
+    db.fusionStudies.toArray(),
+    db.fusionTrials.toArray(),
+    db.fusionAttempts.toArray(),
+    db.fusionObservations.toArray(),
+    db.fusionPlaybooks.toArray(),
   ]);
   return canonicalJsonString({
-    suites, experiments, rubrics, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
-    fusionRecipes, poolManifests, fusionStudies, fusionTrials, fusionAttempts, fusionObservations, fusionPlaybooks,
+    suites,
+    experiments,
+    rubrics,
+    profileVersions,
+    tasks,
+    taskVersions,
+    taskMigrationCrosswalk,
+    fusionRecipes,
+    poolManifests,
+    fusionStudies,
+    fusionTrials,
+    fusionAttempts,
+    fusionObservations,
+    fusionPlaybooks,
   });
 }
 
@@ -934,14 +1000,20 @@ async function verifyMigration(
   for (const e of plan.experiments) {
     const row = await db.taskSetOwnershipCrosswalk.get(experimentOwnerKey(e.id));
     if (!row) {
-      throw new StorageError("validation", `Migration verification failed: experiment ${e.id} has no owner crosswalk`);
+      throw new StorageError(
+        "validation",
+        `Migration verification failed: experiment ${e.id} has no owner crosswalk`,
+      );
     }
   }
   // (b) every fusion study has a fusion-owner crosswalk.
   for (const s of plan.fusionStudies) {
     const row = await db.taskSetOwnershipCrosswalk.get(fusionOwnerKey(s.id));
     if (!row) {
-      throw new StorageError("validation", `Migration verification failed: fusion study ${s.id} has no owner crosswalk`);
+      throw new StorageError(
+        "validation",
+        `Migration verification failed: fusion study ${s.id} has no owner crosswalk`,
+      );
     }
   }
   // (c) every suite-manifest crosswalk target version exists with the expected digest.
@@ -966,7 +1038,10 @@ async function verifyMigration(
   // (d) all source payloads unchanged.
   const afterSnapshot = await snapshotAllSources(db);
   if (afterSnapshot !== beforeSnapshot) {
-    throw new StorageError("validation", "Migration verification failed: a source payload was mutated");
+    throw new StorageError(
+      "validation",
+      "Migration verification failed: a source payload was mutated",
+    );
   }
 }
 
@@ -979,7 +1054,9 @@ async function verifyMigration(
  * The versioned completion marker is written only after independent
  * verification inside the safe persistence boundary.
  */
-export async function migrateSuitesToTaskSets(db: RSembleEvaluationDB): Promise<TaskSetMigrationResult> {
+export async function migrateSuitesToTaskSets(
+  db: RSembleEvaluationDB,
+): Promise<TaskSetMigrationResult> {
   db.assertWritable();
   try {
     // A valid terminal marker makes repeat startup a no-write operation:
@@ -1010,7 +1087,8 @@ export async function migrateSuitesToTaskSets(db: RSembleEvaluationDB): Promise<
       db.profileVersions.toArray(),
     ]);
     const crosswalkMap = new Map<string, { taskId: string; taskVersion: number }>();
-    for (const r of crosswalkRows) crosswalkMap.set(r.legacyScopeKey, { taskId: r.taskId, taskVersion: r.taskVersion });
+    for (const r of crosswalkRows)
+      crosswalkMap.set(r.legacyScopeKey, { taskId: r.taskId, taskVersion: r.taskVersion });
     const taskVersionSet = new Set<string>();
     for (const r of taskVersionRows) taskVersionSet.add(`${r.taskId}::v${r.version}`);
     const rubricVersionMap = new Map<string, EvaluationRubric>();

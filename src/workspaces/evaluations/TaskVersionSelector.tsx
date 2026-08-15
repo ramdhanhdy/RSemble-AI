@@ -83,7 +83,9 @@ export function TaskVersionSelector({
         setTaskTitles(titles);
         setLoading(false);
         if (records.length > 0) {
-          setSelectedTaskId((prev) => (prev && records.some((r) => r.id === prev) ? prev : records[0]!.id));
+          setSelectedTaskId((prev) =>
+            prev && records.some((r) => r.id === prev) ? prev : records[0]!.id,
+          );
         } else {
           setSelectedTaskId(null);
         }
@@ -119,7 +121,7 @@ export function TaskVersionSelector({
         setVersions(sorted);
         setLoadingVersions(false);
         const taskRec = tasks.find((t) => t.id === selectedTaskId);
-        const defaultVer = taskRec ? taskRec.latestVersion : sorted[0]?.version ?? 1;
+        const defaultVer = taskRec ? taskRec.latestVersion : (sorted[0]?.version ?? 1);
         setSelectedVersionNum(defaultVer);
         setArchivedConfirmed(false);
       })
@@ -135,7 +137,8 @@ export function TaskVersionSelector({
   }, [open, repo, selectedTaskId, tasks]);
 
   const selectedRecord = tasks.find((t) => t.id === selectedTaskId) ?? null;
-  const selectedVersionObj = versions.find((v) => v.version === selectedVersionNum) ?? versions[0] ?? null;
+  const selectedVersionObj =
+    versions.find((v) => v.version === selectedVersionNum) ?? versions[0] ?? null;
   const isArchived = selectedRecord?.archivedAt != null;
 
   const handleConfirmSelect = useCallback(() => {
@@ -217,7 +220,9 @@ export function TaskVersionSelector({
               </div>
             ) : tasks.length === 0 ? (
               <div className="flex min-h-[140px] items-center justify-center p-4 text-center text-sm text-text-muted">
-                {search.trim() ? "No canonical tasks match your search." : "No canonical tasks available."}
+                {search.trim()
+                  ? "No canonical tasks match your search."
+                  : "No canonical tasks available."}
               </div>
             ) : (
               <ul className="flex flex-col gap-1" role="list">
@@ -276,7 +281,9 @@ export function TaskVersionSelector({
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-base font-semibold text-text">
-                      {selectedVersionObj?.title || taskTitles.get(selectedRecord.id) || selectedRecord.id}
+                      {selectedVersionObj?.title ||
+                        taskTitles.get(selectedRecord.id) ||
+                        selectedRecord.id}
                     </h3>
                     <span
                       data-pinned-version
@@ -294,7 +301,10 @@ export function TaskVersionSelector({
 
                 {/* Version Selector */}
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="task-version-select" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                  <label
+                    htmlFor="task-version-select"
+                    className="font-mono text-xs uppercase tracking-wide text-text-muted"
+                  >
                     Version Pin
                   </label>
                   {loadingVersions ? (
@@ -311,8 +321,13 @@ export function TaskVersionSelector({
                         className="flex min-h-[44px] flex-1 rounded-md border border-edge bg-input-bg px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         {versions.map((ver) => (
-                          <option key={ver.version} value={ver.version} data-version-option={ver.version}>
-                            v{ver.version} {ver.version === selectedRecord.latestVersion ? "(latest)" : ""}
+                          <option
+                            key={ver.version}
+                            value={ver.version}
+                            data-version-option={ver.version}
+                          >
+                            v{ver.version}{" "}
+                            {ver.version === selectedRecord.latestVersion ? "(latest)" : ""}
                           </option>
                         ))}
                       </select>
@@ -346,7 +361,8 @@ export function TaskVersionSelector({
                       <div>
                         <p className="font-medium">Warning: This canonical task is archived.</p>
                         <p className="text-text-secondary mt-0.5">
-                          Archived tasks can only execute in previously saved sets. Adding to a new workload requires explicit confirmation.
+                          Archived tasks can only execute in previously saved sets. Adding to a new
+                          workload requires explicit confirmation.
                         </p>
                       </div>
                     </div>

@@ -262,7 +262,8 @@ function LegacyFusionRedirect() {
       setResolution("unresolved");
       return;
     }
-    void db.taskSetOwnershipCrosswalk.get(`ts-xwalk:fusion:${studyId}`)
+    void db.taskSetOwnershipCrosswalk
+      .get(`ts-xwalk:fusion:${studyId}`)
       .then((row) => {
         if (cancelled) return;
         if (isResolvedFusionOwner(row)) {
@@ -297,8 +298,8 @@ function LegacyFusionRedirect() {
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       {resolution === "unresolved" ? (
         <p className="text-sm text-warning" data-unresolved-owner="">
-          Unresolved Fusion owner — this study stays on its legacy route because
-          the Suite→Task Set crosswalk did not resolve exactly.
+          Unresolved Fusion owner — this study stays on its legacy route because the Suite→Task Set
+          crosswalk did not resolve exactly.
         </p>
       ) : (
         <p className="text-sm text-text-muted">Resolving Fusion owner…</p>
@@ -313,9 +314,7 @@ function FusionStudyRouteWrapper() {
   return <FusionStudyRoute fusionRepo={fusionRepo} />;
 }
 
-function isResolvedFusionOwner(
-  row: unknown,
-): row is { status: "resolved"; taskSetId: string } {
+function isResolvedFusionOwner(row: unknown): row is { status: "resolved"; taskSetId: string } {
   if (!row || typeof row !== "object") return false;
   if (!("status" in row) || !("taskSetId" in row)) return false;
   return row.status === "resolved" && typeof row.taskSetId === "string";

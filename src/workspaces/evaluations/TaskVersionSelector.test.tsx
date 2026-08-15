@@ -128,12 +128,7 @@ describe("TaskVersionSelector — dialog visibility and search", () => {
     const repo = new InMemoryTaskRepository();
     await seedTask(repo, "t-1", "Summarize article");
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={true}
-        onClose={vi.fn()}
-        onSelect={vi.fn()}
-      />,
+      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={vi.fn()} />,
     );
     await settle();
 
@@ -147,12 +142,7 @@ describe("TaskVersionSelector — dialog visibility and search", () => {
   it("does not render dialog content when open is false", async () => {
     const repo = new InMemoryTaskRepository();
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={false}
-        onClose={vi.fn()}
-        onSelect={vi.fn()}
-      />,
+      <TaskVersionSelector repo={repo} open={false} onClose={vi.fn()} onSelect={vi.fn()} />,
     );
     await settle();
 
@@ -167,12 +157,7 @@ describe("TaskVersionSelector — dialog visibility and search", () => {
     await seedTask(repo, "t-3", "Analyze quarterly revenue");
 
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={true}
-        onClose={vi.fn()}
-        onSelect={vi.fn()}
-      />,
+      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={vi.fn()} />,
     );
     await settle();
 
@@ -180,7 +165,9 @@ describe("TaskVersionSelector — dialog visibility and search", () => {
     expect(h.container.textContent).toContain("Draft email reply");
     expect(h.container.textContent).toContain("Analyze quarterly revenue");
 
-    const searchInput = h.$("input[type='search'], input[data-action='search-tasks']") as HTMLInputElement;
+    const searchInput = h.$(
+      "input[type='search'], input[data-action='search-tasks']",
+    ) as HTMLInputElement;
     typeInto(searchInput, "triage");
     await settle();
 
@@ -197,17 +184,14 @@ describe("TaskVersionSelector — version pinning and selection", () => {
 
     const onSelect = vi.fn();
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={true}
-        onClose={vi.fn()}
-        onSelect={onSelect}
-      />,
+      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={onSelect} />,
     );
     await settle();
 
     // Select the task row to view versions
-    const taskRow = h.$("[data-task-id='t-multi']") ?? h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi-version Task"));
+    const taskRow =
+      h.$("[data-task-id='t-multi']") ??
+      h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi-version Task"));
     expect(taskRow).toBeTruthy();
     await act(async () => {
       taskRow!.click();
@@ -220,7 +204,9 @@ describe("TaskVersionSelector — version pinning and selection", () => {
     expect(pinBadge.textContent).toContain("v3");
 
     // Add / Select button triggers onSelect with v3
-    const addBtn = h.$("button[data-action='confirm-select-task']") ?? h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
+    const addBtn =
+      h.$("button[data-action='confirm-select-task']") ??
+      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
     expect(addBtn).toBeTruthy();
     await act(async () => {
       addBtn!.click();
@@ -240,24 +226,25 @@ describe("TaskVersionSelector — version pinning and selection", () => {
 
     const onSelect = vi.fn();
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={true}
-        onClose={vi.fn()}
-        onSelect={onSelect}
-      />,
+      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={onSelect} />,
     );
     await settle();
 
     // Select the task
-    const taskRow = h.$("[data-task-id='t-multi']") ?? h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi-version Task"));
+    const taskRow =
+      h.$("[data-task-id='t-multi']") ??
+      h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi-version Task"));
     await act(async () => {
       taskRow!.click();
     });
     await settle();
 
     // Choose older version v1
-    const v1Option = h.$("[data-version-option='1']") ?? h.$$("button, option").find((el) => el.textContent?.trim() === "v1" || el.getAttribute("value") === "1");
+    const v1Option =
+      h.$("[data-version-option='1']") ??
+      h
+        .$$("button, option")
+        .find((el) => el.textContent?.trim() === "v1" || el.getAttribute("value") === "1");
     expect(v1Option).toBeTruthy();
     if (v1Option?.tagName.toLowerCase() === "option") {
       const select = v1Option.closest("select")!;
@@ -275,7 +262,9 @@ describe("TaskVersionSelector — version pinning and selection", () => {
     // Pinned version shows v1
     expect(h.container.textContent).toMatch(/v1/);
 
-    const addBtn = h.$("button[data-action='confirm-select-task']") ?? h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
+    const addBtn =
+      h.$("button[data-action='confirm-select-task']") ??
+      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
     await act(async () => {
       addBtn!.click();
     });
@@ -296,23 +285,22 @@ describe("TaskVersionSelector — version pinning and selection", () => {
     });
 
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={true}
-        onClose={vi.fn()}
-        onSelect={vi.fn()}
-      />,
+      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={vi.fn()} />,
     );
     await settle();
 
-    const taskRow = h.$("[data-task-id='t-preview']") ?? h.$$("button, [role='button']").find((b) => b.textContent?.includes("Article Summarizer"));
+    const taskRow =
+      h.$("[data-task-id='t-preview']") ??
+      h.$$("button, [role='button']").find((b) => b.textContent?.includes("Article Summarizer"));
     await act(async () => {
       taskRow!.click();
     });
     await settle();
 
     expect(h.container.textContent).toContain("Condense long articles into 3 key takeaways.");
-    expect(h.container.textContent).toContain("Given the following article, produce 3 concise bullet points.");
+    expect(h.container.textContent).toContain(
+      "Given the following article, produce 3 concise bullet points.",
+    );
     cleanup(h);
   });
 });
@@ -324,16 +312,13 @@ describe("TaskVersionSelector — archived tasks warning & confirmation", () => 
 
     const onSelect = vi.fn();
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={true}
-        onClose={vi.fn()}
-        onSelect={onSelect}
-      />,
+      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={onSelect} />,
     );
     await settle();
 
-    const taskRow = h.$("[data-task-id='t-archived']") ?? h.$$("button, [role='button']").find((b) => b.textContent?.includes("Archived legacy task"));
+    const taskRow =
+      h.$("[data-task-id='t-archived']") ??
+      h.$$("button, [role='button']").find((b) => b.textContent?.includes("Archived legacy task"));
     expect(taskRow).toBeTruthy();
     await act(async () => {
       taskRow!.click();
@@ -347,7 +332,8 @@ describe("TaskVersionSelector — archived tasks warning & confirmation", () => 
 
     // Confirmation control is present
     const confirmBox = h.$("input[data-action='confirm-archived']") as HTMLInputElement | null;
-    const addBtn = (h.$("button[data-action='confirm-select-task']") ?? h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i))) as HTMLButtonElement;
+    const addBtn = (h.$("button[data-action='confirm-select-task']") ??
+      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i))) as HTMLButtonElement;
 
     if (confirmBox) {
       // Button is disabled until confirmed
@@ -375,16 +361,13 @@ describe("TaskVersionSelector — closing and accessibility", () => {
     const repo = new InMemoryTaskRepository();
     const onClose = vi.fn();
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={true}
-        onClose={onClose}
-        onSelect={vi.fn()}
-      />,
+      <TaskVersionSelector repo={repo} open={true} onClose={onClose} onSelect={vi.fn()} />,
     );
     await settle();
 
-    const closeBtn = h.$("button[data-action='close-selector']") ?? h.$$("button").find((b) => b.textContent?.match(/cancel|close/i));
+    const closeBtn =
+      h.$("button[data-action='close-selector']") ??
+      h.$$("button").find((b) => b.textContent?.match(/cancel|close/i));
     expect(closeBtn).toBeTruthy();
     await act(async () => {
       closeBtn!.click();
@@ -400,12 +383,7 @@ describe("TaskVersionSelector — closing and accessibility", () => {
     await seedTask(repo, "t-1", "Sample task");
 
     const h = render(
-      <TaskVersionSelector
-        repo={repo}
-        open={true}
-        onClose={vi.fn()}
-        onSelect={vi.fn()}
-      />,
+      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={vi.fn()} />,
     );
     await settle();
 

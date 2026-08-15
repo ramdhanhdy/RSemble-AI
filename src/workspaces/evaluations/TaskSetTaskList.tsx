@@ -33,7 +33,10 @@ export interface TaskSetTaskListProps {
   onMove: (taskId: string, direction: -1 | 1) => void;
   onDelete: (taskId: string) => void;
   readOnly?: boolean;
-  resolveTaskInfo?: (taskId: string, task: EvaluationTask) => {
+  resolveTaskInfo?: (
+    taskId: string,
+    task: EvaluationTask,
+  ) => {
     pinnedVersion?: number;
     role?: TaskSetMemberRole;
     stratum?: string | null;
@@ -145,9 +148,7 @@ export function TaskSetTaskList({
                     aria-current={isSelected ? "true" : undefined}
                     className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
-                    <span className="font-mono text-xs text-text-muted tabular-nums">
-                      {i + 1}.
-                    </span>
+                    <span className="font-mono text-xs text-text-muted tabular-nums">{i + 1}.</span>
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <div className="flex items-center gap-1.5">
                         <span className="min-w-0 truncate text-sm text-text">

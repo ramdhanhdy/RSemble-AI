@@ -40,11 +40,11 @@ import type { TaskVersion } from "../tasks/task-types";
 import { RSembleEvaluationDB, type TaskSetOwnershipCrosswalkRow } from "./database";
 import { legacyTaskCrosswalkKey } from "./canonical-task-migration";
 import { computeLegacyExecutableDefinitionDigest } from "../tasks/legacy-task-inventory";
-import { canonicalJsonString, computeProtocolFingerprint } from "../evaluations/protocol-fingerprint";
 import {
-  migrateSuitesToTaskSets,
-  taskSetMigrationMarkerKey,
-} from "./task-set-migration";
+  canonicalJsonString,
+  computeProtocolFingerprint,
+} from "../evaluations/protocol-fingerprint";
+import { migrateSuitesToTaskSets, taskSetMigrationMarkerKey } from "./task-set-migration";
 import type { TaskSetVersion } from "../evaluations/task-set-types";
 import {
   materializeWorkloadManifest,
@@ -115,7 +115,9 @@ function suite(overrides: Partial<EvaluationSuite> = {}): EvaluationSuite {
   };
 }
 
-function snapshot(overrides: Partial<ExperimentSnapshot> & { suiteId?: string; suiteVersion?: number } = {}): ExperimentSnapshot {
+function snapshot(
+  overrides: Partial<ExperimentSnapshot> & { suiteId?: string; suiteVersion?: number } = {},
+): ExperimentSnapshot {
   const baseSuite = suite();
   return {
     suiteId: overrides.suiteId ?? baseSuite.id,
@@ -131,7 +133,9 @@ function snapshot(overrides: Partial<ExperimentSnapshot> & { suiteId?: string; s
   };
 }
 
-function experiment(overrides: Partial<ExperimentRecord> & { snapshot?: Partial<ExperimentSnapshot> } = {}): ExperimentRecord {
+function experiment(
+  overrides: Partial<ExperimentRecord> & { snapshot?: Partial<ExperimentSnapshot> } = {},
+): ExperimentRecord {
   const snap = snapshot({
     suiteId: overrides.suiteId ?? overrides.snapshot?.suiteId ?? "suite-1",
     suiteVersion: overrides.suiteVersion ?? overrides.snapshot?.suiteVersion ?? 1,
@@ -239,7 +243,12 @@ async function seedRubric(db: RSembleEvaluationDB, r: EvaluationRubric): Promise
     updatedAt: r.updatedAt,
     archivedAt: null,
   });
-  await db.profileVersions.put({ id: r.id, version: r.version, profile: r, updatedAt: r.updatedAt });
+  await db.profileVersions.put({
+    id: r.id,
+    version: r.version,
+    profile: r,
+    updatedAt: r.updatedAt,
+  });
 }
 
 /** Seed a child-02 crosswalk + canonical Task Version so a legacy member resolves. */
@@ -321,7 +330,11 @@ function manifest(id = "pool-1", version = 1): PoolManifestVersion {
   };
 }
 
-function study(id = "study-1", suiteRef: SuiteSnapshotRef, claimLevel: "exploratory" | "confirmed" = "exploratory"): FusionStudy {
+function study(
+  id = "study-1",
+  suiteRef: SuiteSnapshotRef,
+  claimLevel: "exploratory" | "confirmed" = "exploratory",
+): FusionStudy {
   return {
     id,
     revision: 0,
@@ -393,13 +406,32 @@ function observation(id: string, trialId: string): EvaluationObservation {
   };
 }
 
-function playbook(id: string, studyId: string, suiteRef: SuiteSnapshotRef, claimLevel: "exploratory" | "confirmed" = "exploratory"): FusionPlaybook {
+function playbook(
+  id: string,
+  studyId: string,
+  suiteRef: SuiteSnapshotRef,
+  claimLevel: "exploratory" | "confirmed" = "exploratory",
+): FusionPlaybook {
   return {
     id,
     studyId,
     suiteRef,
-    rows: [{ policy: "fuse", configuration: "B + C", score: 4, lift: 1.2, costMultiplier: 1.5, confidence: "high" }],
-    recommendation: { kind: "adopt", policy: "fuse", configuration: "B + C", rationale: "Clear lift." },
+    rows: [
+      {
+        policy: "fuse",
+        configuration: "B + C",
+        score: 4,
+        lift: 1.2,
+        costMultiplier: 1.5,
+        confidence: "high",
+      },
+    ],
+    recommendation: {
+      kind: "adopt",
+      policy: "fuse",
+      configuration: "B + C",
+      rationale: "Clear lift.",
+    },
     poolAdequacy: { probed: true, outcome: "confirmed", challengerKeys: [], note: "" },
     claimLevel,
     conclusion: "Adopt fuse.",
@@ -427,38 +459,102 @@ async function seedFusionFull(
   const t1 = trial("trial-1", "study-1", suiteRef);
   const t2 = trial("trial-2", "study-1", suiteRef);
   await db.fusionTrials.put({
-    id: t1.id, trial: t1, revision: t1.revision, studyId: t1.studyId, stage: t1.stage, status: t1.status, createdAt: t1.createdAt,
+    id: t1.id,
+    trial: t1,
+    revision: t1.revision,
+    studyId: t1.studyId,
+    stage: t1.stage,
+    status: t1.status,
+    createdAt: t1.createdAt,
   });
   await db.fusionTrials.put({
-    id: t2.id, trial: t2, revision: t2.revision, studyId: t2.studyId, stage: t2.stage, status: t2.status, createdAt: t2.createdAt,
+    id: t2.id,
+    trial: t2,
+    revision: t2.revision,
+    studyId: t2.studyId,
+    stage: t2.stage,
+    status: t2.status,
+    createdAt: t2.createdAt,
   });
   const att = attempt("attempt-1", "study-1");
-  await db.fusionAttempts.put({ id: att.id, attempt: att, studyId: att.studyId, createdAt: att.createdAt });
+  await db.fusionAttempts.put({
+    id: att.id,
+    attempt: att,
+    studyId: att.studyId,
+    createdAt: att.createdAt,
+  });
   const obs = observation("obs-1", "trial-1");
-  await db.fusionObservations.put({ id: obs.id, observation: obs, trialId: obs.trialId, createdAt: obs.startedAt });
+  await db.fusionObservations.put({
+    id: obs.id,
+    observation: obs,
+    trialId: obs.trialId,
+    createdAt: obs.startedAt,
+  });
   const pb = playbook("playbook-1", "study-1", suiteRef, claimLevel);
-  await db.fusionPlaybooks.put({ id: pb.id, playbook: pb, studyId: pb.studyId, createdAt: pb.createdAt });
+  await db.fusionPlaybooks.put({
+    id: pb.id,
+    playbook: pb,
+    studyId: pb.studyId,
+    createdAt: pb.createdAt,
+  });
 }
 
 // --- source-preservation snapshot -------------------------------------------
 
 async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
   const [
-    suites, experiments, rubrics, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
-    fusionRecipes, poolManifests, fusionStudies, fusionTrials, fusionAttempts, fusionObservations, fusionPlaybooks,
+    suites,
+    experiments,
+    rubrics,
+    profileVersions,
+    tasks,
+    taskVersions,
+    taskMigrationCrosswalk,
+    fusionRecipes,
+    poolManifests,
+    fusionStudies,
+    fusionTrials,
+    fusionAttempts,
+    fusionObservations,
+    fusionPlaybooks,
   ] = await Promise.all([
-    db.suites.toArray(), db.experiments.toArray(), db.profiles.toArray(), db.profileVersions.toArray(),
-    db.tasks.toArray(), db.taskVersions.toArray(), db.taskMigrationCrosswalk.toArray(),
-    db.fusionRecipes.toArray(), db.poolManifests.toArray(), db.fusionStudies.toArray(),
-    db.fusionTrials.toArray(), db.fusionAttempts.toArray(), db.fusionObservations.toArray(), db.fusionPlaybooks.toArray(),
+    db.suites.toArray(),
+    db.experiments.toArray(),
+    db.profiles.toArray(),
+    db.profileVersions.toArray(),
+    db.tasks.toArray(),
+    db.taskVersions.toArray(),
+    db.taskMigrationCrosswalk.toArray(),
+    db.fusionRecipes.toArray(),
+    db.poolManifests.toArray(),
+    db.fusionStudies.toArray(),
+    db.fusionTrials.toArray(),
+    db.fusionAttempts.toArray(),
+    db.fusionObservations.toArray(),
+    db.fusionPlaybooks.toArray(),
   ]);
   return canonicalJsonString({
-    suites, experiments, rubrics, profileVersions, tasks, taskVersions, taskMigrationCrosswalk,
-    fusionRecipes, poolManifests, fusionStudies, fusionTrials, fusionAttempts, fusionObservations, fusionPlaybooks,
+    suites,
+    experiments,
+    rubrics,
+    profileVersions,
+    tasks,
+    taskVersions,
+    taskMigrationCrosswalk,
+    fusionRecipes,
+    poolManifests,
+    fusionStudies,
+    fusionTrials,
+    fusionAttempts,
+    fusionObservations,
+    fusionPlaybooks,
   });
 }
 
-async function xwalks(db: RSembleEvaluationDB, kind: TaskSetOwnershipCrosswalkRow["kind"]): Promise<TaskSetOwnershipCrosswalkRow[]> {
+async function xwalks(
+  db: RSembleEvaluationDB,
+  kind: TaskSetOwnershipCrosswalkRow["kind"],
+): Promise<TaskSetOwnershipCrosswalkRow[]> {
   return db.taskSetOwnershipCrosswalk.where("kind").equals(kind).toArray();
 }
 
@@ -501,7 +597,10 @@ describe("migrateSuitesToTaskSets", () => {
     const record = await db.taskSets.get("suite-1");
     expect(record?.origin).toBe("legacy-suite");
     expect(record?.latestVersion).toBe(1);
-    const versions = await db.taskSetVersions.where("taskSetId").equals("suite-1").sortBy("version");
+    const versions = await db.taskSetVersions
+      .where("taskSetId")
+      .equals("suite-1")
+      .sortBy("version");
     expect(versions).toHaveLength(1);
     expect(versions[0].version).toBe(1);
     // Both source coordinates map to version 1.
@@ -524,12 +623,19 @@ describe("migrateSuitesToTaskSets", () => {
 
   it("changed-suite: distinct digests create contiguous immutable versions; each Experiment/current maps exactly", async () => {
     const db = await makeDb();
-    const current = suite({ version: 2, tasks: [task({ prompt: "Newer prompt.", systemPrompt: "Two bullets." })] });
+    const current = suite({
+      version: 2,
+      tasks: [task({ prompt: "Newer prompt.", systemPrompt: "Two bullets." })],
+    });
     const hist = experiment({
       id: "exp-1",
       suiteId: "suite-1",
       suiteVersion: 1,
-      snapshot: snapshot({ suiteVersion: 1, tasks: [task({ prompt: "Older prompt.", systemPrompt: "Three bullets." })], createdAt: 15 }),
+      snapshot: snapshot({
+        suiteVersion: 1,
+        tasks: [task({ prompt: "Older prompt.", systemPrompt: "Three bullets." })],
+        createdAt: 15,
+      }),
       createdAt: 15,
     });
     await seedSuite(db, current);
@@ -542,7 +648,10 @@ describe("migrateSuitesToTaskSets", () => {
 
     expect(result.complete).toBe(true);
     expect(result.createdVersions).toBe(2);
-    const versions = await db.taskSetVersions.where("taskSetId").equals("suite-1").sortBy("version");
+    const versions = await db.taskSetVersions
+      .where("taskSetId")
+      .equals("suite-1")
+      .sortBy("version");
     expect(versions.map((v) => v.version)).toEqual([1, 2]);
     expect((await db.taskSets.get("suite-1"))?.latestVersion).toBe(2);
     // Historical maps to v1, current suite's coordinate maps to v2.
@@ -561,13 +670,25 @@ describe("migrateSuitesToTaskSets", () => {
     const db = await makeDb();
     const current = suite({ version: 3, tasks: [task({ prompt: "v3 prompt." })] });
     const e1 = experiment({
-      id: "exp-1", suiteId: "suite-1", suiteVersion: 1,
-      snapshot: snapshot({ suiteVersion: 1, tasks: [task({ prompt: "v1 prompt." })], createdAt: 10 }),
+      id: "exp-1",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      snapshot: snapshot({
+        suiteVersion: 1,
+        tasks: [task({ prompt: "v1 prompt." })],
+        createdAt: 10,
+      }),
       createdAt: 10,
     });
     const e2 = experiment({
-      id: "exp-2", suiteId: "suite-1", suiteVersion: 2,
-      snapshot: snapshot({ suiteVersion: 2, tasks: [task({ prompt: "v2 prompt." })], createdAt: 20 }),
+      id: "exp-2",
+      suiteId: "suite-1",
+      suiteVersion: 2,
+      snapshot: snapshot({
+        suiteVersion: 2,
+        tasks: [task({ prompt: "v2 prompt." })],
+        createdAt: 20,
+      }),
       createdAt: 20,
     });
     await seedSuite(db, current);
@@ -581,10 +702,17 @@ describe("migrateSuitesToTaskSets", () => {
     const result = await migrateSuitesToTaskSets(db);
 
     expect(result.createdVersions).toBe(3);
-    const versions = await db.taskSetVersions.where("taskSetId").equals("suite-1").sortBy("version");
+    const versions = await db.taskSetVersions
+      .where("taskSetId")
+      .equals("suite-1")
+      .sortBy("version");
     expect(versions.map((v) => v.version)).toEqual([1, 2, 3]);
-    expect((await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-1")?.version).toBe(1);
-    expect((await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-2")?.version).toBe(2);
+    expect(
+      (await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-1")?.version,
+    ).toBe(1);
+    expect(
+      (await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-2")?.version,
+    ).toBe(2);
     expect(await snapshotAllSources(db)).toBe(before);
   });
 
@@ -594,8 +722,14 @@ describe("migrateSuitesToTaskSets", () => {
     const db = await makeDb();
     const current = suite({ version: 5, tasks: [task({ prompt: "Unexecuted latest." })] });
     const hist = experiment({
-      id: "exp-1", suiteId: "suite-1", suiteVersion: 4,
-      snapshot: snapshot({ suiteVersion: 4, tasks: [task({ prompt: "Executed older." })], createdAt: 50 }),
+      id: "exp-1",
+      suiteId: "suite-1",
+      suiteVersion: 4,
+      snapshot: snapshot({
+        suiteVersion: 4,
+        tasks: [task({ prompt: "Executed older." })],
+        createdAt: 50,
+      }),
       createdAt: 50,
     });
     await seedSuite(db, current);
@@ -608,10 +742,15 @@ describe("migrateSuitesToTaskSets", () => {
 
     expect(result.createdVersions).toBe(2);
     expect((await db.taskSets.get("suite-1"))?.latestVersion).toBe(2);
-    const versions = await db.taskSetVersions.where("taskSetId").equals("suite-1").sortBy("version");
+    const versions = await db.taskSetVersions
+      .where("taskSetId")
+      .equals("suite-1")
+      .sortBy("version");
     expect(versions.map((v) => v.version)).toEqual([1, 2]);
     // Historical mapping stays at v1.
-    expect((await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-1")?.version).toBe(1);
+    expect(
+      (await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-1")?.version,
+    ).toBe(1);
     expect(await snapshotAllSources(db)).toBe(before);
   });
 
@@ -629,7 +768,9 @@ describe("migrateSuitesToTaskSets", () => {
       tasks: [task({ evaluation: { kind: "profile", profile: { id: "rubric-2", version: 1 } } })],
     });
     const hist = experiment({
-      id: "exp-1", suiteId: "suite-1", suiteVersion: 1,
+      id: "exp-1",
+      suiteId: "suite-1",
+      suiteVersion: 1,
       snapshot: snapshot({
         suiteVersion: 1,
         defaultEvaluation: { kind: "profile", profile: { id: "rubric-1", version: 1 } },
@@ -650,7 +791,10 @@ describe("migrateSuitesToTaskSets", () => {
     expect(result.complete).toBe(true);
     expect(result.createdVersions).toBe(1);
     const v1 = (await db.taskSetVersions.where("taskSetId").equals("suite-1").toArray())[0];
-    const version = v1.version_ as { defaultRubricRef: unknown; members: Array<{ rubricOverrideRef: unknown }> };
+    const version = v1.version_ as {
+      defaultRubricRef: unknown;
+      members: Array<{ rubricOverrideRef: unknown }>;
+    };
     expect(version.defaultRubricRef).toEqual({ id: "rubric-1", version: 1 });
     expect(version.members[0].rubricOverrideRef).toEqual({ id: "rubric-2", version: 1 });
     expect(await snapshotAllSources(db)).toBe(before);
@@ -658,7 +802,8 @@ describe("migrateSuitesToTaskSets", () => {
     // Missing exact Rubric ref → unresolved member that blocks new execution.
     const db2 = await makeDb();
     const current2 = suite({
-      id: "suite-2", version: 1,
+      id: "suite-2",
+      version: 1,
       defaultEvaluation: { kind: "profile", profile: { id: "rubric-missing", version: 1 } },
       tasks: [task()],
     });
@@ -698,9 +843,7 @@ describe("migrateSuitesToTaskSets", () => {
     expect(
       unresolved.some(
         (u) =>
-          u.field === "defaultRubricRef" &&
-          isVersionRef(u.ref) &&
-          u.ref.id === "rubric-missing",
+          u.field === "defaultRubricRef" && isVersionRef(u.ref) && u.ref.id === "rubric-missing",
       ),
     ).toBe(true);
     // No substitution: the pinned ref on the migrated version is still the missing one.
@@ -715,17 +858,23 @@ describe("migrateSuitesToTaskSets", () => {
     const a = suite({ id: "suite-a", version: 2, tasks: [sameTask] });
     const b = suite({ id: "suite-b", version: 3, tasks: [sameTask] });
     const aExp = experiment({
-      id: "exp-a", suiteId: "suite-a", suiteVersion: 1,
+      id: "exp-a",
+      suiteId: "suite-a",
+      suiteVersion: 1,
       snapshot: snapshot({ suiteId: "suite-a", suiteVersion: 1, tasks: [sameTask], createdAt: 10 }),
       createdAt: 10,
     });
     const bExp1 = experiment({
-      id: "exp-b1", suiteId: "suite-b", suiteVersion: 1,
+      id: "exp-b1",
+      suiteId: "suite-b",
+      suiteVersion: 1,
       snapshot: snapshot({ suiteId: "suite-b", suiteVersion: 1, tasks: [sameTask], createdAt: 10 }),
       createdAt: 10,
     });
     const bExp2 = experiment({
-      id: "exp-b2", suiteId: "suite-b", suiteVersion: 2,
+      id: "exp-b2",
+      suiteId: "suite-b",
+      suiteVersion: 2,
       snapshot: snapshot({ suiteId: "suite-b", suiteVersion: 2, tasks: [sameTask], createdAt: 20 }),
       createdAt: 20,
     });
@@ -749,7 +898,7 @@ describe("migrateSuitesToTaskSets", () => {
     expect((await db.taskSets.get("suite-b"))?.latestVersion).toBe(1);
     expect(await db.taskSets.count()).toBe(2);
     // Timestamp/id differences did not change the digest: one version each.
-    expect((await db.taskSetVersions.where("taskSetId").equals("suite-b").count())).toBe(1);
+    expect(await db.taskSetVersions.where("taskSetId").equals("suite-b").count()).toBe(1);
     expect(await snapshotAllSources(db)).toBe(before);
   });
 
@@ -761,16 +910,37 @@ describe("migrateSuitesToTaskSets", () => {
     const extendedSlots = [slot("s1", "m1"), slot("s2", "m2"), slot("s3", "m3")];
     const current = suite({ version: 1, modelSlots: extendedSlots, tasks: [task()] });
     const original = experiment({
-      id: "exp-1", suiteId: "suite-1", suiteVersion: 1,
-      snapshot: snapshot({ suiteVersion: 1, modelSlots: baseSlots, tasks: [task()], createdAt: 10, protocolFingerprint: "sha256:orig" }),
+      id: "exp-1",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      snapshot: snapshot({
+        suiteVersion: 1,
+        modelSlots: baseSlots,
+        tasks: [task()],
+        createdAt: 10,
+        protocolFingerprint: "sha256:orig",
+      }),
       createdAt: 10,
     });
     const extended = experiment({
-      id: "exp-2", suiteId: "suite-1", suiteVersion: 1,
-      snapshot: snapshot({ suiteVersion: 1, modelSlots: extendedSlots, tasks: [task()], createdAt: 20, protocolFingerprint: "sha256:ext" }),
+      id: "exp-2",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      snapshot: snapshot({
+        suiteVersion: 1,
+        modelSlots: extendedSlots,
+        tasks: [task()],
+        createdAt: 20,
+        protocolFingerprint: "sha256:ext",
+      }),
       createdAt: 20,
       rosterExtensions: [
-        { addedModelKey: "openrouter:m3", addedSlot: slot("s3", "m3"), priorFingerprint: "sha256:orig", extendedAt: 20 },
+        {
+          addedModelKey: "openrouter:m3",
+          addedSlot: slot("s3", "m3"),
+          priorFingerprint: "sha256:orig",
+          extendedAt: 20,
+        },
       ],
     });
     await seedSuite(db, current);
@@ -799,21 +969,44 @@ describe("migrateSuitesToTaskSets", () => {
     const db = await makeDb();
     const current = suite({ version: 1, tasks: [task()] });
     const statuses: ExperimentRecord["status"][] = [
-      "draft", "queued", "running", "paused", "completed", "completed_with_failures", "aborted", "interrupted",
+      "draft",
+      "queued",
+      "running",
+      "paused",
+      "completed",
+      "completed_with_failures",
+      "aborted",
+      "interrupted",
     ];
     const taskState: ExperimentTaskState = {
       taskId: "task-1",
       selectedAttemptId: "att-1",
       attempts: [
-        { id: "att-1", runId: null, trial: 1, status: "interrupted", startedAt: 10, finishedAt: null, error: { message: "boom" } },
+        {
+          id: "att-1",
+          runId: null,
+          trial: 1,
+          status: "interrupted",
+          startedAt: 10,
+          finishedAt: null,
+          error: { message: "boom" },
+        },
       ],
     };
     let i = 0;
     for (const status of statuses) {
       i += 1;
       const e = experiment({
-        id: `exp-${i}`, suiteId: "suite-1", suiteVersion: 1, status,
-        snapshot: snapshot({ suiteVersion: 1, tasks: [task()], createdAt: 100 + i, protocolFingerprint: `sha256:f${i}` }),
+        id: `exp-${i}`,
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        status,
+        snapshot: snapshot({
+          suiteVersion: 1,
+          tasks: [task()],
+          createdAt: 100 + i,
+          protocolFingerprint: `sha256:f${i}`,
+        }),
         createdAt: 100 + i,
         tasks: [taskState],
       });
@@ -840,7 +1033,11 @@ describe("migrateSuitesToTaskSets", () => {
     const current = suite({ version: 4, tasks: [task()] });
     await seedSuite(db, current);
     await seedTaskCrosswalk(db, "suite-1", 4, task(), "ctask-1", 1);
-    const suiteRef: SuiteSnapshotRef = { suiteId: "suite-1", suiteVersion: 4, protocolFingerprint: computeProtocolFingerprint(current, []) };
+    const suiteRef: SuiteSnapshotRef = {
+      suiteId: "suite-1",
+      suiteVersion: 4,
+      protocolFingerprint: computeProtocolFingerprint(current, []),
+    };
     await seedFusionFull(db, suiteRef, "exploratory");
     // Add a confirmed study + playbook too.
     const confirmedRef = suiteRef;
@@ -871,7 +1068,11 @@ describe("migrateSuitesToTaskSets", () => {
     await seedSuite(db, current);
     await seedTaskCrosswalk(db, "suite-1", 4, task(), "ctask-1", 1);
     // Study references a suiteVersion/protocolFingerprint that was never reconstructed.
-    const suiteRef: SuiteSnapshotRef = { suiteId: "suite-1", suiteVersion: 9, protocolFingerprint: "sha256:never" };
+    const suiteRef: SuiteSnapshotRef = {
+      suiteId: "suite-1",
+      suiteVersion: 9,
+      protocolFingerprint: "sha256:never",
+    };
     await seedFusionFull(db, suiteRef, "exploratory");
     const before = await snapshotAllSources(db);
 
@@ -900,7 +1101,10 @@ describe("migrateSuitesToTaskSets", () => {
     // Run once to establish exact rows.
     await migrateSuitesToTaskSets(db);
     const aRows = await db.taskSetVersions.where("taskSetId").equals("suite-a").toArray();
-    const aXwalks = await db.taskSetOwnershipCrosswalk.where("taskSetId").equals("suite-a").toArray();
+    const aXwalks = await db.taskSetOwnershipCrosswalk
+      .where("taskSetId")
+      .equals("suite-a")
+      .toArray();
     const marker = await db.storageMeta.get(taskSetMigrationMarkerKey);
     expect(marker).toBeDefined();
 
@@ -915,7 +1119,10 @@ describe("migrateSuitesToTaskSets", () => {
     const result = await migrateSuitesToTaskSets(db);
     expect(result.complete).toBe(true);
     const aRowsAfter = await db.taskSetVersions.where("taskSetId").equals("suite-a").toArray();
-    const aXwalksAfter = await db.taskSetOwnershipCrosswalk.where("taskSetId").equals("suite-a").toArray();
+    const aXwalksAfter = await db.taskSetOwnershipCrosswalk
+      .where("taskSetId")
+      .equals("suite-a")
+      .toArray();
     expect(aRowsAfter).toEqual(aRows);
     expect(aXwalksAfter).toEqual(aXwalks);
     expect(await db.taskSets.get("suite-b")).toBeDefined();
@@ -939,10 +1146,22 @@ describe("migrateSuitesToTaskSets", () => {
     await db.taskSets.put({
       id: "suite-a",
       record: {
-        id: "suite-a", latestVersion: 99, name: "Tampered", description: "",
-        createdAt: 1, updatedAt: 1, archivedAt: null, revision: 0, origin: "legacy-suite",
+        id: "suite-a",
+        latestVersion: 99,
+        name: "Tampered",
+        description: "",
+        createdAt: 1,
+        updatedAt: 1,
+        archivedAt: null,
+        revision: 0,
+        origin: "legacy-suite",
       },
-      latestVersion: 99, createdAt: 1, updatedAt: 1, archivedAt: null, origin: "legacy-suite", revision: 0,
+      latestVersion: 99,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: null,
+      origin: "legacy-suite",
+      revision: 0,
     });
     const before = await snapshotAllSources(db);
 
@@ -970,7 +1189,13 @@ describe("migrateSuitesToTaskSets", () => {
     expect(result.complete).toBe(true);
     expect(result.unresolvedMembers).toBeGreaterThanOrEqual(1);
     const v1 = (await db.taskSetVersions.where("taskSetId").equals("suite-1").toArray())[0];
-    const version = v1.version_ as { members: Array<{ id: string; unresolved: string | null; taskVersionRef: { taskId: string; version: number } }> };
+    const version = v1.version_ as {
+      members: Array<{
+        id: string;
+        unresolved: string | null;
+        taskVersionRef: { taskId: string; version: number };
+      }>;
+    };
     const unresolvedMember = version.members.find((m) => m.id === "task-2");
     expect(unresolvedMember).toBeDefined();
     expect(unresolvedMember?.unresolved).not.toBeNull();
@@ -987,7 +1212,9 @@ describe("migrateSuitesToTaskSets", () => {
     const db = await makeDb();
     const current = suite({ version: 2 });
     const hist = experiment({
-      id: "exp-1", suiteId: "suite-1", suiteVersion: 1,
+      id: "exp-1",
+      suiteId: "suite-1",
+      suiteVersion: 1,
       snapshot: snapshot({ suiteVersion: 1, createdAt: 15, tasks: [task()] }),
       createdAt: 15,
     });
@@ -1032,10 +1259,22 @@ describe("migrateSuitesToTaskSets", () => {
     await db.taskSets.put({
       id: "suite-1",
       record: {
-        id: "suite-1", latestVersion: 99, name: "Tampered", description: "",
-        createdAt: 1, updatedAt: 1, archivedAt: null, revision: 0, origin: "legacy-suite",
+        id: "suite-1",
+        latestVersion: 99,
+        name: "Tampered",
+        description: "",
+        createdAt: 1,
+        updatedAt: 1,
+        archivedAt: null,
+        revision: 0,
+        origin: "legacy-suite",
       },
-      latestVersion: 99, createdAt: 1, updatedAt: 1, archivedAt: null, origin: "legacy-suite", revision: 0,
+      latestVersion: 99,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: null,
+      origin: "legacy-suite",
+      revision: 0,
     });
     const storageMetaBefore = canonicalJsonString(await db.storageMeta.toArray());
     const versionsBefore = await db.taskSetVersions.count();
@@ -1061,13 +1300,27 @@ describe("migrateSuitesToTaskSets", () => {
     const tA = task({ judgeInstructionOverride: "Judge A." });
     const tB = task({ judgeInstructionOverride: "Judge B." });
     const eA = experiment({
-      id: "exp-a", suiteId: "suite-1", suiteVersion: 1,
-      snapshot: snapshot({ suiteVersion: 1, protocolFingerprint: "sha256:shared", tasks: [tA], createdAt: 10 }),
+      id: "exp-a",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      snapshot: snapshot({
+        suiteVersion: 1,
+        protocolFingerprint: "sha256:shared",
+        tasks: [tA],
+        createdAt: 10,
+      }),
       createdAt: 10,
     });
     const eB = experiment({
-      id: "exp-b", suiteId: "suite-1", suiteVersion: 1,
-      snapshot: snapshot({ suiteVersion: 1, protocolFingerprint: "sha256:shared", tasks: [tB], createdAt: 20 }),
+      id: "exp-b",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      snapshot: snapshot({
+        suiteVersion: 1,
+        protocolFingerprint: "sha256:shared",
+        tasks: [tB],
+        createdAt: 20,
+      }),
       createdAt: 20,
     });
     await seedExperiment(db, eA);
@@ -1078,7 +1331,11 @@ describe("migrateSuitesToTaskSets", () => {
     await seedTaskCrosswalk(db, "suite-1", 1, tA, "ctask-1", 1);
     await seedTaskCrosswalk(db, "suite-1", 2, current.tasks[0], "ctask-1", 1);
     // Fusion Study references the ambiguous shared coordinate.
-    const suiteRef: SuiteSnapshotRef = { suiteId: "suite-1", suiteVersion: 1, protocolFingerprint: "sha256:shared" };
+    const suiteRef: SuiteSnapshotRef = {
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      protocolFingerprint: "sha256:shared",
+    };
     await seedFusionFull(db, suiteRef, "exploratory");
     const before = await snapshotAllSources(db);
 
@@ -1101,16 +1358,24 @@ describe("migrateSuitesToTaskSets", () => {
     await seedSuite(db, current);
     await seedTaskCrosswalk(db, "suite-1", 1, task(), "ctask-1", 1);
     const suiteRef: SuiteSnapshotRef = {
-      suiteId: "suite-1", suiteVersion: 1, protocolFingerprint: computeProtocolFingerprint(current, []),
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      protocolFingerprint: computeProtocolFingerprint(current, []),
     };
     await seedFusionFull(db, suiteRef, "exploratory");
     // Overwrite one Trial so its suiteRef disagrees with the Study's.
     const disagreeing = trial("trial-1", "study-1", {
-      suiteId: "suite-1", suiteVersion: 1, protocolFingerprint: "sha256:different",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      protocolFingerprint: "sha256:different",
     });
     await db.fusionTrials.put({
-      id: disagreeing.id, trial: disagreeing, revision: disagreeing.revision,
-      studyId: disagreeing.studyId, stage: disagreeing.stage, status: disagreeing.status,
+      id: disagreeing.id,
+      trial: disagreeing,
+      revision: disagreeing.revision,
+      studyId: disagreeing.studyId,
+      stage: disagreeing.stage,
+      status: disagreeing.status,
       createdAt: disagreeing.createdAt,
     });
     const before = await snapshotAllSources(db);
@@ -1138,13 +1403,27 @@ describe("migrateSuitesToTaskSets", () => {
     const tLower = task({ judgeInstructionOverride: "Lower id digest." });
     const tUpper = task({ judgeInstructionOverride: "Upper id digest." });
     const eLower = experiment({
-      id: "exp-a", suiteId: "suite-1", suiteVersion: 1,
-      snapshot: snapshot({ suiteVersion: 1, protocolFingerprint: "sha256:lower", tasks: [tLower], createdAt: 100 }),
+      id: "exp-a",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      snapshot: snapshot({
+        suiteVersion: 1,
+        protocolFingerprint: "sha256:lower",
+        tasks: [tLower],
+        createdAt: 100,
+      }),
       createdAt: 100,
     });
     const eUpper = experiment({
-      id: "exp-B", suiteId: "suite-1", suiteVersion: 1,
-      snapshot: snapshot({ suiteVersion: 1, protocolFingerprint: "sha256:upper", tasks: [tUpper], createdAt: 100 }),
+      id: "exp-B",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      snapshot: snapshot({
+        suiteVersion: 1,
+        protocolFingerprint: "sha256:upper",
+        tasks: [tUpper],
+        createdAt: 100,
+      }),
       createdAt: 100,
     });
     await seedExperiment(db, eLower);
@@ -1161,8 +1440,12 @@ describe("migrateSuitesToTaskSets", () => {
     expect(result.createdVersions).toBe(3);
     // Ordinal tie-break: "exp-B" (0x42) < "exp-a" (0x61), so exp-B is the
     // chronologically first observation → canonical version 1.
-    const upperXwalk = (await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-B");
-    const lowerXwalk = (await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-a");
+    const upperXwalk = (await xwalks(db, "experiment-owner")).find(
+      (r) => r.experimentId === "exp-B",
+    );
+    const lowerXwalk = (await xwalks(db, "experiment-owner")).find(
+      (r) => r.experimentId === "exp-a",
+    );
     expect(upperXwalk?.version).toBe(1);
     expect(lowerXwalk?.version).toBe(2);
     expect(await snapshotAllSources(db)).toBe(before);
@@ -1188,16 +1471,35 @@ describe("migrateSuitesToTaskSets", () => {
 });
 
 // Helper used by the fusion fixture to add a confirmed study + playbook.
-async function seedFusionConfirmed(db: RSembleEvaluationDB, suiteRef: SuiteSnapshotRef): Promise<void> {
+async function seedFusionConfirmed(
+  db: RSembleEvaluationDB,
+  suiteRef: SuiteSnapshotRef,
+): Promise<void> {
   const s = study("study-2", suiteRef, "confirmed");
   await db.fusionStudies.put({
-    id: s.id, study: s, revision: s.revision, suiteId: s.suiteRef.suiteId,
-    suiteVersion: s.suiteRef.suiteVersion, status: s.status, updatedAt: s.updatedAt,
+    id: s.id,
+    study: s,
+    revision: s.revision,
+    suiteId: s.suiteRef.suiteId,
+    suiteVersion: s.suiteRef.suiteVersion,
+    status: s.status,
+    updatedAt: s.updatedAt,
   });
   const t = trial("trial-c", "study-2", suiteRef);
   await db.fusionTrials.put({
-    id: t.id, trial: t, revision: t.revision, studyId: t.studyId, stage: t.stage, status: t.status, createdAt: t.createdAt,
+    id: t.id,
+    trial: t,
+    revision: t.revision,
+    studyId: t.studyId,
+    stage: t.stage,
+    status: t.status,
+    createdAt: t.createdAt,
   });
   const pb = playbook("playbook-2", "study-2", suiteRef, "confirmed");
-  await db.fusionPlaybooks.put({ id: pb.id, playbook: pb, studyId: pb.studyId, createdAt: pb.createdAt });
+  await db.fusionPlaybooks.put({
+    id: pb.id,
+    playbook: pb,
+    studyId: pb.studyId,
+    createdAt: pb.createdAt,
+  });
 }

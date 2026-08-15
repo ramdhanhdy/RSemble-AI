@@ -49,7 +49,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function makeTask(id: string, order: number, overrides: Partial<EvaluationTask> = {}): EvaluationTask {
+function makeTask(
+  id: string,
+  order: number,
+  overrides: Partial<EvaluationTask> = {},
+): EvaluationTask {
   return {
     id,
     title: `Task ${id}`,
@@ -94,9 +98,7 @@ describe("TaskSetTaskList — deterministic order and member rendering", () => {
   });
 
   it("displays pinned version, role, stratum, and weight metadata when provided", async () => {
-    const tasks = [
-      makeTask("t-1", 0, { title: "Classification Task" }),
-    ];
+    const tasks = [makeTask("t-1", 0, { title: "Classification Task" })];
 
     const h = render(
       <TaskSetTaskList
@@ -126,10 +128,7 @@ describe("TaskSetTaskList — deterministic order and member rendering", () => {
 
 describe("TaskSetTaskList — keyboard-operable reordering", () => {
   it("move up is disabled on the first item and move down is disabled on the last item", async () => {
-    const tasks = [
-      makeTask("t-1", 0),
-      makeTask("t-2", 1),
-    ];
+    const tasks = [makeTask("t-1", 0), makeTask("t-2", 1)];
 
     const h = render(
       <TaskSetTaskList
@@ -143,8 +142,12 @@ describe("TaskSetTaskList — keyboard-operable reordering", () => {
     );
     await settle();
 
-    const moveUpBtns = h.$$("button[aria-label*='up'], button[title*='up'], button[data-action='move-up']");
-    const moveDownBtns = h.$$("button[aria-label*='down'], button[title*='down'], button[data-action='move-down']");
+    const moveUpBtns = h.$$(
+      "button[aria-label*='up'], button[title*='up'], button[data-action='move-up']",
+    );
+    const moveDownBtns = h.$$(
+      "button[aria-label*='down'], button[title*='down'], button[data-action='move-down']",
+    );
 
     expect((moveUpBtns[0] as HTMLButtonElement)?.disabled).toBe(true);
     expect((moveDownBtns[1] as HTMLButtonElement)?.disabled).toBe(true);
@@ -153,10 +156,7 @@ describe("TaskSetTaskList — keyboard-operable reordering", () => {
 
   it("clicking move down calls onMove with direction 1", async () => {
     const onMove = vi.fn();
-    const tasks = [
-      makeTask("t-1", 0),
-      makeTask("t-2", 1),
-    ];
+    const tasks = [makeTask("t-1", 0), makeTask("t-2", 1)];
 
     const h = render(
       <TaskSetTaskList
@@ -170,7 +170,9 @@ describe("TaskSetTaskList — keyboard-operable reordering", () => {
     );
     await settle();
 
-    const moveDownBtns = h.$$("button[aria-label*='down'], button[title*='down'], button[data-action='move-down']");
+    const moveDownBtns = h.$$(
+      "button[aria-label*='down'], button[title*='down'], button[data-action='move-down']",
+    );
     await act(async () => {
       moveDownBtns[0]?.click();
     });
@@ -182,10 +184,7 @@ describe("TaskSetTaskList — keyboard-operable reordering", () => {
 
   it("clicking move up calls onMove with direction -1", async () => {
     const onMove = vi.fn();
-    const tasks = [
-      makeTask("t-1", 0),
-      makeTask("t-2", 1),
-    ];
+    const tasks = [makeTask("t-1", 0), makeTask("t-2", 1)];
 
     const h = render(
       <TaskSetTaskList
@@ -199,7 +198,9 @@ describe("TaskSetTaskList — keyboard-operable reordering", () => {
     );
     await settle();
 
-    const moveUpBtns = h.$$("button[aria-label*='up'], button[title*='up'], button[data-action='move-up']");
+    const moveUpBtns = h.$$(
+      "button[aria-label*='up'], button[title*='up'], button[data-action='move-up']",
+    );
     await act(async () => {
       moveUpBtns[1]?.click();
     });
@@ -287,7 +288,9 @@ describe("TaskSetTaskList — actions, selection, and deletion", () => {
     );
     await settle();
 
-    const addBtn = h.$("button[data-action='add-task']") ?? h.$$("button").find((b) => b.textContent?.includes("Add task"));
+    const addBtn =
+      h.$("button[data-action='add-task']") ??
+      h.$$("button").find((b) => b.textContent?.includes("Add task"));
     expect(addBtn).toBeTruthy();
     await act(async () => {
       addBtn?.click();
@@ -313,7 +316,8 @@ describe("TaskSetTaskList — actions, selection, and deletion", () => {
     );
     await settle();
 
-    const addBtn = (h.$("button[data-action='add-task']") ?? h.$$("button").find((b) => b.textContent?.includes("Add task"))) as HTMLButtonElement | null;
+    const addBtn = (h.$("button[data-action='add-task']") ??
+      h.$$("button").find((b) => b.textContent?.includes("Add task"))) as HTMLButtonElement | null;
     expect(addBtn?.disabled ?? true).toBe(true);
 
     const moveBtns = h.$$("button[aria-label*='up'], button[aria-label*='down']");

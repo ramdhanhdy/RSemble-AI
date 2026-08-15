@@ -362,9 +362,9 @@ export function TaskSetList({ repo }: TaskSetListProps) {
           No evaluation task sets yet
         </h2>
         <p className="max-w-md text-sm text-text-secondary">
-          A task set groups several tasks into a versioned set, executed one at a time
-          through the comparison pipeline. Build a task set to compare models across a shared workload
-          with a consistent judge and evaluation rubric.
+          A task set groups several tasks into a versioned set, executed one at a time through the
+          comparison pipeline. Build a task set to compare models across a shared workload with a
+          consistent judge and evaluation rubric.
         </p>
         {/* Identity spec §5.4: teach the split from the task-set side. */}
         <p className="max-w-md text-sm text-text-muted">
@@ -491,7 +491,10 @@ export function TaskSetList({ repo }: TaskSetListProps) {
       {createError && <p className="text-sm text-error">{createError}</p>}
       {actionError && <p className="text-sm text-error">{actionError}</p>}
       {importErrors.length > 0 && (
-        <ul className="flex flex-col gap-0.5 text-sm text-error" data-testid="task-set-import-errors">
+        <ul
+          className="flex flex-col gap-0.5 text-sm text-error"
+          data-testid="task-set-import-errors"
+        >
           {importErrors.slice(0, 5).map((e) => (
             <li key={e}>{e}</li>
           ))}
