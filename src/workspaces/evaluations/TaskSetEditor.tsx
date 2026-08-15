@@ -40,7 +40,16 @@ import { FusionStudyPanel } from "./FusionStudyPanel";
 import {
   useFusionStudyRepository,
   useTaskRepository,
+  useTaskSetRepository,
 } from "../../lib/persistence/repository-context";
+import type { TaskSetRepository } from "../../lib/persistence/task-set-repository";
+import { suiteToTaskSetRecord, suiteToTaskSetVersion } from "../../lib/evaluations/suite-compat";
+import {
+  ArchivedTaskExecutionError,
+  InvalidWorkloadForExecutionError,
+  UnresolvedWorkloadRefError,
+  type WorkloadCatalogResolvers,
+} from "../../lib/evaluations/workload-manifest";
 import {
   type EvaluationSuite,
   type EvaluationTask,
@@ -53,6 +62,7 @@ import {
 import type { TaskSetMemberRole } from "../../lib/evaluations/task-set-types";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import type { CatalogModel } from "../../lib/providers/types";
+import { DialogSurface } from "../../ui/DialogSurface";
 import {
   isSuiteDirty,
   validateSuiteForExecution,
@@ -70,6 +80,8 @@ interface TaskSetEditorProps {
   models: CatalogModel[];
   /** Test seam: override the context task repository. */
   taskRepo?: TaskRepository | null;
+  /** Test seam: override the context task set repository. */
+  taskSetRepo?: TaskSetRepository | null;
   /** Test seam: override the context experiment controller. Pass null to
    *  simulate storage-unavailable (no controller). */
   controller?: ExperimentController | null;
@@ -81,10 +93,15 @@ export function TaskSetEditor({
   repo,
   models,
   taskRepo: taskRepoProp,
+  taskSetRepo: taskSetRepoProp,
   controller: controllerProp,
   executionOwner: ownerProp,
 }: TaskSetEditorProps) {
-  const { taskSetId, suiteId: legacySuiteId, version: versionParam } = useParams<{
+  const {
+    taskSetId,
+    suiteId: legacySuiteId,
+    version: versionParam,
+  } = useParams<{
     taskSetId?: string;
     suiteId?: string;
     version?: string;
@@ -102,6 +119,8 @@ export function TaskSetEditor({
   const ctxController = useExperimentController();
   const { owner: ctxOwner } = useExecutionOwner();
   const controller = controllerProp !== undefined ? controllerProp : ctxController;
+  const ctxTaskSetRepo = useTaskSetRepository();
+  const taskSetRepo = taskSetRepoProp !== undefined ? taskSetRepoProp : ctxTaskSetRepo;
   const executionOwner = ownerProp !== undefined ? ownerProp : ctxOwner;
   const fusionRepo = useFusionStudyRepository();
 
@@ -118,7 +137,8 @@ export function TaskSetEditor({
   const [runError, setRunError] = useState<string | null>(null);
   const [preflightOpen, setPreflightOpen] = useState(false);
   const [taskSelectorOpen, setTaskSelectorOpen] = useState(false);
-
+  const [dirtyRunOpen, setDirtyRunOpen] = useState(false);
+  const [runState, setRunState] = useState<"idle" | "materializing" | "running">("idle");
   // Metadata cache for tasks referenced by the set
   const [taskMeta, setTaskMeta] = useState<
     Map<string, { record: TaskRecord | null; versions: TaskVersion[] }>
@@ -283,7 +303,8 @@ export function TaskSetEditor({
       const taskData = task as TaskSetMemberData;
       const canonicalTaskId = taskData.taskVersionRef?.taskId || taskId;
       const meta = taskMeta.get(canonicalTaskId);
-      const pinnedVersion = taskData.taskVersionRef?.version ?? (meta?.record ? meta.record.latestVersion : undefined);
+      const pinnedVersion =
+        taskData.taskVersionRef?.version ?? (meta?.record ? meta.record.latestVersion : undefined);
       const isArchived = meta?.record?.archivedAt != null;
 
       return {
@@ -325,7 +346,8 @@ export function TaskSetEditor({
         weight?: number;
       } = {
         id: selection.taskId,
-        title: selection.taskVersion.title || selection.taskVersion.objective || selection.taskRecord.id,
+        title:
+          selection.taskVersion.title || selection.taskVersion.objective || selection.taskRecord.id,
         prompt: selection.taskVersion.candidateInstruction,
         systemPrompt: "",
         evaluation: { kind: "inherit" },
@@ -379,49 +401,97 @@ export function TaskSetEditor({
   );
 
   // --- Save ---
-  const handleSave = useCallback(async () => {
-    if (!repo || !draft || !persisted || saving) return;
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!repo || !draft || !persisted || saving) return false;
     const saveValidation = validateSuiteForSave(draft);
     if (!saveValidation.valid) {
       setSaveError(saveValidation.errors[0]?.message ?? "Task set failed validation.");
-      return;
+      return false;
     }
     setSaving(true);
     setSaveError(null);
+    const candidate = { ...draft, version: persisted.version };
     try {
-      const newRevision = await repo.saveSuite(
-        { ...draft, version: draft.version, revision: persisted.revision },
-        persisted.revision,
-      );
+      const newRevision = await repo.saveSuite(candidate, persisted.revision);
       const fresh = await repo.getSuite(draft.id);
-      if (fresh) {
-        setPersisted({ ...fresh, revision: newRevision });
-        setDraft(structuredClone({ ...fresh, revision: newRevision }));
+      const settled = fresh
+        ? { ...fresh, revision: newRevision }
+        : { ...candidate, revision: newRevision };
+      if (taskSetRepo) {
+        await persistTaskSetVersion(taskSetRepo, settled, newRevision);
       }
+      setPersisted(settled);
+      setDraft(structuredClone(settled));
+      return true;
     } catch (err: unknown) {
-      const msg =
+      setSaveError(
         err instanceof StorageError
           ? friendlyStorageError(err)
           : err instanceof Error
             ? err.message
-            : "Could not save the task set.";
-      setSaveError(msg);
+            : "Could not save the task set.",
+      );
+      return false;
     } finally {
       setSaving(false);
     }
-  }, [repo, draft, persisted, saving]);
+  }, [repo, draft, persisted, saving, taskSetRepo]);
 
-  // --- Run experiment ---
-  const handleRun = useCallback(async () => {
+  // --- Run a clean, persisted suite: materialize immutable workload, then start ---
+  const runCleanSuite = useCallback(
+    async (cleanSuite: EvaluationSuite) => {
+      if (!controller || !repo) return;
+      setRunError(null);
+      setDirtyRunOpen(false);
+      setPreflightOpen(false);
+      setRunState("materializing");
+      try {
+        await materializeWorkloadBeforeRun(repo, taskRepo, taskSetRepo, cleanSuite);
+        setRunState("running");
+        const result = await controller.start(cleanSuite.id);
+        if (result.ok) {
+          void navigate(`/experiments/${result.experimentId}`);
+        } else {
+          setRunError(result.error);
+        }
+      } catch (err: unknown) {
+        setRunError(friendlyRunError(err));
+      } finally {
+        setRunState("idle");
+      }
+    },
+    [controller, repo, taskRepo, taskSetRepo, navigate],
+  );
+
+  // --- Run entry (Run button) ---
+  const handleRun = useCallback(() => {
     if (!controller || !persisted) return;
-    setRunError(null);
-    const result = await controller.start(persisted.id);
-    if (result.ok) {
-      void navigate(`/experiments/${result.experimentId}`);
-    } else {
-      setRunError(result.error);
+    if (dirty) {
+      setRunError(null);
+      setDirtyRunOpen(true);
+      return;
     }
-  }, [controller, persisted, navigate]);
+    setPreflightOpen(true);
+  }, [controller, persisted, dirty]);
+
+  const discardDraft = useCallback(() => {
+    if (!persisted) return;
+    setDirtyRunOpen(false);
+    setDraft(structuredClone(persisted));
+    setPreflightOpen(true);
+  }, [persisted]);
+
+  const cancelDirtyRun = useCallback(() => {
+    setDirtyRunOpen(false);
+  }, []);
+
+  const saveNewAndRun = useCallback(async () => {
+    setDirtyRunOpen(false);
+    const saved = await handleSave();
+    if (saved) {
+      setPreflightOpen(true);
+    }
+  }, [handleSave]);
 
   const probeContext = useModelProbe();
   const enabledCandidates = draft?.modelSlots.filter((s) => s.enabled) ?? [];
@@ -442,8 +512,8 @@ export function TaskSetEditor({
 
   const handleRunAnyway = useCallback(async () => {
     setPreflightOpen(false);
-    await handleRun();
-  }, [handleRun]);
+    if (persisted) await runCleanSuite(persisted);
+  }, [runCleanSuite, persisted]);
 
   if (!taskSetIdResolved) {
     return <NoTaskSetSelected />;
@@ -478,26 +548,27 @@ export function TaskSetEditor({
   const isHistorical = historical !== null && historical !== persisted.version;
   const runDisabledReason = isHistorical
     ? "Historical versions are read-only"
-    : dirty
-      ? "Save this task set before running"
-      : !execValidation.valid
-        ? (execValidation.errors[0]?.message ?? "Task set is not ready to run.")
-        : !controller
-          ? "Storage unavailable — cannot start an experiment"
-          : executionOwner
-            ? "Another execution is active"
-            : persisted.archivedAt != null
-              ? "Archived task sets cannot run"
-              : null;
+    : !execValidation.valid
+      ? (execValidation.errors[0]?.message ?? "Task set is not ready to run.")
+      : !controller
+        ? "Storage unavailable — cannot start an experiment"
+        : executionOwner
+          ? "Another execution is active"
+          : persisted.archivedAt != null
+            ? "Archived task sets cannot run"
+            : null;
   const canRun = runDisabledReason === null;
 
   // Selected task canonical metadata
   const selectedTaskData = selectedTask as TaskSetMemberData | null;
-  const selectedCanonicalTaskId = selectedTaskData?.taskVersionRef?.taskId || selectedTask?.id || "";
+  const selectedCanonicalTaskId =
+    selectedTaskData?.taskVersionRef?.taskId || selectedTask?.id || "";
   const selectedMeta = taskMeta.get(selectedCanonicalTaskId);
   const selectedRecord = selectedMeta?.record ?? null;
   const availableVersions = selectedMeta?.versions ?? [];
-  const pinnedVersionNum = selectedTaskData?.taskVersionRef?.version ?? (selectedRecord ? selectedRecord.latestVersion : 1);
+  const pinnedVersionNum =
+    selectedTaskData?.taskVersionRef?.version ??
+    (selectedRecord ? selectedRecord.latestVersion : 1);
   const isSelectedTaskArchived = selectedRecord?.archivedAt != null;
 
   const inheritDescription =
@@ -577,17 +648,23 @@ export function TaskSetEditor({
             <button
               type="button"
               data-action="run-task-set"
-              onClick={() => {
-                if (canRun) {
-                  setPreflightOpen(true);
-                }
-              }}
-              disabled={!canRun}
+              onClick={handleRun}
+              disabled={!canRun || runState !== "idle"}
               title={runDisabledReason ?? `Run v${persisted.version}`}
               className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Play size={14} aria-hidden="true" />
-              {dirty || isHistorical ? "Run" : `Run v${persisted.version}`}
+              {runState === "materializing" ? (
+                <Loader2 size={14} className="animate-spin-ease" aria-hidden="true" />
+              ) : (
+                <Play size={14} aria-hidden="true" />
+              )}
+              {runState === "materializing"
+                ? "Preparing…"
+                : runState === "running"
+                  ? "Running…"
+                  : dirty || isHistorical
+                    ? "Run"
+                    : `Run v${persisted.version}`}
             </button>
           </div>
         </div>
@@ -698,7 +775,8 @@ export function TaskSetEditor({
                   </Link>
                 </div>
                 <p className="text-xs text-text-muted">
-                  Canonical tasks are managed globally. Editing this task navigates to the Task editor and will not silently mutate saved manifests.
+                  Canonical tasks are managed globally. Editing this task navigates to the Task
+                  editor and will not silently mutate saved manifests.
                 </p>
               </div>
 
@@ -711,9 +789,12 @@ export function TaskSetEditor({
                 >
                   <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
                   <div>
-                    <p className="font-medium">Warning: This referenced canonical task is archived.</p>
+                    <p className="font-medium">
+                      Warning: This referenced canonical task is archived.
+                    </p>
                     <p className="text-text-secondary mt-0.5">
-                      Archived tasks remain executable in previously saved sets, but cannot receive new canonical versions.
+                      Archived tasks remain executable in previously saved sets, but cannot receive
+                      new canonical versions.
                     </p>
                   </div>
                 </div>
@@ -731,7 +812,10 @@ export function TaskSetEditor({
 
               {/* Version Pinning Controls */}
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="member-version-select" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                <label
+                  htmlFor="member-version-select"
+                  className="font-mono text-xs uppercase tracking-wide text-text-muted"
+                >
                   Pinned Version
                 </label>
                 {availableVersions.length > 1 ? (
@@ -762,7 +846,8 @@ export function TaskSetEditor({
                   </select>
                 ) : (
                   <span className="font-mono text-xs text-text-secondary">
-                    v{pinnedVersionNum} {selectedRecord?.latestVersion === pinnedVersionNum ? "(latest)" : ""}
+                    v{pinnedVersionNum}{" "}
+                    {selectedRecord?.latestVersion === pinnedVersionNum ? "(latest)" : ""}
                   </span>
                 )}
               </div>
@@ -770,7 +855,10 @@ export function TaskSetEditor({
               {/* Member Roles, Strata, and Weights */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="member-role-select" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                  <label
+                    htmlFor="member-role-select"
+                    className="font-mono text-xs uppercase tracking-wide text-text-muted"
+                  >
                     Membership Role
                   </label>
                   <select
@@ -793,7 +881,10 @@ export function TaskSetEditor({
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="member-stratum-input" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                  <label
+                    htmlFor="member-stratum-input"
+                    className="font-mono text-xs uppercase tracking-wide text-text-muted"
+                  >
                     Stratum (optional)
                   </label>
                   <input
@@ -814,7 +905,10 @@ export function TaskSetEditor({
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="member-weight-input" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                  <label
+                    htmlFor="member-weight-input"
+                    className="font-mono text-xs uppercase tracking-wide text-text-muted"
+                  >
                     Positive Weight
                   </label>
                   <input
@@ -852,7 +946,10 @@ export function TaskSetEditor({
 
               {/* Judge Instruction Override */}
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="judge-override-input" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                <label
+                  htmlFor="judge-override-input"
+                  className="font-mono text-xs uppercase tracking-wide text-text-muted"
+                >
                   Judge instruction override (evaluator-only)
                 </label>
                 <textarea
@@ -880,6 +977,53 @@ export function TaskSetEditor({
         </section>
       </div>
 
+      <DialogSurface
+        open={dirtyRunOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDirtyRunOpen(false);
+          }
+        }}
+        title="Save or discard your changes before running"
+        className="max-w-md"
+      >
+        <div data-dirty-run-dialog className="flex flex-col gap-3 p-4">
+          <h2 className="text-sm font-semibold text-text">This task set has unsaved changes</h2>
+          <p className="text-xs text-text-muted">
+            Running must pin an immutable workload. Choose how to proceed:
+          </p>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              data-action="dirty-run-save"
+              onClick={() => void saveNewAndRun()}
+              disabled={saving || runState !== "idle"}
+              className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Save a new version and run
+            </button>
+            <button
+              type="button"
+              data-action="dirty-run-discard"
+              onClick={discardDraft}
+              disabled={runState !== "idle"}
+              className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Discard draft
+            </button>
+            <button
+              type="button"
+              data-action="dirty-run-cancel"
+              onClick={cancelDirtyRun}
+              disabled={runState !== "idle"}
+              className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </DialogSurface>
+
       <TaskVersionSelector
         open={taskSelectorOpen}
         onClose={() => setTaskSelectorOpen(false)}
@@ -887,7 +1031,10 @@ export function TaskSetEditor({
         repo={taskRepo}
         existingRefs={draft.tasks.map((t) => {
           const tData = t as TaskSetMemberData;
-          return { taskId: tData.taskVersionRef?.taskId || t.id, version: tData.taskVersionRef?.version };
+          return {
+            taskId: tData.taskVersionRef?.taskId || t.id,
+            version: tData.taskVersionRef?.version,
+          };
         })}
       />
 
@@ -925,7 +1072,11 @@ function TaskEvaluationPicker({
         Evaluation Override
       </span>
 
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Evaluation mode override">
+      <div
+        className="flex flex-wrap gap-1.5"
+        role="radiogroup"
+        aria-label="Evaluation mode override"
+      >
         <button
           type="button"
           role="radio"
@@ -978,13 +1129,12 @@ function TaskEvaluationPicker({
         </button>
       </div>
 
-      {currentMode === "inherit" && (
-        <p className="text-xs text-text-muted">{inheritDescription}</p>
-      )}
+      {currentMode === "inherit" && <p className="text-xs text-text-muted">{inheritDescription}</p>}
 
       {currentMode === "holistic" && (
         <p className="text-xs text-text-muted">
-          Holistic judge scoring: the judge rates candidate outputs directly without criteria rubrics.
+          Holistic judge scoring: the judge rates candidate outputs directly without criteria
+          rubrics.
         </p>
       )}
 
@@ -1024,6 +1174,108 @@ function TaskEvaluationPicker({
       )}
     </div>
   );
+}
+
+/** Snapshot the task-set-version projection for an exact suite payload. */
+function projectTaskSetVersion(suite: EvaluationSuite) {
+  return suiteToTaskSetVersion(suite, (task) => {
+    const data = task as TaskSetMemberData;
+    return data.taskVersionRef
+      ? { taskId: data.taskVersionRef.taskId, version: data.taskVersionRef.version }
+      : { taskId: task.id, version: 1 };
+  });
+}
+
+/** Atomically append (or create) the immutable Task Set Version on save. */
+async function persistTaskSetVersion(
+  taskSetRepo: TaskSetRepository,
+  candidate: EvaluationSuite,
+  expectedRevision: number,
+): Promise<number> {
+  const record = suiteToTaskSetRecord({ ...candidate, revision: expectedRevision });
+  const { version } = projectTaskSetVersion(candidate);
+  const existing = await taskSetRepo.getTaskSetRecord(candidate.id);
+  if (!existing) {
+    await taskSetRepo.createTaskSet({ ...record, latestVersion: version.version }, version);
+    return 1;
+  }
+  return taskSetRepo.appendTaskSetVersion(record, version, expectedRevision);
+}
+
+/** Resolve the frozen workload snapshot before any provider call. */
+async function materializeWorkloadBeforeRun(
+  repo: EvaluationRepository,
+  taskRepo: TaskRepository | null,
+  taskSetRepo: TaskSetRepository | null,
+  suite: EvaluationSuite,
+): Promise<void> {
+  if (!taskSetRepo || !taskRepo) {
+    throw new StorageError("validation", "Storage unavailable for workload materialization.");
+  }
+  const record = suiteToTaskSetRecord(suite);
+  const { version } = projectTaskSetVersion(suite);
+  const existing = await taskSetRepo.getTaskSetRecord(suite.id);
+  if (!existing) {
+    await taskSetRepo.createTaskSet({ ...record, latestVersion: version.version }, version);
+  }
+
+  const rows = await Promise.all(
+    suite.tasks.map((task) => {
+      const data = task as TaskSetMemberData;
+      return taskRepo.getTaskVersion(
+        data.taskVersionRef?.taskId ?? task.id,
+        data.taskVersionRef?.version ?? 1,
+      );
+    }),
+  );
+  const archivedRows = await Promise.all(
+    suite.tasks.map((task) => {
+      const data = task as TaskSetMemberData;
+      return taskRepo.getTaskRecord(data.taskVersionRef?.taskId ?? task.id);
+    }),
+  );
+
+  const rubrics = new Map<string, EvaluationRubric>();
+  const seenSelections: TaskEvaluationSelection[] = [
+    suite.defaultEvaluation,
+    ...suite.tasks.map((task) =>
+      task.evaluation.kind === "inherit" ? suite.defaultEvaluation : task.evaluation,
+    ),
+  ];
+  for (const sel of seenSelections) {
+    if (sel.kind !== "profile") continue;
+    const r = await repo.getRubricVersion(sel.profile.id, sel.profile.version);
+    if (r) rubrics.set(`${r.id}::${r.version}`, r);
+  }
+
+  const resolvers: WorkloadCatalogResolvers = {
+    getTaskVersion: (ref) =>
+      rows.find((r) => r?.taskId === ref.taskId && r.version === ref.version) ?? undefined,
+    getRubricVersion: (ref) => rubrics.get(`${ref.id}::${ref.version}`),
+    isTaskArchived: (taskId) => archivedRows.some((r) => r?.id === taskId && r.archivedAt != null),
+    isRubricArchived: () => false,
+  };
+
+  await taskSetRepo.materializeTaskSetVersion(suite.id, version.version, resolvers, {
+    allowArchived: false,
+    isDirty: false,
+  });
+}
+
+function friendlyRunError(err: unknown): string {
+  if (err instanceof ArchivedTaskExecutionError) {
+    return "This task set references an archived task or rubric and cannot run.";
+  }
+  if (err instanceof UnresolvedWorkloadRefError) {
+    return "This task set references unresolved tasks or rubrics and cannot run.";
+  }
+  if (err instanceof InvalidWorkloadForExecutionError) {
+    return "This task set is not ready to run.";
+  }
+  if (err instanceof StorageError) {
+    return friendlyStorageError(err);
+  }
+  return err instanceof Error ? err.message : "Could not start the task set.";
 }
 
 function NoTaskSetSelected() {

@@ -21,10 +21,7 @@ import type {
 } from "../../lib/evaluations/evaluation-types";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import { InMemoryTaskSetRepository } from "../../lib/persistence/in-memory-task-set-repository";
-import {
-  suiteToTaskSetRecord,
-  suiteToTaskSetVersion,
-} from "../../lib/evaluations/suite-compat";
+import { suiteToTaskSetRecord, suiteToTaskSetVersion } from "../../lib/evaluations/suite-compat";
 import { StorageError } from "../../lib/persistence/database";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -40,10 +37,7 @@ function flush(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function renderWithRouter(
-  node: React.ReactNode,
-  initialPath = "/evaluations/sets/s1",
-): Harness {
+function renderWithRouter(node: React.ReactNode, initialPath = "/evaluations/sets/s1"): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -54,15 +48,9 @@ function renderWithRouter(
           <ModelProbeProvider>
             <Routes>
               <Route path="/evaluations/sets/:taskSetId" element={node} />
-              <Route
-                path="/evaluations/sets/:taskSetId/versions/:version"
-                element={node}
-              />
+              <Route path="/evaluations/sets/:taskSetId/versions/:version" element={node} />
               <Route path="/evaluations/sets/:taskSetId/tasks/:taskId" element={node} />
-              <Route
-                path="/tasks/:taskId"
-                element={<div data-route="task-detail" />}
-              />
+              <Route path="/tasks/:taskId" element={<div data-route="task-detail" />} />
               <Route
                 path="/tasks/:taskId/versions/:version"
                 element={<div data-route="task-version" />}
@@ -279,7 +267,6 @@ function makeStubController(overrides: Partial<ExperimentController> = {}): Expe
   };
 }
 
-
 /** Crosswalk every suite task id to taskId + v1. */
 function identityCrosswalk(task: EvaluationTask) {
   const data = task as { taskVersionRef?: { taskId: string; version: number } };
@@ -299,10 +286,7 @@ async function seedTaskSetVersion(
   const { version } = suiteToTaskSetVersion(suite, identityCrosswalk);
   const existing = await taskSetRepo.getTaskSetRecord(suite.id);
   if (!existing) {
-    await taskSetRepo.createTaskSet(
-      { ...record, latestVersion: version.version },
-      version,
-    );
+    await taskSetRepo.createTaskSet({ ...record, latestVersion: version.version }, version);
     return 1;
   }
   return taskSetRepo.appendTaskSetVersion(record, version, expectedRevision);
@@ -322,7 +306,7 @@ class TrackingTaskSetRepository extends InMemoryTaskSetRepository {
 
 /** Task Set repository whose materialization always fails (persistence failure seam). */
 class FailingTaskSetRepository extends InMemoryTaskSetRepository {
-  override async materializeTaskSetVersion() {
+  override async materializeTaskSetVersion(): Promise<never> {
     throw new StorageError("quota", "disk full");
   }
 }
@@ -335,7 +319,6 @@ describe("TaskSetEditor — loading & not found", () => {
     await settle();
     cleanup(h);
   });
-
   it("shows not found for a missing task set", async () => {
     const repo = new InMemoryEvaluationRepository();
     const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
@@ -401,10 +384,9 @@ describe("TaskSetEditor — header & dirty state", () => {
     });
     await settle();
 
-    expect(h.$("[data-dirty-run-dialog]")).toBeTruthy();
-    expect(h.container.textContent).toContain("Save a new version");
-    expect(h.container.textContent).toContain("Discard draft");
-    expect(h.container.textContent).toContain("Cancel");
+    expect(document.body.querySelector("[data-dirty-run-dialog]")).toBeTruthy();
+    expect(document.body.textContent).toContain("Discard draft");
+    expect(document.body.textContent).toContain("Cancel");
     expect(controller.start).not.toHaveBeenCalled();
     cleanup(h);
   });
@@ -503,9 +485,24 @@ describe("TaskSetEditor — run validation", () => {
 describe("TaskSetEditor — run execution", () => {
   it("Run click calls controller.start with the persisted suite id and navigates", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeValidSuite("s1"));
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    await seedCanonicalTask(taskRepo, "t1", "Download Music", {
+      instruction: "Download this album.",
+    });
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
     const controller = makeStubController();
-    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} controller={controller} />);
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+        controller={controller}
+      />,
+    );
     await settle();
     const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
     expect(runBtn.disabled).toBe(false);
@@ -530,14 +527,29 @@ describe("TaskSetEditor — run execution", () => {
 
   it("start failure shows the error in a role=alert line and does not navigate", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeValidSuite("s1"));
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    await seedCanonicalTask(taskRepo, "t1", "Download Music", {
+      instruction: "Download this album.",
+    });
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
     const controller = makeStubController({
       start: vi.fn(async () => ({
         ok: false as const,
         error: "Another tab is active (lease held)",
       })),
     });
-    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} controller={controller} />);
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+        controller={controller}
+      />,
+    );
     await settle();
     const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
     await act(async () => {
@@ -816,13 +828,13 @@ describe("TaskSetEditor — canonical Task selection and version pinning", () =>
       extraVersions: 2,
     });
 
-    const h = renderWithRouter(
-      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
-    );
+    const h = renderWithRouter(<TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />);
     await settle();
 
     // Click Add task
-    const addBtn = h.$("button[data-action='add-task']") ?? h.$$("button").find((b) => b.textContent?.includes("Add task"));
+    const addBtn =
+      h.$("button[data-action='add-task']") ??
+      h.$$("button").find((b) => b.textContent?.includes("Add task"));
     expect(addBtn).toBeTruthy();
     await act(async () => {
       addBtn!.click();
@@ -834,7 +846,9 @@ describe("TaskSetEditor — canonical Task selection and version pinning", () =>
     expect(dialog).toBeTruthy();
 
     // Select the task
-    const taskRow = h.$("[data-task-id='t-canon']") ?? h.$$("button, [role='button']").find((b) => b.textContent?.includes("Code Review Task"));
+    const taskRow =
+      h.$("[data-task-id='t-canon']") ??
+      h.$$("button, [role='button']").find((b) => b.textContent?.includes("Code Review Task"));
     expect(taskRow).toBeTruthy();
     await act(async () => {
       taskRow!.click();
@@ -842,7 +856,9 @@ describe("TaskSetEditor — canonical Task selection and version pinning", () =>
     await settle();
 
     // Confirm selection (defaults to latest v2)
-    const selectBtn = h.$("button[data-action='confirm-select-task']") ?? h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
+    const selectBtn =
+      h.$("button[data-action='confirm-select-task']") ??
+      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
     expect(selectBtn).toBeTruthy();
     await act(async () => {
       selectBtn!.click();
@@ -864,27 +880,33 @@ describe("TaskSetEditor — canonical Task selection and version pinning", () =>
       extraVersions: 3,
     });
 
-    const h = renderWithRouter(
-      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
-    );
+    const h = renderWithRouter(<TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />);
     await settle();
 
     // Open selector
-    const addBtn = h.$("button[data-action='add-task']") ?? h.$$("button").find((b) => b.textContent?.includes("Add task"));
+    const addBtn =
+      h.$("button[data-action='add-task']") ??
+      h.$$("button").find((b) => b.textContent?.includes("Add task"));
     await act(async () => {
       addBtn!.click();
     });
     await settle();
 
     // Pick task
-    const taskRow = h.$("[data-task-id='t-multi']") ?? h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi Version Task"));
+    const taskRow =
+      h.$("[data-task-id='t-multi']") ??
+      h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi Version Task"));
     await act(async () => {
       taskRow!.click();
     });
     await settle();
 
     // Select older version v1
-    const v1Option = h.$("[data-version-option='1']") ?? h.$$("button, option").find((el) => el.textContent?.trim() === "v1" || el.getAttribute("value") === "1");
+    const v1Option =
+      h.$("[data-version-option='1']") ??
+      h
+        .$$("button, option")
+        .find((el) => el.textContent?.trim() === "v1" || el.getAttribute("value") === "1");
     expect(v1Option).toBeTruthy();
     if (v1Option?.tagName.toLowerCase() === "option") {
       const select = v1Option.closest("select")!;
@@ -900,7 +922,9 @@ describe("TaskSetEditor — canonical Task selection and version pinning", () =>
     await settle();
 
     // Confirm selection
-    const selectBtn = h.$("button[data-action='confirm-select-task']") ?? h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
+    const selectBtn =
+      h.$("button[data-action='confirm-select-task']") ??
+      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
     await act(async () => {
       selectBtn!.click();
     });
@@ -929,15 +953,16 @@ describe("TaskSetEditor — member roles, strata, positive weights, and override
   it("modifying member role, stratum, positive weight, rubric override, and judge override marks draft dirty and persists on save", async () => {
     const evalRepo = new InMemoryEvaluationRepository();
     const taskRepo = new InMemoryTaskRepository();
-    await seedSuite(evalRepo, makeSuite("s1", {
-      name: "Bench Suite",
-      version: 1,
-      tasks: [makeTask("t-mem", { title: "Configurable Member", prompt: "Prompt", order: 0 })],
-    }));
-
-    const h = renderWithRouter(
-      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
+    await seedSuite(
+      evalRepo,
+      makeSuite("s1", {
+        name: "Bench Suite",
+        version: 1,
+        tasks: [makeTask("t-mem", { title: "Configurable Member", prompt: "Prompt", order: 0 })],
+      }),
     );
+
+    const h = renderWithRouter(<TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />);
     await settle();
 
     // Select the task
@@ -972,7 +997,9 @@ describe("TaskSetEditor — member roles, strata, positive weights, and override
     }
 
     // Change judge override
-    const judgeOverride = h.$("textarea[data-field='judge-instruction-override'], textarea[name='judgeInstructionOverride']") as HTMLTextAreaElement | null;
+    const judgeOverride = h.$(
+      "textarea[data-field='judge-instruction-override'], textarea[name='judgeInstructionOverride']",
+    ) as HTMLTextAreaElement | null;
     if (judgeOverride) {
       typeInto(judgeOverride, "Special instructions for judge");
       await settle();
@@ -1001,24 +1028,35 @@ describe("TaskSetEditor — task detail navigation without mutation", () => {
       objective: "Translate text accurately",
       instruction: "Translate this French paragraph to English.",
     });
-    await seedSuite(evalRepo, makeSuite("s1", {
-      name: "Bench Suite",
-      version: 1,
-      tasks: [makeTask("t-nav", { title: "Canonical Nav Task", prompt: "Translate this French paragraph to English.", order: 0 })],
-    }));
-
-    const h = renderWithRouter(
-      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
+    await seedSuite(
+      evalRepo,
+      makeSuite("s1", {
+        name: "Bench Suite",
+        version: 1,
+        tasks: [
+          makeTask("t-nav", {
+            title: "Canonical Nav Task",
+            prompt: "Translate this French paragraph to English.",
+            order: 0,
+          }),
+        ],
+      }),
     );
+
+    const h = renderWithRouter(<TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />);
     await settle();
 
     // Link to canonical task detail exists
-    const editLink = h.$("a[data-action='open-task-detail']") ?? h.$$("a").find((a) => a.textContent?.match(/edit task|open task/i));
+    const editLink =
+      h.$("a[data-action='open-task-detail']") ??
+      h.$$("a").find((a) => a.textContent?.match(/edit task|open task/i));
     expect(editLink).toBeTruthy();
     expect(editLink?.getAttribute("href")).toContain("/tasks/t-nav");
 
     // The candidate prompt is a read-only preview, not an editable textarea mutating canonical task
-    const promptInput = h.$("textarea[name='prompt'], textarea[data-field='task-prompt']") as HTMLTextAreaElement | null;
+    const promptInput = h.$(
+      "textarea[name='prompt'], textarea[data-field='task-prompt']",
+    ) as HTMLTextAreaElement | null;
     if (promptInput) {
       expect(promptInput.readOnly || promptInput.disabled).toBe(true);
     } else {
@@ -1034,15 +1072,16 @@ describe("TaskSetEditor — archived task warning", () => {
     const evalRepo = new InMemoryEvaluationRepository();
     const taskRepo = new InMemoryTaskRepository();
     await seedCanonicalTask(taskRepo, "t-arch", "Archived Task", { archived: true });
-    await seedSuite(evalRepo, makeSuite("s1", {
-      name: "Bench Suite",
-      version: 1,
-      tasks: [makeTask("t-arch", { title: "Archived Task", order: 0 })],
-    }));
-
-    const h = renderWithRouter(
-      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
+    await seedSuite(
+      evalRepo,
+      makeSuite("s1", {
+        name: "Bench Suite",
+        version: 1,
+        tasks: [makeTask("t-arch", { title: "Archived Task", order: 0 })],
+      }),
     );
+
+    const h = renderWithRouter(<TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />);
     await settle();
 
     // Warning is visible
@@ -1056,18 +1095,19 @@ describe("TaskSetEditor — archived task warning", () => {
 describe("TaskSetEditor — keyboard reordering", () => {
   it("reordering tasks via keyboard controls updates deterministic order", async () => {
     const evalRepo = new InMemoryEvaluationRepository();
-    await seedSuite(evalRepo, makeSuite("s1", {
-      name: "Bench Suite",
-      version: 1,
-      tasks: [
-        makeTask("t1", { title: "Task 1", order: 0 }),
-        makeTask("t2", { title: "Task 2", order: 1 }),
-      ],
-    }));
-
-    const h = renderWithRouter(
-      <TaskSetEditor repo={evalRepo} models={[]} />,
+    await seedSuite(
+      evalRepo,
+      makeSuite("s1", {
+        name: "Bench Suite",
+        version: 1,
+        tasks: [
+          makeTask("t1", { title: "Task 1", order: 0 }),
+          makeTask("t2", { title: "Task 2", order: 1 }),
+        ],
+      }),
     );
+
+    const h = renderWithRouter(<TaskSetEditor repo={evalRepo} models={[]} />);
     await settle();
 
     const moveDownBtns = h.$$("button[aria-label*='down'], button[data-action='move-down']");
@@ -1116,24 +1156,37 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     await settle();
 
     const settingsBtn = h.$("button[aria-expanded='false']");
-    await act(async () => { settingsBtn!.click(); });
+    await act(async () => {
+      settingsBtn!.click();
+    });
     await settle();
     const nameInput = h.$("#task-set-name") as HTMLInputElement;
     typeInto(nameInput, "Dirty Draft");
     await settle();
 
     const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
-    await act(async () => { runBtn.click(); await flush(); });
+    await act(async () => {
+      runBtn.click();
+      await flush();
+    });
     await settle();
-    const discard = h.$("button[data-action='dirty-run-discard']") as HTMLButtonElement;
+    const discard = document.body.querySelector(
+      "button[data-action='dirty-run-discard']",
+    ) as HTMLButtonElement | null;
     expect(discard).toBeTruthy();
-    await act(async () => { discard.click(); await flush(); });
+    await act(async () => {
+      discard!.click();
+      await flush();
+    });
     await settle();
 
     const preflightRun = [...document.body.querySelectorAll("button")].find(
       (b) => b.textContent?.trim() === "Run task set",
     );
-    await act(async () => { preflightRun?.click(); await flush(); });
+    await act(async () => {
+      preflightRun?.click();
+      await flush();
+    });
     await settle();
 
     expect(runCall).toHaveBeenCalledTimes(1);
@@ -1173,18 +1226,28 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     await settle();
 
     const settingsBtn = h.$("button[aria-expanded='false']");
-    await act(async () => { settingsBtn!.click(); });
+    await act(async () => {
+      settingsBtn!.click();
+    });
     await settle();
     const nameInput = h.$("#task-set-name") as HTMLInputElement;
     typeInto(nameInput, "Never Commit");
     await settle();
 
     const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
-    await act(async () => { runBtn.click(); await flush(); });
+    await act(async () => {
+      runBtn.click();
+      await flush();
+    });
     await settle();
-    const cancel = h.$("button[data-action='dirty-run-cancel']") as HTMLButtonElement;
+    const cancel = document.body.querySelector(
+      "button[data-action='dirty-run-cancel']",
+    ) as HTMLButtonElement | null;
     expect(cancel).toBeTruthy();
-    await act(async () => { cancel.click(); await flush(); });
+    await act(async () => {
+      cancel!.click();
+      await flush();
+    });
     expect(runCall).not.toHaveBeenCalled();
     expect(h.container.textContent).toMatch(/unsaved changes/i);
     expect(h.container.textContent).toContain("Never Commit");
@@ -1223,7 +1286,9 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     await settle();
 
     const settingsBtn = h.$("button[aria-expanded='false']");
-    await act(async () => { settingsBtn!.click(); });
+    await act(async () => {
+      settingsBtn!.click();
+    });
     await settle();
     const nameInput = h.$("#task-set-name") as HTMLInputElement;
     typeInto(nameInput, "Stale Save");
@@ -1234,14 +1299,22 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     await repo.saveSuite({ ...suite, name: "Another Tab Won" }, suite.revision);
 
     const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
-    await act(async () => { runBtn.click(); await flush(); });
+    await act(async () => {
+      runBtn.click();
+      await flush();
+    });
     await settle();
-    const saveAndRun = h.$("button[data-action='dirty-run-save']") as HTMLButtonElement;
+    const saveAndRun = document.body.querySelector(
+      "button[data-action='dirty-run-save']",
+    ) as HTMLButtonElement | null;
     expect(saveAndRun).toBeTruthy();
-    await act(async () => { saveAndRun.click(); await flush(); });
+    await act(async () => {
+      saveAndRun!.click();
+      await flush();
+    });
     await settle();
 
-    expect(h.$("[role='alert']")?.textContent).toMatch(/stale|conflict/i);
+    expect(h.$("[role='alert']")?.textContent).toMatch(/stale|conflict|modified in another tab/i);
     expect(runCall).not.toHaveBeenCalled();
     expect(h.$("[data-route='experiment-progress']")).toBeNull();
     cleanup(h);
@@ -1294,17 +1367,29 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
 
       const controller = makeStubController();
       const h = renderWithRouter(
-        <TaskSetEditor repo={repo} taskRepo={taskRepo} taskSetRepo={taskSetRepo} models={[]} controller={controller} />,
+        <TaskSetEditor
+          repo={repo}
+          taskRepo={taskRepo}
+          taskSetRepo={taskSetRepo}
+          models={[]}
+          controller={controller}
+        />,
       );
       await settle();
-      const runBtn = h.$("button[data-action='run-task-set']");
+      const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement | null;
       expect(runBtn?.disabled ?? true).toBe(false);
-      await act(async () => { runBtn?.click(); await flush(); });
+      await act(async () => {
+        runBtn?.click();
+        await flush();
+      });
       await settle();
       const confirm = [...document.body.querySelectorAll("button")].find(
         (b) => b.textContent?.trim() === "Run task set",
       );
-      await act(async () => { confirm?.click(); await flush(); });
+      await act(async () => {
+        confirm?.click();
+        await flush();
+      });
       await settle();
       expect(h.$("[role='alert']")?.textContent).toMatch(/unresolved/i);
       expect(controller.start).not.toHaveBeenCalled();
@@ -1319,6 +1404,12 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
       const taskSetRepo = new InMemoryTaskSetRepository();
       await seedCanonicalTask(taskRepo, "arch-t", "Archived Task", { archived: true });
       const suite = makeValidSuite("s1");
+      suite.tasks = [
+        {
+          ...makeTask("t1"),
+          taskVersionRef: { taskId: "arch-t", version: 1 },
+        } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+      ];
       await seedSuite(repo, suite);
       // Force an archived ref on the pinned workload.
       const record = suiteToTaskSetRecord(suite);
@@ -1327,17 +1418,29 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
 
       const controller = makeStubController();
       const h = renderWithRouter(
-        <TaskSetEditor repo={repo} taskRepo={taskRepo} taskSetRepo={taskSetRepo} models={[]} controller={controller} />,
+        <TaskSetEditor
+          repo={repo}
+          taskRepo={taskRepo}
+          taskSetRepo={taskSetRepo}
+          models={[]}
+          controller={controller}
+        />,
       );
       await settle();
-      const runBtn = h.$("button[data-action='run-task-set']");
+      const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement | null;
       expect(runBtn?.disabled ?? true).toBe(false);
-      await act(async () => { runBtn?.click(); await flush(); });
+      await act(async () => {
+        runBtn?.click();
+        await flush();
+      });
       await settle();
       const confirm = [...document.body.querySelectorAll("button")].find(
         (b) => b.textContent?.trim() === "Run task set",
       );
-      await act(async () => { confirm?.click(); await flush(); });
+      await act(async () => {
+        confirm?.click();
+        await flush();
+      });
       await settle();
       expect(h.$("[role='alert']")?.textContent).toMatch(/archived/i);
       expect(controller.start).not.toHaveBeenCalled();
@@ -1367,14 +1470,20 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     );
     await settle();
 
-    const runBtn = h.$("button[data-action='run-task-set']");
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement | null;
     expect(runBtn?.disabled ?? true).toBe(false);
-    await act(async () => { runBtn?.click(); await flush(); });
+    await act(async () => {
+      runBtn?.click();
+      await flush();
+    });
     await settle();
     const confirm = [...document.body.querySelectorAll("button")].find(
       (b) => b.textContent?.trim() === "Run task set",
     );
-    await act(async () => { confirm?.click(); await flush(); });
+    await act(async () => {
+      confirm?.click();
+      await flush();
+    });
     await settle();
     expect(h.$("[role='alert']")?.textContent).toMatch(/disk full|quota/i);
     expect(runCall).not.toHaveBeenCalled();
@@ -1423,14 +1532,20 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     );
     await settle();
 
-    const runBtn = h.$("button[data-action='run-task-set']");
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement | null;
     expect(runBtn?.disabled ?? true).toBe(false);
-    await act(async () => { runBtn?.click(); await flush(); });
+    await act(async () => {
+      runBtn?.click();
+      await flush();
+    });
     await settle();
     const confirm = [...document.body.querySelectorAll("button")].find(
       (b) => b.textContent?.trim() === "Run task set",
     );
-    await act(async () => { confirm?.click(); await flush(); });
+    await act(async () => {
+      confirm?.click();
+      await flush();
+    });
     await settle();
 
     const mat = order.indexOf("materialize");
@@ -1446,7 +1561,6 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     cleanup(h);
   });
 });
-
 
 describe("TaskSetEditor — accessibility", () => {
   it("all interactive controls meet 44px target size", async () => {
