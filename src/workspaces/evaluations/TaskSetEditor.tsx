@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { ChevronDown, Loader2, Save, Play, AlertCircle, Trophy } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
+import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import { useExperimentController } from "../../lib/evaluations/experiment-controller-hooks";
 import { useModelProbe } from "../../ui/ModelProbeContext";
@@ -45,6 +46,8 @@ interface TaskSetEditorProps {
   repo: EvaluationRepository | null;
   /** Catalog models from provider probes (may be empty). */
   models: CatalogModel[];
+  /** Test seam: override the context task repository. */
+  taskRepo?: TaskRepository | null;
   /** Test seam: override the context experiment controller. Pass null to
    *  simulate storage-unavailable (no controller). */
   controller?: ExperimentController | null;
@@ -59,6 +62,7 @@ function generateTaskId(): string {
 export function TaskSetEditor({
   repo,
   models,
+  taskRepo: _taskRepoProp,
   controller: controllerProp,
   executionOwner: ownerProp,
 }: TaskSetEditorProps) {

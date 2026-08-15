@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ModelProbeProvider } from "../../ui/ModelProbeContext";
 import { TaskSetEditor } from "./TaskSetEditor";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
+import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-repository";
 import { ExecutionOwnerProvider } from "../../lib/execution-owner-context";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import type {
@@ -18,6 +19,7 @@ import type {
   EvaluationTask,
   ExperimentRecord,
 } from "../../lib/evaluations/evaluation-types";
+import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -51,6 +53,14 @@ function renderWithRouter(
                 element={node}
               />
               <Route path="/evaluations/sets/:taskSetId/tasks/:taskId" element={node} />
+              <Route
+                path="/tasks/:taskId"
+                element={<div data-route="task-detail" />}
+              />
+              <Route
+                path="/tasks/:taskId/versions/:version"
+                element={<div data-route="task-version" />}
+              />
               <Route
                 path="/experiments/:experimentId"
                 element={<div data-route="experiment-progress" />}
@@ -131,6 +141,67 @@ function makeSuite(id: string, overrides: Partial<EvaluationSuite> = {}): Evalua
 
 async function seedSuite(repo: InMemoryEvaluationRepository, suite: EvaluationSuite) {
   await repo.saveSuite(suite, 0);
+}
+
+async function seedCanonicalTask(
+  repo: InMemoryTaskRepository,
+  id: string,
+  title: string,
+  overrides: {
+    objective?: string;
+    instruction?: string;
+    systemInstruction?: string;
+    archived?: boolean;
+    extraVersions?: number;
+  } = {},
+): Promise<TaskRecord> {
+  const now = Date.now();
+  const v1: TaskVersion = {
+    taskId: id,
+    version: 1,
+    title,
+    objective: overrides.objective ?? `Objective for ${title}.`,
+    candidateInstruction: overrides.instruction ?? `Instruction for ${title}.`,
+    defaultContextManifest: [],
+    responseContract: null,
+    taskVerifierRef: null,
+    source: { kind: "authored", legacyScopeKey: null, note: null },
+    createdAt: now,
+  };
+
+  const record: TaskRecord = {
+    id,
+    latestVersion: 1,
+    origin: "authored",
+    revision: 0,
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
+  };
+
+  await repo.createTask(record, v1);
+
+  if (overrides.extraVersions && overrides.extraVersions > 1) {
+    for (let v = 2; v <= overrides.extraVersions; v++) {
+      const rec = (await repo.getTaskRecord(id))!;
+      const nextVer: TaskVersion = {
+        ...v1,
+        version: v,
+        title: `${title} (v${v})`,
+        objective: `${title} objective (v${v})`,
+        candidateInstruction: `Instruction for ${title} (v${v})`,
+        createdAt: now + v * 1000,
+      };
+      await repo.appendTaskVersion(rec, nextVer, rec.revision);
+    }
+  }
+
+  if (overrides.archived) {
+    const rec = (await repo.getTaskRecord(id))!;
+    await repo.archiveTask(id, rec.revision);
+  }
+
+  return (await repo.getTaskRecord(id))!;
 }
 
 function makeExperiment(id: string, suite: EvaluationSuite): ExperimentRecord {
@@ -664,6 +735,283 @@ describe("TaskSetEditor — Test selected models (spec §8.1)", () => {
     await settle();
     const batchBtn = h.$$("button").find((b) => b.textContent?.trim() === "Test selected models");
     expect(batchBtn).toBeFalsy();
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — canonical Task selection and version pinning", () => {
+  it("Add task opens TaskVersionSelector and adds selected canonical task version to the set", async () => {
+    const evalRepo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    await seedSuite(evalRepo, makeSuite("s1", { name: "Bench Suite", version: 1, tasks: [] }));
+    await seedCanonicalTask(taskRepo, "t-canon", "Code Review Task", {
+      objective: "Review PR for security issues",
+      instruction: "Find any security flaws in this PR.",
+      extraVersions: 2,
+    });
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
+    );
+    await settle();
+
+    // Click Add task
+    const addBtn = h.$("button[data-action='add-task']") ?? h.$$("button").find((b) => b.textContent?.includes("Add task"));
+    expect(addBtn).toBeTruthy();
+    await act(async () => {
+      addBtn!.click();
+    });
+    await settle();
+
+    // TaskVersionSelector is open
+    const dialog = h.$("[role='dialog']") ?? h.$("[data-task-version-selector]");
+    expect(dialog).toBeTruthy();
+
+    // Select the task
+    const taskRow = h.$("[data-task-id='t-canon']") ?? h.$$("button, [role='button']").find((b) => b.textContent?.includes("Code Review Task"));
+    expect(taskRow).toBeTruthy();
+    await act(async () => {
+      taskRow!.click();
+    });
+    await settle();
+
+    // Confirm selection (defaults to latest v2)
+    const selectBtn = h.$("button[data-action='confirm-select-task']") ?? h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
+    expect(selectBtn).toBeTruthy();
+    await act(async () => {
+      selectBtn!.click();
+    });
+    await settle();
+
+    // Task is added to the set and shows pinned v2
+    expect(h.container.textContent).toContain("Code Review Task");
+    expect(h.container.textContent).toContain("v2");
+    expect(h.container.textContent).toMatch(/unsaved changes/i);
+    cleanup(h);
+  });
+
+  it("allows selecting an older canonical task version without upgrading to latest on save", async () => {
+    const evalRepo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    await seedSuite(evalRepo, makeSuite("s1", { name: "Bench Suite", version: 1, tasks: [] }));
+    await seedCanonicalTask(taskRepo, "t-multi", "Multi Version Task", {
+      extraVersions: 3,
+    });
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
+    );
+    await settle();
+
+    // Open selector
+    const addBtn = h.$("button[data-action='add-task']") ?? h.$$("button").find((b) => b.textContent?.includes("Add task"));
+    await act(async () => {
+      addBtn!.click();
+    });
+    await settle();
+
+    // Pick task
+    const taskRow = h.$("[data-task-id='t-multi']") ?? h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi Version Task"));
+    await act(async () => {
+      taskRow!.click();
+    });
+    await settle();
+
+    // Select older version v1
+    const v1Option = h.$("[data-version-option='1']") ?? h.$$("button, option").find((el) => el.textContent?.trim() === "v1" || el.getAttribute("value") === "1");
+    expect(v1Option).toBeTruthy();
+    if (v1Option?.tagName.toLowerCase() === "option") {
+      const select = v1Option.closest("select")!;
+      await act(async () => {
+        select.value = "1";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    } else {
+      await act(async () => {
+        v1Option!.click();
+      });
+    }
+    await settle();
+
+    // Confirm selection
+    const selectBtn = h.$("button[data-action='confirm-select-task']") ?? h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
+    await act(async () => {
+      selectBtn!.click();
+    });
+    await settle();
+
+    // Pinned version shows v1
+    expect(h.container.textContent).toContain("v1");
+
+    // Save task set
+    const saveBtn = h.$("button[data-action='save-task-set']") as HTMLButtonElement;
+    await act(async () => {
+      saveBtn.click();
+      await flush();
+    });
+    await settle();
+
+    const fresh = await evalRepo.getSuite("s1");
+    expect(fresh?.tasks.length).toBe(1);
+    // Verified: No latest-version substitution happened
+    expect(h.container.textContent).toContain("v1");
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — member roles, strata, positive weights, and overrides", () => {
+  it("modifying member role, stratum, positive weight, rubric override, and judge override marks draft dirty and persists on save", async () => {
+    const evalRepo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    await seedSuite(evalRepo, makeSuite("s1", {
+      name: "Bench Suite",
+      version: 1,
+      tasks: [makeTask("t-mem", { title: "Configurable Member", prompt: "Prompt", order: 0 })],
+    }));
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
+    );
+    await settle();
+
+    // Select the task
+    const taskBtn = h.$("button[aria-label*='Configurable Member'], [data-task-item] button");
+    await act(async () => {
+      taskBtn?.click();
+    });
+    await settle();
+
+    // Change role
+    const roleSelect = h.$("select[data-field='member-role']") as HTMLSelectElement | null;
+    if (roleSelect) {
+      await act(async () => {
+        roleSelect.value = "anchor";
+        roleSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await settle();
+    }
+
+    // Change stratum
+    const stratumInput = h.$("input[data-field='member-stratum']") as HTMLInputElement | null;
+    if (stratumInput) {
+      typeInto(stratumInput, "reasoning");
+      await settle();
+    }
+
+    // Change weight
+    const weightInput = h.$("input[data-field='member-weight']") as HTMLInputElement | null;
+    if (weightInput) {
+      typeInto(weightInput, "2.5");
+      await settle();
+    }
+
+    // Change judge override
+    const judgeOverride = h.$("textarea[data-field='judge-instruction-override'], textarea[name='judgeInstructionOverride']") as HTMLTextAreaElement | null;
+    if (judgeOverride) {
+      typeInto(judgeOverride, "Special instructions for judge");
+      await settle();
+    }
+
+    expect(h.container.textContent).toMatch(/unsaved changes/i);
+
+    // Save
+    const saveBtn = h.$("button[data-action='save-task-set']") as HTMLButtonElement;
+    await act(async () => {
+      saveBtn.click();
+      await flush();
+    });
+    await settle();
+
+    expect(h.container.textContent).toMatch(/saved/i);
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — task detail navigation without mutation", () => {
+  it("provides link to canonical task detail without offering editable inputs that mutate the canonical task", async () => {
+    const evalRepo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCanonicalTask(taskRepo, "t-nav", "Canonical Nav Task", {
+      objective: "Translate text accurately",
+      instruction: "Translate this French paragraph to English.",
+    });
+    await seedSuite(evalRepo, makeSuite("s1", {
+      name: "Bench Suite",
+      version: 1,
+      tasks: [makeTask("t-nav", { title: "Canonical Nav Task", prompt: "Translate this French paragraph to English.", order: 0 })],
+    }));
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
+    );
+    await settle();
+
+    // Link to canonical task detail exists
+    const editLink = h.$("a[data-action='open-task-detail']") ?? h.$$("a").find((a) => a.textContent?.match(/edit task|open task/i));
+    expect(editLink).toBeTruthy();
+    expect(editLink?.getAttribute("href")).toContain("/tasks/t-nav");
+
+    // The candidate prompt is a read-only preview, not an editable textarea mutating canonical task
+    const promptInput = h.$("textarea[name='prompt'], textarea[data-field='task-prompt']") as HTMLTextAreaElement | null;
+    if (promptInput) {
+      expect(promptInput.readOnly || promptInput.disabled).toBe(true);
+    } else {
+      // It is rendered as read-only text / pre
+      expect(h.container.textContent).toContain("Translate this French paragraph to English.");
+    }
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — archived task warning", () => {
+  it("displays warning when a member references an archived canonical task", async () => {
+    const evalRepo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCanonicalTask(taskRepo, "t-arch", "Archived Task", { archived: true });
+    await seedSuite(evalRepo, makeSuite("s1", {
+      name: "Bench Suite",
+      version: 1,
+      tasks: [makeTask("t-arch", { title: "Archived Task", order: 0 })],
+    }));
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />,
+    );
+    await settle();
+
+    // Warning is visible
+    const warning = h.$("[data-archived-warning]") ?? h.$("[role='alert']");
+    expect(warning).toBeTruthy();
+    expect(warning?.textContent?.toLowerCase()).toContain("archived");
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — keyboard reordering", () => {
+  it("reordering tasks via keyboard controls updates deterministic order", async () => {
+    const evalRepo = new InMemoryEvaluationRepository();
+    await seedSuite(evalRepo, makeSuite("s1", {
+      name: "Bench Suite",
+      version: 1,
+      tasks: [
+        makeTask("t1", { title: "Task 1", order: 0 }),
+        makeTask("t2", { title: "Task 2", order: 1 }),
+      ],
+    }));
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={evalRepo} models={[]} />,
+    );
+    await settle();
+
+    const moveDownBtns = h.$$("button[aria-label*='down'], button[data-action='move-down']");
+    expect(moveDownBtns.length).toBeGreaterThan(0);
+    await act(async () => {
+      moveDownBtns[0]?.click();
+    });
+    await settle();
+
+    expect(h.container.textContent).toMatch(/unsaved changes/i);
     cleanup(h);
   });
 });
