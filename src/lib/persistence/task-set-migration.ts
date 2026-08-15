@@ -77,6 +77,26 @@ export interface TaskSetMigrationResult {
   complete: boolean;
 }
 
+/** Shape of the persisted terminal completion marker. */
+interface MigrationMarkerValue {
+  kind: string;
+  version: number;
+  completedAt: number;
+  migratedSuites: number;
+  unresolvedMembers: number;
+  unresolvedExperiments: number;
+  unresolvedFusionOwners: number;
+}
+
+/** A terminal marker is valid when its kind/version identify a completed
+ *  migration. The completedAt timestamp is recorded once on completion and
+ *  never rewritten, because a valid marker short-circuits repeat startup. */
+function isValidMigrationMarker(value: unknown): value is MigrationMarkerValue {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return v.kind === "task-set-migration" && v.version === 1;
+}
+
 // --- internal types ---------------------------------------------------------
 
 interface LegacyWorkloadView {
@@ -125,9 +145,10 @@ interface ReconstructedVersion {
 interface SuitePlan {
   suite: EvaluationSuite;
   versions: ReconstructedVersion[];
-  /** (suiteVersion, protocolFingerprint) → canonical version, for Fusion owner
-   *  resolution. Multiple coordinates may point to the same version. */
-  coordinateToVersion: Map<string, number>;
+  /** Full suiteRef coordinate → set of candidate canonical versions, for
+   *  Fusion owner resolution. A coordinate is resolvable only when the set
+   *  has exactly one member (no duplicate-coordinate ambiguity). */
+  coordinateToVersion: Map<string, Set<number>>;
 }
 
 // --- projection helpers (pure, mirror suite-compat without mutating source) --
@@ -162,6 +183,16 @@ function protocolDefaultsFromReasoningPolicy(reasoningPolicy?: ReasoningPolicy):
   return { reasoningPolicy: { candidates: reasoningPolicy.candidates, judge: reasoningPolicy.judge } };
 }
 
+/** Locale-independent code-unit ordinal comparator for string identifiers.
+ *  Used for every deterministic ordering (Rubric id tie-break, Experiment-id
+ *  chronology tie-break) so digest coalescing and canonical version assignment
+ *  do not depend on host collation. */
+function compareOrdinal(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 // --- rubric resolution ------------------------------------------------------
 
 function collectReferencedRubricRefs(view: {
@@ -191,7 +222,7 @@ function resolveRubrics(
     const resolved = byKey.get(key) ?? profileVersionMap.get(key);
     if (resolved) out.push(resolved);
   }
-  out.sort((a, b) => (a.id !== b.id ? a.id.localeCompare(b.id) : a.version - b.version));
+  out.sort((a, b) => (a.id !== b.id ? compareOrdinal(a.id, b.id) : a.version - b.version));
   // Deduplicate by id+version while preserving order.
   const seen = new Set<string>();
   return out.filter((r) => {
@@ -389,7 +420,7 @@ function compareObservations(a: Observation, b: Observation): number {
   if (a.executedAt !== null && b.executedAt !== null && a.executedAt !== b.executedAt) {
     return a.executedAt - b.executedAt;
   }
-  return (a.experimentId ?? "").localeCompare(b.experimentId ?? "");
+  return compareOrdinal(a.experimentId ?? "", b.experimentId ?? "");
 }
 
 // --- TaskSetRecord / TaskSetVersion construction ----------------------------
@@ -569,15 +600,16 @@ async function buildPlan(
         unresolvedMemberTotal += representative.unresolvedMemberIds.length;
       }
     }
-
-    const coordinateToVersion = new Map<string, number>();
+    const coordinateToVersion = new Map<string, Set<number>>();
     for (const v of versions) {
       const seen = new Set<string>();
       for (const obs of v.observations) {
         const coord = `${obs.view.suiteId}::v${obs.view.suiteVersion}::${obs.view.protocolFingerprint}`;
         if (seen.has(coord)) continue;
         seen.add(coord);
-        coordinateToVersion.set(coord, v.version);
+        const candidates = coordinateToVersion.get(coord) ?? new Set<number>();
+        candidates.add(v.version);
+        coordinateToVersion.set(coord, candidates);
       }
     }
 
@@ -702,11 +734,16 @@ function buildFusionOwnerRows(plan: MigrationPlan): TaskSetOwnershipCrosswalkRow
     if (!suitePlan) {
       note = "suite-not-found";
     } else {
-      const matched = suitePlan.coordinateToVersion.get(coord);
-      if (matched === undefined) {
+      const candidates = suitePlan.coordinateToVersion.get(coord);
+      if (candidates === undefined || candidates.size === 0) {
         note = "no-matching-suiteRef";
+      } else if (candidates.size > 1) {
+        // The same full suiteRef coordinate occurs in more than one
+        // reconstructed digest; the Study cannot be resolved by guess.
+        note = "ambiguous-suiteRef";
       } else {
-        // Verify Trial/Playbook suiteRefs agree with the Study suiteRef.
+        // Unique candidate — verify Trial/Playbook suiteRefs agree with the
+        // Study suiteRef before resolving.
         const trials = trialsByStudy.get(study.id) ?? [];
         const playbooks = playbooksByStudy.get(study.id) ?? [];
         const allAgree =
@@ -715,7 +752,7 @@ function buildFusionOwnerRows(plan: MigrationPlan): TaskSetOwnershipCrosswalkRow
         if (!allAgree) {
           note = "trial-or-playbook-suiteRef-disagreement";
         } else {
-          version = matched;
+          version = [...candidates][0];
           status = "resolved";
         }
       }
@@ -945,6 +982,25 @@ async function verifyMigration(
 export async function migrateSuitesToTaskSets(db: RSembleEvaluationDB): Promise<TaskSetMigrationResult> {
   db.assertWritable();
   try {
+    // A valid terminal marker makes repeat startup a no-write operation:
+    // validate it at entry, before any planning or writes, and return without
+    // touching storage. A failed/interrupted attempt never wrote a marker
+    // (it is written only after verification below), so a valid marker is an
+    // authoritative completion signal.
+    const priorMarker = await db.storageMeta.get(taskSetMigrationMarkerKey);
+    if (priorMarker && isValidMigrationMarker(priorMarker.value)) {
+      const m = priorMarker.value;
+      return {
+        migratedSuites: m.migratedSuites,
+        createdVersions: 0,
+        crosswalksWritten: 0,
+        unresolvedMembers: m.unresolvedMembers,
+        unresolvedExperiments: m.unresolvedExperiments,
+        unresolvedFusionOwners: m.unresolvedFusionOwners,
+        complete: true,
+      };
+    }
+
     const beforeSnapshot = await snapshotAllSources(db);
 
     // Read-only authority catalogs.
@@ -984,9 +1040,10 @@ export async function migrateSuitesToTaskSets(db: RSembleEvaluationDB): Promise<
 
     await verifyMigration(db, plan, beforeSnapshot);
 
-    // Marker — written only after verification, and only when absent/different.
-    const existingMarker = await db.storageMeta.get(taskSetMigrationMarkerKey);
-    const markerValue = {
+    // Marker — written only after verification. A valid marker would have
+    // short-circuited at entry, so reaching here means the marker was absent
+    // or invalid; record completion once.
+    const markerValue: MigrationMarkerValue = {
       kind: "task-set-migration",
       version: 1,
       completedAt: Date.now(),
@@ -995,9 +1052,7 @@ export async function migrateSuitesToTaskSets(db: RSembleEvaluationDB): Promise<
       unresolvedExperiments: experimentEntries.filter((e) => e.row.status === "unresolved").length,
       unresolvedFusionOwners: fusionRows.filter((r) => r.status === "unresolved").length,
     };
-    if (!existingMarker || !sameJson(existingMarker.value, markerValue)) {
-      await db.storageMeta.put({ key: taskSetMigrationMarkerKey, value: markerValue });
-    }
+    await db.storageMeta.put({ key: taskSetMigrationMarkerKey, value: markerValue });
 
     return {
       migratedSuites: plan.suitePlans.filter((p) => p.versions.length > 0).length,
