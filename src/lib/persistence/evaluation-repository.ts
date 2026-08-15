@@ -85,6 +85,7 @@ function isTaskSetMaterializationRecord(value: unknown): value is TaskSetMateria
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<TaskSetMaterializationRecord>;
   const snapshot = record.snapshot as Partial<MaterializedWorkloadSnapshot> | undefined;
+  const judge = snapshot?.defaultJudge;
   return (
     typeof record.id === "string" &&
     record.id.length > 0 &&
@@ -99,7 +100,17 @@ function isTaskSetMaterializationRecord(value: unknown): value is TaskSetMateria
     snapshot !== undefined &&
     snapshot.taskSetId === record.taskSetId &&
     snapshot.taskSetVersion === record.taskSetVersion &&
-    snapshot.protocolFingerprint === record.protocolFingerprint
+    snapshot.protocolFingerprint === record.protocolFingerprint &&
+    Array.isArray(snapshot.tasks) &&
+    Array.isArray(snapshot.defaultModelSlots) &&
+    Array.isArray(snapshot.rubrics) &&
+    judge !== undefined &&
+    judge !== null &&
+    typeof judge === "object" &&
+    typeof judge.providerId === "string" &&
+    judge.providerId.length > 0 &&
+    typeof judge.model === "string" &&
+    judge.model.length > 0
   );
 }
 

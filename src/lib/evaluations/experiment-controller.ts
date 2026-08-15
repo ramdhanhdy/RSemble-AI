@@ -188,6 +188,28 @@ function projectMaterializationToSuite(snapshot: MaterializedWorkloadSnapshot): 
 }
 
 
+function profileSelectionHasSnapshot(
+  selection: EvaluationSelection,
+  rubrics: RubricSnapshot[],
+): boolean {
+  if (selection.kind !== "profile") return true;
+  return rubrics.some(
+    (rubric) => rubric.id === selection.profile.id && rubric.version === selection.profile.version,
+  );
+}
+
+function projectedProfileSelectionsResolve(
+  suite: EvaluationSuite,
+  rubrics: RubricSnapshot[],
+): boolean {
+  if (!profileSelectionHasSnapshot(suite.defaultEvaluation, rubrics)) return false;
+  return suite.tasks.every((task) => {
+    const selection: EvaluationSelection =
+      task.evaluation.kind === "inherit" ? suite.defaultEvaluation : task.evaluation;
+    return profileSelectionHasSnapshot(selection, rubrics);
+  });
+}
+
 /** Resolve a task's evaluation selection to an AdHocEvaluationConfig for the
  *  executor. Inherits the suite default when the task says "inherit". */
 function taskEvaluationConfig(
@@ -833,14 +855,26 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       return { ok: false, error: `Materialization ${materializationId} has already been used` };
     }
 
-    const projected = projectMaterializationToSuite(loaded.snapshot);
-    const rubrics: RubricSnapshot[] = loaded.snapshot.rubrics.map((rubric) => ({ ...rubric }));
+    let projected: EvaluationSuite;
+    let rubrics: RubricSnapshot[];
+    try {
+      projected = projectMaterializationToSuite(loaded.snapshot);
+      rubrics = loaded.snapshot.rubrics.map((rubric) => ({ ...rubric }));
+    } catch {
+      return { ok: false, error: `Materialization ${materializationId} is invalid or malformed` };
+    }
     if (
       !isEvaluationSuite(projected) ||
       projected.id !== loaded.taskSetId ||
       projected.version !== loaded.taskSetVersion
     ) {
       return { ok: false, error: `Materialization ${materializationId} projected an invalid suite` };
+    }
+    if (!projectedProfileSelectionsResolve(projected, rubrics)) {
+      return {
+        ok: false,
+        error: `Materialization ${materializationId} has an unresolved profile selection`,
+      };
     }
 
     const id = `exp-${generateId()}`;
