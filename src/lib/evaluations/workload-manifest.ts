@@ -89,12 +89,22 @@ export class ArchivedTaskExecutionError extends Error {
   }
 }
 
-// --- Materialized Snapshot Types (spec §3.3) ---------------------------------
-
 /**
- * Materialized member of a workload snapshot with resolved TaskVersion,
- * effective Rubric, and computed execution fields.
+ * Thrown when a Task Set Version fails execution-readiness validation for a
+ * non-reference reason (e.g. no enabled model slot, invalid judge, empty
+ * members, or contradictory Rubric selection). Distinct from unresolved refs
+ * and archived rejection so callers can classify the failure precisely.
  */
+export class InvalidWorkloadForExecutionError extends Error {
+  readonly errors: string[];
+
+  constructor(errors: string[]) {
+    super(`Task Set is not ready for execution: ${errors.join(" ")}`);
+    this.name = "InvalidWorkloadForExecutionError";
+    this.errors = errors;
+  }
+}
+
 export interface MaterializedTask {
   memberId: string;
   taskVersionRef: TaskVersionRef;
@@ -111,6 +121,7 @@ export interface MaterializedTask {
   judgeInstructionOverride: string | null;
   verification: TaskVerification | null;
   isArchived: boolean;
+  isEffectiveRubricArchived: boolean;
   taskInstance?: TaskInstance | null;
 }
 
@@ -276,6 +287,38 @@ export function validateWorkloadForExecution(
           hasArchivedRefs = true;
         }
       }
+
+      // Resolve any Rubric pinned inside the legacy execution-override
+      // evaluation selection. It is authoritative for the member's effective
+      // rubric, so it must resolve exactly and may not contradict an explicit
+      // rubricOverrideRef.
+      const overrideEval = m.executionOverrides?.evaluation;
+      if (overrideEval !== undefined && overrideEval !== null && overrideEval.kind === "profile") {
+        const nestedRef = overrideEval.profile;
+        const nestedRubric = resolvers.getRubricVersion?.(nestedRef);
+        if (!nestedRubric) {
+          unresolved.push({
+            field: `members[${idx}].executionOverrides.evaluation.profile`,
+            ref: nestedRef,
+            reason: "Execution override Rubric ref does not resolve in the catalog.",
+          });
+          errors.push(
+            `Unresolved execution-override rubric at member ${idx}: ${nestedRef.id} v${nestedRef.version}`,
+          );
+        } else if (resolvers.isRubricArchived?.(nestedRef.id)) {
+          hasArchivedRefs = true;
+        }
+
+        if (
+          m.rubricOverrideRef !== null &&
+          (m.rubricOverrideRef.id !== nestedRef.id ||
+            m.rubricOverrideRef.version !== nestedRef.version)
+        ) {
+          errors.push(
+            `Contradictory rubric selection at member ${idx}: rubricOverrideRef and execution override evaluation disagree.`,
+          );
+        }
+      }
     });
   }
 
@@ -346,6 +389,10 @@ export function materializeWorkloadManifest(
     throw new ArchivedTaskExecutionError();
   }
 
+  if (preflight.errors.length > 0) {
+    throw new InvalidWorkloadForExecutionError(preflight.errors);
+  }
+
   // Resolve default rubric
   let resolvedDefaultRubric: EvaluationRubric | null = null;
   if (version.defaultRubricRef !== null) {
@@ -397,11 +444,31 @@ export function materializeWorkloadManifest(
 
     const isTaskArchived = resolvers.isTaskArchived?.(member.taskVersionRef.taskId) ?? false;
 
-    // Resolve effective rubric
+    // Resolve effective rubric. Precedence: a rubric pinned inside the legacy
+    // execution-override evaluation selection is authoritative; otherwise an
+    // explicit rubricOverrideRef wins; otherwise the set default applies.
     let effectiveRubricRef: VersionRef | null = null;
     let effectiveRubric: EvaluationRubric | null = null;
+    let effectiveRubricArchived = false;
 
-    if (member.rubricOverrideRef !== null) {
+    const overrideEval = member.executionOverrides?.evaluation;
+    if (overrideEval !== undefined && overrideEval !== null && overrideEval.kind === "profile") {
+      const nestedRef = overrideEval.profile;
+      const nestedRubric = resolvers.getRubricVersion?.(nestedRef);
+      if (!nestedRubric) {
+        throw new UnresolvedWorkloadRefError([
+          {
+            field: `members[${member.id}].executionOverrides.evaluation.profile`,
+            ref: nestedRef,
+            reason: "Execution override Rubric ref does not resolve in the catalog.",
+          },
+        ]);
+      }
+      effectiveRubricRef = deepClone(nestedRef);
+      effectiveRubric = deepClone(nestedRubric);
+      effectiveRubricArchived = resolvers.isRubricArchived?.(nestedRef.id) ?? false;
+      rubricsMap.set(`${effectiveRubric.id}::v${effectiveRubric.version}`, effectiveRubric);
+    } else if (member.rubricOverrideRef !== null) {
       const overrideR = resolvers.getRubricVersion?.(member.rubricOverrideRef);
       if (!overrideR) {
         throw new UnresolvedWorkloadRefError([
@@ -414,10 +481,12 @@ export function materializeWorkloadManifest(
       }
       effectiveRubricRef = deepClone(member.rubricOverrideRef);
       effectiveRubric = deepClone(overrideR);
+      effectiveRubricArchived = resolvers.isRubricArchived?.(member.rubricOverrideRef.id) ?? false;
       rubricsMap.set(`${effectiveRubric.id}::v${effectiveRubric.version}`, effectiveRubric);
     } else if (version.defaultRubricRef !== null && resolvedDefaultRubric !== null) {
       effectiveRubricRef = deepClone(version.defaultRubricRef);
       effectiveRubric = resolvedDefaultRubric;
+      effectiveRubricArchived = resolvers.isRubricArchived?.(version.defaultRubricRef.id) ?? false;
     }
 
     // Resolve evaluation selection
@@ -456,6 +525,7 @@ export function materializeWorkloadManifest(
       judgeInstructionOverride,
       verification,
       isArchived: isTaskArchived,
+      isEffectiveRubricArchived: effectiveRubricArchived,
     });
   }
 

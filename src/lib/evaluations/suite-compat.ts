@@ -148,13 +148,22 @@ function rubricOverrideRefFromTask(task: EvaluationTask): RubricVersionRef | nul
  *  always carry evaluation + judgeInstructionOverride). */
 function executionOverridesFromTask(task: EvaluationTask): TaskExecutionOverrides {
   const overrides: TaskExecutionOverrides = {
-    evaluation: task.evaluation,
+    evaluation: cloneSelection(task.evaluation),
     judgeInstructionOverride: task.judgeInstructionOverride,
   };
   if (task.verification !== undefined) {
-    overrides.verification = task.verification;
+    overrides.verification = { ...task.verification };
   }
   return overrides;
+}
+
+/** Deep clone the legacy evaluation selection so mutating the projected
+ *  overrides can never alias (and corrupt) the frozen source suite. */
+function cloneSelection(selection: EvaluationTask["evaluation"]): EvaluationTask["evaluation"] {
+  if (selection.kind === "profile") {
+    return { kind: "profile", profile: { ...selection.profile } };
+  }
+  return { kind: selection.kind };
 }
 
 /** Judge identity from the legacy CriticRef. The suite-level reasoningPolicy

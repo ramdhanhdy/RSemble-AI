@@ -62,9 +62,13 @@ export class InMemoryTaskSetRepository implements TaskSetRepository {
     if (this.records.has(record.id)) {
       throw new StorageError("conflict", `Task Set ${record.id} already exists`);
     }
-    this.records.set(record.id, clone(record));
+    // Clone validates clone-compatibility BEFORE any map write, so a throwing
+    // clone (e.g. non-cloneable extra field) leaves no orphan record/version.
+    const clonedRecord = clone(record);
+    const clonedVersion = clone(version);
+    this.records.set(record.id, clonedRecord);
     const versionMap = new Map<number, TaskSetVersion>();
-    versionMap.set(version.version, clone(version));
+    versionMap.set(version.version, clonedVersion);
     this.versions.set(record.id, versionMap);
   }
 
@@ -102,18 +106,22 @@ export class InMemoryTaskSetRepository implements TaskSetRepository {
     }
     const newRevision = expectedRevision + 1;
     const newLatest = version.version;
+    // Clone before mutating either map: a throwing clone must leave the record
+    // revision/latestVersion and the version map untouched (Dexie parity).
+    const clonedRecord = clone(record);
+    const clonedVersion = clone(version);
     const updated: TaskSetRecord = {
-      ...clone(record),
+      ...clonedRecord,
       revision: newRevision,
       latestVersion: newLatest,
       updatedAt: Date.now(),
     };
     this.records.set(record.id, updated);
     if (versionMap) {
-      versionMap.set(version.version, clone(version));
+      versionMap.set(version.version, clonedVersion);
     } else {
       const created = new Map<number, TaskSetVersion>();
-      created.set(version.version, clone(version));
+      created.set(version.version, clonedVersion);
       this.versions.set(record.id, created);
     }
     return newRevision;
