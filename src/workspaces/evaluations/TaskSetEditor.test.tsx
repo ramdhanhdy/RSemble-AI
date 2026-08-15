@@ -1771,8 +1771,7 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     cleanup(h);
   });
 
-  it("durably materializes before lease acquisition, attempt creation, controller work, and provider call", async () => {
-    const order: string[] = [];
+  it("hands the persisted materialization id to start after durable persist", async () => {
     const repo = new InMemoryEvaluationRepository();
     const taskRepo = new InMemoryTaskRepository();
     await seedCanonicalTask(taskRepo, "canon-t", "Canonical Task", {
@@ -1787,45 +1786,8 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     ];
     await seedSuite(repo, suite);
 
-    // Task 7 persists an immutable execution input before controller.start.
-    // Passing/consuming its identity in the controller is the explicit Task 8 hand-off.
-    const orderedController = {
-      ...makeStubController(),
-      start: vi.fn(async () => {
-        const materializations = await (
-          repo as InMemoryEvaluationRepository & {
-            listTaskSetMaterializations: (taskSetId: string) => Promise<
-              Array<{
-                taskSetId: string;
-                taskSetVersion: number;
-                protocolFingerprint: string;
-                snapshot: {
-                  taskSetId: string;
-                  taskSetVersion: number;
-                  protocolFingerprint: string;
-                };
-              }>
-            >;
-          }
-        ).listTaskSetMaterializations("s1");
-        const persistedAtStart = materializations[materializations.length - 1];
-        if (
-          persistedAtStart?.taskSetId === "s1" &&
-          persistedAtStart.taskSetVersion === 1 &&
-          persistedAtStart.protocolFingerprint === persistedAtStart.snapshot.protocolFingerprint &&
-          persistedAtStart.snapshot.taskSetId === "s1" &&
-          persistedAtStart.snapshot.taskSetVersion === 1
-        ) {
-          order.push("durable-materialization");
-        }
-        order.push("lease-acquire");
-        order.push("attempt-create");
-        order.push("controller-paid-work");
-        order.push("provider-call");
-        return { ok: true as const, experimentId: "exp-1" };
-      }),
-    };
-    const trackingRepo = new TrackingTaskSetRepository(() => order.push("materialize"));
+    const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
+    const trackingRepo = new TrackingTaskSetRepository(() => undefined);
     await seedTaskSetVersion(trackingRepo, suite, 0);
 
     const h = renderWithRouter(
@@ -1834,7 +1796,7 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
         taskRepo={taskRepo}
         taskSetRepo={trackingRepo}
         models={[]}
-        controller={orderedController}
+        controller={makeStubController({ start: runCall })}
       />,
     );
     await settle();
@@ -1855,18 +1817,13 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     });
     await settle();
 
-    const mat = order.indexOf("materialize");
-    const durable = order.indexOf("durable-materialization");
-    const lease = order.indexOf("lease-acquire");
-    const attempt = order.indexOf("attempt-create");
-    const paid = order.indexOf("controller-paid-work");
-    const provider = order.indexOf("provider-call");
-    expect(mat).toBeGreaterThanOrEqual(0);
-    expect(durable).toBeGreaterThan(mat);
-    expect(lease).toBeGreaterThan(durable);
-    expect(attempt).toBeGreaterThan(lease);
-    expect(paid).toBeGreaterThan(attempt);
-    expect(provider).toBeGreaterThan(paid);
+    const rows = await repo.listTaskSetMaterializations("s1");
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const frozenId = rows[rows.length - 1]!.id;
+    expect(frozenId).not.toBe("s1");
+    expect(runCall).toHaveBeenCalledTimes(1);
+    expect(runCall).toHaveBeenCalledWith(frozenId);
+    expect(runCall).not.toHaveBeenCalledWith("s1");
     cleanup(h);
   });
 });

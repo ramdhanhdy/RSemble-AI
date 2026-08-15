@@ -15,22 +15,32 @@
 //    tab cannot start, resume, retry, recover, or commit.
 // =============================================================================
 
+import "fake-indexeddb/auto";
 import { describe, it, expect, vi } from "vitest";
 import {
   createExperimentController,
   type ExperimentControllerEvent,
+  type StartResult,
 } from "./experiment-controller";
 import {
   createExperimentUnitOfWork,
+  DexieExperimentStore,
   InMemoryExperimentStore,
 } from "../persistence/experiment-unit-of-work";
 import {
+  createEvaluationRepository,
   InMemoryEvaluationRepository,
   type TaskSetMaterializationRecord,
 } from "../persistence/evaluation-repository";
-import { InMemoryRunRepository } from "../persistence/run-repository";
-import { InMemoryExecutionLease, LEASE_TTL, type LeaseInfo } from "../execution-lease";
+import { createRunRepository, InMemoryRunRepository } from "../persistence/run-repository";
+import {
+  createExecutionLease,
+  InMemoryExecutionLease,
+  LEASE_TTL,
+  type LeaseInfo,
+} from "../execution-lease";
 import { ExecutionOwnerRegistry } from "../execution-owner";
+import { RSembleEvaluationDB } from "../persistence/database";
 import type {
   EvaluationRubric,
   EvaluationSuite,
@@ -2316,6 +2326,115 @@ describe("experiment-controller — frozen Task Set materialization start", () =
       modelKeys: ["openrouter:m1"],
     });
     expect(repaired.ok).toBe(false);
+  });
+
+  it("unresolved profile selection fails closed before lease and does not fall through to holistic", async () => {
+    const h = makeHarness();
+    const frozen = makeSuite(["t1"]);
+    frozen.tasks[0] = {
+      ...frozen.tasks[0],
+      evaluation: { kind: "profile", profile: { id: "rubric-missing", version: 1 } },
+    };
+    frozen.defaultEvaluation = { kind: "profile", profile: { id: "rubric-missing", version: 1 } };
+    await persistMaterialization(h, frozen, {
+      id: "mat-unresolved-profile-1",
+      snapshot: { rubrics: [], defaultRubric: null, defaultRubricRef: { id: "rubric-missing", version: 1 } },
+    });
+
+    const acquire = vi.spyOn(h.lease, "acquire");
+    const result = await h.controller.start("mat-unresolved-profile-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/unresolved|rubric|profile|materialization/i);
+      expect(result.error).not.toMatch(/holistic/i);
+    }
+    expect(acquire).not.toHaveBeenCalled();
+    await expectZeroExecutionSideEffects(h);
+    expect(h.executor.calls.every((call) => call.evaluation.kind !== "holistic")).toBe(true);
+  });
+
+  it("malformed materialization snapshot fails closed before lease instead of throwing", async () => {
+    const h = makeHarness();
+    const record = await persistMaterialization(h, makeSuite(["t1"]), { id: "mat-malformed-1" });
+    const stored = storedMaterializations(h).get("mat-malformed-1");
+    expect(stored).toBeDefined();
+    if (stored) {
+      Reflect.deleteProperty(stored.snapshot, "tasks");
+      Reflect.deleteProperty(stored.snapshot, "defaultModelSlots");
+      Reflect.deleteProperty(stored.snapshot, "defaultJudge");
+      Reflect.deleteProperty(stored.snapshot, "rubrics");
+    }
+
+    const acquire = vi.spyOn(h.lease, "acquire");
+    let thrown: unknown = null;
+    let result: StartResult | null = null;
+    try {
+      result = await h.controller.start(record.id);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) {
+      expect(result.error).toMatch(/invalid|corrupt|malformed|materialization/i);
+    }
+    expect(acquire).not.toHaveBeenCalled();
+    await expectZeroExecutionSideEffects(h);
+  });
+
+});
+
+describe("experiment-controller — Dexie persist to start ordering", () => {
+  it("persist then start acquires lease before createExperiment and beginTask", async () => {
+    const db = new RSembleEvaluationDB("t8-repair-" + Math.random().toString(36).slice(2));
+    await db.open();
+    const runRepo = createRunRepository(db);
+    const evalRepo = createEvaluationRepository(db, runRepo);
+    const uow = createExperimentUnitOfWork(new DexieExperimentStore(db));
+    const lease = createExecutionLease(db, { now: () => 10_000 });
+    const owner = new ExecutionOwnerRegistry();
+    let idCounter = 0;
+    const generateId = () => `dexie-${++idCounter}`;
+    const executor = makeFakeExecutor({
+      now: () => 10_000,
+      generateId,
+      behavior: () => ({ kind: "success" }),
+    });
+    const controller = createExperimentController({
+      evalRepo,
+      uow,
+      runRepo,
+      lease,
+      owner,
+      executor,
+      generateId,
+      now: () => 10_000,
+      heartbeatMs: 0,
+    });
+
+    const suite = makeSuite(["t1"]);
+    const record = makeMaterializationRecord(makeMaterializedSnapshot(suite), {
+      id: "mat-dexie-order-1",
+    });
+    await evalRepo.persistTaskSetMaterialization(record);
+
+    const acquire = vi.spyOn(lease, "acquire");
+    const create = vi.spyOn(evalRepo, "createExperiment");
+    const begin = vi.spyOn(uow, "beginTask");
+    const result = await controller.start(record.id);
+    expect(result.ok).toBe(true);
+    if (result.ok) await controller.whenIdle();
+
+    expect(acquire).toHaveBeenCalledWith({ kind: "experiment", executionId: suite.id });
+    expect(create).toHaveBeenCalled();
+    expect(begin).toHaveBeenCalled();
+    expect(acquire.mock.invocationCallOrder[0]!).toBeLessThan(create.mock.invocationCallOrder[0]!);
+    expect(create.mock.invocationCallOrder[0]!).toBeLessThan(begin.mock.invocationCallOrder[0]!);
+
+    await lease.dispose?.();
+    db.close();
+    await db.delete();
   });
 });
 

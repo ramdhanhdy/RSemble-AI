@@ -142,13 +142,60 @@ function makeExperiment(id: string, suiteId: string): ExperimentRecord {
 
 function makeMaterialization(id: string, taskSetId = "set-1"): TaskSetMaterializationRecord {
   const protocolFingerprint = "sha256:materialization-identity";
-  // Persist only checks envelope/snapshot identity alignment, not the full
-  // workload graph — lookup tests need a valid row, not a complete snapshot.
-  const snapshot = {
+  const snapshot: MaterializedWorkloadSnapshot = {
     taskSetId,
     taskSetVersion: 1,
+    tasks: [
+      {
+        memberId: "task-1",
+        taskVersionRef: { taskId: "task-1", version: 1 },
+        order: 0,
+        role: "organic",
+        stratum: null,
+        weight: 1,
+        rubricOverrideRef: null,
+        executionOverrides: null,
+        task: {
+          taskId: "task-1",
+          version: 1,
+          title: "Task 1",
+          objective: "Task 1",
+          candidateInstruction: "Do something",
+          defaultContextManifest: [],
+          responseContract: null,
+          taskVerifierRef: null,
+          source: { kind: "authored", legacyScopeKey: null, note: null },
+          createdAt: 1000,
+        },
+        effectiveRubricRef: null,
+        effectiveRubric: null,
+        evaluation: { kind: "holistic" },
+        judgeInstructionOverride: null,
+        verification: null,
+        isArchived: false,
+        isEffectiveRubricArchived: false,
+      },
+    ],
+    rubrics: [],
+    defaultRubricRef: null,
+    defaultRubric: null,
+    defaultModelSlots: [
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m1",
+        slug: "m1",
+        enabled: true,
+      },
+    ],
+    defaultJudge: { providerId: "openrouter", model: "judge" },
+    repeatPolicy: { kind: "none" },
+    missingnessPolicy: { kind: "allow-repair" },
+    protocolDefaults: {},
     protocolFingerprint,
-  } as MaterializedWorkloadSnapshot;
+    createdAt: 1000,
+  };
   return {
     id,
     taskSetId,
@@ -513,6 +560,22 @@ describe("EvaluationRepository (Dexie-backed)", () => {
       expect(await evalRepo.getTaskSetMaterialization("mat-1")).toEqual(record);
       expect(await evalRepo.getTaskSetMaterialization("mat-missing")).toBeNull();
     });
+
+    it("returns null for a stored materialization missing tasks, slots, judge, or rubrics", async () => {
+      await db.taskSetMaterializations.put({
+        id: "mat-incomplete-1",
+        taskSetId: "set-1",
+        taskSetVersion: 1,
+        protocolFingerprint: "sha256:materialization-identity",
+        snapshot: {
+          taskSetId: "set-1",
+          taskSetVersion: 1,
+          protocolFingerprint: "sha256:materialization-identity",
+        },
+        createdAt: 1000,
+      });
+      expect(await evalRepo.getTaskSetMaterialization("mat-incomplete-1")).toBeNull();
+    });
   });
 
   describe("Deprecated Profile adapter surface", () => {
@@ -826,5 +889,22 @@ describe("EvaluationRepository (In-memory)", () => {
     await evalRepo.persistTaskSetMaterialization(record);
     expect(await evalRepo.getTaskSetMaterialization("mat-mem-1")).toEqual(record);
     expect(await evalRepo.getTaskSetMaterialization("mat-missing")).toBeNull();
+  });
+
+  it("returns null for a stored materialization missing tasks, slots, judge, or rubrics", async () => {
+    const record = makeMaterialization("mat-incomplete-mem-1");
+    await evalRepo.persistTaskSetMaterialization(record);
+    const store = evalRepo as unknown as {
+      taskSetMaterializations: Map<string, TaskSetMaterializationRecord>;
+    };
+    const stored = store.taskSetMaterializations.get("mat-incomplete-mem-1");
+    expect(stored).toBeDefined();
+    if (stored) {
+      Reflect.deleteProperty(stored.snapshot, "tasks");
+      Reflect.deleteProperty(stored.snapshot, "defaultModelSlots");
+      Reflect.deleteProperty(stored.snapshot, "defaultJudge");
+      Reflect.deleteProperty(stored.snapshot, "rubrics");
+    }
+    expect(await evalRepo.getTaskSetMaterialization("mat-incomplete-mem-1")).toBeNull();
   });
 });
