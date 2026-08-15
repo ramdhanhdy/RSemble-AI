@@ -45,6 +45,12 @@ import {
   migrateSuitesToTaskSets,
   taskSetMigrationMarkerKey,
 } from "./task-set-migration";
+import type { TaskSetVersion } from "../evaluations/task-set-types";
+import {
+  materializeWorkloadManifest,
+  UnresolvedWorkloadRefError,
+  type WorkloadCatalogResolvers,
+} from "../evaluations/workload-manifest";
 
 // --- shared DB lifecycle -----------------------------------------------------
 
@@ -456,6 +462,13 @@ async function xwalks(db: RSembleEvaluationDB, kind: TaskSetOwnershipCrosswalkRo
   return db.taskSetOwnershipCrosswalk.where("kind").equals(kind).toArray();
 }
 
+/** Narrows an unresolved-ref payload to a `{ id, version }` VersionRef. */
+function isVersionRef(ref: unknown): ref is { id: string; version: number } {
+  if (ref === null || typeof ref !== "object") return false;
+  const r = ref as Record<string, unknown>;
+  return typeof r.id === "string" && typeof r.version === "number";
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -655,8 +668,42 @@ describe("migrateSuitesToTaskSets", () => {
     const res2 = await migrateSuitesToTaskSets(db2);
     expect(res2.complete).toBe(true);
     const v2 = (await db2.taskSetVersions.where("taskSetId").equals("suite-2").toArray())[0];
-    const version2 = v2.version_ as { defaultRubricRef: unknown };
+    const version2 = v2.version_ as TaskSetVersion;
     // The default rubric ref is preserved exactly (not substituted); resolution is a read-time concern.
+    expect(version2.defaultRubricRef).toEqual({ id: "rubric-missing", version: 1 });
+
+    // Resolve the migrated version against the exact Rubric catalog (the only
+    // pinned Rubric versions that exist: rubric-1 and rubric-2) and exercise
+    // the execution/materialization guard. The missing pinned ref must be
+    // reported unresolved and execution rejected without latest-version
+    // substitution.
+    const exactRubricCatalog: WorkloadCatalogResolvers = {
+      getTaskVersion: (ref) =>
+        ref.taskId === "ctask-2" && ref.version === 1 ? canonicalTaskVersion("ctask-2", 1) : null,
+      getRubricVersion: (ref) =>
+        ref.id === "rubric-1" && ref.version === 1
+          ? r1
+          : ref.id === "rubric-2" && ref.version === 1
+            ? r2
+            : null,
+    };
+    let materializeError: unknown;
+    try {
+      materializeWorkloadManifest(version2, exactRubricCatalog);
+    } catch (err) {
+      materializeError = err;
+    }
+    expect(materializeError).toBeInstanceOf(UnresolvedWorkloadRefError);
+    const unresolved = (materializeError as UnresolvedWorkloadRefError).unresolved;
+    expect(
+      unresolved.some(
+        (u) =>
+          u.field === "defaultRubricRef" &&
+          isVersionRef(u.ref) &&
+          u.ref.id === "rubric-missing",
+      ),
+    ).toBe(true);
+    // No substitution: the pinned ref on the migrated version is still the missing one.
     expect(version2.defaultRubricRef).toEqual({ id: "rubric-missing", version: 1 });
   });
 
@@ -931,6 +978,193 @@ describe("migrateSuitesToTaskSets", () => {
     // Member order/overrides preserved.
     expect(version.members.map((m) => m.id)).toEqual(["task-1", "task-2"]);
     // Source unchanged.
+    expect(await snapshotAllSources(db)).toBe(before);
+  });
+
+  // --- F1: repeat-startup terminal marker (review repair) -------------------
+
+  it("F1 repeat-startup: valid terminal marker makes repeat a no-write (storageMeta byte-for-byte unchanged)", async () => {
+    const db = await makeDb();
+    const current = suite({ version: 2 });
+    const hist = experiment({
+      id: "exp-1", suiteId: "suite-1", suiteVersion: 1,
+      snapshot: snapshot({ suiteVersion: 1, createdAt: 15, tasks: [task()] }),
+      createdAt: 15,
+    });
+    await seedSuite(db, current);
+    await seedExperiment(db, hist);
+    await seedTaskCrosswalk(db, "suite-1", 1, task(), "ctask-1", 1);
+    await seedTaskCrosswalk(db, "suite-1", 2, task(), "ctask-1", 1);
+
+    await migrateSuitesToTaskSets(db);
+    const markerBefore = await db.storageMeta.get(taskSetMigrationMarkerKey);
+    expect(markerBefore).toBeDefined();
+    const storageMetaBefore = canonicalJsonString(await db.storageMeta.toArray());
+    const completedAtBefore = (markerBefore!.value as { completedAt: number }).completedAt;
+
+    // Repeat startup must perform no writes: storageMeta byte-for-byte identical.
+    await migrateSuitesToTaskSets(db);
+    const markerAfter = await db.storageMeta.get(taskSetMigrationMarkerKey);
+    expect(canonicalJsonString(await db.storageMeta.toArray())).toBe(storageMetaBefore);
+    // The completion timestamp must not advance on repeat.
+    expect((markerAfter!.value as { completedAt: number }).completedAt).toBe(completedAtBefore);
+  });
+
+  it("F1 repeat-startup: pre-existing valid terminal marker short-circuits before planning even when a collision would abort", async () => {
+    const db = await makeDb();
+    const current = suite({ version: 1, tasks: [task()] });
+    await seedSuite(db, current);
+    await seedTaskCrosswalk(db, "suite-1", 1, task(), "ctask-1", 1);
+    // Pre-seed a valid terminal marker.
+    await db.storageMeta.put({
+      key: taskSetMigrationMarkerKey,
+      value: {
+        kind: "task-set-migration",
+        version: 1,
+        completedAt: 12345,
+        migratedSuites: 1,
+        unresolvedMembers: 0,
+        unresolvedExperiments: 0,
+        unresolvedFusionOwners: 0,
+      },
+    });
+    // Introduce a non-identical collision that would abort if the plan ran.
+    await db.taskSets.put({
+      id: "suite-1",
+      record: {
+        id: "suite-1", latestVersion: 99, name: "Tampered", description: "",
+        createdAt: 1, updatedAt: 1, archivedAt: null, revision: 0, origin: "legacy-suite",
+      },
+      latestVersion: 99, createdAt: 1, updatedAt: 1, archivedAt: null, origin: "legacy-suite", revision: 0,
+    });
+    const storageMetaBefore = canonicalJsonString(await db.storageMeta.toArray());
+    const versionsBefore = await db.taskSetVersions.count();
+    const xwalksBefore = await db.taskSetOwnershipCrosswalk.count();
+
+    const result = await migrateSuitesToTaskSets(db);
+
+    expect(result.complete).toBe(true);
+    expect(await db.taskSetVersions.count()).toBe(versionsBefore);
+    expect(await db.taskSetOwnershipCrosswalk.count()).toBe(xwalksBefore);
+    expect(canonicalJsonString(await db.storageMeta.toArray())).toBe(storageMetaBefore);
+  });
+
+  // --- F2: Fusion coordinate ambiguity / Trial-Playbook disagreement ---------
+
+  it("F2 fusion-owner: duplicate-coordinate ambiguity (same suiteRef, distinct digests) stays unresolved", async () => {
+    const db = await makeDb();
+    // Two experiments share the same (suiteId, suiteVersion, protocolFingerprint)
+    // coordinate but carry distinct workload digests — possible because the
+    // migration digest includes fields the legacy protocol fingerprint omits
+    // (here: judgeInstructionOverride). judgeInstructionOverride is NOT part of
+    // the legacy definition digest, so both tasks share one crosswalk entry.
+    const tA = task({ judgeInstructionOverride: "Judge A." });
+    const tB = task({ judgeInstructionOverride: "Judge B." });
+    const eA = experiment({
+      id: "exp-a", suiteId: "suite-1", suiteVersion: 1,
+      snapshot: snapshot({ suiteVersion: 1, protocolFingerprint: "sha256:shared", tasks: [tA], createdAt: 10 }),
+      createdAt: 10,
+    });
+    const eB = experiment({
+      id: "exp-b", suiteId: "suite-1", suiteVersion: 1,
+      snapshot: snapshot({ suiteVersion: 1, protocolFingerprint: "sha256:shared", tasks: [tB], createdAt: 20 }),
+      createdAt: 20,
+    });
+    await seedExperiment(db, eA);
+    await seedExperiment(db, eB);
+    // Current suite at a different version so its coordinate differs.
+    const current = suite({ version: 2, tasks: [task({ judgeInstructionOverride: "Current." })] });
+    await seedSuite(db, current);
+    await seedTaskCrosswalk(db, "suite-1", 1, tA, "ctask-1", 1);
+    await seedTaskCrosswalk(db, "suite-1", 2, current.tasks[0], "ctask-1", 1);
+    // Fusion Study references the ambiguous shared coordinate.
+    const suiteRef: SuiteSnapshotRef = { suiteId: "suite-1", suiteVersion: 1, protocolFingerprint: "sha256:shared" };
+    await seedFusionFull(db, suiteRef, "exploratory");
+    const before = await snapshotAllSources(db);
+
+    const result = await migrateSuitesToTaskSets(db);
+
+    expect(result.complete).toBe(true);
+    expect(result.unresolvedFusionOwners).toBe(1);
+    const fusionXwalk = (await xwalks(db, "fusion-owner"))[0];
+    expect(fusionXwalk).toBeDefined();
+    expect(fusionXwalk.status).toBe("unresolved");
+    expect(fusionXwalk.version).toBeNull();
+    expect(fusionXwalk.note).toBe("ambiguous-suiteRef");
+    // No Fusion entity reparented.
+    expect(await snapshotAllSources(db)).toBe(before);
+  });
+
+  it("F2 fusion-owner: Trial/Playbook suiteRef disagreement with an otherwise unique coordinate stays unresolved", async () => {
+    const db = await makeDb();
+    const current = suite({ version: 1, tasks: [task()] });
+    await seedSuite(db, current);
+    await seedTaskCrosswalk(db, "suite-1", 1, task(), "ctask-1", 1);
+    const suiteRef: SuiteSnapshotRef = {
+      suiteId: "suite-1", suiteVersion: 1, protocolFingerprint: computeProtocolFingerprint(current, []),
+    };
+    await seedFusionFull(db, suiteRef, "exploratory");
+    // Overwrite one Trial so its suiteRef disagrees with the Study's.
+    const disagreeing = trial("trial-1", "study-1", {
+      suiteId: "suite-1", suiteVersion: 1, protocolFingerprint: "sha256:different",
+    });
+    await db.fusionTrials.put({
+      id: disagreeing.id, trial: disagreeing, revision: disagreeing.revision,
+      studyId: disagreeing.studyId, stage: disagreeing.stage, status: disagreeing.status,
+      createdAt: disagreeing.createdAt,
+    });
+    const before = await snapshotAllSources(db);
+
+    const result = await migrateSuitesToTaskSets(db);
+
+    expect(result.complete).toBe(true);
+    expect(result.unresolvedFusionOwners).toBe(1);
+    const fusionXwalk = (await xwalks(db, "fusion-owner"))[0];
+    expect(fusionXwalk.status).toBe("unresolved");
+    expect(fusionXwalk.version).toBeNull();
+    expect(fusionXwalk.note).toBe("trial-or-playbook-suiteRef-disagreement");
+    expect(await snapshotAllSources(db)).toBe(before);
+  });
+
+  // --- F3: locale-independent ordinal ordering (review repair) ---------------
+
+  it("F3 locale-independent ordering: equal suiteVersion/createdAt with locale-differing experiment ids yields ordinal digest order and version assignment", async () => {
+    const db = await makeDb();
+    // Two experiments tied on suiteVersion AND executedAt; their ids ("exp-a"
+    // vs "exp-B") collate differently under a case-insensitive host locale
+    // (en-US: "exp-a" < "exp-B") than under code-unit ordinal ("exp-B" < "exp-a"
+    // because 0x42 < 0x61). Canonical version assignment must follow the
+    // locale-independent ordinal order, not the host collation.
+    const tLower = task({ judgeInstructionOverride: "Lower id digest." });
+    const tUpper = task({ judgeInstructionOverride: "Upper id digest." });
+    const eLower = experiment({
+      id: "exp-a", suiteId: "suite-1", suiteVersion: 1,
+      snapshot: snapshot({ suiteVersion: 1, protocolFingerprint: "sha256:lower", tasks: [tLower], createdAt: 100 }),
+      createdAt: 100,
+    });
+    const eUpper = experiment({
+      id: "exp-B", suiteId: "suite-1", suiteVersion: 1,
+      snapshot: snapshot({ suiteVersion: 1, protocolFingerprint: "sha256:upper", tasks: [tUpper], createdAt: 100 }),
+      createdAt: 100,
+    });
+    await seedExperiment(db, eLower);
+    await seedExperiment(db, eUpper);
+    const current = suite({ version: 2, tasks: [task({ judgeInstructionOverride: "Current." })] });
+    await seedSuite(db, current);
+    await seedTaskCrosswalk(db, "suite-1", 1, tLower, "ctask-1", 1);
+    await seedTaskCrosswalk(db, "suite-1", 2, current.tasks[0], "ctask-1", 1);
+    const before = await snapshotAllSources(db);
+
+    const result = await migrateSuitesToTaskSets(db);
+
+    expect(result.complete).toBe(true);
+    expect(result.createdVersions).toBe(3);
+    // Ordinal tie-break: "exp-B" (0x42) < "exp-a" (0x61), so exp-B is the
+    // chronologically first observation → canonical version 1.
+    const upperXwalk = (await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-B");
+    const lowerXwalk = (await xwalks(db, "experiment-owner")).find((r) => r.experimentId === "exp-a");
+    expect(upperXwalk?.version).toBe(1);
+    expect(lowerXwalk?.version).toBe(2);
     expect(await snapshotAllSources(db)).toBe(before);
   });
 
