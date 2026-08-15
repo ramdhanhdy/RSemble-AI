@@ -11,7 +11,11 @@ import type {
   ExperimentSnapshot,
 } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
-import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
+import type {
+  ExperimentController,
+  SimpleResult,
+  StartResult,
+} from "../../lib/evaluations/experiment-controller";
 import type { CandidateEvaluation, ModelSlot } from "../../studio-data";
 import { RepositoryContext } from "../../lib/persistence/repository-context";
 import { StorageError } from "../../lib/persistence/database";
@@ -312,16 +316,22 @@ describe("ExperimentResults — winner and provisional ranking", () => {
 });
 
 describe("ExperimentResults — terminal recovery (Task 7)", () => {
-  function makeController(retryResult: { ok: boolean; error?: string } = { ok: true }) {
+  function makeController(retryResult: SimpleResult = { ok: true }): ExperimentController {
     return {
-      retryIncomplete: vi.fn(async () => retryResult),
-      repairMissingCells: vi.fn(async () => ({ ok: true })),
-      addModelAndRun: vi.fn(async () => ({ ok: true, experimentId: "exp-1" })),
+      start: vi.fn(async (_materializationId: string): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       requestPause: vi.fn(async () => {}),
+      resume: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      abort: vi.fn(async () => {}),
+      retryIncomplete: vi.fn(async (): Promise<SimpleResult> => retryResult),
+      repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      addModelAndRun: vi.fn(async (): Promise<StartResult> => ({ ok: true, experimentId: "exp-1" })),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
       whenIdle: vi.fn(async () => {}),
-    } as unknown as ExperimentController;
+    };
   }
 
   function makeFailedExperiment(): {
@@ -446,16 +456,23 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
 });
 
 describe("ExperimentResults — recovery controls (Task 12)", () => {
-  function makeController(overrides: Partial<Record<string, unknown>> = {}) {
+  function makeController(overrides: Partial<ExperimentController> = {}): ExperimentController {
     return {
-      retryIncomplete: vi.fn(async () => ({ ok: true })),
-      repairMissingCells: vi.fn(async () => ({ ok: true })),
+      start: vi.fn(async (_materializationId: string): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       requestPause: vi.fn(async () => {}),
+      resume: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      abort: vi.fn(async () => {}),
+      retryIncomplete: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      addModelAndRun: vi.fn(async (): Promise<StartResult> => ({ ok: true, experimentId: "exp-1" })),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
       whenIdle: vi.fn(async () => {}),
       ...overrides,
-    } as unknown as ExperimentController;
+    };
   }
 
   /** Desktop media query so the full result matrix (with cell actions) renders. */
@@ -1288,16 +1305,22 @@ describe("ExperimentResults — add model (roster extension)", () => {
 
   function makeControllerWithAddModel(
     result: { ok: true; experimentId: string } | { ok: false; error: string },
-  ) {
+  ): ExperimentController {
     return {
-      retryIncomplete: vi.fn(async () => ({ ok: true })),
-      repairMissingCells: vi.fn(async () => ({ ok: true })),
-      addModelAndRun: vi.fn(async () => result),
+      start: vi.fn(async (_materializationId: string): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       requestPause: vi.fn(async () => {}),
+      resume: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      abort: vi.fn(async () => {}),
+      retryIncomplete: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      addModelAndRun: vi.fn(async (): Promise<StartResult> => result),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
       whenIdle: vi.fn(async () => {}),
-    } as unknown as ExperimentController;
+    };
   }
 
   const READY = ["openrouter" as const];

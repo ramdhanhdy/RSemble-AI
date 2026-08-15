@@ -253,7 +253,10 @@ function makeValidSuite(id: string): EvaluationSuite {
 
 function makeStubController(overrides: Partial<ExperimentController> = {}): ExperimentController {
   return {
-    start: vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" })),
+    start: vi.fn(async (_materializationId: string) => ({
+      ok: true as const,
+      experimentId: "exp-1",
+    })),
     requestPause: vi.fn(async () => {}),
     resume: vi.fn(async () => ({ ok: true as const })),
     abort: vi.fn(async () => {}),
@@ -507,7 +510,12 @@ describe("TaskSetEditor — save", () => {
     expect(savedSuite).toMatchObject({ name: "Version Two", version: 2 });
     expect(savedRecord).toMatchObject({ latestVersion: 2 });
     expect(savedV2?.members.map((member) => member.id)).toEqual(["member-1"]);
-    expect(runCall).toHaveBeenCalledWith("s1");
+    const rows = await repo.listTaskSetMaterializations("s1");
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const frozenId = rows[rows.length - 1]!.id;
+    expect(frozenId).not.toBe("s1");
+    expect(runCall).toHaveBeenCalledWith(frozenId);
+    expect(runCall).not.toHaveBeenCalledWith("s1");
     cleanup(h);
   });
 
@@ -618,7 +626,7 @@ describe("TaskSetEditor — run validation", () => {
 });
 
 describe("TaskSetEditor — run execution", () => {
-  it("Run click calls controller.start with the persisted suite id and navigates", async () => {
+  it("Run click calls controller.start with the persisted materialization id and navigates", async () => {
     const repo = new InMemoryEvaluationRepository();
     const taskRepo = new InMemoryTaskRepository();
     const taskSetRepo = new InMemoryTaskSetRepository();
@@ -655,7 +663,12 @@ describe("TaskSetEditor — run execution", () => {
       await flush();
     });
     await settle();
-    expect(controller.start).toHaveBeenCalledWith("s1");
+    const rows = await repo.listTaskSetMaterializations("s1");
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const frozenId = rows[rows.length - 1]!.id;
+    expect(frozenId).not.toBe("s1");
+    expect(controller.start).toHaveBeenCalledWith(frozenId);
+    expect(controller.start).not.toHaveBeenCalledWith("s1");
     expect(h.$("[data-route='experiment-progress']")).toBeTruthy();
     cleanup(h);
   });
@@ -1399,8 +1412,13 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     });
     await settle();
 
+    const rows = await repo.listTaskSetMaterializations("s1");
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const frozenId = rows[rows.length - 1]!.id;
+    expect(frozenId).not.toBe("s1");
     expect(runCall).toHaveBeenCalledTimes(1);
-    expect(runCall).toHaveBeenCalledWith("s1");
+    expect(runCall).toHaveBeenCalledWith(frozenId);
+    expect(runCall).not.toHaveBeenCalledWith("s1");
     expect(h.$("[data-route='experiment-progress']")).toBeTruthy();
     cleanup(h);
   });

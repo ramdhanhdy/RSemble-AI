@@ -13,7 +13,7 @@ import type {
 
 const { mockController, mockEvalRepo, mockRunRepo } = vi.hoisted(() => {
   const controller = {
-    start: vi.fn(async () => ({ ok: true, experimentId: "exp-1" })),
+    start: vi.fn(async (_materializationId: string) => ({ ok: true, experimentId: "exp-1" })),
     requestPause: vi.fn(async () => {}),
     resume: vi.fn(async () => ({ ok: true })),
     abort: vi.fn(async () => {}),

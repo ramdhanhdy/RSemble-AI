@@ -24,11 +24,19 @@ import {
   createExperimentUnitOfWork,
   InMemoryExperimentStore,
 } from "../persistence/experiment-unit-of-work";
-import { InMemoryEvaluationRepository } from "../persistence/evaluation-repository";
+import {
+  InMemoryEvaluationRepository,
+  type TaskSetMaterializationRecord,
+} from "../persistence/evaluation-repository";
 import { InMemoryRunRepository } from "../persistence/run-repository";
 import { InMemoryExecutionLease, LEASE_TTL, type LeaseInfo } from "../execution-lease";
 import { ExecutionOwnerRegistry } from "../execution-owner";
-import type { ExperimentRecord, EvaluationSuite, EvaluationTask } from "./evaluation-types";
+import type {
+  EvaluationRubric,
+  EvaluationSuite,
+  EvaluationTask,
+  ExperimentRecord,
+} from "./evaluation-types";
 import type { FullRunSummaryV2, RunRecordV2, RunSummary } from "../persistence/run-types";
 import type { RunExecutor, RunExecutorEvents, RunRequest } from "../run-executor";
 import { candidateIdForSlot } from "../pipeline";
@@ -36,6 +44,9 @@ import { type JudgeReport, type ModelSlot } from "../../studio-data";
 import { StorageError } from "../persistence/database";
 import { rotateExperimentRoster } from "./experiment-roster-extension";
 import { createExperimentRecord } from "./experiment-engine";
+import type { MaterializedTask, MaterializedWorkloadSnapshot } from "./workload-manifest";
+import type { TaskVersion } from "../tasks/task-types";
+
 
 // --- Fixtures -------------------------------------------------------------------
 
@@ -342,6 +353,141 @@ function makeHarness(
 async function seedSuite(h: Harness, suite: EvaluationSuite): Promise<void> {
   await h.evalRepo.saveSuite(suite, 0);
 }
+function makeTaskVersionFromEvalTask(task: EvaluationTask, createdAt: number): TaskVersion {
+  return {
+    taskId: task.id,
+    version: 1,
+    title: task.title,
+    objective: task.title,
+    candidateInstruction: task.prompt,
+    defaultContextManifest: [],
+    responseContract: null,
+    taskVerifierRef: null,
+    source: { kind: "authored", legacyScopeKey: null, note: null },
+    createdAt,
+  };
+}
+
+function makeFrozenRubric(): EvaluationRubric {
+  return {
+    id: "rubric-frozen",
+    version: 1,
+    name: "Frozen Rubric",
+    description: "frozen",
+    judgeInstruction: "Grade the frozen snapshot.",
+    criteria: [
+      {
+        id: "c1",
+        kind: "graded",
+        name: "Accuracy",
+        description: "Factual correctness",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+    ],
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
+}
+
+function makeMaterializedSnapshot(
+  suite: EvaluationSuite,
+  overrides: Partial<MaterializedWorkloadSnapshot> = {},
+): MaterializedWorkloadSnapshot {
+  const tasks: MaterializedTask[] = suite.tasks.map((task) => ({
+    memberId: task.id,
+    taskVersionRef: { taskId: task.id, version: 1 },
+    order: task.order,
+    role: "organic",
+    stratum: null,
+    weight: 1,
+    rubricOverrideRef: task.evaluation.kind === "profile" ? { ...task.evaluation.profile } : null,
+    executionOverrides: null,
+    task: makeTaskVersionFromEvalTask(task, suite.createdAt),
+    effectiveRubricRef: task.evaluation.kind === "profile" ? { ...task.evaluation.profile } : null,
+    effectiveRubric: null,
+    evaluation: task.evaluation,
+    judgeInstructionOverride: task.judgeInstructionOverride || null,
+    verification: task.verification ?? null,
+    isArchived: false,
+    isEffectiveRubricArchived: false,
+  }));
+  return {
+    taskSetId: suite.id,
+    taskSetVersion: suite.version,
+    tasks,
+    rubrics: [],
+    defaultRubricRef:
+      suite.defaultEvaluation.kind === "profile" ? { ...suite.defaultEvaluation.profile } : null,
+    defaultRubric: null,
+    defaultModelSlots: suite.modelSlots.map((slot) => ({ ...slot })),
+    defaultJudge: {
+      providerId: suite.defaultJudge.providerId,
+      model: suite.defaultJudge.model,
+    },
+    repeatPolicy: { kind: "none" },
+    missingnessPolicy: { kind: "allow-repair" },
+    protocolDefaults: suite.reasoningPolicy
+      ? { reasoningPolicy: { ...suite.reasoningPolicy } }
+      : {},
+    protocolFingerprint:
+      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    createdAt: suite.createdAt,
+    ...overrides,
+    tasks: overrides.tasks ?? tasks,
+  };
+}
+
+function makeMaterializationRecord(
+  snapshot: MaterializedWorkloadSnapshot,
+  overrides: Partial<TaskSetMaterializationRecord> = {},
+): TaskSetMaterializationRecord {
+  return {
+    id: "mat-1",
+    taskSetId: snapshot.taskSetId,
+    taskSetVersion: snapshot.taskSetVersion,
+    protocolFingerprint: snapshot.protocolFingerprint,
+    snapshot,
+    createdAt: snapshot.createdAt,
+    ...overrides,
+  };
+}
+
+async function persistMaterialization(
+  h: Harness,
+  suite: EvaluationSuite,
+  overrides: Partial<Omit<TaskSetMaterializationRecord, "snapshot">> & {
+    snapshot?: Partial<MaterializedWorkloadSnapshot>;
+  } = {},
+): Promise<TaskSetMaterializationRecord> {
+  const { snapshot: snapshotOverrides, ...recordOverrides } = overrides;
+  const snapshot = makeMaterializedSnapshot(suite, snapshotOverrides ?? {});
+  const record = makeMaterializationRecord(snapshot, recordOverrides);
+  await h.evalRepo.persistTaskSetMaterialization(record);
+  return record;
+}
+
+type InMemoryMaterializationStore = {
+  taskSetMaterializations: Map<string, TaskSetMaterializationRecord>;
+};
+
+
+function storedMaterializations(h: Harness): Map<string, TaskSetMaterializationRecord> {
+  // In-memory repo keeps the append-only map private; tests mutate the stored
+  // clone to inject corrupt rows the public persist API refuses.
+  const store = h.evalRepo as unknown as InMemoryMaterializationStore;
+  return store.taskSetMaterializations;
+}
+
+
+async function expectZeroExecutionSideEffects(h: Harness): Promise<void> {
+  expect(h.leaseStore.lease).toBeNull();
+  expect(h.owner.get()).toBeNull();
+  expect(await h.evalRepo.listExperiments()).toHaveLength(0);
+  expect(h.executor.calls).toHaveLength(0);
+  expect(h.store.runDetails.size).toBe(0);
+}
+
 
 function taskIds(executor: FakeExecutor): string[] {
   return executor.calls.map((c) => (c.source.kind === "experiment" ? c.source.taskId : "adhoc"));
@@ -1974,3 +2120,201 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     expect(h.executor.calls).toHaveLength(0);
   });
 });
+
+describe("experiment-controller — frozen Task Set materialization start", () => {
+  it("start consumes a persisted Task Set materialization before any lease, experiment, attempt, or executor side effect", async () => {
+    const h = makeHarness();
+    const live = makeSuite(["t1"]);
+    live.tasks[0] = { ...live.tasks[0], prompt: "LIVE PROMPT" };
+    live.modelSlots = [...live.modelSlots, makeSlot("s3", "m3")];
+    live.defaultJudge = { providerId: "openrouter", model: "live-judge" };
+    await seedSuite(h, live);
+
+    const frozenRubric = makeFrozenRubric();
+    const frozen = makeSuite(["t1"]);
+    frozen.tasks[0] = {
+      ...frozen.tasks[0],
+      prompt: "FROZEN PROMPT",
+      evaluation: { kind: "profile", profile: { id: frozenRubric.id, version: 1 } },
+    };
+    frozen.defaultEvaluation = { kind: "profile", profile: { id: frozenRubric.id, version: 1 } };
+    frozen.defaultJudge = { providerId: "openrouter", model: "frozen-judge" };
+    const record = await persistMaterialization(h, frozen, {
+      id: "mat-frozen-1",
+      snapshot: {
+        rubrics: [frozenRubric],
+        defaultRubric: frozenRubric,
+        defaultRubricRef: { id: frozenRubric.id, version: 1 },
+      },
+    });
+
+    const storedLive = await h.evalRepo.getSuite("suite-1");
+    if (storedLive) storedLive.tasks[0] = { ...storedLive.tasks[0], prompt: "EVEN NEWER LIVE PROMPT" };
+
+    const acquire = vi.spyOn(h.lease, "acquire");
+    const getSuite = vi.spyOn(h.evalRepo, "getSuite");
+    const result = await h.controller.start("mat-frozen-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await h.controller.whenIdle();
+
+    expect(getSuite).not.toHaveBeenCalled();
+    expect(acquire).toHaveBeenCalledWith({ kind: "experiment", executionId: "suite-1" });
+    expect(acquire.mock.invocationCallOrder[0]).toBeGreaterThan(0);
+
+    const experiment = await h.evalRepo.getExperiment(result.experimentId);
+    expect(experiment).not.toBeNull();
+    expect(
+      "materializationId" in experiment! && experiment.materializationId === "mat-frozen-1",
+    ).toBe(true);
+    expect(experiment!.snapshot.tasks[0]).toMatchObject({
+      prompt: "FROZEN PROMPT",
+      source: { kind: "authored", legacyScopeKey: null, note: null },
+      taskVersionRef: { taskId: "t1", version: 1 },
+    });
+    expect(experiment!.snapshot.modelSlots.map((slot) => slot.id)).toEqual(["s1", "s2"]);
+    expect(experiment!.snapshot.defaultJudge).toEqual({
+      providerId: "openrouter",
+      model: "frozen-judge",
+    });
+    expect(experiment!.snapshot.profiles).toEqual([frozenRubric]);
+    expect(experiment!.protocolFingerprint).toBe(experiment!.snapshot.protocolFingerprint);
+    expect(record.protocolFingerprint).toBe(record.snapshot.protocolFingerprint);
+    expect(experiment!.protocolFingerprint).not.toBe(record.protocolFingerprint);
+
+    expect(h.executor.calls).toHaveLength(1);
+    expect(h.executor.calls[0].task.prompt).toBe("FROZEN PROMPT");
+    expect(h.executor.calls[0].slots.map((slot) => slot.id)).toEqual(["s1", "s2"]);
+    expect(h.executor.calls[0].critic).toEqual({
+      providerId: "openrouter",
+      model: "frozen-judge",
+    });
+    expect(h.executor.calls[0].evaluation).toMatchObject({
+      kind: "profile",
+      profile: frozenRubric,
+    });
+    const run = await h.runRepo.get(h.executor.calls[0].source.kind === "experiment"
+      ? experiment!.tasks[0].attempts[0].runId!
+      : "");
+    expect(run).not.toBeNull();
+    if (run && run.source.kind === "experiment") {
+      expect(run.source.protocolFingerprint).toBe(experiment!.protocolFingerprint);
+      expect(run.source.suiteId).toBe("suite-1");
+      expect(run.source.suiteVersion).toBe(1);
+    }
+  });
+
+  it("missing materialization yields explicit failure and zero side effects", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+    const result = await h.controller.start("mat-missing");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/materialization/i);
+    await expectZeroExecutionSideEffects(h);
+  });
+
+  it("corrupt materialization (identity/snapshot fingerprint mismatch) yields explicit failure and zero side effects", async () => {
+    const h = makeHarness();
+    await persistMaterialization(h, makeSuite(["t1"]), { id: "mat-broken-1" });
+    const stored = storedMaterializations(h).get("mat-broken-1");
+    expect(stored).toBeDefined();
+    if (stored) stored.snapshot.protocolFingerprint = "sha256:tampered-identity-digest";
+    const result = await h.controller.start("mat-broken-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/invalid|corrupt|mismatch|materialization/i);
+      expect(result.error).not.toMatch(/^Suite .+ not found$/);
+    }
+    await expectZeroExecutionSideEffects(h);
+  });
+
+  it("mismatched materialization vs live Suite does not execute the live Suite", async () => {
+    const h = makeHarness();
+    const live = makeSuite(["t1"]);
+    live.tasks[0] = { ...live.tasks[0], prompt: "LIVE PROMPT" };
+    live.modelSlots = [...live.modelSlots, makeSlot("s3", "m3")];
+    live.defaultJudge = { providerId: "openrouter", model: "live-judge" };
+    await seedSuite(h, live);
+
+    const frozen = makeSuite(["t1"]);
+    frozen.tasks[0] = { ...frozen.tasks[0], prompt: "FROZEN PROMPT" };
+    frozen.defaultJudge = { providerId: "openrouter", model: "frozen-judge" };
+    const record = await persistMaterialization(h, frozen, { id: "mat-mismatch-1" });
+
+    const result = await h.controller.start(record.id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await h.controller.whenIdle();
+
+    const experiment = await h.evalRepo.getExperiment(result.experimentId);
+    expect(experiment!.snapshot.tasks[0].prompt).toBe("FROZEN PROMPT");
+    expect(experiment!.snapshot.tasks[0]).toMatchObject({
+      source: { kind: "authored", legacyScopeKey: null, note: null },
+    });
+    expect(h.executor.calls[0].task.prompt).toBe("FROZEN PROMPT");
+    expect(h.executor.calls[0].slots.map((slot) => slot.id)).not.toContain("s3");
+    expect(h.executor.calls[0].critic.model).toBe("frozen-judge");
+  });
+
+  it("replay of an already-consumed materialization yields explicit failure and zero new side effects", async () => {
+    const h = makeHarness();
+    const suite = makeSuite(["t1"]);
+    await persistMaterialization(h, suite, { id: "mat-replay-1" });
+
+    const first = await h.controller.start("mat-replay-1");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    await h.controller.whenIdle();
+    const afterFirst = await h.evalRepo.listExperiments();
+    expect(afterFirst).toHaveLength(1);
+    expect(
+      "materializationId" in afterFirst[0] && afterFirst[0].materializationId === "mat-replay-1",
+    ).toBe(true);
+    const executorCalls = h.executor.calls.length;
+
+    const second = await h.controller.start("mat-replay-1");
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toMatch(/replay|already|consumed|materialization/i);
+    expect(await h.evalRepo.listExperiments()).toHaveLength(1);
+    expect(h.executor.calls).toHaveLength(executorCalls);
+    expect(h.leaseStore.lease).toBeNull();
+    expect(h.owner.get()).toBeNull();
+  });
+
+  it("characterization: unit-of-work, owner, streams, retry, roster, judge remain unchanged when start is given a valid frozen snapshot", async () => {
+    const h = makeHarness();
+    const suite = makeSuite(["t1", "t2", "t3"]);
+    const record = await persistMaterialization(h, suite, { id: "mat-char-1" });
+    const result = await h.controller.start(record.id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await h.controller.whenIdle();
+
+    expect(taskIds(h.executor)).toEqual(["t1", "t2", "t3"]);
+    const experiment = await h.evalRepo.getExperiment(result.experimentId);
+    expect(experiment!.status).toBe("completed");
+    expect(experiment!.execution).toBeNull();
+    expect("materializationId" in experiment! && experiment.materializationId === record.id).toBe(
+      true,
+    );
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+    for (const runId of experiment!.tasks.map((task) => task.attempts[0].runId)) {
+      const run = await h.runRepo.get(runId!);
+      expect(run!.mode).toBe("rank");
+      if (run && run.source.kind === "experiment") {
+        expect(run.source.protocolFingerprint).toBe(experiment!.protocolFingerprint);
+        expect(run.source.experimentId).toBe(result.experimentId);
+      }
+    }
+
+    const retried = await h.controller.retryIncomplete(result.experimentId);
+    expect(retried.ok).toBe(false);
+    const repaired = await h.controller.repairMissingCells(result.experimentId, {
+      taskId: "t1",
+      modelKeys: ["openrouter:m1"],
+    });
+    expect(repaired.ok).toBe(false);
+  });
+});
+
