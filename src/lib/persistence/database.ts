@@ -17,6 +17,9 @@
 //   v4 — additive typed cross-family relations (1 table): taskFamilyRelations.
 //   v5 — additive Task Set record/version tables (2 tables): taskSets,
 //        taskSetVersions. The legacy Suite table is unchanged.
+//   v6 — additive legacy ownership crosswalk (1 table):
+//        taskSetOwnershipCrosswalk (child 03 Task 4). Maps reconstructed
+//        Suite/Experiment/Fusion-owner coordinates to exact Task Set Versions.
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
@@ -277,6 +280,32 @@ export interface TaskSetVersionRow {
   createdAt: number;
 }
 
+/** Legacy Suite/Experiment/Fusion-owner → Task Set Version crosswalk row
+ *  (schema v6, child 03 Task 4). Discriminated by `kind`; one row per
+ *  deterministic owner coordinate. `version` is null and `status` is
+ *  "unresolved" when the owner could not be pinned to an exact reconstructed
+ *  Task Set Version. The migration writes these additively; legacy entity
+ *  payloads are never modified. */
+export interface TaskSetOwnershipCrosswalkRow {
+  key: string;
+  kind: "suite-manifest" | "experiment-owner" | "fusion-owner";
+  taskSetId: string;
+  version: number | null;
+  /** Migration workload digest (`sha256:<hex>`) for suite-manifest/experiment
+   *  rows; null for unresolved fusion-owner rows. */
+  digest: string | null;
+  status: "resolved" | "unresolved";
+  /** Member ids that remained unresolved on the mapped version. */
+  unresolvedMemberIds?: string[];
+  /** Full frozen suiteRef for fusion-owner rows. */
+  suiteRef?: { suiteId: string; suiteVersion: number; protocolFingerprint: string };
+  /** Experiment id for experiment-owner rows. */
+  experimentId?: string;
+  /** Optional human-readable note for unresolved rows. */
+  note?: string | null;
+  updatedAt: number;
+}
+
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -354,7 +383,8 @@ export class RSembleEvaluationDB extends Dexie {
   // Task Set tables (schema v5)
   taskSets!: Table<TaskSetRecordRow, string>;
   taskSetVersions!: Table<TaskSetVersionRow, [string, number]>;
-
+  // Legacy ownership crosswalk (schema v6, child 03 Task 4)
+  taskSetOwnershipCrosswalk!: Table<TaskSetOwnershipCrosswalkRow, string>;
   /** Current storage lifecycle state. */
   private _storageState: StorageState = "ready";
   private stateListeners = new Set<StateListener>();
@@ -418,6 +448,14 @@ export class RSembleEvaluationDB extends Dexie {
     this.version(5).stores({
       taskSets: "id, updatedAt, archivedAt, origin",
       taskSetVersions: "[taskSetId+version], taskSetId, createdAt",
+    });
+
+    // v6: additive legacy ownership crosswalk (child 03 Task 4, spec §8.1/§8.2,
+    // §10). One discriminated store maps reconstructed Suite-manifest,
+    // Experiment, and Fusion-owner coordinates to exact Task Set Versions
+    // (or explicit unresolved states). No existing table is redefined.
+    this.version(6).stores({
+      taskSetOwnershipCrosswalk: "key, kind, taskSetId",
     });
 
     this.on("blocked", () => {

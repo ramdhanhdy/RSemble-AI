@@ -44,7 +44,6 @@ import { canonicalJsonString, computeProtocolFingerprint } from "../evaluations/
 import {
   migrateSuitesToTaskSets,
   taskSetMigrationMarkerKey,
-  type TaskSetMigrationResult,
 } from "./task-set-migration";
 
 // --- shared DB lifecycle -----------------------------------------------------
@@ -430,7 +429,7 @@ async function seedFusionFull(
   const att = attempt("attempt-1", "study-1");
   await db.fusionAttempts.put({ id: att.id, attempt: att, studyId: att.studyId, createdAt: att.createdAt });
   const obs = observation("obs-1", "trial-1");
-  await db.fusionObservations.put({ id: obs.id, observation: obs, trialId: obs.trialId, createdAt: obs.createdAt });
+  await db.fusionObservations.put({ id: obs.id, observation: obs, trialId: obs.trialId, createdAt: obs.startedAt });
   const pb = playbook("playbook-1", "study-1", suiteRef, claimLevel);
   await db.fusionPlaybooks.put({ id: pb.id, playbook: pb, studyId: pb.studyId, createdAt: pb.createdAt });
 }

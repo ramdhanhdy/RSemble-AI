@@ -667,7 +667,7 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(true);
     expect(db.tables.some((t) => t.name === "tasks")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskFamilyRelations")).toBe(true);
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBe(6);
   });
 
   it("upgrades a v4-seeded database to v5 additively without losing v1-v4 rows", async () => {
@@ -757,7 +757,7 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "taskSets")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskSetVersions")).toBe(true);
     expect(db.tables.some((t) => t.name === "suites")).toBe(true);
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBe(6);
   });
 
   it("does not write Task Set rows into the legacy Suite table", async () => {
