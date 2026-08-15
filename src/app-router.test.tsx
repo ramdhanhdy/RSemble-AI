@@ -32,6 +32,7 @@ import "./workspaces/evaluations/RubricDetail";
 import "./workspaces/evaluations/TaskSetList";
 import "./workspaces/evaluations/TaskSetEditor";
 import "./workspaces/evaluations/FusionStudyView";
+import "./workspaces/evaluations/ExperimentRoute";
 import "./workspaces/tasks/TaskCatalog";
 import "./workspaces/tasks/TaskRoute";
 import { AppRoutes } from "./app-router";
@@ -1023,6 +1024,260 @@ describe("AppRouter — Fusion owner redirects (spec §4, §8.2)", () => {
       fusionRepo,
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/fusion/study-1");
+    cleanup(h);
+  });
+});
+
+describe("AppRouter — Evaluation execution results routes (spec §5.1, §4)", () => {
+  it("direct-loads canonical /evaluations/results/:evaluationExecutionId for completed execution", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await repo.createExperiment({
+      id: "exp-completed-1",
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 2,
+      protocolFingerprint: "fp",
+      status: "completed",
+      execution: null,
+      snapshot: {
+        suiteId: "suite-1",
+        suiteVersion: 2,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: Date.now(),
+      },
+      tasks: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/results/exp-completed-1"],
+      repo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-completed-1");
+    expect(h.container.textContent).toContain("Evaluation results");
+    cleanup(h);
+  });
+
+  it("direct-loads canonical /evaluations/results/:evaluationExecutionId for running execution", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await repo.createExperiment({
+      id: "exp-running-1",
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 2,
+      protocolFingerprint: "fp",
+      status: "running",
+      execution: null,
+      snapshot: {
+        suiteId: "suite-1",
+        suiteVersion: 2,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: Date.now(),
+      },
+      tasks: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/results/exp-running-1"],
+      repo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-running-1");
+    cleanup(h);
+  });
+
+  it("redirects legacy /experiments/:experimentId -> /evaluations/results/:experimentId preserving query params and state", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await repo.createExperiment({
+      id: "exp-leg-1",
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 2,
+      protocolFingerprint: "fp",
+      status: "completed",
+      execution: null,
+      snapshot: {
+        suiteId: "suite-1",
+        suiteVersion: 2,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: Date.now(),
+      },
+      tasks: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const h = await renderRouterAsync({
+      initialEntries: [
+        {
+          pathname: "/experiments/exp-leg-1",
+          search: "?page=2&filter=all",
+          state: { returnTo: "/custom" },
+        },
+      ],
+      repo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-leg-1");
+    expect(h.loc.current?.search).toBe("?page=2&filter=all");
+    expect(h.loc.current?.state).toEqual({ returnTo: "/custom" });
+    cleanup(h);
+  });
+
+  it("legacy redirect uses replace so browser back does not loop", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await repo.createExperiment({
+      id: "exp-replace-1",
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 2,
+      protocolFingerprint: "fp",
+      status: "completed",
+      execution: null,
+      snapshot: {
+        suiteId: "suite-1",
+        suiteVersion: 2,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: Date.now(),
+      },
+      tasks: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/sets", "/experiments/exp-replace-1"],
+      initialIndex: 1,
+      repo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-replace-1");
+    await act(async () => {
+      h.nav.current?.(-1);
+    });
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets");
+    cleanup(h);
+  });
+
+  it("refresh (remount) at canonical /evaluations/results/:id reloads the execution", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await repo.createExperiment({
+      id: "exp-refresh-1",
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 2,
+      protocolFingerprint: "fp",
+      status: "completed",
+      execution: null,
+      snapshot: {
+        suiteId: "suite-1",
+        suiteVersion: 2,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: Date.now(),
+      },
+      tasks: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const h1 = await renderRouterAsync({
+      initialEntries: ["/evaluations/results/exp-refresh-1"],
+      repo,
+    });
+    expect(h1.loc.current?.pathname).toBe("/evaluations/results/exp-refresh-1");
+    cleanup(h1);
+
+    const h2 = await renderRouterAsync({
+      initialEntries: ["/evaluations/results/exp-refresh-1"],
+      repo,
+    });
+    expect(h2.loc.current?.pathname).toBe("/evaluations/results/exp-refresh-1");
+    cleanup(h2);
+  });
+
+  it("back/forward history between task set editor and evaluation results preserves entity", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("set-1", "Evaluation Suite 1"));
+    await repo.createExperiment({
+      id: "exp-nav-1",
+      revision: 1,
+      suiteId: "set-1",
+      suiteVersion: 1,
+      protocolFingerprint: "fp",
+      status: "completed",
+      execution: null,
+      snapshot: {
+        suiteId: "set-1",
+        suiteVersion: 1,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: Date.now(),
+      },
+      tasks: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/sets/set-1"],
+      repo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/set-1");
+    await act(async () => {
+      h.nav.current?.("/evaluations/results/exp-nav-1");
+    });
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-nav-1");
+    await act(async () => {
+      h.nav.current?.(-1);
+    });
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/set-1");
+    await act(async () => {
+      h.nav.current?.(1);
+    });
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-nav-1");
+    cleanup(h);
+  });
+
+  it("does not invent a top-level /results or /results/* alias", async () => {
+    const h = await renderRouterAsync({
+      initialEntries: ["/results"],
+    });
+    expect(h.container.textContent).toMatch(/not found/i);
+    cleanup(h);
+  });
+
+  it("RESERVED_EVALUATION_SEGMENTS ensures /evaluations/results is not captured by legacy suite redirect", async () => {
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/results"],
+    });
+    expect(h.loc.current?.pathname).not.toBe("/evaluations/sets/results");
     cleanup(h);
   });
 });

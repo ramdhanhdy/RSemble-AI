@@ -219,7 +219,7 @@ describe("ExperimentProgress", () => {
     expect(text).toContain("Task 2 of 3");
     expect(text).toContain("Write a haiku");
     expect(text).toContain("1 completed");
-    expect(text).toContain("Suite v3");
+    expect(text).toContain("Task Set v3");
     expect(text).toContain("exp-1");
     expect(text).toContain(Intl.DateTimeFormat().resolvedOptions().timeZone);
     cleanup(h);
@@ -588,15 +588,15 @@ describe("ExperimentProgress", () => {
     cleanup(h);
   });
 
-  it("links Back to suite at the owning suite route with a ≥44px target", async () => {
+  it("links Back to task set at the owning task set route with a ≥44px target", async () => {
     const { controller } = makeController();
     const h = renderWithRouter(
       <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
     );
     await settle();
-    const back = h.$('a[href="/evaluations/suite-1"]')!;
+    const back = h.$('a[href="/evaluations/sets/suite-1"]')!;
     expect(back).not.toBeNull();
-    expect(back.textContent).toContain("Back to suite");
+    expect(back.textContent).toContain("Back to task set");
     expect(back.className).toContain("min-h-[44px]");
     cleanup(h);
   });

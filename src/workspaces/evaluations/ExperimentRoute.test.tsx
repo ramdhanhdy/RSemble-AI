@@ -64,8 +64,9 @@ function renderWithRouter(node: React.ReactNode): Harness {
   const root = createRoot(container);
   act(() => {
     root.render(
-      <MemoryRouter initialEntries={["/experiments/exp-1"]}>
+      <MemoryRouter initialEntries={["/evaluations/results/exp-1"]}>
         <Routes>
+          <Route path="/evaluations/results/:evaluationExecutionId" element={node} />
           <Route path="/experiments/:experimentId" element={node} />
         </Routes>
       </MemoryRouter>,
@@ -218,7 +219,7 @@ describe("ExperimentRoute", () => {
     const h = renderWithRouter(<ExperimentRoute />);
     await settle();
     const text = h.container.textContent ?? "";
-    expect(text).toContain("Experiment results · Suite v3");
+    expect(text).toContain("Evaluation results · Task Set v3");
     cleanup(h);
   });
 
@@ -227,9 +228,10 @@ describe("ExperimentRoute", () => {
     const h = renderWithRouter(<ExperimentRoute />);
     await settle();
     const text = h.container.textContent ?? "";
-    expect(text).toContain("Experiment not found.");
-    const back = h.$('a[href="/evaluations"]');
+    expect(text).toContain("Evaluation not found.");
+    const back = h.$('a[href="/evaluations/sets"]');
     expect(back).not.toBeNull();
+    expect(back!.textContent).toContain("Back to Evaluations");
     cleanup(h);
   });
 

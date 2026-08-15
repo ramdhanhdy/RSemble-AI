@@ -240,7 +240,7 @@ describe("FusionStudyPanel", () => {
     await settle();
     const list = h.$('[data-testid="fusion-study-list"]');
     expect(list?.textContent).toContain("Exploratory");
-    const link = h.$('a[href="/evaluations/suite-1/fusion/study-1"]');
+    const link = h.$('a[href="/evaluations/sets/suite-1/fusion/study-1"]');
     expect(link).not.toBeNull();
     h.unmount();
   });

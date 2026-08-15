@@ -570,20 +570,20 @@ describe("RunDetail", () => {
     const provenance = h.$("[data-section='provenance']");
     expect(provenance).toBeTruthy();
     const text = provenance?.textContent ?? "";
-    // "Experiment" links to the experiment route
-    const experimentLinks = [...provenance!.querySelectorAll("a[href='/experiments/exp-1']")];
-    expect(experimentLinks.some((a) => a.textContent?.trim() === "Experiment")).toBe(true);
-    // Suite part links to the suite route with its version
-    const suiteLink = provenance!.querySelector("a[href='/evaluations/suite-1']");
+    // "Evaluation" links to the canonical evaluation results route
+    const experimentLinks = [...provenance!.querySelectorAll("a[href='/evaluations/results/exp-1']")];
+    expect(experimentLinks.some((a) => a.textContent?.trim() === "Evaluation")).toBe(true);
+    // Task Set part links to the task set route with its version
+    const suiteLink = provenance!.querySelector("a[href='/evaluations/sets/suite-1']");
     expect(suiteLink).toBeTruthy();
-    expect(suiteLink?.textContent).toContain("Suite v3");
+    expect(suiteLink?.textContent).toContain("Task Set v3");
     // Task id is visible
     expect(text).toContain("task-pricing");
     // Attempt id is bounded (first 8 chars) with the full value present (sr-only)
     expect(text).toContain("attempt-");
     expect(text).toContain("attempt-2-xyz");
-    // Trailing Back to experiment link
-    expect(experimentLinks.some((a) => a.textContent?.includes("Back to experiment"))).toBe(true);
+    // Trailing Back to evaluation link
+    expect(experimentLinks.some((a) => a.textContent?.includes("Back to evaluation"))).toBe(true);
     cleanup(h);
   });
 

@@ -227,6 +227,26 @@ function makeWinnerProvisionalExperiment(): {
   return { experiment, runs };
 }
 
+describe("ExperimentResults — header and task set backlink", () => {
+  it("renders Evaluation results · Task Set vN header and Back to task set link", async () => {
+    const { experiment, runs } = makeWinnerProvisionalExperiment();
+    const resolveRun = vi.fn(async (runId: string) => runs[runId] ?? null);
+
+    const h = renderWithRouter(
+      <ExperimentResults experiment={experiment} resolveRunRecord={resolveRun} />,
+    );
+    await settle();
+
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("Evaluation results · Task Set v3");
+    const back = h.$(`a[href="/evaluations/sets/${experiment.suiteId}"]`);
+    expect(back).toBeTruthy();
+    expect(back?.textContent).toContain("Back to task set");
+    expect(back?.className).toContain("min-h-[44px]");
+    cleanup(h);
+  });
+});
+
 describe("ExperimentResults — winner and provisional ranking", () => {
   it("crowns the complete-coverage winner, not the higher-mean incomplete model", async () => {
     const { experiment, runs } = makeWinnerProvisionalExperiment();

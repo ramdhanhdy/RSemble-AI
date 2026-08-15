@@ -3,7 +3,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { SuiteExperimentHistory, experimentCoverage } from "./SuiteExperimentHistory";
+import { SuiteExperimentHistory as TaskSetExecutionHistory, experimentCoverage } from "./SuiteExperimentHistory";
 import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type {
   ExperimentRecord,
@@ -130,14 +130,14 @@ async function seedExperiments(
 function rowLinks(h: Harness): HTMLAnchorElement[] {
   return [
     ...h.container.querySelectorAll<HTMLAnchorElement>(
-      "[data-record-row] a[href^='/experiments/']",
+      "[data-record-row] a[href^='/evaluations/results/']",
     ),
   ];
 }
 
 // --- Tests --------------------------------------------------------------------
 
-describe("SuiteExperimentHistory", () => {
+describe("TaskSetExecutionHistory", () => {
   it("lists multiple experiments newest first, not only the latest", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedExperiments(repo, [
@@ -145,17 +145,17 @@ describe("SuiteExperimentHistory", () => {
       makeExperiment("exp-newest", { createdAt: 1716134400000 }),
       makeExperiment("exp-middle", { createdAt: 1716048000000 }),
     ]);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
     const links = rowLinks(h);
     expect(links).toHaveLength(3);
-    expect(links[0].getAttribute("href")).toBe("/experiments/exp-newest");
-    expect(links[1].getAttribute("href")).toBe("/experiments/exp-middle");
-    expect(links[2].getAttribute("href")).toBe("/experiments/exp-oldest");
+    expect(links[0].getAttribute("href")).toBe("/evaluations/results/exp-newest");
+    expect(links[1].getAttribute("href")).toBe("/evaluations/results/exp-middle");
+    expect(links[2].getAttribute("href")).toBe("/evaluations/results/exp-oldest");
     cleanup(h);
   });
 
-  it("row shows exact localized timestamp with timezone, StatusMark, suite version, coverage, and model count", async () => {
+  it("row shows exact localized timestamp with timezone, StatusMark, task set version, coverage, and model count", async () => {
     const repo = new InMemoryEvaluationRepository();
     const exp = makeExperiment("exp-1", {
       suiteVersion: 3,
@@ -163,7 +163,7 @@ describe("SuiteExperimentHistory", () => {
       tasks: [makeTaskState("t1", ["completed"]), makeTaskState("t2", ["failed"])],
     });
     await seedExperiments(repo, [exp]);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
     const text = h.container.textContent ?? "";
     // Exact localized start time + timezone (RecordRow itself shows relative time)
@@ -173,8 +173,8 @@ describe("SuiteExperimentHistory", () => {
     const mark = h.$("[data-status-mark]");
     expect(mark).toBeTruthy();
     expect(mark!.textContent).toContain("Completed");
-    // Suite version, task coverage, model count
-    expect(text).toContain("Suite v3");
+    // Task set version, task coverage, model count
+    expect(text).toContain("Task Set v3");
     expect(text).toContain("1/2 tasks");
     expect(text).toContain("2 models");
     cleanup(h);
@@ -188,7 +188,7 @@ describe("SuiteExperimentHistory", () => {
       makeExperiment("exp-aborted", { status: "aborted", createdAt: 1716048200000 }),
       makeExperiment("exp-interrupted", { status: "interrupted", createdAt: 1716048300000 }),
     ]);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
     const links = rowLinks(h);
     expect(links).toHaveLength(4);
@@ -200,16 +200,16 @@ describe("SuiteExperimentHistory", () => {
     cleanup(h);
   });
 
-  it("each row links to /experiments/:id", async () => {
+  it("each row links to /evaluations/results/:id", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedExperiments(repo, [
       makeExperiment("exp-1"),
       makeExperiment("exp-2", { createdAt: 1716048100000 }),
     ]);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
-    expect(h.$("a[href='/experiments/exp-1']")).toBeTruthy();
-    expect(h.$("a[href='/experiments/exp-2']")).toBeTruthy();
+    expect(h.$("a[href='/evaluations/results/exp-1']")).toBeTruthy();
+    expect(h.$("a[href='/evaluations/results/exp-2']")).toBeTruthy();
     cleanup(h);
   });
 
@@ -219,7 +219,7 @@ describe("SuiteExperimentHistory", () => {
       makeExperiment(`exp-${String(i).padStart(2, "0")}`, { createdAt: 1716048000000 + i * 1000 }),
     );
     await seedExperiments(repo, experiments);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
     expect(h.$$("[data-record-row]")).toHaveLength(20);
     expect(h.container.textContent).toContain("20 of 25");
@@ -261,11 +261,11 @@ describe("SuiteExperimentHistory", () => {
       makeExperiment("exp-1"),
       makeExperiment("exp-2", { createdAt: 1716048100000 }),
     ]);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
     expect(h.$$("[data-record-row]")).toHaveLength(2);
-    expect(h.$("a[href='/experiments/exp-1']")).toBeTruthy();
-    expect(h.$("a[href='/experiments/exp-2']")).toBeTruthy();
+    expect(h.$("a[href='/evaluations/results/exp-1']")).toBeTruthy();
+    expect(h.$("a[href='/evaluations/results/exp-2']")).toBeTruthy();
     cleanup(h);
   });
 
@@ -274,7 +274,7 @@ describe("SuiteExperimentHistory", () => {
     await seedExperiments(repo, [
       makeExperiment("experiment-with-a-very-long-identifier-0123456789"),
     ]);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
     const row = h.$("[data-record-row]");
     expect(row).toBeTruthy();
@@ -283,7 +283,7 @@ describe("SuiteExperimentHistory", () => {
     expect(title).toBeTruthy();
     expect(title!.textContent).toContain("experiment-with-a-very-long-identifier");
     // No fixed pixel widths in the section markup
-    const section = h.$("section[aria-label='Experiments']");
+    const section = h.$("section[aria-label='Evaluations']");
     expect(section).toBeTruthy();
     expect(section!.innerHTML).not.toMatch(/w-\[\d+px\]/);
     cleanup(h);
@@ -292,7 +292,7 @@ describe("SuiteExperimentHistory", () => {
   it("rows use the shared RecordRow grammar (status mark, mono title, timestamp)", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedExperiments(repo, [makeExperiment("exp-1", { createdAt: 1716048000000 })]);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
     const row = h.$("[data-record-row]");
     expect(row).toBeTruthy();
@@ -310,19 +310,19 @@ describe("SuiteExperimentHistory", () => {
   it("shows a compact loading line with role=status before resolving", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedExperiments(repo, [makeExperiment("exp-1")]);
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     const status = h.$("[role='status']");
     expect(status).toBeTruthy();
-    expect(status!.textContent).toMatch(/loading/i);
+    expect(status!.textContent).toMatch(/loading evaluations/i);
     await settle();
     cleanup(h);
   });
 
   it("shows a compact one-line empty state", async () => {
     const repo = new InMemoryEvaluationRepository();
-    const h = renderWithRouter(<SuiteExperimentHistory repo={repo} suiteId="suite-1" />);
+    const h = renderWithRouter(<TaskSetExecutionHistory repo={repo} suiteId="suite-1" />);
     await settle();
-    expect(h.container.textContent).toContain("No experiments yet — run this suite to create one.");
+    expect(h.container.textContent).toContain("No evaluations yet — run this task set to create one.");
     expect(h.$$("[data-record-row]")).toHaveLength(0);
     cleanup(h);
   });
