@@ -549,6 +549,39 @@ describe("TaskSetEditor — save", () => {
     );
     cleanup(h);
   });
+
+  it("Suite write failure after canonical append staging rolls both stores back", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+    const suiteBefore = structuredClone(await repo.getSuite("s1"));
+    const taskSetBefore = structuredClone(await taskSetRepo.getTaskSetRecord("s1"));
+    vi.spyOn(repo, "saveSuite").mockRejectedValueOnce(
+      new StorageError("quota", "Suite compatibility write failed"),
+    );
+
+    const h = renderWithRouter(<TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />);
+    await settle();
+    await act(async () => {
+      h.$("button[aria-expanded='false']")!.click();
+    });
+    await settle();
+    typeInto(h.$("#task-set-name") as HTMLInputElement, "Atomic Version Two");
+    await settle();
+    await act(async () => {
+      (h.$("button[data-action='save-task-set']") as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+
+    expect(await repo.getSuite("s1")).toEqual(suiteBefore);
+    expect(await taskSetRepo.getTaskSetRecord("s1")).toEqual(taskSetBefore);
+    expect(await taskSetRepo.getTaskSetVersion("s1", 2)).toBeNull();
+    expect(h.$("[role='alert']")?.textContent).toMatch(/Suite compatibility write|quota/i);
+    cleanup(h);
+  });
 });
 
 describe("TaskSetEditor — run validation", () => {
@@ -852,6 +885,26 @@ describe("TaskSetEditor — historical version is read-only", () => {
 
     expect(h.$("[data-task-set-editor]")).toBeTruthy();
     expect(h.container.textContent).toMatch(/version 99.*not found|not found.*version 99/i);
+    expect(h.container.textContent).not.toContain(suite.name);
+    cleanup(h);
+  });
+
+  it("rejects a latest-number historical route when its exact canonical row is absent", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />,
+      `/evaluations/sets/s1/versions/${suite.version}`,
+    );
+    await settle();
+
+    expect(h.$("[data-task-set-editor]")).toBeTruthy();
+    expect(h.container.textContent).toMatch(
+      new RegExp(`version ${suite.version}.*not found|not found.*version ${suite.version}`, "i"),
+    );
     expect(h.container.textContent).not.toContain(suite.name);
     cleanup(h);
   });
@@ -1663,9 +1716,12 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     ];
     await seedSuite(repo, suite);
     await seedTaskSetVersion(taskSetRepo, suite, 0);
-    vi.spyOn(repo, "saveSuite").mockRejectedValueOnce(
-      new StorageError("quota", "materialized snapshot commit failed"),
-    );
+    vi.spyOn(
+      repo as InMemoryEvaluationRepository & {
+        persistTaskSetMaterialization: () => Promise<unknown>;
+      },
+      "persistTaskSetMaterialization",
+    ).mockRejectedValueOnce(new StorageError("quota", "materialized snapshot commit failed"));
     const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
     const h = renderWithRouter(
       <TaskSetEditor
@@ -1714,26 +1770,36 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     ];
     await seedSuite(repo, suite);
 
-    // The controller observes the real persisted Suite boundary before it records
-    // lease/attempt/provider effects.
+    // Task 7 persists an immutable execution input before controller.start.
+    // Passing/consuming its identity in the controller is the explicit Task 8 hand-off.
     const orderedController = {
       ...makeStubController(),
       start: vi.fn(async () => {
-        const persistedAtStart = (await repo.getSuite("s1")) as
-          | (EvaluationSuite & {
-              materializedTaskSetRef?: { taskSetId: string; taskSetVersion: number };
-              materializedWorkloadSnapshot?: {
+        const materializations = await (
+          repo as InMemoryEvaluationRepository & {
+            listTaskSetMaterializations: (
+              taskSetId: string,
+            ) => Promise<
+              Array<{
                 taskSetId: string;
                 taskSetVersion: number;
                 protocolFingerprint: string;
-              };
-            })
-          | null;
+                snapshot: {
+                  taskSetId: string;
+                  taskSetVersion: number;
+                  protocolFingerprint: string;
+                };
+              }>
+            >;
+          }
+        ).listTaskSetMaterializations("s1");
+        const persistedAtStart = materializations.at(-1);
         if (
-          persistedAtStart?.materializedTaskSetRef?.taskSetId === "s1" &&
-          persistedAtStart.materializedTaskSetRef.taskSetVersion === 1 &&
-          persistedAtStart.materializedWorkloadSnapshot?.taskSetId === "s1" &&
-          persistedAtStart.materializedWorkloadSnapshot.taskSetVersion === 1
+          persistedAtStart?.taskSetId === "s1" &&
+          persistedAtStart.taskSetVersion === 1 &&
+          persistedAtStart.protocolFingerprint === persistedAtStart.snapshot.protocolFingerprint &&
+          persistedAtStart.snapshot.taskSetId === "s1" &&
+          persistedAtStart.snapshot.taskSetVersion === 1
         ) {
           order.push("durable-materialization");
         }
