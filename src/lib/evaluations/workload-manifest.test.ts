@@ -668,7 +668,9 @@ describe("Workload Manifest Materialization: Run 10 repair (F1/F2/F4)", () => {
 
   it("F1: rejects materialization when the default judge is invalid", () => {
     const resolvers = makeCatalogResolvers([makeTaskVersion()], [makeRubric()]);
-    const taskSetVersion = makeTaskSetVersion({ defaultJudge: { providerId: "openrouter", model: "" } });
+    const taskSetVersion = makeTaskSetVersion({
+      defaultJudge: { providerId: "openrouter", model: "" },
+    });
     expect(() => materializeWorkloadManifest(taskSetVersion, resolvers)).toThrow();
   });
 
