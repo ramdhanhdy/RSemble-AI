@@ -96,44 +96,52 @@ export async function appendModelToSuite(
         input.suiteId,
         currentTaskSet.latestVersion,
       );
-      if (latest) {
-        const nextVersionNumber = currentTaskSet.latestVersion + 1;
-        const canonicalUpdated: EvaluationSuite = {
-          ...suite,
-          modelSlots: [...suite.modelSlots, { ...input.slot }],
-          version: nextVersionNumber,
-          updatedAt: input.now,
+      if (!latest) {
+        // Fail closed: a canonical Task Set whose latest Version row is missing
+        // must not silently fall through to a legacy-only write and leave
+        // latestVersion stale.
+        return {
+          ok: false,
+          code: "storage",
+          message: "The Task Set version is missing — the model was added to these results only.",
         };
-        const taskSetRecord = suiteToTaskSetRecord({
-          ...canonicalUpdated,
-          revision: currentTaskSet.revision,
+      }
+      const nextVersionNumber = currentTaskSet.latestVersion + 1;
+      const canonicalUpdated: EvaluationSuite = {
+        ...suite,
+        modelSlots: [...suite.modelSlots, { ...input.slot }],
+        version: nextVersionNumber,
+        updatedAt: input.now,
+      };
+      const taskSetRecord = suiteToTaskSetRecord({
+        ...canonicalUpdated,
+        revision: currentTaskSet.revision,
+      });
+      const nextVersion = {
+        ...latest,
+        version: nextVersionNumber,
+        defaultModelSlots: [...latest.defaultModelSlots, { ...input.slot }],
+        createdAt: input.now,
+      };
+      try {
+        await repo.saveSuiteAndTaskSetVersion({
+          suite: canonicalUpdated,
+          expectedSuiteRevision: suite.revision,
+          taskSetRecord,
+          taskSetVersion: nextVersion,
+          expectedTaskSetRevision: currentTaskSet.revision,
+          taskSetRepository: taskSetRepo,
         });
-        const nextVersion = {
-          ...latest,
-          version: nextVersionNumber,
-          defaultModelSlots: [...latest.defaultModelSlots, { ...input.slot }],
-          createdAt: input.now,
-        };
-        try {
-          await repo.saveSuiteAndTaskSetVersion({
-            suite: canonicalUpdated,
-            expectedSuiteRevision: suite.revision,
-            taskSetRecord,
-            taskSetVersion: nextVersion,
-            expectedTaskSetRevision: currentTaskSet.revision,
-            taskSetRepository: taskSetRepo,
-          });
-          return { ok: true, suiteVersion: nextVersionNumber };
-        } catch (err) {
-          if (err instanceof StorageError && err.kind === "conflict") {
-            return {
-              ok: false,
-              code: "conflict",
-              message: "Suite was modified elsewhere — the model was added to these results only.",
-            };
-          }
-          return { ok: false, code: "storage", message: suiteStorageMessage(err) };
+        return { ok: true, suiteVersion: nextVersionNumber };
+      } catch (err) {
+        if (err instanceof StorageError && err.kind === "conflict") {
+          return {
+            ok: false,
+            code: "conflict",
+            message: "Suite was modified elsewhere — the model was added to these results only.",
+          };
         }
+        return { ok: false, code: "storage", message: suiteStorageMessage(err) };
       }
     }
   }

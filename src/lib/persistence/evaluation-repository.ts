@@ -173,6 +173,7 @@ export interface EvaluationRepository {
   updateExperiment(experiment: ExperimentRecord, expectedRevision: number): Promise<number>;
   getExperiment(id: string): Promise<ExperimentRecord | null>;
   listExperiments(suiteId?: string): Promise<ExperimentRecord[]>;
+  deleteExperiment(id: string): Promise<void>;
   beginExperimentTask(
     input: BeginExperimentTaskInput,
   ): Promise<{ runRevision: number; experimentRevision: number }>;
@@ -764,6 +765,18 @@ export function createEvaluationRepository(
     }
   }
 
+  async function deleteExperiment(id: string): Promise<void> {
+    db.assertWritable();
+    try {
+      await db.transaction("rw", db.experiments, async () => {
+        await db.experiments.delete(id);
+      });
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
+      throw classifyStorageError(err);
+    }
+  }
+
   // begin/commit delegate to the shared experiment unit of work (Task 6.2):
   // fence-verified when supplied, idempotent for identical IDs/payload, and
   // atomic across experiments + run tables.
@@ -815,6 +828,7 @@ export function createEvaluationRepository(
     updateExperiment,
     getExperiment,
     listExperiments,
+    deleteExperiment,
     beginExperimentTask,
     commitExperimentTaskTerminal,
     importSuitePackage,
@@ -1090,6 +1104,9 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     return [...this.experiments.values()]
       .filter((e) => !suiteId || e.suiteId === suiteId)
       .sort((a, b) => b.createdAt - a.createdAt);
+  }
+  async deleteExperiment(id: string): Promise<void> {
+    this.experiments.delete(id);
   }
   async beginExperimentTask(
     input: BeginExperimentTaskInput,

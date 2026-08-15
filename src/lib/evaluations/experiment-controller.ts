@@ -948,6 +948,14 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     } finally {
       if (!transferredToRunLoop) {
+        // Best-effort roll back the just-created draft so a post-create sync
+        // failure neither orphans a draft row nor permanently burns the
+        // materialization (spec §11.2).
+        try {
+          await evalRepo.deleteExperiment(id);
+        } catch {
+          // Best-effort — the store may itself be the cause of the failure.
+        }
         releaseExecution();
         engine = null;
         experimentId = null;
@@ -976,6 +984,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     if (!engine || !experimentId) {
       return { ok: false, error: "No experiment to resume" };
     }
+    const expId = experimentId;
     if (engine.record.status !== "paused") {
       return { ok: false, error: `Cannot resume from status ${engine.record.status}` };
     }
@@ -993,6 +1002,8 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       fence: leaseInfo.fence,
       ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
     };
+    // Snapshot the paused state so a failed post-resume sync can restore it.
+    const preResumeSnapshot = engine.snapshot();
     const result = engine.resume(fence, now());
     if (!result.ok) {
       return { ok: false, error: result.reason ?? "Failed to resume" };
@@ -1009,10 +1020,34 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     } finally {
       if (!transferredToRunLoop) {
-        releaseExecution();
-        engine = null;
-        experimentId = null;
-        suite = null;
+        // A post-resume sync failure must not revoke the takeover lease nor
+        // strand a paused record: restore the pre-resume paused state and
+        // retain ownership + lease while the durable record is still 'paused'
+        // so a subsequent resume succeeds.
+        engine.restore(preResumeSnapshot);
+        let durablePaused = true;
+        try {
+          durablePaused = (await evalRepo.getExperiment(expId))?.status === "paused";
+        } catch {
+          // Store unreachable — the failed sync leaves the durable record
+          // 'paused' by construction, so retain ownership + lease.
+        }
+        if (!durablePaused) {
+          // The durable record diverged from 'paused' — tear down, releasing
+          // the lease only when its token is verified current.
+          stopHeartbeat();
+          owner.release(expId);
+          try {
+            if (await lease.verify(activeLease ?? undefined)) {
+              await releaseLeaseToken();
+            }
+          } catch {
+            // Best-effort teardown — never override the resume failure result.
+          }
+          engine = null;
+          experimentId = null;
+          suite = null;
+        }
       }
     }
   }
@@ -1107,6 +1142,14 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     try {
       const experiments = await evalRepo.listExperiments();
       for (const exp of experiments) {
+        if (exp.status === "draft") {
+          // A stranded draft (created but never transitioned to running) holds
+          // the materialization forever; roll it back so the materialization
+          // becomes reusable (spec §11.2).
+          await evalRepo.deleteExperiment(exp.id);
+          recovered++;
+          continue;
+        }
         if (exp.status !== "running" && exp.status !== "paused") continue;
 
         // We acquired the lease, so any running/paused experiment's prior
