@@ -30,10 +30,7 @@ import {
 } from "../evaluations/workload-manifest";
 import { RSembleEvaluationDB, StorageError } from "./database";
 import { InMemoryTaskSetRepository } from "./in-memory-task-set-repository";
-import {
-  createTaskSetRepository,
-  type TaskSetRepository,
-} from "./task-set-repository";
+import { createTaskSetRepository, type TaskSetRepository } from "./task-set-repository";
 
 // --- fixtures ----------------------------------------------------------------
 
@@ -227,9 +224,7 @@ export function repositorySuite(name: string, makeRepo: () => TaskSetRepository)
 
     it("rejects createTaskSet when version.version !== 1", async () => {
       const repo = makeRepo();
-      const err = await storageError(
-        repo.createTaskSet(makeRecord(), makeVersion({ version: 2 })),
-      );
+      const err = await storageError(repo.createTaskSet(makeRecord(), makeVersion({ version: 2 })));
       expect(err.name).toBe("StorageError");
       expect(err.kind).toBe("validation");
       expect(err.message).toMatch(/version.*1/i);
@@ -497,9 +492,11 @@ export function repositorySuite(name: string, makeRepo: () => TaskSetRepository)
       expect((await repo.listTaskSets({ archiveState: "archived" })).map((r) => r.id)).toEqual([
         "set-gamma",
       ]);
-      expect(
-        (await repo.listTaskSets({ archiveState: "all" })).map((r) => r.id).sort(),
-      ).toEqual(["set-alpha", "set-beta", "set-gamma"]);
+      expect((await repo.listTaskSets({ archiveState: "all" })).map((r) => r.id).sort()).toEqual([
+        "set-alpha",
+        "set-beta",
+        "set-gamma",
+      ]);
     });
 
     // --- version history ----------------------------------------------------
@@ -610,9 +607,7 @@ export function repositorySuite(name: string, makeRepo: () => TaskSetRepository)
         [makeTaskVersion({ taskId: "task-1", version: 2 })],
         [makeRubric()],
       );
-      await expect(
-        repo.materializeTaskSetVersion("set-1", 1, catalogHasOnlyV2),
-      ).rejects.toSatisfy(
+      await expect(repo.materializeTaskSetVersion("set-1", 1, catalogHasOnlyV2)).rejects.toSatisfy(
         (err: unknown) =>
           err instanceof UnresolvedWorkloadRefError ||
           (err instanceof StorageError && /unresolved/i.test(err.message)),

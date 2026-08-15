@@ -16,10 +16,7 @@ import type {
   TaskSetVersion,
   TaskVersionRef,
 } from "./task-set-types";
-import type {
-  TaskVersion,
-  VersionRef,
-} from "../tasks/task-types";
+import type { TaskVersion, VersionRef } from "../tasks/task-types";
 import {
   ArchivedTaskExecutionError,
   DirtyDraftExecutionError,
@@ -325,9 +322,21 @@ describe("Workload Manifest Materialization: Deterministic Member Order", () => 
     const rubric = makeRubric();
     const resolvers = makeCatalogResolvers([task1, task2, task3], [rubric]);
 
-    const m1 = makeTaskSetMember({ id: "m1", order: 0, taskVersionRef: { taskId: "t1", version: 1 } });
-    const m2 = makeTaskSetMember({ id: "m2", order: 1, taskVersionRef: { taskId: "t2", version: 1 } });
-    const m3 = makeTaskSetMember({ id: "m3", order: 2, taskVersionRef: { taskId: "t3", version: 1 } });
+    const m1 = makeTaskSetMember({
+      id: "m1",
+      order: 0,
+      taskVersionRef: { taskId: "t1", version: 1 },
+    });
+    const m2 = makeTaskSetMember({
+      id: "m2",
+      order: 1,
+      taskVersionRef: { taskId: "t2", version: 1 },
+    });
+    const m3 = makeTaskSetMember({
+      id: "m3",
+      order: 2,
+      taskVersionRef: { taskId: "t3", version: 1 },
+    });
 
     // Permuted array [m3, m1, m2]
     const versionA = makeTaskSetVersion({ members: [m3, m1, m2] });
@@ -348,8 +357,16 @@ describe("Workload Manifest Materialization: Deterministic Member Order", () => 
     const rubric = makeRubric();
     const resolvers = makeCatalogResolvers([taskA, taskB], [rubric]);
 
-    const m1 = makeTaskSetMember({ id: "m1", order: 0, taskVersionRef: { taskId: "tA", version: 1 } });
-    const m2 = makeTaskSetMember({ id: "m2", order: 0, taskVersionRef: { taskId: "tB", version: 1 } });
+    const m1 = makeTaskSetMember({
+      id: "m1",
+      order: 0,
+      taskVersionRef: { taskId: "tA", version: 1 },
+    });
+    const m2 = makeTaskSetMember({
+      id: "m2",
+      order: 0,
+      taskVersionRef: { taskId: "tB", version: 1 },
+    });
 
     const snapA = materializeWorkloadManifest(makeTaskSetVersion({ members: [m1, m2] }), resolvers);
     const snapB = materializeWorkloadManifest(makeTaskSetVersion({ members: [m2, m1] }), resolvers);
@@ -369,7 +386,16 @@ describe("Workload Manifest Materialization: Immutable Snapshot", () => {
       taskId: "task-1",
       version: 1,
       title: "Original Task Title",
-      defaultContextManifest: [{ role: "doc", artifactId: "art-1", externalRef: null, metadataDigest: null, mediaType: "text/plain", byteCount: 100 }],
+      defaultContextManifest: [
+        {
+          role: "doc",
+          artifactId: "art-1",
+          externalRef: null,
+          metadataDigest: null,
+          mediaType: "text/plain",
+          byteCount: 100,
+        },
+      ],
       responseContract: { format: "json", constraints: ["c1"], maxLength: 500 },
     });
     const rubric = makeRubric({
@@ -406,7 +432,14 @@ describe("Workload Manifest Materialization: Immutable Snapshot", () => {
 
     // Mutate source task object in-place
     task.title = "MUTATED TASK TITLE";
-    task.defaultContextManifest.push({ role: "extra", artifactId: null, externalRef: null, metadataDigest: null, mediaType: null, byteCount: null });
+    task.defaultContextManifest.push({
+      role: "extra",
+      artifactId: null,
+      externalRef: null,
+      metadataDigest: null,
+      mediaType: null,
+      byteCount: null,
+    });
     task.responseContract!.maxLength = 9999;
 
     // Mutate source rubric object in-place
@@ -449,7 +482,9 @@ describe("Workload Manifest Materialization: Archived References", () => {
       members: [makeTaskSetMember({ taskVersionRef: { taskId: "archived-task", version: 1 } })],
     });
 
-    const snapshot = materializeWorkloadManifest(taskSetVersion, resolvers, { allowArchived: true });
+    const snapshot = materializeWorkloadManifest(taskSetVersion, resolvers, {
+      allowArchived: true,
+    });
 
     expect(snapshot.tasks[0].isArchived).toBe(true);
     expect(snapshot.tasks).toHaveLength(1);
@@ -614,9 +649,9 @@ describe("Workload Manifest Materialization: Dirty Draft Rejection", () => {
     const resolvers = makeCatalogResolvers([makeTaskVersion()], [makeRubric()]);
     const taskSetVersion = makeTaskSetVersion();
 
-    expect(() =>
-      materializeWorkloadManifest(taskSetVersion, resolvers, { isDirty: true }),
-    ).toThrow(DirtyDraftExecutionError);
+    expect(() => materializeWorkloadManifest(taskSetVersion, resolvers, { isDirty: true })).toThrow(
+      DirtyDraftExecutionError,
+    );
   });
 });
 
@@ -634,10 +669,38 @@ describe("Workload Manifest Materialization: Policies & Metadata", () => {
 
     const taskSetVersion = makeTaskSetVersion({
       members: [
-        makeTaskSetMember({ id: "m1", taskVersionRef: { taskId: "tA", version: 1 }, order: 0, role: "organic", stratum: "strat-1", weight: 1.0 }),
-        makeTaskSetMember({ id: "m2", taskVersionRef: { taskId: "tB", version: 1 }, order: 1, role: "anchor", stratum: null, weight: 3.5 }),
-        makeTaskSetMember({ id: "m3", taskVersionRef: { taskId: "tC", version: 1 }, order: 2, role: "calibration", stratum: "strat-2", weight: 0.5 }),
-        makeTaskSetMember({ id: "m4", taskVersionRef: { taskId: "tD", version: 1 }, order: 3, role: "holdout", stratum: "strat-2", weight: 2.0 }),
+        makeTaskSetMember({
+          id: "m1",
+          taskVersionRef: { taskId: "tA", version: 1 },
+          order: 0,
+          role: "organic",
+          stratum: "strat-1",
+          weight: 1.0,
+        }),
+        makeTaskSetMember({
+          id: "m2",
+          taskVersionRef: { taskId: "tB", version: 1 },
+          order: 1,
+          role: "anchor",
+          stratum: null,
+          weight: 3.5,
+        }),
+        makeTaskSetMember({
+          id: "m3",
+          taskVersionRef: { taskId: "tC", version: 1 },
+          order: 2,
+          role: "calibration",
+          stratum: "strat-2",
+          weight: 0.5,
+        }),
+        makeTaskSetMember({
+          id: "m4",
+          taskVersionRef: { taskId: "tD", version: 1 },
+          order: 3,
+          role: "holdout",
+          stratum: "strat-2",
+          weight: 2.0,
+        }),
       ],
     });
 
@@ -817,10 +880,7 @@ describe("Workload Manifest Fingerprint: Semantic Sensitivity & Invariance", () 
     const snapA = materializeWorkloadManifest(makeTaskSetVersion(), resolvers);
     const snapB = materializeWorkloadManifest(
       makeTaskSetVersion({
-        defaultModelSlots: [
-          DEFAULT_SLOTS[0],
-          { ...DEFAULT_SLOTS[1], enabled: false },
-        ],
+        defaultModelSlots: [DEFAULT_SLOTS[0], { ...DEFAULT_SLOTS[1], enabled: false }],
       }),
       resolvers,
     );
@@ -886,11 +946,16 @@ describe("Workload Manifest Fingerprint: Semantic Sensitivity & Invariance", () 
         taskSetId: "set-1",
         createdAt: 1000,
         defaultModelSlots: [
-          { id: "slot-A", providerId: "openrouter", provider: "OpenRouter Display", model: "gpt-4o", slug: "gpt-4o", enabled: true },
+          {
+            id: "slot-A",
+            providerId: "openrouter",
+            provider: "OpenRouter Display",
+            model: "gpt-4o",
+            slug: "gpt-4o",
+            enabled: true,
+          },
         ],
-        members: [
-          makeTaskSetMember({ id: "mem-uuid-1", order: 0 }),
-        ],
+        members: [makeTaskSetMember({ id: "mem-uuid-1", order: 0 })],
       }),
       resolvers,
       { now: 1000 },
@@ -901,11 +966,16 @@ describe("Workload Manifest Fingerprint: Semantic Sensitivity & Invariance", () 
         taskSetId: "set-DIFFERENT-ID",
         createdAt: 99999,
         defaultModelSlots: [
-          { id: "slot-DIFFERENT-ID", providerId: "openrouter", provider: "Custom Label", model: "gpt-4o", slug: "gpt-4o", enabled: true },
+          {
+            id: "slot-DIFFERENT-ID",
+            providerId: "openrouter",
+            provider: "Custom Label",
+            model: "gpt-4o",
+            slug: "gpt-4o",
+            enabled: true,
+          },
         ],
-        members: [
-          makeTaskSetMember({ id: "mem-uuid-DIFFERENT", order: 0 }),
-        ],
+        members: [makeTaskSetMember({ id: "mem-uuid-DIFFERENT", order: 0 })],
       }),
       resolvers,
       { now: 99999 },

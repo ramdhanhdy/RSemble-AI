@@ -35,10 +35,7 @@
 
 import type { CriticRef, ProviderId, ReasoningPolicy } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
-import type {
-  TaskEvaluationSelection,
-  TaskVerification,
-} from "./evaluation-types";
+import type { TaskEvaluationSelection, TaskVerification } from "./evaluation-types";
 import type { VersionRef } from "../tasks/task-types";
 
 import {
@@ -200,7 +197,6 @@ export interface TaskSetRefResolutionResult {
   unresolved: TaskSetUnresolvedRef[];
 }
 
-
 function fail(errors: TaskSetValidationError[]): TaskSetValidationResult {
   return { valid: errors.length === 0, errors };
 }
@@ -294,16 +290,11 @@ export function isProtocolDefaults(v: unknown): v is ProtocolDefaults {
   return !hasProhibitedKeys(v);
 }
 
-export function isTaskExecutionOverrides(
-  v: unknown,
-): v is TaskExecutionOverrides | null {
+export function isTaskExecutionOverrides(v: unknown): v is TaskExecutionOverrides | null {
   if (v === null) return true;
   if (!isRecord(v)) return false;
   if (v.evaluation !== undefined && !isTaskEvaluationSelection(v.evaluation)) return false;
-  if (
-    v.judgeInstructionOverride !== undefined &&
-    !isString(v.judgeInstructionOverride)
-  ) {
+  if (v.judgeInstructionOverride !== undefined && !isString(v.judgeInstructionOverride)) {
     return false;
   }
   if (v.verification !== undefined && !isTaskVerification(v.verification)) return false;

@@ -33,10 +33,7 @@ import type {
   TaskEvaluationSelection,
   TaskVerification,
 } from "./evaluation-types";
-import {
-  canonicalJsonString,
-  hashArtifactContent,
-} from "./protocol-fingerprint";
+import { canonicalJsonString, hashArtifactContent } from "./protocol-fingerprint";
 import type {
   JudgeSnapshot,
   MissingnessPolicy,
@@ -49,11 +46,7 @@ import type {
   TaskSetVersion,
   TaskVersionRef,
 } from "./task-set-types";
-import type {
-  TaskInstance,
-  TaskVersion,
-  VersionRef,
-} from "../tasks/task-types";
+import type { TaskInstance, TaskVersion, VersionRef } from "../tasks/task-types";
 
 // --- Custom Error Classes ----------------------------------------------------
 
@@ -233,7 +226,9 @@ export function validateWorkloadForExecution(
         reason: "Default rubric version ref does not resolve in the catalog.",
       };
       unresolved.push(err);
-      errors.push(`Unresolved default rubric: ${version.defaultRubricRef.id} v${version.defaultRubricRef.version}`);
+      errors.push(
+        `Unresolved default rubric: ${version.defaultRubricRef.id} v${version.defaultRubricRef.version}`,
+      );
     } else if (resolvers.isRubricArchived?.(version.defaultRubricRef.id)) {
       hasArchivedRefs = true;
     }
@@ -369,7 +364,10 @@ export function materializeWorkloadManifest(
 
   const rubricsMap = new Map<string, EvaluationRubric>();
   if (resolvedDefaultRubric) {
-    rubricsMap.set(`${resolvedDefaultRubric.id}::v${resolvedDefaultRubric.version}`, resolvedDefaultRubric);
+    rubricsMap.set(
+      `${resolvedDefaultRubric.id}::v${resolvedDefaultRubric.version}`,
+      resolvedDefaultRubric,
+    );
   }
 
   const sortedMembers = sortMembers(version.members);
@@ -423,21 +421,24 @@ export function materializeWorkloadManifest(
     }
 
     // Resolve evaluation selection
-    const evaluation: TaskEvaluationSelection = member.executionOverrides?.evaluation !== undefined
-      ? deepClone(member.executionOverrides.evaluation)
-      : effectiveRubricRef !== null
-        ? { kind: "profile", profile: effectiveRubricRef }
-        : { kind: "holistic" };
+    const evaluation: TaskEvaluationSelection =
+      member.executionOverrides?.evaluation !== undefined
+        ? deepClone(member.executionOverrides.evaluation)
+        : effectiveRubricRef !== null
+          ? { kind: "profile", profile: effectiveRubricRef }
+          : { kind: "holistic" };
 
-    const judgeInstructionOverride = member.executionOverrides?.judgeInstructionOverride !== undefined
-      ? member.executionOverrides.judgeInstructionOverride
-      : null;
-
-    const verification = member.executionOverrides?.verification !== undefined
-      ? deepClone(member.executionOverrides.verification)
-      : taskVersion.taskVerifierRef !== null
-        ? { kind: "custom_checker" as const }
+    const judgeInstructionOverride =
+      member.executionOverrides?.judgeInstructionOverride !== undefined
+        ? member.executionOverrides.judgeInstructionOverride
         : null;
+
+    const verification =
+      member.executionOverrides?.verification !== undefined
+        ? deepClone(member.executionOverrides.verification)
+        : taskVersion.taskVerifierRef !== null
+          ? { kind: "custom_checker" as const }
+          : null;
 
     materializedTasks.push({
       memberId: member.id,

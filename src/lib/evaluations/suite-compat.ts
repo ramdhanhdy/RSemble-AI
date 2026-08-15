@@ -92,11 +92,7 @@ export function suiteToTaskSetVersion(
   const members: TaskSetMember[] = suite.tasks.map((task) => {
     const resolved = crosswalk ? crosswalk(task) : null;
     const unresolvedReason =
-      crosswalk === undefined
-        ? NO_CROSSWALK_REASON
-        : resolved === null
-          ? UNMAPPED_REASON
-          : null;
+      crosswalk === undefined ? NO_CROSSWALK_REASON : resolved === null ? UNMAPPED_REASON : null;
 
     if (unresolvedReason !== null) {
       unresolvedMemberIds.push(task.id);

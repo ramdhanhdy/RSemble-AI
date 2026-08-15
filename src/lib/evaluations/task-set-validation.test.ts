@@ -54,11 +54,7 @@ import {
   type TaskVersionRef,
 } from "./task-set-types";
 
-import {
-  suiteToTaskSetRecord,
-  suiteToTaskSetVersion,
-  type TaskCrosswalk,
-} from "./suite-compat";
+import { suiteToTaskSetRecord, suiteToTaskSetVersion, type TaskCrosswalk } from "./suite-compat";
 
 // --- fixtures ----------------------------------------------------------------
 
@@ -215,12 +211,10 @@ describe("isJudgeSnapshot", () => {
   it("rejects missing provider/model, bad reasoning policy, prohibited keys", () => {
     expect(isJudgeSnapshot({ providerId: "openrouter" })).toBe(false);
     expect(isJudgeSnapshot({ providerId: "openrouter", model: "" })).toBe(false);
-    expect(
-      isJudgeSnapshot({ providerId: "openrouter", model: "x", reasoningPolicy: {} }),
-    ).toBe(false);
-    expect(
-      isJudgeSnapshot({ providerId: "openrouter", model: "x", secret: "v" }),
-    ).toBe(false);
+    expect(isJudgeSnapshot({ providerId: "openrouter", model: "x", reasoningPolicy: {} })).toBe(
+      false,
+    );
+    expect(isJudgeSnapshot({ providerId: "openrouter", model: "x", secret: "v" })).toBe(false);
   });
 });
 
@@ -253,9 +247,7 @@ describe("isMissingnessPolicy", () => {
 describe("isProtocolDefaults", () => {
   it("accepts empty and valid reasoning policy", () => {
     expect(isProtocolDefaults({})).toBe(true);
-    expect(
-      isProtocolDefaults({ reasoningPolicy: { candidates: "low", judge: "low" } }),
-    ).toBe(true);
+    expect(isProtocolDefaults({ reasoningPolicy: { candidates: "low", judge: "low" } })).toBe(true);
   });
   it("rejects bad reasoning policy and prohibited keys", () => {
     expect(isProtocolDefaults({ reasoningPolicy: { candidates: "low" } })).toBe(false);
@@ -304,14 +296,12 @@ describe("isTaskSetMember", () => {
     expect(isTaskSetMember(makeMember({ weight: 0 }))).toBe(false);
     expect(isTaskSetMember(makeMember({ weight: -1 }))).toBe(false);
     expect(isTaskSetMember(makeMember({ order: -1 }))).toBe(false);
-    expect(isTaskSetMember(makeMember({ taskVersionRef: { taskId: "", version: 1 } }))).toBe(
-      false,
-    );
-    expect(isTaskSetMember(makeMember({ rubricOverrideRef: { id: "x", version: 0 } }))).toBe(
-      false,
-    );
+    expect(isTaskSetMember(makeMember({ taskVersionRef: { taskId: "", version: 1 } }))).toBe(false);
+    expect(isTaskSetMember(makeMember({ rubricOverrideRef: { id: "x", version: 0 } }))).toBe(false);
     expect(isTaskSetMember(makeMember({ stratum: 5 as unknown as string }))).toBe(false);
-    expect(isTaskSetMember(makeMember({ apiKey: "x" } as unknown as Partial<TaskSetMember>))).toBe(false);
+    expect(isTaskSetMember(makeMember({ apiKey: "x" } as unknown as Partial<TaskSetMember>))).toBe(
+      false,
+    );
   });
 });
 
@@ -322,9 +312,9 @@ describe("isTaskSetVersion (immutable)", () => {
     expect(isTaskSetVersion(makeVersion({ defaultRubricRef: null }))).toBe(true);
   });
   it("accepts a well-formed version with a pinned default rubric", () => {
-    expect(isTaskSetVersion(makeVersion({ defaultRubricRef: { id: "rubric-1", version: 2 } }))).toBe(
-      true,
-    );
+    expect(
+      isTaskSetVersion(makeVersion({ defaultRubricRef: { id: "rubric-1", version: 2 } })),
+    ).toBe(true);
   });
   it("rejects empty members, bad taskSetId, non-positive version, malformed defaults", () => {
     expect(isTaskSetVersion(makeVersion({ members: [] }))).toBe(false);
@@ -332,14 +322,20 @@ describe("isTaskSetVersion (immutable)", () => {
     expect(isTaskSetVersion(makeVersion({ version: 0 }))).toBe(false);
     expect(
       isTaskSetVersion(
-        makeVersion({ defaultJudge: { providerId: "openrouter" } } as unknown as Partial<TaskSetVersion>),
+        makeVersion({
+          defaultJudge: { providerId: "openrouter" },
+        } as unknown as Partial<TaskSetVersion>),
       ),
     ).toBe(false);
     expect(
-      isTaskSetVersion(makeVersion({ defaultModelSlots: "x" } as unknown as Partial<TaskSetVersion>)),
+      isTaskSetVersion(
+        makeVersion({ defaultModelSlots: "x" } as unknown as Partial<TaskSetVersion>),
+      ),
     ).toBe(false);
     expect(
-      isTaskSetVersion(makeVersion({ repeatPolicy: { kind: "always" } } as unknown as Partial<TaskSetVersion>)),
+      isTaskSetVersion(
+        makeVersion({ repeatPolicy: { kind: "always" } } as unknown as Partial<TaskSetVersion>),
+      ),
     ).toBe(false);
     expect(
       isTaskSetVersion(
@@ -348,9 +344,9 @@ describe("isTaskSetVersion (immutable)", () => {
     ).toBe(false);
     expect(
       isTaskSetVersion(
-        makeVersion(
-          { protocolDefaults: { reasoningPolicy: {} } } as unknown as Partial<TaskSetVersion>,
-        ),
+        makeVersion({
+          protocolDefaults: { reasoningPolicy: {} },
+        } as unknown as Partial<TaskSetVersion>),
       ),
     ).toBe(false);
     expect(isTaskSetVersion(makeVersion({ defaultRubricRef: { id: "x", version: 0 } }))).toBe(
@@ -472,8 +468,7 @@ describe("validateTaskSetMember", () => {
 
 describe("validateTaskSetVersionRefs", () => {
   const resolvers = {
-    taskVersionExists: (ref: TaskVersionRef) =>
-      ref.taskId === "task-1" && ref.version === 1,
+    taskVersionExists: (ref: TaskVersionRef) => ref.taskId === "task-1" && ref.version === 1,
     rubricVersionExists: (ref: { id: string; version: number }) =>
       ref.id === "rubric-1" && ref.version === 1,
   };
@@ -530,15 +525,13 @@ describe("validateTaskSetVersionRefs", () => {
       ],
     });
     const out = validateTaskSetVersionRefs(version, resolvers);
-    expect(out.unresolved.some((u) => u.field === "members[0]" && u.reason.includes("no-crosswalk")))
-      .toBe(true);
+    expect(
+      out.unresolved.some((u) => u.field === "members[0]" && u.reason.includes("no-crosswalk")),
+    ).toBe(true);
   });
 
   it("skips null rubric refs (holistic) without reporting them unresolved", () => {
-    const out = validateTaskSetVersionRefs(
-      makeVersion({ defaultRubricRef: null }),
-      resolvers,
-    );
+    const out = validateTaskSetVersionRefs(makeVersion({ defaultRubricRef: null }), resolvers);
     expect(out.unresolved).toEqual([]);
   });
 });
