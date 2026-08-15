@@ -2,10 +2,11 @@
 // RSemble AI — Dexie persistence database
 //
 // Single IndexedDB database hosting the run, evaluation rubric, suite,
-// experiment, storage-meta, Fusion Study, and canonical Task tables. Owns the
-// storage lifecycle: classified StorageError for quota/unavailable/blocked
-// states and a StorageState surface so React providers can react when the
-// database is blocked by another tab or upgraded out from under it.
+// experiment, storage-meta, Fusion Study, canonical Task, and Task Set
+// tables. Owns the storage lifecycle: classified StorageError for
+// quota/unavailable/blocked states and a StorageState surface so React
+// providers can react when the database is blocked by another tab or
+// upgraded out from under it.
 //
 // Schema versions:
 //   v1 — run/evaluation/suite/experiment/storage-meta (7 tables).
@@ -14,6 +15,8 @@
 //        taskArtifacts, taskInstances, taskFamilies, taskFamilyAssignments,
 //        taskFacetAnnotations, taskMigrationCrosswalk.
 //   v4 — additive typed cross-family relations (1 table): taskFamilyRelations.
+//   v5 — additive Task Set record/version tables (2 tables): taskSets,
+//        taskSetVersions. The legacy Suite table is unchanged.
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
@@ -248,6 +251,32 @@ export interface TaskMigrationCrosswalkRow {
   taskVersion: number;
 }
 
+// --- Task Set rows (schema v5) ------------------------------------------------
+//
+// Mutable Task Set records plus immutable versions. Mirrors the Task/Rubric
+// record+version pattern — never the Suite overwrite model. The legacy
+// `suites` table remains untouched.
+
+/** Canonical Task Set record row (spec §3.1). Mutable metadata only via CAS. */
+export interface TaskSetRecordRow {
+  id: string;
+  record: unknown;
+  latestVersion: number;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt: number | null;
+  origin: string;
+  revision: number;
+}
+
+/** Immutable Task Set Version row (spec §3.2). Compound [taskSetId+version] key. */
+export interface TaskSetVersionRow {
+  taskSetId: string;
+  version: number;
+  version_: unknown;
+  createdAt: number;
+}
+
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -322,6 +351,9 @@ export class RSembleEvaluationDB extends Dexie {
   taskFacetAnnotations!: Table<TaskFacetAnnotationRow, string>;
   taskMigrationCrosswalk!: Table<TaskMigrationCrosswalkRow, string>;
   taskFamilyRelations!: Table<TaskFamilyRelationRow, string>;
+  // Task Set tables (schema v5)
+  taskSets!: Table<TaskSetRecordRow, string>;
+  taskSetVersions!: Table<TaskSetVersionRow, [string, number]>;
 
   /** Current storage lifecycle state. */
   private _storageState: StorageState = "ready";
@@ -378,6 +410,14 @@ export class RSembleEvaluationDB extends Dexie {
     // not imply a universal family tree.
     this.version(4).stores({
       taskFamilyRelations: "id, fromFamilyId, toFamilyId, kind, createdAt",
+    });
+
+    // v5: additive Task Set record/version tables (spec §3.1–3.2, §5.2).
+    // No existing v1–v4 table is redefined — this block only adds the new
+    // stores. The legacy Suite table stays a single mutable row.
+    this.version(5).stores({
+      taskSets: "id, updatedAt, archivedAt, origin",
+      taskSetVersions: "[taskSetId+version], taskSetId, createdAt",
     });
 
     this.on("blocked", () => {

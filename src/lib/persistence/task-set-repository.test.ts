@@ -175,7 +175,12 @@ function makeCatalogResolvers(
 async function storageError(
   promise: Promise<unknown>,
 ): Promise<{ name: string; kind: string; message: string }> {
-  return (await promise.catch((e: { name: string; kind: string; message: string }) => e))!;
+  try {
+    await promise;
+  } catch (err) {
+    return err as { name: string; kind: string; message: string };
+  }
+  throw new Error("expected storage rejection");
 }
 
 // --- shared contract suite ---------------------------------------------------

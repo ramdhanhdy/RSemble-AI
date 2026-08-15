@@ -8,7 +8,8 @@
 // Child 02 (Canonical Tasks) Milestone B — Task 3: composes the Task
 // repository beside run → eval → fusion. A canonical Task migration failure is
 // bounded to `taskMigrationError` and leaves Compare's established repositories
-// operational (spec §8).
+// operational (spec §8). Child 03 Milestone A Task 3 publishes Task Set
+// storage independently of that Task-catalog migration boundary.
 // =============================================================================
 
 import {
@@ -31,12 +32,16 @@ import { createRunRepository, type RunRepository } from "./run-repository";
 import { createEvaluationRepository, type EvaluationRepository } from "./evaluation-repository";
 import { createFusionStudyRepository, type FusionStudyRepository } from "./fusion-study-repository";
 import { createTaskRepository, type TaskRepository } from "./task-repository";
+import { createTaskSetRepository, type TaskSetRepository } from "./task-set-repository";
 
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
   fusionRepo: FusionStudyRepository | null;
   taskRepo: TaskRepository | null;
+  /** Optional so out-of-ownership test doubles keep typechecking. Published
+   *  only after the database is ready; independent of taskMigrationError. */
+  taskSetRepo?: TaskSetRepository | null;
   /** Raw Dexie handle for infrastructure that composes repositories (execution
    *  lease, experiment unit of work). Null while storage is unavailable. */
   db: RSembleEvaluationDB | null;
@@ -53,6 +58,7 @@ export const RepositoryContext = createContext<RepositoryContextValue>({
   evalRepo: null,
   fusionRepo: null,
   taskRepo: null,
+  taskSetRepo: null,
   db: null,
   storageState: "unavailable",
   taskMigrationError: null,
@@ -73,6 +79,10 @@ export function useFusionStudyRepository(): FusionStudyRepository | null {
 
 export function useTaskRepository(): TaskRepository | null {
   return useContext(RepositoryContext).taskRepo;
+}
+
+export function useTaskSetRepository(): TaskSetRepository | null {
+  return useContext(RepositoryContext).taskSetRepo ?? null;
 }
 
 /** Read the bounded canonical Task migration failure, if Task catalog storage
@@ -158,6 +168,10 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
         : null,
     [repositoriesReady, handle, taskMigrationError],
   );
+  const taskSetRepo = useMemo(
+    () => (repositoriesReady && handle ? createTaskSetRepository(handle.db) : null),
+    [repositoriesReady, handle],
+  );
 
   const value = useMemo<RepositoryContextValue>(
     () => ({
@@ -165,12 +179,23 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       evalRepo,
       fusionRepo,
       taskRepo,
+      taskSetRepo,
       db: handle?.db ?? null,
       storageState,
       taskMigrationError,
       retry,
     }),
-    [runRepo, evalRepo, fusionRepo, taskRepo, handle, storageState, taskMigrationError, retry],
+    [
+      runRepo,
+      evalRepo,
+      fusionRepo,
+      taskRepo,
+      taskSetRepo,
+      handle,
+      storageState,
+      taskMigrationError,
+      retry,
+    ],
   );
   return <RepositoryContext.Provider value={value}>{children}</RepositoryContext.Provider>;
 }
