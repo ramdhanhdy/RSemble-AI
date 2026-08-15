@@ -53,6 +53,11 @@ import type {
 } from "./lib/evaluations/evaluation-types";
 import type { FusionStudy } from "./lib/evaluations/fusion-study-types";
 
+import { ExecutionOwnerRegistry } from "./lib/execution-owner";
+import { ExecutionOwnerProvider, useExecutionOwner } from "./lib/execution-owner-context";
+import { ExperimentControllerContext } from "./lib/evaluations/experiment-controller-hooks";
+import type { ExperimentController } from "./lib/evaluations/experiment-controller";
+import type { CatalogModel, ProviderId } from "./lib/providers/types";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 // --- Fixtures ----------------------------------------------------------------
@@ -143,6 +148,8 @@ interface Harness {
   loc: { current: CapturedLocation | null };
   /** navigate() exposed by the NavProbe for history/navigation tests. */
   nav: { current: NavigateFunction | null };
+  /** App-lifetime execution owner registry. */
+  ownerRegistry: ExecutionOwnerRegistry | null;
 }
 
 interface RenderOptions {
@@ -152,6 +159,9 @@ interface RenderOptions {
   taskRepo?: TaskRepository | null;
   fusionRepo?: FusionStudyRepository | null;
   db?: { taskSetOwnershipCrosswalk: { get: (key: string) => Promise<unknown> } } | null;
+  models?: CatalogModel[];
+  availableProviderIds?: ProviderId[];
+  controller?: ExperimentController | null;
 }
 
 function flush(): Promise<void> {
@@ -181,6 +191,7 @@ function renderRouter(opts: RenderOptions): Harness {
 
   const loc: { current: CapturedLocation | null } = { current: null };
   const nav: { current: NavigateFunction | null } = { current: null };
+  const ownerRegRef: { current: ExecutionOwnerRegistry | null } = { current: null };
 
   // Probe lives inside the Router but outside AppRoutes' <Routes>, so it
   // always renders with the current location — including after a
@@ -198,6 +209,12 @@ function renderRouter(opts: RenderOptions): Harness {
     return null;
   }
 
+  function OwnerProbe() {
+    const { registry } = useExecutionOwner();
+    ownerRegRef.current = registry;
+    return null;
+  }
+
   act(() => {
     root.render(
       <MemoryRouter initialEntries={opts.initialEntries} initialIndex={opts.initialIndex}>
@@ -212,8 +229,22 @@ function renderRouter(opts: RenderOptions): Harness {
             retry: () => undefined,
           }}
         >
-          <AppRoutes compareOutlet={null} models={[]} />
-          <NavProbe />
+          <ExecutionOwnerProvider>
+            <ExperimentControllerContext.Provider
+              value={{
+                controller: opts.controller ?? null,
+                lease: null,
+              }}
+            >
+              <AppRoutes
+                compareOutlet={null}
+                models={opts.models ?? []}
+                availableProviderIds={opts.availableProviderIds ?? []}
+              />
+              <NavProbe />
+              <OwnerProbe />
+            </ExperimentControllerContext.Provider>
+          </ExecutionOwnerProvider>
         </RepositoryContext.Provider>
       </MemoryRouter>,
     );
@@ -226,6 +257,7 @@ function renderRouter(opts: RenderOptions): Harness {
     $$: (s) => [...container.querySelectorAll<HTMLElement>(s)],
     loc,
     nav,
+    ownerRegistry: ownerRegRef.current,
   };
 }
 
@@ -1061,6 +1093,114 @@ describe("AppRouter — Evaluation execution results routes (spec §5.1, §4)", 
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/results/exp-completed-1");
     expect(h.container.textContent).toContain("Evaluation results");
+    cleanup(h);
+  });
+
+  it("gates recovery and add-model controls on results route when app-lifetime owner is held", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await repo.createExperiment({
+      id: "exp-gated-1",
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 2,
+      protocolFingerprint: "fp",
+      status: "completed",
+      execution: null,
+      snapshot: {
+        suiteId: "suite-1",
+        suiteVersion: 2,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: Date.now(),
+      },
+      tasks: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const fakeController = {
+      start: vi.fn(),
+      requestPause: vi.fn(),
+      resume: vi.fn(),
+      abort: vi.fn(),
+      retryIncomplete: vi.fn(),
+      repairMissingCells: vi.fn(),
+      addModelAndRun: vi.fn(),
+      recoverOnStartup: vi.fn(),
+      subscribe: vi.fn(() => () => {}),
+      whenIdle: vi.fn(),
+    } as unknown as ExperimentController;
+
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/results/exp-gated-1"],
+      repo,
+      availableProviderIds: ["openrouter"],
+      controller: fakeController,
+    });
+
+    // Acquire an app-lifetime execution owner (e.g. Compare is running in the tab)
+    act(() => {
+      h.ownerRegistry?.tryAcquire({ kind: "compare", id: "run-cmp-1" });
+    });
+    await settle();
+
+    // Since the app-lifetime owner is held, recovery controls (like Add Model) must be gated/hidden.
+    expect(h.$('[data-testid="add-model-action"]')).toBeNull();
+    cleanup(h);
+  });
+
+  it("shows recovery and add-model controls on results route when no owner is held and controller is present", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await repo.createExperiment({
+      id: "exp-ungated-1",
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 2,
+      protocolFingerprint: "fp",
+      status: "completed",
+      execution: null,
+      snapshot: {
+        suiteId: "suite-1",
+        suiteVersion: 2,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+        profiles: [],
+        protocolFingerprint: "fp",
+        createdAt: Date.now(),
+      },
+      tasks: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const fakeController = {
+      start: vi.fn(),
+      requestPause: vi.fn(),
+      resume: vi.fn(),
+      abort: vi.fn(),
+      retryIncomplete: vi.fn(),
+      repairMissingCells: vi.fn(),
+      addModelAndRun: vi.fn(),
+      recoverOnStartup: vi.fn(),
+      subscribe: vi.fn(() => () => {}),
+      whenIdle: vi.fn(),
+    } as unknown as ExperimentController;
+
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/results/exp-ungated-1"],
+      repo,
+      availableProviderIds: ["openrouter"],
+      controller: fakeController,
+    });
+    await settle();
+
+    expect(h.$('[data-testid="add-model-action"]')).not.toBeNull();
     cleanup(h);
   });
 
