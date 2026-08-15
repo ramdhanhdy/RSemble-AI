@@ -12,6 +12,7 @@ import {
   useStorageState,
   useTaskMigrationError,
   useTaskRepository,
+  useTaskSetRepository,
 } from "./repository-context";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -28,6 +29,7 @@ afterEach(() => {
 function RepositoryProbe() {
   const runRepo = useRunRepository();
   const taskRepo = useTaskRepository();
+  const taskSetRepo = useTaskSetRepository();
   const storageState = useStorageState();
   const taskMigrationError = useTaskMigrationError();
   activeProviderDatabase = useContext(RepositoryContext).db;
@@ -35,6 +37,7 @@ function RepositoryProbe() {
     <div
       data-run={runRepo ? "ready" : "pending"}
       data-task={taskRepo ? "ready" : "pending"}
+      data-task-set={taskSetRepo ? "ready" : "pending"}
       data-storage={storageState}
       data-task-error={taskMigrationError?.kind ?? "none"}
     />
@@ -104,9 +107,11 @@ describe("RepositoryProvider initialization", () => {
     const probe = () => container.querySelector("div[data-run]");
     expect(probe()?.getAttribute("data-run")).toBe("pending");
     expect(probe()?.getAttribute("data-task")).toBe("pending");
+    expect(probe()?.getAttribute("data-task-set")).toBe("pending");
 
     await waitUntil(() => probe()?.getAttribute("data-task") === "ready");
     expect(probe()?.getAttribute("data-run")).toBe("ready");
+    expect(probe()?.getAttribute("data-task-set")).toBe("ready");
     act(() => root.unmount());
     container.remove();
   });
@@ -129,6 +134,7 @@ describe("RepositoryProvider initialization", () => {
     await waitUntil(() => probe()?.getAttribute("data-task-error") === "validation");
     expect(probe()?.getAttribute("data-run")).toBe("ready");
     expect(probe()?.getAttribute("data-task")).toBe("pending");
+    expect(probe()?.getAttribute("data-task-set")).toBe("ready");
     expect(probe()?.getAttribute("data-storage")).toBe("ready");
     act(() => root.unmount());
     container.remove();
