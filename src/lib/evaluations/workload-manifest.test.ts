@@ -654,6 +654,99 @@ describe("Workload Manifest Materialization: Dirty Draft Rejection", () => {
     );
   });
 });
+// =============================================================================
+// Run 10 repair: execution-readiness rejection (F1), nested Rubric resolution
+// (F2), and archived-Rubric provenance (F4).
+// =============================================================================
+
+describe("Workload Manifest Materialization: Run 10 repair (F1/F2/F4)", () => {
+  it("F1: rejects materialization when no model slot is enabled", () => {
+    const resolvers = makeCatalogResolvers([makeTaskVersion()], [makeRubric()]);
+    const taskSetVersion = makeTaskSetVersion({ defaultModelSlots: [] });
+    expect(() => materializeWorkloadManifest(taskSetVersion, resolvers)).toThrow();
+  });
+
+  it("F1: rejects materialization when the default judge is invalid", () => {
+    const resolvers = makeCatalogResolvers([makeTaskVersion()], [makeRubric()]);
+    const taskSetVersion = makeTaskSetVersion({ defaultJudge: { providerId: "openrouter", model: "" } });
+    expect(() => materializeWorkloadManifest(taskSetVersion, resolvers)).toThrow();
+  });
+
+  it("F2: rejects an execution-override evaluation that pins an unresolved Rubric", () => {
+    const resolvers = makeCatalogResolvers([makeTaskVersion()], [makeRubric()]);
+    const taskSetVersion = makeTaskSetVersion({
+      members: [
+        makeTaskSetMember({
+          executionOverrides: {
+            evaluation: { kind: "profile", profile: { id: "missing-rubric", version: 9 } },
+          },
+        }),
+      ],
+    });
+    expect(() => materializeWorkloadManifest(taskSetVersion, resolvers)).toThrow(
+      UnresolvedWorkloadRefError,
+    );
+  });
+
+  it("F2: rejects a Rubric override that conflicts with the execution-override evaluation", () => {
+    const resolvers = makeCatalogResolvers(
+      [makeTaskVersion()],
+      [makeRubric(), makeRubric({ id: "rubric-2", version: 1 })],
+    );
+    const taskSetVersion = makeTaskSetVersion({
+      members: [
+        makeTaskSetMember({
+          rubricOverrideRef: { id: "rubric-1", version: 1 },
+          executionOverrides: {
+            evaluation: { kind: "profile", profile: { id: "rubric-2", version: 1 } },
+          },
+        }),
+      ],
+    });
+    expect(() => materializeWorkloadManifest(taskSetVersion, resolvers)).toThrow();
+  });
+
+  it("F2: carries the resolved nested-override Rubric into the snapshot", () => {
+    const rubric2 = makeRubric({ id: "rubric-2", version: 1 });
+    const resolvers = makeCatalogResolvers([makeTaskVersion()], [makeRubric(), rubric2]);
+    const taskSetVersion = makeTaskSetVersion({
+      members: [
+        makeTaskSetMember({
+          rubricOverrideRef: null,
+          executionOverrides: {
+            evaluation: { kind: "profile", profile: { id: "rubric-2", version: 1 } },
+          },
+        }),
+      ],
+    });
+    const snapshot = materializeWorkloadManifest(taskSetVersion, resolvers);
+    expect(snapshot.tasks[0].effectiveRubricRef).toEqual({ id: "rubric-2", version: 1 });
+    expect(snapshot.tasks[0].effectiveRubric?.id).toBe("rubric-2");
+    expect(snapshot.rubrics.some((r) => r.id === "rubric-2")).toBe(true);
+  });
+
+  it("F4: records archived-Rubric provenance even when the Task is not archived", () => {
+    const task = makeTaskVersion({ taskId: "task-1", version: 1 });
+    const rubric = makeRubric({ id: "archived-rubric", version: 1 });
+    const resolvers = makeCatalogResolvers(
+      [task],
+      [rubric],
+      new Set(),
+      new Set(["archived-rubric"]),
+    );
+    const taskSetVersion = makeTaskSetVersion({
+      defaultRubricRef: { id: "archived-rubric", version: 1 },
+      members: [makeTaskSetMember({ taskVersionRef: { taskId: "task-1", version: 1 } })],
+    });
+    const snapshot = materializeWorkloadManifest(taskSetVersion, resolvers, {
+      allowArchived: true,
+    });
+    expect(snapshot.tasks[0].isArchived).toBe(false);
+    expect(
+      (snapshot.tasks[0] as { isEffectiveRubricArchived?: unknown }).isEffectiveRubricArchived,
+    ).toBe(true);
+  });
+});
 
 // =============================================================================
 // 7. Roles, Strata, Weights, Policies & Defaults Preservation

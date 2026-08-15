@@ -674,6 +674,35 @@ describe("suiteToTaskSetVersion (deprecated adapter)", () => {
     expect(JSON.stringify(suite)).toBe(snapshot);
   });
 
+  it("F3: projection returns fresh evaluation/verification objects — mutating them leaves the source suite unchanged", () => {
+    const suite = makeLegacySuite({
+      tasks: [
+        makeLegacyTask("t1", {
+          order: 0,
+          evaluation: { kind: "profile", profile: { id: "rubric-2", version: 1 } },
+          judgeInstructionOverride: "be strict",
+          verification: { kind: "exact_match" },
+        }),
+        makeLegacyTask("t2", { order: 1, evaluation: { kind: "inherit" } }),
+      ],
+    });
+    const snapshot = JSON.stringify(suite);
+    const crosswalk: TaskCrosswalk = () => ({ taskId: "task-1", version: 1 });
+    const { version } = suiteToTaskSetVersion(suite, crosswalk);
+
+    const overrides = version.members[0].executionOverrides;
+    expect(overrides).not.toBeNull();
+    if (overrides?.evaluation?.kind === "profile") {
+      overrides.evaluation.profile = { id: "corrupted", version: 999 };
+    }
+    if (overrides?.verification) {
+      overrides.verification.kind = "numeric";
+    }
+    overrides!.judgeInstructionOverride = "corrupted";
+
+    expect(JSON.stringify(suite)).toBe(snapshot);
+  });
+
   it("does not make Suite canonical: members stay unresolved without a crosswalk", () => {
     const suite = makeLegacySuite();
     const { version } = suiteToTaskSetVersion(suite);

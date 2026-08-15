@@ -111,3 +111,41 @@ describe("InMemoryTaskSetRepository additional parity edge cases", () => {
     ).rejects.toThrow(/mismatch/);
   });
 });
+
+describe("InMemoryTaskSetRepository Run 10 repair (F5)", () => {
+  function poisonMember(): TaskSetMember {
+    const member = makeMember();
+    // structuredClone throws DataCloneError on function-valued properties; the
+    // runtime validators check only known fields, so this passes validation and
+    // fails only at clone time — exactly the F5 failure-atomicity surface.
+    Object.assign(member, { __clonePoison: () => undefined });
+    return member;
+  }
+
+  it("createTaskSet leaves no partial state when the version clone fails", async () => {
+    const repo = new InMemoryTaskSetRepository();
+    const versionInput = { ...version({ version: 1, members: [poisonMember()] }), version: 1 };
+
+    await expect(repo.createTaskSet(record(), versionInput)).rejects.toThrow();
+
+    expect(await repo.getTaskSetRecord("set-1")).toBeNull();
+    expect(await repo.listTaskSetVersions("set-1")).toEqual([]);
+  });
+
+  it("appendTaskSetVersion leaves no partial state when the version clone fails", async () => {
+    const repo = new InMemoryTaskSetRepository();
+    await repo.createTaskSet(record(), version());
+    const base = (await repo.getTaskSetRecord("set-1"))!;
+
+    const versionInput = { ...version({ version: 2, members: [poisonMember()] }), version: 2 };
+
+    await expect(
+      repo.appendTaskSetVersion({ ...base, latestVersion: 2 }, versionInput, base.revision),
+    ).rejects.toThrow();
+
+    const after = (await repo.getTaskSetRecord("set-1"))!;
+    expect(after.revision).toBe(0);
+    expect(after.latestVersion).toBe(1);
+    expect((await repo.listTaskSetVersions("set-1")).map((v) => v.version)).toEqual([1]);
+  });
+});
