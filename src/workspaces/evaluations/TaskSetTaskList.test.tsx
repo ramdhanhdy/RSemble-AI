@@ -253,10 +253,10 @@ describe("TaskSetTaskList — actions, selection, and deletion", () => {
     );
     await settle();
 
-    const deleteBtn = h.$("button[aria-label*='Delete'], button[data-action='delete-task']");
+    const deleteBtn = h.$("button[data-action='delete-task']");
     expect(deleteBtn).toBeTruthy();
     await act(async () => {
-      deleteBtn?.click();
+      deleteBtn!.click();
     });
     await settle();
 

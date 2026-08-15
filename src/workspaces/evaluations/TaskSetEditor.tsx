@@ -1,16 +1,32 @@
 // =============================================================================
-// TaskSetEditor — two-pane Task Set authoring surface (spec §4–§5, plan Task 5).
+// TaskSetEditor — two-pane Task Set authoring surface (spec §4–§5, Child 03 Task 6).
 //
-// Desktop: two-pane split (task list | selected task editor). Header shows
+// Desktop: two-pane split (task list | selected task member editor). Header shows
 // task set name, persisted version, dirty/save state, settings disclosure,
 // and Run evaluation button. Save and Run are distinct controls. Historical
 // versions at /evaluations/sets/:taskSetId/versions/:version are read-only.
 // Frozen EvaluationSuite fields stay named suiteId/suiteVersion on records.
+//
+// Task 6 canonical selection:
+//  - Add task opens TaskVersionSelector to pick exact canonical Task Versions.
+//  - Pinned version is visible and selectable (no latest-version substitution).
+//  - Preserves deterministic order, role, stratum, weight, overrides.
+//  - Editing a task navigates to /tasks/:taskId (never mutates canonical tasks here).
+//  - Archived tasks display warning banner and require confirmation.
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ChevronDown, Loader2, Save, Play, AlertCircle, Trophy } from "lucide-react";
+import {
+  ChevronDown,
+  Loader2,
+  Save,
+  Play,
+  AlertCircle,
+  AlertTriangle,
+  Trophy,
+  ExternalLink,
+} from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
@@ -21,7 +37,10 @@ import { useExecutionOwner } from "../../lib/execution-owner-context";
 import type { ExecutionOwner } from "../../lib/execution-owner";
 import { SuiteExperimentHistory } from "./SuiteExperimentHistory";
 import { FusionStudyPanel } from "./FusionStudyPanel";
-import { useFusionStudyRepository } from "../../lib/persistence/repository-context";
+import {
+  useFusionStudyRepository,
+  useTaskRepository,
+} from "../../lib/persistence/repository-context";
 import {
   type EvaluationSuite,
   type EvaluationTask,
@@ -29,7 +48,10 @@ import {
   type ExperimentRecord,
   type EvaluationRubric,
   type RubricRecord,
+  type TaskEvaluationSelection,
 } from "../../lib/evaluations/evaluation-types";
+import type { TaskSetMemberRole } from "../../lib/evaluations/task-set-types";
+import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import {
   isSuiteDirty,
@@ -37,8 +59,8 @@ import {
   validateSuiteForSave,
 } from "../../lib/evaluations/suite-validation";
 import { StorageError } from "../../lib/persistence/database";
-import { SuiteTaskList } from "./SuiteTaskList";
-import { SuiteTaskEditor } from "./SuiteTaskEditor";
+import { TaskSetTaskList, type TaskSetMemberData } from "./TaskSetTaskList";
+import { TaskVersionSelector, type TaskVersionSelection } from "./TaskVersionSelector";
 import { SuiteSettings } from "./SuiteSettings";
 import { RubricRefChip } from "../../ui/RubricRefChip";
 
@@ -55,14 +77,10 @@ interface TaskSetEditorProps {
   executionOwner?: ExecutionOwner | null;
 }
 
-function generateTaskId(): string {
-  return `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-}
-
 export function TaskSetEditor({
   repo,
   models,
-  taskRepo: _taskRepoProp,
+  taskRepo: taskRepoProp,
   controller: controllerProp,
   executionOwner: ownerProp,
 }: TaskSetEditorProps) {
@@ -77,7 +95,10 @@ export function TaskSetEditor({
     Number.isFinite(requestedVersion) && requestedVersion > 0 ? requestedVersion : null;
   const navigate = useNavigate();
 
-  // Context resolution with prop overrides (test seams — see file header).
+  // Context resolution with prop overrides (test seams).
+  const ctxTaskRepo = useTaskRepository();
+  const taskRepo = taskRepoProp !== undefined ? taskRepoProp : ctxTaskRepo;
+
   const ctxController = useExperimentController();
   const { owner: ctxOwner } = useExecutionOwner();
   const controller = controllerProp !== undefined ? controllerProp : ctxController;
@@ -96,6 +117,13 @@ export function TaskSetEditor({
   const [rubricRecords, setRubricRecords] = useState<RubricRecord[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [preflightOpen, setPreflightOpen] = useState(false);
+  const [taskSelectorOpen, setTaskSelectorOpen] = useState(false);
+
+  // Metadata cache for tasks referenced by the set
+  const [taskMeta, setTaskMeta] = useState<
+    Map<string, { record: TaskRecord | null; versions: TaskVersion[] }>
+  >(new Map());
+
   const requestIdRef = useRef(0);
 
   // --- Load suite + rubric records ---
@@ -137,8 +165,49 @@ export function TaskSetEditor({
     void load();
   }, [load]);
 
-  // Latest experiment for the header "Latest results" entry — the persistent
-  // path back to results after navigation (discoverability, spec §10.4).
+  // Load canonical task metadata when draft.tasks change
+  useEffect(() => {
+    if (!taskRepo || !draft) return;
+    let cancelled = false;
+
+    const taskIds = Array.from(
+      new Set(
+        draft.tasks.map((t) => {
+          const tData = t as TaskSetMemberData;
+          return tData.taskVersionRef?.taskId || t.id;
+        }),
+      ),
+    );
+
+    if (taskIds.length === 0) {
+      setTaskMeta(new Map());
+      return;
+    }
+
+    Promise.all(
+      taskIds.map(async (taskId) => {
+        try {
+          const [rec, vers] = await Promise.all([
+            taskRepo.getTaskRecord(taskId),
+            taskRepo.listTaskVersions(taskId).catch(() => [] as TaskVersion[]),
+          ]);
+          return [taskId, { record: rec, versions: vers }] as const;
+        } catch {
+          return [taskId, { record: null, versions: [] as TaskVersion[] }] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled) {
+        setTaskMeta(new Map(entries));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [taskRepo, draft?.tasks]);
+
+  // Latest experiment for the header "Latest results" entry
   useEffect(() => {
     let cancelled = false;
     setLatestExperiment(null);
@@ -156,8 +225,7 @@ export function TaskSetEditor({
     };
   }, [repo, persisted]);
 
-  // Resolve the persisted default-evaluation pin for the header rubric chip
-  // (identity spec §5.3). Tracks the persisted suite — the version Run uses.
+  // Resolve pinned rubric for header chip
   const [pinnedRubric, setPinnedRubric] = useState<EvaluationRubric | null>(null);
   const [pinnedRubricLoaded, setPinnedRubricLoaded] = useState(false);
   useEffect(() => {
@@ -199,7 +267,7 @@ export function TaskSetEditor({
 
   const nextVersion = (persisted?.version ?? 0) + 1;
 
-  // --- Resolve rubric label (id + version → "Name vN") ---
+  // Resolve rubric label
   const resolveRubricLabel = useCallback(
     (ref: RubricVersionRef): string => {
       const rec = rubricRecords.find((p) => p.id === ref.id);
@@ -207,6 +275,26 @@ export function TaskSetEditor({
       return `${name} v${ref.version}`;
     },
     [rubricRecords],
+  );
+
+  // Resolve task info for list
+  const resolveTaskInfo = useCallback(
+    (taskId: string, task: EvaluationTask) => {
+      const taskData = task as TaskSetMemberData;
+      const canonicalTaskId = taskData.taskVersionRef?.taskId || taskId;
+      const meta = taskMeta.get(canonicalTaskId);
+      const pinnedVersion = taskData.taskVersionRef?.version ?? (meta?.record ? meta.record.latestVersion : undefined);
+      const isArchived = meta?.record?.archivedAt != null;
+
+      return {
+        pinnedVersion,
+        role: taskData.role,
+        stratum: taskData.stratum,
+        weight: taskData.weight,
+        isArchived,
+      };
+    },
+    [taskMeta],
   );
 
   // --- Draft mutation helpers ---
@@ -226,36 +314,49 @@ export function TaskSetEditor({
     );
   }, []);
 
-  const addTask = useCallback(() => {
-    if (!draft) return;
-    const id = generateTaskId();
-    const newTask: EvaluationTask = {
-      id,
-      title: "",
-      prompt: "",
-      systemPrompt: "",
-      evaluation: { kind: "inherit" },
-      judgeInstructionOverride: "",
-      order: draft.tasks.length,
-    };
-    setDraft({
-      ...draft,
-      tasks: [...draft.tasks, newTask],
-      updatedAt: Date.now(),
-    });
-    setSelectedTaskId(id);
-  }, [draft]);
+  const handleSelectCanonicalTask = useCallback(
+    (selection: TaskVersionSelection) => {
+      if (!draft) return;
+
+      const newTask: EvaluationTask & {
+        taskVersionRef?: { taskId: string; version: number };
+        role?: TaskSetMemberRole;
+        stratum?: string | null;
+        weight?: number;
+      } = {
+        id: selection.taskId,
+        title: selection.taskVersion.title || selection.taskVersion.objective || selection.taskRecord.id,
+        prompt: selection.taskVersion.candidateInstruction,
+        systemPrompt: "",
+        evaluation: { kind: "inherit" },
+        judgeInstructionOverride: "",
+        order: draft.tasks.length,
+        taskVersionRef: { taskId: selection.taskId, version: selection.version },
+        role: "organic",
+        stratum: null,
+        weight: 1,
+      };
+
+      setDraft({
+        ...draft,
+        tasks: [...draft.tasks, newTask],
+        updatedAt: Date.now(),
+      });
+      setSelectedTaskId(selection.taskId);
+    },
+    [draft],
+  );
 
   const moveTask = useCallback((taskId: string, direction: -1 | 1) => {
     setDraft((prev) => {
       if (!prev) return prev;
-      const idx = prev.tasks.findIndex((t) => t.id === taskId);
+      const sorted = [...prev.tasks].sort((a, b) => a.order - b.order);
+      const idx = sorted.findIndex((t) => t.id === taskId);
       if (idx < 0) return prev;
       const newIdx = idx + direction;
-      if (newIdx < 0 || newIdx >= prev.tasks.length) return prev;
-      const tasks = [...prev.tasks];
-      [tasks[idx], tasks[newIdx]] = [tasks[newIdx], tasks[idx]];
-      // Reassign order to reflect new positions.
+      if (newIdx < 0 || newIdx >= sorted.length) return prev;
+      const tasks = [...sorted];
+      [tasks[idx], tasks[newIdx]] = [tasks[newIdx]!, tasks[idx]!];
       const reordered = tasks.map((t, i) => ({ ...t, order: i }));
       return { ...prev, tasks: reordered, updatedAt: Date.now() };
     });
@@ -270,7 +371,6 @@ export function TaskSetEditor({
       });
       setSelectedTaskId((prev) => {
         if (prev !== taskId) return prev;
-        // Move selection to the nearest remaining task.
         const remaining = draft?.tasks.filter((t) => t.id !== taskId) ?? [];
         return remaining[0]?.id ?? null;
       });
@@ -390,6 +490,20 @@ export function TaskSetEditor({
               ? "Archived task sets cannot run"
               : null;
   const canRun = runDisabledReason === null;
+
+  // Selected task canonical metadata
+  const selectedTaskData = selectedTask as TaskSetMemberData | null;
+  const selectedCanonicalTaskId = selectedTaskData?.taskVersionRef?.taskId || selectedTask?.id || "";
+  const selectedMeta = taskMeta.get(selectedCanonicalTaskId);
+  const selectedRecord = selectedMeta?.record ?? null;
+  const availableVersions = selectedMeta?.versions ?? [];
+  const pinnedVersionNum = selectedTaskData?.taskVersionRef?.version ?? (selectedRecord ? selectedRecord.latestVersion : 1);
+  const isSelectedTaskArchived = selectedRecord?.archivedAt != null;
+
+  const inheritDescription =
+    draft.defaultEvaluation.kind === "holistic"
+      ? "Inherits the task set default: holistic judgment"
+      : `Inherits the task set default: pinned rubric ${resolveRubricLabel(draft.defaultEvaluation.profile)}`;
 
   return (
     <div
@@ -524,7 +638,7 @@ export function TaskSetEditor({
           aria-label="Task list"
           className="min-h-0 lg:w-[320px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-edge lg:pr-3"
         >
-          <SuiteTaskList
+          <TaskSetTaskList
             tasks={draft.tasks}
             selectedTaskId={selectedTaskId}
             onSelect={(id) => {
@@ -533,9 +647,11 @@ export function TaskSetEditor({
                 void navigate(`/evaluations/sets/${taskSetIdResolved}/tasks/${id}`);
               }
             }}
-            onAdd={isHistorical ? () => undefined : addTask}
+            onAddClick={isHistorical ? () => undefined : () => setTaskSelectorOpen(true)}
             onMove={isHistorical ? () => undefined : moveTask}
             onDelete={isHistorical ? () => undefined : deleteTask}
+            readOnly={isHistorical}
+            resolveTaskInfo={resolveTaskInfo}
           />
           <div className="mt-3 min-w-0 border-t border-edge pt-3">
             <SuiteExperimentHistory repo={repo} suiteId={persisted.id} />
@@ -552,22 +668,228 @@ export function TaskSetEditor({
 
         <section aria-label="Task editor" className="min-h-0 flex-1 lg:overflow-y-auto lg:pl-3">
           {selectedTask ? (
-            <SuiteTaskEditor
-              task={selectedTask}
-              suiteDefaultEvaluation={draft.defaultEvaluation}
-              onChange={(patch) => {
-                if (!isHistorical) patchTask(selectedTask.id, patch);
-              }}
-              rubricRecords={rubricRecords}
-              resolveRubricLabel={resolveRubricLabel}
-            />
+            <div className="flex flex-col gap-4 p-1">
+              {/* Canonical Task Identity Header */}
+              <div className="flex flex-col gap-2 rounded-md border border-edge bg-panel p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <h2 className="min-w-0 truncate text-base font-semibold text-text">
+                      {selectedTask.title || selectedCanonicalTaskId}
+                    </h2>
+                    <span
+                      data-pinned-version
+                      className="shrink-0 rounded-sm border border-accent/40 bg-accent/[0.08] px-1.5 py-0.5 font-mono text-xs text-accent"
+                    >
+                      v{pinnedVersionNum}
+                    </span>
+                    {isSelectedTaskArchived && (
+                      <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-warning">
+                        Archived
+                      </span>
+                    )}
+                  </div>
+                  <Link
+                    to={`/tasks/${selectedCanonicalTaskId}`}
+                    data-action="open-task-detail"
+                    className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-card px-3 text-sm text-text-secondary transition-colors hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <ExternalLink size={14} aria-hidden="true" />
+                    Edit task
+                  </Link>
+                </div>
+                <p className="text-xs text-text-muted">
+                  Canonical tasks are managed globally. Editing this task navigates to the Task editor and will not silently mutate saved manifests.
+                </p>
+              </div>
+
+              {/* Archived Warning Banner */}
+              {isSelectedTaskArchived && (
+                <div
+                  role="alert"
+                  data-archived-warning
+                  className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/[0.08] p-3 text-xs text-warning"
+                >
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <div>
+                    <p className="font-medium">Warning: This referenced canonical task is archived.</p>
+                    <p className="text-text-secondary mt-0.5">
+                      Archived tasks remain executable in previously saved sets, but cannot receive new canonical versions.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Candidate Instruction (Read-only Preview) */}
+              <div className="flex flex-col gap-1.5">
+                <span className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                  Candidate Instruction (Read-only preview)
+                </span>
+                <div className="max-h-[160px] overflow-y-auto rounded-md border border-edge bg-card p-3 font-mono text-xs text-text-secondary scroll-thin whitespace-pre-wrap">
+                  {selectedTask.prompt || "(No candidate instruction text)"}
+                </div>
+              </div>
+
+              {/* Version Pinning Controls */}
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="member-version-select" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                  Pinned Version
+                </label>
+                {availableVersions.length > 1 ? (
+                  <select
+                    id="member-version-select"
+                    data-field="member-version"
+                    disabled={isHistorical}
+                    value={pinnedVersionNum}
+                    onChange={(e) => {
+                      const newVer = Number(e.target.value);
+                      const verObj = availableVersions.find((v) => v.version === newVer);
+                      patchTask(selectedTask.id, {
+                        title: verObj?.title || verObj?.objective || selectedTask.title,
+                        prompt: verObj?.candidateInstruction ?? selectedTask.prompt,
+                        taskVersionRef: {
+                          taskId: selectedCanonicalTaskId,
+                          version: newVer,
+                        },
+                      } as Partial<EvaluationTask>);
+                    }}
+                    className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                  >
+                    {availableVersions.map((v) => (
+                      <option key={v.version} value={v.version}>
+                        v{v.version} {v.version === selectedRecord?.latestVersion ? "(latest)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="font-mono text-xs text-text-secondary">
+                    v{pinnedVersionNum} {selectedRecord?.latestVersion === pinnedVersionNum ? "(latest)" : ""}
+                  </span>
+                )}
+              </div>
+
+              {/* Member Roles, Strata, and Weights */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="member-role-select" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                    Membership Role
+                  </label>
+                  <select
+                    id="member-role-select"
+                    data-field="member-role"
+                    disabled={isHistorical}
+                    value={selectedTaskData?.role ?? "organic"}
+                    onChange={(e) => {
+                      patchTask(selectedTask.id, {
+                        role: e.target.value as TaskSetMemberRole,
+                      } as Partial<EvaluationTask>);
+                    }}
+                    className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                  >
+                    <option value="organic">organic (default)</option>
+                    <option value="anchor">anchor</option>
+                    <option value="calibration">calibration</option>
+                    <option value="holdout">holdout</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="member-stratum-input" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                    Stratum (optional)
+                  </label>
+                  <input
+                    id="member-stratum-input"
+                    data-field="member-stratum"
+                    type="text"
+                    disabled={isHistorical}
+                    value={selectedTaskData?.stratum ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      patchTask(selectedTask.id, {
+                        stratum: val.length > 0 ? val : null,
+                      } as Partial<EvaluationTask>);
+                    }}
+                    placeholder="e.g. math, code, safety"
+                    className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 text-sm text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="member-weight-input" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                    Positive Weight
+                  </label>
+                  <input
+                    id="member-weight-input"
+                    data-field="member-weight"
+                    type="number"
+                    min="0.01"
+                    step="0.1"
+                    disabled={isHistorical}
+                    value={selectedTaskData?.weight ?? 1}
+                    onChange={(e) => {
+                      const parsed = parseFloat(e.target.value);
+                      if (Number.isFinite(parsed) && parsed > 0) {
+                        patchTask(selectedTask.id, {
+                          weight: parsed,
+                        } as Partial<EvaluationTask>);
+                      }
+                    }}
+                    className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                  />
+                </div>
+              </div>
+
+              {/* Evaluation Override */}
+              <TaskEvaluationPicker
+                selection={selectedTask.evaluation}
+                inheritDescription={inheritDescription}
+                rubricRecords={rubricRecords}
+                resolveRubricLabel={resolveRubricLabel}
+                disabled={isHistorical}
+                onChange={(sel) => {
+                  if (!isHistorical) patchTask(selectedTask.id, { evaluation: sel });
+                }}
+              />
+
+              {/* Judge Instruction Override */}
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="judge-override-input" className="font-mono text-xs uppercase tracking-wide text-text-muted">
+                  Judge instruction override (evaluator-only)
+                </label>
+                <textarea
+                  id="judge-override-input"
+                  data-field="judge-instruction-override"
+                  name="judgeInstructionOverride"
+                  rows={3}
+                  disabled={isHistorical}
+                  value={selectedTask.judgeInstructionOverride}
+                  onChange={(e) => {
+                    if (!isHistorical) {
+                      patchTask(selectedTask.id, { judgeInstructionOverride: e.target.value });
+                    }
+                  }}
+                  placeholder="Evaluator-only guidance override for this task in this task set..."
+                  className="rounded-md border border-edge bg-input-bg p-3 font-mono text-xs text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                />
+              </div>
+            </div>
           ) : (
             <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">
-              Select a task to edit, or add a new task.
+              Select a task to inspect details and member configuration, or add a canonical task.
             </div>
           )}
         </section>
       </div>
+
+      <TaskVersionSelector
+        open={taskSelectorOpen}
+        onClose={() => setTaskSelectorOpen(false)}
+        onSelect={handleSelectCanonicalTask}
+        repo={taskRepo}
+        existingRefs={draft.tasks.map((t) => {
+          const tData = t as TaskSetMemberData;
+          return { taskId: tData.taskVersionRef?.taskId || t.id, version: tData.taskVersionRef?.version };
+        })}
+      />
 
       <SuitePreflightDialog
         open={preflightOpen}
@@ -580,26 +902,154 @@ export function TaskSetEditor({
   );
 }
 
+function TaskEvaluationPicker({
+  selection,
+  inheritDescription,
+  rubricRecords,
+  resolveRubricLabel,
+  disabled = false,
+  onChange,
+}: {
+  selection: TaskEvaluationSelection;
+  inheritDescription: string;
+  rubricRecords: RubricRecord[];
+  resolveRubricLabel: (ref: RubricVersionRef) => string;
+  disabled?: boolean;
+  onChange: (selection: TaskEvaluationSelection) => void;
+}) {
+  const currentMode = selection.kind;
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-edge pt-3">
+      <span className="font-mono text-xs uppercase tracking-wide text-text-muted">
+        Evaluation Override
+      </span>
+
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Evaluation mode override">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={currentMode === "inherit"}
+          disabled={disabled}
+          onClick={() => onChange({ kind: "inherit" })}
+          className={`flex min-h-[44px] items-center gap-1.5 rounded-md border px-3 text-xs transition-colors ${
+            currentMode === "inherit"
+              ? "border-accent bg-accent/[0.12] text-accent font-medium"
+              : "border-edge bg-panel text-text-secondary hover:border-edge-bright hover:text-text"
+          } disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          Inherit suite default
+        </button>
+
+        <button
+          type="button"
+          role="radio"
+          aria-checked={currentMode === "holistic"}
+          disabled={disabled}
+          onClick={() => onChange({ kind: "holistic" })}
+          className={`flex min-h-[44px] items-center gap-1.5 rounded-md border px-3 text-xs transition-colors ${
+            currentMode === "holistic"
+              ? "border-accent bg-accent/[0.12] text-accent font-medium"
+              : "border-edge bg-panel text-text-secondary hover:border-edge-bright hover:text-text"
+          } disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          Holistic judgment
+        </button>
+
+        <button
+          type="button"
+          role="radio"
+          aria-checked={currentMode === "profile"}
+          disabled={disabled}
+          onClick={() => {
+            const first = rubricRecords[0];
+            const fallback: RubricVersionRef = first
+              ? { id: first.id, version: first.latestVersion }
+              : { id: "default", version: 1 };
+            onChange({ kind: "profile", profile: fallback });
+          }}
+          className={`flex min-h-[44px] items-center gap-1.5 rounded-md border px-3 text-xs transition-colors ${
+            currentMode === "profile"
+              ? "border-accent bg-accent/[0.12] text-accent font-medium"
+              : "border-edge bg-panel text-text-secondary hover:border-edge-bright hover:text-text"
+          } disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          Pin rubric version
+        </button>
+      </div>
+
+      {currentMode === "inherit" && (
+        <p className="text-xs text-text-muted">{inheritDescription}</p>
+      )}
+
+      {currentMode === "holistic" && (
+        <p className="text-xs text-text-muted">
+          Holistic judge scoring: the judge rates candidate outputs directly without criteria rubrics.
+        </p>
+      )}
+
+      {currentMode === "profile" && (
+        <div className="flex flex-col gap-1.5 pt-1">
+          <label htmlFor="member-rubric-select" className="font-mono text-xs text-text-secondary">
+            Pinned Rubric:
+          </label>
+          {rubricRecords.length > 0 ? (
+            <select
+              id="member-rubric-select"
+              disabled={disabled}
+              value={`${selection.profile.id}@${selection.profile.version}`}
+              onChange={(e) => {
+                const [id, verStr] = e.target.value.split("@");
+                if (id && verStr) {
+                  onChange({
+                    kind: "profile",
+                    profile: { id, version: Number(verStr) },
+                  });
+                }
+              }}
+              className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+            >
+              {rubricRecords.map((r) => (
+                <option key={r.id} value={`${r.id}@${r.latestVersion}`}>
+                  {resolveRubricLabel({ id: r.id, version: r.latestVersion })}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-xs text-text-muted">
+              Pinned: {resolveRubricLabel(selection.profile)}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NoTaskSetSelected() {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
-      <p className="text-sm text-text-muted">Select a task set from the list.</p>
+      <div className="flex max-w-md flex-col items-center gap-2">
+        <h2 className="text-base text-text">No task set selected</h2>
+        <p className="text-sm text-text-secondary">
+          Choose a task set from the list on the left to start editing, or create a new one.
+        </p>
+      </div>
     </div>
   );
 }
 
 function friendlyStorageError(err: StorageError): string {
   switch (err.kind) {
-    case "quota":
-      return "Storage is full — free space or remove unused data before saving.";
     case "conflict":
-      return "This task set was modified elsewhere. Reload and retry.";
+      return "This task set was modified in another tab. Reload to see the latest changes.";
     case "validation":
-      return "The task set could not be saved — a field failed validation.";
+      return `Validation failed: ${err.message}`;
     case "blocked":
-    case "versionchange":
-      return "Storage is blocked by another tab. Close it and retry.";
-    case "unavailable":
-      return "Storage is unavailable — retry; your existing data was not modified.";
+      return "Storage is blocked. Close other tabs using this workspace and try again.";
+    case "quota":
+      return "Storage quota exceeded. Free up disk space to save.";
+    default:
+      return err.message;
   }
 }
