@@ -5,7 +5,9 @@
 import { describe, expect, it } from "vitest";
 import { appendModelToSuite } from "./suite-roster-extension";
 import { InMemoryEvaluationRepository } from "../persistence/evaluation-repository";
+import { InMemoryTaskSetRepository } from "../persistence/in-memory-task-set-repository";
 import { StorageError } from "../persistence/database";
+import { suiteToTaskSetRecord, suiteToTaskSetVersion } from "./suite-compat";
 import type { EvaluationSuite } from "./evaluation-types";
 import type { ModelSlot } from "../../studio-data";
 
@@ -215,5 +217,68 @@ describe("appendModelToSuite", () => {
       expect(result.code).toBe("storage");
       expect(result.message).toMatch(/full/i);
     }
+  });
+});
+
+describe("appendModelToSuite — canonical Task Set sync (spec 7.9)", () => {
+  it("appends a new Task Set Version with the added slot when the Task Set is canonical", async () => {
+    const suite = makeSuite({ version: 1 });
+    const repo = await seededRepo(suite);
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    // Seed the canonical Task Set record + v1 for the same suite id.
+    const record = suiteToTaskSetRecord(suite);
+    const { version } = suiteToTaskSetVersion(suite);
+    await taskSetRepo.createTaskSet({ ...record, latestVersion: 1 }, { ...version, version: 1 });
+
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+      taskSetRepository: taskSetRepo,
+    });
+
+    expect(result).toEqual({ ok: true, suiteVersion: 2 });
+
+    // A new Task Set Version row exists with the appended slot identity.
+    const v2 = await taskSetRepo.getTaskSetVersion("suite-1", 2);
+    expect(v2).not.toBeNull();
+    expect(v2!.defaultModelSlots).toHaveLength(3);
+    expect(v2!.defaultModelSlots[2].id).toBe(NEW_SLOT.id);
+    expect(v2!.defaultModelSlots[2].slug).toBe(NEW_SLOT.slug);
+    // Members are preserved untouched.
+    expect(v2!.members).toHaveLength(1);
+    expect(v2!.members[0].id).toBe("t1");
+
+    // The legacy Suite compatibility write also landed.
+    const saved = await repo.getSuite("suite-1");
+    expect(saved).not.toBeNull();
+    expect(saved!.modelSlots).toHaveLength(3);
+    expect(saved!.version).toBe(2);
+    expect(saved!.revision).toBe(2);
+  });
+
+  it("reports a canonical sync conflict as results-only without creating a Task Set Version", async () => {
+    const suite = makeSuite({ version: 1 });
+    const repo = await seededRepo(suite);
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    const record = suiteToTaskSetRecord(suite);
+    const { version } = suiteToTaskSetVersion(suite);
+    await taskSetRepo.createTaskSet({ ...record, latestVersion: 1 }, { ...version, version: 1 });
+
+    // A stale revision makes the atomic save conflict.
+    repo.saveSuiteAndTaskSetVersion = async () => {
+      throw new StorageError("conflict", "Stale revision");
+    };
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+      taskSetRepository: taskSetRepo,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("conflict");
+    expect(await taskSetRepo.getTaskSetVersion("suite-1", 2)).toBeNull();
+    expect(await taskSetRepo.getTaskSetRecord("suite-1")).toMatchObject({ latestVersion: 1 });
   });
 });

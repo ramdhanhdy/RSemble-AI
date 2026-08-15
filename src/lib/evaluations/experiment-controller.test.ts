@@ -20,6 +20,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   createExperimentController,
   type ExperimentControllerEvent,
+  type SimpleResult,
   type StartResult,
 } from "./experiment-controller";
 import {
@@ -2385,6 +2386,145 @@ describe("experiment-controller — frozen Task Set materialization start", () =
 
 });
 
+describe("experiment-controller — start/retry/resume persistence-failure reliability (Milestone D)", () => {
+  it("a createExperiment failure during start releases lease and owner, returns {ok:false}, and leaves the materialization reusable", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    const originalCreate = h.evalRepo.createExperiment.bind(h.evalRepo);
+    h.evalRepo.createExperiment = async () => {
+      throw new StorageError("unavailable", "storage unavailable");
+    };
+    let thrown: unknown = null;
+    let result: StartResult | null = null;
+    try {
+      result = await h.controller.start("mat-suite-1");
+    } catch (err) {
+      thrown = err;
+    } finally {
+      h.evalRepo.createExperiment = originalCreate;
+    }
+
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) expect(result.error).toMatch(/storage unavailable/i);
+    // Lease and owner released; no draft experiment persisted.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+    expect(await h.evalRepo.listExperiments()).toHaveLength(0);
+
+    // The materialization was not burned: a fresh start succeeds.
+    const fresh = await h.controller.start("mat-suite-1");
+    expect(fresh.ok).toBe(true);
+    if (fresh.ok) {
+      await h.controller.whenIdle();
+      const experiment = await h.evalRepo.getExperiment(fresh.experimentId);
+      expect(experiment!.status).toBe("completed");
+    }
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("an owner-busy start writes no draft experiment and leaves the materialization reusable after owner release", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    // Another in-tab execution owns the registry.
+    expect(h.owner.tryAcquire({ kind: "compare", id: "cmp-x" })).toBe(true);
+
+    const result = await h.controller.start("mat-suite-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/another execution/i);
+
+    // No draft experiment was written; the lease was released.
+    expect(await h.evalRepo.listExperiments()).toHaveLength(0);
+    expect(h.leaseStore.lease).toBeNull();
+
+    // After the owner releases, the materialization starts fresh.
+    h.owner.release("cmp-x");
+    const fresh = await h.controller.start("mat-suite-1");
+    expect(fresh.ok).toBe(true);
+    if (fresh.ok) {
+      await h.controller.whenIdle();
+      const experiment = await h.evalRepo.getExperiment(fresh.experimentId);
+      expect(experiment!.status).toBe("completed");
+    }
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("a persistence failure during retryIncomplete releases lease and owner and returns {ok:false}", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    await seedSuite(h, makeSuite(["t1"]));
+    const startRes = await h.controller.start("mat-suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    const originalUpdate = h.evalRepo.updateExperiment.bind(h.evalRepo);
+    h.evalRepo.updateExperiment = async () => {
+      throw new StorageError("unavailable", "storage unavailable");
+    };
+    let thrown: unknown = null;
+    let result: SimpleResult | null = null;
+    try {
+      result = await h.controller.retryIncomplete(expId);
+    } catch (err) {
+      thrown = err;
+    } finally {
+      h.evalRepo.updateExperiment = originalUpdate;
+    }
+
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) expect(result.error).toMatch(/storage unavailable/i);
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("a persistence failure during resume releases lease and owner and returns {ok:false}", async () => {
+    let controllerRef: Harness["controller"] | null = null;
+    const h = makeHarness({
+      midTask: () => {
+        void controllerRef!.requestPause();
+      },
+    });
+    controllerRef = h.controller;
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const startRes = await h.controller.start("mat-suite-1");
+    expect(startRes.ok).toBe(true);
+    await h.controller.whenIdle();
+    // Paused with queued work retains ownership.
+    expect(h.owner.get()).not.toBeNull();
+
+    const originalUpdate = h.evalRepo.updateExperiment.bind(h.evalRepo);
+    h.evalRepo.updateExperiment = async () => {
+      throw new StorageError("unavailable", "storage unavailable");
+    };
+    let thrown: unknown = null;
+    let result: SimpleResult | null = null;
+    try {
+      result = await h.controller.resume();
+    } catch (err) {
+      thrown = err;
+    } finally {
+      h.evalRepo.updateExperiment = originalUpdate;
+    }
+
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) expect(result.error).toMatch(/storage unavailable/i);
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+});
 describe("experiment-controller — Dexie persist to start ordering", () => {
   it("persist then start acquires lease before createExperiment and beginTask", async () => {
     const db = new RSembleEvaluationDB("t8-repair-" + Math.random().toString(36).slice(2));
