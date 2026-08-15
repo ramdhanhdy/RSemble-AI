@@ -48,6 +48,7 @@ import {
   ArchivedTaskExecutionError,
   InvalidWorkloadForExecutionError,
   UnresolvedWorkloadRefError,
+  type MaterializedWorkloadSnapshot,
   type WorkloadCatalogResolvers,
 } from "../../lib/evaluations/workload-manifest";
 import {
@@ -59,7 +60,11 @@ import {
   type RubricRecord,
   type TaskEvaluationSelection,
 } from "../../lib/evaluations/evaluation-types";
-import type { TaskSetMemberRole } from "../../lib/evaluations/task-set-types";
+import type {
+  TaskSetMemberRole,
+  TaskSetRecord,
+  TaskSetVersion,
+} from "../../lib/evaluations/task-set-types";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import { DialogSurface } from "../../ui/DialogSurface";
@@ -109,7 +114,9 @@ export function TaskSetEditor({
   const taskSetIdResolved = taskSetId ?? legacySuiteId;
   const requestedVersion = Number(versionParam);
   const historical =
-    Number.isFinite(requestedVersion) && requestedVersion > 0 ? requestedVersion : null;
+    versionParam !== undefined && Number.isInteger(requestedVersion) && requestedVersion > 0
+      ? requestedVersion
+      : null;
   const navigate = useNavigate();
 
   // Context resolution with prop overrides (test seams).
@@ -158,28 +165,56 @@ export function TaskSetEditor({
     setLoading(true);
     setLoadError(null);
     try {
-      const [suite, rubrics] = await Promise.all([
+      if (versionParam !== undefined && historical === null) {
+        throw new StorageError("validation", `Invalid task set version "${versionParam}".`);
+      }
+      const [latestSuite, rubrics, historicalVersion, taskSetRecord] = await Promise.all([
         repo.getSuite(taskSetIdResolved),
         repo.listRubrics(true),
+        historical !== null && taskSetRepo
+          ? taskSetRepo.getTaskSetVersion(taskSetIdResolved, historical)
+          : Promise.resolve(null),
+        historical !== null && taskSetRepo
+          ? taskSetRepo.getTaskSetRecord(taskSetIdResolved)
+          : Promise.resolve(null),
       ]);
       if (id !== requestIdRef.current) return;
-      if (!suite) {
+      if (!latestSuite) {
         setPersisted(null);
         setDraft(null);
         setLoadError("Task set not found.");
+      } else if (
+        historical !== null &&
+        (!taskSetRepo || !historicalVersion || !taskSetRecord) &&
+        historical !== latestSuite.version
+      ) {
+        setPersisted(null);
+        setDraft(null);
+        setLoadError(
+          taskSetRepo
+            ? `Task set version ${historical} not found.`
+            : `Task set version ${historical} is unavailable because storage is unavailable.`,
+        );
       } else {
+        const suite =
+          historicalVersion && taskSetRecord
+            ? await projectHistoricalSuite(latestSuite, taskSetRecord, historicalVersion, taskRepo)
+            : latestSuite;
+        if (id !== requestIdRef.current) return;
         setPersisted(suite);
         setDraft(structuredClone(suite));
-        setSelectedTaskId((prev) => prev ?? suite.tasks[0]?.id ?? null);
+        setSelectedTaskId(suite.tasks[0]?.id ?? null);
       }
       setRubricRecords(rubrics.filter((p) => !p.archivedAt));
       setLoading(false);
     } catch (err: unknown) {
       if (id !== requestIdRef.current) return;
+      setPersisted(null);
+      setDraft(null);
       setLoadError(err instanceof Error ? err.message : "Failed to load task set.");
       setLoading(false);
     }
-  }, [repo, taskSetIdResolved]);
+  }, [historical, repo, taskRepo, taskSetIdResolved, taskSetRepo, versionParam]);
 
   useEffect(() => {
     void load();
@@ -411,16 +446,27 @@ export function TaskSetEditor({
     }
     setSaving(true);
     setSaveError(null);
-    const candidate = { ...draft, version: persisted.version };
     try {
+      let candidate = { ...draft, version: persisted.version };
+      if (taskSetRepo) {
+        const [currentSuite, currentTaskSet] = await Promise.all([
+          repo.getSuite(draft.id),
+          taskSetRepo.getTaskSetRecord(draft.id),
+        ]);
+        if (!currentSuite || currentSuite.revision !== persisted.revision) {
+          throw new StorageError("conflict", "Task set was modified in another tab.");
+        }
+        if (!currentTaskSet) {
+          throw new StorageError("conflict", `Task Set ${draft.id} not found`);
+        }
+        candidate = { ...candidate, version: currentTaskSet.latestVersion + 1 };
+        await persistTaskSetVersion(taskSetRepo, candidate, currentTaskSet.revision);
+      }
       const newRevision = await repo.saveSuite(candidate, persisted.revision);
       const fresh = await repo.getSuite(draft.id);
       const settled = fresh
         ? { ...fresh, revision: newRevision }
         : { ...candidate, revision: newRevision };
-      if (taskSetRepo) {
-        await persistTaskSetVersion(taskSetRepo, settled, newRevision);
-      }
       setPersisted(settled);
       setDraft(structuredClone(settled));
       return true;
@@ -447,9 +493,14 @@ export function TaskSetEditor({
       setPreflightOpen(false);
       setRunState("materializing");
       try {
-        await materializeWorkloadBeforeRun(repo, taskRepo, taskSetRepo, cleanSuite);
+        const materializedSuite = await materializeWorkloadBeforeRun(
+          repo,
+          taskRepo,
+          taskSetRepo,
+          cleanSuite,
+        );
         setRunState("running");
-        const result = await controller.start(cleanSuite.id);
+        const result = await controller.start(materializedSuite.id);
         if (result.ok) {
           void navigate(`/experiments/${result.experimentId}`);
         } else {
@@ -531,9 +582,15 @@ export function TaskSetEditor({
 
   if (loadError || !persisted || !draft) {
     return (
-      <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center">
+      <div
+        className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center"
+        data-task-set-editor={versionParam !== undefined ? "" : undefined}
+      >
         <AlertCircle size={16} className="text-error" aria-hidden="true" />
         <p className="text-sm text-error">{loadError ?? "Task set not found."}</p>
+        {versionParam !== undefined && (
+          <p className="text-xs text-text-muted">Historical versions are read-only.</p>
+        )}
         <button
           type="button"
           onClick={() => navigate("/evaluations/sets")}
@@ -546,7 +603,7 @@ export function TaskSetEditor({
   }
 
   const selectedTask = draft.tasks.find((t) => t.id === selectedTaskId) ?? null;
-  const isHistorical = historical !== null && historical !== persisted.version;
+  const isHistorical = historical !== null;
   const runDisabledReason = isHistorical
     ? "Historical versions are read-only"
     : !execValidation.valid
@@ -1177,7 +1234,83 @@ function TaskEvaluationPicker({
   );
 }
 
-/** Snapshot the task-set-version projection for an exact suite payload. */
+/** Reconstruct the read-only compatibility view from one exact immutable Task Set Version. */
+async function projectHistoricalSuite(
+  latestSuite: EvaluationSuite,
+  record: TaskSetRecord,
+  version: TaskSetVersion,
+  taskRepo: TaskRepository | null,
+): Promise<EvaluationSuite> {
+  const tasks = await Promise.all(
+    [...version.members]
+      .sort((a, b) => a.order - b.order)
+      .map(async (member): Promise<EvaluationTask> => {
+        const latestTask = latestSuite.tasks.find(
+          (task) =>
+            task.id === member.id ||
+            (task as TaskSetMemberData).taskVersionRef?.taskId === member.taskVersionRef.taskId,
+        );
+        const taskVersion = taskRepo
+          ? await taskRepo.getTaskVersion(
+              member.taskVersionRef.taskId,
+              member.taskVersionRef.version,
+            )
+          : null;
+        const evaluation =
+          member.executionOverrides?.evaluation ??
+          (member.rubricOverrideRef
+            ? { kind: "profile" as const, profile: { ...member.rubricOverrideRef } }
+            : { kind: "inherit" as const });
+        return {
+          id: member.id,
+          title:
+            taskVersion?.title ??
+            latestTask?.title ??
+            `${member.taskVersionRef.taskId} v${member.taskVersionRef.version}`,
+          prompt: taskVersion?.candidateInstruction ?? latestTask?.prompt ?? "",
+          systemPrompt: latestTask?.systemPrompt ?? "",
+          evaluation,
+          judgeInstructionOverride:
+            member.executionOverrides?.judgeInstructionOverride ??
+            latestTask?.judgeInstructionOverride ??
+            "",
+          order: member.order,
+          ...(member.executionOverrides?.verification
+            ? { verification: { ...member.executionOverrides.verification } }
+            : latestTask?.verification
+              ? { verification: { ...latestTask.verification } }
+              : {}),
+          taskVersionRef: { ...member.taskVersionRef },
+          role: member.role,
+          stratum: member.stratum,
+          weight: member.weight,
+        } as EvaluationTask & TaskSetMemberData;
+      }),
+  );
+  return {
+    ...latestSuite,
+    revision: record.revision,
+    version: version.version,
+    name: record.name,
+    description: record.description,
+    tasks,
+    modelSlots: version.defaultModelSlots.map((slot) => ({ ...slot })),
+    defaultJudge: {
+      providerId: version.defaultJudge.providerId,
+      model: version.defaultJudge.model,
+    },
+    defaultEvaluation: version.defaultRubricRef
+      ? { kind: "profile", profile: { ...version.defaultRubricRef } }
+      : { kind: "holistic" },
+    ...(version.protocolDefaults.reasoningPolicy
+      ? { reasoningPolicy: { ...version.protocolDefaults.reasoningPolicy } }
+      : { reasoningPolicy: undefined }),
+    createdAt: record.createdAt,
+    updatedAt: version.createdAt,
+    archivedAt: record.archivedAt,
+  };
+}
+
 function projectTaskSetVersion(suite: EvaluationSuite) {
   return suiteToTaskSetVersion(suite, (task) => {
     const data = task as TaskSetMemberData;
@@ -1187,7 +1320,7 @@ function projectTaskSetVersion(suite: EvaluationSuite) {
   });
 }
 
-/** Atomically append (or create) the immutable Task Set Version on save. */
+/** Append (or create) the immutable Task Set Version before updating the Suite compatibility row. */
 async function persistTaskSetVersion(
   taskSetRepo: TaskSetRepository,
   candidate: EvaluationSuite,
@@ -1198,18 +1331,27 @@ async function persistTaskSetVersion(
   const existing = await taskSetRepo.getTaskSetRecord(candidate.id);
   if (!existing) {
     await taskSetRepo.createTaskSet({ ...record, latestVersion: version.version }, version);
-    return 1;
+    return record.revision;
   }
   return taskSetRepo.appendTaskSetVersion(record, version, expectedRevision);
 }
 
-/** Resolve the frozen workload snapshot before any provider call. */
+type MaterializedSuite = EvaluationSuite & {
+  materializedTaskSetRef: {
+    taskSetId: string;
+    taskSetVersion: number;
+    protocolFingerprint: string;
+  };
+  materializedWorkloadSnapshot: MaterializedWorkloadSnapshot;
+};
+
+/** Resolve and durably persist the frozen workload before any controller side effect. */
 async function materializeWorkloadBeforeRun(
   repo: EvaluationRepository,
   taskRepo: TaskRepository | null,
   taskSetRepo: TaskSetRepository | null,
   suite: EvaluationSuite,
-): Promise<void> {
+): Promise<MaterializedSuite> {
   if (!taskSetRepo || !taskRepo) {
     throw new StorageError("validation", "Storage unavailable for workload materialization.");
   }
@@ -1257,10 +1399,26 @@ async function materializeWorkloadBeforeRun(
     isRubricArchived: () => false,
   };
 
-  await taskSetRepo.materializeTaskSetVersion(suite.id, version.version, resolvers, {
-    allowArchived: false,
-    isDirty: false,
-  });
+  const snapshot = await taskSetRepo.materializeTaskSetVersion(
+    suite.id,
+    version.version,
+    resolvers,
+    {
+      allowArchived: false,
+      isDirty: false,
+    },
+  );
+  const durable: MaterializedSuite = {
+    ...suite,
+    materializedTaskSetRef: {
+      taskSetId: snapshot.taskSetId,
+      taskSetVersion: snapshot.taskSetVersion,
+      protocolFingerprint: snapshot.protocolFingerprint,
+    },
+    materializedWorkloadSnapshot: snapshot,
+  };
+  const revision = await repo.saveSuite(durable, suite.revision);
+  return { ...durable, revision };
 }
 
 function friendlyRunError(err: unknown): string {

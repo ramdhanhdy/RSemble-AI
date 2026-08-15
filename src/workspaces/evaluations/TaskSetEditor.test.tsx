@@ -487,9 +487,7 @@ describe("TaskSetEditor — save", () => {
     await settle();
     await act(async () => {
       (
-        document.body.querySelector(
-          "button[data-action='dirty-run-save']",
-        ) as HTMLButtonElement
+        document.body.querySelector("button[data-action='dirty-run-save']") as HTMLButtonElement
       ).click();
       await flush();
     });
@@ -529,9 +527,7 @@ describe("TaskSetEditor — save", () => {
     await seedSuite(repo, suite);
     await seedTaskSetVersion(taskSetRepo, suite, 0);
     const before = structuredClone(await repo.getSuite("s1"));
-    const h = renderWithRouter(
-      <TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />,
-    );
+    const h = renderWithRouter(<TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />);
     await settle();
     await act(async () => {
       h.$("button[aria-expanded='false']")!.click();
@@ -548,7 +544,9 @@ describe("TaskSetEditor — save", () => {
 
     expect(await repo.getSuite("s1")).toEqual(before);
     expect(await taskSetRepo.getTaskSetVersion("s1", 2)).toBeNull();
-    expect(h.$("[role='alert']")?.textContent).toMatch(/stale|append|quota|conflict/i);
+    expect(h.$("[role='alert']")?.textContent).toMatch(
+      /stale|append|quota|conflict|modified in another tab/i,
+    );
     cleanup(h);
   });
 });
@@ -822,12 +820,7 @@ describe("TaskSetEditor — historical version is read-only", () => {
     await seedTaskSetVersion(taskSetRepo, v2, 1);
 
     const h = renderWithRouter(
-      <TaskSetEditor
-        repo={repo}
-        taskRepo={taskRepo}
-        taskSetRepo={taskSetRepo}
-        models={[]}
-      />,
+      <TaskSetEditor repo={repo} taskRepo={taskRepo} taskSetRepo={taskSetRepo} models={[]} />,
       "/evaluations/sets/s1/versions/1",
     );
     await settle();
@@ -857,8 +850,9 @@ describe("TaskSetEditor — historical version is read-only", () => {
     );
     await settle();
 
-    expect(h.$("[data-task-set-editor]")).toBeNull();
+    expect(h.$("[data-task-set-editor]")).toBeTruthy();
     expect(h.container.textContent).toMatch(/version 99.*not found|not found.*version 99/i);
+    expect(h.container.textContent).not.toContain(suite.name);
     cleanup(h);
   });
 });
