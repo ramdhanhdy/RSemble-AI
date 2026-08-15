@@ -35,7 +35,6 @@
 
 import type { CriticRef, ProviderId, ReasoningPolicy } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
-import type { TaskEvaluationSelection, TaskVerification } from "./evaluation-types";
 import type { VersionRef } from "../tasks/task-types";
 
 import {
@@ -50,6 +49,8 @@ import {
   isReasoningPolicy,
   isTaskEvaluationSelection,
   isTaskVerification,
+  type TaskEvaluationSelection,
+  type TaskVerification,
 } from "./evaluation-types";
 
 // --- re-exported canonical primitives ---------------------------------------

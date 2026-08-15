@@ -16,9 +16,13 @@ import { describe, expect, it } from "vitest";
 
 import { InMemoryTaskSetRepository } from "./in-memory-task-set-repository";
 import { repositorySuite } from "./task-set-repository.test";
-import type { TaskSetMember, TaskSetRecord, TaskSetVersion } from "../evaluations/task-set-types";
+import type {
+  JudgeSnapshot,
+  TaskSetMember,
+  TaskSetRecord,
+  TaskSetVersion,
+} from "../evaluations/task-set-types";
 import type { ModelSlot } from "../../studio-data";
-import type { JudgeSnapshot } from "../evaluations/task-set-types";
 
 // Re-run the shared contract suite against the in-memory implementation.
 repositorySuite("InMemoryTaskSetRepository (parity)", () => new InMemoryTaskSetRepository());

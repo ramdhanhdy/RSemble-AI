@@ -28,8 +28,7 @@
 // later tasks. This module is types + pure projection only.
 // =============================================================================
 
-import type { EvaluationSuite, EvaluationTask } from "./evaluation-types";
-import type { RubricVersionRef } from "./evaluation-types";
+import type { EvaluationSuite, EvaluationTask, RubricVersionRef } from "./evaluation-types";
 import type {
   JudgeSnapshot,
   ProtocolDefaults,
