@@ -29,19 +29,26 @@ import {
 import "./workspaces/EvaluationsWorkspace";
 import "./workspaces/evaluations/RubricList";
 import "./workspaces/evaluations/RubricDetail";
+import "./workspaces/evaluations/SuiteList";
+import "./workspaces/evaluations/SuiteEditor";
+import "./workspaces/evaluations/FusionStudyView";
 import "./workspaces/tasks/TaskCatalog";
 import "./workspaces/tasks/TaskRoute";
 import { AppRoutes } from "./app-router";
 import { RepositoryContext } from "./lib/persistence/repository-context";
 import { InMemoryEvaluationRepository } from "./lib/persistence/evaluation-repository";
 import { InMemoryTaskRepository } from "./lib/persistence/in-memory-task-repository";
+import { InMemoryFusionStudyRepository } from "./lib/persistence/fusion-study-repository";
 import type { TaskRepository } from "./lib/persistence/task-repository";
+import type { FusionStudyRepository } from "./lib/persistence/fusion-study-repository";
 import type { TaskRecord, TaskVersion } from "./lib/tasks/task-types";
 import type {
   EvaluationCriterion,
   EvaluationRubric,
+  EvaluationSuite,
   RubricRecord,
 } from "./lib/evaluations/evaluation-types";
+import type { FusionStudy } from "./lib/evaluations/fusion-study-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -136,9 +143,11 @@ interface Harness {
 }
 
 interface RenderOptions {
-  initialEntries: (string | { pathname: string; state?: unknown })[];
+  initialEntries: (string | { pathname: string; search?: string; state?: unknown })[];
   repo?: InMemoryEvaluationRepository;
   taskRepo?: TaskRepository | null;
+  fusionRepo?: FusionStudyRepository | null;
+  db?: { taskSetOwnershipCrosswalk: { get: (key: string) => Promise<unknown> } } | null;
 }
 
 function flush(): Promise<void> {
@@ -160,6 +169,8 @@ async function settle(): Promise<void> {
 function renderRouter(opts: RenderOptions): Harness {
   const repo = opts.repo ?? new InMemoryEvaluationRepository();
   const taskRepo = opts.taskRepo === undefined ? null : opts.taskRepo;
+  const fusionRepo = opts.fusionRepo === undefined ? null : opts.fusionRepo;
+  const db = opts.db === undefined ? null : opts.db;
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -191,8 +202,8 @@ function renderRouter(opts: RenderOptions): Harness {
             taskRepo,
             runRepo: null,
             evalRepo: repo,
-            fusionRepo: null,
-            db: null,
+            fusionRepo,
+            db: db as never,
             storageState: "ready",
             retry: () => undefined,
           }}
@@ -652,6 +663,360 @@ describe("AppRouter — canonical Task routes (spec §7)", () => {
     const h = await renderRouterAsync({ initialEntries: ["/tasks"], taskRepo: null });
     expect(h.$("[data-task-catalog]")).toBeTruthy();
     expect(h.$("[data-task-error-state]")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+// --- Canonical Task Set routes (task-sets spec §4, plan Task 5) -------------
+
+
+function makeRoutedSuite(id: string, name: string): EvaluationSuite {
+  const now = Date.now();
+  return {
+    id,
+    revision: 1,
+    version: 2,
+    name,
+    description: "",
+    tasks: [
+      {
+        id: "t1",
+        title: "Task 1",
+        prompt: "Describe the task.",
+        systemPrompt: "",
+        evaluation: { kind: "inherit" },
+        judgeInstructionOverride: "",
+        order: 0,
+      },
+    ],
+    modelSlots: [
+      {
+        id: "slot-1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "A",
+        slug: "org/a",
+        enabled: true,
+      },
+      {
+        id: "slot-2",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "B",
+        slug: "org/b",
+        enabled: true,
+      },
+    ],
+    defaultJudge: { providerId: "openrouter", model: "org/judge" },
+    defaultEvaluation: { kind: "holistic" },
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
+  };
+}
+
+async function seedSuite(repo: InMemoryEvaluationRepository, suite: EvaluationSuite): Promise<void> {
+  await repo.saveSuite(suite, 0);
+}
+
+function makeFusionStudy(id: string, suiteId: string): FusionStudy {
+  return {
+    id,
+    revision: 1,
+    kind: "exploration",
+    suiteRef: {
+      suiteId,
+      suiteVersion: 2,
+      protocolFingerprint: "sha256:0123456789abcdef",
+    },
+    poolRef: { id: "pool-1", version: 1 },
+    judge1: { providerId: "openrouter", model: "acme/judge-1" },
+    judge2: { providerId: "gemini", model: "acme/judge-2" },
+    recipeRefs: [{ id: "builtin-blind-raw", version: 1 }],
+    stageResults: { stageA: null, stageB: null, stageC: null },
+    playbookRef: null,
+    claimLevel: "exploratory",
+    confirmationOf: null,
+    status: "completed",
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
+}
+
+describe("AppRouter — canonical Task Set routes (spec §4)", () => {
+  it("direct-loads /evaluations/sets and renders the Task Set list", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const h = await renderRouterAsync({ initialEntries: ["/evaluations/sets"], repo });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets");
+    expect(h.container.textContent).toContain("Battery Alpha");
+    expect(h.$("a[href='/evaluations/sets/s1']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("direct-loads /evaluations/sets/new as the create surface", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = await renderRouterAsync({ initialEntries: ["/evaluations/sets/new"], repo });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/new");
+    expect(h.$("[data-task-set-editor='new']") ?? h.$("button[data-action='create-task-set']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("direct-loads /evaluations/sets/:taskSetId and renders the editor", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const h = await renderRouterAsync({ initialEntries: ["/evaluations/sets/s1"], repo });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1");
+    expect(h.container.textContent).toContain("Battery Alpha");
+    expect(h.$("[data-task-set-editor]")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("direct-loads /evaluations/sets/:taskSetId/versions/:version as a historical view", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/sets/s1/versions/1"],
+      repo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/versions/1");
+    expect(h.$("[data-task-set-editor]")).toBeTruthy();
+    expect(h.container.textContent).toMatch(/read-only/i);
+    cleanup(h);
+  });
+
+  it("refresh (remount) at the canonical editor reloads the same task set", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const first = await renderRouterAsync({ initialEntries: ["/evaluations/sets/s1"], repo });
+    expect(first.container.textContent).toContain("Battery Alpha");
+    cleanup(first);
+    const refreshed = await renderRouterAsync({ initialEntries: ["/evaluations/sets/s1"], repo });
+    expect(refreshed.container.textContent).toContain("Battery Alpha");
+    expect(refreshed.loc.current?.pathname).toBe("/evaluations/sets/s1");
+    cleanup(refreshed);
+  });
+
+  it("back/forward between list and editor preserves the entity", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const h = await renderRouterAsync({ initialEntries: ["/evaluations/sets"], repo });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets");
+    void act(() => h.nav.current!("/evaluations/sets/s1"));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1");
+    expect(h.container.textContent).toContain("Battery Alpha");
+    void act(() => h.nav.current!(-1));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets");
+    void act(() => h.nav.current!(1));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1");
+    cleanup(h);
+  });
+
+  it("static /evaluations/sets wins over a dynamic :suiteId named sets", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("sets", "Name collision guard"));
+    const h = await renderRouterAsync({ initialEntries: ["/evaluations/sets"], repo });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets");
+    expect(h.$("a[href='/evaluations/sets/sets']") ?? h.container.textContent).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("AppRouter — /evaluations/:suiteId legacy redirects (spec §4)", () => {
+  it("redirects a real /evaluations/:suiteId link to /evaluations/sets/:taskSetId", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const h = await renderRouterAsync({ initialEntries: ["/evaluations/s1"], repo });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1");
+    expect(h.container.textContent).toContain("Battery Alpha");
+    cleanup(h);
+  });
+
+  it("preserves search through the suite redirect", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/s1?returnTo=/compare"],
+      repo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1");
+    expect(h.loc.current?.search).toBe("?returnTo=/compare");
+    cleanup(h);
+  });
+
+  it("preserves location state through the suite redirect", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const returnState = { returnTo: "/compare", version: 2 };
+    const h = await renderRouterAsync({
+      initialEntries: [{ pathname: "/evaluations/s1", state: returnState }],
+      repo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1");
+    expect(h.loc.current?.state).toEqual(returnState);
+    cleanup(h);
+  });
+
+  it("uses replace so browser back does not loop to the legacy suite URL", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const h = await renderRouterAsync({ initialEntries: ["/compare"], repo });
+    void act(() => h.nav.current!("/evaluations/s1"));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1");
+    void act(() => h.nav.current!(-1));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/compare");
+    cleanup(h);
+  });
+
+  it("does not invent a /sets/* alias outside evaluations", async () => {
+    const h = await renderRouterAsync({ initialEntries: ["/sets/s1"] });
+    expect(h.container.textContent).toContain("Not found");
+    expect(h.loc.current?.pathname).toBe("/sets/s1");
+    cleanup(h);
+  });
+
+  it("does not redirect reserved static segments as suite ids", async () => {
+    const h = await renderRouterAsync({ initialEntries: ["/evaluations/rubrics"] });
+    expect(h.loc.current?.pathname).toBe("/evaluations/rubrics");
+    expect(h.$("button[data-action='new-rubric']")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("AppRouter — Fusion owner redirects (spec §4, §8.2)", () => {
+  it("redirects /evaluations/:suiteId/fusion/:studyId only after exact crosswalk resolution", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    const db = {
+      taskSetOwnershipCrosswalk: {
+        get: async (key: string) =>
+          key === "ts-xwalk:fusion:study-1"
+            ? {
+                key,
+                kind: "fusion-owner",
+                taskSetId: "s1",
+                version: 2,
+                digest: null,
+                status: "resolved",
+              }
+            : undefined,
+      },
+    };
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/s1/fusion/study-1"],
+      repo,
+      fusionRepo,
+      db,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/fusion/study-1");
+    cleanup(h);
+  });
+
+  it("preserves search and state on a resolved Fusion redirect", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    const returnState = { from: "legacy" };
+    const db = {
+      taskSetOwnershipCrosswalk: {
+        get: async (key: string) =>
+          key === "ts-xwalk:fusion:study-1"
+            ? {
+                key,
+                kind: "fusion-owner",
+                taskSetId: "s1",
+                version: 2,
+                digest: null,
+                status: "resolved",
+              }
+            : undefined,
+      },
+    };
+    const h = await renderRouterAsync({
+      initialEntries: [
+        { pathname: "/evaluations/s1/fusion/study-1", search: "?tab=playbook", state: returnState },
+      ],
+      repo,
+      fusionRepo,
+      db,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/fusion/study-1");
+    expect(h.loc.current?.search).toBe("?tab=playbook");
+    expect(h.loc.current?.state).toEqual(returnState);
+    cleanup(h);
+  });
+
+  it("keeps an unresolved Fusion owner on the legacy route with an explicit warning", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    const db = {
+      taskSetOwnershipCrosswalk: {
+        get: async (key: string) =>
+          key === "ts-xwalk:fusion:study-1"
+            ? {
+                key,
+                kind: "fusion-owner",
+                taskSetId: "s1",
+                version: null,
+                digest: null,
+                status: "unresolved",
+              }
+            : undefined,
+      },
+    };
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/s1/fusion/study-1"],
+      repo,
+      fusionRepo,
+      db,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/s1/fusion/study-1");
+    expect(h.container.textContent).toMatch(/unresolved/i);
+    cleanup(h);
+  });
+
+  it("does not invent a Fusion redirect when no crosswalk row exists", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    const db = {
+      taskSetOwnershipCrosswalk: {
+        get: async () => undefined,
+      },
+    };
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/s1/fusion/study-1"],
+      repo,
+      fusionRepo,
+      db,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/s1/fusion/study-1");
+    expect(h.container.textContent).toMatch(/unresolved/i);
+    cleanup(h);
+  });
+
+  it("canonical Fusion route stays put and does not loop", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/sets/s1/fusion/study-1"],
+      repo,
+      fusionRepo,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/fusion/study-1");
     cleanup(h);
   });
 });

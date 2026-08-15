@@ -1,0 +1,691 @@
+// @vitest-environment happy-dom
+//
+// Task Set editor surface (child 03 Task 5 / spec §4–§5). Canonical routes
+// /evaluations/sets/:taskSetId and /evaluations/sets/:taskSetId/versions/:version.
+// Historical versions are read-only. Frozen EvaluationSuite fields stay named
+// suiteId/suiteVersion on persisted records.
+import { describe, expect, it, afterEach, vi } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { ModelProbeProvider } from "../../ui/ModelProbeContext";
+import { TaskSetEditor } from "./TaskSetEditor";
+import { InMemoryEvaluationRepository } from "../../lib/persistence/evaluation-repository";
+import { ExecutionOwnerProvider } from "../../lib/execution-owner-context";
+import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
+import type {
+  EvaluationSuite,
+  EvaluationTask,
+  ExperimentRecord,
+} from "../../lib/evaluations/evaluation-types";
+
+(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+
+interface Harness {
+  container: HTMLDivElement;
+  root: { render: (n: React.ReactNode) => void; unmount: () => void };
+  $: (s: string) => HTMLElement | null;
+  $$: (s: string) => HTMLElement[];
+}
+
+function flush(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+function renderWithRouter(
+  node: React.ReactNode,
+  initialPath = "/evaluations/sets/s1",
+): Harness {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(
+      <MemoryRouter initialEntries={[initialPath]}>
+        <ExecutionOwnerProvider>
+          <ModelProbeProvider>
+            <Routes>
+              <Route path="/evaluations/sets/:taskSetId" element={node} />
+              <Route
+                path="/evaluations/sets/:taskSetId/versions/:version"
+                element={node}
+              />
+              <Route path="/evaluations/sets/:taskSetId/tasks/:taskId" element={node} />
+              <Route
+                path="/experiments/:experimentId"
+                element={<div data-route="experiment-progress" />}
+              />
+            </Routes>
+          </ModelProbeProvider>
+        </ExecutionOwnerProvider>
+      </MemoryRouter>,
+    );
+  });
+  return {
+    container,
+    root,
+    $: (s) => container.querySelector<HTMLElement>(s),
+    $$: (s) => [...container.querySelectorAll<HTMLElement>(s)],
+  };
+}
+
+function cleanup(h: Harness) {
+  act(() => h.root.unmount());
+  h.container.remove();
+}
+
+function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  act(() => {
+    const proto =
+      input instanceof HTMLTextAreaElement
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function settle() {
+  await act(async () => {
+    await flush();
+  });
+}
+
+afterEach(() => {
+  document.body.innerHTML = "";
+  vi.clearAllMocks();
+});
+
+function makeTask(id: string, overrides: Partial<EvaluationTask> = {}): EvaluationTask {
+  return {
+    id,
+    title: `Task ${id}`,
+    prompt: `Prompt for ${id}`,
+    systemPrompt: "",
+    evaluation: { kind: "inherit" },
+    judgeInstructionOverride: "",
+    order: 0,
+    ...overrides,
+  };
+}
+
+function makeSuite(id: string, overrides: Partial<EvaluationSuite> = {}): EvaluationSuite {
+  const now = Date.now();
+  return {
+    id,
+    revision: 1,
+    version: 2,
+    name: `Suite ${id}`,
+    description: "",
+    tasks: [],
+    modelSlots: [],
+    defaultJudge: { providerId: "openrouter", model: "" },
+    defaultEvaluation: { kind: "holistic" },
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
+async function seedSuite(repo: InMemoryEvaluationRepository, suite: EvaluationSuite) {
+  await repo.saveSuite(suite, 0);
+}
+
+function makeExperiment(id: string, suite: EvaluationSuite): ExperimentRecord {
+  return {
+    id,
+    revision: 0,
+    suiteId: suite.id,
+    suiteVersion: suite.version,
+    protocolFingerprint: "sha256:fp",
+    status: "completed",
+    execution: null,
+    snapshot: {
+      suiteId: suite.id,
+      suiteVersion: suite.version,
+      tasks: suite.tasks,
+      modelSlots: suite.modelSlots,
+      defaultJudge: suite.defaultJudge,
+      defaultEvaluation: suite.defaultEvaluation,
+      profiles: [],
+      protocolFingerprint: "sha256:fp",
+      createdAt: 1000,
+    },
+    tasks: [],
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
+}
+
+function makeValidSuite(id: string): EvaluationSuite {
+  return makeSuite(id, {
+    name: "Valid Suite",
+    version: 1,
+    tasks: [makeTask("t1")],
+    modelSlots: [
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "gpt-4o",
+        slug: "openai/gpt-4o",
+        enabled: true,
+      },
+      {
+        id: "s2",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "claude",
+        slug: "anthropic/claude",
+        enabled: true,
+      },
+    ],
+    defaultJudge: { providerId: "openrouter", model: "z-ai/glm-5.2" },
+  });
+}
+
+function makeStubController(overrides: Partial<ExperimentController> = {}): ExperimentController {
+  return {
+    start: vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" })),
+    requestPause: vi.fn(async () => {}),
+    resume: vi.fn(async () => ({ ok: true as const })),
+    abort: vi.fn(async () => {}),
+    retryIncomplete: vi.fn(async () => ({ ok: true as const })),
+    repairMissingCells: vi.fn(async () => ({ ok: true as const })),
+    addModelAndRun: vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" })),
+    recoverOnStartup: vi.fn(async () => 0),
+    subscribe: vi.fn(() => () => {}),
+    whenIdle: vi.fn(async () => {}),
+    ...overrides,
+  };
+}
+
+describe("TaskSetEditor — loading & not found", () => {
+  it("shows loading state", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    expect(h.container.textContent).toMatch(/loading/i);
+    await settle();
+    cleanup(h);
+  });
+
+  it("shows not found for a missing task set", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    expect(h.container.textContent).toMatch(/not found/i);
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — header & dirty state", () => {
+  it("shows the task set name and persisted version", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 3 }));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toContain("My Suite");
+    expect(text).toContain("v3");
+    expect(text).toMatch(/saved/i);
+    cleanup(h);
+  });
+
+  it("dirty state shows unsaved changes and next version", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 2 }));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const nameInput = h.$("#task-set-name") as HTMLInputElement;
+    expect(nameInput).toBeTruthy();
+    typeInto(nameInput, "My Suite (edited)");
+    await settle();
+    const text = h.container.textContent ?? "";
+    expect(text).toMatch(/unsaved changes/i);
+    expect(text).toMatch(/v3/);
+    cleanup(h);
+  });
+
+  it("Run is disabled while dirty with save-first message", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 2 }));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const nameInput = h.$("#task-set-name") as HTMLInputElement;
+    typeInto(nameInput, "Edited");
+    await settle();
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(true);
+    expect(h.container.textContent).toMatch(/save this task set before running/i);
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — save", () => {
+  it("save persists changes and clears dirty state without renaming frozen suite fields", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 2 }));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const nameInput = h.$("#task-set-name") as HTMLInputElement;
+    typeInto(nameInput, "Saved Suite");
+    await settle();
+    const saveBtn = h.$("button[data-action='save-task-set']") as HTMLButtonElement;
+    expect(saveBtn.disabled).toBe(false);
+    await act(async () => {
+      saveBtn.click();
+      await flush();
+    });
+    await settle();
+    const fresh = await repo.getSuite("s1");
+    expect(fresh?.name).toBe("Saved Suite");
+    expect(fresh).toHaveProperty("id", "s1");
+    expect(fresh).toHaveProperty("version");
+    expect(h.container.textContent).toMatch(/saved/i);
+    expect(h.container.textContent).not.toMatch(/unsaved changes/i);
+    cleanup(h);
+  });
+
+  it("save with empty name shows validation error", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 2 }));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const nameInput = h.$("#task-set-name") as HTMLInputElement;
+    typeInto(nameInput, "");
+    await settle();
+    const saveBtn = h.$("button[data-action='save-task-set']") as HTMLButtonElement;
+    await act(async () => {
+      saveBtn.click();
+      await flush();
+    });
+    await settle();
+    expect(h.container.textContent).toMatch(/name is required/i);
+    const fresh = await repo.getSuite("s1");
+    expect(fresh?.name).toBe("My Suite");
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — run validation", () => {
+  it("Run disabled when the task set fails execution validation (no models)", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "Valid Suite",
+        version: 1,
+        tasks: [makeTask("t1")],
+        modelSlots: [],
+      }),
+    );
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(true);
+    expect(h.container.textContent).toMatch(/candidate models/i);
+    cleanup(h);
+  });
+
+  it("Run enabled when the task set passes execution validation", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} models={[]} controller={makeStubController()} />,
+    );
+    await settle();
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(false);
+    expect(runBtn.textContent).toMatch(/run v1/i);
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — run execution", () => {
+  it("Run click calls controller.start with the persisted suite id and navigates", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const controller = makeStubController();
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} controller={controller} />);
+    await settle();
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(false);
+    await act(async () => {
+      runBtn.click();
+      await flush();
+    });
+    await settle();
+    const confirmBtn = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Run task set",
+    );
+    expect(confirmBtn).toBeTruthy();
+    await act(async () => {
+      confirmBtn!.click();
+      await flush();
+    });
+    await settle();
+    expect(controller.start).toHaveBeenCalledWith("s1");
+    expect(h.$("[data-route='experiment-progress']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("start failure shows the error in a role=alert line and does not navigate", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const controller = makeStubController({
+      start: vi.fn(async () => ({
+        ok: false as const,
+        error: "Another tab is active (lease held)",
+      })),
+    });
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} controller={controller} />);
+    await settle();
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    await act(async () => {
+      runBtn.click();
+      await flush();
+    });
+    await settle();
+    const confirmBtn = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Run task set",
+    );
+    expect(confirmBtn).toBeTruthy();
+    await act(async () => {
+      confirmBtn!.click();
+      await flush();
+    });
+    await settle();
+    const alert = h.$("[role='alert']");
+    expect(alert).toBeTruthy();
+    expect(alert!.textContent).toContain("Another tab is active (lease held)");
+    expect(h.$("[data-route='experiment-progress']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("active in-tab execution owner disables Run with a truthful helper", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        models={[]}
+        controller={makeStubController()}
+        executionOwner={{ kind: "compare", id: "run-9" }}
+      />,
+    );
+    await settle();
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(true);
+    expect(h.container.textContent).toContain("Another execution is active");
+    cleanup(h);
+  });
+
+  it("null controller disables Run with a storage-unavailable helper", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} controller={null} />);
+    await settle();
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(true);
+    expect(h.container.textContent).toContain("Storage unavailable — cannot start an experiment");
+    cleanup(h);
+  });
+
+  it("shows a Latest results entry linking to the newest experiment", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+    await repo.createExperiment(makeExperiment("exp-1", suite));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const link = h.$('[data-testid="latest-results-link"]');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href")).toBe("/experiments/exp-1");
+    cleanup(h);
+  });
+
+  it("hides the Latest results entry when the task set has no experiments", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeValidSuite("s1"));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    expect(h.$('[data-testid="latest-results-link"]')).toBeNull();
+    cleanup(h);
+  });
+
+  it("archived task set disables Run with an archived helper", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, { ...makeValidSuite("s1"), archivedAt: Date.now() });
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} models={[]} controller={makeStubController()} />,
+    );
+    await settle();
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
+    expect(runBtn.disabled).toBe(true);
+    expect(h.container.textContent).toContain("Archived task sets cannot run");
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — two-pane split", () => {
+  it("renders task list and task editor panes on desktop", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        tasks: [makeTask("t1"), makeTask("t2")],
+      }),
+    );
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const taskListSection = h.$('section[aria-label="Task list"]');
+    expect(taskListSection).toBeTruthy();
+    expect(h.container.textContent).toContain("Task t1");
+    expect(h.container.textContent).toContain("Task t2");
+    const taskEditorSection = h.$('section[aria-label="Task editor"]');
+    expect(taskEditorSection).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — settings disclosure", () => {
+  it("settings disclosure opens and closes", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 1 }));
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    expect(settingsBtn).toBeTruthy();
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const openBtn = h.$("button[aria-expanded='true']");
+    expect(openBtn).toBeTruthy();
+    expect(h.$("#task-set-name")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — historical version is read-only", () => {
+  it("direct-loads /sets/:taskSetId/versions/:version as a read-only historical view", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeSuite("s1", { name: "Historical Set", version: 2 }));
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} models={[]} />,
+      "/evaluations/sets/s1/versions/1",
+    );
+    await settle();
+    expect(h.$("[data-task-set-editor]")).toBeTruthy();
+    expect(h.container.textContent).toMatch(/read-only/i);
+    const saveBtn = h.$("button[data-action='save-task-set']") as HTMLButtonElement | null;
+    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement | null;
+    expect(saveBtn?.disabled ?? true).toBe(true);
+    expect(runBtn?.disabled ?? true).toBe(true);
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — Test selected models (spec §8.1)", () => {
+  it("puts one model-specific test action inside each candidate row", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          {
+            id: "m1",
+            providerId: "9router",
+            provider: "9Router",
+            model: "A",
+            slug: "cmc/model-a",
+            enabled: true,
+          },
+          {
+            id: "m2",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "B",
+            slug: "org/model-b",
+            enabled: true,
+          },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    await act(async () => h.$("button[aria-expanded='false']")!.click());
+    await settle();
+
+    for (const label of ["9router:cmc/model-a", "openrouter:org/model-b"]) {
+      const checkbox = h.$(`input[aria-label="Enable ${label}"]`);
+      const row = checkbox?.closest("li");
+      const action = row?.querySelector<HTMLButtonElement>(
+        `button[aria-label="Test model ${label}"]`,
+      );
+      expect(action).toBeTruthy();
+      expect(action?.textContent?.trim()).toBe("Test");
+      expect(h.$$(`button[aria-label="Test model ${label}"]`)).toHaveLength(1);
+    }
+
+    cleanup(h);
+  });
+
+  it("shows the batch test action when enabled candidates exist", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          {
+            id: "m1",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "A",
+            slug: "model-a",
+            enabled: true,
+          },
+          {
+            id: "m2",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "B",
+            slug: "model-b",
+            enabled: true,
+          },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const batchBtn = h.$$("button").find((b) => b.textContent?.trim() === "Test selected models");
+    expect(batchBtn).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("does not show the batch action when no candidates are enabled", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        modelSlots: [
+          {
+            id: "m1",
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "A",
+            slug: "model-a",
+            enabled: false,
+          },
+        ],
+      }),
+    );
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const settingsBtn = h.$("button[aria-expanded='false']");
+    await act(async () => {
+      settingsBtn!.click();
+    });
+    await settle();
+    const batchBtn = h.$$("button").find((b) => b.textContent?.trim() === "Test selected models");
+    expect(batchBtn).toBeFalsy();
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — accessibility", () => {
+  it("all interactive controls meet 44px target size", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s1", {
+        name: "My Suite",
+        version: 1,
+        tasks: [makeTask("t1")],
+      }),
+    );
+    const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
+    await settle();
+    const buttons = h.$$("button");
+    for (const el of buttons) {
+      const cls = el.getAttribute("class") ?? "";
+      expect(cls).toMatch(/min-h-\[44px\]|h-11/);
+    }
+    cleanup(h);
+  });
+});
