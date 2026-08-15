@@ -641,6 +641,15 @@ describe("EvaluationRepository (Dexie-backed)", () => {
       await evalRepo.createExperiment(exp);
       await expect(evalRepo.updateExperiment(exp, 99)).rejects.toThrow(/stale/i);
     });
+
+    it("deleteExperiment removes the row and is idempotent", async () => {
+      await evalRepo.saveSuite(makeSuite("s1"), 0);
+      await evalRepo.createExperiment(makeExperiment("e1", "s1"));
+      await evalRepo.deleteExperiment("e1");
+      expect(await evalRepo.getExperiment("e1")).toBeNull();
+      // Deleting a missing row is a no-op.
+      await expect(evalRepo.deleteExperiment("e1")).resolves.toBeUndefined();
+    });
   });
 
   describe("Experiment task lifecycle", () => {

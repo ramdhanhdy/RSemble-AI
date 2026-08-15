@@ -281,4 +281,35 @@ describe("appendModelToSuite — canonical Task Set sync (spec 7.9)", () => {
     expect(await taskSetRepo.getTaskSetVersion("suite-1", 2)).toBeNull();
     expect(await taskSetRepo.getTaskSetRecord("suite-1")).toMatchObject({ latestVersion: 1 });
   });
+
+  it("fails closed when the canonical Task Set's latest TaskSetVersion row is missing", async () => {
+    const suite = makeSuite({ version: 1 });
+    const repo = await seededRepo(suite);
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    const record = suiteToTaskSetRecord(suite);
+    const { version } = suiteToTaskSetVersion(suite);
+    await taskSetRepo.createTaskSet({ ...record, latestVersion: 1 }, { ...version, version: 1 });
+    // Simulate an inconsistent store: the canonical TaskSetRecord exists but
+    // its latest TaskSetVersion row is gone.
+    taskSetRepo.getTaskSetVersion = async () => null;
+
+    const result = await appendModelToSuite(repo, {
+      suiteId: "suite-1",
+      slot: NEW_SLOT,
+      now: 5000,
+      taskSetRepository: taskSetRepo,
+    });
+
+    // Fail closed — no silent legacy-only fallthrough.
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("storage");
+      expect(result.message).toMatch(/results only/i);
+    }
+    // The legacy Suite was not rewritten and latestVersion stays stale.
+    const saved = await repo.getSuite("suite-1");
+    expect(saved!.modelSlots).toHaveLength(2);
+    expect(saved!.version).toBe(1);
+    expect((await taskSetRepo.getTaskSetRecord("suite-1"))!.latestVersion).toBe(1);
+  });
 });
