@@ -446,6 +446,111 @@ describe("TaskSetEditor — save", () => {
     expect(fresh?.name).toBe("My Suite");
     cleanup(h);
   });
+
+  it("Save a new version and Run commits contiguous N+1 before starting", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    await seedCanonicalTask(taskRepo, "canon-t", "Canonical Task");
+    const suite = makeValidSuite("s1");
+    suite.tasks = [
+      {
+        ...makeTask("member-1", { title: "Canonical Task" }),
+        taskVersionRef: { taskId: "canon-t", version: 1 },
+      } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+    ];
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+
+    const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+        controller={makeStubController({ start: runCall })}
+      />,
+    );
+    await settle();
+    await act(async () => {
+      h.$("button[aria-expanded='false']")!.click();
+    });
+    await settle();
+    typeInto(h.$("#task-set-name") as HTMLInputElement, "Version Two");
+    await settle();
+
+    await act(async () => {
+      (h.$("button[data-action='run-task-set']") as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+    await act(async () => {
+      (
+        document.body.querySelector(
+          "button[data-action='dirty-run-save']",
+        ) as HTMLButtonElement
+      ).click();
+      await flush();
+    });
+    await settle();
+    const preflightRun = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Run task set",
+    );
+    await act(async () => {
+      preflightRun?.click();
+      await flush();
+    });
+    await settle();
+
+    const savedSuite = await repo.getSuite("s1");
+    const savedRecord = await taskSetRepo.getTaskSetRecord("s1");
+    const savedV2 = await taskSetRepo.getTaskSetVersion("s1", 2);
+    expect(savedSuite).toMatchObject({ name: "Version Two", version: 2 });
+    expect(savedRecord).toMatchObject({ latestVersion: 2 });
+    expect(savedV2?.members.map((member) => member.id)).toEqual(["member-1"]);
+    expect(runCall).toHaveBeenCalledWith("s1");
+    cleanup(h);
+  });
+
+  it.each([
+    ["CAS", new StorageError("conflict", "stale task set revision")],
+    ["append", new StorageError("quota", "version append failed")],
+  ])("%s failure leaves the Suite compatibility row unchanged", async (_kind, failure) => {
+    class RejectingAppendRepository extends InMemoryTaskSetRepository {
+      override async appendTaskSetVersion(): Promise<number> {
+        throw failure;
+      }
+    }
+
+    const repo = new InMemoryEvaluationRepository();
+    const taskSetRepo = new RejectingAppendRepository();
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+    const before = structuredClone(await repo.getSuite("s1"));
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />,
+    );
+    await settle();
+    await act(async () => {
+      h.$("button[aria-expanded='false']")!.click();
+    });
+    await settle();
+    typeInto(h.$("#task-set-name") as HTMLInputElement, "Must Not Partially Save");
+    await settle();
+
+    await act(async () => {
+      (h.$("button[data-action='save-task-set']") as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+
+    expect(await repo.getSuite("s1")).toEqual(before);
+    expect(await taskSetRepo.getTaskSetVersion("s1", 2)).toBeNull();
+    expect(h.$("[role='alert']")?.textContent).toMatch(/stale|append|quota|conflict/i);
+    cleanup(h);
+  });
 });
 
 describe("TaskSetEditor — run validation", () => {
@@ -681,20 +786,79 @@ describe("TaskSetEditor — settings disclosure", () => {
 });
 
 describe("TaskSetEditor — historical version is read-only", () => {
-  it("direct-loads /sets/:taskSetId/versions/:version as a read-only historical view", async () => {
+  it("loads the exact historical membership and defaults instead of the latest suite payload", async () => {
     const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeSuite("s1", { name: "Historical Set", version: 2 }));
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    await seedCanonicalTask(taskRepo, "historical-task", "Historical Task");
+    await seedCanonicalTask(taskRepo, "latest-task", "Latest Task");
+
+    const v1 = makeValidSuite("s1");
+    v1.name = "Versioned Set";
+    v1.tasks = [
+      {
+        ...makeTask("historical-member", { title: "Historical Task" }),
+        taskVersionRef: { taskId: "historical-task", version: 1 },
+      } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+    ];
+    v1.defaultEvaluation = { kind: "holistic" };
+
+    const v2 = {
+      ...makeValidSuite("s1"),
+      version: 2,
+      tasks: [
+        {
+          ...makeTask("latest-member", { title: "Latest Task" }),
+          taskVersionRef: { taskId: "latest-task", version: 1 },
+        } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+      ],
+      defaultEvaluation: {
+        kind: "profile" as const,
+        profile: { id: "latest-rubric", version: 1 },
+      },
+    };
+    await seedSuite(repo, v2);
+    await seedTaskSetVersion(taskSetRepo, v1, 0);
+    await seedTaskSetVersion(taskSetRepo, v2, 1);
+
     const h = renderWithRouter(
-      <TaskSetEditor repo={repo} models={[]} />,
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+      />,
       "/evaluations/sets/s1/versions/1",
     );
     await settle();
+
     expect(h.$("[data-task-set-editor]")).toBeTruthy();
+    expect(h.container.textContent).toContain("Historical Task");
+    expect(h.container.textContent).not.toContain("Latest Task");
+    expect(h.container.textContent).toMatch(/holistic judgment/i);
     expect(h.container.textContent).toMatch(/read-only/i);
     const saveBtn = h.$("button[data-action='save-task-set']") as HTMLButtonElement | null;
     const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement | null;
     expect(saveBtn?.disabled ?? true).toBe(true);
     expect(runBtn?.disabled ?? true).toBe(true);
+    cleanup(h);
+  });
+
+  it("renders an explicit missing-version state instead of falling back to latest", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    const suite = makeValidSuite("s1");
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />,
+      "/evaluations/sets/s1/versions/99",
+    );
+    await settle();
+
+    expect(h.$("[data-task-set-editor]")).toBeNull();
+    expect(h.container.textContent).toMatch(/version 99.*not found|not found.*version 99/i);
     cleanup(h);
   });
 });
@@ -1491,6 +1655,55 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     cleanup(h);
   });
 
+  it("durable snapshot commit failure aborts before controller or provider effects", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    const taskSetRepo = new InMemoryTaskSetRepository();
+    await seedCanonicalTask(taskRepo, "canon-t", "Canonical Task");
+    const suite = makeValidSuite("s1");
+    suite.tasks = [
+      {
+        ...makeTask("member-1"),
+        taskVersionRef: { taskId: "canon-t", version: 1 },
+      } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
+    ];
+    await seedSuite(repo, suite);
+    await seedTaskSetVersion(taskSetRepo, suite, 0);
+    vi.spyOn(repo, "saveSuite").mockRejectedValueOnce(
+      new StorageError("quota", "materialized snapshot commit failed"),
+    );
+    const runCall = vi.fn(async () => ({ ok: true as const, experimentId: "exp-1" }));
+    const h = renderWithRouter(
+      <TaskSetEditor
+        repo={repo}
+        taskRepo={taskRepo}
+        taskSetRepo={taskSetRepo}
+        models={[]}
+        controller={makeStubController({ start: runCall })}
+      />,
+    );
+    await settle();
+
+    await act(async () => {
+      (h.$("button[data-action='run-task-set']") as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Run task set",
+    );
+    await act(async () => {
+      confirm?.click();
+      await flush();
+    });
+    await settle();
+
+    expect(h.$("[role='alert']")?.textContent).toMatch(/snapshot commit|quota/i);
+    expect(runCall).not.toHaveBeenCalled();
+    expect(h.$("[data-route='experiment-progress']")).toBeNull();
+    cleanup(h);
+  });
+
   it("durably materializes before lease acquisition, attempt creation, controller work, and provider call", async () => {
     const order: string[] = [];
     const repo = new InMemoryEvaluationRepository();
@@ -1507,10 +1720,29 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     ];
     await seedSuite(repo, suite);
 
-    // Deterministic fake observes the exact boundary order the editor must honor.
+    // The controller observes the real persisted Suite boundary before it records
+    // lease/attempt/provider effects.
     const orderedController = {
       ...makeStubController(),
       start: vi.fn(async () => {
+        const persistedAtStart = (await repo.getSuite("s1")) as
+          | (EvaluationSuite & {
+              materializedTaskSetRef?: { taskSetId: string; taskSetVersion: number };
+              materializedWorkloadSnapshot?: {
+                taskSetId: string;
+                taskSetVersion: number;
+                protocolFingerprint: string;
+              };
+            })
+          | null;
+        if (
+          persistedAtStart?.materializedTaskSetRef?.taskSetId === "s1" &&
+          persistedAtStart.materializedTaskSetRef.taskSetVersion === 1 &&
+          persistedAtStart.materializedWorkloadSnapshot?.taskSetId === "s1" &&
+          persistedAtStart.materializedWorkloadSnapshot.taskSetVersion === 1
+        ) {
+          order.push("durable-materialization");
+        }
         order.push("lease-acquire");
         order.push("attempt-create");
         order.push("controller-paid-work");
@@ -1549,12 +1781,14 @@ describe("TaskSetEditor — safe Save versus Run boundary", () => {
     await settle();
 
     const mat = order.indexOf("materialize");
+    const durable = order.indexOf("durable-materialization");
     const lease = order.indexOf("lease-acquire");
     const attempt = order.indexOf("attempt-create");
     const paid = order.indexOf("controller-paid-work");
     const provider = order.indexOf("provider-call");
     expect(mat).toBeGreaterThanOrEqual(0);
-    expect(lease).toBeGreaterThan(mat);
+    expect(durable).toBeGreaterThan(mat);
+    expect(lease).toBeGreaterThan(durable);
     expect(attempt).toBeGreaterThan(lease);
     expect(paid).toBeGreaterThan(attempt);
     expect(provider).toBeGreaterThan(paid);
