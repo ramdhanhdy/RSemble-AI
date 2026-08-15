@@ -18,7 +18,7 @@
 //    objects/arrays; the input suite is left byte-identical.
 //  - Current serialized semantics are preserved: order, model slots, judge
 //    identity, default evaluation (holistic → null defaultRubricRef; pinned
-//    profile → defaultRubricRef), per-task evaluation/judge-instruction/
+//    Rubric → defaultRubricRef), per-task evaluation/judge-instruction/
 //    verification overrides, suite-level reasoningPolicy (→ protocolDefaults),
 //    and the shipped missing-cell repair behavior (→ allow-repair). Legacy
 //    suites have no repeat concept (→ repeatPolicy { kind: "none" }).
@@ -128,14 +128,14 @@ export function suiteToTaskSetVersion(
 
 // --- projection helpers (pure, no source mutation) -------------------------
 
-/** Holistic default evaluation → null; pinned profile → its version ref. */
+/** Holistic default evaluation → null; pinned Rubric → its version ref. */
 function defaultRubricRefFromSuite(suite: EvaluationSuite): RubricVersionRef | null {
   const sel = suite.defaultEvaluation;
   if (sel.kind === "profile") return { id: sel.profile.id, version: sel.profile.version };
   return null;
 }
 
-/** Per-task rubric override: a pinned profile selection projects to its ref;
+/** Per-task rubric override: a pinned Rubric selection projects to its ref;
  *  inherit/holistic project to null (the member inherits the set default). */
 function rubricOverrideRefFromTask(task: EvaluationTask): RubricVersionRef | null {
   const sel = task.evaluation;

@@ -84,7 +84,7 @@ export interface TaskSetRecord {
 }
 
 /** Membership role (spec §3.2, §5.3). Visible in provenance; never becomes
- *  global profile weighting. */
+ *  global Rubric weighting. */
 export type TaskSetMemberRole = "organic" | "anchor" | "calibration" | "holdout";
 
 /** Exact reference to an immutable canonical Task Version inside a member.
