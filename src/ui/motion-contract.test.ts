@@ -48,7 +48,7 @@ describe("motion contract", () => {
     // trailing action cluster. Covers the shared row surface and both lists.
     const offendersList = [
       "src/ui/RecordRow.tsx",
-      "src/workspaces/evaluations/SuiteList.tsx",
+      "src/workspaces/evaluations/TaskSetList.tsx",
       "src/workspaces/evaluations/RubricList.tsx",
     ].flatMap((file) => {
       const source = readFileSync(join(process.cwd(), file), "utf8");

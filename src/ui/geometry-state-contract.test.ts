@@ -15,7 +15,7 @@ describe("compact state geometry", () => {
   it("keeps disclosure panels instant and reserves their trigger geometry", () => {
     const disclosure = source("src/ui/EvaluationDisclosure.tsx");
     const rubricEditor = source("src/ui/EvaluationRubricEditor.tsx");
-    const suiteEditor = source("src/workspaces/evaluations/SuiteEditor.tsx");
+    const suiteEditor = source("src/workspaces/evaluations/TaskSetEditor.tsx");
 
     expect(disclosure).toContain('data-geometry="evaluation-disclosure"');
     expect(disclosure).toContain('data-geometry="evaluation-panel"');
@@ -36,8 +36,8 @@ describe("compact state geometry", () => {
     // the confirm pair never shifts the row's action cluster. The floor is
     // responsive (sm:) — on phones the slot takes natural width so the row's
     // content column is never crushed (Task 14 mobile finding).
-    const suiteList = source("src/workspaces/evaluations/SuiteList.tsx");
-    expect(suiteList).toContain('data-geometry="suite-archive-slot"');
+    const suiteList = source("src/workspaces/evaluations/TaskSetList.tsx");
+    expect(suiteList).toContain('data-geometry="task-set-archive-slot"');
     expect(suiteList).toMatch(/min-w-\[136px\]/);
     expect(suiteList).toMatch(/justify-end/);
   });
