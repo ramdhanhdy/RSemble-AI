@@ -747,6 +747,56 @@ describe("TaskObservations — Deep links to exact Observation and source Record
 
     cleanup(h);
   });
+
+  it("formats source record deep link with URLSearchParams, omits attempt when null, and encodes URI components", async () => {
+    const repo = new InMemoryEvidenceRepository();
+    const m = makeModelConfig("anthropic", "claude-3-5-sonnet");
+    await repo.putModelConfiguration(m);
+
+    // Observation A with special characters in IDs and valid judgeAttemptId
+    const obsA = makeObservation("t-1", 1, "inst-1", m.id, {
+      sourceResultId: "run#special/id",
+      candidateAttemptId: "cand#1/alpha",
+      assessmentRef: makeAssessmentRef("judge#att&1"),
+    });
+    await repo.putObservation(obsA);
+    await repo.putDecision(makeDecision(obsA.id));
+
+    // Observation B with null judgeAttemptId
+    const obsB: Observation = {
+      ...obsA,
+      id: "obs-no-judge",
+      taskInstanceId: "inst-2",
+      candidateAttemptId: "cand-2",
+      assessmentRef: {
+        ...obsA.assessmentRef,
+        judgeAttemptId: null as unknown as string,
+      },
+    };
+
+    repo.listObservationsByTask = async () => [obsA, obsB];
+
+    const h = render(<TaskObservations taskId="t-1" evidenceRepo={repo} />);
+    await settle();
+
+    // Verify obsA link encoding
+    const rowA = h.$(`[data-observation-row="${obsA.id}"]`);
+    const recordLinkA = rowA?.querySelector<HTMLAnchorElement>("a[data-link-record]");
+    expect(recordLinkA).toBeTruthy();
+    expect(recordLinkA?.getAttribute("href")).toBe(
+      "/runs/run%23special%2Fid?candidate=cand%231%2Falpha&attempt=judge%23att%261",
+    );
+
+    // Verify obsB link omits attempt parameter
+    const rowB = h.$(`[data-observation-row="${obsB.id}"]`);
+    const recordLinkB = rowB?.querySelector<HTMLAnchorElement>("a[data-link-record]");
+    expect(recordLinkB).toBeTruthy();
+    expect(recordLinkB?.getAttribute("href")).toBe(
+      "/runs/run%23special%2Fid?candidate=cand-2",
+    );
+
+    cleanup(h);
+  });
 });
 
 describe("TaskObservations — Navigation and URL filter preservation", () => {
