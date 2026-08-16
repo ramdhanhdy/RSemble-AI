@@ -163,10 +163,7 @@ export interface EvidenceRepository {
    * exactly once per occurrence; fresh markers (active owners) are never
    * stolen. Returns recovered sourceResultIds in deterministic order.
    */
-  recoverStaleIndexJobs(opts: {
-    staleTimeoutMs: number;
-    now: number;
-  }): Promise<string[]>;
+  recoverStaleIndexJobs(opts: { staleTimeoutMs: number; now: number }): Promise<string[]>;
   // --- Executed verifier outcomes ----------------------------------------------
   /** Persist one executed verifier outcome, idempotent under the composite
    *  [runId+taskId+modelKey+executedAt] id. A non-identical outcome at the
@@ -679,7 +676,6 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
     }
   }
 
-
   async function putVerifierOutcome(
     outcome: ExecutedVerifierOutcome,
   ): Promise<"created" | "existing"> {
@@ -691,10 +687,7 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
       const prohibited: string[] = [];
       collectProhibitedFieldPaths(outcome, "", prohibited);
       if (prohibited.length > 0) {
-        throw new StorageError(
-          "validation",
-          `Invalid ExecutedVerifierOutcome: ${prohibited[0]}`,
-        );
+        throw new StorageError("validation", `Invalid ExecutedVerifierOutcome: ${prohibited[0]}`);
       }
       const row = toVerifierRow(outcome);
       return await db.transaction("rw", db.verifierOutcomes, async () => {
@@ -958,9 +951,7 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
     return decisions;
   }
 
-  async putVerifierOutcome(
-    outcome: ExecutedVerifierOutcome,
-  ): Promise<"created" | "existing"> {
+  async putVerifierOutcome(outcome: ExecutedVerifierOutcome): Promise<"created" | "existing"> {
     if (!isExecutedVerifierOutcome(outcome)) {
       throw new StorageError("validation", "Invalid ExecutedVerifierOutcome.");
     }
@@ -1037,10 +1028,7 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
       );
   }
 
-  async recoverStaleIndexJobs(opts: {
-    staleTimeoutMs: number;
-    now: number;
-  }): Promise<string[]> {
+  async recoverStaleIndexJobs(opts: { staleTimeoutMs: number; now: number }): Promise<string[]> {
     if (!Number.isFinite(opts.staleTimeoutMs) || opts.staleTimeoutMs < 0) {
       throw new StorageError("validation", "staleTimeoutMs must be a non-negative number.");
     }

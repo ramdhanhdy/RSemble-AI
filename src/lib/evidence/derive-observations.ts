@@ -315,7 +315,8 @@ export async function deriveObservationsForSource(
           observedAt,
           sourceCorrupt,
           fullTaskSetCoverage,
-          resolveModelConfiguration: deps.resolveModelConfiguration ?? defaultModelConfigurationResolver,
+          resolveModelConfiguration:
+            deps.resolveModelConfiguration ?? defaultModelConfigurationResolver,
         });
         if (cellOutcome.limitation !== null) {
           limitations.push(cellOutcome.limitation);

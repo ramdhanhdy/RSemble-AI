@@ -527,8 +527,9 @@ function runContract(name: string, makeHarness: RepoFactory) {
     describe("verifier outcomes", () => {
       it("persists executed outcomes idempotently and lists them deterministically", async () => {
         const { repo } = harness;
-        await expect(repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 5 })))
-          .resolves.toBe("created");
+        await expect(
+          repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 5 })),
+        ).resolves.toBe("created");
         await expect(
           repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 5 })),
         ).resolves.toBe("existing");
@@ -574,14 +575,17 @@ function runContract(name: string, makeHarness: RepoFactory) {
         await expect(
           repo.putVerifierOutcome({ ...base, configurationDigest: "not-a-digest" }),
         ).rejects.toBeInstanceOf(StorageError);
-        await expect(
-          repo.putVerifierOutcome({ ...base, executedAt: -1 }),
-        ).rejects.toBeInstanceOf(StorageError);
+        await expect(repo.putVerifierOutcome({ ...base, executedAt: -1 })).rejects.toBeInstanceOf(
+          StorageError,
+        );
         await expect(
           repo.putVerifierOutcome({ ...base, verifierRef: { id: "", version: 1 } }),
         ).rejects.toBeInstanceOf(StorageError);
         await expect(
-          repo.putVerifierOutcome({ ...base, apiKey: "sk-x" } as unknown as ExecutedVerifierOutcome),
+          repo.putVerifierOutcome({
+            ...base,
+            apiKey: "sk-x",
+          } as unknown as ExecutedVerifierOutcome),
         ).rejects.toBeInstanceOf(StorageError);
         expect(await repo.listVerifierOutcomes({})).toHaveLength(0);
       });
@@ -601,12 +605,16 @@ function runContract(name: string, makeHarness: RepoFactory) {
     describe("stale-running recovery", () => {
       it("re-queues only running jobs at or past the stale boundary", async () => {
         const { repo } = harness;
-        await repo.putIndexJob(makeJob({ sourceResultId: "run-stale", status: "running", updatedAt: 1000 }));
+        await repo.putIndexJob(
+          makeJob({ sourceResultId: "run-stale", status: "running", updatedAt: 1000 }),
+        );
         // Boundary: exactly updatedAt + timeout == now counts as stale.
         await repo.putIndexJob(
           makeJob({ sourceResultId: "run-boundary", status: "running", updatedAt: 1001 }),
         );
-        await repo.putIndexJob(makeJob({ sourceResultId: "run-queued", status: "queued", updatedAt: 0 }));
+        await repo.putIndexJob(
+          makeJob({ sourceResultId: "run-queued", status: "queued", updatedAt: 0 }),
+        );
         await repo.putIndexJob(
           makeJob({ sourceResultId: "run-complete", status: "complete", updatedAt: 0 }),
         );
