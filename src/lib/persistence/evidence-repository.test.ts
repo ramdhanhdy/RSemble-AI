@@ -39,7 +39,7 @@ import {
   classifyEligibility,
   type EligibilityInput,
 } from "../evidence/evidence-eligibility";
-import type { Observation } from "../evidence/evidence-types";
+import type { EligibilityDecision, Observation } from "../evidence/evidence-types";
 
 
 
@@ -361,6 +361,17 @@ function runContract(name: string, makeHarness: RepoFactory) {
         await repo.putDecision({ ...makeDecision(o), ruleVersion: 3 });
         await expect(repo.countObservations()).resolves.toBe(1);
         expect(await repo.listDecisionRevisions(o.id)).toHaveLength(2);
+      });
+
+      it("rejects decisions carrying extra or prohibited fields", async () => {
+        const { repo } = harness;
+        const o = makeObservation("dec-extra");
+        await repo.putObservation(o);
+        const withSecret = { ...makeDecision(o), apiKey: "sk-secret" } as unknown as EligibilityDecision;
+        await expect(repo.putDecision(withSecret)).rejects.toBeInstanceOf(StorageError);
+        const withUnknown = { ...makeDecision(o), extraField: 1 } as unknown as EligibilityDecision;
+        await expect(repo.putDecision(withUnknown)).rejects.toBeInstanceOf(StorageError);
+        expect(await repo.listDecisionRevisions(o.id)).toHaveLength(0);
       });
     });
 

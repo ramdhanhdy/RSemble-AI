@@ -373,9 +373,27 @@ export function isEvidenceReasonCode(v: unknown): v is EvidenceReasonCode {
   return isString(v) && (EVIDENCE_REASON_CODES as readonly string[]).includes(v);
 }
 
+/** Exact EligibilityDecision field set (spec §3.3) — no free-form fields. */
+const ELIGIBILITY_DECISION_FIELDS: Readonly<Record<string, true>> = {
+  observationId: true,
+  ruleVersion: true,
+  status: true,
+  evidenceClass: true,
+  allowedUses: true,
+  reasonCodes: true,
+  comparabilityCohortId: true,
+  decidedAt: true,
+};
+
 export function validateEligibilityDecision(v: unknown): ValidationResult<EligibilityDecision> {
   const errors: string[] = [];
   if (!isRecord(v)) return { ok: false, errors: ["EligibilityDecision payload is not an object."] };
+  collectProhibitedFieldPaths(v, "", errors);
+  for (const key of Object.keys(v)) {
+    if (ELIGIBILITY_DECISION_FIELDS[key] !== true) {
+      errors.push(`unknown field "${key}" on EligibilityDecision.`);
+    }
+  }
   if (!isString(v.observationId) || !OBS_ID_RE.test(v.observationId)) {
     errors.push("observationId must be a canonical observation id.");
   }
