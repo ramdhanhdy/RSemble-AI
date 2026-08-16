@@ -338,12 +338,50 @@ export function EvidenceReceipt({
     );
   }
 
-  // Render missing cell state (when no observation exists)
+  // Render missing / pending derivation / unindexed state (when no observation exists)
   if (missingReason || (!obs && !dec)) {
-    const reasonKey = missingReason ?? "no-score";
-    const title = MISSING_TITLES[reasonKey];
-    const explanationText = MISSING_EXPLANATIONS[reasonKey];
-    const summaryLabel = `Excluded — ${title}`;
+    const isDerivationInProgress =
+      !missingReason && (job?.status === "queued" || job?.status === "running");
+    const isUnindexed = !missingReason && !job;
+
+    let title: string;
+    let badge: string;
+    let explanationText: string;
+    let summaryLabel: string;
+    let accessibleLabel: string;
+    let IconComponent: typeof XCircle | typeof Loader2 | typeof ReceiptText;
+    let iconClass: string;
+
+    if (isDerivationInProgress) {
+      title = "Derivation in progress";
+      badge = "Pending";
+      explanationText =
+        "Evidence derivation is currently in progress for this source record. Derivation runs locally without provider calls.";
+      summaryLabel = "Derivation in progress";
+      accessibleLabel =
+        "Evidence receipt: Derivation in progress. Evidence derivation is in progress for this record.";
+      IconComponent = Loader2;
+      iconClass = "animate-spin text-accent";
+    } else if (isUnindexed) {
+      title = "Not yet indexed";
+      badge = "Not indexed";
+      explanationText =
+        "Evidence has not yet been indexed for this source record. Derivation will index this record automatically.";
+      summaryLabel = "Not yet indexed";
+      accessibleLabel =
+        "Evidence receipt: Not yet indexed. Evidence derivation has not yet indexed this record.";
+      IconComponent = ReceiptText;
+      iconClass = "text-text-muted";
+    } else {
+      const reasonKey: MissingReason = missingReason ?? "evidence-missing";
+      title = MISSING_TITLES[reasonKey];
+      badge = "Excluded";
+      explanationText = MISSING_EXPLANATIONS[reasonKey];
+      summaryLabel = `Excluded — ${title}`;
+      accessibleLabel = `Evidence receipt: ${summaryLabel}. Excluded from comparative standing.`;
+      IconComponent = XCircle;
+      iconClass = "text-text-muted";
+    }
 
     if (compact) {
       return (
@@ -351,12 +389,12 @@ export function EvidenceReceipt({
           <button
             type="button"
             aria-expanded={open}
-            aria-label={`Evidence receipt: ${summaryLabel}. Excluded from comparative standing.`}
+            aria-label={accessibleLabel}
             onClick={() => setOpen((o) => !o)}
             className="inline-flex min-h-[44px] items-center gap-1 px-1 text-xs text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            <XCircle size={12} className="text-text-muted" aria-hidden="true" />
-            <span className="sr-only">Evidence receipt: {summaryLabel}</span>
+            <IconComponent size={12} className={iconClass} aria-hidden="true" />
+            <span className="sr-only">{accessibleLabel}</span>
           </button>
           {open ? (
             <div className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96">
@@ -366,18 +404,19 @@ export function EvidenceReceipt({
               >
                 <div className="flex items-center justify-between border-b border-edge pb-2">
                   <div className="flex items-center gap-1.5 font-medium text-text">
-                    <XCircle size={14} className="text-text-muted" aria-hidden="true" />
+                    <IconComponent size={14} className={iconClass} aria-hidden="true" />
                     <span>{summaryLabel}</span>
                   </div>
                   <span className="rounded bg-panel-hover px-1.5 py-0.5 font-mono text-[10px] uppercase text-text-muted">
-                    Excluded
+                    {badge}
                   </span>
                 </div>
                 <div className="mt-2 text-text-secondary">
                   <p>{explanationText}</p>
                   <p className="mt-1 text-[11px] text-text-muted">
-                    No Observation was derived. This cell cannot support profile, comparative, or
-                    standing use.
+                    {isDerivationInProgress || isUnindexed
+                      ? "Exact source run records remain safe and immutable."
+                      : "No Observation was derived. This cell cannot support profile, comparative, or standing use."}
                   </p>
                 </div>
                 {runId ? (
@@ -405,18 +444,19 @@ export function EvidenceReceipt({
       >
         <div className="flex items-center justify-between border-b border-edge pb-2">
           <div className="flex items-center gap-1.5 font-medium text-text">
-            <XCircle size={14} className="text-text-muted" aria-hidden="true" />
+            <IconComponent size={14} className={iconClass} aria-hidden="true" />
             <span>{summaryLabel}</span>
           </div>
           <span className="rounded bg-panel-hover px-1.5 py-0.5 font-mono text-[10px] uppercase text-text-muted">
-            Excluded
+            {badge}
           </span>
         </div>
         <div className="mt-2 text-text-secondary">
           <p>{explanationText}</p>
           <p className="mt-1 text-[11px] text-text-muted">
-            No Observation was derived. This cell cannot support profile, comparative, or standing
-            use.
+            {isDerivationInProgress || isUnindexed
+              ? "Exact source run records remain safe and immutable."
+              : "No Observation was derived. This cell cannot support profile, comparative, or standing use."}
           </p>
         </div>
         {runId ? (
