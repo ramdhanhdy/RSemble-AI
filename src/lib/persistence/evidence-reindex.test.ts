@@ -241,11 +241,28 @@ class MemoryMetaStore implements ReindexMetaStore {
     now: number,
   ): Promise<"acquired" | "foreign-held"> {
     const held = this.values.get(key) ?? null;
-    if (isLeaseRecord(held) && held.expiresAt > now && held.ownerId !== ownerId) {
+    if (isLeaseRecord(held) && held.expiresAt > now) {
+      // Any unexpired lease blocks acquisition — including the same owner.
       return "foreign-held";
     }
     this.values.set(key, { ownerId, expiresAt });
     return "acquired";
+  }
+  async renewLease(
+    key: string,
+    ownerId: string,
+    expiresAt: number,
+  ): Promise<"renewed" | "lost"> {
+    const held = this.values.get(key) ?? null;
+    if (!isLeaseRecord(held) || held.ownerId !== ownerId) return "lost";
+    this.values.set(key, { ownerId, expiresAt });
+    return "renewed";
+  }
+  async releaseLease(key: string, ownerId: string): Promise<"released" | "not-owned"> {
+    const held = this.values.get(key) ?? null;
+    if (!isLeaseRecord(held) || held.ownerId !== ownerId) return "not-owned";
+    this.values.delete(key);
+    return "released";
   }
 }
 
@@ -762,10 +779,17 @@ describe("reindexEvidence", () => {
     seedCleanEvaluation(world, "run-s2");
     seedCleanEvaluation(world, "run-s3");
     const experimentsSeen: string[] = [];
+    let releaseAfterSecond!: () => void;
+    const afterSecond = new Promise<void>((resolve) => {
+      releaseAfterSecond = resolve;
+    });
     const depsA = depsFor(world, { ownerId: "tab-a", leaseTtlMs: 1_000 });
     depsA.resolver = {
       getExperiment: async (id) => {
         experimentsSeen.push(id);
+        // Park A right after its second source: clock at t=1000, lease
+        // renewed to t=1500 — B must still be excluded.
+        if (experimentsSeen.length === 2) await afterSecond;
         return world.experiments.get(id) ?? null;
       },
       getRun: async (id) => {
@@ -777,13 +801,13 @@ describe("reindexEvidence", () => {
       },
     };
     const passA = reindexEvidence(depsA);
-    // After A derived two sources (clock at t=1000), a second owner attempts
-    // the pass while A's lease is still live thanks to renewal.
+    // A has derived two sources (clock at t=1000) and holds a live lease;
+    // a second owner attempts the pass now.
     await until(() => experimentsSeen.length === 2);
     const depsB = depsFor(world, { ownerId: "tab-b", leaseTtlMs: 1_000 });
-    const passB = reindexEvidence(depsB);
+    const resultB = await reindexEvidence(depsB);
+    releaseAfterSecond();
     const resultA = await passA;
-    const resultB = await passB;
     expect(resultA).toMatchObject({ skipped: false, sourcesProcessed: 3 });
     expect(resultB).toEqual({ skipped: true, reason: "lease-held" });
     expect(await world.repo.countObservations()).toBe(3);
@@ -926,9 +950,9 @@ describe("Dexie reindex seams", () => {
     const meta = createDexieReindexMetaStore(db);
     await meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-a", 100, 0);
     // A non-owner cannot renew (fail closed) and cannot extend the lease.
-    await expect(meta.renewLease(REINDEX_LEASE_KEY, "tab-b", 500, 50)).resolves.toBe("lost");
+    await expect(meta.renewLease(REINDEX_LEASE_KEY, "tab-b", 500)).resolves.toBe("lost");
     expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-a", expiresAt: 100 });
-    await expect(meta.renewLease(REINDEX_LEASE_KEY, "tab-a", 500, 50)).resolves.toBe("renewed");
+    await expect(meta.renewLease(REINDEX_LEASE_KEY, "tab-a", 500)).resolves.toBe("renewed");
     expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-a", expiresAt: 500 });
     // A's lease expires; B acquires; A's release must not delete B's lease.
     await expect(meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-b", 900, 600)).resolves.toBe(

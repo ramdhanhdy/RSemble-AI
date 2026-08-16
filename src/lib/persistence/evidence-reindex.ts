@@ -22,7 +22,9 @@
 //  - storage quota/unavailable failures are classified onto the owning job
 //    row and never delete exact evidence;
 //  - cross-tab safety uses a local storage-work lease (separate from paid
-//    execution): an unexpired foreign lease skips the run.
+//    execution): any unexpired lease blocks acquisition, active passes renew
+//    per source (fail-closed on ownership loss), and release is owner-checked
+//    so a lapsed owner never deletes a successor's lease.
 //
 // This module never mutates source records and never invokes a provider.
 // =============================================================================
@@ -102,9 +104,10 @@ export interface ReindexMetaStore {
   /**
    * Atomically acquire the storage-work lease: read the current value and
    * write the new lease inside one storage transaction. Returns
-   * "foreign-held" when an unexpired lease owned by another owner exists at
-   * check time; otherwise writes `{ ownerId, expiresAt }` and returns
-   * "acquired".
+   * "foreign-held" when ANY unexpired lease exists at check time — including
+   * one recorded under the same owner id, so two runtimes sharing an owner
+   * id can never both run the pass; otherwise writes `{ ownerId, expiresAt }`
+   * and returns "acquired".
    */
   tryAcquireLease(
     key: string,
@@ -112,6 +115,23 @@ export interface ReindexMetaStore {
     expiresAt: number,
     now: number,
   ): Promise<"acquired" | "foreign-held">;
+  /**
+   * Owner-checked renewal inside one storage transaction: extends the lease
+   * only when the stored record still belongs to `ownerId`. Fail-closed —
+   * a missing, foreign, or non-lease record returns "lost" and the caller
+   * must stop working.
+   */
+  renewLease(
+    key: string,
+    ownerId: string,
+    expiresAt: number,
+  ): Promise<"renewed" | "lost">;
+  /**
+   * Owner-checked release inside one storage transaction: deletes the lease
+   * only when the stored record still belongs to `ownerId`, so an owner
+   * whose lease lapsed never deletes a successor's lease.
+   */
+  releaseLease(key: string, ownerId: string): Promise<"released" | "not-owned">;
 }
 
 export const REINDEX_LEASE_KEY = "evidenceReindexLease";
@@ -138,11 +158,35 @@ export function createDexieReindexMetaStore(db: RSembleEvaluationDB): ReindexMet
       return db.transaction("rw", db.storageMeta, async () => {
         const row = await db.storageMeta.get(key);
         const held = row?.value ?? null;
-        if (isLeaseRecord(held) && held.expiresAt > now && held.ownerId !== ownerId) {
+        if (isLeaseRecord(held) && held.expiresAt > now) {
+          // Any unexpired lease blocks acquisition — even the same owner id.
+          // Renewal is the only path for an existing owner to extend it.
           return "foreign-held";
         }
         await db.storageMeta.put({ key, value: { ownerId, expiresAt } });
         return "acquired";
+      });
+    },
+    async renewLease(
+      key: string,
+      ownerId: string,
+      expiresAt: number,
+    ): Promise<"renewed" | "lost"> {
+      return db.transaction("rw", db.storageMeta, async () => {
+        const row = await db.storageMeta.get(key);
+        const held = row?.value ?? null;
+        if (!isLeaseRecord(held) || held.ownerId !== ownerId) return "lost";
+        await db.storageMeta.put({ key, value: { ownerId, expiresAt } });
+        return "renewed";
+      });
+    },
+    async releaseLease(key: string, ownerId: string): Promise<"released" | "not-owned"> {
+      return db.transaction("rw", db.storageMeta, async () => {
+        const row = await db.storageMeta.get(key);
+        const held = row?.value ?? null;
+        if (!isLeaseRecord(held) || held.ownerId !== ownerId) return "not-owned";
+        await db.storageMeta.delete(key);
+        return "released";
       });
     },
   };
@@ -165,9 +209,8 @@ export interface ReindexDeps {
   leaseTtlMs?: number;
   ownerId?: string;
 }
-
 export type ReindexRunResult =
-  | { skipped: true; reason: string }
+  | { skipped: true; reason: "lease-held" | "lease-lost" }
   | {
       skipped: false;
       sourcesProcessed: number;
@@ -217,13 +260,16 @@ async function inventoryComparisonSource(deps: ReindexDeps, source: ReindexSourc
 /**
  * Run one deterministic backfill/reindex pass. Sources are processed in
  * sourceResultId order; a source is skipped only when its marker is complete
- * at the current revision (marker-after-verify). Never mutates source records
- * and never invokes a provider.
+ * at the current revision (marker-after-verify). The pass renews its
+ * owner-checked storage-work lease before every source and stops with
+ * `{ skipped: true, reason: "lease-lost" }` the moment ownership is lost;
+ * release is owner-checked too. Never mutates source records and never
+ * invokes a provider.
  */
 export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResult> {
   const now = deps.now ?? (() => Date.now());
   const ttlMs = deps.leaseTtlMs ?? 5 * 60_000;
-  const ownerId = deps.ownerId ?? "reindex-owner";
+  const ownerId = deps.ownerId ?? uniqueOwnerId();
 
   // Local storage-work ownership, separate from paid execution. The
   // check-and-acquire runs inside one storage transaction over the meta
@@ -252,6 +298,13 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
     const sources = await deps.enumerator.listSources();
 
     for (const source of sources) {
+      // Owner-checked renewal before every source: a pass that outlives its
+      // TTL stays exclusive, and one whose lease was lost (expired + taken
+      // by a successor) fails closed instead of overlapping the successor.
+      const renewed = await deps.meta.renewLease(REINDEX_LEASE_KEY, ownerId, now() + ttlMs);
+      if (renewed === "lost") {
+        return { skipped: true, reason: "lease-lost" };
+      }
       // Non-terminal runs are not yet sources of completed evidence.
       if (source.runStatus === "running") continue;
 
@@ -371,7 +424,9 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
 
     return result;
   } finally {
-    await deps.meta.delete(REINDEX_LEASE_KEY);
+    // Owner-checked release: a pass whose lease lapsed and was taken over
+    // by a successor must never delete the successor's lease.
+    await deps.meta.releaseLease(REINDEX_LEASE_KEY, ownerId);
   }
 }
 
@@ -392,8 +447,10 @@ export interface EvidenceIndexingRuntime {
 /**
  * Compose the production evidence-indexing seams (Wave A). The derivation
  * queue covers post-commit sources; `reindex` is the local startup/background
- * migration with the existing storage-work lease, deterministic cursor, and
- * resume behavior. `reindexOwnerId` names the caller for lease ownership.
+ * migration with the storage-work lease, deterministic cursor, and resume
+ * behavior. When `reindexOwnerId` is omitted, a genuinely unique owner id is
+ * minted per runtime (per tab/provider instance) and shared by the reindex
+ * lease and the queue claims; pass an explicit id for deterministic tests.
  */
 export function createEvidenceIndexingRuntime(input: {
   db: RSembleEvaluationDB;
@@ -408,6 +465,7 @@ export function createEvidenceIndexingRuntime(input: {
   const evidenceRepo = createEvidenceRepository(input.db);
   const resolveVerifierOutcomes =
     input.resolveVerifierOutcomes ?? createRepositoryVerifierResolver(evidenceRepo);
+  const ownerId = input.reindexOwnerId ?? uniqueOwnerId();
   const derivationQueue = createDerivationQueue(
     {
       evidenceRepo,
@@ -417,7 +475,7 @@ export function createEvidenceIndexingRuntime(input: {
       resolveModelConfiguration: input.resolveModelConfiguration,
       now: input.now,
     },
-    input.queueOptions,
+    { ...input.queueOptions, ownerId: input.queueOptions?.ownerId ?? ownerId },
   );
   const reindex = () =>
     reindexEvidence({
@@ -429,7 +487,15 @@ export function createEvidenceIndexingRuntime(input: {
       resolveVerifierOutcomes,
       resolveModelConfiguration: input.resolveModelConfiguration,
       now: input.now,
-      ownerId: input.reindexOwnerId,
+      ownerId,
     });
   return { evidenceRepo, derivationQueue, reindex };
+}
+
+/** A genuinely unique owner identity per runtime/tab. Injectable via
+ *  `reindexOwnerId` for deterministic tests. */
+function uniqueOwnerId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  return `evidence-owner-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

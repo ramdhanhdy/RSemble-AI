@@ -54,7 +54,8 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
     const evidenceRuntime = createEvidenceIndexingRuntime({
       db,
       resolver: sourceResolver,
-      reindexOwnerId: "startup-evidence-reindex",
+      // No reindexOwnerId: the runtime mints a unique owner per tab/provider
+      // instance so concurrent startup passes serialize under the lease.
     });
     const controller = createExperimentController({
       evalRepo,
