@@ -1071,12 +1071,7 @@ function validateDuplicates(archive: WorkbenchArchiveV2, errors: ArchiveV2Valida
     checkDuplicates("taskSets.records", taskSets.records, byId, errors);
     checkDuplicates("taskSets.versions", taskSets.versions, byTaskSetIdVersion, errors);
     checkDuplicates("taskSets.materializations", taskSets.materializations, byId, errors);
-    checkDuplicates(
-      "taskSets.ownershipCrosswalks",
-      taskSets.ownershipCrosswalks,
-      byKey,
-      errors,
-    );
+    checkDuplicates("taskSets.ownershipCrosswalks", taskSets.ownershipCrosswalks, byKey, errors);
   }
 }
 

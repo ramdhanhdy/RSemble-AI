@@ -479,8 +479,8 @@ describe("archive v2 Task Set identity", () => {
     expect(result.errors).toEqual([]);
   });
 });
- 
- // --- Helpers -----------------------------------------------------------------
+
+// --- Helpers -----------------------------------------------------------------
 
 /** Recompute counts and payload digest so a mutated fixture isolates one
  *  validation failure when desired. */

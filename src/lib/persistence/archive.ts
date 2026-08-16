@@ -42,6 +42,7 @@ import {
   classifyStorageError,
   type RunDetailRow,
   type RunSummaryRow,
+  type TaskSetOwnershipCrosswalkRow,
 } from "./database";
 import {
   isFullRunSummaryV2,
@@ -122,10 +123,13 @@ import type {
   TaskVersion,
 } from "../tasks/task-types";
 import type { TaskMigrationCrosswalk } from "../tasks/task-references";
-import { isTaskSetRecord, isTaskSetVersion } from "../evaluations/task-set-types";
-import type { TaskSetRecord, TaskSetVersion } from "../evaluations/task-set-types";
+import {
+  isTaskSetRecord,
+  isTaskSetVersion,
+  type TaskSetRecord,
+  type TaskSetVersion,
+} from "../evaluations/task-set-types";
 import type { TaskSetMaterializationRecord } from "./evaluation-repository";
-import type { TaskSetOwnershipCrosswalkRow } from "./database";
 
 // --- Archive shape -------------------------------------------------------------
 
@@ -1068,7 +1072,6 @@ function isExportableTaskFamilyRelation(v: unknown): v is TaskFamilyRelation {
   return findProhibitedKey(v) === null;
 }
 
-
 /** Archive-boundary guard for a Task Set ownership crosswalk row. Structural
  *  safety only (identity fields + prohibited-key scan); the domain migration
  *  owns the richer authoring rules. */
@@ -1426,7 +1429,13 @@ export async function exportWorkbenchArchiveV2(
     const taskSetMaterializations: TaskSetMaterializationRecord[] = [];
     await db.taskSetMaterializations.orderBy("id").each((row) => {
       if (isTaskSetMaterializationRecord(row)) taskSetMaterializations.push(row);
-      else recordGuardFailure("taskSets.materializations", row.id, "taskSetMaterializations", guardViolations);
+      else
+        recordGuardFailure(
+          "taskSets.materializations",
+          row.id,
+          "taskSetMaterializations",
+          guardViolations,
+        );
     });
     const taskSetOwnershipCrosswalks: TaskSetOwnershipCrosswalkRow[] = [];
     await db.taskSetOwnershipCrosswalk.orderBy("key").each((row) => {

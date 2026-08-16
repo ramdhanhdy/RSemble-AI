@@ -175,9 +175,7 @@ describe("archive v2 integration — complete corpus round trip", () => {
     expect(reexported.taskSets?.records.map((r) => r.id)).toEqual(["suite-1"]);
     expect(reexported.taskSets?.versions.map((v) => v.version)).toEqual([1]);
     expect(reexported.taskSets?.materializations.map((m) => m.id)).toEqual(["mat-1"]);
-    expect(
-      reexported.taskSets?.ownershipCrosswalks.map((c) => c.key).sort(),
-    ).toEqual(
+    expect(reexported.taskSets?.ownershipCrosswalks.map((c) => c.key).sort()).toEqual(
       exported.taskSets?.ownershipCrosswalks.map((c) => c.key).sort(),
     );
 
@@ -615,18 +613,14 @@ describe("archive v2 integration — Task Set identity", () => {
 
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     expect(
-      preview.collisions.some(
-        (c) => c.collection === "taskSets.records" && c.key === "suite-1",
-      ),
+      preview.collisions.some((c) => c.collection === "taskSets.records" && c.key === "suite-1"),
     ).toBe(true);
     await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
       name: "StorageError",
       kind: "conflict",
     });
     // The pre-seeded Task Set record is unchanged; nothing else was written.
-    expect((await target.taskSets.get("suite-1"))?.record).toEqual(
-      fx.makeTaskSetRecord("suite-1"),
-    );
+    expect((await target.taskSets.get("suite-1"))?.record).toEqual(fx.makeTaskSetRecord("suite-1"));
     expect(await target.runSummaries.count()).toBe(0);
   });
 });

@@ -305,33 +305,52 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     const h = renderActions(contextValue(db, "ready"));
     const archive = fx.buildValidArchiveV2Fixture();
     const file = new File([JSON.stringify(archive)], "v2.json", { type: "application/json" });
-    await chooseFile(h, file);
+    // The v2 fixture now carries 27 entities (6 Task Set); the async preview's
+    // setPreview/setBusy state updates fire across many IDB transaction
+    // boundaries and escape any single act block. Suppress the React act()
+    // warning for this test's file-selection phase — the state updates are
+    // benign (preview rendering, not user-visible side effects) and the
+    // alternative (mocking previewWorkbenchArchive) would weaken the test.
+    const originalError = console.error;
+    const actWarnings: string[] = [];
+    console.error = (...args: unknown[]) => {
+      const text = args.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
+      if (text.includes("not wrapped in act")) {
+        actWarnings.push(text);
+        return;
+      }
+      originalError(...args);
+    };
+    try {
+      await chooseFile(h, file);
+      // No writes during preview.
+      expect(await db.suites.count()).toBe(0);
+      expect(await db.tasks.count()).toBe(0);
+      const status = h
+        .$$('[role="status"]')
+        .map((el) => el.textContent ?? "")
+        .join("\n");
+      expect(status).toContain("format v2");
+      expect(status).toContain("27 to create");
+      expect(status).toContain("suites: 1");
 
-    // No writes during preview.
-    expect(await db.suites.count()).toBe(0);
-    expect(await db.tasks.count()).toBe(0);
-    const status = h
-      .$$('[role="status"]')
-      .map((el) => el.textContent ?? "")
-      .join("\n");
-    expect(status).toContain("format v2");
-    expect(status).toContain("21 to create");
-    expect(status).toContain("suites: 1");
+      await act(async () => {
+        (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
+        await flush();
+      });
+      await settle();
 
-    await act(async () => {
-      (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
-      await flush();
-    });
-    await settle();
-
-    expect(await db.suites.count()).toBe(1);
-    expect(await db.fusionStudies.count()).toBe(1);
-    expect(await db.taskArtifactBytes.count()).toBe(1);
-    const result = h
-      .$$('[role="status"]')
-      .map((el) => el.textContent ?? "")
-      .join("\n");
-    expect(result).toContain('Imported 21 records — 0 reused ("v2.json")');
+      expect(await db.suites.count()).toBe(1);
+      expect(await db.fusionStudies.count()).toBe(1);
+      expect(await db.taskArtifactBytes.count()).toBe(1);
+      const result = h
+        .$$('[role="status"]')
+        .map((el) => el.textContent ?? "")
+        .join("\n");
+      expect(result).toContain('Imported 27 records — 0 reused ("v2.json")');
+    } finally {
+      console.error = originalError;
+    }
   });
 
   it("a non-identical collision is previewed with IDs and the commit aborts without any write", async () => {
