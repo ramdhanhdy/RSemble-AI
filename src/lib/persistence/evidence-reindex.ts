@@ -548,7 +548,7 @@ export function createEvidenceIndexingRuntime(input: {
     } catch {
       // Contained: derivation still runs and stays not_declared without rows.
     }
-    derivationQueue.enqueue(ref);
+    void derivationQueue.enqueue(ref);
     return persisted;
   };
   const reindex = () =>
