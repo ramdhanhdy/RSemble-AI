@@ -52,6 +52,9 @@ export interface EvidenceCounts {
   versionCountByTask: Record<string, number>;
   instanceCountByTask: Record<string, number>;
   activeObservationCount: number;
+  replicateCount: number;
+  attemptCount: number;
+  assessmentEventCount: number;
   /** Distinct generated outputs among active rows (reuse never inflates). */
   responseSampleCount: number;
   responseSampleCountByConfiguration: Record<string, number>;
