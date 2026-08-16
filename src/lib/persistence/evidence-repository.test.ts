@@ -598,6 +598,62 @@ function runContract(name: string, makeHarness: RepoFactory) {
       });
     });
 
+    describe("stale-running recovery", () => {
+      it("re-queues only running jobs at or past the stale boundary", async () => {
+        const { repo } = harness;
+        await repo.putIndexJob(makeJob({ sourceResultId: "run-stale", status: "running", updatedAt: 1000 }));
+        // Boundary: exactly updatedAt + timeout == now counts as stale.
+        await repo.putIndexJob(
+          makeJob({ sourceResultId: "run-boundary", status: "running", updatedAt: 1001 }),
+        );
+        await repo.putIndexJob(makeJob({ sourceResultId: "run-queued", status: "queued", updatedAt: 0 }));
+        await repo.putIndexJob(
+          makeJob({ sourceResultId: "run-complete", status: "complete", updatedAt: 0 }),
+        );
+        await repo.putIndexJob(
+          makeJob({
+            sourceResultId: "run-error",
+            status: "error",
+            updatedAt: 0,
+            errorKind: "quota",
+            errorMessage: "full",
+          }),
+        );
+        const recovered = await repo.recoverStaleIndexJobs({ staleTimeoutMs: 5000, now: 6000 });
+        expect(recovered).toEqual(["run-stale"]);
+        expect((await repo.getIndexJob("run-stale"))?.status).toBe("queued");
+        expect((await repo.getIndexJob("run-boundary"))?.status).toBe("running");
+        expect((await repo.getIndexJob("run-queued"))?.status).toBe("queued");
+        expect((await repo.getIndexJob("run-complete"))?.status).toBe("complete");
+        expect((await repo.getIndexJob("run-error"))?.status).toBe("error");
+      });
+
+      it("recovers a stranded job exactly once and is idempotent", async () => {
+        const { repo } = harness;
+        await repo.putIndexJob(makeJob({ status: "running", updatedAt: 1000 }));
+        expect(await repo.recoverStaleIndexJobs({ staleTimeoutMs: 5000, now: 6000 })).toEqual([
+          "run-a",
+        ]);
+        // A repeated recovery finds no stale running marker and rewrites nothing.
+        expect(await repo.recoverStaleIndexJobs({ staleTimeoutMs: 5000, now: 6000 })).toEqual([]);
+        expect(await repo.recoverStaleIndexJobs({ staleTimeoutMs: 5000, now: 9000 })).toEqual([]);
+        expect((await repo.getIndexJob("run-a"))?.status).toBe("queued");
+      });
+
+      it("rejects invalid recovery arguments", async () => {
+        const { repo } = harness;
+        await expect(
+          repo.recoverStaleIndexJobs({ staleTimeoutMs: -1, now: 1000 }),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.recoverStaleIndexJobs({ staleTimeoutMs: Number.NaN, now: 1000 }),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.recoverStaleIndexJobs({ staleTimeoutMs: 1000, now: Number.NaN }),
+        ).rejects.toBeInstanceOf(StorageError);
+      });
+    });
+
     describe("storage failure", () => {
       it("classifies closed-database failures as unavailable", async () => {
         if (!harness.close) return; // in-memory parity has no storage failures

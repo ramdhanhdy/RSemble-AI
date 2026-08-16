@@ -969,6 +969,111 @@ describe("derivation queue", () => {
     ).toBe(true);
   });
 
+  it("recovers a stranded running job on drain and completes it without inflating counts", async () => {
+    const world = makeWorld();
+    const { run } = seedCleanSource(world);
+    // A tab crashed after marking the job running at t=1000.
+    await world.repo.putIndexJob({
+      sourceResultId: run.id,
+      sourceKind: "evaluation",
+      status: "running",
+      ruleVersion: 1,
+      sourceRevision: run.revision,
+      updatedAt: 1000,
+      errorKind: null,
+      errorMessage: null,
+      summary: null,
+    });
+    const queue = createDerivationQueue(
+      { ...depsFor(world), now: () => 6000 },
+      { staleRunningTimeoutMs: 5000 },
+    );
+    await queue.drain();
+    expect((await world.repo.getIndexJob(run.id))?.status).toBe("complete");
+    expect(await world.repo.countObservations()).toBe(1);
+
+    // Repeated recovery never re-processes or re-writes.
+    await queue.drain();
+    expect((await world.repo.getIndexJob(run.id))?.status).toBe("complete");
+    expect(await world.repo.countObservations()).toBe(1);
+    expect(await world.repo.recoverStaleIndexJobs({ staleTimeoutMs: 5000, now: 6000 })).toEqual([]);
+  });
+
+  it("never steals an active owner whose heartbeat keeps the marker fresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const world = makeWorld();
+      const { run } = seedCleanSource(world);
+      let t = 1000;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const resolver: EvaluationSourceResolver = {
+        getExperiment: async (id) => {
+          await gate;
+          return world.experiments.get(id) ?? null;
+        },
+        getRun: async (id) => world.runs.get(id) ?? null,
+      };
+      const queue = createDerivationQueue(
+        { ...depsFor(world), resolver, now: () => t },
+        { staleRunningTimeoutMs: 1000, heartbeatMs: 100 },
+      );
+      await queue.enqueue(refFor(run));
+      // Flush the scheduled pass until the job is running and derivation is
+      // blocked on the gate.
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await world.repo.getIndexJob(run.id))?.status).toBe("running");
+
+      // Three heartbeat intervals keep the marker fresh while the clock moves
+      // past the original staleness boundary (1000 + 1000 = 2000).
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(100);
+        t += 100;
+      }
+      t = 2100;
+      // Without the heartbeat this marker would be stale; the active owner
+      // must not be stolen.
+      expect(await world.repo.recoverStaleIndexJobs({ staleTimeoutMs: 1000, now: t })).toEqual([]);
+      expect((await world.repo.getIndexJob(run.id))?.status).toBe("running");
+
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await world.repo.getIndexJob(run.id))?.status).toBe("complete");
+      expect(await world.repo.countObservations()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("duplicate multi-tab recovery processes a stranded job exactly once", async () => {
+    const world = makeWorld();
+    const { run } = seedCleanSource(world);
+    await world.repo.putIndexJob({
+      sourceResultId: run.id,
+      sourceKind: "evaluation",
+      status: "running",
+      ruleVersion: 1,
+      sourceRevision: run.revision,
+      updatedAt: 1000,
+      errorKind: null,
+      errorMessage: null,
+      summary: null,
+    });
+    const deps = { ...depsFor(world), now: () => 6000 };
+    const options = { staleRunningTimeoutMs: 5000 };
+    const tabA = createDerivationQueue(deps, options);
+    const tabB = createDerivationQueue(deps, options);
+    await tabA.drain();
+    await tabB.drain();
+    expect((await world.repo.getIndexJob(run.id))?.status).toBe("complete");
+    expect(await world.repo.countObservations()).toBe(1);
+    expect(await world.repo.recoverStaleIndexJobs({ staleTimeoutMs: 5000, now: 6000 })).toEqual([]);
+    tabA.dispose();
+    tabB.dispose();
+  });
+
   it("disposes without leaking pending jobs", async () => {
     const world = makeWorld();
     seedCleanSource(world);
