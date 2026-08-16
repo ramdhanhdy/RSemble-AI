@@ -1005,7 +1005,7 @@ export function TaskObservations({
                               </div>
                             ) : (
                               <div className="text-[11px] text-text-muted">
-                                No permitted uses (excluded from model profile and comparative
+                                No permitted uses (excluded from within-model and comparative
                                 standing).
                               </div>
                             )}

@@ -16,6 +16,10 @@ import {
 } from "../lib/persistence/evidence-repository";
 import { observationIdFor } from "../lib/evidence/evidence-validation";
 import { EVIDENCE_RULE_VERSION } from "../lib/evidence/evidence-eligibility";
+import {
+  EVIDENCE_CLASS_EXPLANATIONS,
+  EVIDENCE_USE_EXPLANATIONS,
+} from "../lib/evidence/evidence-explanation";
 import { canonicalizeModelConfiguration } from "../lib/evidence/model-configuration";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -288,9 +292,7 @@ describe("EvidenceReceipt — All four evidence classes", () => {
     );
 
     expect(h.container.textContent).toContain("Exploratory");
-    expect(h.container.textContent).toContain(
-      "Exploratory evidence — visible and drillable, excluded from default model profiles.",
-    );
+    expect(h.container.textContent).toContain(EVIDENCE_CLASS_EXPLANATIONS.exploratory);
     cleanup(h);
   });
 
@@ -445,7 +447,7 @@ describe("EvidenceReceipt — Allowed uses", () => {
     expect(h.container.textContent).toContain(
       "Describe outcomes for this Task, Version, and Instance.",
     );
-    expect(h.container.textContent).toContain("Contribute to this model configuration's profile.");
+    expect(h.container.textContent).toContain(EVIDENCE_USE_EXPLANATIONS.within_model_profile);
     expect(h.container.textContent).toContain("Compare paired models within one protocol cohort.");
     expect(h.container.textContent).toContain("Establish standing across the complete Task Set.");
     expect(h.container.textContent).toContain(

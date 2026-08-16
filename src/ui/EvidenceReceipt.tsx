@@ -72,7 +72,7 @@ export interface EvidenceReceiptProps {
 
 const MISSING_EXPLANATIONS: Record<MissingReason, string> = {
   "no-attempt":
-    "This task has not been run for this model yet. It is excluded from all comparative standing and cannot support any profile use.",
+    "This task has not been run for this model yet. It is excluded from all comparative standing and cannot support any within-model use.",
   "no-accepted-attempt":
     "Execution produced no accepted candidate attempt for this task cell. No canonical Observation was derived.",
   "evidence-missing":
@@ -446,7 +446,7 @@ export function EvidenceReceipt({
                   <p className="mt-1 text-[11px] text-text-muted">
                     {isDerivationInProgress || isUnindexed
                       ? "Exact source run records remain safe and immutable."
-                      : "No Observation was derived. This cell cannot support profile, comparative, or standing use."}
+                      : "No Observation was derived. This cell cannot support within-model, comparative, or standing use."}
                   </p>
                 </div>
                 {runId ? (
@@ -486,7 +486,7 @@ export function EvidenceReceipt({
           <p className="mt-1 text-[11px] text-text-muted">
             {isDerivationInProgress || isUnindexed
               ? "Exact source run records remain safe and immutable."
-              : "No Observation was derived. This cell cannot support profile, comparative, or standing use."}
+              : "No Observation was derived. This cell cannot support within-model, comparative, or standing use."}
           </p>
         </div>
         {runId ? (
@@ -512,7 +512,7 @@ export function EvidenceReceipt({
         ruleVersion: 1,
         classLabel: "Exploratory",
         classDescription:
-          "Exploratory evidence — visible and drillable, excluded from default model profiles.",
+          "Exploratory evidence — visible and drillable, excluded from default within-model aggregation.",
         statusLabel: "Provisional",
         statusDescription:
           "Provisional — eligible only for qualified uses with disclosed limitations.",
@@ -648,8 +648,8 @@ export function EvidenceReceipt({
           </ul>
         ) : (
           <p className="text-text-muted">
-            No permitted evidence uses (this cell cannot support profile, comparative, or standing
-            analysis).
+            No permitted evidence uses (this cell cannot support within-model, comparative, or
+            standing analysis).
           </p>
         )}
       </section>
