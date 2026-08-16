@@ -22,9 +22,14 @@
 //        Suite/Experiment/Fusion-owner coordinates to exact Task Set Versions.
 //   v7 — additive immutable Task Set execution materializations (1 table):
 //        taskSetMaterializations.
-
+//   v8 — additive evidence reference stores (4 tables, spec §10):
+//        modelConfigurations, observations, evidenceDecisions,
+//        evidenceIndexJobs. Observation rows carry the canonical six-part
+//        source key (unique) so repository insertion is idempotent and a
+//        conflicting duplicate aborts before any write.
 import Dexie, { type Table } from "dexie";
 import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
+import type { ObservationSourceKind } from "../evidence/evidence-types";
 
 // Indexed row shapes — a search/summary row is the stored summary plus the
 // indexes Dexie needs to filter and paginate without loading detail records.
@@ -319,6 +324,68 @@ export interface TaskSetMaterializationRow {
   createdAt: number;
 }
 
+// --- Evidence reference rows (schema v8, spec §10) ----------------------------
+//
+// Observations are immutable references/indexes over exact run/experiment
+// records. Rows store the full validated payload plus the identity fields
+// needed for exact indexed lookup. The `sourceKey` column holds the canonical
+// six-part observation source key (spec §5) and is unique: a duplicate key
+// with non-identical canonical content is a corruption error, never
+// last-write-wins.
+
+/** Canonical model-configuration snapshot row (spec §3.1). */
+export interface ModelConfigurationRow {
+  id: string;
+  snapshot: unknown;
+  providerId: string;
+  requestedModel: string;
+  resolvedVersion: string | null;
+  observedTo: number;
+}
+
+/** Canonical Task Observation row (spec §3.2). */
+export interface EvidenceObservationRow {
+  id: string;
+  /** Canonical six-part source key serialization (unique, spec §5). */
+  sourceKey: string;
+  sourceKind: ObservationSourceKind;
+  sourceResultId: string;
+  sourceTaskCellId: string;
+  taskId: string;
+  taskInstanceId: string;
+  modelConfigurationId: string;
+  observedAt: number;
+  observation: unknown;
+}
+
+/** Eligibility decision row (spec §3.3); compound [observationId+ruleVersion]. */
+export interface EvidenceDecisionRow {
+  id: string;
+  observationId: string;
+  ruleVersion: number;
+  status: string;
+  evidenceClass: string;
+  comparabilityCohortId: string;
+  decidedAt: number;
+  decision: unknown;
+}
+
+export type EvidenceIndexJobStatus = "queued" | "running" | "complete" | "error";
+
+/** Per-source evidence indexing job/marker row (spec §10, §11.3). */
+export interface EvidenceIndexJobRow {
+  sourceResultId: string;
+  sourceKind: ObservationSourceKind;
+  status: EvidenceIndexJobStatus;
+  ruleVersion: number;
+  /** Source revision observed when the marker was written (CAS, spec §11.3). */
+  sourceRevision: number;
+  updatedAt: number;
+  errorKind: string | null;
+  errorMessage: string | null;
+  /** Sanitized derived summary; null until the source completes. */
+  summary: unknown;
+}
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -374,6 +441,11 @@ export class RSembleEvaluationDB extends Dexie {
   suites!: Table<SuiteRow, string>;
   experiments!: Table<ExperimentRow, string>;
   storageMeta!: Table<StorageMetaRow, string>;
+  // Evidence reference tables (schema v8)
+  modelConfigurations!: Table<ModelConfigurationRow, string>;
+  observations!: Table<EvidenceObservationRow, string>;
+  evidenceDecisions!: Table<EvidenceDecisionRow, string>;
+  evidenceIndexJobs!: Table<EvidenceIndexJobRow, string>;
   // Fusion Study tables (schema v2)
   fusionRecipes!: Table<FusionRecipeRow, [string, number]>;
   poolManifests!: Table<PoolManifestRow, [string, number]>;
@@ -480,6 +552,21 @@ export class RSembleEvaluationDB extends Dexie {
       taskSetMaterializations:
         "id, taskSetId, [taskSetId+taskSetVersion], protocolFingerprint, createdAt",
     });
+
+    // v8: additive evidence reference stores (spec §10). No existing v1–v7
+    // table is redefined — this block only adds the four new stores. The
+    // observations `sourceKey` is a unique index: repository insertion is
+    // idempotent under the six-part source key and a conflicting duplicate
+    // aborts before any write.
+    this.version(8).stores({
+      modelConfigurations: "id, providerId, requestedModel, resolvedVersion, observedTo",
+      observations:
+        "id, sourceKey, sourceResultId, taskId, taskInstanceId, modelConfigurationId, observedAt",
+      evidenceDecisions:
+        "id, [observationId+ruleVersion], observationId, status, evidenceClass, comparabilityCohortId",
+      evidenceIndexJobs: "sourceResultId, sourceKind, status, ruleVersion, updatedAt",
+    });
+
 
     this.on("blocked", () => {
       this.setState("blocked");

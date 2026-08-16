@@ -808,7 +808,7 @@ describe("Dexie atomic Suite + Task Set save seam", () => {
 // --- clean + legacy database open/upgrade coverage (Dexie-only) --------------
 
 describe("Dexie task set repository schema upgrade", () => {
-  it("opens a fresh database with additive v7 materializations and every prior table", async () => {
+  it("opens a fresh database with additive v8 evidence tables and every prior table", async () => {
     const db = new RSembleEvaluationDB(`task-set-clean-${crypto.randomUUID()}`);
     dbs.push(db);
     await db.open();
@@ -820,10 +820,14 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(true);
     expect(db.tables.some((t) => t.name === "tasks")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskFamilyRelations")).toBe(true);
-    expect(db.verno).toBe(7);
+    expect(db.tables.some((t) => t.name === "modelConfigurations")).toBe(true);
+    expect(db.tables.some((t) => t.name === "observations")).toBe(true);
+    expect(db.tables.some((t) => t.name === "evidenceDecisions")).toBe(true);
+    expect(db.tables.some((t) => t.name === "evidenceIndexJobs")).toBe(true);
+    expect(db.verno).toBe(8);
   });
 
-  it("upgrades a v4-seeded database through v7 additively without losing prior rows", async () => {
+  it("upgrades a v4-seeded database through v8 additively without losing prior rows", async () => {
     const dbName = `task-set-v4-legacy-${crypto.randomUUID()}`;
     const v4 = new Dexie(dbName);
     v4.version(1).stores({
@@ -911,7 +915,7 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "taskSetVersions")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskSetMaterializations")).toBe(true);
     expect(db.tables.some((t) => t.name === "suites")).toBe(true);
-    expect(db.verno).toBe(7);
+    expect(db.verno).toBe(8);
   });
 
   it("does not write Task Set rows into the legacy Suite table", async () => {
