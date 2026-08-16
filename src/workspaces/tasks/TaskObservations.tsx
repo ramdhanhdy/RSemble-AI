@@ -1071,7 +1071,7 @@ export function TaskObservations({
       {/* Pagination Footer */}
       {!loading && !error && totalItems > pageSize ? (
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-edge pt-3 text-xs">
-          <div data-pagination-info className="text-text-secondary">
+          <div data-pagination-info role="status" aria-live="polite" className="text-text-secondary">
             Showing <span className="font-medium text-text">{startItem}</span>–
             <span className="font-medium text-text">{endItem}</span> of{" "}
             <span className="font-medium text-text">{totalItems}</span> observations
