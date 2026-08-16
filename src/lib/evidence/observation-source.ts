@@ -194,6 +194,16 @@ export function selectObservationSources(input: ObservationSourceInput): Observa
   const seenModelKeys = new Set<string>();
 
   for (const candidate of run.candidates) {
+    if (seenModelKeys.has(candidate.modelKey)) {
+      // Spec §5: a duplicate source cell with potentially non-identical
+      // content is corruption, never last-write-wins. The first record
+      // stands; the duplicate is surfaced, not silently emitted.
+      integrityIssues.push(
+        `Run ${run.id} contains duplicate candidate records for source task cell ` +
+          `${experiment.id}:${taskId}:${candidate.modelKey}; the duplicate is ignored — source corruption.`,
+      );
+      continue;
+    }
     seenModelKeys.add(candidate.modelKey);
     const accepted = resolveAcceptedAttempt(candidate);
     if (!accepted || accepted.status !== "completed") {

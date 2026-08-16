@@ -767,6 +767,30 @@ describe("verifier-only and judge+verifier", () => {
     expect(cellFor(selection, M1).verifier?.passed).toBe(false);
   });
 });
+describe("duplicate source cells", () => {
+  it("flags duplicate candidates for one source cell instead of emitting both", () => {
+    const run = makeRun({
+      id: "run-1",
+      attemptId: "att-1",
+      trial: 0,
+      status: "completed",
+      candidates: [
+        candidate("c1", M1, "a1", [attemptRec("a1", "completed")]),
+        candidate("c2", M1, "a2", [attemptRec("a2", "completed")]),
+      ],
+      judgeAccepted: "j-1",
+      judgeAttempts: [judgeAttempt("j-1", "completed", { report: true })],
+    });
+    const experiment = makeExperiment({
+      attempts: [taskAttempt({ id: "att-1", runId: "run-1", trial: 0, status: "completed" })],
+      selected: "att-1",
+    });
+    const selection = select({ experiment, runs: [run] });
+    expect(selection.integrityIssues.some((issue) => issue.includes("duplicate"))).toBe(true);
+    expect(selection.cells.filter((c) => c.modelKey === M1)).toHaveLength(1);
+  });
+});
+
 
 describe("source integrity", () => {
   it("rejects a selected run from a different experiment", () => {
