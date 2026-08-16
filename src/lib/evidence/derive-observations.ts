@@ -535,9 +535,13 @@ export interface DerivationQueue {
 }
 
 /**
- * Local, serialized post-commit derivation job queue. Processing runs in this
- * tab only, after the source transaction committed, and never inside the
- * paid-execution owner or the experiment unit of work.
+ * Post-commit derivation job queue over the shared evidence stores. Every
+ * queue instance drains the same queued index jobs, so any tab with a live
+ * queue can process jobs enqueued by any tab. Derivation writes are
+ * idempotent under the six-part source key, so concurrent processing never
+ * inflates observation counts. Enqueue runs after the source transaction
+ * committed and never inside the paid-execution owner or the experiment
+ * unit of work.
  */
 export function createDerivationQueue(
   deps: DerivationDeps,
