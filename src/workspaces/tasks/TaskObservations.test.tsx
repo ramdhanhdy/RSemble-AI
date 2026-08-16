@@ -873,4 +873,69 @@ describe("TaskObservations — Same-component route transitions regression", () 
 
     cleanup(h);
   });
+
+  it("does not leak stale observations or counts from previous taskId on synchronous render when taskId changes", async () => {
+    const repo = new InMemoryEvidenceRepository();
+    const m = makeModelConfig("anthropic", "claude-3-5-sonnet");
+    await repo.putModelConfiguration(m);
+
+    const oTask1A = makeObservation("t-1", 1, "inst-1", m.id, { sourceResultId: "res-task-1a" });
+    const oTask1B = makeObservation("t-1", 1, "inst-2", m.id, { sourceResultId: "res-task-1b" });
+    const oTask2 = makeObservation("t-2", 1, "inst-1", m.id, { sourceResultId: "res-task-2" });
+    await repo.putObservation(oTask1A);
+    await repo.putObservation(oTask1B);
+    await repo.putObservation(oTask2);
+    await repo.putDecision(makeDecision(oTask1A.id));
+    await repo.putDecision(makeDecision(oTask1B.id));
+    await repo.putDecision(makeDecision(oTask2.id));
+
+    function RouteWrapper() {
+      const loc = useLocation();
+      const nav = useNavigate();
+      const currentTaskId = loc.pathname.includes("t-2") ? "t-2" : "t-1";
+      return (
+        <div>
+          <button type="button" data-nav-t2 onClick={() => nav("/tasks/t-2")}>
+            Go to T2
+          </button>
+          <TaskObservations taskId={currentTaskId} evidenceRepo={repo} />
+        </div>
+      );
+    }
+
+    const h = render(
+      <Routes>
+        <Route path="/tasks/:taskId" element={<RouteWrapper />} />
+      </Routes>,
+      { initialEntries: ["/tasks/t-1"] },
+    );
+    await settle();
+
+    // Initially shows task 1 observations (count = 2)
+    expect(h.$$("[data-observation-row]").length).toBe(2);
+    expect(h.$("[data-count-active-observations]")?.textContent).toBe("2");
+    expect(h.$("[data-count-instances]")?.textContent).toBe("2");
+
+    // Trigger navigation to t-2
+    const btn = h.$("button[data-nav-t2]") as HTMLButtonElement;
+    act(() => {
+      btn.click();
+    });
+
+    // Synchronous assert WITHOUT awaiting settle:
+    // Stale t-1 observation rows and counts must NOT be visible under t-2; loading state must be shown and counts must be 0.
+    expect(h.$$("[data-observation-row]").length).toBe(0);
+    expect(h.$("[data-count-active-observations]")?.textContent).toBe("0");
+    expect(h.$("[data-count-instances]")?.textContent).toBe("0");
+    expect(h.container.textContent).not.toContain(oTask1A.id);
+    expect(h.container.textContent).not.toContain(oTask1B.id);
+    expect(h.$("[data-task-observations-loading]")).toBeTruthy();
+
+    await settle();
+    expect(h.container.textContent).toContain(oTask2.id);
+    expect(h.$$("[data-observation-row]").length).toBe(1);
+    expect(h.$("[data-count-active-observations]")?.textContent).toBe("1");
+
+    cleanup(h);
+  });
 });
