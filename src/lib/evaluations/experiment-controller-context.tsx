@@ -69,7 +69,7 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
       heartbeatMs: 0, // 0 selects the controller default (3000ms) lease-renew cadence
       onTaskTerminalCommitted: (event) => {
         if (event.status !== "completed" && event.status !== "partial") return;
-        void evidenceRuntime.derivationQueue.enqueue({
+        void evidenceRuntime.persistThenEnqueue({
           sourceKind: "evaluation",
           sourceResultId: event.runId,
           sourceRevision: event.runRevision,

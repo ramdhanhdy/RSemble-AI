@@ -36,6 +36,7 @@ import { EVIDENCE_RULE_VERSION } from "../evidence/evidence-eligibility";
 import {
   createDerivationQueue,
   createRepositoryVerifierResolver,
+  createStoredModelConfigurationResolver,
   deriveObservationsForSource,
   type DerivationQueue,
   type DerivationQueueOptions,
@@ -45,8 +46,12 @@ import {
   type TaskIdentityResolver,
   type VerifierOutcomeResolver,
 } from "../evidence/derive-observations";
+import {
+  persistExecutedEvidenceForCommittedSource,
+  type PersistExecutedEvidenceResult,
+} from "../evidence/persist-executed-evidence";
+import type { ExecutedVerifierOutcome, ObservationSourceKind } from "../evidence/evidence-types";
 import type { RunStatus, RunSummary } from "./run-types";
-import type { ObservationSourceKind } from "../evidence/evidence-types";
 
 export interface ReindexSource {
   sourceKind: ObservationSourceKind;
@@ -473,6 +478,14 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
 export interface EvidenceIndexingRuntime {
   evidenceRepo: EvidenceRepository;
   derivationQueue: DerivationQueue;
+  /**
+   * Persist executed verifier facts for a committed source, then enqueue
+   * derivation. Persist is a no-op when no executed outcomes are supplied.
+   */
+  persistThenEnqueue: (
+    ref: DerivationSourceRef,
+    executedOutcomes?: readonly ExecutedVerifierOutcome[],
+  ) => Promise<PersistExecutedEvidenceResult>;
   /** Bounded, deterministic backfill/reindex over current sources. Silent
    *  when no work exists; failures land on the owning index-job rows. */
   reindex: () => Promise<ReindexRunResult>;
@@ -499,6 +512,8 @@ export function createEvidenceIndexingRuntime(input: {
   const evidenceRepo = createEvidenceRepository(input.db);
   const resolveVerifierOutcomes =
     input.resolveVerifierOutcomes ?? createRepositoryVerifierResolver(evidenceRepo);
+  const resolveModelConfiguration =
+    input.resolveModelConfiguration ?? createStoredModelConfigurationResolver();
   const ownerId = input.reindexOwnerId ?? uniqueOwnerId();
   const derivationQueue = createDerivationQueue(
     {
@@ -506,11 +521,36 @@ export function createEvidenceIndexingRuntime(input: {
       resolver: input.resolver,
       identity: input.identity,
       resolveVerifierOutcomes,
-      resolveModelConfiguration: input.resolveModelConfiguration,
+      resolveModelConfiguration,
       now: input.now,
     },
     { ...input.queueOptions, ownerId: input.queueOptions?.ownerId ?? ownerId },
   );
+  const persistThenEnqueue = async (
+    ref: DerivationSourceRef,
+    executedOutcomes?: readonly ExecutedVerifierOutcome[],
+  ): Promise<PersistExecutedEvidenceResult> => {
+    let persisted: PersistExecutedEvidenceResult = { created: 0, existing: 0 };
+    try {
+      const run = await input.resolver.getRun(ref.sourceResultId);
+      if (run) {
+        const experiment =
+          run.source.kind === "experiment"
+            ? await input.resolver.getExperiment(run.source.experimentId)
+            : null;
+        persisted = await persistExecutedEvidenceForCommittedSource({
+          evidenceRepo,
+          run,
+          experiment,
+          executedOutcomes,
+        });
+      }
+    } catch {
+      // Contained: derivation still runs and stays not_declared without rows.
+    }
+    derivationQueue.enqueue(ref);
+    return persisted;
+  };
   const reindex = () =>
     reindexEvidence({
       evidenceRepo,
@@ -519,11 +559,11 @@ export function createEvidenceIndexingRuntime(input: {
       meta: createDexieReindexMetaStore(input.db),
       identity: input.identity,
       resolveVerifierOutcomes,
-      resolveModelConfiguration: input.resolveModelConfiguration,
+      resolveModelConfiguration,
       now: input.now,
       ownerId,
     });
-  return { evidenceRepo, derivationQueue, reindex };
+  return { evidenceRepo, derivationQueue, persistThenEnqueue, reindex };
 }
 
 /** A genuinely unique owner identity per runtime/tab. Injectable via

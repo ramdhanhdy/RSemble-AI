@@ -168,6 +168,39 @@ export const defaultModelConfigurationResolver: ModelConfigurationResolver = () 
   resolvedVersion: null,
 });
 
+/**
+ * Production resolver: read only stored provider-confirmed identity facts
+ * attached to the candidate. Requested model/slug is never used as resolved
+ * identity. An incoherent version-without-model is treated as unknown.
+ */
+export function createStoredModelConfigurationResolver(): ModelConfigurationResolver {
+  return ({ candidate }) => {
+    const stored = (
+      candidate as PersistedCandidate & {
+        resolvedIdentity?: {
+          resolvedModel?: string | null;
+          resolvedVersion?: string | null;
+        };
+      }
+    ).resolvedIdentity;
+    if (stored === undefined || stored === null || typeof stored !== "object") {
+      return { resolvedModel: null, resolvedVersion: null };
+    }
+    const resolvedModel =
+      typeof stored.resolvedModel === "string" && stored.resolvedModel.trim().length > 0
+        ? stored.resolvedModel.trim()
+        : null;
+    const resolvedVersion =
+      typeof stored.resolvedVersion === "string" && stored.resolvedVersion.trim().length > 0
+        ? stored.resolvedVersion.trim()
+        : null;
+    if (resolvedVersion !== null && resolvedModel === null) {
+      return { resolvedModel: null, resolvedVersion: null };
+    }
+    return { resolvedModel, resolvedVersion };
+  };
+}
+
 // --- Derivation ------------------------------------------------------------------
 
 export interface DerivationSourceRef {
