@@ -41,8 +41,6 @@ import {
 } from "../evidence/evidence-eligibility";
 import type { EligibilityDecision, Observation } from "../evidence/evidence-types";
 
-
-
 function makeModelConfiguration(idSeed: string, observedAt = 1000) {
   const r = canonicalizeModelConfiguration({
     providerId: "openrouter",
@@ -367,7 +365,10 @@ function runContract(name: string, makeHarness: RepoFactory) {
         const { repo } = harness;
         const o = makeObservation("dec-extra");
         await repo.putObservation(o);
-        const withSecret = { ...makeDecision(o), apiKey: "sk-secret" } as unknown as EligibilityDecision;
+        const withSecret = {
+          ...makeDecision(o),
+          apiKey: "sk-secret",
+        } as unknown as EligibilityDecision;
         await expect(repo.putDecision(withSecret)).rejects.toBeInstanceOf(StorageError);
         const withUnknown = { ...makeDecision(o), extraField: 1 } as unknown as EligibilityDecision;
         await expect(repo.putDecision(withUnknown)).rejects.toBeInstanceOf(StorageError);
@@ -401,9 +402,9 @@ function runContract(name: string, makeHarness: RepoFactory) {
       it("a source revision bump re-triggers indexing", async () => {
         const { repo } = harness;
         await repo.putIndexJob(makeJob({ status: "complete", sourceRevision: 1 }));
-        await expect(repo.putIndexJob(makeJob({ status: "queued", sourceRevision: 2 }))).resolves.toBe(
-          "updated",
-        );
+        await expect(
+          repo.putIndexJob(makeJob({ status: "queued", sourceRevision: 2 })),
+        ).resolves.toBe("updated");
         const job = await repo.getIndexJob("run-a");
         expect(job?.status).toBe("queued");
         expect(job?.sourceRevision).toBe(2);
@@ -412,9 +413,9 @@ function runContract(name: string, makeHarness: RepoFactory) {
       it("never regresses a complete marker at the same revision (duplicate events)", async () => {
         const { repo } = harness;
         await repo.putIndexJob(makeJob({ status: "complete", sourceRevision: 1 }));
-        await expect(repo.putIndexJob(makeJob({ status: "queued", sourceRevision: 1 }))).resolves.toBe(
-          "unchanged",
-        );
+        await expect(
+          repo.putIndexJob(makeJob({ status: "queued", sourceRevision: 1 })),
+        ).resolves.toBe("unchanged");
         expect((await repo.getIndexJob("run-a"))?.status).toBe("complete");
       });
 
@@ -423,21 +424,21 @@ function runContract(name: string, makeHarness: RepoFactory) {
         await repo.putIndexJob(
           makeJob({ status: "error", sourceRevision: 1, errorKind: "quota", errorMessage: "full" }),
         );
-        await expect(repo.putIndexJob(makeJob({ status: "queued", sourceRevision: 1 }))).resolves.toBe(
-          "updated",
-        );
+        await expect(
+          repo.putIndexJob(makeJob({ status: "queued", sourceRevision: 1 })),
+        ).resolves.toBe("updated");
         expect((await repo.getIndexJob("run-a"))?.status).toBe("queued");
       });
 
       it("advances queued -> running -> complete within one revision", async () => {
         const { repo } = harness;
         await repo.putIndexJob(makeJob({ status: "queued", sourceRevision: 1 }));
-        await expect(repo.putIndexJob(makeJob({ status: "running", sourceRevision: 1 }))).resolves.toBe(
-          "updated",
-        );
-        await expect(repo.putIndexJob(makeJob({ status: "complete", sourceRevision: 1 }))).resolves.toBe(
-          "updated",
-        );
+        await expect(
+          repo.putIndexJob(makeJob({ status: "running", sourceRevision: 1 })),
+        ).resolves.toBe("updated");
+        await expect(
+          repo.putIndexJob(makeJob({ status: "complete", sourceRevision: 1 })),
+        ).resolves.toBe("updated");
         expect((await repo.getIndexJob("run-a"))?.status).toBe("complete");
       });
 
@@ -524,7 +525,9 @@ runContract("in-memory", memoryFactory);
 
 describe("EvidenceRepository canonical content checks (dexie)", () => {
   it("compares canonical JSON, not object identity, for duplicate detection", async () => {
-    const db = new RSembleEvaluationDB(`evidence-repo-canon-${Math.random().toString(36).slice(2)}`);
+    const db = new RSembleEvaluationDB(
+      `evidence-repo-canon-${Math.random().toString(36).slice(2)}`,
+    );
     await db.open();
     try {
       const repo = createEvidenceRepository(db);

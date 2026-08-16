@@ -15,10 +15,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "./database";
-import {
-  InMemoryEvidenceRepository,
-  type EvidenceRepository,
-} from "./evidence-repository";
+import { InMemoryEvidenceRepository, type EvidenceRepository } from "./evidence-repository";
 import {
   REINDEX_LEASE_KEY,
   createDexieReindexEnumerator,
@@ -97,7 +94,9 @@ function judgeAttempt(attemptId: string): JudgeAttemptRecord {
           strengths: [],
           deductions: [],
           missedRequirements: [],
-          criterionScores: [{ criterionId: "quality", label: "quality", kind: "graded", score: 4, rationale: "" }],
+          criterionScores: [
+            { criterionId: "quality", label: "quality", kind: "graded", score: 4, rationale: "" },
+          ],
         },
       },
       comparisons: [],
@@ -159,10 +158,7 @@ function makeRun(
   };
 }
 
-function makeExperiment(
-  experimentId = "exp-1",
-  selectedRunId = "run-a",
-): ExperimentRecord {
+function makeExperiment(experimentId = "exp-1", selectedRunId = "run-a"): ExperimentRecord {
   return {
     id: experimentId,
     revision: 1,
@@ -189,7 +185,14 @@ function makeExperiment(
         },
       ],
       modelSlots: [
-        { id: "s1", providerId: "openrouter", provider: "X", model: "M1", slug: "model-m1", enabled: true },
+        {
+          id: "s1",
+          providerId: "openrouter",
+          provider: "X",
+          model: "M1",
+          slug: "model-m1",
+          enabled: true,
+        },
       ],
       defaultJudge: { providerId: "openrouter", model: "org/judge" },
       defaultEvaluation: { kind: "holistic" },
@@ -202,7 +205,15 @@ function makeExperiment(
         taskId: "task-1",
         selectedAttemptId: `att-${selectedRunId}`,
         attempts: [
-          { id: `att-${selectedRunId}`, runId: selectedRunId, trial: 0, status: "completed", startedAt: 0, finishedAt: 10, error: null },
+          {
+            id: `att-${selectedRunId}`,
+            runId: selectedRunId,
+            trial: 0,
+            status: "completed",
+            startedAt: 0,
+            finishedAt: 10,
+            error: null,
+          },
         ],
       },
     ],
@@ -267,7 +278,11 @@ function makeWorld(): World {
   };
 }
 
-function evaluationSource(id: string, revision = 1, overrides: Partial<ReindexSource> = {}): ReindexSource {
+function evaluationSource(
+  id: string,
+  revision = 1,
+  overrides: Partial<ReindexSource> = {},
+): ReindexSource {
   return {
     sourceKind: "evaluation",
     sourceResultId: id,
@@ -340,7 +355,9 @@ function seedCleanEvaluation(world: World, id = "run-a", experimentId = `exp-${i
   world.experiments.set(experimentId, makeExperiment(experimentId, id));
 }
 
-async function fusionObs(overrides: Partial<EvaluationObservation> = {}): Promise<EvaluationObservation> {
+async function fusionObs(
+  overrides: Partial<EvaluationObservation> = {},
+): Promise<EvaluationObservation> {
   return {
     id: "fusion-obs-1",
     trialId: "trial-1",
@@ -364,7 +381,12 @@ describe("reindexEvidence", () => {
     const world = makeWorld();
     seedCleanEvaluation(world);
     const first = await reindexEvidence(depsFor(world));
-    expect(first).toMatchObject({ skipped: false, sourcesProcessed: 1, sourcesSkipped: 0, sourcesFailed: 0 });
+    expect(first).toMatchObject({
+      skipped: false,
+      sourcesProcessed: 1,
+      sourcesSkipped: 0,
+      sourcesFailed: 0,
+    });
     expect(await world.repo.countObservations()).toBe(1);
     const job = await world.repo.getIndexJob("run-a");
     expect(job?.status).toBe("complete");
@@ -381,7 +403,9 @@ describe("reindexEvidence", () => {
 
   it("inventories Compare history as exploratory entries without observations or merging", async () => {
     const world = makeWorld();
-    world.sources.push(comparisonSource("cmp-1", { modelKeys: ["openrouter:m1", "openrouter:m2"] }));
+    world.sources.push(
+      comparisonSource("cmp-1", { modelKeys: ["openrouter:m1", "openrouter:m2"] }),
+    );
     world.sources.push(comparisonSource("cmp-2"));
     const result = await reindexEvidence(depsFor(world));
     expect(result).toMatchObject({ skipped: false, sourcesProcessed: 2 });
@@ -422,7 +446,12 @@ describe("reindexEvidence", () => {
     );
     run.candidates[1].acceptedAttemptId = null;
     run.candidates[1].attempts[0].status = "failed";
-    world.sources.push(evaluationSource("run-partial", 1, { runStatus: "partial", modelKeys: ["openrouter:model-m1", "openrouter:model-m2"] }));
+    world.sources.push(
+      evaluationSource("run-partial", 1, {
+        runStatus: "partial",
+        modelKeys: ["openrouter:model-m1", "openrouter:model-m2"],
+      }),
+    );
     world.runs.set("run-partial", run);
     const experiment = makeExperiment("exp-run-partial", "run-partial");
     world.experiments.set("exp-run-partial", experiment);
@@ -441,7 +470,10 @@ describe("reindexEvidence", () => {
     const run = makeRun(
       "run-corrupt",
       {
-        candidates: [candidate("cand-1", "openrouter:model-m1"), candidate("cand-1", "openrouter:model-m1")],
+        candidates: [
+          candidate("cand-1", "openrouter:model-m1"),
+          candidate("cand-1", "openrouter:model-m1"),
+        ],
       },
       "exp-run-corrupt",
     );
@@ -680,7 +712,11 @@ describe("Dexie reindex seams", () => {
 
     const sources = await createDexieReindexEnumerator(db).listSources();
     const evalSource = sources.find((s) => s.sourceResultId === "run-eval");
-    expect(evalSource).toMatchObject({ sourceKind: "evaluation", sourceRevision: 3, legacy: false });
+    expect(evalSource).toMatchObject({
+      sourceKind: "evaluation",
+      sourceRevision: 3,
+      legacy: false,
+    });
     const legacySource = sources.find((s) => s.sourceResultId === "run-legacy");
     expect(legacySource).toMatchObject({ sourceKind: "comparison", legacy: true, runStatus: null });
 
@@ -697,14 +733,14 @@ describe("Dexie reindex seams", () => {
     const meta = createDexieReindexMetaStore(db);
     await meta.put(REINDEX_LEASE_KEY, { ownerId: "tab-2", expiresAt: 5_000 });
     // Foreign unexpired lease: rejected without overwriting.
-    await expect(
-      meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-1", 6_000, 1_000),
-    ).resolves.toBe("foreign-held");
+    await expect(meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-1", 6_000, 1_000)).resolves.toBe(
+      "foreign-held",
+    );
     expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-2", expiresAt: 5_000 });
     // Lease expired: acquired inside the transaction.
-    await expect(
-      meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-1", 11_000, 6_000),
-    ).resolves.toBe("acquired");
+    await expect(meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-1", 11_000, 6_000)).resolves.toBe(
+      "acquired",
+    );
     expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-1", expiresAt: 11_000 });
   });
 });

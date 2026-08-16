@@ -580,7 +580,6 @@ export class RSembleEvaluationDB extends Dexie {
         "id, &sourceKey, sourceResultId, taskId, taskInstanceId, modelConfigurationId, observedAt",
     });
 
-
     this.on("blocked", () => {
       this.setState("blocked");
     });

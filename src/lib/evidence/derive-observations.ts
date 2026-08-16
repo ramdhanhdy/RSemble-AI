@@ -347,7 +347,6 @@ const REUSE_PROVENANCES: Record<string, true> = {
   roster_extension_reused: true,
 };
 
-
 function deriveCellObservation(input: DeriveCellInput): DeriveCellResult {
   const { run, experiment, identity, cell, observedAt } = input;
   const modelKey = cell.modelKey;
@@ -401,15 +400,18 @@ function deriveCellObservation(input: DeriveCellInput): DeriveCellResult {
   // Verifier contract declared by the frozen snapshot task, when present.
   const sourceTaskId = run.source.taskId;
   const snapshotTask = experiment.snapshot.tasks.find((t) => t.id === sourceTaskId);
-  const verification = (snapshotTask as (EvaluationTask & { verification?: { kind: string } }) | undefined)
-    ?.verification;
+  const verification = (
+    snapshotTask as (EvaluationTask & { verification?: { kind: string } }) | undefined
+  )?.verification;
   const hasVerifierContract = verification !== undefined && verification.kind !== "none";
   const verifierSnapshot: VerifierSnapshot | null =
     hasVerifierContract && cell.verifier
       ? {
           verifierRef: null,
           kind: verification!.kind as VerifierSnapshot["kind"],
-          configurationDigest: hashArtifactContent(canonicalJsonString({ kind: verification!.kind })),
+          configurationDigest: hashArtifactContent(
+            canonicalJsonString({ kind: verification!.kind }),
+          ),
         }
       : null;
   const verifierState: VerifierState = cell.verifier

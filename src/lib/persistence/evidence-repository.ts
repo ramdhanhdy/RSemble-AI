@@ -41,10 +41,7 @@ import {
   observationSourceKey,
   validateObservation,
 } from "../evidence/evidence-validation";
-import {
-  configurationsCollide,
-  extendConfigurationWindow,
-} from "../evidence/model-configuration";
+import { configurationsCollide, extendConfigurationWindow } from "../evidence/model-configuration";
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
 import type {
   EligibilityDecision,
@@ -398,9 +395,7 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
   }
 
   function toObservations(rows: { observation: unknown }[]): Observation[] {
-    return rows
-      .map((r) => r.observation as Observation)
-      .filter((o) => validateObservation(o).ok);
+    return rows.map((r) => r.observation as Observation).filter((o) => validateObservation(o).ok);
   }
 
   async function listObservationsBySource(
@@ -549,8 +544,7 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
         if (active) decisions.push(active);
       }
       decisions.sort(
-        (a, b) =>
-          a.observationId.localeCompare(b.observationId) || a.ruleVersion - b.ruleVersion,
+        (a, b) => a.observationId.localeCompare(b.observationId) || a.ruleVersion - b.ruleVersion,
       );
       return decisions;
     } catch (err) {
@@ -600,9 +594,7 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
       return rows
         .map(fromJobRow)
         .sort(
-          (a, b) =>
-            a.updatedAt - b.updatedAt ||
-            a.sourceResultId.localeCompare(b.sourceResultId),
+          (a, b) => a.updatedAt - b.updatedAt || a.sourceResultId.localeCompare(b.sourceResultId),
         );
     } catch (err) {
       throw classifyStorageError(err);
@@ -654,10 +646,7 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
     const prohibited: string[] = [];
     collectProhibitedFieldPaths(snapshot, "", prohibited);
     if (prohibited.length > 0) {
-      throw new StorageError(
-        "validation",
-        `Invalid ModelConfigurationSnapshot: ${prohibited[0]}`,
-      );
+      throw new StorageError("validation", `Invalid ModelConfigurationSnapshot: ${prohibited[0]}`);
     }
     const existing = this.modelConfigurations.get(snapshot.id);
     if (!existing) {
@@ -692,7 +681,6 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
       .map((s) => ({ ...s }))
       .sort((a, b) => a.id.localeCompare(b.id));
   }
-
 
   async putObservation(observation: Observation): Promise<"created" | "existing"> {
     const validation = validateObservation(observation);
@@ -741,9 +729,7 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
       .map((o) => JSON.parse(JSON.stringify(o)));
   }
 
-  async listObservationsByModelConfiguration(
-    modelConfigurationId: string,
-  ): Promise<Observation[]> {
+  async listObservationsByModelConfiguration(modelConfigurationId: string): Promise<Observation[]> {
     return [...this.observationsByKey.values()]
       .filter((o) => o.modelConfigurationId === modelConfigurationId)
       .map((o) => JSON.parse(JSON.stringify(o)));
@@ -811,9 +797,7 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
     return revisions.length === 0 ? null : revisions[revisions.length - 1];
   }
 
-  async listActiveDecisions(
-    query: ActiveDecisionsQuery = {},
-  ): Promise<EligibilityDecision[]> {
+  async listActiveDecisions(query: ActiveDecisionsQuery = {}): Promise<EligibilityDecision[]> {
     let ids = [...this.observationsByKey.values()].map((o) => o.id);
     if (query.sourceResultId !== undefined) {
       ids = [...this.observationsByKey.values()]
@@ -826,8 +810,7 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
       if (active) decisions.push(active);
     }
     decisions.sort(
-      (a, b) =>
-        a.observationId.localeCompare(b.observationId) || a.ruleVersion - b.ruleVersion,
+      (a, b) => a.observationId.localeCompare(b.observationId) || a.ruleVersion - b.ruleVersion,
     );
     return decisions;
   }
@@ -862,9 +845,7 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
     return rows
       .map((r) => JSON.parse(JSON.stringify(r)))
       .sort(
-        (a, b) =>
-          a.updatedAt - b.updatedAt ||
-          a.sourceResultId.localeCompare(b.sourceResultId),
+        (a, b) => a.updatedAt - b.updatedAt || a.sourceResultId.localeCompare(b.sourceResultId),
       );
   }
 }

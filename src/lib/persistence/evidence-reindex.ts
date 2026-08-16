@@ -186,10 +186,7 @@ export function isLeaseRecord(v: unknown): v is LeaseRecord {
 }
 
 /** Inventory one Compare source: exploratory entries only, never observations. */
-async function inventoryComparisonSource(
-  deps: ReindexDeps,
-  source: ReindexSource,
-): Promise<void> {
+async function inventoryComparisonSource(deps: ReindexDeps, source: ReindexSource): Promise<void> {
   const now = deps.now ?? (() => Date.now());
   const limitations = source.modelKeys.map((key) => `model:${key}:canonical_task_unresolved`);
   if (source.legacy) limitations.push("source:legacy_limited");

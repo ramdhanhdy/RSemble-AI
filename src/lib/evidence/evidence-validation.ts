@@ -146,9 +146,7 @@ function isNullishString(v: unknown): boolean {
 
 function isStringRecord(v: unknown): v is Record<string, string> {
   if (!isRecord(v)) return false;
-  return Object.entries(v).every(
-    ([k, val]) => k.length > 0 && isString(val) && val.length > 0,
-  );
+  return Object.entries(v).every(([k, val]) => k.length > 0 && isString(val) && val.length > 0);
 }
 
 export function isJsonScalar(v: unknown): v is JsonScalar {
@@ -176,10 +174,12 @@ export function isModelConfigurationSnapshot(v: unknown): v is ModelConfiguratio
   if (!isString(v.id) || !MC_ID_RE.test(v.id)) return false;
   if (!isNonBlankString(v.providerId) || !isNonBlankString(v.requestedModel)) return false;
   if (!isNullishString(v.resolvedModel) || !isNullishString(v.resolvedVersion)) return false;
-  if (!isNullishString(v.reasoningRequested) || !isNullishString(v.reasoningEffective)) return false;
+  if (!isNullishString(v.reasoningRequested) || !isNullishString(v.reasoningEffective))
+    return false;
   if (!isNullishString(v.toolScaffoldSignature)) return false;
   if (!isRecord(v.runtimeSettings)) return false;
-  if (!Object.values(v.runtimeSettings as Record<string, unknown>).every(isJsonScalar)) return false;
+  if (!Object.values(v.runtimeSettings as Record<string, unknown>).every(isJsonScalar))
+    return false;
   if (!isNonNegativeFinite(v.observedFrom) || !isNonNegativeFinite(v.observedTo)) return false;
   if (v.observedFrom > v.observedTo) return false;
   if (!isIdentityCompleteness(v.identityCompleteness)) return false;
@@ -239,7 +239,10 @@ export function isObservationOutcome(v: unknown): v is ObservationOutcome {
   if (new Set(ids).size !== ids.length) return false;
   if (v.verifierPassed !== null && !isBoolean(v.verifierPassed)) return false;
   // A rejected judge stage cannot carry scores.
-  if (!v.judgeAccepted && (v.overallScore !== null || (v.criterionValues as unknown[]).length > 0)) {
+  if (
+    !v.judgeAccepted &&
+    (v.overallScore !== null || (v.criterionValues as unknown[]).length > 0)
+  ) {
     return false;
   }
   return true;
@@ -251,14 +254,16 @@ export function isEvaluatorSnapshot(v: unknown): v is EvaluatorSnapshot {
   if (!isNonBlankString(v.providerId) || !isNonBlankString(v.model)) return false;
   if (!isNullishString(v.resolvedVersion)) return false;
   if (!isString(v.instructionDigest) || !SHA256_RE.test(v.instructionDigest)) return false;
-  if (!isNullishString(v.reasoningEffort) || !isNullishString(v.toolScaffoldSignature)) return false;
+  if (!isNullishString(v.reasoningEffort) || !isNullishString(v.toolScaffoldSignature))
+    return false;
   return true;
 }
 
 export function isVerifierSnapshot(v: unknown): v is VerifierSnapshot {
   if (!isRecord(v)) return false;
   if (v.verifierRef !== null && !isVersionRef(v.verifierRef)) return false;
-  if (!isString(v.kind) || !(VERIFICATION_KINDS as readonly string[]).includes(v.kind)) return false;
+  if (!isString(v.kind) || !(VERIFICATION_KINDS as readonly string[]).includes(v.kind))
+    return false;
   if (v.kind === "none") return false;
   return isString(v.configurationDigest) && SHA256_RE.test(v.configurationDigest);
 }
@@ -282,7 +287,8 @@ export function validateObservation(v: unknown): ValidationResult<Observation> {
   if (!isString(v.id) || !OBS_ID_RE.test(v.id)) {
     errors.push(`id must match the canonical observation id format, got ${JSON.stringify(v.id)}.`);
   }
-  if (!isObservationSourceKind(v.sourceKind)) errors.push("sourceKind must be comparison|evaluation.");
+  if (!isObservationSourceKind(v.sourceKind))
+    errors.push("sourceKind must be comparison|evaluation.");
   for (const field of [
     "sourceResultId",
     "executionLineageId",
@@ -342,7 +348,8 @@ export function validateObservation(v: unknown): ValidationResult<Observation> {
       errors.push("verifierPassed disagrees with assessmentRef.verifierOutcome.passed.");
     }
   }
-  if (!isNonNegativeFinite(v.observedAt)) errors.push("observedAt must be a non-negative epoch ms.");
+  if (!isNonNegativeFinite(v.observedAt))
+    errors.push("observedAt must be a non-negative epoch ms.");
   // Idempotency: the id is derived from the source key; a mismatch is corruption.
   if (errors.length === 0) {
     const derived = observationIdFor(v as unknown as Observation);
@@ -400,10 +407,7 @@ export function validateEligibilityDecision(v: unknown): ValidationResult<Eligib
   if (!isFiniteNumber(v.ruleVersion) || !Number.isInteger(v.ruleVersion) || v.ruleVersion <= 0) {
     errors.push("ruleVersion must be a positive integer.");
   }
-  if (
-    !isString(v.status) ||
-    !(ELIGIBILITY_STATUSES as readonly string[]).includes(v.status)
-  ) {
+  if (!isString(v.status) || !(ELIGIBILITY_STATUSES as readonly string[]).includes(v.status)) {
     errors.push("status must be eligible|provisional|excluded.");
   }
   if (!isEvidenceClass(v.evidenceClass)) errors.push("evidenceClass is unknown.");
