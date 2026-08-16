@@ -30,6 +30,7 @@ import {
 } from "./lib/persistence/repository-context";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
+import type { TaskSetOwnershipCrosswalkRow } from "./lib/persistence/database";
 import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
 import { ModelProbeProvider } from "./ui/ModelProbeContext";
 
@@ -264,9 +265,8 @@ function LegacyExperimentRedirect() {
     />
   );
 }
-
 function LegacyFusionRedirect() {
-  const { studyId } = useParams<{ suiteId: string; studyId: string }>();
+  const { suiteId, studyId } = useParams<{ suiteId: string; studyId: string }>();
   const location = useLocation();
   const { db } = useContext(RepositoryContext);
   const [resolution, setResolution] = useState<"pending" | "resolved" | "unresolved">("pending");
@@ -282,7 +282,7 @@ function LegacyFusionRedirect() {
       .get(`ts-xwalk:fusion:${studyId}`)
       .then((row) => {
         if (cancelled) return;
-        if (isResolvedFusionOwner(row)) {
+        if (isResolvedFusionOwner(row) && row.suiteRef.suiteId === suiteId) {
           setResolvedTaskSetId(row.taskSetId);
           setResolution("resolved");
           return;
@@ -295,7 +295,7 @@ function LegacyFusionRedirect() {
     return () => {
       cancelled = true;
     };
-  }, [db, studyId]);
+  }, [db, studyId, suiteId]);
 
   if (resolution === "resolved" && resolvedTaskSetId) {
     return (
@@ -327,13 +327,32 @@ function LegacyFusionRedirect() {
 
 function FusionStudyRouteWrapper() {
   const fusionRepo = useFusionStudyRepository();
-  return <FusionStudyRoute fusionRepo={fusionRepo} />;
+  const { db } = useContext(RepositoryContext);
+  return (
+    <FusionStudyRoute fusionRepo={fusionRepo} crosswalk={db?.taskSetOwnershipCrosswalk ?? null} />
+  );
 }
 
-function isResolvedFusionOwner(row: unknown): row is { status: "resolved"; taskSetId: string } {
+function isResolvedFusionOwner(row: unknown): row is TaskSetOwnershipCrosswalkRow & {
+  kind: "fusion-owner";
+  status: "resolved";
+  version: number;
+  suiteRef: { suiteId: string; suiteVersion: number; protocolFingerprint: string };
+} {
   if (!row || typeof row !== "object") return false;
-  if (!("status" in row) || !("taskSetId" in row)) return false;
-  return row.status === "resolved" && typeof row.taskSetId === "string";
+  const r = row as Record<string, unknown>;
+  if (r.kind !== "fusion-owner") return false;
+  if (r.status !== "resolved") return false;
+  if (typeof r.taskSetId !== "string") return false;
+  if (typeof r.version !== "number") return false;
+  const suiteRef = r.suiteRef;
+  if (!suiteRef || typeof suiteRef !== "object") return false;
+  const sr = suiteRef as Record<string, unknown>;
+  return (
+    typeof sr.suiteId === "string" &&
+    typeof sr.suiteVersion === "number" &&
+    typeof sr.protocolFingerprint === "string"
+  );
 }
 
 /** Task catalog route wrapper — reads the task repository from context; the

@@ -945,6 +945,11 @@ describe("AppRouter — Fusion owner redirects (spec §4, §8.2)", () => {
                 version: 2,
                 digest: null,
                 status: "resolved",
+                suiteRef: {
+                  suiteId: "s1",
+                  suiteVersion: 2,
+                  protocolFingerprint: "sha256:0123456789abcdef",
+                },
               }
             : undefined,
       },
@@ -976,6 +981,11 @@ describe("AppRouter — Fusion owner redirects (spec §4, §8.2)", () => {
                 version: 2,
                 digest: null,
                 status: "resolved",
+                suiteRef: {
+                  suiteId: "s1",
+                  suiteVersion: 2,
+                  protocolFingerprint: "sha256:0123456789abcdef",
+                },
               }
             : undefined,
       },

@@ -916,8 +916,13 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     experimentId = id;
 
     let transferredToRunLoop = false;
+    // Set only after createExperiment resolves: an id collision throws before
+    // this invocation writes a row, so the rollback must never delete a
+    // pre-existing experiment.
+    let createdDraft = false;
     try {
       await evalRepo.createExperiment(draft);
+      createdDraft = true;
       persistedExperimentRevision = draft.revision;
 
       // Initialize engine.
@@ -948,13 +953,15 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     } finally {
       if (!transferredToRunLoop) {
-        // Best-effort roll back the just-created draft so a post-create sync
-        // failure neither orphans a draft row nor permanently burns the
-        // materialization (spec §11.2).
-        try {
-          await evalRepo.deleteExperiment(id);
-        } catch {
-          // Best-effort — the store may itself be the cause of the failure.
+        if (createdDraft) {
+          // Best-effort roll back the just-created draft so a post-create sync
+          // failure neither orphans a draft row nor permanently burns the
+          // materialization (spec §11.2).
+          try {
+            await evalRepo.deleteExperiment(id);
+          } catch {
+            // Best-effort — the store may itself be the cause of the failure.
+          }
         }
         releaseExecution();
         engine = null;

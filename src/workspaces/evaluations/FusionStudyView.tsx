@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AlertCircle, ChevronDown, ChevronRight, FlaskConical } from "lucide-react";
 import type { FusionStudyRepository } from "../../lib/persistence/fusion-study-repository";
+import type { TaskSetOwnershipCrosswalkRow } from "../../lib/persistence/database";
 import type {
   EvaluationObservation,
   FusionPlaybook,
@@ -54,7 +55,39 @@ export function ClaimBadge({ level }: { level: "exploratory" | "confirmed" }) {
 
 // --- Route wrapper ------------------------------------------------------------------
 
-export function FusionStudyRoute({ fusionRepo }: { fusionRepo: FusionStudyRepository | null }) {
+type FusionOwnerCrosswalk = {
+  get: (key: string) => Promise<TaskSetOwnershipCrosswalkRow | undefined>;
+};
+
+function isResolvedFusionOwner(row: unknown): row is TaskSetOwnershipCrosswalkRow & {
+  kind: "fusion-owner";
+  status: "resolved";
+  version: number;
+  suiteRef: { suiteId: string; suiteVersion: number; protocolFingerprint: string };
+} {
+  if (!row || typeof row !== "object") return false;
+  const r = row as Record<string, unknown>;
+  if (r.kind !== "fusion-owner") return false;
+  if (r.status !== "resolved") return false;
+  if (typeof r.taskSetId !== "string") return false;
+  if (typeof r.version !== "number") return false;
+  const suiteRef = r.suiteRef;
+  if (!suiteRef || typeof suiteRef !== "object") return false;
+  const sr = suiteRef as Record<string, unknown>;
+  return (
+    typeof sr.suiteId === "string" &&
+    typeof sr.suiteVersion === "number" &&
+    typeof sr.protocolFingerprint === "string"
+  );
+}
+
+export function FusionStudyRoute({
+  fusionRepo,
+  crosswalk,
+}: {
+  fusionRepo: FusionStudyRepository | null;
+  crosswalk?: FusionOwnerCrosswalk | null;
+}) {
   const { suiteId, taskSetId, studyId } = useParams<{
     suiteId?: string;
     taskSetId?: string;
@@ -62,8 +95,55 @@ export function FusionStudyRoute({ fusionRepo }: { fusionRepo: FusionStudyReposi
   }>();
   const ownerId = taskSetId ?? suiteId;
   const isCanonical = Boolean(taskSetId);
+  const [ownerState, setOwnerState] = useState<"resolving" | "ok" | "blocked">(
+    isCanonical ? "resolving" : "ok",
+  );
+  const [ownerError, setOwnerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isCanonical || !studyId) return;
+    let cancelled = false;
+    setOwnerState("resolving");
+    setOwnerError(null);
+    if (!crosswalk) {
+      setOwnerError("Fusion owner could not be resolved.");
+      setOwnerState("blocked");
+      return;
+    }
+    void crosswalk
+      .get(`ts-xwalk:fusion:${studyId}`)
+      .then((row) => {
+        if (cancelled) return;
+        if (isResolvedFusionOwner(row) && row.taskSetId === taskSetId) {
+          setOwnerState("ok");
+        } else {
+          setOwnerError("This Fusion Study does not belong to this Task Set.");
+          setOwnerState("blocked");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOwnerError("Fusion owner could not be resolved.");
+          setOwnerState("blocked");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [crosswalk, isCanonical, studyId, taskSetId]);
+
   if (!ownerId || !studyId) {
     return <div className="text-sm text-text-muted">Missing task set or study id.</div>;
+  }
+  if (ownerState === "resolving") {
+    return <div className="text-sm text-text-muted">Resolving Fusion owner…</div>;
+  }
+  if (ownerState === "blocked") {
+    return (
+      <div className="flex items-center gap-2 text-sm text-red-400">
+        <AlertCircle size={16} /> {ownerError}
+      </div>
+    );
   }
   return (
     <FusionStudyView
