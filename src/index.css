@@ -161,6 +161,7 @@ body {
 /* Reduced motion: remove movement/loops; keep short opacity/color feedback. */
 @media (prefers-reduced-motion: reduce) {
   .animate-dash-march,
+  .animate-spin,
   .animate-spin-ease,
   .animate-pulse-ease,
   .animate-pulse,
