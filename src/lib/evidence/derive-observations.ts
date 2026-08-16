@@ -25,29 +25,32 @@
 // =============================================================================
 
 import type { EvidenceRepository } from "../persistence/evidence-repository";
-import { EVIDENCE_RULE_VERSION } from "./evidence-eligibility";
+import {
+  EVIDENCE_RULE_VERSION,
+  classifyEligibility,
+  type VerifierState,
+} from "./evidence-eligibility";
 import type { ExperimentRecord, EvaluationTask } from "../evaluations/evaluation-types";
 import type { VerifierOutcome } from "../evaluations/fusion-study-types";
 import type { RunRecordV2, PersistedCandidate } from "../persistence/run-types";
 import type { VersionRef } from "../tasks/task-types";
-import type {
-  AssessmentRef,
-  EligibilityDecision,
-  EvaluatorSnapshot,
-  ModelConfigurationSnapshot,
-  Observation,
-  ObservationOutcome,
-  ObservationSourceKind,
-  VerifierSnapshot,
+import {
+  type AssessmentRef,
+  type EligibilityDecision,
+  type EvaluatorSnapshot,
+  type ModelConfigurationSnapshot,
+  type Observation,
+  type ObservationOutcome,
+  type ObservationSourceKind,
+  type VerifierSnapshot,
+  OBSERVATION_SCHEMA_VERSION,
 } from "./evidence-types";
 import type { TaskVersionRef } from "../evaluations/task-set-types";
-import { OBSERVATION_SCHEMA_VERSION } from "./evidence-types";
 import {
   canonicalizeModelConfiguration,
   type ModelConfigurationResult,
 } from "./model-configuration";
 import { selectObservationSources } from "./observation-source";
-import { classifyEligibility, type VerifierState } from "./evidence-eligibility";
 import { buildComparabilityCohort } from "./comparability-cohort";
 import { observationIdFor } from "./evidence-validation";
 import { hashArtifactContent, canonicalJsonString } from "../evaluations/protocol-fingerprint";

@@ -27,7 +27,7 @@
 // This module never mutates source records and never invokes a provider.
 // =============================================================================
 
-import { type RSembleEvaluationDB } from "./database";
+import { classifyStorageError, type RSembleEvaluationDB } from "./database";
 import { type EvidenceRepository } from "./evidence-repository";
 import { EVIDENCE_RULE_VERSION } from "../evidence/evidence-eligibility";
 import {
@@ -39,7 +39,6 @@ import {
 import type { VerifierOutcome } from "../evaluations/fusion-study-types";
 import type { ObservationSourceKind } from "../evidence/evidence-types";
 import type { RunStatus, RunSummary } from "./run-types";
-import { classifyStorageError } from "./database";
 
 // --- Source enumeration ----------------------------------------------------------
 

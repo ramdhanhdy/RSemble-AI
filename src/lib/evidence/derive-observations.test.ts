@@ -31,8 +31,7 @@ import type {
   EvaluationTask,
   EvaluationRubric,
 } from "../evaluations/evaluation-types";
-import type { VerifierOutcome } from "../evaluations/fusion-study-types";
-import type { EvaluationObservation } from "../evaluations/fusion-study-types";
+import type { VerifierOutcome, EvaluationObservation } from "../evaluations/fusion-study-types";
 import type { RunRecordV2, JudgeAttemptRecord, PersistedCandidate } from "../persistence/run-types";
 
 // --- Fixtures -----------------------------------------------------------------
