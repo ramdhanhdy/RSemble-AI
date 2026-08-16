@@ -97,6 +97,19 @@ export interface ReindexMetaStore {
   get(key: string): Promise<unknown>;
   put(key: string, value: unknown): Promise<void>;
   delete(key: string): Promise<void>;
+  /**
+   * Atomically acquire the storage-work lease: read the current value and
+   * write the new lease inside one storage transaction. Returns
+   * "foreign-held" when an unexpired lease owned by another owner exists at
+   * check time; otherwise writes `{ ownerId, expiresAt }` and returns
+   * "acquired".
+   */
+  tryAcquireLease(
+    key: string,
+    ownerId: string,
+    expiresAt: number,
+    now: number,
+  ): Promise<"acquired" | "foreign-held">;
 }
 
 export const REINDEX_LEASE_KEY = "evidenceReindexLease";
@@ -113,6 +126,22 @@ export function createDexieReindexMetaStore(db: RSembleEvaluationDB): ReindexMet
     },
     async delete(key: string): Promise<void> {
       await db.storageMeta.delete(key);
+    },
+    async tryAcquireLease(
+      key: string,
+      ownerId: string,
+      expiresAt: number,
+      now: number,
+    ): Promise<"acquired" | "foreign-held"> {
+      return db.transaction("rw", db.storageMeta, async () => {
+        const row = await db.storageMeta.get(key);
+        const held = row?.value ?? null;
+        if (isLeaseRecord(held) && held.expiresAt > now && held.ownerId !== ownerId) {
+          return "foreign-held";
+        }
+        await db.storageMeta.put({ key, value: { ownerId, expiresAt } });
+        return "acquired";
+      });
     },
   };
 }
@@ -142,13 +171,12 @@ export type ReindexRunResult =
       limitations: number;
       errors: string[];
     };
-
 interface LeaseRecord {
   ownerId: string;
   expiresAt: number;
 }
 
-function isLeaseRecord(v: unknown): v is LeaseRecord {
+export function isLeaseRecord(v: unknown): v is LeaseRecord {
   return (
     typeof v === "object" &&
     v !== null &&
@@ -194,12 +222,18 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
   const ttlMs = deps.leaseTtlMs ?? 5 * 60_000;
   const ownerId = deps.ownerId ?? "reindex-owner";
 
-  // Local storage-work ownership, separate from paid execution.
-  const held = await deps.meta.get(REINDEX_LEASE_KEY);
-  if (isLeaseRecord(held) && held.expiresAt > now() && held.ownerId !== ownerId) {
+  // Local storage-work ownership, separate from paid execution. The
+  // check-and-acquire runs inside one storage transaction over the meta
+  // store so two tabs cannot both take the lease (spec §13).
+  const acquired = await deps.meta.tryAcquireLease(
+    REINDEX_LEASE_KEY,
+    ownerId,
+    now() + ttlMs,
+    now(),
+  );
+  if (acquired === "foreign-held") {
     return { skipped: true, reason: "lease-held" };
   }
-  await deps.meta.put(REINDEX_LEASE_KEY, { ownerId, expiresAt: now() + ttlMs });
 
   const result = {
     skipped: false as const,

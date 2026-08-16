@@ -23,6 +23,7 @@ import {
   REINDEX_LEASE_KEY,
   createDexieReindexEnumerator,
   createDexieReindexMetaStore,
+  isLeaseRecord,
   reindexEvidence,
   type ReindexDeps,
   type ReindexMetaStore,
@@ -220,6 +221,19 @@ class MemoryMetaStore implements ReindexMetaStore {
   }
   async delete(key: string): Promise<void> {
     this.values.delete(key);
+  }
+  async tryAcquireLease(
+    key: string,
+    ownerId: string,
+    expiresAt: number,
+    now: number,
+  ): Promise<"acquired" | "foreign-held"> {
+    const held = this.values.get(key) ?? null;
+    if (isLeaseRecord(held) && held.expiresAt > now && held.ownerId !== ownerId) {
+      return "foreign-held";
+    }
+    this.values.set(key, { ownerId, expiresAt });
+    return "acquired";
   }
 }
 
@@ -675,5 +689,22 @@ describe("Dexie reindex seams", () => {
     expect(await meta.get("k")).toEqual({ a: 1 });
     await meta.delete("k");
     expect(await meta.get("k")).toBeNull();
+  });
+
+  it("acquires the storage-work lease atomically against foreign holders", async () => {
+    db = new RSembleEvaluationDB(`reindex-lease-${Math.random().toString(36).slice(2)}`);
+    await db.open();
+    const meta = createDexieReindexMetaStore(db);
+    await meta.put(REINDEX_LEASE_KEY, { ownerId: "tab-2", expiresAt: 5_000 });
+    // Foreign unexpired lease: rejected without overwriting.
+    await expect(
+      meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-1", 6_000, 1_000),
+    ).resolves.toBe("foreign-held");
+    expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-2", expiresAt: 5_000 });
+    // Lease expired: acquired inside the transaction.
+    await expect(
+      meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-1", 11_000, 6_000),
+    ).resolves.toBe("acquired");
+    expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-1", expiresAt: 11_000 });
   });
 });
