@@ -20,6 +20,8 @@ import type { CandidateEvaluation, ModelSlot } from "../../studio-data";
 import { RepositoryContext } from "../../lib/persistence/repository-context";
 import { StorageError } from "../../lib/persistence/database";
 
+import { InMemoryEvidenceRepository } from "../../lib/persistence/evidence-repository";
+import { observationIdFor } from "../../lib/evidence/evidence-validation";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 interface Harness {
@@ -1861,6 +1863,123 @@ describe("ExperimentResults — add model (roster extension)", () => {
     expect(document.body.textContent).toContain("Add model to results");
     const alert = document.body.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain("Another tab owns the lease.");
+    cleanup(h);
+  });
+});
+
+describe("ExperimentResults — Evidence receipt integration (F1-blocker)", () => {
+  it("loads observation through context-provided evidenceRepo when evidenceRepo prop is omitted", async () => {
+    const evidenceRepo = new InMemoryEvidenceRepository();
+    const runId = "run_f1_test";
+    const taskId = "t1";
+    const modelKey = "umans:model";
+
+    const SHA = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const baseObs = {
+      id: "",
+      sourceKind: "evaluation" as const,
+      sourceResultId: runId,
+      executionLineageId: "lineage_1",
+      runId,
+      sourceTaskCellId: "cell_1",
+      taskId,
+      taskVersion: 1,
+      taskInstanceId: "inst_1",
+      taskFamilyId: null,
+      modelConfigurationId: "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      candidateAttemptId: "att-cand-0",
+      assessmentRef: {
+        judgeAttemptId: "judge-att-1",
+        judgeProviderId: "openrouter",
+        judgeModel: "judge",
+        blindLabelMapping: {},
+        candidateAttemptIdsByCandidateId: {},
+        rubricRef: null,
+        verifierRef: null,
+        verifierOutcome: null,
+      },
+      protocolFingerprint: SHA,
+      rubricRef: null,
+      evaluatorSnapshot: {
+        kind: "model_judge" as const,
+        providerId: "openrouter",
+        model: "judge",
+        resolvedVersion: "1",
+        instructionDigest: SHA,
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: null,
+      outcome: {
+        judgeAccepted: true,
+        overallScore: 85,
+        criterionValues: [],
+        verifierPassed: null,
+      },
+      observedAt: 1000,
+      observationSchemaVersion: 1,
+    };
+    const obs = { ...baseObs, id: observationIdFor(baseObs) };
+    await evidenceRepo.putObservation(obs);
+    await evidenceRepo.putDecision({
+      observationId: obs.id,
+      ruleVersion: 1,
+      status: "eligible" as const,
+      evidenceClass: "comparable" as const,
+      allowedUses: ["task_descriptive" as const, "within_model_profile" as const],
+      reasonCodes: ["canonical_task_resolved" as const],
+      comparabilityCohortId: SHA,
+      decidedAt: 1000,
+    });
+    const run = makeRun(runId, { [modelKey]: 4.5 });
+    const experiment: ExperimentRecord = {
+      id: "exp-f1",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      protocolFingerprint: "sha256:abc",
+      execution: null,
+      snapshot: makeSnapshot([taskId]),
+      tasks: [makeTaskState(taskId, runId)],
+      status: "completed",
+      revision: 1,
+      createdAt: 1000,
+      updatedAt: 1100,
+    };
+    const h = renderWithRouter(
+      <RepositoryContext.Provider
+        value={{
+          taskRepo: null,
+          runRepo: null,
+          evalRepo: null,
+          fusionRepo: null,
+          evidenceRepo,
+          db: null,
+          storageState: "ready",
+          retry: () => undefined,
+        }}
+      >
+        <ExperimentResults
+          experiment={experiment}
+          resolveRunRecord={async (id) => (id === runId ? run : null)}
+        />
+      </RepositoryContext.Provider>,
+    );
+    await settle();
+    await settle();
+
+    const receiptButtons = h.$$('button[aria-label*="Evidence receipt:"]');
+    expect(receiptButtons.length).toBeGreaterThan(0);
+    const hasExcludedNoScore = receiptButtons.some((b) =>
+      b.getAttribute("aria-label")?.includes("Excluded — No score"),
+    );
+    expect(hasExcludedNoScore).toBe(false);
+    const hasEligibleOrComparable = receiptButtons.some(
+      (b) =>
+        b.getAttribute("aria-label")?.includes("Eligible") ||
+        b.getAttribute("aria-label")?.includes("Comparable"),
+    );
+    expect(hasEligibleOrComparable).toBe(true);
+
     cleanup(h);
   });
 });
