@@ -15,8 +15,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import {
   MemoryRouter,
+  Route,
+  Routes,
   useLocation,
   useNavigate,
+  useParams,
   type Location,
   type NavigateFunction,
 } from "react-router-dom";
@@ -31,13 +34,14 @@ import "./workspaces/evaluations/RubricList";
 import "./workspaces/evaluations/RubricDetail";
 import "./workspaces/evaluations/TaskSetList";
 import "./workspaces/evaluations/TaskSetEditor";
-import "./workspaces/evaluations/FusionStudyView";
+import { FusionStudyRoute } from "./workspaces/evaluations/FusionStudyView";
 import "./workspaces/evaluations/ExperimentRoute";
 import "./workspaces/tasks/TaskCatalog";
 import "./workspaces/tasks/TaskRoute";
 import { AppRoutes } from "./app-router";
 import { RepositoryContext } from "./lib/persistence/repository-context";
 import { InMemoryEvaluationRepository } from "./lib/persistence/evaluation-repository";
+import type { TaskSetOwnershipCrosswalkRow } from "./lib/persistence/database";
 import { InMemoryTaskRepository } from "./lib/persistence/in-memory-task-repository";
 import {
   InMemoryFusionStudyRepository,
@@ -1168,6 +1172,105 @@ describe("AppRouter — Fusion owner redirects (spec §4, §8.2)", () => {
     expect(h.$("[data-testid='fusion-study-view']")).toBeNull();
     expect(h.container.textContent).toMatch(/does not belong/i);
     cleanup(h);
+  });
+
+  it("never renders the study view across a canonical valid-to-wrong-owner navigation", async () => {
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    // study-1 resolves to Task Set "s1". Navigating to /sets/s2/fusion/
+    // study-1 reuses the SAME route component instance with new params, so a
+    // stale, coordinate-agnostic "ok" would render the study beneath the
+    // wrong Task Set breadcrumb for at least the first post-navigation
+    // commit. An inline-ref probe observes every commit of the route
+    // subtree: React detaches the old callback and attaches the new one
+    // during the commit phase, after the DOM mutates but before effects —
+    // the exact window the stale study view can leak into.
+    const crosswalk: {
+      get: (key: string) => Promise<TaskSetOwnershipCrosswalkRow | undefined>;
+    } = {
+      get: async (key: string) =>
+        key === "ts-xwalk:fusion:study-1"
+          ? {
+              key,
+              kind: "fusion-owner",
+              taskSetId: "s1",
+              version: 2,
+              digest: null,
+              status: "resolved",
+              suiteRef: {
+                suiteId: "s1",
+                suiteVersion: 2,
+                protocolFingerprint: "sha256:0123456789abcdef",
+              },
+              updatedAt: Date.now(),
+            }
+          : undefined,
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const commits: string[] = [];
+    function FusionNavProbe() {
+      const navigate = useNavigate();
+      return (
+        <button data-testid="fusion-nav" onClick={() => navigate("/sets/s2/fusion/study-1")}>
+          nav
+        </button>
+      );
+    }
+    function CommitProbe({ onCommit }: { onCommit: () => void }) {
+      // Subscribe to the params context so this probe re-renders in the SAME
+      // commit as the route on a param transition. The inline ref callback
+      // gets a new identity every render, so React re-fires it during the
+      // commit phase — after the DOM mutates but before the route's effect
+      // can reset state (the exact window the stale study view can leak in).
+      useParams();
+      return <div style={{ display: "none" }} ref={() => onCommit()} />;
+    }
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/sets/s1/fusion/study-1"]}>
+          <Routes>
+            <Route
+              path="/sets/:taskSetId/fusion/:studyId"
+              element={
+                <>
+                  <FusionStudyRoute fusionRepo={fusionRepo} crosswalk={crosswalk} />
+                  <CommitProbe
+                    onCommit={() => {
+                      commits.push(
+                        container.querySelector("[data-testid='fusion-study-view']")
+                          ? "view"
+                          : "guard",
+                      );
+                    }}
+                  />
+                </>
+              }
+            />
+          </Routes>
+          <FusionNavProbe />
+        </MemoryRouter>,
+      );
+      await flush();
+      await flush();
+    });
+    // Sanity: the valid owner renders the study view before we navigate.
+    expect(container.querySelector("[data-testid='fusion-study-view']")).toBeTruthy();
+    commits.length = 0;
+    act(() => {
+      container.querySelector<HTMLElement>("[data-testid='fusion-nav']")!.click();
+    });
+    await act(async () => {
+      await flush();
+    });
+    // No commit — including the first post-navigation render — may show the
+    // study view under the wrong owner.
+    expect(commits).not.toContain("view");
+    expect(container.textContent).toMatch(/does not belong/i);
+    expect(container.querySelector("[data-testid='fusion-study-view']")).toBeNull();
+    act(() => root.unmount());
+    container.remove();
   });
 });
 
