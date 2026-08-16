@@ -696,6 +696,99 @@ describe("EvidenceReceipt — Accessibility and screen-reader semantics", () => 
     expect(trigger?.className).toContain("min-h-[44px]");
     cleanup(h);
   });
+
+  it("associates compact trigger with popover via aria-controls, role='region', aria-labelledby, and closes on Escape (F5-concern)", async () => {
+    const obs = makeObservation();
+    const decision = makeDecision();
+
+    const h = renderWithRouter(
+      <EvidenceReceipt
+        observation={obs}
+        decision={decision}
+        compact
+      />,
+    );
+
+    const trigger = h.$("button[aria-expanded]")!;
+    expect(trigger).toBeTruthy();
+    const triggerId = trigger.getAttribute("id");
+    expect(triggerId).toBeTruthy();
+
+    act(() => {
+      trigger.click();
+    });
+    await settle();
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const panelId = trigger.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+
+    const popover = h.$(`[id="${panelId}"]`);
+    expect(popover).toBeTruthy();
+    expect(popover?.getAttribute("role")).toBe("region");
+    expect(popover?.getAttribute("aria-labelledby")).toBe(triggerId);
+
+    act(() => {
+      popover?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(h.$(`[id="${panelId}"]`)).toBeNull();
+
+    cleanup(h);
+  });
+
+  it("provides aria-controls, role='region', and Escape close on loading compact disclosure", async () => {
+    const h = renderWithRouter(<EvidenceReceipt loading compact defaultOpen />);
+    const trigger = h.$("button[aria-expanded]")!;
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const panelId = trigger.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+    const popover = h.$(`[id="${panelId}"]`);
+    expect(popover?.getAttribute("role")).toBe("region");
+
+    act(() => {
+      popover?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    cleanup(h);
+  });
+
+  it("provides aria-controls, role='region', and Escape close on error compact disclosure", async () => {
+    const h = renderWithRouter(<EvidenceReceipt error="Fetch failure" compact defaultOpen />);
+    const trigger = h.$("button[aria-expanded]")!;
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const panelId = trigger.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+    const popover = h.$(`[id="${panelId}"]`);
+    expect(popover?.getAttribute("role")).toBe("region");
+
+    act(() => {
+      popover?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    cleanup(h);
+  });
+
+  it("provides aria-controls, role='region', and Escape close on missing-cell compact disclosure", async () => {
+    const h = renderWithRouter(<EvidenceReceipt missingReason="no-score" compact defaultOpen />);
+    const trigger = h.$("button[aria-expanded]")!;
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const panelId = trigger.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+    const popover = h.$(`[id="${panelId}"]`);
+    expect(popover?.getAttribute("role")).toBe("region");
+
+    act(() => {
+      popover?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    cleanup(h);
+  });
 });
 
 describe("EvidenceReceipt — Asynchronous repository resolution", () => {
