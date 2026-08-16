@@ -700,7 +700,7 @@ export function EvidenceReceipt({
                   {obs.rubricRef.id} v{obs.rubricRef.version}
                 </span>
               ) : (
-                <span>Holistic judgment</span>
+                <span>No rubric recorded</span>
               )}
             </dd>
           </div>
