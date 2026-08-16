@@ -550,6 +550,53 @@ describe("roster extension with reused output", () => {
 
     expect(selection.gaps).toEqual([]);
   });
+  it("lists the base run's judge assessment as a drillable prior assessment", () => {
+    const base = makeRun({
+      id: "run-base",
+      attemptId: "att-0",
+      trial: 0,
+      status: "completed",
+      candidates: [candidate("cand-m1", M1, "m1-base", [attemptRec("m1-base", "completed")])],
+      judgeAccepted: "j-base",
+      judgeAttempts: [judgeAttempt("j-base", "completed", { report: true })],
+    });
+    const extension = makeRun({
+      id: "run-ext",
+      attemptId: "att-1",
+      trial: 1,
+      status: "completed",
+      candidates: [
+        candidate("cand-m1", M1, "m1-copy", [
+          attemptRec("m1-copy", "completed", {
+            sourceRunId: "run-base",
+            sourceCandidateId: "cand-m1",
+            sourceAttemptId: "m1-base",
+          }),
+        ]),
+      ],
+      judgeAccepted: "j-ext",
+      judgeAttempts: [judgeAttempt("j-ext", "completed", { report: true })],
+      repair: { kind: "roster-extension", addedModelKey: M3, baseRunId: "run-base" },
+    });
+    const experiment = makeExperiment({
+      attempts: [
+        taskAttempt({ id: "att-0", runId: "run-base", trial: 0, status: "completed" }),
+        taskAttempt({
+          id: "att-1",
+          runId: "run-ext",
+          trial: 1,
+          status: "completed",
+          repair: { kind: "roster-extension", addedModelKey: M3, baseRunId: "run-base" },
+        }),
+      ],
+      selected: "att-1",
+      slots: [slot("s1", M1)],
+    });
+    const selection = select({ experiment, runs: [base, extension] });
+    const m1 = cellFor(selection, M1);
+    expect(m1.judgeAssessment?.judgeAttemptId).toBe("j-ext");
+    expect(m1.judgeAssessment?.priorJudgeAttemptIds).toEqual(["j-base"]);
+  });
 });
 
 describe("full-roster fallback", () => {
@@ -673,6 +720,11 @@ describe("multiple extension events", () => {
     // m1's output was generated in run-base and reused across both extensions.
     expect(cellFor(selection, M1).candidateAttemptId).toBe("m1-base");
     expect(cellFor(selection, M1).provenance).toBe("roster_extension_reused");
+    // Prior lineage assessments stay drillable across every extension event.
+    expect(cellFor(selection, M1).judgeAssessment?.priorJudgeAttemptIds).toEqual([
+      "j-base",
+      "j-ext1",
+    ]);
     // m3 was generated in ext1 and reused in ext2.
     expect(cellFor(selection, M3).candidateAttemptId).toBe("m3-ext1");
     expect(cellFor(selection, M3).provenance).toBe("roster_extension_reused");

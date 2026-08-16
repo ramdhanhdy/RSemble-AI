@@ -187,8 +187,8 @@ export function selectObservationSources(input: ObservationSourceInput): Observa
       ),
     };
   }
-
-  const judgeAssessment = resolveJudgeAssessment(run);
+  const lineageRuns = collectLineageRuns(taskState.attempts, resolveRunRecord);
+  const judgeAssessment = resolveJudgeAssessment(run, lineageRuns);
   const cells: ObservationSourceCell[] = [];
   const gaps: ObservationSourceGap[] = [];
   const seenModelKeys = new Set<string>();
@@ -352,19 +352,45 @@ function latestVerifierOutcome(
   }
   return latest;
 }
-function resolveJudgeAssessment(run: RunRecordV2): AcceptedJudgeAssessment | null {
-  if (run.judge.acceptedAttemptId === null) return null;
+/** All resolvable run records in this task's execution lineage, attempt order. */
+function collectLineageRuns(
+  attempts: ExperimentTaskAttempt[],
+  resolveRunRecord: (runId: string) => RunRecordV2 | null,
+): RunRecordV2[] {
+  const runs: RunRecordV2[] = [];
+  for (const attempt of attempts) {
+    if (attempt.runId === null) continue;
+    const run = resolveRunRecord(attempt.runId);
+    if (run) runs.push(run);
+  }
+  return runs;
+}
 
+function resolveJudgeAssessment(
+  run: RunRecordV2,
+  lineageRuns: RunRecordV2[],
+): AcceptedJudgeAssessment | null {
+  if (run.judge.acceptedAttemptId === null) return null;
   const accepted = run.judge.attempts.find(
     (a: JudgeAttemptRecord) => a.attemptId === run.judge.acceptedAttemptId,
   );
   if (!accepted) return null;
-  const priorJudgeAttemptIds = run.judge.attempts
-    .filter(
-      (a: JudgeAttemptRecord) =>
-        a.attemptId !== accepted.attemptId && a.status === "completed" && a.report !== null,
-    )
-    .map((a: JudgeAttemptRecord) => a.attemptId);
+  // Prior accepted judge events across the whole execution lineage (spec
+  // §6.3): prior assessments remain drillable for evaluator-variability
+  // analysis. Includes earlier re-judges within the selected run and judge
+  // events from earlier lineage runs (base run of a roster extension,
+  // prior retry runs). Lineage order is attempt order; ids are unique.
+  const priorJudgeAttemptIds: string[] = [];
+  const seen = new Set<string>();
+  for (const lineageRun of lineageRuns) {
+    for (const attempt of lineageRun.judge.attempts) {
+      if (attempt.attemptId === accepted.attemptId) continue;
+      if (attempt.status !== "completed" || attempt.report === null) continue;
+      if (seen.has(attempt.attemptId)) continue;
+      seen.add(attempt.attemptId);
+      priorJudgeAttemptIds.push(attempt.attemptId);
+    }
+  }
   return {
     judgeAttemptId: accepted.attemptId,
     providerId: accepted.providerId,
