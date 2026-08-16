@@ -139,14 +139,41 @@ export function EvidenceReceipt({
         if (cancelled) return;
         if (job) setLoadedIndexJob(job);
 
-        // Find matching observation
-        let matching = observations.find((o) => {
-          if (attemptId && o.assessmentRef?.judgeAttemptId !== attemptId) return false;
-          if (taskId && o.taskId !== taskId) return false;
-          return true;
-        });
+        // Find matching observation by taskId and optionally modelKey/candidateAttemptId
+        const taskMatches = taskId
+          ? observations.filter((o) => o.taskId === taskId)
+          : observations;
 
-        if (!matching && observations.length > 0 && !attemptId && !taskId) {
+        let matching: Observation | null = null;
+        if (taskMatches.length === 1) {
+          matching = taskMatches[0];
+        } else if (taskMatches.length > 1) {
+          if (attemptId) {
+            matching = taskMatches.find((o) => o.candidateAttemptId === attemptId) ?? null;
+          }
+          if (!matching && modelKey) {
+            for (const o of taskMatches) {
+              if (o.modelConfigurationId) {
+                const cfg = await repo.getModelConfiguration(o.modelConfigurationId);
+                if (cfg) {
+                  const keyWithProvider = `${cfg.providerId}:${cfg.requestedModel}`;
+                  if (
+                    keyWithProvider === modelKey ||
+                    cfg.requestedModel === modelKey ||
+                    modelKey.endsWith(`:${cfg.requestedModel}`) ||
+                    (cfg.resolvedModel && modelKey.endsWith(`:${cfg.resolvedModel}`))
+                  ) {
+                    matching = o;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          if (!matching) {
+            matching = taskMatches[0];
+          }
+        } else if (observations.length > 0 && !taskId) {
           matching = observations[0];
         }
 
@@ -176,7 +203,7 @@ export function EvidenceReceipt({
     return () => {
       cancelled = true;
     };
-  }, [observation, runId, attemptId, taskId, repo]);
+  }, [observation, runId, attemptId, taskId, modelKey, repo]);
 
   const obs = observation ?? loadedObs;
   const dec = decision ?? loadedDecision;
