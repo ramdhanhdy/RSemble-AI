@@ -138,7 +138,7 @@ export function EvidenceReceipt({
     setAsyncLoading(true);
     setAsyncError(null);
 
-    (async () => {
+    void (async () => {
       try {
         const [observations, job] = await Promise.all([
           repo.listObservationsBySource("evaluation", runId),
@@ -222,6 +222,7 @@ export function EvidenceReceipt({
   if (isLoading) {
     if (compact) {
       return (
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape closes the disclosure
         <div className={`relative inline-block ${className}`} onKeyDown={handleKeyDown}>
           <button
             type="button"
@@ -278,6 +279,7 @@ export function EvidenceReceipt({
 
     if (compact) {
       return (
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape closes the disclosure
         <div className={`relative inline-block ${className}`} onKeyDown={handleKeyDown}>
           <button
             type="button"
@@ -405,6 +407,7 @@ export function EvidenceReceipt({
 
     if (compact) {
       return (
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape closes the disclosure
         <div className={`relative inline-block ${className}`} onKeyDown={handleKeyDown}>
           <button
             type="button"
@@ -779,6 +782,7 @@ export function EvidenceReceipt({
 
   if (compact) {
     return (
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape closes the disclosure from anywhere within it
       <div className={`relative inline-block ${className}`} onKeyDown={handleKeyDown}>
         <button
           type="button"
