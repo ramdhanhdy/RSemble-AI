@@ -4,17 +4,24 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { EvidenceReceipt } from "./EvidenceReceipt";
-import type {
-  EligibilityDecision,
-  EvidenceIndexJob,
-  ModelConfigurationSnapshot,
-  Observation,
+import {
+  OBSERVATION_SCHEMA_VERSION,
+  type EligibilityDecision,
+  type ModelConfigurationSnapshot,
+  type Observation,
 } from "../lib/evidence/evidence-types";
-import { InMemoryEvidenceRepository } from "../lib/persistence/evidence-repository";
-import { OBSERVATION_SCHEMA_VERSION } from "../lib/evidence/evidence-types";
-import { CURRENT_EVIDENCE_RULE_VERSION } from "../lib/evidence/evidence-eligibility";
-
+import {
+  InMemoryEvidenceRepository,
+  type EvidenceIndexJob,
+} from "../lib/persistence/evidence-repository";
+import { observationIdFor } from "../lib/evidence/evidence-validation";
+import { EVIDENCE_RULE_VERSION } from "../lib/evidence/evidence-eligibility";
+import { canonicalizeModelConfiguration } from "../lib/evidence/model-configuration";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+
+const VALID_SHA = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const VALID_MC_ID = "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const VALID_OBS_ID = "obs:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 interface Harness {
   container: HTMLDivElement;
@@ -48,31 +55,31 @@ function cleanup(h: Harness) {
 }
 
 async function settle() {
-  await act(async () => {
-    await flush();
-  });
+  for (let i = 0; i < 5; i++) {
+    await act(async () => {
+      await flush();
+    });
+  }
 }
-
 afterEach(() => {
   document.body.innerHTML = "";
   vi.clearAllMocks();
 });
 
-// --- Fixtures -----------------------------------------------------------------
-
 function makeObservation(overrides: Partial<Observation> = {}): Observation {
+  const runId = overrides.runId ?? overrides.sourceResultId ?? "run_456";
   return {
-    id: "obs_test_123",
+    id: VALID_OBS_ID,
     sourceKind: "evaluation",
-    sourceResultId: "run_456",
+    sourceResultId: runId,
     executionLineageId: "lineage_789",
-    runId: "run_456",
+    runId,
     sourceTaskCellId: "cell_task_model",
     taskId: "task_sentiment_analysis",
     taskVersion: 2,
     taskInstanceId: "inst_001",
     taskFamilyId: "family_nlp",
-    modelConfigurationId: "cfg_gemini_pro",
+    modelConfigurationId: VALID_MC_ID,
     candidateAttemptId: "att_cand_01",
     assessmentRef: {
       judgeAttemptId: "att_judge_01",
@@ -89,21 +96,21 @@ function makeObservation(overrides: Partial<Observation> = {}): Observation {
         executedAt: 1700000000000,
       },
     },
-    protocolFingerprint: "proto_fp_abc123",
+    protocolFingerprint: VALID_SHA,
     rubricRef: { id: "rubric_accuracy", version: 1 },
     evaluatorSnapshot: {
       kind: "model_judge",
       providerId: "gemini",
       model: "gemini-1.5-pro",
       resolvedVersion: "002",
-      instructionDigest: "inst_dig_xyz",
+      instructionDigest: VALID_SHA,
       reasoningEffort: "medium",
       toolScaffoldSignature: null,
     },
     verifierSnapshot: {
       verifierRef: { id: "verifier_regex", version: 1 },
       kind: "exact_match",
-      configurationDigest: "ver_dig_123",
+      configurationDigest: VALID_SHA,
     },
     outcome: {
       judgeAccepted: true,
@@ -119,8 +126,8 @@ function makeObservation(overrides: Partial<Observation> = {}): Observation {
 
 function makeDecision(overrides: Partial<EligibilityDecision> = {}): EligibilityDecision {
   return {
-    observationId: "obs_test_123",
-    ruleVersion: CURRENT_EVIDENCE_RULE_VERSION,
+    observationId: VALID_OBS_ID,
+    ruleVersion: EVIDENCE_RULE_VERSION,
     status: "eligible",
     evidenceClass: "comparable",
     allowedUses: [
@@ -140,28 +147,27 @@ function makeDecision(overrides: Partial<EligibilityDecision> = {}): Eligibility
       "full_pair_coverage",
       "full_task_set_coverage",
     ],
-    comparabilityCohortId: "cohort_xyz_123",
+    comparabilityCohortId: VALID_SHA,
     decidedAt: 1700000000000,
     ...overrides,
   };
 }
-
 function makeModelConfig(
   overrides: Partial<ModelConfigurationSnapshot> = {},
 ): ModelConfigurationSnapshot {
-  return {
-    id: "cfg_gemini_pro",
+  const res = canonicalizeModelConfiguration({
     providerId: "gemini",
     requestedModel: "gemini-1.5-pro",
     resolvedModel: "gemini-1.5-pro-002",
     resolvedVersion: "002",
     reasoningRequested: "medium",
     reasoningEffective: "medium",
-    toolScaffoldSignature: null,
     runtimeSettings: { temperature: 0.7 },
-    observedFrom: 1700000000000,
-    observedTo: 1700000000000,
-    identityCompleteness: "exact",
+    observedAt: 1700000000000,
+  });
+  if (!res.ok) throw new Error(res.reason);
+  return {
+    ...res.snapshot,
     ...overrides,
   };
 }
@@ -171,7 +177,7 @@ function makeIndexJob(overrides: Partial<EvidenceIndexJob> = {}): EvidenceIndexJ
     sourceResultId: "run_456",
     sourceKind: "evaluation",
     status: "complete",
-    ruleVersion: CURRENT_EVIDENCE_RULE_VERSION,
+    ruleVersion: EVIDENCE_RULE_VERSION,
     sourceRevision: 1,
     updatedAt: 1700000000000,
     errorKind: null,
@@ -593,7 +599,7 @@ describe("EvidenceReceipt — Exact Task, Observation, and Record links", () => 
     const rubricLink = h.$("a[href*='/evaluations/rubrics/rubric_accuracy']");
     expect(rubricLink).toBeTruthy();
 
-    expect(h.container.textContent).toContain("obs_test_123");
+    expect(h.container.textContent).toContain(VALID_OBS_ID);
     expect(h.container.textContent).toContain("inst_001");
     cleanup(h);
   });
@@ -678,10 +684,18 @@ describe("EvidenceReceipt — Accessibility and screen-reader semantics", () => 
 describe("EvidenceReceipt — Asynchronous repository resolution", () => {
   it("resolves observation, decision, and model configuration from EvidenceRepository", async () => {
     const repo = new InMemoryEvidenceRepository();
-    const obs = makeObservation({ runId: "run_async_1", id: "obs_async_1" });
-    const decision = makeDecision({ observationId: "obs_async_1" });
-    const modelConfig = makeModelConfig({ id: "cfg_gemini_pro" });
-
+    const modelConfig = makeModelConfig();
+    const baseObs = makeObservation({
+      runId: "run_async_1",
+      modelConfigurationId: modelConfig.id,
+    });
+    const obs = {
+      ...baseObs,
+      id: observationIdFor(baseObs),
+    };
+    const decision = makeDecision({
+      observationId: obs.id,
+    });
     await repo.putModelConfiguration(modelConfig);
     await repo.putObservation(obs);
     await repo.putDecision(decision);
@@ -699,7 +713,7 @@ describe("EvidenceReceipt — Asynchronous repository resolution", () => {
 
     expect(h.container.textContent).toContain("Eligible");
     expect(h.container.textContent).toContain("Comparable");
-    expect(h.container.textContent).toContain("obs_async_1");
+    expect(h.container.textContent).toContain(obs.id);
     expect(h.container.textContent).toContain("gemini-1.5-pro");
     cleanup(h);
   });

@@ -33,7 +33,7 @@ import { createEvaluationRepository, type EvaluationRepository } from "./evaluat
 import { createFusionStudyRepository, type FusionStudyRepository } from "./fusion-study-repository";
 import { createTaskRepository, type TaskRepository } from "./task-repository";
 import { createTaskSetRepository, type TaskSetRepository } from "./task-set-repository";
-
+import { createEvidenceRepository, type EvidenceRepository } from "./evidence-repository";
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
@@ -42,6 +42,9 @@ export interface RepositoryContextValue {
   /** Optional so out-of-ownership test doubles keep typechecking. Published
    *  only after the database is ready; independent of taskMigrationError. */
   taskSetRepo?: TaskSetRepository | null;
+  /** Evidence derivation repository for Observations, Eligibility Decisions,
+   *  Model Configuration snapshots, and index jobs (spec §10, §12.1). */
+  evidenceRepo?: EvidenceRepository | null;
   /** Raw Dexie handle for infrastructure that composes repositories (execution
    *  lease, experiment unit of work). Null while storage is unavailable. */
   db: RSembleEvaluationDB | null;
@@ -60,6 +63,7 @@ export const RepositoryContext = createContext<RepositoryContextValue>({
   taskRepo: null,
   taskSetRepo: null,
   db: null,
+  evidenceRepo: null,
   storageState: "unavailable",
   taskMigrationError: null,
   retry: () => undefined,
@@ -83,6 +87,10 @@ export function useTaskRepository(): TaskRepository | null {
 
 export function useTaskSetRepository(): TaskSetRepository | null {
   return useContext(RepositoryContext).taskSetRepo ?? null;
+}
+
+export function useEvidenceRepository(): EvidenceRepository | null {
+  return useContext(RepositoryContext).evidenceRepo ?? null;
 }
 
 /** Read the bounded canonical Task migration failure, if Task catalog storage
@@ -172,6 +180,10 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     () => (repositoriesReady && handle ? createTaskSetRepository(handle.db) : null),
     [repositoriesReady, handle],
   );
+  const evidenceRepo = useMemo(
+    () => (repositoriesReady && handle ? createEvidenceRepository(handle.db) : null),
+    [repositoriesReady, handle],
+  );
 
   const value = useMemo<RepositoryContextValue>(
     () => ({
@@ -180,6 +192,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       fusionRepo,
       taskRepo,
       taskSetRepo,
+      evidenceRepo,
       db: handle?.db ?? null,
       storageState,
       taskMigrationError,
@@ -191,6 +204,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       fusionRepo,
       taskRepo,
       taskSetRepo,
+      evidenceRepo,
       handle,
       storageState,
       taskMigrationError,

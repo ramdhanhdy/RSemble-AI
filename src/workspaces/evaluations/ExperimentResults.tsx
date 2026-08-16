@@ -18,6 +18,7 @@ import {
   useEvaluationRepository,
   useTaskSetRepository,
 } from "../../lib/persistence/repository-context";
+import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
 import type { ModelSlot } from "../../studio-data";
@@ -49,10 +50,11 @@ import {
   type ExperimentRecoveryMessage,
 } from "./ExperimentRecoveryDialog";
 import { ExperimentAddModelDialog, type AddModelDialogMessage } from "./ExperimentAddModelDialog";
-
 export interface ExperimentResultsProps {
   experiment: ExperimentRecord;
   resolveRunRecord: (runId: string) => Promise<RunRecordV2 | null>;
+  /** Evidence derivation repository for receipts (spec §12.1). */
+  evidenceRepo?: EvidenceRepository | null;
   /** Terminal recovery handoff — retry incomplete tasks (Task 7). */
   controller?: ExperimentController | null;
   /** Model catalog shared with the suite editor (roster spec F1). */
@@ -96,6 +98,7 @@ function useMediaQuery(query: string): boolean {
 export function ExperimentResults({
   experiment,
   resolveRunRecord,
+  evidenceRepo: evidenceRepoProp,
   controller = null,
   models = [],
   availableProviderIds = [],
@@ -104,9 +107,17 @@ export function ExperimentResults({
   suiteName: suiteNameProp,
 }: ExperimentResultsProps): ReactElement {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
+  const [searchParams, setSearchParams] = useSearchParams();
   const evalRepo = useEvaluationRepository();
   const taskSetRepo = useTaskSetRepository();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [evidenceRepo, setEvidenceRepo] = useState<EvidenceRepository | null>(
+    evidenceRepoProp ?? null,
+  );
+  useEffect(() => {
+    if (evidenceRepoProp !== undefined) {
+      setEvidenceRepo(evidenceRepoProp);
+    }
+  }, [evidenceRepoProp]);
   const [runRecords, setRunRecords] = useState<ReadonlyMap<string, RunRecordV2> | null>(null);
   const [suiteName, setSuiteName] = useState<string | null>(
     taskSetNameProp ?? suiteNameProp ?? null,
@@ -889,6 +900,7 @@ export function ExperimentResults({
           runRecords={runRecords}
           repairablePlans={repairablePlans}
           onRepairRequest={recoveryEnabled ? handleRepairRequest : undefined}
+          evidenceRepo={evidenceRepo}
           page={matrixPage}
           onPageChange={handleMatrixPageChange}
         />
@@ -900,6 +912,7 @@ export function ExperimentResults({
           runRecords={runRecords}
           repairablePlans={repairablePlans}
           onRepairRequest={recoveryEnabled ? handleRepairRequest : undefined}
+          evidenceRepo={evidenceRepo}
         />
       )}
 

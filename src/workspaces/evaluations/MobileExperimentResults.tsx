@@ -21,8 +21,9 @@ import {
   formatAggregateMean,
 } from "../../lib/evaluations/experiment-aggregation";
 import { StatusMark } from "../../ui/StatusMark";
+import { EvidenceReceipt } from "../../ui/EvidenceReceipt";
 import { cellEvidenceLink, MISSING_CELL_DISPLAY, type RepairableCellPlans } from "./ResultMatrix";
-
+import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 export interface MobileExperimentResultsProps {
   aggregation: ExperimentAggregation;
   tasks: EvaluationTask[];
@@ -33,6 +34,8 @@ export interface MobileExperimentResultsProps {
   /** Recovery handoff — present only while this surface owns the lease; when
    *  provided, every missing row renders one action control (spec §11.1). */
   onRepairRequest?: (taskId: string, modelKey: string) => void;
+  /** Evidence derivation repository for receipt popovers (spec §12.1). */
+  evidenceRepo?: EvidenceRepository | null;
 }
 
 const ROW_CLASSES =
@@ -46,6 +49,7 @@ function MissingTaskRow({
   taskId,
   repairable,
   onRepairRequest,
+  evidenceRepo,
 }: {
   title: string;
   reason: MissingReason;
@@ -54,6 +58,7 @@ function MissingTaskRow({
   taskId: string;
   repairable: boolean;
   onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
+  evidenceRepo?: EvidenceRepository | null;
 }): ReactElement {
   const evidenceHref = runId ? `/runs/${runId}` : null;
   return (
@@ -62,6 +67,14 @@ function MissingTaskRow({
       <span className="flex items-center gap-2">
         <StatusMark status={MISSING_CELL_DISPLAY[reason].status} size={12} />
         <span className="text-xs text-text-secondary">{MISSING_CELL_DISPLAY[reason].text}</span>
+        <EvidenceReceipt
+          runId={runId}
+          taskId={taskId}
+          modelKey={modelKey}
+          missingReason={reason}
+          evidenceRepo={evidenceRepo}
+          compact
+        />
       </span>
       {onRepairRequest ? (
         <span className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -102,6 +115,7 @@ function TaskRow({
   repairable,
   onRepairRequest,
   runRecords,
+  evidenceRepo,
 }: {
   title: string;
   cell: CellState;
@@ -110,6 +124,7 @@ function TaskRow({
   repairable: boolean;
   onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
   runRecords: ReadonlyMap<string, RunRecordV2>;
+  evidenceRepo?: EvidenceRepository | null;
 }): ReactElement {
   if (cell.kind !== "scored") {
     return (
@@ -121,6 +136,7 @@ function TaskRow({
         taskId={taskId}
         repairable={repairable}
         onRepairRequest={onRepairRequest}
+        evidenceRepo={evidenceRepo}
       />
     );
   }
@@ -149,10 +165,25 @@ function TaskRow({
       ) : null}
     </span>
   );
+  const candidateId = cell.runId
+    ? runRecords.get(cell.runId)?.candidates.find((c) => c.modelKey === modelKey)?.candidateId ??
+      null
+    : null;
   const body = (
     <>
       <span className="truncate text-sm text-text">{title}</span>
-      {value}
+      <span className="flex items-center gap-1.5">
+        {value}
+        <EvidenceReceipt
+          runId={cell.runId}
+          attemptId={cell.attemptId}
+          taskId={taskId}
+          modelKey={modelKey}
+          candidateId={candidateId}
+          evidenceRepo={evidenceRepo}
+          compact
+        />
+      </span>
     </>
   );
   return href ? (
@@ -174,6 +205,7 @@ export function MobileExperimentResults({
   runRecords,
   repairablePlans,
   onRepairRequest,
+  evidenceRepo,
 }: MobileExperimentResultsProps): ReactElement {
   const [selectedKey, setSelectedKey] = useState<string>(aggregation.modelKeys[0] ?? "");
   const activeKey = aggregation.modelKeys.includes(selectedKey)
@@ -247,6 +279,7 @@ export function MobileExperimentResults({
                 repairable={repairablePlans?.get(taskId)?.has(activeKey) ?? false}
                 onRepairRequest={onRepairRequest}
                 runRecords={runRecords}
+                evidenceRepo={evidenceRepo}
               />
             </li>
           );

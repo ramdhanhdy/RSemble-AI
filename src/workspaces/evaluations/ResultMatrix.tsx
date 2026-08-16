@@ -29,8 +29,9 @@ import {
 import { rankScoreOf } from "../../lib/evaluations/evaluation-rubric";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
+import { EvidenceReceipt } from "../../ui/EvidenceReceipt";
 import type { CompoundRepairPlan } from "../../lib/evaluations/experiment-repair";
-
+import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 /** Planner plans by taskId → modelKey (spec §11.2). Shared with the mobile
  *  adaptation and the recovery toolbar. */
 export type RepairableCellPlans = ReadonlyMap<string, ReadonlyMap<string, CompoundRepairPlan>>;
@@ -46,6 +47,8 @@ export interface ResultMatrixProps {
   /** Recovery handoff — present only while this surface owns the lease; when
    *  provided, every missing cell renders one action control (spec §11.1). */
   onRepairRequest?: (taskId: string, modelKey: string) => void;
+  /** Evidence derivation repository for receipt popovers (spec §12.1). */
+  evidenceRepo?: EvidenceRepository | null;
   /** Initial 1-based page (clamped). Used by tests and deep links. */
   initialPage?: number;
   /** Controlled page (1-based) — the URL search param is the source of truth
@@ -107,6 +110,7 @@ function MissingCellContent({
   modelKey,
   repairable,
   onRepairRequest,
+  evidenceRepo,
 }: {
   reason: MissingReason;
   runId: string | null;
@@ -114,6 +118,7 @@ function MissingCellContent({
   modelKey: string;
   repairable: boolean;
   onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
+  evidenceRepo?: EvidenceRepository | null;
 }): ReactElement {
   const display = MISSING_CELL_DISPLAY[reason];
   const evidenceHref = runId ? `/runs/${runId}` : null;
@@ -122,6 +127,14 @@ function MissingCellContent({
       <span className="flex items-center gap-2">
         <StatusMark status={display.status} size={12} />
         <span className="text-xs text-text-secondary">{display.text}</span>
+        <EvidenceReceipt
+          runId={runId}
+          taskId={taskId}
+          modelKey={modelKey}
+          missingReason={reason}
+          evidenceRepo={evidenceRepo}
+          compact
+        />
       </span>
       {onRepairRequest ? (
         <span className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -162,6 +175,7 @@ function CellContent({
   taskId,
   repairable,
   onRepairRequest,
+  evidenceRepo,
 }: {
   cell: CellState;
   modelKey: string;
@@ -170,6 +184,7 @@ function CellContent({
   taskId: string;
   repairable: boolean;
   onRepairRequest: ((taskId: string, modelKey: string) => void) | undefined;
+  evidenceRepo?: EvidenceRepository | null;
 }): ReactElement {
   if (cell.kind === "scored") {
     const href = cellEvidenceLink(
@@ -212,12 +227,29 @@ function CellContent({
         ) : null}
       </>
     );
-    return href ? (
-      <Link to={href} className={`${CELL_LINK_CLASSES}${rowBest ? " font-bold" : ""}`}>
-        {content}
-      </Link>
-    ) : (
-      <span className={CELL_LINK_CLASSES}>{content}</span>
+    const candidateId = cell.runId
+      ? runRecords.get(cell.runId)?.candidates.find((c) => c.modelKey === modelKey)?.candidateId ??
+        null
+      : null;
+    return (
+      <div className="flex items-center gap-1.5">
+        {href ? (
+          <Link to={href} className={`${CELL_LINK_CLASSES}${rowBest ? " font-bold" : ""}`}>
+            {content}
+          </Link>
+        ) : (
+          <span className={CELL_LINK_CLASSES}>{content}</span>
+        )}
+        <EvidenceReceipt
+          runId={cell.runId}
+          attemptId={cell.attemptId}
+          taskId={taskId}
+          modelKey={modelKey}
+          candidateId={candidateId}
+          evidenceRepo={evidenceRepo}
+          compact
+        />
+      </div>
     );
   }
   return (
@@ -228,6 +260,7 @@ function CellContent({
       modelKey={modelKey}
       repairable={repairable}
       onRepairRequest={onRepairRequest}
+      evidenceRepo={evidenceRepo}
     />
   );
 }
@@ -239,6 +272,7 @@ export function ResultMatrix({
   runRecords,
   repairablePlans,
   onRepairRequest,
+  evidenceRepo,
   initialPage = 1,
   page,
   onPageChange,
@@ -248,7 +282,6 @@ export function ResultMatrix({
   const winners = new Set(aggregation.winnerKeys);
   const showNoWinnerCopy =
     aggregation.winnerKeys.length === 0 && aggregation.models.some((m) => !m.complete);
-
   // Large-suite paging (spec §12.5): 50 task rows per page, stable suite
   // order, page state clamped; hidden pages never mount.
   const totalTasks = aggregation.taskIds.length;
@@ -363,6 +396,7 @@ export function ResultMatrix({
                           taskId={taskId}
                           repairable={repairablePlans?.get(taskId)?.has(modelKey) ?? false}
                           onRepairRequest={onRepairRequest}
+                          evidenceRepo={evidenceRepo}
                         />
                       </td>
                     );
