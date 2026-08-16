@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T17:15:02.737Z",
+  "generatedAt": "2026-08-16T03:29:14.520Z",
   "baseUrl": "http://localhost:5176/",
   "probes": [
     {
@@ -13,7 +13,7 @@
     {
       "name": "compare-probe-ready",
       "ready": true,
-      "text": "Ready · 2ms",
+      "text": "Ready · 3ms",
       "pass": true,
       "reason": "mocked provider stream yields a Ready probe result"
     },
@@ -75,7 +75,7 @@
     {
       "name": "recovery-cell-completed",
       "anyRepairableCellLeft": 49,
-      "t1Row": "Task t14.4▲4.2",
+      "t1Row": "Task t14.24.4▲",
       "pass": true,
       "reason": "repair execution selects newly judged evidence and clears the missing t1 cell"
     },
@@ -107,13 +107,6 @@
       "reason": "page five mounts <=50 rows with the correct range"
     },
     {
-      "name": "ledger-attempt-history",
-      "attemptRows": 2,
-      "hasOldFailed": true,
-      "pass": true,
-      "reason": "expanding the disclosure mounts attempt rows including historical failures"
-    },
-    {
       "name": "mobile-250-pagination",
       "cardsMounted": 50,
       "rangeText": "1–50 of 250",
@@ -134,16 +127,6 @@
       "overflowX": false,
       "keyboardOpened": true,
       "tabTrapped": true,
-      "trapDetail": {
-        "count": 24,
-        "lastTag": "BUTTON",
-        "lastLabel": "Done",
-        "lastTabindex": null,
-        "afterTag": "BUTTON",
-        "afterLabel": "Close connections",
-        "afterInDialog": true,
-        "dialogCount": 1
-      },
       "pass": true,
       "reason": "keyboard opens the dialog, focus enters it, and Tab remains trapped without horizontal overflow"
     },
@@ -179,7 +162,6 @@
     "qa-failed-repair.png",
     "qa-ledger-250-page1.png",
     "qa-ledger-250-page5.png",
-    "qa-ledger-history-expanded.png",
     "qa-mobile-250.png",
     "qa-mobile-250-page2.png",
     "qa-dialog.png",
