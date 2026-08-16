@@ -29,6 +29,8 @@ function cohortInput(overrides: Partial<ComparabilityCohortInput> = {}): Compara
     taskInstanceId: "inst-1",
     rubricRef: { id: "rub-1", version: 3 },
     verifierRef: null,
+    verifierKind: null,
+    verifierConfigurationDigest: null,
     protocolFingerprint: FP,
     responseMode: "json",
     evaluator: {
@@ -87,6 +89,8 @@ describe("cohort fingerprint", () => {
       responseMode: a.responseMode,
       protocolFingerprint: a.protocolFingerprint,
       verifierRef: a.verifierRef,
+      verifierKind: a.verifierKind,
+      verifierConfigurationDigest: a.verifierConfigurationDigest,
       rubricRef: a.rubricRef,
       taskInstanceId: a.taskInstanceId,
       taskVersion: a.taskVersion,
@@ -102,9 +106,11 @@ describe("split dimensions", () => {
     { name: "task identity", override: { taskId: "task-2" } },
     { name: "task version", override: { taskVersion: 3 } },
     { name: "task instance", override: { taskInstanceId: "inst-2" } },
+    { name: "verifier kind", override: { verifierKind: "exact_match" } },
+    { name: "verifier configuration", override: { verifierConfigurationDigest: `sha256:${"e".repeat(64)}` } },
+    { name: "verifier contract", override: { verifierRef: { id: "ver-1", version: 1 } } },
     { name: "rubric", override: { rubricRef: { id: "rub-2", version: 1 } } },
     { name: "rubric absence", override: { rubricRef: null } },
-    { name: "verifier contract", override: { verifierRef: { id: "ver-1", version: 1 } } },
     { name: "protocol fingerprint", override: { protocolFingerprint: `sha256:${"b".repeat(64)}` } },
     { name: "response mode", override: { responseMode: "text" } },
     {
@@ -170,5 +176,24 @@ describe("never pool", () => {
     const b = buildComparabilityCohort(cohortInput({ taskInstanceId: "inst-2" })).id;
     expect(cohortsComparable(a, a)).toBe(true);
     expect(cohortsComparable(a, b)).toBe(false);
+  });
+
+  it("splits same-version verifiers when kind or configuration differ", () => {
+    const ref = { id: "v", version: 1 };
+    const aInput = cohortInput({
+      verifierRef: ref,
+      verifierKind: "exact_match",
+      verifierConfigurationDigest: `sha256:${"e".repeat(64)}`,
+    });
+    const bInput = cohortInput({
+      verifierRef: ref,
+      verifierKind: "unit_tests",
+      verifierConfigurationDigest: `sha256:${"f".repeat(64)}`,
+    });
+    const a = buildComparabilityCohort(aInput);
+    const b = buildComparabilityCohort(bInput);
+    expect(a.id).not.toBe(b.id);
+    expect(cohortsComparable(a.id, b.id)).toBe(false);
+    expect(cohortSplitReasons(aInput, bInput)).toHaveLength(2);
   });
 });

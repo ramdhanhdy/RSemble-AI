@@ -17,6 +17,7 @@
 // =============================================================================
 
 import { canonicalJsonString, hashArtifactContent } from "../evaluations/protocol-fingerprint";
+import type { VerificationKind } from "../evaluations/evaluation-types";
 import type { VersionRef } from "../tasks/task-types";
 import type { EvaluatorSnapshot } from "./evidence-types";
 
@@ -26,6 +27,10 @@ export interface ComparabilityCohortInput {
   taskInstanceId: string;
   rubricRef: VersionRef | null;
   verifierRef: VersionRef | null;
+  /** Verifier contract kind (spec §9); null when no verifier is declared. */
+  verifierKind: VerificationKind | null;
+  /** Canonical serialization hash of the verifier configuration; null when absent. */
+  verifierConfigurationDigest: string | null;
   protocolFingerprint: string;
   /** Expected response contract format (e.g. "json", "text"); null when unknown. */
   responseMode: string | null;
@@ -58,6 +63,8 @@ export function canonicalCohortJson(input: ComparabilityCohortInput): string {
     taskInstanceId: input.taskInstanceId,
     rubricRef: input.rubricRef,
     verifierRef: input.verifierRef,
+    verifierKind: input.verifierKind,
+    verifierConfigurationDigest: input.verifierConfigurationDigest,
     protocolFingerprint: input.protocolFingerprint,
     responseMode: input.responseMode,
     evaluator: {
@@ -134,6 +141,16 @@ export function cohortSplitReasons(
     `Verifier contract differs (${fmtVersionRef(a.verifierRef)} vs ${fmtVersionRef(b.verifierRef)})`,
     fmtVersionRef(a.verifierRef),
     fmtVersionRef(b.verifierRef),
+  );
+  push(
+    `Verifier kind differs (${JSON.stringify(a.verifierKind)} vs ${JSON.stringify(b.verifierKind)})`,
+    a.verifierKind,
+    b.verifierKind,
+  );
+  push(
+    `Verifier configuration differs (${fmtNullable(a.verifierConfigurationDigest)} vs ${fmtNullable(b.verifierConfigurationDigest)})`,
+    a.verifierConfigurationDigest,
+    b.verifierConfigurationDigest,
   );
   push("Protocol fingerprint differs", a.protocolFingerprint, b.protocolFingerprint);
   push(
