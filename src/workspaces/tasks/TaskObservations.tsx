@@ -99,6 +99,17 @@ export function TaskObservations({
   );
   const [refreshIndex, setRefreshIndex] = useState<number>(0);
 
+  // Synchronously reset state during render when taskId changes to avoid leaking stale data
+  const [prevTaskId, setPrevTaskId] = useState(taskId);
+  if (prevTaskId !== taskId) {
+    setPrevTaskId(taskId);
+    setObservations([]);
+    setDecisions(new Map());
+    setModelConfigs(new Map());
+    setLoading(true);
+    setError(null);
+  }
+
   // Read filter state from URL search params
   const modelFilter = searchParams.get("obs_model") ?? "";
   const classFilter = (searchParams.get("obs_class") as EvidenceClass) || "";
