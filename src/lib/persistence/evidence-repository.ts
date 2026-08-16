@@ -205,6 +205,35 @@ function validateJob(job: EvidenceIndexJob): void {
   if (!Number.isFinite(job.updatedAt) || job.updatedAt < 0) {
     throw new StorageError("validation", "updatedAt must be a non-negative epoch ms.");
   }
+  if (job.errorKind !== null && typeof job.errorKind !== "string") {
+    throw new StorageError("validation", "errorKind must be a string or null.");
+  }
+  if (job.errorMessage !== null && typeof job.errorMessage !== "string") {
+    throw new StorageError("validation", "errorMessage must be a string or null.");
+  }
+  const summary = job.summary as Record<string, unknown> | null;
+  if (summary !== null) {
+    if (typeof summary !== "object" || Array.isArray(summary)) {
+      throw new StorageError("validation", "summary must be an EvidenceIndexJobSummary or null.");
+    }
+    for (const field of ["observationCount", "gapCount", "limitationCount"]) {
+      const value = summary[field];
+      if (!Number.isInteger(value) || (value as number) < 0) {
+        throw new StorageError("validation", `summary.${field} must be a non-negative integer.`);
+      }
+    }
+    if (
+      !Array.isArray(summary.integrityIssues) ||
+      !summary.integrityIssues.every((issue) => typeof issue === "string")
+    ) {
+      throw new StorageError("validation", "summary.integrityIssues must be an array of strings.");
+    }
+  }
+  const prohibited: string[] = [];
+  collectProhibitedFieldPaths(job, "", prohibited);
+  if (prohibited.length > 0) {
+    throw new StorageError("validation", `Index job carries prohibited content: ${prohibited[0]}`);
+  }
 }
 
 /**

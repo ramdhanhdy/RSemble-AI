@@ -25,6 +25,7 @@ import {
   createEvidenceRepository,
   InMemoryEvidenceRepository,
   type EvidenceIndexJob,
+  type EvidenceIndexJobSummary,
   type EvidenceRepository,
 } from "./evidence-repository";
 import { canonicalizeModelConfiguration } from "../evidence/model-configuration";
@@ -431,6 +432,7 @@ function runContract(name: string, makeHarness: RepoFactory) {
 
       it("lists jobs by status", async () => {
         const { repo } = harness;
+
         await repo.putIndexJob(makeJob({ sourceResultId: "run-1" }));
         await repo.putIndexJob(makeJob({ sourceResultId: "run-2", status: "complete" }));
         await repo.putIndexJob(
@@ -441,6 +443,51 @@ function runContract(name: string, makeHarness: RepoFactory) {
         const errored = await repo.listIndexJobs({ status: "error" });
         expect(errored).toHaveLength(1);
         expect(errored[0].errorKind).toBe("unavailable");
+      });
+
+      it("rejects jobs with non-string secret-bearing error fields", async () => {
+        const { repo } = harness;
+        const secretMessage = {
+          ...makeJob(),
+          errorMessage: { apiKey: "sk-x" } as unknown as string,
+        };
+        await expect(repo.putIndexJob(secretMessage)).rejects.toBeInstanceOf(StorageError);
+        const err = await repo.putIndexJob(secretMessage).catch((e) => e);
+        expect((err as StorageError).kind).toBe("validation");
+        await expect(
+          repo.putIndexJob({
+            ...makeJob(),
+            errorKind: { apiKey: "sk-x" } as unknown as string,
+          }),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(repo.getIndexJob("run-a")).resolves.toBeNull();
+      });
+
+      it("rejects summaries carrying prohibited keys or malformed counts", async () => {
+        const { repo } = harness;
+        await expect(
+          repo.putIndexJob({
+            ...makeJob(),
+            summary: {
+              observationCount: 1,
+              gapCount: 0,
+              limitationCount: 0,
+              integrityIssues: [],
+              apiKey: "sk-y",
+            } as unknown as EvidenceIndexJobSummary,
+          }),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.putIndexJob({
+            ...makeJob(),
+            summary: {
+              observationCount: "one",
+              gapCount: 0,
+              limitationCount: 0,
+              integrityIssues: [],
+            } as unknown as EvidenceIndexJobSummary,
+          }),
+        ).rejects.toBeInstanceOf(StorageError);
       });
     });
 
