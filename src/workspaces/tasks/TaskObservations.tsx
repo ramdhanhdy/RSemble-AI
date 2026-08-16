@@ -900,7 +900,15 @@ export function TaskObservations({
                         const hasPartialIdentity = cfg?.identityCompleteness !== "exact";
                         const isLegacyLimited = dec?.reasonCodes?.includes("source_legacy_limited");
 
-                        const runUrl = `/runs/${obs.sourceResultId}?candidate=${obs.candidateAttemptId}&attempt=${obs.assessmentRef.judgeAttemptId ?? ""}`;
+                        const runParams = new URLSearchParams();
+                        if (obs.candidateAttemptId) {
+                          runParams.set("candidate", obs.candidateAttemptId);
+                        }
+                        if (obs.assessmentRef?.judgeAttemptId) {
+                          runParams.set("attempt", obs.assessmentRef.judgeAttemptId);
+                        }
+                        const runQuery = runParams.toString();
+                        const runUrl = `/runs/${encodeURIComponent(obs.sourceResultId)}${runQuery ? `?${runQuery}` : ""}`;
                         const rubricUrl = obs.rubricRef?.id
                           ? `/evaluations/rubrics/${obs.rubricRef.id}`
                           : null;
