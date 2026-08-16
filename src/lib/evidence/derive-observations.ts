@@ -592,6 +592,18 @@ function deriveCellObservation(input: DeriveCellInput): DeriveCellResult {
 
 export interface DerivationQueueOptions {
   scheduleDelayMs?: number;
+  /**
+   * Running jobs whose marker is at or past this age (updatedAt +
+   * staleRunningTimeoutMs <= now) are considered stranded by a crashed tab
+   * and recovered to "queued". Fresh markers (active owners) are never
+   * stolen. Default 2 minutes.
+   */
+  staleRunningTimeoutMs?: number;
+  /**
+   * Cadence at which the running marker is refreshed while deriving, so an
+   * active owner stays fresh past the stale timeout. Default 30 seconds.
+   */
+  heartbeatMs?: number;
 }
 
 export interface DrainSummary {
@@ -627,8 +639,22 @@ export function createDerivationQueue(
 ): DerivationQueue {
   const now = deps.now ?? (() => Date.now());
   const scheduleDelayMs = options.scheduleDelayMs ?? 0;
+  const staleRunningTimeoutMs = options.staleRunningTimeoutMs ?? 120_000;
+  const heartbeatMs = options.heartbeatMs ?? 30_000;
   let disposed = false;
   let chain: Promise<void> = Promise.resolve();
+
+  /** Re-queue jobs stranded in "running" by a crashed tab (exact once). */
+  async function recoverStale(): Promise<void> {
+    try {
+      await deps.evidenceRepo.recoverStaleIndexJobs({
+        staleTimeoutMs: staleRunningTimeoutMs,
+        now: now(),
+      });
+    } catch {
+      // Contained: the next drain/enqueue pass retries recovery.
+    }
+  }
 
   async function processOne(): Promise<{ handled: true; ok: boolean } | { handled: false }> {
     const queued = await deps.evidenceRepo.listIndexJobs({ status: "queued" });
@@ -645,7 +671,24 @@ export function createDerivationQueue(
       updatedAt: now(),
     });
     if (running === "unchanged") return { handled: false };
-    const result = await deriveObservationsForSource(deps, ref);
+
+    // Heartbeat: refresh the running marker so a concurrent recovery never
+    // steals an active owner. Containment is absolute; the CAS on the final
+    // complete/error write keeps stale heartbeats from regressing anything.
+    const heartbeat =
+      heartbeatMs > 0
+        ? setInterval(() => {
+            void deps.evidenceRepo
+              .putIndexJob({ ...job, status: "running", updatedAt: now() })
+              .catch(() => {});
+          }, heartbeatMs)
+        : null;
+    let result;
+    try {
+      result = await deriveObservationsForSource(deps, ref);
+    } finally {
+      if (heartbeat !== null) clearInterval(heartbeat);
+    }
     if (result.status === "complete") {
       await deps.evidenceRepo.putIndexJob({
         ...job,
@@ -683,6 +726,7 @@ export function createDerivationQueue(
       await delay;
       if (disposed) return;
       try {
+        await recoverStale();
         let done = false;
         while (!disposed && !done) {
           const outcome = await processOne();
@@ -719,6 +763,7 @@ export function createDerivationQueue(
       await chain;
       const summary: DrainSummary = { processed: 0, completed: 0, failed: 0 };
       try {
+        await recoverStale();
         let outcome = await processOne();
         while (outcome.handled) {
           summary.processed += 1;

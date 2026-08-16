@@ -155,7 +155,18 @@ export interface EvidenceRepository {
     status?: EvidenceIndexJobStatus;
     sourceKind?: ObservationSourceKind;
   }): Promise<EvidenceIndexJob[]>;
-
+  /**
+   * Deterministic stale-running recovery: re-queues jobs stranded in
+   * "running" whose marker is at or past the stale boundary
+   * (updatedAt + staleTimeoutMs <= now). Runs inside one storage transaction
+   * so concurrent recoveries serialize and each stranded job is recovered
+   * exactly once per occurrence; fresh markers (active owners) are never
+   * stolen. Returns recovered sourceResultIds in deterministic order.
+   */
+  recoverStaleIndexJobs(opts: {
+    staleTimeoutMs: number;
+    now: number;
+  }): Promise<string[]>;
   // --- Executed verifier outcomes ----------------------------------------------
   /** Persist one executed verifier outcome, idempotent under the composite
    *  [runId+taskId+modelKey+executedAt] id. A non-identical outcome at the
@@ -640,6 +651,35 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
     }
   }
 
+  async function recoverStaleIndexJobs(opts: {
+    staleTimeoutMs: number;
+    now: number;
+  }): Promise<string[]> {
+    try {
+      db.assertWritable();
+      if (!Number.isFinite(opts.staleTimeoutMs) || opts.staleTimeoutMs < 0) {
+        throw new StorageError("validation", "staleTimeoutMs must be a non-negative number.");
+      }
+      if (!Number.isFinite(opts.now)) {
+        throw new StorageError("validation", "now must be a finite number.");
+      }
+      return await db.transaction("rw", db.evidenceIndexJobs, async () => {
+        const rows = await db.evidenceIndexJobs.toArray();
+        const recovered: string[] = [];
+        for (const row of rows) {
+          if (row.status !== "running") continue;
+          if (row.updatedAt + opts.staleTimeoutMs > opts.now) continue;
+          await db.evidenceIndexJobs.put({ ...row, status: "queued" });
+          recovered.push(row.sourceResultId);
+        }
+        return recovered.sort((a, b) => a.localeCompare(b));
+      });
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+
   async function putVerifierOutcome(
     outcome: ExecutedVerifierOutcome,
   ): Promise<"created" | "existing"> {
@@ -720,6 +760,7 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
     putIndexJob,
     getIndexJob,
     listIndexJobs,
+    recoverStaleIndexJobs,
     putVerifierOutcome,
     listVerifierOutcomes,
   };
@@ -994,5 +1035,25 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
       .sort(
         (a, b) => a.updatedAt - b.updatedAt || a.sourceResultId.localeCompare(b.sourceResultId),
       );
+  }
+
+  async recoverStaleIndexJobs(opts: {
+    staleTimeoutMs: number;
+    now: number;
+  }): Promise<string[]> {
+    if (!Number.isFinite(opts.staleTimeoutMs) || opts.staleTimeoutMs < 0) {
+      throw new StorageError("validation", "staleTimeoutMs must be a non-negative number.");
+    }
+    if (!Number.isFinite(opts.now)) {
+      throw new StorageError("validation", "now must be a finite number.");
+    }
+    const recovered: string[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.status !== "running") continue;
+      if (job.updatedAt + opts.staleTimeoutMs > opts.now) continue;
+      job.status = "queued";
+      recovered.push(job.sourceResultId);
+    }
+    return recovered.sort((a, b) => a.localeCompare(b));
   }
 }
