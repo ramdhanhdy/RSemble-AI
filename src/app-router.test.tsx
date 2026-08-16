@@ -642,22 +642,23 @@ describe("AppRouter — canonical Task routes (spec §7)", () => {
     cleanup(h);
   });
 
-  it("direct-loads /tasks/:taskId and renders the detail shell", async () => {
+  it("direct-loads /tasks/:taskId and renders the detail shell with observations section", async () => {
     const taskRepo = new InMemoryTaskRepository();
     await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
     const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1"], taskRepo });
     expect(h.$("[data-task-detail='t-1']")).toBeTruthy();
+    expect(h.$("[data-task-observations-section]")).toBeTruthy();
     cleanup(h);
   });
 
-  it("direct-loads /tasks/:taskId/versions/:version and renders the version shell", async () => {
+  it("direct-loads /tasks/:taskId/versions/:version and renders the version shell with observations section", async () => {
     const taskRepo = new InMemoryTaskRepository();
     await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
     const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/1"], taskRepo });
     expect(h.$("[data-task-version='t-1@1']")).toBeTruthy();
+    expect(h.$("[data-task-observations-section]")).toBeTruthy();
     cleanup(h);
   });
-
   it("renders an explicit not-found state for an unknown task id (no silent redirect)", async () => {
     const taskRepo = new InMemoryTaskRepository();
     const h = await renderRouterAsync({ initialEntries: ["/tasks/no-such-task"], taskRepo });

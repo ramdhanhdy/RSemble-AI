@@ -20,6 +20,7 @@ import { Link } from "react-router-dom";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
+import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 import { useEvaluationRepository } from "../../lib/persistence/repository-context";
 
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
@@ -28,7 +29,7 @@ import { TaskFacetEditor } from "./TaskFacetEditor";
 import { TaskFamilyRegistry } from "./TaskFamilyRegistry";
 import { TaskFamilyAssignmentSection } from "./TaskFamilyAssignment";
 import { TaskReferencesSection } from "./TaskReferencesSection";
-
+import { TaskObservations } from "./TaskObservations";
 function StorageUnavailable() {
   return (
     <div
@@ -164,7 +165,15 @@ export function TaskNewRoute({ repo }: { repo: TaskRepository | null }) {
 
 /** Task detail editor: stable identity header plus the draft/commit surface.
  *  Archived Tasks stay routable here and expose restore (spec §4.5). */
-export function TaskDetailRoute({ repo, taskId }: { repo: TaskRepository | null; taskId: string }) {
+export function TaskDetailRoute({
+  repo,
+  taskId,
+  evidenceRepo,
+}: {
+  repo: TaskRepository | null;
+  taskId: string;
+  evidenceRepo?: EvidenceRepository | null;
+}) {
   const evalRepo = useEvaluationRepository();
 
   const { state, retry } = useTaskRecord(repo, taskId);
@@ -257,6 +266,7 @@ export function TaskDetailRoute({ repo, taskId }: { repo: TaskRepository | null;
           </section>
 
           <TaskReferencesSection taskRepo={repo} evalRepo={evalRepo} task={record} />
+          <TaskObservations taskId={record.id} evidenceRepo={evidenceRepo} />
         </>
       ) : null}
     </div>
@@ -271,10 +281,12 @@ export function TaskVersionRoute({
   repo,
   taskId,
   version,
+  evidenceRepo,
 }: {
   repo: TaskRepository | null;
   taskId: string;
   version: number;
+  evidenceRepo?: EvidenceRepository | null;
 }) {
   const validVersion = Number.isFinite(version) && Number.isInteger(version) && version > 0;
   const { state, retry } = useTaskRecord(repo, validVersion ? taskId : "");
@@ -360,6 +372,7 @@ export function TaskVersionRoute({
         <BackToCatalog />
       </header>
       <TaskVersionView version={v} latestVersion={latestVersion} />
+      <TaskObservations taskId={taskId} version={v.version} evidenceRepo={evidenceRepo} />
     </div>
   );
 }
