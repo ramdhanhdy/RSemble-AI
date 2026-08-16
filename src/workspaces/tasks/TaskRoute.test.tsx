@@ -233,13 +233,13 @@ describe("TaskDetailRoute — historical references and origin (spec §7.2)", ()
     cleanup(h);
   });
 
-  it("keeps future Compare and Observation sections absent, not placeholders", async () => {
+  it("renders observations section and keeps future Compare section absent, not placeholders", async () => {
     const repo = new InMemoryTaskRepository();
     await seedTask(repo, "t-1", "No future sections");
     const h = render(<TaskDetailRoute repo={repo} taskId="t-1" />);
     await settle();
     expect(h.$("[data-task-compare-section]")).toBeNull();
-    expect(h.$("[data-task-observations-section]")).toBeNull();
+    expect(h.$("[data-task-observations-section]")).toBeTruthy();
     const text = h.container.textContent ?? "";
     expect(text).not.toMatch(/coming soon/i);
     expect(text).not.toMatch(/placeholder/i);
