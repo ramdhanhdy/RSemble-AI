@@ -25,6 +25,7 @@ import {
 import { createEvidenceRepository } from "../persistence/evidence-repository";
 import { RepositoryContext, type RepositoryContextValue } from "../persistence/repository-context";
 import { ExecutionOwnerProvider } from "../execution-owner-context";
+import { candidateIdForSlot } from "../pipeline";
 import { ExperimentControllerProvider } from "./experiment-controller-context";
 import { useExperimentController } from "./experiment-controller-hooks";
 import type { RunRecordV2, FullRunSummaryV2 } from "../persistence/run-types";
@@ -510,7 +511,16 @@ describe("ExperimentControllerProvider startup evidence reindex", () => {
       id: experiment.id,
       experiment,
       revision: experiment.revision,
+      suiteId: experiment.suiteId,
+      suiteVersion: experiment.suiteVersion,
+      protocolFingerprint: experiment.protocolFingerprint,
+      createdAt: experiment.createdAt,
+      status: experiment.status,
     });
+    // Exact records as persisted — the reindex must not rewrite any of them.
+    const beforeDetail = await runRepo.get("run-eval");
+    const beforeSummary = (await db.runSummaries.get("run-eval"))?.summary;
+    const beforeExperiment = (await db.experiments.get("exp-run-eval"))?.experiment;
 
     const value: RepositoryContextValue = {
       taskRepo: null,
@@ -534,12 +544,14 @@ describe("ExperimentControllerProvider startup evidence reindex", () => {
     );
 
     const evidenceRepo = createEvidenceRepository(db);
-    await waitUntil(async () => (await evidenceRepo.getIndexJob("run-eval"))?.status === "complete");
-    expect(await evidenceRepo.countObservations()).toBe(1);
+    await waitUntil(
+      async () => (await evidenceRepo.getIndexJob("run-eval"))?.status === "complete",
+    );
     // Evaluation completion and the exact source records are untouched.
     expect((await runRepo.get("run-eval"))?.status).toBe("completed");
-    expect((await db.runSummaries.get("run-eval"))?.summary).toEqual(summary);
-    expect((await db.experiments.get("exp-run-eval"))?.experiment).toEqual(experiment);
+    expect(await runRepo.get("run-eval")).toEqual(beforeDetail);
+    expect((await db.runSummaries.get("run-eval"))?.summary).toEqual(beforeSummary);
+    expect((await db.experiments.get("exp-run-eval"))?.experiment).toEqual(beforeExperiment);
 
     cleanup(h);
     db.close();

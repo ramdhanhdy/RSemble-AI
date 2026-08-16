@@ -13,6 +13,7 @@
 // =============================================================================
 
 import "fake-indexeddb/auto";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   REINDEX_LEASE_KEY,
   createDexieReindexEnumerator,
@@ -25,6 +26,8 @@ import {
   type ReindexSource,
   type ReindexSourceEnumerator,
 } from "./evidence-reindex";
+import { RSembleEvaluationDB } from "./database";
+import { InMemoryEvidenceRepository, type EvidenceRepository } from "./evidence-repository";
 import type { EvaluationSourceResolver } from "../evidence/derive-observations";
 import type { ExperimentRecord } from "../evaluations/evaluation-types";
 import type { EvaluationObservation } from "../evaluations/fusion-study-types";
@@ -821,7 +824,7 @@ describe("createEvidenceIndexingRuntime", () => {
     return db;
   }
 
-  function summaryRowFor(run: RunRecordV2, experimentId: string): {
+  function summaryRowFor(run: RunRecordV2): {
     kind: "full";
     summary: FullRunSummaryV2;
     id: string;
@@ -865,7 +868,8 @@ describe("createEvidenceIndexingRuntime", () => {
       status: run.status,
       mode: run.mode,
       sourceKind: run.source.kind,
-      sourceProtocolFingerprint: run.source.kind === "experiment" ? run.source.protocolFingerprint : null,
+      sourceProtocolFingerprint:
+        run.source.kind === "experiment" ? run.source.protocolFingerprint : null,
       sourceExperimentTaskAttemptId:
         run.source.kind === "experiment" ? run.source.experimentTaskAttemptId : null,
       modelKeys: run.candidates.map((c) => c.modelKey),
@@ -885,8 +889,17 @@ describe("createEvidenceIndexingRuntime", () => {
       createdAt: run.createdAt,
       status: run.status,
     });
-    await d.runSummaries.put(summaryRowFor(run, experiment.id));
-    await d.experiments.put({ id: experiment.id, experiment, revision: experiment.revision });
+    await d.runSummaries.put(summaryRowFor(run));
+    await d.experiments.put({
+      id: experiment.id,
+      experiment,
+      revision: experiment.revision,
+      suiteId: experiment.suiteId,
+      suiteVersion: experiment.suiteVersion,
+      protocolFingerprint: experiment.protocolFingerprint,
+      createdAt: experiment.createdAt,
+      status: experiment.status,
+    });
     return { run, experiment };
   }
 
@@ -974,7 +987,7 @@ describe("createEvidenceIndexingRuntime", () => {
       createdAt: bumped.createdAt,
       status: bumped.status,
     });
-    await d.runSummaries.put(summaryRowFor(bumped, "exp-run-a"));
+    await d.runSummaries.put(summaryRowFor(bumped));
     await runtime.derivationQueue.enqueue({
       sourceKind: "evaluation",
       sourceResultId: bumped.id,
@@ -1012,7 +1025,7 @@ describe("createEvidenceIndexingRuntime", () => {
     const d = await openDb();
     await seedSource(d);
     const meta = createDexieReindexMetaStore(d);
-    await meta.tryAcquireLease(REINDEX_LEASE_KEY, "other-tab", 60_000, 0);
+    await meta.tryAcquireLease(REINDEX_LEASE_KEY, "other-tab", Number.MAX_SAFE_INTEGER, 0);
     const runtime = runtimeFor(d);
     const result = await runtime.reindex();
     expect(result).toMatchObject({ skipped: true, reason: "lease-held" });

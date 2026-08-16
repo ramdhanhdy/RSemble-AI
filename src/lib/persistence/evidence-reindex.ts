@@ -28,19 +28,22 @@
 // =============================================================================
 
 import { classifyStorageError, type RSembleEvaluationDB } from "./database";
-import { type EvidenceRepository } from "./evidence-repository";
+import { createEvidenceRepository, type EvidenceRepository } from "./evidence-repository";
 import { EVIDENCE_RULE_VERSION } from "../evidence/evidence-eligibility";
 import {
+  createDerivationQueue,
+  createRepositoryVerifierResolver,
   deriveObservationsForSource,
+  type DerivationQueue,
+  type DerivationQueueOptions,
   type DerivationSourceRef,
   type EvaluationSourceResolver,
   type ModelConfigurationResolver,
   type TaskIdentityResolver,
   type VerifierOutcomeResolver,
 } from "../evidence/derive-observations";
-import type { ObservationSourceKind } from "../evidence/evidence-types";
 import type { RunStatus, RunSummary } from "./run-types";
-// --- Source enumeration ----------------------------------------------------------
+import type { ObservationSourceKind } from "../evidence/evidence-types";
 
 export interface ReindexSource {
   sourceKind: ObservationSourceKind;
@@ -370,4 +373,63 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
   } finally {
     await deps.meta.delete(REINDEX_LEASE_KEY);
   }
+}
+
+// --- Production indexing runtime ---------------------------------------------------
+
+/** The composed local evidence-indexing runtime for one database handle:
+ *  post-commit derivation queue plus the bounded, lease-guarded reindex pass.
+ *  Both resolve persisted verifier outcomes from the same repository-backed
+ *  seam and never execute a verifier or call a provider. */
+export interface EvidenceIndexingRuntime {
+  evidenceRepo: EvidenceRepository;
+  derivationQueue: DerivationQueue;
+  /** Bounded, deterministic backfill/reindex over current sources. Silent
+   *  when no work exists; failures land on the owning index-job rows. */
+  reindex: () => Promise<ReindexRunResult>;
+}
+
+/**
+ * Compose the production evidence-indexing seams (Wave A). The derivation
+ * queue covers post-commit sources; `reindex` is the local startup/background
+ * migration with the existing storage-work lease, deterministic cursor, and
+ * resume behavior. `reindexOwnerId` names the caller for lease ownership.
+ */
+export function createEvidenceIndexingRuntime(input: {
+  db: RSembleEvaluationDB;
+  resolver: EvaluationSourceResolver;
+  identity?: TaskIdentityResolver;
+  resolveVerifierOutcomes?: VerifierOutcomeResolver;
+  resolveModelConfiguration?: ModelConfigurationResolver;
+  now?: () => number;
+  queueOptions?: DerivationQueueOptions;
+  reindexOwnerId?: string;
+}): EvidenceIndexingRuntime {
+  const evidenceRepo = createEvidenceRepository(input.db);
+  const resolveVerifierOutcomes =
+    input.resolveVerifierOutcomes ?? createRepositoryVerifierResolver(evidenceRepo);
+  const derivationQueue = createDerivationQueue(
+    {
+      evidenceRepo,
+      resolver: input.resolver,
+      identity: input.identity,
+      resolveVerifierOutcomes,
+      resolveModelConfiguration: input.resolveModelConfiguration,
+      now: input.now,
+    },
+    input.queueOptions,
+  );
+  const reindex = () =>
+    reindexEvidence({
+      evidenceRepo,
+      enumerator: createDexieReindexEnumerator(input.db),
+      resolver: input.resolver,
+      meta: createDexieReindexMetaStore(input.db),
+      identity: input.identity,
+      resolveVerifierOutcomes,
+      resolveModelConfiguration: input.resolveModelConfiguration,
+      now: input.now,
+      ownerId: input.reindexOwnerId,
+    });
+  return { evidenceRepo, derivationQueue, reindex };
 }
