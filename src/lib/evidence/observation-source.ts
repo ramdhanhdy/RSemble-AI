@@ -216,9 +216,7 @@ export function selectObservationSources(input: ObservationSourceInput): Observa
       reusedOutput: accepted.reusedFrom !== undefined,
       runId: run.id,
       judgeAssessment,
-      verifier:
-        verifierOutcomes.find((v) => v.taskId === taskId && v.modelKey === candidate.modelKey) ??
-        null,
+      verifier: latestVerifierOutcome(verifierOutcomes, taskId, candidate.modelKey),
     });
   }
 
@@ -327,8 +325,26 @@ function classifyProvenance(
   return selectedAttempt.trial > 0 ? "retry_success" : "fresh";
 }
 
+/**
+ * The active verifier outcome for one cell is the latest execution
+ * (greatest executedAt); ties keep the earliest match in array order so the
+ * selection is deterministic (spec §6.3 latest-active rule).
+ */
+function latestVerifierOutcome(
+  outcomes: VerifierOutcome[],
+  taskId: string,
+  modelKey: string,
+): VerifierOutcome | null {
+  let latest: VerifierOutcome | null = null;
+  for (const outcome of outcomes) {
+    if (outcome.taskId !== taskId || outcome.modelKey !== modelKey) continue;
+    if (latest === null || outcome.executedAt > latest.executedAt) latest = outcome;
+  }
+  return latest;
+}
 function resolveJudgeAssessment(run: RunRecordV2): AcceptedJudgeAssessment | null {
   if (run.judge.acceptedAttemptId === null) return null;
+
   const accepted = run.judge.attempts.find(
     (a: JudgeAttemptRecord) => a.attemptId === run.judge.acceptedAttemptId,
   );

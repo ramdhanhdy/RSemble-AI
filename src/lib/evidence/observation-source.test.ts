@@ -741,6 +741,31 @@ describe("verifier-only and judge+verifier", () => {
     expect(cellFor(selection, M2).judgeAssessment).not.toBeNull();
     expect(cellFor(selection, M2).verifier).toBeNull();
   });
+
+  it("selects the latest verifier outcome by executedAt, not the first array match", () => {
+    const run = makeRun({
+      id: "run-1",
+      attemptId: "att-1",
+      trial: 0,
+      status: "completed",
+      candidates: [candidate("cand-m1", M1, "m1-a1", [attemptRec("m1-a1", "completed")])],
+      judgeAccepted: null,
+      judgeAttempts: [],
+    });
+    const experiment = makeExperiment({
+      attempts: [taskAttempt({ id: "att-1", runId: "run-1", trial: 0, status: "completed" })],
+      selected: "att-1",
+    });
+    const selection = select({
+      experiment,
+      runs: [run],
+      verifierOutcomes: [
+        { taskId: "task-1", modelKey: M1, passed: true, executedAt: 5 },
+        { taskId: "task-1", modelKey: M1, passed: false, executedAt: 10 },
+      ],
+    });
+    expect(cellFor(selection, M1).verifier?.passed).toBe(false);
+  });
 });
 
 describe("source integrity", () => {
