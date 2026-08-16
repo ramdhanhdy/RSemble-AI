@@ -1,7 +1,8 @@
 // =============================================================================
 // RSemble AI — Archive v2 contract: envelope, collections, validators
 //
-// Child 02 (Canonical Tasks) Task 10A.
+// Child 02 (Canonical Tasks) Task 10A, extended by Child 03 (Task Sets)
+// Task 11.
 //
 // Defines the extensible, task-first archive v2 envelope that round-trips the
 // exact current Run and Experiment evidence, all seven Fusion Study stores
@@ -9,6 +10,17 @@
 // `fusionAttempts`, `fusionObservations`, `fusionPlaybooks`), canonical
 // Rubrics, and every canonical Task collection available in this child —
 // including artifact bytes and legacy migration crosswalks.
+//
+// Child 03 (Task Sets) Task 11 adds an OPTIONAL top-level `taskSets` payload
+// carrying four collections: `records` (TaskSetRecord), `versions` (immutable
+// TaskSetVersion / WorkloadManifest), `materializations` (immutable
+// TaskSetMaterializationRecord execution snapshots), and
+// `ownershipCrosswalks` (TaskSetOwnershipCrosswalkRow — suite-manifest,
+// experiment-owner, fusion-owner). When the key is present all four arrays are
+// fully validated (array shape, counts, ordering, duplicates, reference
+// graph); when absent (earlier-v2 envelope) the four counts must be zero.
+// The optional payload joins the integrity digest only when present, so
+// earlier-v2 digests remain stable.
 //
 // V1 (`WorkbenchArchiveV1` in `./archive.ts`) remains a distinct, readable
 // shape. V2 is deterministic and integrity-checked: an explicit manifest

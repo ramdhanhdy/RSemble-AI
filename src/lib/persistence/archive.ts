@@ -13,17 +13,27 @@
 //    records are skipped, same-ID different content is reported as conflicting
 //    and never written, and any thrown error rolls the whole import back.
 //
-//  - v2 (`exportWorkbenchArchiveV2`, Child 02 Task 10B): the task-first
-//    envelope (`WorkbenchArchiveV2`). Exports every canonical Child 02
-//    collection — exact Runs/Experiments, Rubrics, all seven Fusion stores,
-//    Tasks/versions/artifacts+bytes/instances/families/assignments/relations/
-//    facet annotations/crosswalks — in deterministic order with exact counts
-//    and an integrity digest. Before delivery it scans structured fields and
-//    artifact bytes for prohibited credential/auth material and blocks safely
-//    with entity/type diagnostics, never echoing a matched value. Disposable
-//    caches/indexes and unrestricted `storageMeta` are never read. Supports
-//    progress reporting and cancellation before final delivery. V2 import is
-//    deliberately not implemented in this slice.
+//  - v2 (`exportWorkbenchArchiveV2`, Child 02 Task 10B; extended by Child 03
+//    Task 11): the task-first envelope (`WorkbenchArchiveV2`). Exports every
+//    canonical Child 02 collection — exact Runs/Experiments, Rubrics, all
+//    seven Fusion stores, Tasks/versions/artifacts+bytes/instances/families/
+//    assignments/relations/facet annotations/crosswalks — plus the Child 03
+//    Task Set collections (records, versions, materializations, ownership
+//    crosswalks) as an optional top-level `taskSets` payload, in deterministic
+//    order with exact counts and an integrity digest. Before delivery it scans
+//    structured fields and artifact bytes for prohibited credential/auth
+//    material and blocks safely with entity/type diagnostics, never echoing a
+//    matched value. Disposable caches/indexes and unrestricted `storageMeta`
+//    are never read. Supports progress reporting and cancellation before
+//    final delivery.
+//
+//  - v2 import (`previewWorkbenchArchive` + `commitPreviewWorkbenchArchiveV2`):
+//    the validated preview classifies every entity as create/reuse/collision/
+//    invalid; the commit re-checks every CREATE destination inside one Dexie
+//    transaction and aborts BEFORE any write on a non-identical same-key
+//    collision. The seven Fusion stores stay separately typed and unconverted;
+//    Task Set ownership crosswalks reference Fusion studies without altering
+//    their payloads.
 // =============================================================================
 
 import {

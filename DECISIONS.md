@@ -27,6 +27,40 @@ This document records architectural decisions made for RSemble AI.
 > Experiment, or Fusion Study evidence. Task Set editor migration, comparison
 > task promotion, observations, and model evidence profiles remain future
 > children. See Decision #13 for the load-bearing contract.
+>
+> **Reconciliation note (Child 03, 2026-08-16):** Canonical Task Sets are
+> shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 03-task-sets-and-evaluations/task-sets-and-evaluations-spec.md`). A Task Set
+> owns versioned task membership: `TaskSetRecord` (mutable administrative state
+> via compare-and-swap), immutable `TaskSetVersion` / WorkloadManifest (members
+> pin exact canonical Task Versions), immutable `TaskSetMaterializationRecord`
+> execution snapshots, and the `taskSetOwnershipCrosswalk` store resolving
+> legacy owner coordinates (suite-manifest, experiment-owner, fusion-owner) to
+> exact Task Set Versions. The archive v2 envelope gains an optional `taskSets`
+> payload (records/versions/materializations/ownership crosswalks) with exact
+> counts, deterministic ordering, reference-graph validation, prohibited-content
+> scanning, and collision-abort-before-write import; earlier-v2 envelopes
+> without the key remain readable and the seven Fusion collections stay
+> separately typed and unconverted (format version stays 2).
+> Historical decisions below use "suite" language to describe the pre-Task-Set
+> evaluation model. The reconciliation for the flagged sentences is:
+> - **Decision #7** ("Local Suites", "versioned local suites", "suites pin to
+>   profile versions", "multi-task suites"): the versioned membership and
+>   rubric pinning those sentences describe are now owned by Task Sets; the
+>   legacy Evaluation Suite remains the physical compatibility row migrated
+>   conservatively into `legacy-suite` Task Sets.
+> - **Decision #9** ("Policy Discovery on Suites", "suite versions", "versioned
+>   suites"): Fusion Study remains a Task-Set-owned experimental record; the
+>   "suite version" a study attaches to is a Task Set Version today. The
+>   exploration/confirmation and blocked-comparison contracts are unchanged.
+> - **Decision #10** item 6 ("persisted on suites/snapshots", "strict suite
+>   parity"): reasoning-effort provenance and the protocol-fingerprint parity
+>   contract are now carried by Task Set Versions/materializations; the parity
+>   contract itself is unchanged.
+> - **Decision #13** context ("Evaluation Suite tasks had stable IDs only
+>   inside an embedded suite document") and item (d) (conservative migration):
+>   those sentences describe the Child 02 canonical Task migration, which is
+>   unchanged; Child 03 adds the Task Set layer above it.
 
 ---
 
