@@ -18,9 +18,10 @@
 //   renaming production terminology instead.
 //
 // Frozen compatibility boundaries (explicit, narrow allowlist)
-//   The following keep legacy `profile*` names because changing them would
-//   create avoidable migration risk (spec §3.3). They are allowlisted here and
-//   must NOT be renamed:
+//   The following keep `profile*` names because changing them would create
+//   avoidable migration risk, or because the names are spec-defined vocabulary
+//   in a different domain (Child 04 model-profile evidence). They are
+//   allowlisted here and must NOT be renamed:
 //     • evaluationProfileId / evaluationProfileVersion
 //         — frozen RunRecordV2 / ExperimentRecord serialized fields.
 //     • profileVersions / ProfileVersionRow / profileVersionRow
@@ -30,6 +31,13 @@
 //     • the standalone `profiles` token where it is a physical Dexie store
 //       declaration/access (`db.profiles`) or a v1 archive/import payload field
 //       (archive v1 envelope, suite-package v1 import schema).
+//     • within_model_profile — spec-defined EvidenceUse domain literal for
+//       model-profile evidence (Child 04); a compound identifier that never
+//       appears as a scoring-Profile term.
+//     • bare lowercase profile / profiles inside lib/evidence/** — model
+//       configuration behavioral-profile vocabulary (Child 04), path- and
+//       token-scoped. Capital or compound Profile tokens inside evidence
+//       files, and every profile token outside lib/evidence, stay flagged.
 //   Anything else carrying the Profile word — type names, repository methods,
 //   component names, route segments, user-facing strings, comments, test
 //   helpers — is a scoring-Profile term and must become Rubric.
@@ -83,8 +91,8 @@ function listSourceFiles(root: string, acc: string[] = []): string[] {
 
 /**
  * Identifiers allowlisted in ANY file because they are frozen serialized
- * field names or physical-store row types/factories (spec §3.3, §7.6).
- * Case-sensitive — these are exact TypeScript identifiers.
+ * field names, physical-store row types/factories (spec §3.3, §7.6), or
+ * spec-defined domain literals. Case-sensitive — exact TypeScript identifiers.
  */
 const FROZEN_IDENTIFIERS: Record<string, true> = {
   // Frozen RunRecordV2 / ExperimentRecord serialized fields.
@@ -97,6 +105,9 @@ const FROZEN_IDENTIFIERS: Record<string, true> = {
   // Physical IndexedDB `profiles` store row type/factory.
   ProfileRow: true,
   profileRow: true,
+  // Spec-defined EvidenceUse domain literal for model-profile evidence
+  // (Child 04) — never appears as a scoring-Profile term.
+  within_model_profile: true,
 };
 
 /**
@@ -185,16 +196,24 @@ interface Violation {
 }
 
 /**
- * Classify one matched token. Frozen serialized fields and physical-store row
- * types are allowed anywhere. The standalone lowercase `profiles` token is
- * allowed only at physical Dexie stores (`db.profiles`) or v1 archive/import
- * payload fields; capital `Profiles` (nav labels, headings) and all-caps
- * `PROFILES` are user-facing/API terms and stay flagged.
+ * Classify one matched token. Frozen serialized fields, physical-store row
+ * types, and spec-defined domain literals are allowed anywhere. The standalone
+ * lowercase `profiles` token is allowed only at physical Dexie stores
+ * (`db.profiles`) or v1 archive/import payload fields; capital `Profiles`
+ * (nav labels, headings) and all-caps `PROFILES` are user-facing/API terms
+ * and stay flagged.
  *
  * The standalone lowercase `profile` token is allowed when it is a frozen
  * serialized field access (property access `.profile`, property key `profile:`,
  * kind discriminant string literal `"profile"`). In every other context it is
  * a local variable / parameter that must become `rubric`.
+ *
+ * Child 04 model-profile evidence vocabulary: bare lowercase `profile` /
+ * `profiles` inside lib/evidence/** refer to a model configuration's
+ * behavioral profile, not the scoring Profile→Rubric objects. The exemption is
+ * path-scoped (lib/evidence/** only) and token-scoped (exact lowercase match),
+ * so capital or compound Profile tokens and every token outside lib/evidence
+ * keep falling through.
  */
 function isAllowed(token: string, relFile: string, line: string, idx: number): boolean {
   if (token in FROZEN_IDENTIFIERS) return true;
@@ -202,6 +221,12 @@ function isAllowed(token: string, relFile: string, line: string, idx: number): b
   // Explicit compat/legacy-adapter files — all Profile tokens allowed.
   if (relFile in COMPAT_FILES) return true;
   if (relFile in COMPAT_TEST_FILES) return true;
+
+  // Child 04 model-profile evidence vocabulary (spec-defined EvidenceUse
+  // domain): bare lowercase `profile` / `profiles` under lib/evidence/**.
+  if ((token === "profile" || token === "profiles") && relFile.startsWith("lib/evidence/")) {
+    return true;
+  }
 
   if (token === "profiles") {
     // `db.profiles` — physical Dexie store access (frozen, any file).
@@ -304,8 +329,10 @@ function renderReport(violations: Violation[]): string {
   );
   lines.push("");
   lines.push("Allowlisted frozen boundaries: evaluationProfileId, evaluationProfileVersion,");
-  lines.push("profileVersions/ProfileVersionRow/profileVersionRow, ProfileRow/profileRow, and the");
-  lines.push("standalone `profiles` token at physical Dexie stores / v1 archive+import payloads.");
+  lines.push("profileVersions/ProfileVersionRow/profileVersionRow, ProfileRow/profileRow, the");
+  lines.push("standalone `profiles` token at physical Dexie stores / v1 archive+import payloads,");
+  lines.push("and Child 04 evidence vocabulary (within_model_profile; bare lowercase");
+  lines.push("profile/profiles under lib/evidence/).");
   lines.push("");
   lines.push("Surfaces to convert (Tasks 2–6):");
   const shown = files.slice(0, MAX_FILES);
@@ -334,5 +361,92 @@ describe("rubric terminology boundary (Child 01, Task 1)", () => {
   it("has zero non-allowlisted scoring-Profile terms across src", () => {
     const violations = collectViolations();
     expect(violations, renderReport(violations)).toEqual([]);
+  });
+  describe("model-profile evidence vocabulary exemption (Child 04)", () => {
+    it("allows the spec-defined within_model_profile literal in any file", () => {
+      const evidenceLine = 'use: "within_model_profile",';
+      expect(
+        isAllowed(
+          "within_model_profile",
+          "lib/evidence/evidence-types.ts",
+          evidenceLine,
+          evidenceLine.indexOf("within_model_profile"),
+        ),
+      ).toBe(true);
+      expect(
+        isAllowed(
+          "within_model_profile",
+          "lib/evaluations/suite-validation.ts",
+          "within_model_profile",
+          0,
+        ),
+      ).toBe(true);
+    });
+
+    it("allows bare lowercase profile and profiles under lib/evidence", () => {
+      const commentLine = "// unreconstructable input excludes profile use; legacy evidence never";
+      expect(
+        isAllowed(
+          "profile",
+          "lib/evidence/evidence-eligibility.ts",
+          commentLine,
+          commentLine.indexOf("profile"),
+        ),
+      ).toBe(true);
+      const proseLine = "excluded from default model profiles.";
+      expect(
+        isAllowed(
+          "profiles",
+          "lib/evidence/evidence-explanation.ts",
+          proseLine,
+          proseLine.indexOf("profiles"),
+        ),
+      ).toBe(true);
+    });
+
+    it("keeps flagging scoring-Profile tokens inside lib/evidence files", () => {
+      const relFile = "lib/evidence/evidence-types.ts";
+      for (const token of ["Profile", "Profiles", "PROFILES", "ProfileList", "EvaluationProfile"]) {
+        const line = `  const ${token} = 1;`;
+        expect(isAllowed(token, relFile, line, line.indexOf(token)), token).toBe(false);
+      }
+    });
+
+    it("keeps flagging lowercase profile and profiles outside lib/evidence", () => {
+      const relFile = "lib/evaluations/suite-validation.ts";
+      const profileLine = "  const profile = value;";
+      expect(isAllowed("profile", relFile, profileLine, profileLine.indexOf("profile"))).toBe(
+        false,
+      );
+      const profilesLine = "  const profiles = value;";
+      expect(isAllowed("profiles", relFile, profilesLine, profilesLine.indexOf("profiles"))).toBe(
+        false,
+      );
+      // Path scope is strict: sibling directories sharing the evidence prefix do not qualify.
+      const siblingLine = "this is a model profile.";
+      expect(
+        isAllowed(
+          "profile",
+          "lib/evidence-archive/notes.ts",
+          siblingLine,
+          siblingLine.indexOf("profile"),
+        ),
+      ).toBe(false);
+    });
+
+    it("scans every previously-flagged evidence file clean", () => {
+      const relFiles = [
+        "lib/evidence/evidence-eligibility.test.ts",
+        "lib/evidence/evidence-eligibility.ts",
+        "lib/evidence/evidence-explanation.test.ts",
+        "lib/evidence/evidence-explanation.ts",
+        "lib/evidence/evidence-types.test.ts",
+        "lib/evidence/evidence-types.ts",
+        "lib/evidence/evidence-validation.test.ts",
+      ];
+      for (const relFile of relFiles) {
+        expect(scanFile(join(SRC_ROOT, relFile), SRC_ROOT), relFile).toEqual([]);
+      }
+    });
   });
 });
