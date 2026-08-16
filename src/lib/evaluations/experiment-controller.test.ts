@@ -2425,6 +2425,41 @@ describe("experiment-controller — start/retry/resume persistence-failure relia
     expect(h.owner.get()).toBeNull();
     expect(h.leaseStore.lease).toBeNull();
   });
+  it("an id collision during start never deletes a pre-existing experiment", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    // start() generates `exp-${generateId()}`; the harness's first generateId
+    // call yields "id-1", so the draft id is "exp-id-1". Pre-seed an existing
+    // experiment with that id (a different materialization) to force a
+    // storage-level conflict inside createExperiment.
+    const preExisting: ExperimentRecord = {
+      ...createExperimentRecord({
+        id: "exp-id-1",
+        suite: makeSuite(["other"]),
+        rubrics: [],
+        now: h.now(),
+      }),
+      materializationId: "mat-other",
+    };
+    await h.evalRepo.createExperiment(preExisting);
+    expect(await h.evalRepo.getExperiment("exp-id-1")).not.toBeNull();
+
+    const result = await h.controller.start("mat-suite-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/exists/i);
+
+    // The pre-existing experiment survives the failed start: the rollback must
+    // not delete a record this invocation did not create.
+    const survivor = await h.evalRepo.getExperiment("exp-id-1");
+    expect(survivor).not.toBeNull();
+    expect(survivor!.materializationId).toBe("mat-other");
+    expect(await h.evalRepo.listExperiments()).toHaveLength(1);
+
+    // Lease and owner released.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
   it("a post-create sync failure during start deletes the draft and leaves the materialization reusable", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1"]));

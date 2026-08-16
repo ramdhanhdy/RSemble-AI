@@ -1045,18 +1045,118 @@ describe("AppRouter — Fusion owner redirects (spec §4, §8.2)", () => {
     expect(h.container.textContent).toMatch(/unresolved/i);
     cleanup(h);
   });
-
-  it("canonical Fusion route stays put and does not loop", async () => {
+  it("keeps a legacy Fusion link unresolved when the resolved suiteRef mismatches the route suiteId", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
     const fusionRepo = new InMemoryFusionStudyRepository();
     await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    // The crosswalk resolves study-1 to taskSetId "s1" but its frozen suiteRef
+    // points at a different suiteId ("s2"), so the legacy /evaluations/s1/
+    // fusion/study-1 route must remain unresolved rather than redirect.
+    const db = {
+      taskSetOwnershipCrosswalk: {
+        get: async (key: string) =>
+          key === "ts-xwalk:fusion:study-1"
+            ? {
+                key,
+                kind: "fusion-owner",
+                taskSetId: "s1",
+                version: 2,
+                digest: null,
+                status: "resolved",
+                suiteRef: {
+                  suiteId: "s2",
+                  suiteVersion: 2,
+                  protocolFingerprint: "sha256:0123456789abcdef",
+                },
+              }
+            : undefined,
+      },
+    };
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/s1/fusion/study-1"],
+      repo,
+      fusionRepo,
+      db,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/s1/fusion/study-1");
+    expect(h.container.textContent).toMatch(/unresolved/i);
+    cleanup(h);
+  });
+
+  it("canonical Fusion route stays put and renders the study under its exact owner", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    const db = {
+      taskSetOwnershipCrosswalk: {
+        get: async (key: string) =>
+          key === "ts-xwalk:fusion:study-1"
+            ? {
+                key,
+                kind: "fusion-owner",
+                taskSetId: "s1",
+                version: 2,
+                digest: null,
+                status: "resolved",
+                suiteRef: {
+                  suiteId: "s1",
+                  suiteVersion: 2,
+                  protocolFingerprint: "sha256:0123456789abcdef",
+                },
+              }
+            : undefined,
+      },
+    };
     const h = await renderRouterAsync({
       initialEntries: ["/evaluations/sets/s1/fusion/study-1"],
       repo,
       fusionRepo,
+      db,
     });
     expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/fusion/study-1");
+    expect(h.$("[data-testid='fusion-study-view']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("canonical Fusion route fails closed when the resolved owner is a different Task Set", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    // The crosswalk resolves study-1 to a different Task Set ("s2"), so the
+    // canonical /evaluations/sets/s1/fusion/study-1 route must not render the
+    // study under a false owner.
+    const db = {
+      taskSetOwnershipCrosswalk: {
+        get: async (key: string) =>
+          key === "ts-xwalk:fusion:study-1"
+            ? {
+                key,
+                kind: "fusion-owner",
+                taskSetId: "s2",
+                version: 2,
+                digest: null,
+                status: "resolved",
+                suiteRef: {
+                  suiteId: "s2",
+                  suiteVersion: 2,
+                  protocolFingerprint: "sha256:0123456789abcdef",
+                },
+              }
+            : undefined,
+      },
+    };
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/sets/s1/fusion/study-1"],
+      repo,
+      fusionRepo,
+      db,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/fusion/study-1");
+    expect(h.$("[data-testid='fusion-study-view']")).toBeNull();
+    expect(h.container.textContent).toMatch(/does not belong/i);
     cleanup(h);
   });
 });
