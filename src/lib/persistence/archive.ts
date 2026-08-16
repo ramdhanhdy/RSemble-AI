@@ -112,6 +112,10 @@ import type {
   TaskVersion,
 } from "../tasks/task-types";
 import type { TaskMigrationCrosswalk } from "../tasks/task-references";
+import { isTaskSetRecord, isTaskSetVersion } from "../evaluations/task-set-types";
+import type { TaskSetRecord, TaskSetVersion } from "../evaluations/task-set-types";
+import type { TaskSetMaterializationRecord } from "./evaluation-repository";
+import type { TaskSetOwnershipCrosswalkRow } from "./database";
 
 // --- Archive shape -------------------------------------------------------------
 
@@ -926,6 +930,7 @@ export type ArchiveExportStage =
   | "experiments"
   | "fusion"
   | "tasks"
+  | "task-sets"
   | "artifact-bytes"
   | "scan"
   | "finalize";
@@ -968,6 +973,7 @@ const ARCHIVE_V2_STAGES: ArchiveExportStage[] = [
   "experiments",
   "fusion",
   "tasks",
+  "task-sets",
   "artifact-bytes",
   "scan",
   "finalize",
@@ -997,6 +1003,17 @@ function v2SortByTaskIdVersion<T extends { taskId: string; version: number }>(it
 
 function v2SortByLegacyScopeKey<T extends { legacyScopeKey: string }>(items: T[]): T[] {
   return [...items].sort((a, b) => v2OrderingKeyString(a.legacyScopeKey, b.legacyScopeKey));
+}
+
+function v2SortByTaskSetIdVersion<T extends { taskSetId: string; version: number }>(
+  items: T[],
+): T[] {
+  const key = (t: T) => `${t.taskSetId}\u0000${t.version.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v2SortByKey<T extends { key: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.key, b.key));
 }
 
 /** Collects export guard-failing rows so the export can abort with redacted
@@ -1038,6 +1055,48 @@ function isExportableTaskFamilyRelation(v: unknown): v is TaskFamilyRelation {
   }
   if (v.kind !== "overlap" && v.kind !== "parent" && v.kind !== "derivative") return false;
   if (typeof v.createdAt !== "number") return false;
+  return findProhibitedKey(v) === null;
+}
+
+
+/** Archive-boundary guard for a Task Set ownership crosswalk row. Structural
+ *  safety only (identity fields + prohibited-key scan); the domain migration
+ *  owns the richer authoring rules. */
+function isTaskSetOwnershipCrosswalkRow(v: unknown): v is TaskSetOwnershipCrosswalkRow {
+  if (!isRecord(v)) return false;
+  if (typeof v.key !== "string" || v.key.length === 0) return false;
+  if (v.kind !== "suite-manifest" && v.kind !== "experiment-owner" && v.kind !== "fusion-owner") {
+    return false;
+  }
+  if (typeof v.taskSetId !== "string" || v.taskSetId.length === 0) return false;
+  if (
+    v.version !== null &&
+    (typeof v.version !== "number" || !Number.isInteger(v.version) || v.version <= 0)
+  ) {
+    return false;
+  }
+  if (v.digest !== null && v.digest !== undefined && typeof v.digest !== "string") return false;
+  if (v.status !== "resolved" && v.status !== "unresolved") return false;
+  if (typeof v.updatedAt !== "number") return false;
+  return findProhibitedKey(v) === null;
+}
+
+/** Archive-boundary guard for an immutable Task Set materialization record.
+ *  Structural safety only (identity fields + prohibited-key scan). */
+function isTaskSetMaterializationRecord(v: unknown): v is TaskSetMaterializationRecord {
+  if (!isRecord(v)) return false;
+  if (typeof v.id !== "string" || v.id.length === 0) return false;
+  if (typeof v.taskSetId !== "string" || v.taskSetId.length === 0) return false;
+  if (
+    typeof v.taskSetVersion !== "number" ||
+    !Number.isInteger(v.taskSetVersion) ||
+    v.taskSetVersion <= 0
+  ) {
+    return false;
+  }
+  if (typeof v.protocolFingerprint !== "string" || v.protocolFingerprint.length === 0) return false;
+  if (typeof v.createdAt !== "number") return false;
+  if (!isRecord(v.snapshot)) return false;
   return findProhibitedKey(v) === null;
 }
 
@@ -1335,6 +1394,44 @@ export async function exportWorkbenchArchiveV2(
     });
     completeStage("tasks");
 
+    // --- task sets (records/versions/materializations/ownership crosswalks) ---
+    emit("task-sets");
+    throwIfAborted();
+    const taskSetRecords: TaskSetRecord[] = [];
+    await db.taskSets.orderBy("id").each((row) => {
+      if (isTaskSetRecord(row.record)) taskSetRecords.push(row.record);
+      else recordGuardFailure("taskSets.records", row.id, "taskSets", guardViolations);
+    });
+    const taskSetVersions: TaskSetVersion[] = [];
+    await db.taskSetVersions.orderBy("taskSetId").each((row) => {
+      if (isTaskSetVersion(row.version_)) taskSetVersions.push(row.version_);
+      else
+        recordGuardFailure(
+          "taskSets.versions",
+          `${row.taskSetId}@${row.version}`,
+          "taskSetVersions",
+          guardViolations,
+        );
+    });
+    const taskSetMaterializations: TaskSetMaterializationRecord[] = [];
+    await db.taskSetMaterializations.orderBy("id").each((row) => {
+      if (isTaskSetMaterializationRecord(row)) taskSetMaterializations.push(row);
+      else recordGuardFailure("taskSets.materializations", row.id, "taskSetMaterializations", guardViolations);
+    });
+    const taskSetOwnershipCrosswalks: TaskSetOwnershipCrosswalkRow[] = [];
+    await db.taskSetOwnershipCrosswalk.orderBy("key").each((row) => {
+      const key = (row as TaskSetOwnershipCrosswalkRow).key;
+      if (isTaskSetOwnershipCrosswalkRow(row)) taskSetOwnershipCrosswalks.push(row);
+      else
+        recordGuardFailure(
+          "taskSets.ownershipCrosswalks",
+          key ?? "",
+          "taskSetOwnershipCrosswalk",
+          guardViolations,
+        );
+    });
+    completeStage("task-sets");
+
     // Exact store coverage: any persisted canononical row that fails its
     // record guard blocks the whole export. Dexie `.each()` swallows a
     // synchronous callback throw, so violations are collected during reads and
@@ -1410,6 +1507,12 @@ export async function exportWorkbenchArchiveV2(
     for (const a of taskFacetAnnotations) scanStructured("tasks.taskFacetAnnotations", a.id, a);
     for (const c of taskMigrationCrosswalks)
       scanStructured("tasks.taskMigrationCrosswalks", c.legacyScopeKey, c);
+    for (const r of taskSetRecords) scanStructured("taskSets.records", r.id, r);
+    for (const v of taskSetVersions)
+      scanStructured("taskSets.versions", `${v.taskSetId}@${v.version}`, v);
+    for (const m of taskSetMaterializations) scanStructured("taskSets.materializations", m.id, m);
+    for (const c of taskSetOwnershipCrosswalks)
+      scanStructured("taskSets.ownershipCrosswalks", c.key, c);
 
     completeStage("scan");
 
@@ -1453,6 +1556,10 @@ export async function exportWorkbenchArchiveV2(
           taskFamilyRelations: taskFamilyRelations.length,
           taskFacetAnnotations: taskFacetAnnotations.length,
           taskMigrationCrosswalks: taskMigrationCrosswalks.length,
+          taskSets: taskSetRecords.length,
+          taskSetVersions: taskSetVersions.length,
+          taskSetMaterializations: taskSetMaterializations.length,
+          taskSetOwnershipCrosswalks: taskSetOwnershipCrosswalks.length,
         },
         payloadDigest: "",
         disclosure: { scope: "local", notes: ARCHIVE_V2_DISCLOSURE_NOTES },
@@ -1487,6 +1594,12 @@ export async function exportWorkbenchArchiveV2(
         taskFamilyRelations: v2SortById(taskFamilyRelations),
         taskFacetAnnotations: v2SortById(taskFacetAnnotations),
         taskMigrationCrosswalks: v2SortByLegacyScopeKey(taskMigrationCrosswalks),
+      },
+      taskSets: {
+        records: v2SortById(taskSetRecords),
+        versions: v2SortByTaskSetIdVersion(taskSetVersions),
+        materializations: v2SortById(taskSetMaterializations),
+        ownershipCrosswalks: v2SortByKey(taskSetOwnershipCrosswalks),
       },
     };
     // Digest is computed over the final payload (collections only — the
@@ -2216,6 +2329,88 @@ async function previewV2(
     }
   }
 
+  // --- taskSets (records/versions/materializations/ownership crosswalks) -----
+  const taskSets = archive.taskSets;
+  if (taskSets !== undefined) {
+    {
+      const part = partitionGuarded(
+        "taskSets.records",
+        taskSets.records,
+        (r) => r.id,
+        (v) => isTaskSetRecord(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "taskSets.records",
+        part.guarded,
+        (r) => r.id,
+        (k) => db.taskSets.get(k).then((r) => (r === undefined ? undefined : r.record)),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "taskSets.versions",
+        taskSets.versions,
+        (v) => versionKey(v.taskSetId, v.version),
+        (v) => isTaskSetVersion(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "taskSets.versions",
+        part.guarded,
+        (v) => versionKey(v.taskSetId, v.version),
+        (k) => {
+          const [id, v] = splitVersionKey(k);
+          return db.taskSetVersions
+            .get([id, v])
+            .then((r) => (r === undefined ? undefined : r.version_));
+        },
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "taskSets.materializations",
+        taskSets.materializations,
+        (m) => m.id,
+        (v) => isTaskSetMaterializationRecord(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "taskSets.materializations",
+        part.guarded,
+        (m) => m.id,
+        (k) => db.taskSetMaterializations.get(k),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "taskSets.ownershipCrosswalks",
+        taskSets.ownershipCrosswalks,
+        (c) => c.key,
+        (v) => isTaskSetOwnershipCrosswalkRow(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "taskSets.ownershipCrosswalks",
+        part.guarded,
+        (c) => c.key,
+        (k) => db.taskSetOwnershipCrosswalk.get(k),
+        (v) => v,
+        buckets,
+      );
+    }
+  }
+
   throwIfAborted();
   return finalizePreview("v2", options.sourceLabel ?? "archive", archive, buckets);
 }
@@ -2308,6 +2503,28 @@ function annotationRowFor(annotation: TaskFacetAnnotation) {
     facetId: annotation.facetId,
     valueId: annotation.valueId,
     createdAt: annotation.createdAt,
+  };
+}
+
+function taskSetRecordRowFor(record: TaskSetRecord) {
+  return {
+    id: record.id,
+    record,
+    latestVersion: record.latestVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    archivedAt: record.archivedAt,
+    origin: record.origin,
+    revision: record.revision,
+  };
+}
+
+function taskSetVersionRowFor(version: TaskSetVersion) {
+  return {
+    taskSetId: version.taskSetId,
+    version: version.version,
+    version_: version,
+    createdAt: version.createdAt,
   };
 }
 
@@ -2576,6 +2793,10 @@ export async function commitPreviewWorkbenchArchiveV2(
         db.taskFamilyRelations,
         db.taskFacetAnnotations,
         db.taskMigrationCrosswalk,
+        db.taskSets,
+        db.taskSetVersions,
+        db.taskSetMaterializations,
+        db.taskSetOwnershipCrosswalk,
       ],
       async () => {
         if (options.signal?.aborted) throw new ArchiveImportCancelledError();
@@ -2796,8 +3017,41 @@ export async function commitPreviewWorkbenchArchiveV2(
             conflict("tasks.taskMigrationCrosswalks", cw.legacyScopeKey);
           }
         }
+        // --- taskSets (optional envelope) -------------------------------------
+        if (archive.taskSets !== undefined) {
+          for (const r of archive.taskSets.records) {
+            if (!isCreated("taskSets.records", r.id)) continue;
+            const existing = await db.taskSets.get(r.id);
+            if (existing !== undefined && canonical(existing.record) !== canonical(r)) {
+              conflict("taskSets.records", r.id);
+            }
+          }
+          for (const v of archive.taskSets.versions) {
+            const key = versionKey(v.taskSetId, v.version);
+            if (!isCreated("taskSets.versions", key)) continue;
+            const existing = await db.taskSetVersions.get([v.taskSetId, v.version]);
+            if (existing !== undefined && canonical(existing.version_) !== canonical(v)) {
+              conflict("taskSets.versions", key);
+            }
+          }
+          for (const m of archive.taskSets.materializations) {
+            if (!isCreated("taskSets.materializations", m.id)) continue;
+            const existing = await db.taskSetMaterializations.get(m.id);
+            if (existing !== undefined && canonical(existing) !== canonical(m)) {
+              conflict("taskSets.materializations", m.id);
+            }
+          }
+          for (const cw of archive.taskSets.ownershipCrosswalks) {
+            if (!isCreated("taskSets.ownershipCrosswalks", cw.key)) continue;
+            const existing = await db.taskSetOwnershipCrosswalk.get(cw.key);
+            if (existing !== undefined && canonical(existing) !== canonical(cw)) {
+              conflict("taskSets.ownershipCrosswalks", cw.key);
+            }
+          }
+        }
 
         // --- runs.details (paired full summaries committed first) -------------
+
         for (const record of archive.runs.details) {
           const key = record.id;
           const compatible =
@@ -3065,6 +3319,38 @@ export async function commitPreviewWorkbenchArchiveV2(
             });
             created.push(cw.legacyScopeKey);
           } else reused.push(cw.legacyScopeKey);
+        }
+        // --- taskSets (optional envelope) -------------------------------------
+        if (archive.taskSets !== undefined) {
+          for (const r of archive.taskSets.records) {
+            if (!isTaskSetRecord(r)) continue;
+            if (isCreated("taskSets.records", r.id)) {
+              await db.taskSets.put(taskSetRecordRowFor(r));
+              created.push(r.id);
+            } else reused.push(r.id);
+          }
+          for (const v of archive.taskSets.versions) {
+            if (!isTaskSetVersion(v)) continue;
+            const key = versionKey(v.taskSetId, v.version);
+            if (isCreated("taskSets.versions", key)) {
+              await db.taskSetVersions.put(taskSetVersionRowFor(v));
+              created.push(key);
+            } else reused.push(key);
+          }
+          for (const m of archive.taskSets.materializations) {
+            if (!isTaskSetMaterializationRecord(m)) continue;
+            if (isCreated("taskSets.materializations", m.id)) {
+              await db.taskSetMaterializations.put(m);
+              created.push(m.id);
+            } else reused.push(m.id);
+          }
+          for (const cw of archive.taskSets.ownershipCrosswalks) {
+            if (!isTaskSetOwnershipCrosswalkRow(cw)) continue;
+            if (isCreated("taskSets.ownershipCrosswalks", cw.key)) {
+              await db.taskSetOwnershipCrosswalk.put(cw);
+              created.push(cw.key);
+            } else reused.push(cw.key);
+          }
         }
         // `skipped` is a commit-pass no-op channel — currently empty by design
         // (preview classifies every persisted state; a racing same-value write

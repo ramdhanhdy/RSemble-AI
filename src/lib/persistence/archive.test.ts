@@ -1625,6 +1625,7 @@ describe("exportWorkbenchArchiveV2 — progress and cancellation", () => {
       "experiments",
       "fusion",
       "tasks",
+      "task-sets",
       "artifact-bytes",
       "scan",
       "finalize",
@@ -1820,6 +1821,10 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
       taskFamilyRelations: 1,
       taskFacetAnnotations: 1,
       taskMigrationCrosswalks: 1,
+      taskSets: 0,
+      taskSetVersions: 0,
+      taskSetMaterializations: 0,
+      taskSetOwnershipCrosswalks: 0,
     };
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 
@@ -2012,11 +2017,11 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     expect(secondPreview.create).toEqual([]);
     expect(secondPreview.collisions).toEqual([]);
     expect(secondPreview.invalid).toEqual([]);
-    expect(secondPreview.totalEntities).toBe(21);
+    expect(secondPreview.totalEntities).toBe(27);
 
     const second = await commitPreviewWorkbenchArchiveV2(db, secondPreview);
     expect(second.created).toEqual([]);
-    expect(second.reused.length).toBe(21);
+    expect(second.reused.length).toBe(27);
     expect(second.skipped).toEqual([]);
     // No duplicate rows from a second pass.
     expect(await db.suites.count()).toBe(1);

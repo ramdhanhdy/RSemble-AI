@@ -239,7 +239,7 @@ function isFiniteNumber(v: unknown): v is number {
  *  collection except the manifest (which carries the digest itself). Key order
  *  is deterministic so the digest is stable. */
 function payloadForDigest(archive: WorkbenchArchiveV2): Record<string, unknown> {
-  return {
+  const payload: Record<string, unknown> = {
     runs: archive.runs,
     rubrics: archive.rubrics,
     suites: archive.suites,
@@ -247,6 +247,11 @@ function payloadForDigest(archive: WorkbenchArchiveV2): Record<string, unknown> 
     fusion: archive.fusion,
     tasks: archive.tasks,
   };
+  // Optional Task Set identity payload participates in the digest only when
+  // present, so earlier-v2 envelopes (no taskSets key) keep their original
+  // digest and remain readable.
+  if (archive.taskSets !== undefined) payload.taskSets = archive.taskSets;
+  return payload;
 }
 
 /** Recompute the integrity digest (`sha256:<hex>`) over the canonical JSON of
@@ -305,6 +310,7 @@ function scanProhibitedContent(archive: WorkbenchArchiveV2): string | null {
     ["fusion", archive.fusion],
     ["tasks", archive.tasks],
   ];
+  if (archive.taskSets !== undefined) collections.push(["taskSets", archive.taskSets]);
   for (const [label, value] of collections) {
     if (hasProhibitedKeys(value)) return `prohibited credential/transport key in ${label}`;
     if (hasProhibitedContent(value)) return `credential-like value in ${label}`;
@@ -328,6 +334,14 @@ function byTaskIdVersion(item: { taskId: string; version: number }): string {
 
 function byLegacyScopeKey(item: { legacyScopeKey: string }): string {
   return item.legacyScopeKey;
+}
+
+function byTaskSetIdVersion(item: { taskSetId: string; version: number }): string {
+  return `${item.taskSetId}\u0000${item.version.toString().padStart(10, "0")}`;
+}
+
+function byKey(item: { key: string }): string {
+  return item.key;
 }
 
 interface OrderingSpec<T> {
@@ -421,6 +435,21 @@ function requireArrays(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationE
   } else {
     errors.push({ field: "tasks", message: "tasks must be an object." });
   }
+  // Optional Task Set identity payload: validated only when present. Absence is
+  // legal (earlier-v2 envelope) and means all four counts are zero.
+  const taskSets = archive.taskSets;
+  if (taskSets !== undefined) {
+    if (isRecord(taskSets)) {
+      checks.push(
+        ["taskSets.records", taskSets.records],
+        ["taskSets.versions", taskSets.versions],
+        ["taskSets.materializations", taskSets.materializations],
+        ["taskSets.ownershipCrosswalks", taskSets.ownershipCrosswalks],
+      );
+    } else {
+      errors.push({ field: "taskSets", message: "taskSets must be an object." });
+    }
+  }
   for (const [field, value] of checks) {
     if (!Array.isArray(value)) {
       errors.push({ field, message: `${field} must be an array.` });
@@ -493,6 +522,26 @@ function validateManifest(archive: WorkbenchArchiveV2, errors: ArchiveV2Validati
       errors.push({
         field: `manifest.counts.${key}`,
         message: `count mismatch for ${key}: manifest ${String(c[key])} vs actual ${actual}.`,
+      });
+    }
+  }
+  // Optional Task Set counts: when the taskSets key is present the count must
+  // equal the collection length; when absent (earlier-v2) the count must be 0
+  // (or omitted, which is treated as 0).
+  const ts = archive.taskSets;
+  const optionalCounts: Array<[keyof ArchiveV2EntityCounts, number]> = [
+    ["taskSets", ts?.records.length ?? 0],
+    ["taskSetVersions", ts?.versions.length ?? 0],
+    ["taskSetMaterializations", ts?.materializations.length ?? 0],
+    ["taskSetOwnershipCrosswalks", ts?.ownershipCrosswalks.length ?? 0],
+  ];
+  for (const [key, actual] of optionalCounts) {
+    const declared = c[key];
+    const declaredValue = declared === undefined ? 0 : declared;
+    if (!isFiniteNumber(declaredValue) || declaredValue !== actual) {
+      errors.push({
+        field: `manifest.counts.${key}`,
+        message: `count mismatch for ${key}: manifest ${String(declaredValue)} vs actual ${actual}.`,
       });
     }
   }
@@ -746,6 +795,93 @@ function validateReferenceGraph(
       });
     }
   });
+
+  // --- Task Set identity (optional) ------------------------------------------
+  const taskSets = archive.taskSets;
+  if (taskSets !== undefined) {
+    const taskSetIds = new Set(taskSets.records.map((r) => r.id));
+    const taskSetLatest = new Map<string, number>();
+    taskSets.records.forEach((r) => taskSetLatest.set(r.id, r.latestVersion));
+    const taskSetVersionKeys = new Set<string>();
+    taskSets.versions.forEach((v, i) => {
+      taskSetVersionKeys.add(`${v.taskSetId}@${v.version}`);
+      if (!taskSetIds.has(v.taskSetId)) {
+        errors.push({
+          field: `taskSets.versions[${i}].taskSetId`,
+          message: `version references unknown task set ${v.taskSetId}.`,
+        });
+      }
+      const latest = taskSetLatest.get(v.taskSetId);
+      if (latest !== undefined && v.version > latest) {
+        errors.push({
+          field: `taskSets.versions[${i}].version`,
+          message: `version ${v.version} exceeds latestVersion ${latest} for task set ${v.taskSetId}.`,
+        });
+      }
+      v.members.forEach((m, j) => {
+        if (m.unresolved !== null && m.unresolved !== undefined) return;
+        if (!versionKeys.has(`${m.taskVersionRef.taskId}@${m.taskVersionRef.version}`)) {
+          errors.push({
+            field: `taskSets.versions[${i}].members[${j}].taskVersionRef`,
+            message: `member references unknown task version ${m.taskVersionRef.taskId}@${m.taskVersionRef.version}.`,
+          });
+        }
+      });
+    });
+    for (const [taskSetId, latest] of taskSetLatest) {
+      for (let n = 1; n <= latest; n++) {
+        if (!taskSetVersionKeys.has(`${taskSetId}@${n}`)) {
+          errors.push({
+            field: "taskSets.versions",
+            message: `task set ${taskSetId} is missing version ${n}.`,
+          });
+        }
+      }
+    }
+    taskSets.materializations.forEach((m, i) => {
+      if (!taskSetVersionKeys.has(`${m.taskSetId}@${m.taskSetVersion}`)) {
+        errors.push({
+          field: `taskSets.materializations[${i}]`,
+          message: `materialization references unknown task set version ${m.taskSetId}@${m.taskSetVersion}.`,
+        });
+      }
+    });
+    const suiteIds = new Set(archive.suites.map((s) => s.id));
+    const experimentIds = new Set(archive.experiments.map((e) => e.id));
+    taskSets.ownershipCrosswalks.forEach((cw, i) => {
+      if (!taskSetIds.has(cw.taskSetId)) {
+        errors.push({
+          field: `taskSets.ownershipCrosswalks[${i}].taskSetId`,
+          message: `crosswalk references unknown task set ${cw.taskSetId}.`,
+        });
+      }
+      if (cw.kind === "suite-manifest") {
+        if (!suiteIds.has(cw.taskSetId)) {
+          errors.push({
+            field: `taskSets.ownershipCrosswalks[${i}]`,
+            message: `suite-manifest crosswalk references unknown suite ${cw.taskSetId}.`,
+          });
+        }
+      } else if (cw.kind === "experiment-owner") {
+        if (cw.experimentId !== undefined && !experimentIds.has(cw.experimentId)) {
+          errors.push({
+            field: `taskSets.ownershipCrosswalks[${i}].experimentId`,
+            message: `experiment-owner crosswalk references unknown experiment ${cw.experimentId}.`,
+          });
+        }
+      } else if (cw.kind === "fusion-owner") {
+        const studyId = cw.key.startsWith("ts-xwalk:fusion:")
+          ? cw.key.slice("ts-xwalk:fusion:".length)
+          : "";
+        if (!studyIds.has(studyId)) {
+          errors.push({
+            field: `taskSets.ownershipCrosswalks[${i}]`,
+            message: `fusion-owner crosswalk references unknown study ${studyId}.`,
+          });
+        }
+      }
+    });
+  }
 }
 
 function validateArtifactBytes(
@@ -871,6 +1007,22 @@ function validateOrdering(archive: WorkbenchArchiveV2, errors: ArchiveV2Validati
     },
     errors,
   );
+  const taskSets = archive.taskSets;
+  if (taskSets !== undefined) {
+    checkOrdering({ field: "taskSets.records", items: taskSets.records, key: byId }, errors);
+    checkOrdering(
+      { field: "taskSets.versions", items: taskSets.versions, key: byTaskSetIdVersion },
+      errors,
+    );
+    checkOrdering(
+      { field: "taskSets.materializations", items: taskSets.materializations, key: byId },
+      errors,
+    );
+    checkOrdering(
+      { field: "taskSets.ownershipCrosswalks", items: taskSets.ownershipCrosswalks, key: byKey },
+      errors,
+    );
+  }
 }
 
 function validateDuplicates(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationError[]): void {
@@ -902,6 +1054,18 @@ function validateDuplicates(archive: WorkbenchArchiveV2, errors: ArchiveV2Valida
     byLegacyScopeKey,
     errors,
   );
+  const taskSets = archive.taskSets;
+  if (taskSets !== undefined) {
+    checkDuplicates("taskSets.records", taskSets.records, byId, errors);
+    checkDuplicates("taskSets.versions", taskSets.versions, byTaskSetIdVersion, errors);
+    checkDuplicates("taskSets.materializations", taskSets.materializations, byId, errors);
+    checkDuplicates(
+      "taskSets.ownershipCrosswalks",
+      taskSets.ownershipCrosswalks,
+      byKey,
+      errors,
+    );
+  }
 }
 
 // --- Public validator --------------------------------------------------------

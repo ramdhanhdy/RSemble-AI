@@ -472,7 +472,10 @@ describe("archive v2 integration — case matrix", () => {
     expect(suiteCreate).toEqual([]);
     expect(suiteReuse.map((r) => r.key)).toEqual(["suite-1"]);
     const commit = await commitPreviewWorkbenchArchiveV2(target, preview);
-    expect(commit.created).not.toContain("suite-1");
+    // The pre-seeded suite row is reused, not created. (The same key "suite-1"
+    // is legitimately CREATED in taskSets.records — a different store — so the
+    // suites store must still hold exactly the one pre-seeded row.)
+    expect(await target.suites.count()).toBe(1);
     expect(commit.reused).toContain("suite-1");
     // The pre-seeded suite content is unchanged (no overwrite).
     expect((await target.suites.get("suite-1"))?.suite).toEqual(fx.makeSuite("suite-1"));

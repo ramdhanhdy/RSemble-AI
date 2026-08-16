@@ -79,6 +79,7 @@ import type {
   TaskFamilyRelationRow,
   TaskFamilyRow,
   TaskInstanceRow,
+  TaskMigrationCrosswalkRow,
   TaskRecordRow,
   TaskVersionRow,
   TaskSetMaterializationRow,
@@ -1002,7 +1003,7 @@ export function buildValidArchiveV2Fixture(): WorkbenchArchiveV2 {
       makeSuiteManifestCrosswalk("suite-1"),
       makeExperimentOwnerCrosswalk("exp-1", "suite-1"),
       makeFusionOwnerCrosswalk("study-1", "suite-1"),
-    ],
+    ].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)),
   };
 
   const archive: WorkbenchArchiveV2 = {
