@@ -29,7 +29,7 @@ import type {
   ExperimentTaskExecutionPlan,
 } from "../evaluations/evaluation-types";
 import { modelKeyOf } from "../evaluations/experiment-roster-extension";
-import type { VerifierOutcome } from "../evaluations/fusion-study-types";
+import type { ExecutedVerifierOutcome } from "./evidence-types";
 import type {
   CandidateAttemptRecord,
   JudgeAttemptRecord,
@@ -70,7 +70,7 @@ export interface ObservationSourceCell {
   reusedOutput: boolean;
   runId: string;
   judgeAssessment: AcceptedJudgeAssessment | null;
-  verifier: VerifierOutcome | null;
+  verifier: ExecutedVerifierOutcome | null;
 }
 
 export interface ObservationSourceGap {
@@ -101,7 +101,7 @@ export interface ObservationSourceInput {
   experiment: ExperimentRecord;
   taskId: string;
   resolveRunRecord: (runId: string) => RunRecordV2 | null;
-  verifierOutcomes?: VerifierOutcome[];
+  verifierOutcomes?: ExecutedVerifierOutcome[];
 }
 
 export type ObservationSourceResult =
@@ -342,11 +342,11 @@ function classifyProvenance(
  * selection is deterministic (spec §6.3 latest-active rule).
  */
 function latestVerifierOutcome(
-  outcomes: VerifierOutcome[],
+  outcomes: ExecutedVerifierOutcome[],
   taskId: string,
   modelKey: string,
-): VerifierOutcome | null {
-  let latest: VerifierOutcome | null = null;
+): ExecutedVerifierOutcome | null {
+  let latest: ExecutedVerifierOutcome | null = null;
   for (const outcome of outcomes) {
     if (outcome.taskId !== taskId || outcome.modelKey !== modelKey) continue;
     if (latest === null || outcome.executedAt > latest.executedAt) latest = outcome;

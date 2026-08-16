@@ -230,12 +230,40 @@ function resolver(runs: RunRecordV2[]): (runId: string) => RunRecordV2 | null {
   return (runId) => runs.find((r) => r.id === runId) ?? null;
 }
 
+function vo(
+  modelKey: string,
+  opts: { passed: boolean; executedAt: number },
+): {
+  taskId: string;
+  modelKey: string;
+  runId: string;
+  kind: "exact_match";
+  configurationDigest: string;
+  verifierRef: { id: string; version: number } | null;
+  passed: boolean;
+  executedAt: number;
+} {
+  return {
+    taskId: "task-1",
+    modelKey,
+    runId: "run-1",
+    kind: "exact_match",
+    configurationDigest: `sha256:${"7".repeat(64)}`,
+    verifierRef: null,
+    ...opts,
+  };
+}
+
 function select(opts: {
   experiment: ExperimentRecord;
   runs: RunRecordV2[];
   verifierOutcomes?: Array<{
     taskId: string;
     modelKey: string;
+    runId: string;
+    kind: "exact_match";
+    configurationDigest: string;
+    verifierRef: { id: string; version: number } | null;
     passed: boolean;
     executedAt: number;
   }>;
@@ -778,11 +806,11 @@ describe("verifier-only and judge+verifier", () => {
     const selection = select({
       experiment,
       runs: [run],
-      verifierOutcomes: [{ taskId: "task-1", modelKey: M1, passed: true, executedAt: 5 }],
+      verifierOutcomes: [vo(M1, { passed: true, executedAt: 5 })],
     });
     const m1 = cellFor(selection, M1);
     expect(m1.judgeAssessment).toBeNull();
-    expect(m1.verifier).toEqual({ taskId: "task-1", modelKey: M1, passed: true, executedAt: 5 });
+    expect(m1.verifier).toEqual(vo(M1, { passed: true, executedAt: 5 }));
   });
 
   it("selects both judge assessment and verifier outcome", () => {
@@ -805,7 +833,7 @@ describe("verifier-only and judge+verifier", () => {
     const selection = select({
       experiment,
       runs: [run],
-      verifierOutcomes: [{ taskId: "task-1", modelKey: M1, passed: false, executedAt: 5 }],
+      verifierOutcomes: [vo(M1, { passed: false, executedAt: 5 })],
     });
     expect(cellFor(selection, M1).judgeAssessment?.judgeAttemptId).toBe("j-1");
     expect(cellFor(selection, M1).verifier?.passed).toBe(false);
@@ -831,8 +859,8 @@ describe("verifier-only and judge+verifier", () => {
       experiment,
       runs: [run],
       verifierOutcomes: [
-        { taskId: "task-1", modelKey: M1, passed: true, executedAt: 5 },
-        { taskId: "task-1", modelKey: M1, passed: false, executedAt: 10 },
+        vo(M1, { passed: true, executedAt: 5 }),
+        vo(M1, { passed: false, executedAt: 10 }),
       ],
     });
     expect(cellFor(selection, M1).verifier?.passed).toBe(false);

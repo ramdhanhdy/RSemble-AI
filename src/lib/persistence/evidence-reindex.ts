@@ -34,12 +34,12 @@ import {
   deriveObservationsForSource,
   type DerivationSourceRef,
   type EvaluationSourceResolver,
+  type ModelConfigurationResolver,
   type TaskIdentityResolver,
+  type VerifierOutcomeResolver,
 } from "../evidence/derive-observations";
-import type { VerifierOutcome } from "../evaluations/fusion-study-types";
 import type { ObservationSourceKind } from "../evidence/evidence-types";
 import type { RunStatus, RunSummary } from "./run-types";
-
 // --- Source enumeration ----------------------------------------------------------
 
 export interface ReindexSource {
@@ -153,7 +153,11 @@ export interface ReindexDeps {
   resolver: EvaluationSourceResolver;
   meta: ReindexMetaStore;
   identity?: TaskIdentityResolver;
-  verifierOutcomes?: VerifierOutcome[];
+  /** Persisted verifier-outcome resolution for each source lineage (local
+   *  read; never executes a verifier or calls a provider). */
+  resolveVerifierOutcomes?: VerifierOutcomeResolver;
+  /** Executed model identity facts; defaults to unknown (never inferred). */
+  resolveModelConfiguration?: ModelConfigurationResolver;
   now?: () => number;
   leaseTtlMs?: number;
   ownerId?: string;
@@ -274,7 +278,8 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
             evidenceRepo: deps.evidenceRepo,
             resolver: deps.resolver,
             identity: deps.identity,
-            verifierOutcomes: deps.verifierOutcomes,
+            resolveVerifierOutcomes: deps.resolveVerifierOutcomes,
+            resolveModelConfiguration: deps.resolveModelConfiguration,
             now: deps.now,
           },
           ref,

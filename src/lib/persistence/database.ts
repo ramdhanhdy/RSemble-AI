@@ -30,9 +30,14 @@
 //   v9 — hardens the observations store: `sourceKey` becomes a DB-level
 //        unique index (`&sourceKey`) as a defense-in-depth backstop behind
 //        the repository's transactional duplicate check (spec §5).
+//   v10 — additive executed verifier-outcome store (1 table): verifierOutcomes
+//         (spec §3.4/§7.3). Persisted by the verifier execution path and
+//         resolved locally by canonical derivation; never by the fusion stores.
 import Dexie, { type Table } from "dexie";
 import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
 import type { ObservationSourceKind } from "../evidence/evidence-types";
+import type { VerificationKind } from "../evaluations/evaluation-types";
+import type { VersionRef } from "../tasks/task-types";
 
 // Indexed row shapes — a search/summary row is the stored summary plus the
 // indexes Dexie needs to filter and paginate without loading detail records.
@@ -389,6 +394,20 @@ export interface EvidenceIndexJobRow {
   /** Sanitized derived summary; null until the source completes. */
   summary: unknown;
 }
+
+/** Executed verifier outcome row (schema v10, spec §3.4/§7.3). Identity fields
+ *  are indexed for exact cell lookup; the payload stays flat and validated. */
+export interface VerifierOutcomeRow {
+  id: string;
+  taskId: string;
+  modelKey: string;
+  runId: string;
+  kind: VerificationKind;
+  configurationDigest: string;
+  verifierRef: VersionRef | null;
+  passed: boolean;
+  executedAt: number;
+}
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -449,6 +468,8 @@ export class RSembleEvaluationDB extends Dexie {
   observations!: Table<EvidenceObservationRow, string>;
   evidenceDecisions!: Table<EvidenceDecisionRow, string>;
   evidenceIndexJobs!: Table<EvidenceIndexJobRow, string>;
+  // Executed verifier outcomes (schema v10)
+  verifierOutcomes!: Table<VerifierOutcomeRow, string>;
   // Fusion Study tables (schema v2)
   fusionRecipes!: Table<FusionRecipeRow, [string, number]>;
   poolManifests!: Table<PoolManifestRow, [string, number]>;
@@ -578,6 +599,13 @@ export class RSembleEvaluationDB extends Dexie {
     this.version(9).stores({
       observations:
         "id, &sourceKey, sourceResultId, taskId, taskInstanceId, modelConfigurationId, observedAt",
+    });
+
+    // v10: additive executed verifier-outcome store (spec §3.4/§7.3). No
+    // existing table is redefined. Rows are written by the verifier execution
+    // path and read locally by canonical derivation — never the fusion stores.
+    this.version(10).stores({
+      verifierOutcomes: "id, taskId, modelKey, runId, executedAt",
     });
 
     this.on("blocked", () => {

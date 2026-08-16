@@ -30,6 +30,7 @@ import {
   type RSembleEvaluationDB,
   type EvidenceIndexJobStatus,
   type EvidenceIndexJobRow,
+  type VerifierOutcomeRow,
   StorageError,
   classifyStorageError,
 } from "./database";
@@ -37,6 +38,7 @@ import {
   canonicalObservationJson,
   collectProhibitedFieldPaths,
   isEligibilityDecision,
+  isExecutedVerifierOutcome,
   isModelConfigurationSnapshot,
   observationSourceKey,
   validateObservation,
@@ -45,6 +47,7 @@ import { configurationsCollide, extendConfigurationWindow } from "../evidence/mo
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
 import type {
   EligibilityDecision,
+  ExecutedVerifierOutcome,
   ModelConfigurationSnapshot,
   Observation,
   ObservationSourceKind,
@@ -152,6 +155,19 @@ export interface EvidenceRepository {
     status?: EvidenceIndexJobStatus;
     sourceKind?: ObservationSourceKind;
   }): Promise<EvidenceIndexJob[]>;
+
+  // --- Executed verifier outcomes ----------------------------------------------
+  /** Persist one executed verifier outcome, idempotent under the composite
+   *  [runId+taskId+modelKey+executedAt] id. A non-identical outcome at the
+   *  same id is corruption, never last-write-wins. */
+  putVerifierOutcome(outcome: ExecutedVerifierOutcome): Promise<"created" | "existing">;
+  /** List persisted outcomes, optionally scoped by task, model, and exact
+   *  lineage run ids. Deterministic order: executedAt, runId, taskId, modelKey. */
+  listVerifierOutcomes(query?: {
+    taskId?: string;
+    modelKey?: string;
+    runIds?: string[];
+  }): Promise<ExecutedVerifierOutcome[]>;
 }
 
 // --- Row codecs ------------------------------------------------------------------
@@ -171,6 +187,29 @@ function fromJobRow(row: EvidenceIndexJobRow): EvidenceIndexJob {
     errorKind: row.errorKind,
     errorMessage: row.errorMessage,
     summary: row.summary as EvidenceIndexJobSummary | null,
+  };
+}
+
+/** Composite, deterministic row id: identical outcomes re-put to the same id
+ *  (idempotent); non-identical content at one id is corruption. */
+function verifierOutcomeId(outcome: ExecutedVerifierOutcome): string {
+  return `${outcome.runId}::${outcome.taskId}::${outcome.modelKey}::${outcome.executedAt}`;
+}
+
+function toVerifierRow(outcome: ExecutedVerifierOutcome): VerifierOutcomeRow {
+  return { id: verifierOutcomeId(outcome), ...outcome };
+}
+
+function fromVerifierRow(row: VerifierOutcomeRow): ExecutedVerifierOutcome {
+  return {
+    taskId: row.taskId,
+    modelKey: row.modelKey,
+    runId: row.runId,
+    kind: row.kind,
+    configurationDigest: row.configurationDigest,
+    verifierRef: row.verifierRef,
+    passed: row.passed,
+    executedAt: row.executedAt,
   };
 }
 
@@ -601,6 +640,66 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
     }
   }
 
+  async function putVerifierOutcome(
+    outcome: ExecutedVerifierOutcome,
+  ): Promise<"created" | "existing"> {
+    try {
+      db.assertWritable();
+      if (!isExecutedVerifierOutcome(outcome)) {
+        throw new StorageError("validation", "Invalid ExecutedVerifierOutcome.");
+      }
+      const prohibited: string[] = [];
+      collectProhibitedFieldPaths(outcome, "", prohibited);
+      if (prohibited.length > 0) {
+        throw new StorageError(
+          "validation",
+          `Invalid ExecutedVerifierOutcome: ${prohibited[0]}`,
+        );
+      }
+      const row = toVerifierRow(outcome);
+      return await db.transaction("rw", db.verifierOutcomes, async () => {
+        const existing = await db.verifierOutcomes.get(row.id);
+        if (!existing) {
+          await db.verifierOutcomes.put(row);
+          return "created";
+        }
+        if (canonicalJsonString(existing) === canonicalJsonString(row)) return "existing";
+        throw new EvidenceCorruptionError(
+          `Executed verifier outcome ${row.id} already exists with non-identical ` +
+            `content — corruption, not last-write-wins.`,
+        );
+      });
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function listVerifierOutcomes(
+    query: { taskId?: string; modelKey?: string; runIds?: string[] } = {},
+  ): Promise<ExecutedVerifierOutcome[]> {
+    try {
+      let rows = await db.verifierOutcomes.toArray();
+      if (query.taskId !== undefined) rows = rows.filter((r) => r.taskId === query.taskId);
+      if (query.modelKey !== undefined) rows = rows.filter((r) => r.modelKey === query.modelKey);
+      if (query.runIds !== undefined) {
+        const runIds = new Set(query.runIds);
+        rows = rows.filter((r) => runIds.has(r.runId));
+      }
+      return rows
+        .map(fromVerifierRow)
+        .filter((o): o is ExecutedVerifierOutcome => isExecutedVerifierOutcome(o))
+        .sort(
+          (a, b) =>
+            a.executedAt - b.executedAt ||
+            a.runId.localeCompare(b.runId) ||
+            a.taskId.localeCompare(b.taskId) ||
+            a.modelKey.localeCompare(b.modelKey),
+        );
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
   return {
     putModelConfiguration,
     getModelConfiguration,
@@ -621,6 +720,8 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
     putIndexJob,
     getIndexJob,
     listIndexJobs,
+    putVerifierOutcome,
+    listVerifierOutcomes,
   };
 }
 
@@ -636,6 +737,7 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
   private readonly observationsById = new Map<string, Observation>();
   private readonly decisions = new Map<string, EligibilityDecision>();
   private readonly jobs = new Map<string, EvidenceIndexJob>();
+  private readonly verifierOutcomes = new Map<string, ExecutedVerifierOutcome>();
 
   async putModelConfiguration(
     snapshot: ModelConfigurationSnapshot,
@@ -813,6 +915,51 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
       (a, b) => a.observationId.localeCompare(b.observationId) || a.ruleVersion - b.ruleVersion,
     );
     return decisions;
+  }
+
+  async putVerifierOutcome(
+    outcome: ExecutedVerifierOutcome,
+  ): Promise<"created" | "existing"> {
+    if (!isExecutedVerifierOutcome(outcome)) {
+      throw new StorageError("validation", "Invalid ExecutedVerifierOutcome.");
+    }
+    const prohibited: string[] = [];
+    collectProhibitedFieldPaths(outcome, "", prohibited);
+    if (prohibited.length > 0) {
+      throw new StorageError("validation", `Invalid ExecutedVerifierOutcome: ${prohibited[0]}`);
+    }
+    const id = verifierOutcomeId(outcome);
+    const existing = this.verifierOutcomes.get(id);
+    if (existing) {
+      if (canonicalJsonString(existing) === canonicalJsonString(outcome)) return "existing";
+      throw new EvidenceCorruptionError(
+        `Executed verifier outcome ${id} already exists with non-identical ` +
+          `content — corruption, not last-write-wins.`,
+      );
+    }
+    this.verifierOutcomes.set(id, JSON.parse(JSON.stringify(outcome)));
+    return "created";
+  }
+
+  async listVerifierOutcomes(
+    query: { taskId?: string; modelKey?: string; runIds?: string[] } = {},
+  ): Promise<ExecutedVerifierOutcome[]> {
+    let rows = [...this.verifierOutcomes.values()];
+    if (query.taskId !== undefined) rows = rows.filter((r) => r.taskId === query.taskId);
+    if (query.modelKey !== undefined) rows = rows.filter((r) => r.modelKey === query.modelKey);
+    if (query.runIds !== undefined) {
+      const runIds = new Set(query.runIds);
+      rows = rows.filter((r) => runIds.has(r.runId));
+    }
+    return rows
+      .map((r) => JSON.parse(JSON.stringify(r)))
+      .sort(
+        (a, b) =>
+          a.executedAt - b.executedAt ||
+          a.runId.localeCompare(b.runId) ||
+          a.taskId.localeCompare(b.taskId) ||
+          a.modelKey.localeCompare(b.modelKey),
+      );
   }
 
   async putIndexJob(job: EvidenceIndexJob): Promise<PutIndexJobResult> {

@@ -31,13 +31,13 @@ import {
   type VerifierState,
 } from "./evidence-eligibility";
 import type { ExperimentRecord, EvaluationTask } from "../evaluations/evaluation-types";
-import type { VerifierOutcome } from "../evaluations/fusion-study-types";
 import type { RunRecordV2, PersistedCandidate } from "../persistence/run-types";
 import type { VersionRef } from "../tasks/task-types";
 import {
   type AssessmentRef,
   type EligibilityDecision,
   type EvaluatorSnapshot,
+  type ExecutedVerifierOutcome,
   type ModelConfigurationSnapshot,
   type Observation,
   type ObservationOutcome,
@@ -115,6 +115,59 @@ export function defaultTaskIdentityResolver(ctx: TaskIdentityContext): ResolvedT
   };
 }
 
+// --- Persisted verifier-outcome resolution seam ----------------------------------
+
+export interface VerifierOutcomeResolution {
+  /** Execution lineage (run ids) of the derivation source. Outcomes outside
+   *  this lineage never apply to the derivation (exact source scoping). */
+  lineageRunIds: string[];
+}
+
+/**
+ * Resolve persisted executed verifier outcomes for a derivation source. The
+ * resolver is local evidence resolution ONLY: it reads a persisted store and
+ * never executes a verifier or calls a provider. When no outcomes exist the
+ * resolver returns [] and every cell stays `not_declared` — pass/fail is never
+ * inferred (spec §3.4, §7.3).
+ */
+export type VerifierOutcomeResolver = (
+  input: VerifierOutcomeResolution,
+) => Promise<ExecutedVerifierOutcome[]>;
+
+/** Repository-backed resolver: outcomes scoped to the exact source lineage. */
+export function createRepositoryVerifierResolver(
+  evidenceRepo: EvidenceRepository,
+): VerifierOutcomeResolver {
+  return (input) => evidenceRepo.listVerifierOutcomes({ runIds: input.lineageRunIds });
+}
+
+// --- Model-configuration fact resolution seam ------------------------------------
+
+export interface ModelConfigurationFacts {
+  resolvedModel: string | null;
+  resolvedVersion: string | null;
+}
+
+export interface ModelConfigurationCellContext {
+  run: RunRecordV2;
+  candidate: PersistedCandidate;
+}
+
+/**
+ * Resolve executed model identity facts for one cell from stored records. The
+ * default is unknown (null): resolved identity is never inferred from the
+ * requested model. A verifier execution path may supply provider-confirmed
+ * facts; without them cells classify conservatively.
+ */
+export type ModelConfigurationResolver = (
+  ctx: ModelConfigurationCellContext,
+) => ModelConfigurationFacts;
+
+export const defaultModelConfigurationResolver: ModelConfigurationResolver = () => ({
+  resolvedModel: null,
+  resolvedVersion: null,
+});
+
 // --- Derivation ------------------------------------------------------------------
 
 export interface DerivationSourceRef {
@@ -128,8 +181,12 @@ export interface DerivationDeps {
   resolver: EvaluationSourceResolver;
   /** Canonical Task identity seam; defaults to stored-fact resolution. */
   identity?: TaskIdentityResolver;
-  /** Executed verifier outcomes for this lineage; never read from fusion stores. */
-  verifierOutcomes?: VerifierOutcome[];
+  /** Persisted verifier-outcome resolution for the source lineage; local
+   *  evidence resolution only — never reads fusion stores, never executes a
+   *  verifier, never calls a provider. Missing outcomes stay not_declared. */
+  resolveVerifierOutcomes?: VerifierOutcomeResolver;
+  /** Executed model identity facts; defaults to unknown (never inferred). */
+  resolveModelConfiguration?: ModelConfigurationResolver;
   now?: () => number;
 }
 
@@ -210,11 +267,16 @@ export async function deriveObservationsForSource(
     }
     const resolveRunRecord = (runId: string): RunRecordV2 | null => lineageRuns.get(runId) ?? null;
 
+    // Persisted verifier outcomes for the exact source lineage (local read).
+    const verifierOutcomes = deps.resolveVerifierOutcomes
+      ? await deps.resolveVerifierOutcomes({ lineageRunIds })
+      : [];
+
     const selection = selectObservationSources({
       experiment,
       taskId: run.source.taskId,
       resolveRunRecord,
-      verifierOutcomes: deps.verifierOutcomes ?? [],
+      verifierOutcomes,
     });
     if (!selection.ok) {
       return failed("source-corrupt", selection.reason);
@@ -253,6 +315,7 @@ export async function deriveObservationsForSource(
           observedAt,
           sourceCorrupt,
           fullTaskSetCoverage,
+          resolveModelConfiguration: deps.resolveModelConfiguration ?? defaultModelConfigurationResolver,
         });
         if (cellOutcome.limitation !== null) {
           limitations.push(cellOutcome.limitation);
@@ -300,7 +363,7 @@ interface DeriveCellInput {
       blindLabelMapping: Record<string, string>;
       candidateAttemptIdsByCandidateId: Record<string, string>;
     } | null;
-    verifier: VerifierOutcome | null;
+    verifier: ExecutedVerifierOutcome | null;
     candidate: PersistedCandidate | undefined;
   };
   observedAt: number;
@@ -308,6 +371,8 @@ interface DeriveCellInput {
   sourceCorrupt: boolean;
   /** Every declared roster cell has evidence. */
   fullTaskSetCoverage: boolean;
+  /** Executed model identity facts for this cell (default: unknown). */
+  resolveModelConfiguration: ModelConfigurationResolver;
 }
 
 type DeriveCellResult =
@@ -368,13 +433,15 @@ function deriveCellObservation(input: DeriveCellInput): DeriveCellResult {
   }
 
   // Model configuration from stored facts only — unknown resolved versions
-  // stay unknown (spec §3.1).
+  // stay unknown (spec §3.1). The executed identity facts come from the
+  // resolution seam; nothing is inferred from the requested model.
   const reasoning = run.reasoning?.candidates[cell.candidateId];
+  const facts = input.resolveModelConfiguration({ run, candidate: cell.candidate });
   const configResult: ModelConfigurationResult = canonicalizeModelConfiguration({
     providerId: cell.candidate.providerId,
     requestedModel: cell.candidate.model,
-    resolvedModel: null,
-    resolvedVersion: null,
+    resolvedModel: facts.resolvedModel,
+    resolvedVersion: facts.resolvedVersion,
     reasoningRequested: reasoning?.requested ?? null,
     reasoningEffective: reasoning?.effective ?? null,
     toolScaffoldSignature: null,
@@ -407,22 +474,21 @@ function deriveCellObservation(input: DeriveCellInput): DeriveCellResult {
     snapshotTask as (EvaluationTask & { verification?: { kind: string } }) | undefined
   )?.verification;
   const hasVerifierContract = verification !== undefined && verification.kind !== "none";
-  const verifierSnapshot: VerifierSnapshot | null =
-    hasVerifierContract && cell.verifier
-      ? {
-          verifierRef: null,
-          kind: verification!.kind as VerifierSnapshot["kind"],
-          configurationDigest: hashArtifactContent(
-            canonicalJsonString({ kind: verification!.kind }),
-          ),
-        }
-      : null;
+  // The snapshot preserves the EXACT executed contract: kind, configuration
+  // digest, and frozen contract ref come from the persisted outcome, never
+  // from the declared contract alone (spec §3.4, §7.3).
+  const verifierSnapshot: VerifierSnapshot | null = cell.verifier
+    ? {
+        verifierRef: cell.verifier.verifierRef,
+        kind: cell.verifier.kind,
+        configurationDigest: cell.verifier.configurationDigest,
+      }
+    : null;
   const verifierState: VerifierState = cell.verifier
     ? cell.verifier.passed
       ? "passed"
       : "failed"
     : "not_declared";
-
   const assessmentRef: AssessmentRef = {
     judgeAttemptId: cell.judgeAssessment.judgeAttemptId,
     judgeProviderId: cell.judgeAssessment.providerId,
@@ -430,7 +496,7 @@ function deriveCellObservation(input: DeriveCellInput): DeriveCellResult {
     blindLabelMapping: cell.judgeAssessment.blindLabelMapping,
     candidateAttemptIdsByCandidateId: cell.judgeAssessment.candidateAttemptIdsByCandidateId,
     rubricRef,
-    verifierRef: null,
+    verifierRef: cell.verifier?.verifierRef ?? null,
     verifierOutcome: cell.verifier
       ? {
           taskId: cell.verifier.taskId,
@@ -479,7 +545,10 @@ function deriveCellObservation(input: DeriveCellInput): DeriveCellResult {
     candidateSelectedCompleted: true,
     assessmentSelectedCompleted: true,
     verifierState,
-    frozenVerifierVersion: false,
+    // Frozen iff the persisted outcome ran under a versioned verifier
+    // contract (spec §7.3) — never hardcoded, never inferred from the
+    // declared contract alone.
+    frozenVerifierVersion: cell.verifier ? cell.verifier.verifierRef !== null : false,
     humanVerificationAuthorized: false,
     rubricResolved: rubricRef !== null,
     protocolComplete: true,
@@ -496,9 +565,13 @@ function deriveCellObservation(input: DeriveCellInput): DeriveCellResult {
       taskVersion: identity.taskVersion,
       taskInstanceId: identity.taskInstanceId,
       rubricRef,
-      verifierRef: verifierSnapshot?.verifierRef ?? null,
-      verifierKind: hasVerifierContract ? (verification!.kind as VerifierSnapshot["kind"]) : null,
-      verifierConfigurationDigest: verifierSnapshot?.configurationDigest ?? null,
+      verifierRef: cell.verifier?.verifierRef ?? null,
+      verifierKind: cell.verifier
+        ? cell.verifier.kind
+        : hasVerifierContract
+          ? (verification!.kind as VerifierSnapshot["kind"])
+          : null,
+      verifierConfigurationDigest: cell.verifier?.configurationDigest ?? null,
       protocolFingerprint: observation.protocolFingerprint,
       responseMode: null,
       evaluator: evaluatorSnapshot,

@@ -31,7 +31,7 @@ import type {
   EvaluationTask,
   EvaluationRubric,
 } from "../evaluations/evaluation-types";
-import type { VerifierOutcome, EvaluationObservation } from "../evaluations/fusion-study-types";
+import type { EvaluationObservation } from "../evaluations/fusion-study-types";
 import type { RunRecordV2, JudgeAttemptRecord, PersistedCandidate } from "../persistence/run-types";
 
 // --- Fixtures -----------------------------------------------------------------
@@ -475,11 +475,20 @@ describe("deriveObservationsForSource", () => {
     // Seed fusion study observation events/stores — they must be ignored.
     world.fusion.observations.push(makeFusionObservation());
     world.fusion.terminalEvents.push("fusion-terminal:fusion-obs-1");
-    const verifierOutcomes: VerifierOutcome[] = [
-      { taskId: "task-1", modelKey: "openrouter:model-m1", passed: true, executedAt: 5 },
+    const verifierOutcomes = [
+      {
+        taskId: "task-1",
+        modelKey: "openrouter:model-m1",
+        runId: "run-1",
+        kind: "exact_match" as const,
+        configurationDigest: `sha256:${"7".repeat(64)}`,
+        verifierRef: { id: "ver-1", version: 2 },
+        passed: true,
+        executedAt: 5,
+      },
     ];
     const result = await deriveObservationsForSource(
-      depsFor(world, { verifierOutcomes }),
+      depsFor(world, { resolveVerifierOutcomes: async () => verifierOutcomes }),
       refFor(makeRun()),
     );
     expect(result.status).toBe("complete");
@@ -568,6 +577,7 @@ describe("deriveObservationsForSource", () => {
       } as unknown as Partial<DerivationDeps>),
       refFor(run),
     );
+    expect(result.status).toBe("complete");
     const observations = await world.repo.listObservationsBySource("evaluation", run.id);
     const decision = await world.repo.getActiveDecision(observations[0].id);
     expect(observations[0].outcome.verifierPassed).toBe(false);
@@ -599,6 +609,7 @@ describe("deriveObservationsForSource", () => {
       } as unknown as Partial<DerivationDeps>),
       refFor(run),
     );
+    expect(result.status).toBe("complete");
     const observations = await world.repo.listObservationsBySource("evaluation", run.id);
     const decision = await world.repo.getActiveDecision(observations[0].id);
     expect(decision?.evidenceClass).toBe("comparable");

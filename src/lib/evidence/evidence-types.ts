@@ -78,6 +78,34 @@ export interface VerifierOutcomeRef {
 }
 
 /**
+ * A persisted executed verifier result for one task × model cell of one exact
+ * source run (spec §3.4, §7.3). Persisted by the verifier execution path and
+ * resolved locally by canonical derivation — the derivation never executes a
+ * verifier and never infers a pass/fail when the store has no row. The exact
+ * executed contract kind, configuration digest, frozen contract ref, and
+ * execution time are preserved so the Observation's verifier snapshot and
+ * eligibility classification reflect what really ran.
+ */
+export interface ExecutedVerifierOutcome {
+  taskId: string;
+  /** Candidate model key (providerId:slug). */
+  modelKey: string;
+  /** Exact run the verifier executed against — outcomes outside the source
+   *  execution lineage never apply to a derivation. */
+  runId: string;
+  /** Executed verifier contract kind; never "none" (a "none" verifier never runs). */
+  kind: VerificationKind;
+  /** Canonical serialization hash of the executed verifier configuration. */
+  configurationDigest: string;
+  /** Frozen contract version the verifier ran under; null = unfrozen execution
+   *  (passes qualify comparable use but never the Verified class). */
+  verifierRef: VersionRef | null;
+  passed: boolean;
+  /** Wall-clock time the verifier executed. */
+  executedAt: number;
+}
+
+/**
  * Assessment reference (spec §3.4): identifies the accepted judge attempt,
  * verifier result, blind label mapping, rubric/version, and (via the enclosing
  * Observation) the selected task attempt. Multiple assessment events may

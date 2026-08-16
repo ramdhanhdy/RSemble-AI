@@ -23,6 +23,7 @@ import { useExecutionOwner } from "../execution-owner-context";
 import { createEvidenceRepository } from "../persistence/evidence-repository";
 import {
   createDerivationQueue,
+  createRepositoryVerifierResolver,
   type EvaluationSourceResolver,
 } from "../evidence/derive-observations";
 import { createExperimentController, type ExperimentController } from "./experiment-controller";
@@ -49,7 +50,11 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
       getExperiment: (id) => evalRepo.getExperiment(id),
       getRun: (id) => runRepo.get(id),
     };
-    const derivationQueue = createDerivationQueue({ evidenceRepo, resolver: sourceResolver });
+    const derivationQueue = createDerivationQueue({
+      evidenceRepo,
+      resolver: sourceResolver,
+      resolveVerifierOutcomes: createRepositoryVerifierResolver(evidenceRepo),
+    });
     const controller = createExperimentController({
       evalRepo,
       uow: createExperimentUnitOfWork(new DexieExperimentStore(db)),

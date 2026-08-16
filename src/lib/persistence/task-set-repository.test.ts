@@ -824,7 +824,8 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "observations")).toBe(true);
     expect(db.tables.some((t) => t.name === "evidenceDecisions")).toBe(true);
     expect(db.tables.some((t) => t.name === "evidenceIndexJobs")).toBe(true);
-    expect(db.verno).toBe(9);
+    expect(db.tables.some((t) => t.name === "verifierOutcomes")).toBe(true);
+    expect(db.verno).toBe(10);
   });
 
   it("upgrades a v4-seeded database through v9 additively without losing prior rows", async () => {
@@ -916,10 +917,10 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "taskSetMaterializations")).toBe(true);
     expect(db.tables.some((t) => t.name === "modelConfigurations")).toBe(true);
     expect(db.tables.some((t) => t.name === "observations")).toBe(true);
-    expect(db.tables.some((t) => t.name === "evidenceDecisions")).toBe(true);
     expect(db.tables.some((t) => t.name === "evidenceIndexJobs")).toBe(true);
+    expect(db.tables.some((t) => t.name === "verifierOutcomes")).toBe(true);
     expect(db.tables.some((t) => t.name === "suites")).toBe(true);
-    expect(db.verno).toBe(9);
+    expect(db.verno).toBe(10);
   });
 
   it("does not write Task Set rows into the legacy Suite table", async () => {

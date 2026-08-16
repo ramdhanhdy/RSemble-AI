@@ -32,6 +32,7 @@ import {
   type EvidenceClass,
   type EvidenceReasonCode,
   type EvidenceUse,
+  type ExecutedVerifierOutcome,
   type IdentityCompleteness,
   type JsonScalar,
   type ModelConfigurationSnapshot,
@@ -193,6 +194,20 @@ export function isModelConfigurationSnapshot(v: unknown): v is ModelConfiguratio
     return false;
   }
   return true;
+}
+
+export function isExecutedVerifierOutcome(v: unknown): v is ExecutedVerifierOutcome {
+  if (!isRecord(v)) return false;
+  if (!isNonBlankString(v.taskId) || !isNonBlankString(v.modelKey)) return false;
+  if (!isNonBlankString(v.runId)) return false;
+  if (!isString(v.kind) || !(VERIFICATION_KINDS as readonly string[]).includes(v.kind)) {
+    return false;
+  }
+  if (v.kind === "none") return false;
+  if (!isString(v.configurationDigest) || !SHA256_RE.test(v.configurationDigest)) return false;
+  if (v.verifierRef !== null && !isVersionRef(v.verifierRef)) return false;
+  if (!isBoolean(v.passed)) return false;
+  return isNonNegativeFinite(v.executedAt);
 }
 
 export function isVerifierOutcomeRef(v: unknown): v is VerifierOutcomeRef {
