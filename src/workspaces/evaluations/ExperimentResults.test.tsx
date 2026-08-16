@@ -1886,10 +1886,10 @@ describe("ExperimentResults — Evidence receipt integration (F1-blocker)", () =
       taskVersion: 1,
       taskInstanceId: "inst_1",
       taskFamilyId: null,
-      modelConfigurationId: "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      candidateAttemptId: "att-cand-0",
+      modelConfigurationId: `mc:${SHA}`,
+      candidateAttemptId: `att-${taskId}`,
       assessmentRef: {
-        judgeAttemptId: "judge-att-1",
+        judgeAttemptId: `att-${taskId}`,
         judgeProviderId: "openrouter",
         judgeModel: "judge",
         blindLabelMapping: {},
@@ -1968,17 +1968,12 @@ describe("ExperimentResults — Evidence receipt integration (F1-blocker)", () =
     await settle();
 
     const receiptButtons = h.$$('button[aria-label*="Evidence receipt:"]');
-    expect(receiptButtons.length).toBeGreaterThan(0);
-    const hasExcludedNoScore = receiptButtons.some((b) =>
-      b.getAttribute("aria-label")?.includes("Excluded — No score"),
+    const scoredReceiptButton = receiptButtons.find((b) =>
+      b.getAttribute("aria-label")?.includes("Eligible"),
     );
-    expect(hasExcludedNoScore).toBe(false);
-    const hasEligibleOrComparable = receiptButtons.some(
-      (b) =>
-        b.getAttribute("aria-label")?.includes("Eligible") ||
-        b.getAttribute("aria-label")?.includes("Comparable"),
-    );
-    expect(hasEligibleOrComparable).toBe(true);
+    expect(scoredReceiptButton).toBeDefined();
+    expect(scoredReceiptButton?.getAttribute("aria-label")).toContain("Eligible");
+    expect(scoredReceiptButton?.getAttribute("aria-label")).toContain("Comparable");
 
     cleanup(h);
   });

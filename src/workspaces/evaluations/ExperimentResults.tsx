@@ -16,6 +16,7 @@ import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import {
   useEvaluationRepository,
+  useEvidenceRepository,
   useTaskSetRepository,
 } from "../../lib/persistence/repository-context";
 import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
@@ -110,14 +111,8 @@ export function ExperimentResults({
   const [searchParams, setSearchParams] = useSearchParams();
   const evalRepo = useEvaluationRepository();
   const taskSetRepo = useTaskSetRepository();
-  const [evidenceRepo, setEvidenceRepo] = useState<EvidenceRepository | null>(
-    evidenceRepoProp ?? null,
-  );
-  useEffect(() => {
-    if (evidenceRepoProp !== undefined) {
-      setEvidenceRepo(evidenceRepoProp);
-    }
-  }, [evidenceRepoProp]);
+  const contextEvidenceRepo = useEvidenceRepository();
+  const evidenceRepo = evidenceRepoProp ?? contextEvidenceRepo ?? null;
   const [runRecords, setRunRecords] = useState<ReadonlyMap<string, RunRecordV2> | null>(null);
   const [suiteName, setSuiteName] = useState<string | null>(
     taskSetNameProp ?? suiteNameProp ?? null,
