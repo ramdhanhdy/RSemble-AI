@@ -718,11 +718,17 @@ describe("reindexEvidence", () => {
     const world = makeWorld();
     seedCleanEvaluation(world, "run-a");
     // Park A's pass at source enumeration: A holds the lease while blocked.
+    // The heartbeat cadence is inert here so the parked pass simulates an
+    // owner whose timers are suspended — its lease may lapse mid-park.
     let releaseA!: () => void;
     const gateA = new Promise<void>((resolve) => {
       releaseA = resolve;
     });
-    const depsA = depsFor(world, { ownerId: "tab-a", leaseTtlMs: 100 });
+    const depsA = depsFor(world, {
+      ownerId: "tab-a",
+      leaseTtlMs: 100,
+      leaseHeartbeatMs: 10_000,
+    });
     depsA.enumerator = {
       listSources: async () => {
         await gateA;

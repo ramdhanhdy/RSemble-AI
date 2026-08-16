@@ -23,8 +23,9 @@
 //    row and never delete exact evidence;
 //  - cross-tab safety uses a local storage-work lease (separate from paid
 //    execution): any unexpired lease blocks acquisition, active passes renew
-//    per source (fail-closed on ownership loss), and release is owner-checked
-//    so a lapsed owner never deletes a successor's lease.
+//    per source and on a periodic owner-checked heartbeat independent of
+//    source boundaries (fail-closed on ownership loss), and release is
+//    owner-checked so a lapsed owner never deletes a successor's lease.
 //
 // This module never mutates source records and never invokes a provider.
 // =============================================================================
@@ -199,6 +200,14 @@ export interface ReindexDeps {
   resolveModelConfiguration?: ModelConfigurationResolver;
   now?: () => number;
   leaseTtlMs?: number;
+  /**
+   * Cadence of the periodic owner-checked lease renewal that runs for the
+   * whole pass, independent of source boundaries, so a single source that
+   * runs longer than the TTL cannot let the lease lapse. Defaults to a
+   * quarter of `leaseTtlMs` (75s against the default 5m TTL) — meaningfully
+   * below the TTL.
+   */
+  leaseHeartbeatMs?: number;
   ownerId?: string;
 }
 export type ReindexRunResult =
@@ -253,7 +262,8 @@ async function inventoryComparisonSource(deps: ReindexDeps, source: ReindexSourc
  * Run one deterministic backfill/reindex pass. Sources are processed in
  * sourceResultId order; a source is skipped only when its marker is complete
  * at the current revision (marker-after-verify). The pass renews its
- * owner-checked storage-work lease before every source and stops with
+ * owner-checked storage-work lease before every source and on a periodic
+ * heartbeat for the whole pass, and stops with
  * `{ skipped: true, reason: "lease-lost" }` the moment ownership is lost;
  * release is owner-checked too. Never mutates source records and never
  * invokes a provider.
@@ -286,10 +296,35 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
     errors: [] as string[],
   };
 
+  // Periodic owner-checked heartbeat for the duration of the pass: renewal
+  // never reacquires a lost lease — a "lost" report (or a renewal that
+  // cannot run at all) is tracked and the pass fails closed, independent of
+  // source boundaries.
+  let leaseLost = false;
+  const heartbeatMs = deps.leaseHeartbeatMs ?? Math.max(1, Math.floor(ttlMs / 4));
+  const heartbeat = setInterval(() => {
+    void (async () => {
+      let renewed: "renewed" | "lost";
+      try {
+        renewed = await deps.meta.renewLease(REINDEX_LEASE_KEY, ownerId, now() + ttlMs);
+      } catch {
+        // Ownership cannot be confirmed when the renewal itself fails: fail
+        // closed exactly like a reported loss. The owner-checked per-source
+        // renewal and release remain the storage-level backstops.
+        renewed = "lost";
+      }
+      if (renewed === "lost") leaseLost = true;
+    })();
+  }, heartbeatMs);
+
   try {
     const sources = await deps.enumerator.listSources();
 
     for (const source of sources) {
+      // A heartbeat-reported loss stops the pass before any further work.
+      if (leaseLost) {
+        return { skipped: true, reason: "lease-lost" };
+      }
       // Owner-checked renewal before every source: a pass that outlives its
       // TTL stays exclusive, and one whose lease was lost (expired + taken
       // by a successor) fails closed instead of overlapping the successor.
@@ -374,6 +409,12 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
           continue;
         }
 
+        // The heartbeat may have reported a loss while this source was in
+        // flight: a lapsed owner never claims completion.
+        if (leaseLost) {
+          return { skipped: true, reason: "lease-lost" };
+        }
+
         await deps.evidenceRepo.putIndexJob({
           sourceResultId: source.sourceResultId,
           sourceKind: "evaluation",
@@ -416,6 +457,7 @@ export async function reindexEvidence(deps: ReindexDeps): Promise<ReindexRunResu
 
     return result;
   } finally {
+    clearInterval(heartbeat);
     // Owner-checked release: a pass whose lease lapsed and was taken over
     // by a successor must never delete the successor's lease.
     await deps.meta.releaseLease(REINDEX_LEASE_KEY, ownerId);
