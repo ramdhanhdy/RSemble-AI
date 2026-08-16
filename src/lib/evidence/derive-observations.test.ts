@@ -291,6 +291,16 @@ const refFor = (run: RunRecordV2, revision = run.revision) => ({
   sourceResultId: run.id,
   sourceRevision: revision,
 });
+/** Poll a predicate until truthy (real timers; used to sequence concurrent
+ *  drains deterministically). */
+async function until(predicate: () => boolean | Promise<boolean>, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await predicate()) return;
+    if (Date.now() > deadline) throw new Error("until: condition not met in time");
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
 
 // --- Tests ---------------------------------------------------------------------
 
@@ -1085,5 +1095,69 @@ describe("derivation queue", () => {
     // owner/reindex — never lost, never half-written.
     const job = await world.repo.getIndexJob("run-1");
     expect(["queued", "running", "complete"].includes(job?.status ?? "")).toBe(true);
+  });
+  it("concurrent queues claim exclusively so one derivation executes per source revision", async () => {
+    const world = makeWorld();
+    const { run } = seedCleanSource(world);
+    // Both queues list the queued job before either claims it, then race the
+    // claim; only one may derive. Distinct clocks make a non-exclusive
+    // running-marker CAS visibly double-derive (different updatedAt values).
+    let releaseList!: () => void;
+    let releaseDerive!: () => void;
+    const gateList = new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+    const gateDerive = new Promise<void>((resolve) => {
+      releaseDerive = resolve;
+    });
+    let listCalls = 0;
+    const repo: EvidenceRepository = new Proxy(world.repo, {
+      get(target, prop, receiver) {
+        if (prop === "listIndexJobs") {
+          return async (filter?: { status?: string }) => {
+            listCalls += 1;
+            await gateList;
+            return target.listIndexJobs(filter as { status?: "queued" });
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    // Count every derivation attempt of the source run, not unique reads.
+    let derivations = 0;
+    const resolver: EvaluationSourceResolver = {
+      getExperiment: async (id) => {
+        await gateDerive;
+        return world.experiments.get(id) ?? null;
+      },
+      getRun: async (id) => {
+        if (id === run.id) derivations += 1;
+        return world.runs.get(id) ?? null;
+      },
+    };
+    const queueA = createDerivationQueue(
+      { ...depsFor(world, { resolver }), evidenceRepo: repo, now: () => 1000 },
+      { ownerId: "tab-a", scheduleDelayMs: 0 },
+    );
+    const queueB = createDerivationQueue(
+      { ...depsFor(world, { resolver }), evidenceRepo: repo, now: () => 1001 },
+      { ownerId: "tab-b", scheduleDelayMs: 0 },
+    );
+    await queueA.enqueue(refFor(run));
+    const drainA = queueA.drain();
+    const drainB = queueB.drain();
+    await until(() => listCalls === 2);
+    releaseList();
+    await until(() => derivations >= 1);
+    releaseDerive();
+    await Promise.all([drainA, drainB]);
+    // Exactly one derivation despite two queues draining the same queued
+    // source concurrently — the other queue found nothing claimable.
+    expect(derivations).toBe(1);
+    expect((await world.repo.getIndexJob(run.id))?.status).toBe("complete");
+    expect(await world.repo.countObservations()).toBe(1);
+    queueA.dispose();
+    queueB.dispose();
   });
 });

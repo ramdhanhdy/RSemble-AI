@@ -355,6 +355,16 @@ function seedCleanEvaluation(world: World, id = "run-a", experimentId = `exp-${i
   world.runs.set(id, makeRun(id, {}, experimentId));
   world.experiments.set(experimentId, makeExperiment(experimentId, id));
 }
+/** Poll a predicate until truthy (real timers; used to sequence concurrent
+ *  passes deterministically). */
+async function until(predicate: () => boolean | Promise<boolean>, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await predicate()) return;
+    if (Date.now() > deadline) throw new Error("until: condition not met in time");
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
 
 async function fusionObs(
   overrides: Partial<EvaluationObservation> = {},
@@ -691,6 +701,93 @@ describe("reindexEvidence", () => {
     expect((await world.repo.getIndexJob("run-a"))?.status).toBe("complete");
     expect(await world.repo.countObservations()).toBe(1);
   });
+  it("an expired owner cannot delete a successor's lease on exit (owner-checked release)", async () => {
+    const world = makeWorld();
+    seedCleanEvaluation(world, "run-a");
+    // Park A's pass at source enumeration: A holds the lease while blocked.
+    let releaseA!: () => void;
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const depsA = depsFor(world, { ownerId: "tab-a", leaseTtlMs: 100 });
+    depsA.enumerator = {
+      listSources: async () => {
+        await gateA;
+        return world.sources.map((s) => ({ ...s }));
+      },
+    };
+    const passA = reindexEvidence(depsA);
+    await until(async () => (await world.meta.get(REINDEX_LEASE_KEY)) !== null);
+
+    // A's lease (acquired at t=0, ttl 100) lapses; B acquires the expired
+    // lease and parks mid-pass holding it.
+    world.nowMs = 200;
+    let releaseB!: () => void;
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    const depsB = depsFor(world, { ownerId: "tab-b", leaseTtlMs: 1_000 });
+    depsB.enumerator = {
+      listSources: async () => {
+        await gateB;
+        return world.sources.map((s) => ({ ...s }));
+      },
+    };
+    const passB = reindexEvidence(depsB);
+    await until(async () => {
+      const held = (await world.meta.get(REINDEX_LEASE_KEY)) as { ownerId?: string } | null;
+      return held?.ownerId === "tab-b";
+    });
+
+    // A resumes after losing ownership: it must fail closed and must never
+    // delete B's lease.
+    releaseA();
+    const resultA = await passA;
+    expect(resultA).toEqual({ skipped: true, reason: "lease-lost" });
+    expect(
+      ((await world.meta.get(REINDEX_LEASE_KEY)) as { ownerId?: string } | null)?.ownerId,
+    ).toBe("tab-b");
+
+    // B still owns the lease and completes its own pass before releasing it.
+    releaseB();
+    const resultB = await passB;
+    expect(resultB).toMatchObject({ skipped: false, sourcesProcessed: 1 });
+    expect(await world.meta.get(REINDEX_LEASE_KEY)).toBeNull();
+    expect(await world.repo.countObservations()).toBe(1);
+  });
+
+  it("an active pass renews its lease per source so a concurrent owner stays excluded", async () => {
+    const world = makeWorld();
+    seedCleanEvaluation(world, "run-s1");
+    seedCleanEvaluation(world, "run-s2");
+    seedCleanEvaluation(world, "run-s3");
+    const experimentsSeen: string[] = [];
+    const depsA = depsFor(world, { ownerId: "tab-a", leaseTtlMs: 1_000 });
+    depsA.resolver = {
+      getExperiment: async (id) => {
+        experimentsSeen.push(id);
+        return world.experiments.get(id) ?? null;
+      },
+      getRun: async (id) => {
+        // Each source derivation advances the wall clock 500ms past the
+        // acquisition — without per-source renewal the 1000ms TTL would lapse
+        // mid-pass and a second owner could acquire.
+        world.nowMs += 500;
+        return world.runs.get(id) ?? null;
+      },
+    };
+    const passA = reindexEvidence(depsA);
+    // After A derived two sources (clock at t=1000), a second owner attempts
+    // the pass while A's lease is still live thanks to renewal.
+    await until(() => experimentsSeen.length === 2);
+    const depsB = depsFor(world, { ownerId: "tab-b", leaseTtlMs: 1_000 });
+    const passB = reindexEvidence(depsB);
+    const resultA = await passA;
+    const resultB = await passB;
+    expect(resultA).toMatchObject({ skipped: false, sourcesProcessed: 3 });
+    expect(resultB).toEqual({ skipped: true, reason: "lease-held" });
+    expect(await world.repo.countObservations()).toBe(3);
+  });
 });
 
 // --- Dexie-backed enumerator + meta store --------------------------------------
@@ -807,6 +904,40 @@ describe("Dexie reindex seams", () => {
       "acquired",
     );
     expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-1", expiresAt: 11_000 });
+  });
+  it("never lets the same owner re-acquire an unexpired lease", async () => {
+    db = new RSembleEvaluationDB(`reindex-lease-same-${Math.random().toString(36).slice(2)}`);
+    await db.open();
+    const meta = createDexieReindexMetaStore(db);
+    await expect(meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-a", 100, 0)).resolves.toBe(
+      "acquired",
+    );
+    // Same owner, unexpired lease: still held — two runtimes sharing an owner
+    // id must never both run the pass.
+    await expect(meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-a", 500, 50)).resolves.toBe(
+      "foreign-held",
+    );
+    expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-a", expiresAt: 100 });
+  });
+
+  it("renews only the current owner and releases only the owner's lease", async () => {
+    db = new RSembleEvaluationDB(`reindex-lease-owner-${Math.random().toString(36).slice(2)}`);
+    await db.open();
+    const meta = createDexieReindexMetaStore(db);
+    await meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-a", 100, 0);
+    // A non-owner cannot renew (fail closed) and cannot extend the lease.
+    await expect(meta.renewLease(REINDEX_LEASE_KEY, "tab-b", 500, 50)).resolves.toBe("lost");
+    expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-a", expiresAt: 100 });
+    await expect(meta.renewLease(REINDEX_LEASE_KEY, "tab-a", 500, 50)).resolves.toBe("renewed");
+    expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-a", expiresAt: 500 });
+    // A's lease expires; B acquires; A's release must not delete B's lease.
+    await expect(meta.tryAcquireLease(REINDEX_LEASE_KEY, "tab-b", 900, 600)).resolves.toBe(
+      "acquired",
+    );
+    await expect(meta.releaseLease(REINDEX_LEASE_KEY, "tab-a")).resolves.toBe("not-owned");
+    expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-b", expiresAt: 900 });
+    await expect(meta.releaseLease(REINDEX_LEASE_KEY, "tab-b")).resolves.toBe("released");
+    expect(await meta.get(REINDEX_LEASE_KEY)).toBeNull();
   });
 });
 
@@ -1030,5 +1161,74 @@ describe("createEvidenceIndexingRuntime", () => {
     const result = await runtime.reindex();
     expect(result).toMatchObject({ skipped: true, reason: "lease-held" });
     expect(await runtime.evidenceRepo.countObservations()).toBe(0);
+  });
+  async function gatedResolver(d: RSembleEvaluationDB): Promise<{
+    resolver: EvaluationSourceResolver;
+    release: () => void;
+  }> {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const resolver: EvaluationSourceResolver = {
+      getExperiment: async (id) => {
+        await gate;
+        const row = await d.experiments.get(id);
+        return row ? (row.experiment as ExperimentRecord) : null;
+      },
+      getRun: async (id) => {
+        const row = await d.runDetails.get(id);
+        return row ? (row.record as RunRecordV2) : null;
+      },
+    };
+    return { resolver, release };
+  }
+
+  it("serializes concurrent reindex passes even when two runtimes share an owner id", async () => {
+    const d = await openDb();
+    await seedSource(d);
+    const { resolver, release } = await gatedResolver(d);
+    const meta = createDexieReindexMetaStore(d);
+    // Mirrors the production bug: every tab passed the same constant owner id,
+    // so an unexpired lease looked re-acquirable.
+    const runtimeA = createEvidenceIndexingRuntime({
+      db: d,
+      resolver,
+      reindexOwnerId: "startup-evidence-reindex",
+    });
+    const runtimeB = createEvidenceIndexingRuntime({
+      db: d,
+      resolver,
+      reindexOwnerId: "startup-evidence-reindex",
+    });
+    const passA = runtimeA.reindex();
+    // A holds the lease and is parked mid-derivation; B attempts to acquire.
+    await until(async () => (await meta.get(REINDEX_LEASE_KEY)) !== null);
+    const passB = runtimeB.reindex();
+    release();
+    const [resultA, resultB] = await Promise.all([passA, passB]);
+    expect(resultA).toMatchObject({ skipped: false, sourcesProcessed: 1 });
+    expect(resultB).toEqual({ skipped: true, reason: "lease-held" });
+    expect(await runtimeA.evidenceRepo.countObservations()).toBe(1);
+    expect(await meta.get(REINDEX_LEASE_KEY)).toBeNull();
+  });
+
+  it("assigns a unique owner to every runtime so unlabeled concurrent passes serialize", async () => {
+    const d = await openDb();
+    await seedSource(d);
+    const { resolver, release } = await gatedResolver(d);
+    const meta = createDexieReindexMetaStore(d);
+    // No explicit owner ids: each runtime must mint its own identity.
+    const runtimeA = createEvidenceIndexingRuntime({ db: d, resolver });
+    const runtimeB = createEvidenceIndexingRuntime({ db: d, resolver });
+    const passA = runtimeA.reindex();
+    await until(async () => (await meta.get(REINDEX_LEASE_KEY)) !== null);
+    const passB = runtimeB.reindex();
+    release();
+    const [resultA, resultB] = await Promise.all([passA, passB]);
+    expect(resultA).toMatchObject({ skipped: false, sourcesProcessed: 1 });
+    expect(resultB).toEqual({ skipped: true, reason: "lease-held" });
+    expect(await runtimeA.evidenceRepo.countObservations()).toBe(1);
+    expect(await meta.get(REINDEX_LEASE_KEY)).toBeNull();
   });
 });

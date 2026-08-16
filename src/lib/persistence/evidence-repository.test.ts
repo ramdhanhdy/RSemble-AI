@@ -662,6 +662,144 @@ function runContract(name: string, makeHarness: RepoFactory) {
       });
     });
 
+    describe("index job claims", () => {
+      it("claims a queued job atomically and exclusively for one owner", async () => {
+        const { repo } = harness;
+        await repo.putIndexJob(makeJob({ status: "queued" }));
+        const claimed = await repo.claimIndexJob({
+          sourceResultId: "run-a",
+          ownerId: "tab-a",
+          updatedAt: 100,
+        });
+        expect(claimed).toMatchObject({ status: "running", sourceResultId: "run-a" });
+        // A second owner cannot claim the same running job.
+        expect(
+          await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-b", updatedAt: 101 }),
+        ).toBeNull();
+        // A generic queued put never downgrades a claimed running marker.
+        await expect(repo.putIndexJob(makeJob({ status: "queued" }))).resolves.toBe("unchanged");
+        expect((await repo.getIndexJob("run-a"))?.status).toBe("running");
+      });
+
+      it("cannot claim a missing, running, or complete row", async () => {
+        const { repo } = harness;
+        expect(
+          await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1 }),
+        ).toBeNull();
+        await repo.putIndexJob(makeJob({ status: "running" }));
+        expect(
+          await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 2 }),
+        ).toBeNull();
+        await repo.putIndexJob(makeJob({ status: "complete" }));
+        expect(
+          await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 3 }),
+        ).toBeNull();
+      });
+
+      it("a heartbeat refreshes only the current owner's marker", async () => {
+        const { repo } = harness;
+        await repo.putIndexJob(makeJob({ status: "queued" }));
+        await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1000 });
+        expect(
+          await repo.heartbeatIndexJob({ sourceResultId: "run-a", ownerId: "tab-b", updatedAt: 1100 }),
+        ).toBe(false);
+        expect(
+          await repo.heartbeatIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1100 }),
+        ).toBe(true);
+        expect((await repo.getIndexJob("run-a"))?.updatedAt).toBe(1100);
+      });
+
+      it("only the current owner can finalize, and finalization clears the claim", async () => {
+        const { repo } = harness;
+        await repo.putIndexJob(makeJob({ status: "queued" }));
+        await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1000 });
+        const complete = makeJob({
+          status: "complete",
+          updatedAt: 1200,
+          summary: {
+            observationCount: 1,
+            gapCount: 0,
+            limitationCount: 0,
+            integrityIssues: [],
+          },
+        });
+        // A non-owner cannot finalize the running claim.
+        await expect(
+          repo.finalizeIndexJob({ sourceResultId: "run-a", ownerId: "tab-b", job: complete }),
+        ).resolves.toBe("lost");
+        expect((await repo.getIndexJob("run-a"))?.status).toBe("running");
+        await expect(
+          repo.finalizeIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", job: complete }),
+        ).resolves.toBe("finalized");
+        expect((await repo.getIndexJob("run-a"))?.status).toBe("complete");
+        // The claim is cleared: the old owner can no longer heartbeat or finalize.
+        expect(
+          await repo.heartbeatIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1300 }),
+        ).toBe(false);
+        await expect(
+          repo.finalizeIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", job: complete }),
+        ).resolves.toBe("lost");
+      });
+
+      it("stale recovery clears ownership so a new owner can claim, and the old owner cannot", async () => {
+        const { repo } = harness;
+        await repo.putIndexJob(makeJob({ status: "queued" }));
+        await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1000 });
+        // Tab A crashed: at t=7000 the marker is stale and recovery re-queues it.
+        expect(await repo.recoverStaleIndexJobs({ staleTimeoutMs: 5000, now: 7000 })).toEqual([
+          "run-a",
+        ]);
+        expect((await repo.getIndexJob("run-a"))?.status).toBe("queued");
+        // A new owner claims the recovered job.
+        const claimed = await repo.claimIndexJob({
+          sourceResultId: "run-a",
+          ownerId: "tab-b",
+          updatedAt: 7100,
+        });
+        expect(claimed).toMatchObject({ status: "running" });
+        // The old owner can neither heartbeat nor finalize after reassignment.
+        expect(
+          await repo.heartbeatIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 7200 }),
+        ).toBe(false);
+        await expect(
+          repo.finalizeIndexJob({
+            sourceResultId: "run-a",
+            ownerId: "tab-a",
+            job: makeJob({ status: "complete", updatedAt: 7200 }),
+          }),
+        ).resolves.toBe("lost");
+        // The new owner still holds the claim and finalizes it.
+        await expect(
+          repo.finalizeIndexJob({
+            sourceResultId: "run-a",
+            ownerId: "tab-b",
+            job: makeJob({ status: "complete", updatedAt: 7300 }),
+          }),
+        ).resolves.toBe("finalized");
+        expect((await repo.getIndexJob("run-a"))?.status).toBe("complete");
+      });
+
+      it("finalize rejects non-terminal markers and stale revisions", async () => {
+        const { repo } = harness;
+        await repo.putIndexJob(makeJob({ status: "queued" }));
+        await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1000 });
+        await expect(
+          repo.finalizeIndexJob({
+            sourceResultId: "run-a",
+            ownerId: "tab-a",
+            job: makeJob({ status: "running" }),
+          }),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.finalizeIndexJob({
+            sourceResultId: "run-a",
+            ownerId: "tab-a",
+            job: makeJob({ status: "complete", sourceRevision: 0 }),
+          }),
+        ).rejects.toBeInstanceOf(StorageError);
+      });
+    });
+
     describe("storage failure", () => {
       it("classifies closed-database failures as unavailable", async () => {
         if (!harness.close) return; // in-memory parity has no storage failures
