@@ -387,8 +387,12 @@ describe("EvidenceReceipt — Reason codes and plain-language explanations", () 
     );
 
     expect(h.container.textContent).toContain("This record resolves to a canonical Task identity.");
-    expect(h.container.textContent).toContain("The concrete Task Instance input is reconstructable.");
-    expect(h.container.textContent).toContain("An accepted completed candidate output exists for this cell.");
+    expect(h.container.textContent).toContain(
+      "The concrete Task Instance input is reconstructable.",
+    );
+    expect(h.container.textContent).toContain(
+      "An accepted completed candidate output exists for this cell.",
+    );
     expect(h.container.textContent).toContain("An accepted assessment exists for this output.");
     expect(h.container.textContent).toContain("The deterministic verifier passed.");
     expect(h.container.textContent).toContain("The execution protocol is fully recorded.");
@@ -438,11 +442,15 @@ describe("EvidenceReceipt — Allowed uses", () => {
       <EvidenceReceipt observation={obs} decision={decision} defaultOpen />,
     );
 
-    expect(h.container.textContent).toContain("Describe outcomes for this Task, Version, and Instance.");
+    expect(h.container.textContent).toContain(
+      "Describe outcomes for this Task, Version, and Instance.",
+    );
     expect(h.container.textContent).toContain("Contribute to this model configuration's profile.");
     expect(h.container.textContent).toContain("Compare paired models within one protocol cohort.");
     expect(h.container.textContent).toContain("Establish standing across the complete Task Set.");
-    expect(h.container.textContent).toContain("Serve as a benchmark anchor for cross-model analysis.");
+    expect(h.container.textContent).toContain(
+      "Serve as a benchmark anchor for cross-model analysis.",
+    );
     cleanup(h);
   });
 
@@ -637,9 +645,7 @@ describe("EvidenceReceipt — Loading and index-error states", () => {
       errorMessage: "Idempotent derivation conflict on duplicate source key.",
     });
 
-    const h = renderWithRouter(
-      <EvidenceReceipt indexJob={indexJob} runId="run_456" defaultOpen />,
-    );
+    const h = renderWithRouter(<EvidenceReceipt indexJob={indexJob} runId="run_456" defaultOpen />);
 
     expect(h.container.textContent).toMatch(/indexing error|derivation error/i);
     expect(h.container.textContent).toContain("storage_conflict");
@@ -688,9 +694,7 @@ describe("EvidenceReceipt — Accessibility and screen-reader semantics", () => 
     const obs = makeObservation();
     const decision = makeDecision();
 
-    const h = renderWithRouter(
-      <EvidenceReceipt observation={obs} decision={decision} compact />,
-    );
+    const h = renderWithRouter(<EvidenceReceipt observation={obs} decision={decision} compact />);
 
     const trigger = h.$("button[aria-expanded]");
     expect(trigger?.className).toContain("min-h-[44px]");
@@ -701,13 +705,7 @@ describe("EvidenceReceipt — Accessibility and screen-reader semantics", () => 
     const obs = makeObservation();
     const decision = makeDecision();
 
-    const h = renderWithRouter(
-      <EvidenceReceipt
-        observation={obs}
-        decision={decision}
-        compact
-      />,
-    );
+    const h = renderWithRouter(<EvidenceReceipt observation={obs} decision={decision} compact />);
 
     const trigger = h.$("button[aria-expanded]")!;
     expect(trigger).toBeTruthy();
@@ -894,12 +892,7 @@ describe("EvidenceReceipt — Index job pending and unindexed states (F3-concern
     await repo.putIndexJob(job);
 
     const h = renderWithRouter(
-      <EvidenceReceipt
-        runId="run_job_running"
-        taskId="task_x"
-        evidenceRepo={repo}
-        defaultOpen
-      />,
+      <EvidenceReceipt runId="run_job_running" taskId="task_x" evidenceRepo={repo} defaultOpen />,
     );
 
     await settle();
@@ -919,12 +912,7 @@ describe("EvidenceReceipt — Index job pending and unindexed states (F3-concern
     await repo.putIndexJob(job);
 
     const h = renderWithRouter(
-      <EvidenceReceipt
-        runId="run_job_queued"
-        taskId="task_x"
-        evidenceRepo={repo}
-        defaultOpen
-      />,
+      <EvidenceReceipt runId="run_job_queued" taskId="task_x" evidenceRepo={repo} defaultOpen />,
     );
 
     await settle();
@@ -938,12 +926,7 @@ describe("EvidenceReceipt — Index job pending and unindexed states (F3-concern
     const repo = new InMemoryEvidenceRepository();
 
     const h = renderWithRouter(
-      <EvidenceReceipt
-        runId="run_not_indexed"
-        taskId="task_x"
-        evidenceRepo={repo}
-        defaultOpen
-      />,
+      <EvidenceReceipt runId="run_not_indexed" taskId="task_x" evidenceRepo={repo} defaultOpen />,
     );
 
     await settle();

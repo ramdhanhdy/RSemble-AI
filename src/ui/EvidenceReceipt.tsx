@@ -32,10 +32,7 @@ import type {
   Observation,
 } from "../lib/evidence/evidence-types";
 import { explainDecision } from "../lib/evidence/evidence-explanation";
-import type {
-  EvidenceIndexJob,
-  EvidenceRepository,
-} from "../lib/persistence/evidence-repository";
+import type { EvidenceIndexJob, EvidenceRepository } from "../lib/persistence/evidence-repository";
 import type { MissingReason } from "../lib/evaluations/experiment-aggregation";
 
 export interface EvidenceReceiptProps {
@@ -112,8 +109,9 @@ export function EvidenceReceipt({
   const repo = evidenceRepo ?? null;
   const [loadedObs, setLoadedObs] = useState<Observation | null>(null);
   const [loadedDecision, setLoadedDecision] = useState<EligibilityDecision | null>(null);
-  const [loadedModelConfig, setLoadedModelConfig] =
-    useState<ModelConfigurationSnapshot | null>(null);
+  const [loadedModelConfig, setLoadedModelConfig] = useState<ModelConfigurationSnapshot | null>(
+    null,
+  );
   const [loadedIndexJob, setLoadedIndexJob] = useState<EvidenceIndexJob | null>(null);
   const [asyncLoading, setAsyncLoading] = useState<boolean>(
     () => observation === undefined && Boolean(runId) && Boolean(repo),
@@ -150,9 +148,7 @@ export function EvidenceReceipt({
         if (job) setLoadedIndexJob(job);
 
         // Find matching observation by taskId and optionally modelKey/candidateAttemptId
-        const taskMatches = taskId
-          ? observations.filter((o) => o.taskId === taskId)
-          : observations;
+        const taskMatches = taskId ? observations.filter((o) => o.taskId === taskId) : observations;
 
         let matching: Observation | null = null;
         if (taskMatches.length === 1) {
@@ -558,9 +554,7 @@ export function EvidenceReceipt({
       ? `/tasks/${taskId}`
       : null;
 
-  const rubricDeepHref = obs?.rubricRef?.id
-    ? `/evaluations/rubrics/${obs.rubricRef.id}`
-    : null;
+  const rubricDeepHref = obs?.rubricRef?.id ? `/evaluations/rubrics/${obs.rubricRef.id}` : null;
 
   // Receipt body
   const receiptBody = (

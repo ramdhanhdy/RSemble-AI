@@ -818,9 +818,7 @@ describe("TaskObservations — Deep links to exact Observation and source Record
     const rowB = h.$(`[data-observation-row="${obsB.id}"]`);
     const recordLinkB = rowB?.querySelector<HTMLAnchorElement>("a[data-link-record]");
     expect(recordLinkB).toBeTruthy();
-    expect(recordLinkB?.getAttribute("href")).toBe(
-      "/runs/run%23special%2Fid?candidate=cand-2",
-    );
+    expect(recordLinkB?.getAttribute("href")).toBe("/runs/run%23special%2Fid?candidate=cand-2");
 
     cleanup(h);
   });
@@ -1021,7 +1019,9 @@ describe("TaskObservations — Same-component route transitions regression", () 
 describe("TaskObservations — Accessibility and reduced motion", () => {
   it("covers .animate-spin under prefers-reduced-motion in index.css", () => {
     const css = fs.readFileSync("src/index.css", "utf8");
-    const reducedMotionMatch = css.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]+)\}/);
+    const reducedMotionMatch = css.match(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]+)\}/,
+    );
     expect(reducedMotionMatch).toBeTruthy();
     const reducedMotionBody = reducedMotionMatch?.[1] ?? "";
     expect(reducedMotionBody).toContain(".animate-spin,");

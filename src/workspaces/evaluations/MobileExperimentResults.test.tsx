@@ -326,8 +326,12 @@ describe("MobileExperimentResults — recovery actions (spec §11.1)", () => {
     const h = renderWithRecovery();
     switchModel(h, KEY_C);
     const rows = h.$$("li");
-    expect(rows[1].querySelector("button[data-recovery-action]")?.textContent).toContain("Complete missing result");
-    expect(rows[2].querySelector("button[data-recovery-action]")?.textContent).toContain("Retry incomplete task");
+    expect(rows[1].querySelector("button[data-recovery-action]")?.textContent).toContain(
+      "Complete missing result",
+    );
+    expect(rows[2].querySelector("button[data-recovery-action]")?.textContent).toContain(
+      "Retry incomplete task",
+    );
     cleanup(h);
   });
 

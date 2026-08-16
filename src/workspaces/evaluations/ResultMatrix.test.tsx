@@ -598,11 +598,15 @@ describe("ResultMatrix — recovery actions (spec §11.1)", () => {
     const onRepairRequest = vi.fn();
     const h = renderWithRecovery(REPAIRABLE, onRepairRequest);
     const rows = h.$$("tbody tr");
-    const action = tdCells(rows[1])[2].querySelector("button[data-recovery-action]") as HTMLButtonElement;
+    const action = tdCells(rows[1])[2].querySelector(
+      "button[data-recovery-action]",
+    ) as HTMLButtonElement;
     act(() => action.click());
     expect(onRepairRequest).toHaveBeenCalledWith("t2", KEY_C);
     // fallback cell reports its task too
-    const fallback = tdCells(rows[2])[2].querySelector("button[data-recovery-action]") as HTMLButtonElement;
+    const fallback = tdCells(rows[2])[2].querySelector(
+      "button[data-recovery-action]",
+    ) as HTMLButtonElement;
     act(() => fallback.click());
     expect(onRepairRequest).toHaveBeenCalledWith("t3", KEY_C);
     cleanup(h);
@@ -629,7 +633,9 @@ describe("ResultMatrix — recovery actions (spec §11.1)", () => {
   it("keeps 44px action targets with keyboard focus-visible rings", () => {
     const h = renderWithRecovery();
     const rows = h.$$("tbody tr");
-    const action = tdCells(rows[1])[2].querySelector("button[data-recovery-action]") as HTMLButtonElement;
+    const action = tdCells(rows[1])[2].querySelector(
+      "button[data-recovery-action]",
+    ) as HTMLButtonElement;
     expect(action.className).toContain("min-h-[44px]");
     expect(action.className).toContain("focus-visible:ring-2");
     expect(action.className).toContain("focus-visible:ring-accent");

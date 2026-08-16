@@ -166,8 +166,8 @@ function TaskRow({
     </span>
   );
   const candidateId = cell.runId
-    ? runRecords.get(cell.runId)?.candidates.find((c) => c.modelKey === modelKey)?.candidateId ??
-      null
+    ? (runRecords.get(cell.runId)?.candidates.find((c) => c.modelKey === modelKey)?.candidateId ??
+      null)
     : null;
   const body = (
     <>

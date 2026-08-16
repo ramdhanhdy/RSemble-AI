@@ -228,8 +228,8 @@ function CellContent({
       </>
     );
     const candidateId = cell.runId
-      ? runRecords.get(cell.runId)?.candidates.find((c) => c.modelKey === modelKey)?.candidateId ??
-        null
+      ? (runRecords.get(cell.runId)?.candidates.find((c) => c.modelKey === modelKey)?.candidateId ??
+        null)
       : null;
     return (
       <div className="flex items-center gap-1.5">
