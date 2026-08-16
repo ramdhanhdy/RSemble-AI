@@ -603,6 +603,23 @@ describe("EvidenceReceipt — Exact Task, Observation, and Record links", () => 
     expect(h.container.textContent).toContain("inst_001");
     cleanup(h);
   });
+
+  it("renders 'No rubric recorded' when rubricRef is null instead of inferring holistic judgment (F4-concern)", () => {
+    const obs = makeObservation({
+      rubricRef: null,
+    });
+    const decision = makeDecision({
+      reasonCodes: ["canonical_task_resolved", "rubric_unresolved"],
+    });
+
+    const h = renderWithRouter(
+      <EvidenceReceipt observation={obs} decision={decision} defaultOpen />,
+    );
+
+    expect(h.container.textContent).toContain("No rubric recorded");
+    expect(h.container.textContent).not.toContain("Holistic judgment");
+    cleanup(h);
+  });
 });
 
 describe("EvidenceReceipt — Loading and index-error states", () => {
