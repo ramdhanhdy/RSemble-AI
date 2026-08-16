@@ -213,12 +213,15 @@ export function classifyEligibility(input: EligibilityInput): EligibilityDecisio
   if (allowedUses.length === 0) {
     status = "excluded";
   } else {
+    // Limitations lower a decision to provisional. A verifier pass under an
+    // unfrozen verifier version limits only the *verified* claim (spec §7.3),
+    // never the comparable uses, so it is not a limitation here: a comparable
+    // cell with full uses and no other limitations stays eligible. Every
+    // provisional decision therefore carries at least one limitation reason
+    // code that has fixed plain-language copy (spec §8).
     const hasLimitation =
       [...reasons].some((code) => LIMITATION_REASON_CODES[code] === true) ||
-      (!input.assessmentSelectedCompleted && input.verifierState === "not_declared") ||
-      (input.verifierState === "passed" &&
-        !input.frozenVerifierVersion &&
-        !input.humanVerificationAuthorized);
+      (!input.assessmentSelectedCompleted && input.verifierState === "not_declared");
     const fullUses = allowedUses.length === FULL_USES_BY_CLASS[evidenceClass];
     status = hasLimitation || !fullUses ? "provisional" : "eligible";
   }

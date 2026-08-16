@@ -148,6 +148,13 @@ describe("healthy cells", () => {
     expect(d.reasonCodes).toContain("verifier_passed");
   });
 
+  it("an unfrozen verifier pass limits only the verified claim, not comparable uses", () => {
+    const d = classifyEligibility(baseInput({ verifierState: "passed", frozenVerifierVersion: false }));
+    expect(d.evidenceClass).toBe("comparable");
+    expect(d.status).toBe("eligible");
+    expect(d.allowedUses).toEqual([...FULL_COMPARABLE_USES]);
+  });
+
   it("authorized human verification produces verified class", () => {
     const d = classifyEligibility(baseInput({ humanVerificationAuthorized: true }));
     expect(d.evidenceClass).toBe("verified");
