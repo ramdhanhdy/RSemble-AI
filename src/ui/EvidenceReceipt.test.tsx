@@ -717,4 +717,59 @@ describe("EvidenceReceipt — Asynchronous repository resolution", () => {
     expect(h.container.textContent).toContain("gemini-1.5-pro");
     cleanup(h);
   });
+
+  it("resolves observation when attemptId is an experiment task attempt id instead of judgeAttemptId (F2-blocker)", async () => {
+    const repo = new InMemoryEvidenceRepository();
+    const modelConfig = makeModelConfig();
+    const baseObs = makeObservation({
+      runId: "run_exp_1",
+      taskId: "task_sentiment_analysis",
+      candidateAttemptId: "att_cand_01",
+      assessmentRef: {
+        judgeAttemptId: "att_judge_99",
+        judgeProviderId: "gemini",
+        judgeModel: "gemini-1.5-pro",
+        blindLabelMapping: { candidate_a: "slot_0" },
+        candidateAttemptIdsByCandidateId: { slot_0: "att_cand_01" },
+        rubricRef: { id: "rubric_accuracy", version: 1 },
+        verifierRef: { id: "verifier_regex", version: 1 },
+        verifierOutcome: {
+          taskId: "task_sentiment_analysis",
+          modelKey: "gemini:gemini-1.5-pro",
+          passed: true,
+          executedAt: 1700000000000,
+        },
+      },
+      modelConfigurationId: modelConfig.id,
+    });
+    const obs = {
+      ...baseObs,
+      id: observationIdFor(baseObs),
+    };
+    const decision = makeDecision({
+      observationId: obs.id,
+    });
+    await repo.putModelConfiguration(modelConfig);
+    await repo.putObservation(obs);
+    await repo.putDecision(decision);
+
+    const h = renderWithRouter(
+      <EvidenceReceipt
+        runId="run_exp_1"
+        taskId="task_sentiment_analysis"
+        attemptId="exp_trial_attempt_01"
+        modelKey="gemini:gemini-1.5-pro"
+        evidenceRepo={repo}
+        defaultOpen
+      />,
+    );
+
+    await settle();
+
+    expect(h.container.textContent).toContain("Eligible");
+    expect(h.container.textContent).toContain("Comparable");
+    expect(h.container.textContent).toContain(obs.id);
+    expect(h.container.textContent).not.toContain("Excluded — No score");
+    cleanup(h);
+  });
 });
