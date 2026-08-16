@@ -129,14 +129,26 @@ export function cohortSplitReasons(
     if (reason !== null) reasons.push(reason);
   };
 
-  push(`Task identity differs (${JSON.stringify(a.taskId)} vs ${JSON.stringify(b.taskId)})`, a.taskId, b.taskId);
-  push(`Task version differs (v${a.taskVersion} vs v${b.taskVersion})`, a.taskVersion, b.taskVersion);
+  push(
+    `Task identity differs (${JSON.stringify(a.taskId)} vs ${JSON.stringify(b.taskId)})`,
+    a.taskId,
+    b.taskId,
+  );
+  push(
+    `Task version differs (v${a.taskVersion} vs v${b.taskVersion})`,
+    a.taskVersion,
+    b.taskVersion,
+  );
   push(
     `Task instance differs (${JSON.stringify(a.taskInstanceId)} vs ${JSON.stringify(b.taskInstanceId)})`,
     a.taskInstanceId,
     b.taskInstanceId,
   );
-  push(`Rubric differs (${fmtVersionRef(a.rubricRef)} vs ${fmtVersionRef(b.rubricRef)})`, fmtVersionRef(a.rubricRef), fmtVersionRef(b.rubricRef));
+  push(
+    `Rubric differs (${fmtVersionRef(a.rubricRef)} vs ${fmtVersionRef(b.rubricRef)})`,
+    fmtVersionRef(a.rubricRef),
+    fmtVersionRef(b.rubricRef),
+  );
   push(
     `Verifier contract differs (${fmtVersionRef(a.verifierRef)} vs ${fmtVersionRef(b.verifierRef)})`,
     fmtVersionRef(a.verifierRef),
@@ -178,7 +190,11 @@ export function cohortSplitReasons(
     a.evaluator.resolvedVersion,
     b.evaluator.resolvedVersion,
   );
-  push("Evaluator configuration differs", a.evaluator.instructionDigest, b.evaluator.instructionDigest);
+  push(
+    "Evaluator configuration differs",
+    a.evaluator.instructionDigest,
+    b.evaluator.instructionDigest,
+  );
   push(
     `Evaluator reasoning policy differs (${fmtNullable(a.evaluator.reasoningEffort)} vs ${fmtNullable(b.evaluator.reasoningEffort)})`,
     a.evaluator.reasoningEffort,
@@ -199,11 +215,7 @@ export function cohortSplitReasons(
     a.reasoningEffective,
     b.reasoningEffective,
   );
-  push(
-    "Tool scaffold differs",
-    a.toolScaffoldSignature,
-    b.toolScaffoldSignature,
-  );
+  push("Tool scaffold differs", a.toolScaffoldSignature, b.toolScaffoldSignature);
   push(
     `Provider differs (${JSON.stringify(a.providerId)} vs ${JSON.stringify(b.providerId)})`,
     a.providerId,

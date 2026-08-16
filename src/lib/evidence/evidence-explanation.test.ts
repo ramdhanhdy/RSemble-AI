@@ -76,7 +76,10 @@ describe("explainDecision", () => {
     expect(e.statusLabel).toBe("Eligible");
     expect(e.summary).toBe("Eligible — Verified");
     expect(e.reasonLines).toEqual([
-      { code: "canonical_task_resolved", text: EVIDENCE_REASON_EXPLANATIONS.canonical_task_resolved },
+      {
+        code: "canonical_task_resolved",
+        text: EVIDENCE_REASON_EXPLANATIONS.canonical_task_resolved,
+      },
       { code: "verifier_passed", text: EVIDENCE_REASON_EXPLANATIONS.verifier_passed },
     ]);
     expect(e.allowedUses).toEqual([

@@ -26,15 +26,14 @@ import {
   type EvaluationSourceResolver,
   type TaskIdentityResolver,
 } from "./derive-observations";
-import type { ExperimentRecord, EvaluationTask, EvaluationRubric } from "../evaluations/evaluation-types";
+import type {
+  ExperimentRecord,
+  EvaluationTask,
+  EvaluationRubric,
+} from "../evaluations/evaluation-types";
 import type { VerifierOutcome } from "../evaluations/fusion-study-types";
 import type { EvaluationObservation } from "../evaluations/fusion-study-types";
-import type {
-  RunRecordV2,
-  JudgeAttemptRecord,
-  PersistedCandidate,
-} from "../persistence/run-types";
-
+import type { RunRecordV2, JudgeAttemptRecord, PersistedCandidate } from "../persistence/run-types";
 
 // --- Fixtures -----------------------------------------------------------------
 
@@ -96,7 +95,9 @@ function judgeAttempt(attemptId: string): JudgeAttemptRecord {
           strengths: [],
           deductions: [],
           missedRequirements: [],
-          criterionScores: [{ criterionId: "quality", label: "quality", kind: "graded", score: 4, rationale: "" }],
+          criterionScores: [
+            { criterionId: "quality", label: "quality", kind: "graded", score: 4, rationale: "" },
+          ],
         },
       },
       comparisons: [],
@@ -181,7 +182,14 @@ function makeExperiment(overrides: Partial<ExperimentRecord> = {}): ExperimentRe
         } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
       ],
       modelSlots: [
-        { id: "s1", providerId: "openrouter", provider: "X", model: "M1", slug: "model-m1", enabled: true },
+        {
+          id: "s1",
+          providerId: "openrouter",
+          provider: "X",
+          model: "M1",
+          slug: "model-m1",
+          enabled: true,
+        },
       ],
       defaultJudge: { providerId: "openrouter", model: "org/judge" },
       defaultEvaluation: { kind: "holistic" },
@@ -268,7 +276,10 @@ function depsFor(world: World, overrides: Partial<DerivationDeps> = {}): Derivat
   };
 }
 
-function seedCleanSource(world: World, run?: RunRecordV2): { run: RunRecordV2; experiment: ExperimentRecord } {
+function seedCleanSource(
+  world: World,
+  run?: RunRecordV2,
+): { run: RunRecordV2; experiment: ExperimentRecord } {
   const r = run ?? makeRun();
   const e = makeExperiment();
   world.runs.set(r.id, r);
@@ -334,7 +345,10 @@ describe("deriveObservationsForSource", () => {
       taskFamilyId: "fam-1",
       inputComplete: true,
     });
-    const result = await deriveObservationsForSource(depsFor(world, { identity }), refFor(makeRun()));
+    const result = await deriveObservationsForSource(
+      depsFor(world, { identity }),
+      refFor(makeRun()),
+    );
     expect(result.status).toBe("complete");
     const observations = await world.repo.listObservationsBySource("evaluation", "run-1");
     expect(observations[0].taskId).toBe("task-custom");
@@ -385,8 +399,22 @@ describe("deriveObservationsForSource", () => {
       snapshot: {
         ...makeExperiment().snapshot,
         modelSlots: [
-          { id: "s1", providerId: "openrouter", provider: "X", model: "M1", slug: "model-m1", enabled: true },
-          { id: "s2", providerId: "openrouter", provider: "X", model: "M2", slug: "model-m2", enabled: true },
+          {
+            id: "s1",
+            providerId: "openrouter",
+            provider: "X",
+            model: "M1",
+            slug: "model-m1",
+            enabled: true,
+          },
+          {
+            id: "s2",
+            providerId: "openrouter",
+            provider: "X",
+            model: "M2",
+            slug: "model-m2",
+            enabled: true,
+          },
         ],
       },
     });
@@ -405,7 +433,10 @@ describe("deriveObservationsForSource", () => {
     const world = makeWorld();
     // Duplicate candidate records for one source cell: source corruption.
     const run = makeRun({
-      candidates: [candidate("cand-1", "openrouter:model-m1"), candidate("cand-1", "openrouter:model-m1")],
+      candidates: [
+        candidate("cand-1", "openrouter:model-m1"),
+        candidate("cand-1", "openrouter:model-m1"),
+      ],
     });
     seedCleanSource(world, run);
 
@@ -422,7 +453,15 @@ describe("deriveObservationsForSource", () => {
 
   it("records an explicit limitation for a judge-less cell", async () => {
     const world = makeWorld();
-    const run = makeRun({ judge: { status: "done", acceptedAttemptId: null, report: null, consensus: null, attempts: [] } });
+    const run = makeRun({
+      judge: {
+        status: "done",
+        acceptedAttemptId: null,
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
+    });
     seedCleanSource(world, run);
 
     const result = await deriveObservationsForSource(depsFor(world), refFor(run));
@@ -470,7 +509,12 @@ describe("deriveObservationsForSource", () => {
   it("sanitizes secret-shaped values so nothing secret enters snapshots", async () => {
     const world = makeWorld();
     const run = makeRun({
-      task: { title: "T", prompt: "prompt text", systemPrompt: "sk-live-secret-abc", temperature: 0 },
+      task: {
+        title: "T",
+        prompt: "prompt text",
+        systemPrompt: "sk-live-secret-abc",
+        temperature: 0,
+      },
     });
     seedCleanSource(world, run);
     const result = await deriveObservationsForSource(depsFor(world), refFor(run));
@@ -548,7 +592,11 @@ describe("deriveObservationsForSource", () => {
         taskId: "task-1",
         experimentTaskAttemptId: "att-2",
         trial: 1,
-        repair: { kind: "roster-extension", addedModelKey: "openrouter:model-m2", baseRunId: "run-base" },
+        repair: {
+          kind: "roster-extension",
+          addedModelKey: "openrouter:model-m2",
+          baseRunId: "run-base",
+        },
       },
     });
     const experiment = makeExperiment({
@@ -557,8 +605,24 @@ describe("deriveObservationsForSource", () => {
           taskId: "task-1",
           selectedAttemptId: "att-2",
           attempts: [
-            { id: "att-1", runId: "run-base", trial: 0, status: "completed", startedAt: 0, finishedAt: 5, error: null },
-            { id: "att-2", runId: "run-ext", trial: 1, status: "completed", startedAt: 5, finishedAt: 10, error: null },
+            {
+              id: "att-1",
+              runId: "run-base",
+              trial: 0,
+              status: "completed",
+              startedAt: 0,
+              finishedAt: 5,
+              error: null,
+            },
+            {
+              id: "att-2",
+              runId: "run-ext",
+              trial: 1,
+              status: "completed",
+              startedAt: 5,
+              finishedAt: 10,
+              error: null,
+            },
           ],
         },
       ],
@@ -590,16 +654,33 @@ describe("defaultTaskIdentityResolver", () => {
     const other = defaultTaskIdentityResolver({
       experiment,
       taskId: "task-1",
-      run: makeRun({ task: { title: "T", prompt: "different", systemPrompt: "s", temperature: 0 } }),
+      run: makeRun({
+        task: { title: "T", prompt: "different", systemPrompt: "s", temperature: 0 },
+      }),
     });
     expect(other?.taskInstanceId).not.toBe(identity?.taskInstanceId);
   });
 
   it("returns null when no canonical task version ref exists", () => {
     const experiment = makeExperiment({
-      snapshot: { ...makeExperiment().snapshot, tasks: [{ id: "task-1", title: "T", prompt: "p", systemPrompt: "s", evaluation: { kind: "inherit" }, judgeInstructionOverride: "", order: 0 }] },
+      snapshot: {
+        ...makeExperiment().snapshot,
+        tasks: [
+          {
+            id: "task-1",
+            title: "T",
+            prompt: "p",
+            systemPrompt: "s",
+            evaluation: { kind: "inherit" },
+            judgeInstructionOverride: "",
+            order: 0,
+          },
+        ],
+      },
     });
-    expect(defaultTaskIdentityResolver({ experiment, taskId: "task-1", run: makeRun() })).toBeNull();
+    expect(
+      defaultTaskIdentityResolver({ experiment, taskId: "task-1", run: makeRun() }),
+    ).toBeNull();
   });
 });
 
@@ -613,7 +694,8 @@ describe("derivation queue", () => {
 
     let fail = true;
     const failingResolver: EvaluationSourceResolver = {
-      getExperiment: async (id) => (fail ? Promise.reject(new Error("boom")) : world.experiments.get(id) ?? null),
+      getExperiment: async (id) =>
+        fail ? Promise.reject(new Error("boom")) : (world.experiments.get(id) ?? null),
       getRun: async (id) => world.runs.get(id) ?? null,
     };
     const queue = createDerivationQueue({ ...depsFor(world), resolver: failingResolver });
@@ -729,9 +811,9 @@ describe("derivation queue", () => {
     await queue.drain();
     expect((await world.repo.getIndexJob(run.id))?.status).toBe("complete");
     expect(readLog.length).toBeGreaterThan(0);
-    expect(readLog.every((entry) => entry.startsWith("experiment:") || entry.startsWith("run:"))).toBe(
-      true,
-    );
+    expect(
+      readLog.every((entry) => entry.startsWith("experiment:") || entry.startsWith("run:")),
+    ).toBe(true);
   });
 
   it("disposes without leaking pending jobs", async () => {

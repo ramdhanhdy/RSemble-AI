@@ -22,12 +22,7 @@ describe("evidence domain vocabulary", () => {
   });
 
   it("locks evidence classes in canonical order", () => {
-    expect(EVIDENCE_CLASSES).toEqual([
-      "exploratory",
-      "comparable",
-      "verified",
-      "benchmark_anchor",
-    ]);
+    expect(EVIDENCE_CLASSES).toEqual(["exploratory", "comparable", "verified", "benchmark_anchor"]);
   });
 
   it("locks allowed evidence uses in canonical order", () => {

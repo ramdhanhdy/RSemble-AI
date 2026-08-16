@@ -105,8 +105,12 @@ describe("identity sensitivity", () => {
   });
 
   it("is stable across key-order permutations of runtime settings", () => {
-    const a = canonicalize(makeInput({ runtimeSettings: { temperature: 0.7, maxTokens: 4096, seed: 1 } }));
-    const b = canonicalize(makeInput({ runtimeSettings: { seed: 1, temperature: 0.7, maxTokens: 4096 } }));
+    const a = canonicalize(
+      makeInput({ runtimeSettings: { temperature: 0.7, maxTokens: 4096, seed: 1 } }),
+    );
+    const b = canonicalize(
+      makeInput({ runtimeSettings: { seed: 1, temperature: 0.7, maxTokens: 4096 } }),
+    );
     expect(a.id).toBe(b.id);
     expect(canonicalModelConfigurationJson(a)).toBe(canonicalModelConfigurationJson(b));
   });
@@ -162,7 +166,9 @@ describe("secret omission", () => {
   });
 
   it("keeps benign string and scalar settings", () => {
-    const s = canonicalize(makeInput({ runtimeSettings: { stop: "###", seed: 42, stream: false } }));
+    const s = canonicalize(
+      makeInput({ runtimeSettings: { stop: "###", seed: 42, stream: false } }),
+    );
     expect(s.runtimeSettings).toEqual({ stop: "###", seed: 42, stream: false });
   });
 });
@@ -233,7 +239,9 @@ describe("invalid input", () => {
   });
 
   it("rejects a resolved version without a resolved model", () => {
-    const r = canonicalizeModelConfiguration(makeInput({ resolvedModel: null, resolvedVersion: "v1" }));
+    const r = canonicalizeModelConfiguration(
+      makeInput({ resolvedModel: null, resolvedVersion: "v1" }),
+    );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/resolvedVersion/i);
   });

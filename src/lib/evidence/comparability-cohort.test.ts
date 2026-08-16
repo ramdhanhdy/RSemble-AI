@@ -65,7 +65,9 @@ describe("cohort fingerprint", () => {
   });
 
   it("is deterministic for identical input", () => {
-    expect(buildComparabilityCohort(cohortInput()).id).toBe(buildComparabilityCohort(cohortInput()).id);
+    expect(buildComparabilityCohort(cohortInput()).id).toBe(
+      buildComparabilityCohort(cohortInput()).id,
+    );
   });
 
   it("is stable across key-order permutations", () => {
@@ -107,7 +109,10 @@ describe("split dimensions", () => {
     { name: "task version", override: { taskVersion: 3 } },
     { name: "task instance", override: { taskInstanceId: "inst-2" } },
     { name: "verifier kind", override: { verifierKind: "exact_match" } },
-    { name: "verifier configuration", override: { verifierConfigurationDigest: `sha256:${"e".repeat(64)}` } },
+    {
+      name: "verifier configuration",
+      override: { verifierConfigurationDigest: `sha256:${"e".repeat(64)}` },
+    },
     { name: "verifier contract", override: { verifierRef: { id: "ver-1", version: 1 } } },
     { name: "rubric", override: { rubricRef: { id: "rub-2", version: 1 } } },
     { name: "rubric absence", override: { rubricRef: null } },
@@ -127,7 +132,9 @@ describe("split dimensions", () => {
     },
     {
       name: "evaluator configuration",
-      override: { evaluator: { ...cohortInput().evaluator, instructionDigest: `sha256:${"c".repeat(64)}` } },
+      override: {
+        evaluator: { ...cohortInput().evaluator, instructionDigest: `sha256:${"c".repeat(64)}` },
+      },
     },
     {
       name: "evaluator reasoning",
@@ -158,9 +165,9 @@ describe("split dimensions", () => {
     expect(cohortSplitReasons(a, cohortInput({ taskVersion: 3 }))).toEqual([
       "Task version differs (v2 vs v3)",
     ]);
-    expect(cohortSplitReasons(a, cohortInput({ protocolFingerprint: `sha256:${"b".repeat(64)}` }))).toEqual([
-      "Protocol fingerprint differs",
-    ]);
+    expect(
+      cohortSplitReasons(a, cohortInput({ protocolFingerprint: `sha256:${"b".repeat(64)}` })),
+    ).toEqual(["Protocol fingerprint differs"]);
     expect(cohortSplitReasons(a, cohortInput({ rubricRef: null }))).toEqual([
       "Rubric differs (rub-1@3 vs none)",
     ]);

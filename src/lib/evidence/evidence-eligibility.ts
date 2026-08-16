@@ -126,16 +126,24 @@ export function classifyEligibility(input: EligibilityInput): EligibilityDecisio
   const reasons = new Set<EvidenceReasonCode>();
 
   // Canonical Task identity.
-  reasons.add(input.canonicalTaskResolved ? "canonical_task_resolved" : "canonical_task_unresolved");
+  reasons.add(
+    input.canonicalTaskResolved ? "canonical_task_resolved" : "canonical_task_unresolved",
+  );
   // Input completeness.
-  reasons.add(input.candidateInputComplete ? "instance_reconstructed" : "instance_input_incomplete");
+  reasons.add(
+    input.candidateInputComplete ? "instance_reconstructed" : "instance_input_incomplete",
+  );
   // Candidate output.
   reasons.add(
-    input.candidateSelectedCompleted ? "candidate_selected_completed" : "candidate_missing_or_failed",
+    input.candidateSelectedCompleted
+      ? "candidate_selected_completed"
+      : "candidate_missing_or_failed",
   );
   // Assessment evidence.
   reasons.add(
-    input.assessmentSelectedCompleted ? "assessment_selected_completed" : "assessment_missing_or_failed",
+    input.assessmentSelectedCompleted
+      ? "assessment_selected_completed"
+      : "assessment_missing_or_failed",
   );
   // Verifier.
   if (input.verifierState === "passed") reasons.add("verifier_passed");
@@ -151,7 +159,9 @@ export function classifyEligibility(input: EligibilityInput): EligibilityDecisio
   else reasons.add("model_configuration_incomplete");
   // Coverage.
   reasons.add(input.fullPairCoverage ? "full_pair_coverage" : "paired_cell_missing");
-  reasons.add(input.fullTaskSetCoverage ? "full_task_set_coverage" : "incomplete_task_set_coverage");
+  reasons.add(
+    input.fullTaskSetCoverage ? "full_task_set_coverage" : "incomplete_task_set_coverage",
+  );
   // Disclosures.
   if (input.reusedCandidateAssessment) reasons.add("reused_candidate_assessment");
   if (input.undeclaredRepeat) reasons.add("undeclared_repeat");

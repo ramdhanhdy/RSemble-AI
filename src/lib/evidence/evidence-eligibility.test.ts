@@ -128,7 +128,9 @@ describe("healthy cells", () => {
   });
 
   it("a passing frozen verifier produces verified class", () => {
-    const d = classifyEligibility(baseInput({ verifierState: "passed", frozenVerifierVersion: true }));
+    const d = classifyEligibility(
+      baseInput({ verifierState: "passed", frozenVerifierVersion: true }),
+    );
     expect(d.evidenceClass).toBe("verified");
     expect(d.status).toBe("eligible");
     expect(d.reasonCodes).toContain("verifier_passed");
@@ -144,13 +146,17 @@ describe("healthy cells", () => {
   });
 
   it("a passing verifier without a frozen version is not verified", () => {
-    const d = classifyEligibility(baseInput({ verifierState: "passed", frozenVerifierVersion: false }));
+    const d = classifyEligibility(
+      baseInput({ verifierState: "passed", frozenVerifierVersion: false }),
+    );
     expect(d.evidenceClass).toBe("comparable");
     expect(d.reasonCodes).toContain("verifier_passed");
   });
 
   it("an unfrozen verifier pass limits only the verified claim, not comparable uses", () => {
-    const d = classifyEligibility(baseInput({ verifierState: "passed", frozenVerifierVersion: false }));
+    const d = classifyEligibility(
+      baseInput({ verifierState: "passed", frozenVerifierVersion: false }),
+    );
     expect(d.evidenceClass).toBe("comparable");
     expect(d.status).toBe("eligible");
     expect(d.allowedUses).toEqual([...FULL_COMPARABLE_USES]);
@@ -181,7 +187,9 @@ describe("unknown model version", () => {
 
 describe("incomplete coverage", () => {
   it("a missing paired cell removes paired and standing uses", () => {
-    const d = classifyEligibility(baseInput({ fullPairCoverage: false, fullTaskSetCoverage: false }));
+    const d = classifyEligibility(
+      baseInput({ fullPairCoverage: false, fullTaskSetCoverage: false }),
+    );
     expect(d.evidenceClass).toBe("comparable");
     expect(d.status).toBe("provisional");
     expect(d.allowedUses).toEqual(["task_descriptive", "within_model_profile"]);
@@ -190,7 +198,9 @@ describe("incomplete coverage", () => {
   });
 
   it("missing pair but complete task set standing is impossible to claim", () => {
-    const d = classifyEligibility(baseInput({ fullPairCoverage: false, fullTaskSetCoverage: true }));
+    const d = classifyEligibility(
+      baseInput({ fullPairCoverage: false, fullTaskSetCoverage: true }),
+    );
     expect(d.allowedUses).toEqual(["task_descriptive", "within_model_profile"]);
     expect(d.reasonCodes).toContain("paired_cell_missing");
   });
@@ -235,7 +245,6 @@ describe("exploratory fallbacks", () => {
     expect(d.reasonCodes).toContain("instance_input_incomplete");
   });
 
-
   it("a missing assessment with no verifier carries a plain-language limitation", () => {
     const d = classifyEligibility(baseInput({ assessmentSelectedCompleted: false }));
     expect(d.status).toBe("provisional");
@@ -251,7 +260,11 @@ describe("exploratory fallbacks", () => {
 
   it("a verifier-only cell is comparable via its verifier outcome", () => {
     const d = classifyEligibility(
-      baseInput({ assessmentSelectedCompleted: false, verifierState: "passed", frozenVerifierVersion: true }),
+      baseInput({
+        assessmentSelectedCompleted: false,
+        verifierState: "passed",
+        frozenVerifierVersion: true,
+      }),
     );
     expect(d.evidenceClass).toBe("verified");
     expect(d.status).toBe("eligible");
@@ -334,7 +347,9 @@ describe("benchmark anchor", () => {
 
 describe("determinism and contract", () => {
   it("sorts reason codes and keeps the canonical use order", () => {
-    const d = classifyEligibility(baseInput({ fullPairCoverage: false, fullTaskSetCoverage: false }));
+    const d = classifyEligibility(
+      baseInput({ fullPairCoverage: false, fullTaskSetCoverage: false }),
+    );
     expect(d.reasonCodes).toEqual([...d.reasonCodes].sort());
     expect(d.allowedUses).toEqual(["task_descriptive", "within_model_profile"]);
   });

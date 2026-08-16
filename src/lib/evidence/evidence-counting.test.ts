@@ -11,7 +11,11 @@
 // =============================================================================
 
 import { describe, expect, it } from "vitest";
-import { countEvidence, type EvidenceCountInput, type EvidenceLedgerRow } from "./evidence-counting";
+import {
+  countEvidence,
+  type EvidenceCountInput,
+  type EvidenceLedgerRow,
+} from "./evidence-counting";
 
 const CFG_A = `mc:sha256:${"a".repeat(64)}`;
 const CFG_B = `mc:sha256:${"b".repeat(64)}`;
@@ -61,8 +65,16 @@ describe("attempts and retries", () => {
 
 describe("same-instance repeats", () => {
   it("raises the observation count but never task/instance coverage", () => {
-    const r1 = row({ lineageCellKey: "cell-1", taskInstanceId: "inst-1", candidateAttemptId: "x1" });
-    const r2 = row({ lineageCellKey: "cell-2", taskInstanceId: "inst-1", candidateAttemptId: "x2" });
+    const r1 = row({
+      lineageCellKey: "cell-1",
+      taskInstanceId: "inst-1",
+      candidateAttemptId: "x1",
+    });
+    const r2 = row({
+      lineageCellKey: "cell-2",
+      taskInstanceId: "inst-1",
+      candidateAttemptId: "x2",
+    });
     const c = count([r1, r2]);
     expect(c.activeObservationCount).toBe(2);
     expect(c.taskCount).toBe(1);
@@ -82,7 +94,11 @@ describe("same-instance repeats", () => {
 
 describe("planned vs undeclared replicates", () => {
   it("counts only declared replicates as replicates", () => {
-    const planned = row({ lineageCellKey: "cell-1", declaredReplicate: true, candidateAttemptId: "r1" });
+    const planned = row({
+      lineageCellKey: "cell-1",
+      declaredReplicate: true,
+      candidateAttemptId: "r1",
+    });
     const undeclared = row({ lineageCellKey: "cell-2", candidateAttemptId: "r2" });
     const c = count([planned, undeclared]);
     expect(c.activeObservationCount).toBe(2);
@@ -116,14 +132,22 @@ describe("missing paired cell", () => {
   it("breaks pair coverage when one side has no active observation", () => {
     const onlyA = row({ modelConfigurationId: CFG_A });
     const c = count([onlyA], [{ taskId: "task-1", a: CFG_A, b: CFG_B }]);
-    expect(c.pairedCoverage).toEqual({ declaredPairCount: 1, completePairCount: 0, complete: false });
+    expect(c.pairedCoverage).toEqual({
+      declaredPairCount: 1,
+      completePairCount: 0,
+      complete: false,
+    });
   });
 
   it("reports complete pair coverage when both sides are active", () => {
     const a = row({ modelConfigurationId: CFG_A });
     const b = row({ modelConfigurationId: CFG_B });
     const c = count([a, b], [{ taskId: "task-1", a: CFG_A, b: CFG_B }]);
-    expect(c.pairedCoverage).toEqual({ declaredPairCount: 1, completePairCount: 1, complete: true });
+    expect(c.pairedCoverage).toEqual({
+      declaredPairCount: 1,
+      completePairCount: 1,
+      complete: true,
+    });
   });
 });
 

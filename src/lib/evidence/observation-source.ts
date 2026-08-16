@@ -105,8 +105,7 @@ export interface ObservationSourceInput {
 }
 
 export type ObservationSourceResult =
-  | { ok: true; selection: ObservationSourceSelection }
-  | { ok: false; reason: string };
+  { ok: true; selection: ObservationSourceSelection } | { ok: false; reason: string };
 
 // --- Selection ---------------------------------------------------------------------
 
@@ -269,7 +268,9 @@ function checkRunIntegrity(
     issues.push(`Selected run ${run.id} protocol fingerprint does not match the experiment.`);
   }
   if (src.experimentTaskAttemptId !== selectedAttempt.id) {
-    issues.push(`Selected run ${run.id} does not match the selected attempt ${selectedAttempt.id}.`);
+    issues.push(
+      `Selected run ${run.id} does not match the selected attempt ${selectedAttempt.id}.`,
+    );
   }
   return issues;
 }

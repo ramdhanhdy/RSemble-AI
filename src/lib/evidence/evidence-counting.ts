@@ -201,8 +201,7 @@ export function countEvidence(input: EvidenceCountInput): EvidenceCounts {
     pairedCoverage: {
       declaredPairCount: input.declaredPairs.length,
       completePairCount,
-      complete:
-        input.declaredPairs.length > 0 && completePairCount === input.declaredPairs.length,
+      complete: input.declaredPairs.length > 0 && completePairCount === input.declaredPairs.length,
     },
     lineageCellViolations,
   };

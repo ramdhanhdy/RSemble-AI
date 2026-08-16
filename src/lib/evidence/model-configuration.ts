@@ -42,8 +42,7 @@ export interface ModelConfigurationInput {
 }
 
 export type ModelConfigurationResult =
-  | { ok: true; snapshot: ModelConfigurationSnapshot }
-  | { ok: false; reason: string };
+  { ok: true; snapshot: ModelConfigurationSnapshot } | { ok: false; reason: string };
 
 /** Identity-relevant fields of a snapshot, in canonical (sorted-key) form. */
 export type ModelConfigurationIdentityFields = Pick<
@@ -166,7 +165,11 @@ export function canonicalizeModelConfiguration(
       reason: "resolvedVersion requires a resolvedModel — a version without a model is incoherent.",
     };
   }
-  if (typeof input.observedAt !== "number" || !Number.isFinite(input.observedAt) || input.observedAt < 0) {
+  if (
+    typeof input.observedAt !== "number" ||
+    !Number.isFinite(input.observedAt) ||
+    input.observedAt < 0
+  ) {
     return { ok: false, reason: "observedAt must be a non-negative epoch ms." };
   }
 

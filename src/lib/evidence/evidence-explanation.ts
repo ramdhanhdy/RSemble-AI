@@ -18,8 +18,7 @@ import type {
 import { LIMITATION_REASON_CODES } from "./evidence-eligibility";
 
 export const EVIDENCE_REASON_EXPLANATIONS: Readonly<Record<EvidenceReasonCode, string>> = {
-  anchor_designated:
-    "This cell is an explicitly designated benchmark anchor for its Task Set.",
+  anchor_designated: "This cell is an explicitly designated benchmark anchor for its Task Set.",
   assessment_missing_or_failed: "No accepted judge or verifier assessment exists for this output.",
   assessment_selected_completed: "An accepted assessment exists for this output.",
   candidate_missing_or_failed: "No completed accepted candidate output exists for this cell.",

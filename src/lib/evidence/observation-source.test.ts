@@ -42,7 +42,14 @@ const M4 = "openrouter:org/m4";
 
 function slot(id: string, key: string): ModelSlot {
   const [providerId, slug] = key.split(":");
-  return { id, providerId: providerId as ProviderId, provider: "Org", model: key, slug, enabled: true };
+  return {
+    id,
+    providerId: providerId as ProviderId,
+    provider: "Org",
+    model: key,
+    slug,
+    enabled: true,
+  };
 }
 
 function attemptRec(
@@ -64,7 +71,12 @@ function attemptRec(
   };
 }
 
-function candidate(id: string, modelKey: string, accepted: string | null, attempts: CandidateAttemptRecord[]): PersistedCandidate {
+function candidate(
+  id: string,
+  modelKey: string,
+  accepted: string | null,
+  attempts: CandidateAttemptRecord[],
+): PersistedCandidate {
   const [providerId, slug] = modelKey.split(":");
   return {
     candidateId: id,
@@ -205,7 +217,9 @@ function makeExperiment(opts: {
       protocolFingerprint: FP,
       createdAt: 0,
     },
-    tasks: [{ taskId: "task-1", selectedAttemptId: opts.selected ?? null, attempts: opts.attempts }],
+    tasks: [
+      { taskId: "task-1", selectedAttemptId: opts.selected ?? null, attempts: opts.attempts },
+    ],
     createdAt: 0,
     updatedAt: 0,
     ...(opts.extensions ? { rosterExtensions: opts.extensions } : {}),
@@ -219,7 +233,12 @@ function resolver(runs: RunRecordV2[]): (runId: string) => RunRecordV2 | null {
 function select(opts: {
   experiment: ExperimentRecord;
   runs: RunRecordV2[];
-  verifierOutcomes?: Array<{ taskId: string; modelKey: string; passed: boolean; executedAt: number }>;
+  verifierOutcomes?: Array<{
+    taskId: string;
+    modelKey: string;
+    passed: boolean;
+    executedAt: number;
+  }>;
 }): ObservationSourceSelection {
   const result = selectObservationSources({
     experiment: opts.experiment,
@@ -842,7 +861,6 @@ describe("duplicate source cells", () => {
     expect(selection.cells.filter((c) => c.modelKey === M1)).toHaveLength(1);
   });
 });
-
 
 describe("source integrity", () => {
   it("rejects a selected run from a different experiment", () => {

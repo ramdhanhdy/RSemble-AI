@@ -241,7 +241,12 @@ describe("isObservation / validateObservation", () => {
     expect(
       validateObservation(
         makeObservation({
-          outcome: { judgeAccepted: true, overallScore: 4, criterionValues: [], verifierPassed: true },
+          outcome: {
+            judgeAccepted: true,
+            overallScore: 4,
+            criterionValues: [],
+            verifierPassed: true,
+          },
         }),
       ).ok,
     ).toBe(false);
@@ -393,8 +398,12 @@ describe("canonical serializers and source key", () => {
 
   it("changes canonical content when any field changes", () => {
     const a = makeObservation();
-    expect(canonicalObservationJson({ ...a, taskVersion: 3 })).not.toBe(canonicalObservationJson(a));
-    expect(canonicalObservationJson({ ...a, observedAt: 2000 })).not.toBe(canonicalObservationJson(a));
+    expect(canonicalObservationJson({ ...a, taskVersion: 3 })).not.toBe(
+      canonicalObservationJson(a),
+    );
+    expect(canonicalObservationJson({ ...a, observedAt: 2000 })).not.toBe(
+      canonicalObservationJson(a),
+    );
   });
 
   it("builds assessment identities over judge attempt and verifier outcome", () => {
@@ -461,9 +470,9 @@ describe("EligibilityDecision validation", () => {
   });
 
   it("rejects an unknown evidence class or status", () => {
-    expect(
-      validateEligibilityDecision(makeDecision({ evidenceClass: "gold" as never })).ok,
-    ).toBe(false);
+    expect(validateEligibilityDecision(makeDecision({ evidenceClass: "gold" as never })).ok).toBe(
+      false,
+    );
     expect(validateEligibilityDecision(makeDecision({ status: "maybe" as never })).ok).toBe(false);
   });
 });
