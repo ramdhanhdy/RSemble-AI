@@ -773,3 +773,74 @@ describe("EvidenceReceipt — Asynchronous repository resolution", () => {
     cleanup(h);
   });
 });
+
+describe("EvidenceReceipt — Index job pending and unindexed states (F3-concern)", () => {
+  it("renders 'Derivation in progress' when index job is running and no observation exists", async () => {
+    const repo = new InMemoryEvidenceRepository();
+    const job = makeIndexJob({
+      sourceResultId: "run_job_running",
+      status: "running",
+    });
+    await repo.putIndexJob(job);
+
+    const h = renderWithRouter(
+      <EvidenceReceipt
+        runId="run_job_running"
+        taskId="task_x"
+        evidenceRepo={repo}
+        defaultOpen
+      />,
+    );
+
+    await settle();
+
+    expect(h.container.textContent).toContain("Derivation in progress");
+    expect(h.container.textContent).not.toContain("Excluded — No score");
+    expect(h.container.textContent).not.toContain("This cell produced no accepted score");
+    cleanup(h);
+  });
+
+  it("renders 'Derivation in progress' when index job is queued and no observation exists", async () => {
+    const repo = new InMemoryEvidenceRepository();
+    const job = makeIndexJob({
+      sourceResultId: "run_job_queued",
+      status: "queued",
+    });
+    await repo.putIndexJob(job);
+
+    const h = renderWithRouter(
+      <EvidenceReceipt
+        runId="run_job_queued"
+        taskId="task_x"
+        evidenceRepo={repo}
+        defaultOpen
+      />,
+    );
+
+    await settle();
+
+    expect(h.container.textContent).toContain("Derivation in progress");
+    expect(h.container.textContent).not.toContain("Excluded — No score");
+    cleanup(h);
+  });
+
+  it("renders 'Not yet indexed' when no index job and no observation exists and no missingReason passed", async () => {
+    const repo = new InMemoryEvidenceRepository();
+
+    const h = renderWithRouter(
+      <EvidenceReceipt
+        runId="run_not_indexed"
+        taskId="task_x"
+        evidenceRepo={repo}
+        defaultOpen
+      />,
+    );
+
+    await settle();
+
+    expect(h.container.textContent).toContain("Not yet indexed");
+    expect(h.container.textContent).not.toContain("Excluded — No score");
+    expect(h.container.textContent).not.toContain("This cell produced no accepted score");
+    cleanup(h);
+  });
+});
