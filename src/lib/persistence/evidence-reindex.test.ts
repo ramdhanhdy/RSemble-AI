@@ -13,13 +13,11 @@
 // =============================================================================
 
 import "fake-indexeddb/auto";
-import { afterEach, describe, expect, it } from "vitest";
-import { RSembleEvaluationDB } from "./database";
-import { InMemoryEvidenceRepository, type EvidenceRepository } from "./evidence-repository";
 import {
   REINDEX_LEASE_KEY,
   createDexieReindexEnumerator,
   createDexieReindexMetaStore,
+  createEvidenceIndexingRuntime,
   isLeaseRecord,
   reindexEvidence,
   type ReindexDeps,
@@ -806,5 +804,218 @@ describe("Dexie reindex seams", () => {
       "acquired",
     );
     expect(await meta.get(REINDEX_LEASE_KEY)).toEqual({ ownerId: "tab-1", expiresAt: 11_000 });
+  });
+});
+
+// --- Production indexing runtime ------------------------------------------------
+
+describe("createEvidenceIndexingRuntime", () => {
+  let db: RSembleEvaluationDB;
+  afterEach(async () => {
+    if (db) db.close();
+  });
+
+  async function openDb(): Promise<RSembleEvaluationDB> {
+    db = new RSembleEvaluationDB(`evidence-runtime-${Math.random().toString(36).slice(2)}`);
+    await db.open();
+    return db;
+  }
+
+  function summaryRowFor(run: RunRecordV2, experimentId: string): {
+    kind: "full";
+    summary: FullRunSummaryV2;
+    id: string;
+    revision: number;
+    createdAt: number;
+    completedAt: number | null;
+    status: string;
+    mode: string;
+    sourceKind: string;
+    sourceProtocolFingerprint: string | null;
+    sourceExperimentTaskAttemptId: string | null;
+    modelKeys: string[];
+  } {
+    return {
+      kind: "full",
+      summary: {
+        kind: "full",
+        schemaVersion: 2,
+        id: run.id,
+        revision: run.revision,
+        createdAt: run.createdAt,
+        completedAt: run.completedAt,
+        status: run.status,
+        mode: run.mode,
+        source: run.source,
+        taskTitle: run.task.title,
+        taskExcerpt: run.task.prompt,
+        modelKeys: run.candidates.map((c) => c.modelKey),
+        winnerKeys: [],
+        scoresByModelKey: {},
+        judgeModelKey: null,
+        evaluationProfileId: null,
+        evaluationProfileVersion: null,
+        detailAvailable: true,
+        searchText: "probe",
+      },
+      id: run.id,
+      revision: run.revision,
+      createdAt: run.createdAt,
+      completedAt: run.completedAt,
+      status: run.status,
+      mode: run.mode,
+      sourceKind: run.source.kind,
+      sourceProtocolFingerprint: run.source.kind === "experiment" ? run.source.protocolFingerprint : null,
+      sourceExperimentTaskAttemptId:
+        run.source.kind === "experiment" ? run.source.experimentTaskAttemptId : null,
+      modelKeys: run.candidates.map((c) => c.modelKey),
+    };
+  }
+
+  async function seedSource(
+    d: RSembleEvaluationDB,
+    id = "run-a",
+  ): Promise<{ run: RunRecordV2; experiment: ExperimentRecord }> {
+    const run = makeRun(id, {}, `exp-${id}`);
+    const experiment = makeExperiment(`exp-${id}`, id);
+    await d.runDetails.put({
+      id: run.id,
+      record: run,
+      revision: run.revision,
+      createdAt: run.createdAt,
+      status: run.status,
+    });
+    await d.runSummaries.put(summaryRowFor(run, experiment.id));
+    await d.experiments.put({ id: experiment.id, experiment, revision: experiment.revision });
+    return { run, experiment };
+  }
+
+  function runtimeFor(d: RSembleEvaluationDB, overrides: Record<string, unknown> = {}) {
+    const resolver: EvaluationSourceResolver = {
+      getExperiment: async (id) => {
+        const row = await d.experiments.get(id);
+        return row ? (row.experiment as ExperimentRecord) : null;
+      },
+      getRun: async (id) => {
+        const row = await d.runDetails.get(id);
+        return row ? (row.record as RunRecordV2) : null;
+      },
+    };
+    return createEvidenceIndexingRuntime({
+      db: d,
+      resolver,
+      reindexOwnerId: "startup-evidence-reindex",
+      ...overrides,
+    });
+  }
+
+  it("reindexes a seeded source silently, idempotently, and touches nothing when empty", async () => {
+    const d = await openDb();
+    const { run } = await seedSource(d);
+    const runtime = runtimeFor(d);
+
+    const first = await runtime.reindex();
+    expect(first).toMatchObject({ skipped: false, sourcesProcessed: 1, sourcesFailed: 0 });
+    expect((await runtime.evidenceRepo.getIndexJob(run.id))?.status).toBe("complete");
+    expect(await runtime.evidenceRepo.countObservations()).toBe(1);
+    // The exact run record is untouched.
+    expect(((await d.runDetails.get(run.id))?.record as RunRecordV2).status).toBe("completed");
+
+    const idsBefore = (await runtime.evidenceRepo.listObservations({})).items.map((o) => o.id);
+    const second = await runtime.reindex();
+    expect(second).toMatchObject({ skipped: false, sourcesProcessed: 0, sourcesSkipped: 1 });
+    const idsAfter = (await runtime.evidenceRepo.listObservations({})).items.map((o) => o.id);
+    expect(idsAfter).toEqual(idsBefore);
+
+    // An empty database: silent, no work, no job rows.
+    const empty = await openDb();
+    const emptyRuntime = runtimeFor(empty);
+    const result = await emptyRuntime.reindex();
+    expect(result).toMatchObject({ skipped: false, sourcesProcessed: 0 });
+    expect(await emptyRuntime.evidenceRepo.listIndexJobs({})).toHaveLength(0);
+    expect(await emptyRuntime.evidenceRepo.countObservations()).toBe(0);
+  });
+
+  it("plumbs persisted verifier outcomes into both reindex and the post-commit queue", async () => {
+    const d = await openDb();
+    const { run } = await seedSource(d);
+    await d.verifierOutcomes.put({
+      id: `run-a::task-1::openrouter:model-m1::5`,
+      taskId: "task-1",
+      modelKey: "openrouter:model-m1",
+      runId: run.id,
+      kind: "exact_match",
+      configurationDigest: `sha256:${"7".repeat(64)}`,
+      verifierRef: { id: "ver-1", version: 2 },
+      passed: true,
+      executedAt: 5,
+    });
+    const runtime = runtimeFor(d, {
+      resolveModelConfiguration: () => ({
+        resolvedModel: "org/model-m1",
+        resolvedVersion: "2025-06-01",
+      }),
+    });
+
+    const reindexed = await runtime.reindex();
+    expect(reindexed).toMatchObject({ skipped: false, sourcesProcessed: 1 });
+    const observations = await runtime.evidenceRepo.listObservationsBySource("evaluation", run.id);
+    expect(observations).toHaveLength(1);
+    const decision = await runtime.evidenceRepo.getActiveDecision(observations[0].id);
+    expect(decision?.evidenceClass).toBe("verified");
+
+    // The post-commit queue resolves the same persisted store: a revision
+    // bump re-triggers derivation with the outcome wired in.
+    const bumped = makeRun("run-a", { revision: 2 }, "exp-run-a");
+    await d.runDetails.put({
+      id: bumped.id,
+      record: bumped,
+      revision: bumped.revision,
+      createdAt: bumped.createdAt,
+      status: bumped.status,
+    });
+    await d.runSummaries.put(summaryRowFor(bumped, "exp-run-a"));
+    await runtime.derivationQueue.enqueue({
+      sourceKind: "evaluation",
+      sourceResultId: bumped.id,
+      sourceRevision: bumped.revision,
+    });
+    await runtime.derivationQueue.drain();
+    expect((await runtime.evidenceRepo.getIndexJob(bumped.id))?.status).toBe("complete");
+    const queueObservations = await runtime.evidenceRepo.listObservationsBySource(
+      "evaluation",
+      bumped.id,
+    );
+    const queueDecision = await runtime.evidenceRepo.getActiveDecision(queueObservations[0].id);
+    expect(queueDecision?.evidenceClass).toBe("verified");
+    runtime.derivationQueue.dispose();
+  });
+
+  it("records an owning error job when a source cannot be derived, without touching the run", async () => {
+    const d = await openDb();
+    const { run } = await seedSource(d);
+    // Break the lineage: the experiment record disappears after the run committed.
+    await d.experiments.delete("exp-run-a");
+    const runtime = runtimeFor(d);
+    const result = await runtime.reindex();
+    expect(result).toMatchObject({ skipped: false, sourcesProcessed: 1, sourcesFailed: 1 });
+    const job = await runtime.evidenceRepo.getIndexJob(run.id);
+    expect(job?.status).toBe("error");
+    expect(job?.errorKind).toBe("source-unresolvable");
+    expect(await runtime.evidenceRepo.countObservations()).toBe(0);
+    // The exact source records are unchanged.
+    expect(((await d.runDetails.get(run.id))?.record as RunRecordV2).status).toBe("completed");
+    expect((await d.runSummaries.get(run.id))?.status).toBe("completed");
+  });
+
+  it("skips when another owner holds the unexpired storage-work lease", async () => {
+    const d = await openDb();
+    await seedSource(d);
+    const meta = createDexieReindexMetaStore(d);
+    await meta.tryAcquireLease(REINDEX_LEASE_KEY, "other-tab", 60_000, 0);
+    const runtime = runtimeFor(d);
+    const result = await runtime.reindex();
+    expect(result).toMatchObject({ skipped: true, reason: "lease-held" });
+    expect(await runtime.evidenceRepo.countObservations()).toBe(0);
   });
 });
