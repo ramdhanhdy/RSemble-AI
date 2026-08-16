@@ -56,6 +56,8 @@ import type {
 import type { FullRunSummaryV2, RunRecordV2 } from "./run-types";
 import type { CriticRef } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
+import type { TaskSetRecord, TaskSetVersion } from "../evaluations/task-set-types";
+import type { TaskSetMaterializationRecord } from "./evaluation-repository";
 import type {
   ExperimentRow,
   FusionAttemptRow,
@@ -77,9 +79,12 @@ import type {
   TaskFamilyRelationRow,
   TaskFamilyRow,
   TaskInstanceRow,
-  TaskMigrationCrosswalkRow,
   TaskRecordRow,
   TaskVersionRow,
+  TaskSetMaterializationRow,
+  TaskSetOwnershipCrosswalkRow,
+  TaskSetRecordRow,
+  TaskSetVersionRow,
 } from "./database";
 
 // --- Shared constants --------------------------------------------------------
@@ -543,6 +548,130 @@ export function makeCrosswalk(taskId: string, version: number): TaskMigrationCro
   };
 }
 
+// --- Task Set entity builders (Child 03 Task 11) ------------------------------
+
+export function makeTaskSetRecord(id: string): TaskSetRecord {
+  return {
+    id,
+    latestVersion: 1,
+    name: `Task Set ${id}`,
+    description: "",
+    createdAt: 1000,
+    updatedAt: 1000,
+    archivedAt: null,
+    revision: 1,
+    origin: "legacy-suite",
+  };
+}
+
+export function makeTaskSetVersion(taskSetId: string, version = 1): TaskSetVersion {
+  return {
+    taskSetId,
+    version,
+    members: [
+      {
+        id: "member-1",
+        taskVersionRef: { taskId: "task-1", version: 1 },
+        order: 0,
+        role: "organic",
+        stratum: null,
+        weight: 1,
+        rubricOverrideRef: null,
+        executionOverrides: null,
+        unresolved: null,
+      },
+    ],
+    defaultRubricRef: null,
+    defaultModelSlots: [SLOT],
+    defaultJudge: { providerId: "openrouter", model: "judge-1" },
+    repeatPolicy: { kind: "none" },
+    missingnessPolicy: { kind: "strict" },
+    protocolDefaults: {},
+    createdAt: 1000,
+  };
+}
+
+export function makeTaskSetMaterialization(
+  id: string,
+  taskSetId: string,
+  taskSetVersion: number,
+): TaskSetMaterializationRecord {
+  const fingerprint = "sha256:" + "a".repeat(64);
+  return {
+    id,
+    taskSetId,
+    taskSetVersion,
+    protocolFingerprint: fingerprint,
+    snapshot: {
+      taskSetId,
+      taskSetVersion,
+      tasks: [],
+      rubrics: [],
+      defaultRubricRef: null,
+      defaultRubric: null,
+      defaultModelSlots: [],
+      defaultJudge: { providerId: "openrouter", model: "judge-1" },
+      repeatPolicy: { kind: "none" },
+      missingnessPolicy: { kind: "strict" },
+      protocolDefaults: {},
+      protocolFingerprint: fingerprint,
+      createdAt: 1000,
+    },
+    createdAt: 1000,
+  };
+}
+
+export function makeSuiteManifestCrosswalk(
+  taskSetId: string,
+  digest = "sha256:" + "b".repeat(64),
+): TaskSetOwnershipCrosswalkRow {
+  return {
+    key: `ts-xwalk:suite:${taskSetId}:${digest}`,
+    kind: "suite-manifest",
+    taskSetId,
+    version: 1,
+    digest,
+    status: "resolved",
+    updatedAt: 1000,
+  };
+}
+
+export function makeExperimentOwnerCrosswalk(
+  experimentId: string,
+  taskSetId: string,
+): TaskSetOwnershipCrosswalkRow {
+  return {
+    key: `ts-xwalk:exp:${experimentId}`,
+    kind: "experiment-owner",
+    taskSetId,
+    version: 1,
+    digest: "sha256:" + "c".repeat(64),
+    status: "resolved",
+    experimentId,
+    updatedAt: 1000,
+  };
+}
+
+export function makeFusionOwnerCrosswalk(
+  studyId: string,
+  taskSetId: string,
+): TaskSetOwnershipCrosswalkRow {
+  return {
+    key: `ts-xwalk:fusion:${studyId}`,
+    kind: "fusion-owner",
+    taskSetId,
+    version: 1,
+    digest: null,
+    status: "resolved",
+    suiteRef: {
+      suiteId: taskSetId,
+      suiteVersion: 1,
+      protocolFingerprint: "sha256:" + "d".repeat(64),
+    },
+    updatedAt: 1000,
+  };
+}
+
 // --- Wire encoding helper ------------------------------------------------------
 
 /** Encode bytes as base64 — the v2 artifact-bytes wire encoding, shared by
@@ -791,6 +920,41 @@ export function taskMigrationCrosswalkRow(
   };
 }
 
+export function taskSetRecordRow(record: TaskSetRecord): TaskSetRecordRow {
+  return {
+    id: record.id,
+    record,
+    latestVersion: record.latestVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    archivedAt: record.archivedAt,
+    origin: record.origin,
+    revision: record.revision,
+  };
+}
+
+export function taskSetVersionRow(version: TaskSetVersion): TaskSetVersionRow {
+  return {
+    taskSetId: version.taskSetId,
+    version: version.version,
+    version_: version,
+    createdAt: version.createdAt,
+  };
+}
+
+export function taskSetMaterializationRow(
+  record: TaskSetMaterializationRecord,
+): TaskSetMaterializationRow {
+  return {
+    id: record.id,
+    taskSetId: record.taskSetId,
+    taskSetVersion: record.taskSetVersion,
+    protocolFingerprint: record.protocolFingerprint,
+    snapshot: record.snapshot,
+    createdAt: record.createdAt,
+  };
+}
+
 // --- Valid envelope ----------------------------------------------------------
 
 /** Build a complete, valid archive v2 fixture with one representative entity
@@ -830,6 +994,16 @@ export function buildValidArchiveV2Fixture(): WorkbenchArchiveV2 {
     taskFacetAnnotations: [makeTaskFacetAnnotation("ann-1", "task-1")],
     taskMigrationCrosswalks: [makeCrosswalk("task-1", 1)],
   };
+  const taskSets = {
+    records: [makeTaskSetRecord("suite-1")],
+    versions: [makeTaskSetVersion("suite-1", 1)],
+    materializations: [makeTaskSetMaterialization("mat-1", "suite-1", 1)],
+    ownershipCrosswalks: [
+      makeSuiteManifestCrosswalk("suite-1"),
+      makeExperimentOwnerCrosswalk("exp-1", "suite-1"),
+      makeFusionOwnerCrosswalk("study-1", "suite-1"),
+    ],
+  };
 
   const archive: WorkbenchArchiveV2 = {
     manifest: {
@@ -847,6 +1021,7 @@ export function buildValidArchiveV2Fixture(): WorkbenchArchiveV2 {
     experiments,
     fusion,
     tasks,
+    taskSets,
   };
 
   archive.manifest.counts = countAll(archive);
@@ -887,6 +1062,10 @@ function emptyCounts(): ArchiveV2EntityCounts {
     taskFamilyRelations: 0,
     taskFacetAnnotations: 0,
     taskMigrationCrosswalks: 0,
+    taskSets: 0,
+    taskSetVersions: 0,
+    taskSetMaterializations: 0,
+    taskSetOwnershipCrosswalks: 0,
   };
 }
 
@@ -915,5 +1094,9 @@ function countAll(archive: WorkbenchArchiveV2): ArchiveV2EntityCounts {
     taskFamilyRelations: archive.tasks.taskFamilyRelations.length,
     taskFacetAnnotations: archive.tasks.taskFacetAnnotations.length,
     taskMigrationCrosswalks: archive.tasks.taskMigrationCrosswalks.length,
+    taskSets: archive.taskSets?.records.length ?? 0,
+    taskSetVersions: archive.taskSets?.versions.length ?? 0,
+    taskSetMaterializations: archive.taskSets?.materializations.length ?? 0,
+    taskSetOwnershipCrosswalks: archive.taskSets?.ownershipCrosswalks.length ?? 0,
   };
 }

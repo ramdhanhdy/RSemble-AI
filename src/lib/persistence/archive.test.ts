@@ -1292,6 +1292,16 @@ async function seedCompleteCorpus(): Promise<void> {
   );
   await db.taskMigrationCrosswalk.put(fx.taskMigrationCrosswalkRow(fx.makeCrosswalk("task-1", 1)));
 
+  // Task Set identity (Child 03 Task 11).
+  await db.taskSets.put(fx.taskSetRecordRow(fx.makeTaskSetRecord("suite-1")));
+  await db.taskSetVersions.put(fx.taskSetVersionRow(fx.makeTaskSetVersion("suite-1", 1)));
+  await db.taskSetMaterializations.put(
+    fx.taskSetMaterializationRow(fx.makeTaskSetMaterialization("mat-1", "suite-1", 1)),
+  );
+  await db.taskSetOwnershipCrosswalk.put(fx.makeSuiteManifestCrosswalk("suite-1"));
+  await db.taskSetOwnershipCrosswalk.put(fx.makeExperimentOwnerCrosswalk("exp-1", "suite-1"));
+  await db.taskSetOwnershipCrosswalk.put(fx.makeFusionOwnerCrosswalk("study-1", "suite-1"));
+
   // Unrestricted storage metadata must never cross the archive boundary.
   await db.storageMeta.put({ key: "execution-lease", value: { ownerId: "owner-1" } });
 }
@@ -1338,6 +1348,14 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
     expect(archive.tasks.taskMigrationCrosswalks.map((c) => c.legacyScopeKey)).toEqual([
       "legacy:task-1",
     ]);
+    expect(archive.taskSets?.records.map((r) => r.id)).toEqual(["suite-1"]);
+    expect(archive.taskSets?.versions.map((v) => v.version)).toEqual([1]);
+    expect(archive.taskSets?.materializations.map((m) => m.id)).toEqual(["mat-1"]);
+    expect(archive.taskSets?.ownershipCrosswalks.map((c) => c.key).sort()).toEqual([
+      "ts-xwalk:exp:exp-1",
+      "ts-xwalk:fusion:study-1",
+      "ts-xwalk:suite:suite-1:sha256:" + "b".repeat(64),
+    ]);
 
     // Source evidence is semantically unchanged: deep equality with the seeded
     // domain records, and artifact bytes decode byte-equal.
@@ -1361,7 +1379,7 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
 
   it("exports an empty workbench as a valid, count-zero v2 envelope", async () => {
     const archive = await exportWorkbenchArchiveV2(db);
-    expect(Object.values(archive.manifest.counts)).toEqual(new Array(23).fill(0));
+    expect(Object.values(archive.manifest.counts)).toEqual(new Array(27).fill(0));
     const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
     expect(check.valid).toBe(true);
   });
@@ -1393,6 +1411,10 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
     expect(archive.manifest.counts.taskFamilyRelations).toBe(1);
     expect(archive.manifest.counts.taskFacetAnnotations).toBe(1);
     expect(archive.manifest.counts.taskMigrationCrosswalks).toBe(1);
+    expect(archive.manifest.counts.taskSets).toBe(1);
+    expect(archive.manifest.counts.taskSetVersions).toBe(1);
+    expect(archive.manifest.counts.taskSetMaterializations).toBe(1);
+    expect(archive.manifest.counts.taskSetOwnershipCrosswalks).toBe(3);
 
     expect(archive.manifest.payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(archive.manifest.payloadDigest).toBe(computeArchiveV2PayloadDigest(archive));
@@ -1546,6 +1568,32 @@ describe("exportWorkbenchArchiveV2 — secret safety", () => {
       expect(message).not.toContain("Bearer abc123def456");
     }
   });
+
+  it("blocks an export whose Task Set record carries a credential-like value, with redacted diagnostics", async () => {
+    const smuggled = fx.makeTaskSetRecord("ts-secret") as unknown as Record<string, unknown>;
+    smuggled.description = "contact: sk-live-1234567890abcdef";
+    await db.taskSets.put({
+      id: "ts-secret",
+      record: smuggled,
+      latestVersion: 1,
+      createdAt: 1000,
+      updatedAt: 1000,
+      archivedAt: null,
+      origin: "authored",
+      revision: 1,
+    });
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("taskSets.records");
+      expect(message).toContain("ts-secret");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
 });
 
 describe("exportWorkbenchArchiveV2 — progress and cancellation", () => {
@@ -1677,6 +1725,12 @@ function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
     taskFacetAnnotations: [],
     taskMigrationCrosswalks: [],
   };
+  archive.taskSets = {
+    records: [],
+    versions: [],
+    materializations: [],
+    ownershipCrosswalks: [],
+  };
   archive.manifest.counts = {
     runSummaries: 0,
     runDetails: 0,
@@ -1701,6 +1755,10 @@ function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
     taskFamilyRelations: 0,
     taskFacetAnnotations: 0,
     taskMigrationCrosswalks: 0,
+    taskSets: 0,
+    taskSetVersions: 0,
+    taskSetMaterializations: 0,
+    taskSetOwnershipCrosswalks: 0,
   };
   archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
   return archive;

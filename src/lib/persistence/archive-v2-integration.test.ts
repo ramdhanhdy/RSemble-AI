@@ -101,6 +101,19 @@ async function seedCompleteCorpus(db: RSembleEvaluationDB): Promise<void> {
     fx.taskFacetAnnotationRow(fx.makeTaskFacetAnnotation("ann-1", "task-1")),
   );
   await db.taskMigrationCrosswalk.put(fx.taskMigrationCrosswalkRow(fx.makeCrosswalk("task-1", 1)));
+
+  // Task Set identity (Child 03 Task 11): records/versions/materializations and
+  // the single ownership-crosswalk collection (suite-manifest / experiment-owner
+  // / fusion-owner). The Task Set record id mirrors the legacy suite id so the
+  // suite-manifest crosswalk references a real suite.
+  await db.taskSets.put(fx.taskSetRecordRow(fx.makeTaskSetRecord("suite-1")));
+  await db.taskSetVersions.put(fx.taskSetVersionRow(fx.makeTaskSetVersion("suite-1", 1)));
+  await db.taskSetMaterializations.put(
+    fx.taskSetMaterializationRow(fx.makeTaskSetMaterialization("mat-1", "suite-1", 1)),
+  );
+  await db.taskSetOwnershipCrosswalk.put(fx.makeSuiteManifestCrosswalk("suite-1"));
+  await db.taskSetOwnershipCrosswalk.put(fx.makeExperimentOwnerCrosswalk("exp-1", "suite-1"));
+  await db.taskSetOwnershipCrosswalk.put(fx.makeFusionOwnerCrosswalk("study-1", "suite-1"));
 }
 
 const DETERMINISTIC_NOW = () => 5000;
@@ -153,6 +166,31 @@ describe("archive v2 integration — complete corpus round trip", () => {
     expect(reexported.tasks.taskMigrationCrosswalks.map((c) => c.legacyScopeKey)).toEqual([
       "legacy:task-1",
     ]);
+
+    // Task Set identity round-trips with exact counts and crosswalks.
+    expect(reexported.manifest.counts.taskSets).toBe(1);
+    expect(reexported.manifest.counts.taskSetVersions).toBe(1);
+    expect(reexported.manifest.counts.taskSetMaterializations).toBe(1);
+    expect(reexported.manifest.counts.taskSetOwnershipCrosswalks).toBe(3);
+    expect(reexported.taskSets?.records.map((r) => r.id)).toEqual(["suite-1"]);
+    expect(reexported.taskSets?.versions.map((v) => v.version)).toEqual([1]);
+    expect(reexported.taskSets?.materializations.map((m) => m.id)).toEqual(["mat-1"]);
+    expect(
+      reexported.taskSets?.ownershipCrosswalks.map((c) => c.key).sort(),
+    ).toEqual(
+      exported.taskSets?.ownershipCrosswalks.map((c) => c.key).sort(),
+    );
+
+    // The seven Fusion collections round-trip byte-stable (semantic equality is
+    // already asserted via JSON.stringify above); the Fusion owner crosswalk
+    // references the study without altering any Fusion payload.
+    expect(reexported.fusion.studies).toEqual(exported.fusion.studies);
+    expect(reexported.fusion.observations).toEqual(exported.fusion.observations);
+    const fusionOwner = reexported.taskSets?.ownershipCrosswalks.find(
+      (c) => c.kind === "fusion-owner",
+    );
+    expect(fusionOwner?.key).toBe("ts-xwalk:fusion:study-1");
+    expect(fusionOwner?.taskSetId).toBe("suite-1");
 
     // Source Suite/Experiment evidence is semantically unchanged: the
     // target's read-back rows deep-equal the seeded domain records.
@@ -517,6 +555,76 @@ describe("archive v2 integration — case matrix", () => {
       kind: "blocked",
     });
     expect(await snapshotCounts(target)).toEqual(emptyCounts());
+  });
+});
+
+// =============================================================================
+// 5. Task Set identity (Child 03 Task 11)
+// =============================================================================
+
+describe("archive v2 integration — Task Set identity", () => {
+  it("earlier-v2 envelope without the taskSets key still imports with zero new-collection writes", async () => {
+    const source = await freshDb("ts-earlier-src");
+    await seedCompleteCorpus(source);
+    const exported = await exportWorkbenchArchiveV2(source, { now: DETERMINISTIC_NOW });
+    // Simulate an earlier-v2 producer that never emitted taskSets.
+    delete (exported as unknown as Record<string, unknown>).taskSets;
+    exported.manifest.counts.taskSets = 0;
+    exported.manifest.counts.taskSetVersions = 0;
+    exported.manifest.counts.taskSetMaterializations = 0;
+    exported.manifest.counts.taskSetOwnershipCrosswalks = 0;
+    exported.manifest.payloadDigest = computeArchiveV2PayloadDigest(exported);
+
+    const target = await freshDb("ts-earlier-tgt");
+    const preview = await previewWorkbenchArchive(target, exported, { sourceLabel: "memory" });
+    expect(preview.format).toBe("v2");
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+    await commitPreviewWorkbenchArchiveV2(target, preview);
+    // No Task Set rows were written.
+    expect(await target.taskSets.count()).toBe(0);
+    expect(await target.taskSetVersions.count()).toBe(0);
+    expect(await target.taskSetMaterializations.count()).toBe(0);
+    expect(await target.taskSetOwnershipCrosswalk.count()).toBe(0);
+  });
+
+  it("v1 import writes no Task Set rows", async () => {
+    const source = await freshDb("ts-v1-src");
+    await dbSeedV1Corpus(source);
+    const v1 = await exportWorkbenchArchive(source);
+    const target = await freshDb("ts-v1-tgt");
+    await importWorkbenchArchiveAuto(target, v1 as unknown as never);
+    expect(await target.taskSets.count()).toBe(0);
+    expect(await target.taskSetVersions.count()).toBe(0);
+    expect(await target.taskSetMaterializations.count()).toBe(0);
+    expect(await target.taskSetOwnershipCrosswalk.count()).toBe(0);
+  });
+
+  it("non-identical same-key Task Set record aborts the commit BEFORE any write", async () => {
+    const target = await freshDb("ts-collision");
+    await target.taskSets.put(fx.taskSetRecordRow(fx.makeTaskSetRecord("suite-1")));
+    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    archive.taskSets!.records[0] = {
+      ...archive.taskSets!.records[0],
+      name: "different task set name",
+    };
+    recomputeDigest(archive);
+
+    const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
+    expect(
+      preview.collisions.some(
+        (c) => c.collection === "taskSets.records" && c.key === "suite-1",
+      ),
+    ).toBe(true);
+    await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    // The pre-seeded Task Set record is unchanged; nothing else was written.
+    expect((await target.taskSets.get("suite-1"))?.record).toEqual(
+      fx.makeTaskSetRecord("suite-1"),
+    );
+    expect(await target.runSummaries.count()).toBe(0);
   });
 });
 

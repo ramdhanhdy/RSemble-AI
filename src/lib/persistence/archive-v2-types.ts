@@ -57,6 +57,9 @@ import type {
   PoolManifestVersion,
 } from "../evaluations/fusion-study-types";
 import { isRecord, type RunRecordV2, type RunSummary } from "./run-types";
+import type { TaskSetRecord, TaskSetVersion } from "../evaluations/task-set-types";
+import type { TaskSetMaterializationRecord } from "./evaluation-repository";
+import type { TaskSetOwnershipCrosswalkRow } from "./database";
 
 // --- Versions ----------------------------------------------------------------
 
@@ -106,6 +109,10 @@ export interface ArchiveV2EntityCounts {
   taskFamilyRelations: number;
   taskFacetAnnotations: number;
   taskMigrationCrosswalks: number;
+  taskSets: number;
+  taskSetVersions: number;
+  taskSetMaterializations: number;
+  taskSetOwnershipCrosswalks: number;
 }
 
 /** Extensible v2 manifest. Future additive fields must keep older validators
@@ -161,6 +168,19 @@ export interface ArchiveV2TaskPayload {
   taskMigrationCrosswalks: TaskMigrationCrosswalk[];
 }
 
+/** Task Set identity collections (Child 03 Task 11, spec §10). Carries Task
+ *  Set records/versions (each version embeds its immutable workload manifest),
+ *  immutable execution materializations, and the single ownership-crosswalk
+ *  collection (suite-manifest / experiment-owner / fusion-owner). This key is
+ *  OPTIONAL: earlier v2 envelopes without it remain readable, and its absence
+ *  means all four counts are zero. */
+export interface ArchiveV2TaskSetPayload {
+  records: TaskSetRecord[];
+  versions: TaskSetVersion[];
+  materializations: TaskSetMaterializationRecord[];
+  ownershipCrosswalks: TaskSetOwnershipCrosswalkRow[];
+}
+
 /** The complete, task-first archive v2 envelope. Structurally distinct from
  *  `WorkbenchArchiveV1`: a manifest with format/storage versions, integrity
  *  digest, and local-scope disclosure; Fusion and Task collections are
@@ -173,6 +193,8 @@ export interface WorkbenchArchiveV2 {
   experiments: ExperimentRecord[];
   fusion: ArchiveV2FusionPayload;
   tasks: ArchiveV2TaskPayload;
+  /** Optional Task Set identity payload (Child 03). Absent => empty. */
+  taskSets?: ArchiveV2TaskSetPayload;
 }
 
 /** Top-level collection keys, in deterministic declaration order. Used by

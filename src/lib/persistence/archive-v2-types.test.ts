@@ -428,7 +428,59 @@ describe("isWorkbenchArchiveV2", () => {
   });
 });
 
-// --- Helpers -----------------------------------------------------------------
+// --- Task Set identity (Child 03 Task 11) ------------------------------------
+
+describe("archive v2 Task Set identity", () => {
+  it("rejects a prohibited credential key inside a Task Set record", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    Object.assign(archive.taskSets!.records[0], { [PROHIBITED_KEY_SAMPLE]: "anything" });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /prohibited/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a credential-like value inside a Task Set version field", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    (archive.taskSets!.versions[0].members[0] as unknown as Record<string, unknown>).stratum =
+      credentialLikeText();
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /credential/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a Task Set version whose member references an unknown task version", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.taskSets!.versions[0].members[0].taskVersionRef = { taskId: "task-1", version: 99 };
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown task version/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a duplicate Task Set record id", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.taskSets!.records.push({ ...archive.taskSets!.records[0] });
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /duplicate/i.test(e.message))).toBe(true);
+  });
+
+  it("accepts an earlier-v2 envelope without the taskSets key (counts treated as zero)", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    delete archive.taskSets;
+    archive.manifest.counts.taskSets = 0;
+    archive.manifest.counts.taskSetVersions = 0;
+    archive.manifest.counts.taskSetMaterializations = 0;
+    archive.manifest.counts.taskSetOwnershipCrosswalks = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+});
+ 
+ // --- Helpers -----------------------------------------------------------------
 
 /** Recompute counts and payload digest so a mutated fixture isolates one
  *  validation failure when desired. */
@@ -457,6 +509,10 @@ function syncManifest(archive: WorkbenchArchiveV2): void {
     taskFamilyRelations: archive.tasks.taskFamilyRelations.length,
     taskFacetAnnotations: archive.tasks.taskFacetAnnotations.length,
     taskMigrationCrosswalks: archive.tasks.taskMigrationCrosswalks.length,
+    taskSets: archive.taskSets?.records.length ?? 0,
+    taskSetVersions: archive.taskSets?.versions.length ?? 0,
+    taskSetMaterializations: archive.taskSets?.materializations.length ?? 0,
+    taskSetOwnershipCrosswalks: archive.taskSets?.ownershipCrosswalks.length ?? 0,
   };
   archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 }
