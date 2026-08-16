@@ -808,6 +808,134 @@ describe("reindexEvidence", () => {
     expect(resultB).toEqual({ skipped: true, reason: "lease-held" });
     expect(await world.repo.countObservations()).toBe(3);
   });
+
+  it("renews the lease while one source is blocked past the TTL so a second owner stays excluded", async () => {
+    const world = makeWorld();
+    seedCleanEvaluation(world, "run-a");
+    seedCleanEvaluation(world, "run-b");
+    // A parks inside its FIRST source derivation; the wall clock then leaps
+    // far past the 100ms lease TTL while A is still blocked there. Exclusivity
+    // must not depend on source boundaries.
+    let releaseA!: () => void;
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    let entered = false;
+    const depsA = depsFor(world, { ownerId: "tab-a", leaseTtlMs: 100, leaseHeartbeatMs: 10 });
+    depsA.resolver = {
+      getExperiment: async (id) => {
+        if (!entered) {
+          entered = true;
+          await gateA;
+        }
+        return world.experiments.get(id) ?? null;
+      },
+      getRun: async (id) => world.runs.get(id) ?? null,
+    };
+    const passA = reindexEvidence(depsA);
+    await until(() => entered);
+
+    // A is still blocked inside its single source; wall-clock time advances
+    // far beyond the TTL while the derivation is in flight.
+    world.nowMs = 10_000;
+    // Give the periodic renewal a few ticks at the advanced clock.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // A second owner attempts the pass while A is still blocked: excluded
+    // because A's lease is kept fresh by the owner-checked heartbeat.
+    const depsB = depsFor(world, { ownerId: "tab-b", leaseTtlMs: 1_000 });
+    const resultB = await reindexEvidence(depsB);
+    expect(resultB).toEqual({ skipped: true, reason: "lease-held" });
+
+    releaseA();
+    const resultA = await passA;
+    expect(resultA).toMatchObject({ skipped: false, sourcesProcessed: 2, sourcesFailed: 0 });
+    expect(await world.repo.countObservations()).toBe(2);
+  });
+
+  it("a heartbeat-reported loss stops the pass without deleting the successor's lease or marking later sources", async () => {
+    const world = makeWorld();
+    seedCleanEvaluation(world, "run-a");
+    seedCleanEvaluation(world, "run-b");
+    // A parks right before its completion-marker commit for run-a: the
+    // (idempotent) derivation write has landed, the verification read is
+    // gated so the heartbeat has time to observe a loss mid-source.
+    let releaseVerifyA!: () => void;
+    const verifyGateA = new Promise<void>((resolve) => {
+      releaseVerifyA = resolve;
+    });
+    let verifyCalls = 0;
+    const repoA: EvidenceRepository = new Proxy(world.repo, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop);
+        if (prop === "listObservationsBySource") {
+          const fn = (value as (...args: unknown[]) => Promise<unknown>).bind(target);
+          return async (...args: unknown[]) => {
+            verifyCalls += 1;
+            if (verifyCalls === 1) await verifyGateA;
+            return fn(...args);
+          };
+        }
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const depsA = depsFor(world, {
+      ownerId: "tab-a",
+      leaseTtlMs: 100,
+      leaseHeartbeatMs: 10,
+      evidenceRepo: repoA,
+    });
+    const passA = reindexEvidence(depsA);
+    await until(() => verifyCalls === 1);
+
+    // A's lease (last heartbeat extension) has lapsed at the advanced clock;
+    // B acquires inside this wall-clock instant — the read-check-and-write
+    // runs synchronously, before A's next tick can renew.
+    const held = (await world.meta.get(REINDEX_LEASE_KEY)) as { expiresAt?: number } | null;
+    world.nowMs = (held?.expiresAt ?? 0) + 1;
+    const depsB = depsFor(world, { ownerId: "tab-b", leaseTtlMs: 1_000 });
+    let releaseB!: () => void;
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    let enteredB = false;
+    depsB.resolver = {
+      getExperiment: async (id) => {
+        if (!enteredB) {
+          enteredB = true;
+          await gateB;
+        }
+        return world.experiments.get(id) ?? null;
+      },
+      getRun: async (id) => world.runs.get(id) ?? null,
+    };
+    const passB = reindexEvidence(depsB);
+    await until(async () => {
+      const nowHeld = (await world.meta.get(REINDEX_LEASE_KEY)) as { ownerId?: string } | null;
+      return nowHeld?.ownerId === "tab-b";
+    });
+
+    // The successor holds the lease while A is still blocked: A's next
+    // heartbeat tick reports "lost" and the pass must fail closed.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    releaseVerifyA();
+    const resultA = await passA;
+    expect(resultA).toEqual({ skipped: true, reason: "lease-lost" });
+    // A never deleted the successor's lease…
+    expect(
+      ((await world.meta.get(REINDEX_LEASE_KEY)) as { ownerId?: string } | null)?.ownerId,
+    ).toBe("tab-b");
+    // …and never marked the in-flight source complete nor touched later ones.
+    expect((await world.repo.getIndexJob("run-a"))?.status).not.toBe("complete");
+    expect((await world.repo.getIndexJob("run-b"))?.status).not.toBe("complete");
+
+    // B still owns the lease and completes its own pass before releasing it.
+    releaseB();
+    const resultB = await passB;
+    expect(resultB).toMatchObject({ skipped: false, sourcesProcessed: 2 });
+    expect(await world.meta.get(REINDEX_LEASE_KEY)).toBeNull();
+    expect(await world.repo.countObservations()).toBe(2);
+  });
 });
 
 // --- Dexie-backed enumerator + meta store --------------------------------------
