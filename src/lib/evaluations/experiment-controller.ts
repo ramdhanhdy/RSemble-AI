@@ -87,6 +87,20 @@ export interface ExperimentControllerDeps {
   generateId: () => string;
   now: () => number;
   heartbeatMs: number;
+  /**
+   * Optional post-commit seam (evidence derivation, spec §4): invoked once
+   * AFTER the source run + attempt transaction committed and the experiment
+   * status synced. Fired-and-forgotten — a hook failure never rolls back or
+   * changes the exact result and never touches the paid-execution owner or
+   * the experiment unit of work.
+   */
+  onTaskTerminalCommitted?: (event: {
+    taskId: string;
+    attemptId: string;
+    runId: string;
+    runRevision: number;
+    status: RunStatus;
+  }) => void;
 }
 
 // --- Helpers ------------------------------------------------------------------
@@ -523,10 +537,27 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       },
       "info",
     );
-
     // Sync experiment status (completed, completed_with_failures, paused).
     await syncExperimentStatus(persistedExperimentRevision);
 
+    // Post-commit seam: derivation/indexing runs strictly after the source
+    // transaction committed. A hook failure is contained — the exact result
+    // and the paid-execution ownership are unaffected (spec §4, §13).
+    try {
+      deps.onTaskTerminalCommitted?.({
+        taskId,
+        attemptId,
+        runId: finalRun.id,
+        runRevision: commitRev.runRevision,
+        status: finalRun.status,
+      });
+    } catch (err) {
+      devTerminalLog(
+        "experiment.task.postCommitHookFailed",
+        { error: err instanceof Error ? err.message : String(err) },
+        "warn",
+      );
+    }
     emit({ kind: "task-terminal", taskId, attemptId, status: finalRun.status });
   }
 

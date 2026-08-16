@@ -20,6 +20,11 @@ import {
 import { createExecutionLease, type ExecutionLease } from "../execution-lease";
 import { createRunExecutor } from "../run-executor";
 import { useExecutionOwner } from "../execution-owner-context";
+import { createEvidenceRepository } from "../persistence/evidence-repository";
+import {
+  createDerivationQueue,
+  type EvaluationSourceResolver,
+} from "../evidence/derive-observations";
 import { createExperimentController, type ExperimentController } from "./experiment-controller";
 import {
   ExperimentControllerContext,
@@ -36,6 +41,15 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
   } | null>(() => {
     if (!db || !evalRepo || !runRepo) return null;
     const lease = createExecutionLease(db);
+    // Post-commit derivation queue (evidence spec §4): a local, serialized
+    // job runner over the schema v8 evidence stores. It is separate from the
+    // paid-execution owner and the experiment unit of work.
+    const evidenceRepo = createEvidenceRepository(db);
+    const sourceResolver: EvaluationSourceResolver = {
+      getExperiment: (id) => evalRepo.getExperiment(id),
+      getRun: (id) => runRepo.get(id),
+    };
+    const derivationQueue = createDerivationQueue({ evidenceRepo, resolver: sourceResolver });
     const controller = createExperimentController({
       evalRepo,
       uow: createExperimentUnitOfWork(new DexieExperimentStore(db)),
@@ -46,6 +60,14 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
       generateId: () => crypto.randomUUID(),
       now: () => Date.now(),
       heartbeatMs: 0, // 0 selects the controller default (3000ms) lease-renew cadence
+      onTaskTerminalCommitted: (event) => {
+        if (event.status !== "completed" && event.status !== "partial") return;
+        void derivationQueue.enqueue({
+          sourceKind: "evaluation",
+          sourceResultId: event.runId,
+          sourceRevision: event.runRevision,
+        });
+      },
     });
     return { controller, lease };
   }, [db, evalRepo, runRepo, owner]);
