@@ -104,7 +104,7 @@ export const EVIDENCE_CONTENT_FIELDS: ReadonlySet<string> = new Set([
 ]);
 
 /** Recursively collect prohibited-key and raw-content-field occurrences. */
-function collectProhibitedFieldPaths(v: unknown, path: string, out: string[]): void {
+export function collectProhibitedFieldPaths(v: unknown, path: string, out: string[]): void {
   if (Array.isArray(v)) {
     v.forEach((item, index) => collectProhibitedFieldPaths(item, `${path}[${index}]`, out));
     return;

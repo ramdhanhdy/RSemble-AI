@@ -35,6 +35,7 @@ import {
 } from "./database";
 import {
   canonicalObservationJson,
+  collectProhibitedFieldPaths,
   isEligibilityDecision,
   isModelConfigurationSnapshot,
   observationSourceKey,
@@ -239,6 +240,14 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
       db.assertWritable();
       if (!isModelConfigurationSnapshot(snapshot)) {
         throw new StorageError("validation", "Invalid ModelConfigurationSnapshot.");
+      }
+      const prohibited: string[] = [];
+      collectProhibitedFieldPaths(snapshot, "", prohibited);
+      if (prohibited.length > 0) {
+        throw new StorageError(
+          "validation",
+          `Invalid ModelConfigurationSnapshot: ${prohibited[0]}`,
+        );
       }
       return await db.transaction("rw", db.modelConfigurations, async () => {
         const existing = await db.modelConfigurations.get(snapshot.id);
@@ -612,6 +621,14 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
   ): Promise<"created" | "extended" | "unchanged"> {
     if (!isModelConfigurationSnapshot(snapshot)) {
       throw new StorageError("validation", "Invalid ModelConfigurationSnapshot.");
+    }
+    const prohibited: string[] = [];
+    collectProhibitedFieldPaths(snapshot, "", prohibited);
+    if (prohibited.length > 0) {
+      throw new StorageError(
+        "validation",
+        `Invalid ModelConfigurationSnapshot: ${prohibited[0]}`,
+      );
     }
     const existing = this.modelConfigurations.get(snapshot.id);
     if (!existing) {

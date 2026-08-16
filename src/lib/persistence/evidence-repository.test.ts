@@ -212,6 +212,16 @@ function runContract(name: string, makeHarness: RepoFactory) {
         const stored = await repo.getModelConfiguration(a.id);
         expect(stored?.resolvedVersion).toBe("2025-06-01");
       });
+
+      it("rejects snapshots carrying prohibited keys in runtime settings", async () => {
+        const { repo } = harness;
+        const snap = makeModelConfiguration("sec");
+        snap.runtimeSettings = { apiKey: "sk-secret" };
+        await expect(repo.putModelConfiguration(snap)).rejects.toBeInstanceOf(StorageError);
+        const err = await repo.putModelConfiguration(snap).catch((e) => e);
+        expect((err as StorageError).kind).toBe("validation");
+        expect(await repo.listModelConfigurations()).toHaveLength(0);
+      });
     });
 
     describe("observations", () => {
