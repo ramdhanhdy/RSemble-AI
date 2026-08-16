@@ -17,6 +17,7 @@
 //
 // Uses the repo's happy-dom createRoot/act harness — no testing-library.
 
+import * as fs from "node:fs";
 import { describe, expect, it, afterEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -937,5 +938,15 @@ describe("TaskObservations — Same-component route transitions regression", () 
     expect(h.$("[data-count-active-observations]")?.textContent).toBe("1");
 
     cleanup(h);
+  });
+});
+
+describe("TaskObservations — Accessibility and reduced motion", () => {
+  it("covers .animate-spin under prefers-reduced-motion in index.css", () => {
+    const css = fs.readFileSync("src/index.css", "utf8");
+    const reducedMotionMatch = css.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]+)\}/);
+    expect(reducedMotionMatch).toBeTruthy();
+    const reducedMotionBody = reducedMotionMatch?.[1] ?? "";
+    expect(reducedMotionBody).toContain(".animate-spin,");
   });
 });
