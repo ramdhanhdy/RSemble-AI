@@ -248,11 +248,7 @@ class MemoryMetaStore implements ReindexMetaStore {
     this.values.set(key, { ownerId, expiresAt });
     return "acquired";
   }
-  async renewLease(
-    key: string,
-    ownerId: string,
-    expiresAt: number,
-  ): Promise<"renewed" | "lost"> {
+  async renewLease(key: string, ownerId: string, expiresAt: number): Promise<"renewed" | "lost"> {
     const held = this.values.get(key) ?? null;
     if (!isLeaseRecord(held) || held.ownerId !== ownerId) return "lost";
     this.values.set(key, { ownerId, expiresAt });

@@ -121,11 +121,7 @@ export interface ReindexMetaStore {
    * a missing, foreign, or non-lease record returns "lost" and the caller
    * must stop working.
    */
-  renewLease(
-    key: string,
-    ownerId: string,
-    expiresAt: number,
-  ): Promise<"renewed" | "lost">;
+  renewLease(key: string, ownerId: string, expiresAt: number): Promise<"renewed" | "lost">;
   /**
    * Owner-checked release inside one storage transaction: deletes the lease
    * only when the stored record still belongs to `ownerId`, so an owner
@@ -167,11 +163,7 @@ export function createDexieReindexMetaStore(db: RSembleEvaluationDB): ReindexMet
         return "acquired";
       });
     },
-    async renewLease(
-      key: string,
-      ownerId: string,
-      expiresAt: number,
-    ): Promise<"renewed" | "lost"> {
+    async renewLease(key: string, ownerId: string, expiresAt: number): Promise<"renewed" | "lost"> {
       return db.transaction("rw", db.storageMeta, async () => {
         const row = await db.storageMeta.get(key);
         const held = row?.value ?? null;
