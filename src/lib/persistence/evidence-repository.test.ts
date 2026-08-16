@@ -19,7 +19,7 @@
 
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { RSembleEvaluationDB, StorageError } from "./database";
+import { RSembleEvaluationDB, StorageError, type EvidenceObservationRow } from "./database";
 import {
   EvidenceCorruptionError,
   createEvidenceRepository,
@@ -467,6 +467,37 @@ describe("EvidenceRepository canonical content checks (dexie)", () => {
       const reordered: Observation = JSON.parse(canonicalObservationJson(o)) as Observation;
       expect(reordered).not.toBe(o);
       await expect(repo.putObservation(reordered)).resolves.toBe("existing");
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// --- Dexie-only schema backstop -----------------------------------------------
+
+describe("Evidence schema unique sourceKey backstop (dexie)", () => {
+  it("rejects a second row with the same sourceKey at the database level", async () => {
+    const db = new RSembleEvaluationDB(`evidence-schema-${Math.random().toString(36).slice(2)}`);
+    await db.open();
+    try {
+      const row = (id: string): EvidenceObservationRow => ({
+        id,
+        sourceKey: "K",
+        sourceKind: "evaluation",
+        sourceResultId: "run-x",
+        sourceTaskCellId: "cell-x",
+        taskId: "task-x",
+        taskInstanceId: "inst-x",
+        modelConfigurationId: `mc:sha256:${"0".repeat(64)}`,
+        observedAt: 1,
+        observation: {},
+      });
+      await db.observations.put(row("a"));
+      // Bypassing the repository: the schema itself must reject the duplicate.
+      const err = await db.observations.put(row("b")).catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).name).toBe("ConstraintError");
+      expect(await db.observations.count()).toBe(1);
     } finally {
       db.close();
     }

@@ -25,8 +25,11 @@
 //   v8 — additive evidence reference stores (4 tables, spec §10):
 //        modelConfigurations, observations, evidenceDecisions,
 //        evidenceIndexJobs. Observation rows carry the canonical six-part
-//        source key (unique) so repository insertion is idempotent and a
-//        conflicting duplicate aborts before any write.
+//        source key so repository insertion is idempotent and a conflicting
+//        duplicate aborts before any write.
+//   v9 — hardens the observations store: `sourceKey` becomes a DB-level
+//        unique index (`&sourceKey`) as a defense-in-depth backstop behind
+//        the repository's transactional duplicate check (spec §5).
 import Dexie, { type Table } from "dexie";
 import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
 import type { ObservationSourceKind } from "../evidence/evidence-types";
@@ -555,9 +558,9 @@ export class RSembleEvaluationDB extends Dexie {
 
     // v8: additive evidence reference stores (spec §10). No existing v1–v7
     // table is redefined — this block only adds the four new stores. The
-    // observations `sourceKey` is a unique index: repository insertion is
-    // idempotent under the six-part source key and a conflicting duplicate
-    // aborts before any write.
+    // observations `sourceKey` index is declared non-unique here; v9 promotes
+    // it to a unique index as a defense-in-depth backstop behind the
+    // repository's transactional duplicate check.
     this.version(8).stores({
       modelConfigurations: "id, providerId, requestedModel, resolvedVersion, observedTo",
       observations:
@@ -565,6 +568,16 @@ export class RSembleEvaluationDB extends Dexie {
       evidenceDecisions:
         "id, [observationId+ruleVersion], observationId, status, evidenceClass, comparabilityCohortId",
       evidenceIndexJobs: "sourceResultId, sourceKind, status, ruleVersion, updatedAt",
+    });
+
+    // v9: hardens the observations store (defense-in-depth, spec §5). The
+    // repository already rejects duplicate six-part source keys
+    // transactionally; the unique `&sourceKey` index backstops any writer
+    // that bypasses it. A duplicate sourceKey at this level aborts the write
+    // with a constraint violation instead of silently persisting two rows.
+    this.version(9).stores({
+      observations:
+        "id, &sourceKey, sourceResultId, taskId, taskInstanceId, modelConfigurationId, observedAt",
     });
 
 
