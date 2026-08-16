@@ -215,6 +215,32 @@ describe("one active observation per lineage cell", () => {
     expect(c.lineageCellViolations).toHaveLength(1);
     expect(c.lineageCellViolations[0]).toContain("cell-1");
   });
+  it("deflates a violated cell to one representative row so counts never inflate", () => {
+    const a = row({
+      lineageCellKey: "cell-1",
+      sequence: 2,
+      candidateAttemptId: "x1",
+      declaredReplicate: true,
+      assessmentEventId: "j-1",
+      modelConfigurationId: CFG_A,
+      attemptIds: ["x1"],
+    });
+    const b = row({
+      lineageCellKey: "cell-1",
+      sequence: 2,
+      candidateAttemptId: "x2",
+      declaredReplicate: true,
+      assessmentEventId: "j-2",
+      modelConfigurationId: CFG_A,
+      attemptIds: ["x2"],
+    });
+    const c = count([a, b]);
+    expect(c.lineageCellViolations).toHaveLength(1);
+    expect(c.activeObservationCount).toBe(1);
+    expect(c.replicateCount).toBe(1);
+    expect(c.responseSampleCount).toBe(1);
+    expect(c.responseSampleCountByConfiguration).toEqual({ [CFG_A]: 1 });
+  });
 
   it("has no violations for clean ledgers", () => {
     const c = count([row({ lineageCellKey: "cell-1" })]);

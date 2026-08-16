@@ -5,7 +5,8 @@
 // no-inflation rules:
 //
 //  - one active observation per lineage cell (latest event wins; a tie is
-//    reported as a violation, never silently deduplicated);
+//    reported as a violation and deflated to a deterministic representative
+//    row — counts never inflate on corruption);
 //  - Task / version / instance / observation / replicate / attempt counts are
 //    reported separately;
 //  - attempt counts include every retry and copy (audit), never as samples;
@@ -91,8 +92,19 @@ export function countEvidence(input: EvidenceCountInput): EvidenceCounts {
       lineageCellViolations.push(
         `${cellKey} has ${active.length} active rows at sequence ${maxSequence} — one active observation per lineage cell required.`,
       );
+      // Spec §5: a duplicate with non-identical canonical content is a
+      // corruption error, never last-write-wins. Counts must never inflate:
+      // deflate to one deterministic representative row and surface the
+      // violation above so the caller can handle the corruption.
+      const representative = [...active].sort((a, b) =>
+        a.candidateAttemptId === b.candidateAttemptId
+          ? (a.assessmentEventId ?? "").localeCompare(b.assessmentEventId ?? "")
+          : a.candidateAttemptId.localeCompare(b.candidateAttemptId),
+      )[0];
+      activeRows.push(representative);
+    } else {
+      activeRows.push(...active);
     }
-    activeRows.push(...active);
   }
 
   // --- Coverage counts (active rows only) ------------------------------------------
