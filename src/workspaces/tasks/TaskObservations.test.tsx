@@ -663,6 +663,33 @@ describe("TaskObservations — Pagination", () => {
 
     cleanup(h);
   });
+
+  it("announces pagination updates to screen readers with role='status' and aria-live='polite'", async () => {
+    const repo = new InMemoryEvidenceRepository();
+    const m = makeModelConfig("openai", "gpt-4o");
+    await repo.putModelConfiguration(m);
+
+    // Create 15 observations so pagination renders
+    for (let i = 1; i <= 15; i++) {
+      const pad = String(i).padStart(2, "0");
+      const obs = makeObservation("t-1", 1, `inst-${pad}`, m.id, {
+        sourceResultId: `res-page-${pad}`,
+        observedAt: NOW - (15 - i) * 1000,
+      });
+      await repo.putObservation(obs);
+      await repo.putDecision(makeDecision(obs.id));
+    }
+
+    const h = render(<TaskObservations taskId="t-1" pageSize={10} evidenceRepo={repo} />);
+    await settle();
+
+    const info = h.$("[data-pagination-info]");
+    expect(info).toBeTruthy();
+    expect(info?.getAttribute("role")).toBe("status");
+    expect(info?.getAttribute("aria-live")).toBe("polite");
+
+    cleanup(h);
+  });
 });
 
 describe("TaskObservations — Disclosures of unknown and legacy provenance", () => {
