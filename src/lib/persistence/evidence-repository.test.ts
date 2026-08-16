@@ -701,10 +701,18 @@ function runContract(name: string, makeHarness: RepoFactory) {
         await repo.putIndexJob(makeJob({ status: "queued" }));
         await repo.claimIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1000 });
         expect(
-          await repo.heartbeatIndexJob({ sourceResultId: "run-a", ownerId: "tab-b", updatedAt: 1100 }),
+          await repo.heartbeatIndexJob({
+            sourceResultId: "run-a",
+            ownerId: "tab-b",
+            updatedAt: 1100,
+          }),
         ).toBe(false);
         expect(
-          await repo.heartbeatIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1100 }),
+          await repo.heartbeatIndexJob({
+            sourceResultId: "run-a",
+            ownerId: "tab-a",
+            updatedAt: 1100,
+          }),
         ).toBe(true);
         expect((await repo.getIndexJob("run-a"))?.updatedAt).toBe(1100);
       });
@@ -734,7 +742,11 @@ function runContract(name: string, makeHarness: RepoFactory) {
         expect((await repo.getIndexJob("run-a"))?.status).toBe("complete");
         // The claim is cleared: the old owner can no longer heartbeat or finalize.
         expect(
-          await repo.heartbeatIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 1300 }),
+          await repo.heartbeatIndexJob({
+            sourceResultId: "run-a",
+            ownerId: "tab-a",
+            updatedAt: 1300,
+          }),
         ).toBe(false);
         await expect(
           repo.finalizeIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", job: complete }),
@@ -759,7 +771,11 @@ function runContract(name: string, makeHarness: RepoFactory) {
         expect(claimed).toMatchObject({ status: "running" });
         // The old owner can neither heartbeat nor finalize after reassignment.
         expect(
-          await repo.heartbeatIndexJob({ sourceResultId: "run-a", ownerId: "tab-a", updatedAt: 7200 }),
+          await repo.heartbeatIndexJob({
+            sourceResultId: "run-a",
+            ownerId: "tab-a",
+            updatedAt: 7200,
+          }),
         ).toBe(false);
         await expect(
           repo.finalizeIndexJob({

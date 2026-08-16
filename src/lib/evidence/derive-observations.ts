@@ -605,6 +605,12 @@ export interface DerivationQueueOptions {
    * active owner stays fresh past the stale timeout. Default 30 seconds.
    */
   heartbeatMs?: number;
+  /**
+   * Exclusive claim owner identity for this queue instance. Every tab/runtime
+   * must use a distinct owner; defaults to a unique id per queue instance so
+   * concurrent queues can never both claim the same source.
+   */
+  ownerId?: string;
 }
 
 export interface DrainSummary {
@@ -628,9 +634,11 @@ export interface DerivationQueue {
 /**
  * Post-commit derivation job queue over the shared evidence stores. Every
  * queue instance drains the same queued index jobs, so any tab with a live
- * queue can process jobs enqueued by any tab. Derivation writes are
- * idempotent under the six-part source key, so concurrent processing never
- * inflates observation counts. Enqueue runs after the source transaction
+ * queue can process jobs enqueued by any tab. Each queue carries a unique
+ * claim owner: a queued source is claimed atomically and exclusively
+ * (owner-scoped claim/heartbeat/finalize), so concurrent drains derive a
+ * source exactly once per revision — idempotent six-part key writes are a
+ * backstop, not the exclusivity mechanism. Enqueue runs after the source
  * committed and never inside the paid-execution owner or the experiment
  * unit of work.
  */
@@ -644,6 +652,7 @@ export function createDerivationQueue(
   const heartbeatMs = options.heartbeatMs ?? 30_000;
   let disposed = false;
   let chain: Promise<void> = Promise.resolve();
+  const ownerId = options.ownerId ?? uniqueOwnerId();
 
   /** Re-queue jobs stranded in "running" by a crashed tab (exact once). */
   async function recoverStale(): Promise<void> {
@@ -659,62 +668,81 @@ export function createDerivationQueue(
 
   async function processOne(): Promise<{ handled: true; ok: boolean } | { handled: false }> {
     const queued = await deps.evidenceRepo.listIndexJobs({ status: "queued" });
-    if (queued.length === 0) return { handled: false };
-    const job = queued[0];
-    const ref: DerivationSourceRef = {
-      sourceKind: job.sourceKind,
-      sourceResultId: job.sourceResultId,
-      sourceRevision: job.sourceRevision,
-    };
-    const running = await deps.evidenceRepo.putIndexJob({
-      ...job,
-      status: "running",
-      updatedAt: now(),
-    });
-    if (running === "unchanged") return { handled: false };
-
-    // Heartbeat: refresh the running marker so a concurrent recovery never
-    // steals an active owner. Containment is absolute; the CAS on the final
-    // complete/error write keeps stale heartbeats from regressing anything.
-    const heartbeat =
-      heartbeatMs > 0
-        ? setInterval(() => {
-            void deps.evidenceRepo
-              .putIndexJob({ ...job, status: "running", updatedAt: now() })
-              .catch(() => {});
-          }, heartbeatMs)
-        : null;
-    let result;
-    try {
-      result = await deriveObservationsForSource(deps, ref);
-    } finally {
-      if (heartbeat !== null) clearInterval(heartbeat);
-    }
-    if (result.status === "complete") {
-      await deps.evidenceRepo.putIndexJob({
-        ...job,
-        status: "complete",
+    for (const candidate of queued) {
+      // Atomic owner-scoped claim: exactly one queue wins a queued source;
+      // concurrent drains find the row already claimed and move on.
+      const claimed = await deps.evidenceRepo.claimIndexJob({
+        sourceResultId: candidate.sourceResultId,
+        ownerId,
         updatedAt: now(),
-        errorKind: null,
-        errorMessage: null,
-        summary: {
-          observationCount: result.observationCount,
-          gapCount: result.gapCount,
-          limitationCount: result.limitationCount,
-          integrityIssues: result.integrityIssues,
-        },
       });
-      return { handled: true, ok: true };
+      if (claimed === null) continue;
+      const ref: DerivationSourceRef = {
+        sourceKind: claimed.sourceKind,
+        sourceResultId: claimed.sourceResultId,
+        sourceRevision: claimed.sourceRevision,
+      };
+
+      // Owner-checked heartbeat: refresh the running marker so a concurrent
+      // recovery never steals an active owner; stop as soon as ownership is
+      // lost. Containment is absolute; the owner-checked finalize keeps a
+      // stale heartbeat from regressing anything.
+      const heartbeat =
+        heartbeatMs > 0
+          ? setInterval(() => {
+              void deps.evidenceRepo
+                .heartbeatIndexJob({
+                  sourceResultId: ref.sourceResultId,
+                  ownerId,
+                  updatedAt: now(),
+                })
+                .then((held) => {
+                  if (!held && heartbeat !== null) clearInterval(heartbeat);
+                })
+                .catch(() => {});
+            }, heartbeatMs)
+          : null;
+      let result;
+      try {
+        result = await deriveObservationsForSource(deps, ref);
+      } finally {
+        if (heartbeat !== null) clearInterval(heartbeat);
+      }
+      const ok = result.status === "complete";
+      const finalized = await deps.evidenceRepo.finalizeIndexJob({
+        sourceResultId: ref.sourceResultId,
+        ownerId,
+        job: ok
+          ? {
+              ...claimed,
+              status: "complete",
+              updatedAt: now(),
+              errorKind: null,
+              errorMessage: null,
+              summary: {
+                observationCount: result.observationCount,
+                gapCount: result.gapCount,
+                limitationCount: result.limitationCount,
+                integrityIssues: result.integrityIssues,
+              },
+            }
+          : {
+              ...claimed,
+              status: "error",
+              updatedAt: now(),
+              errorKind: result.errorKind ?? "indexing-failed",
+              errorMessage: result.errorMessage ?? "Derivation failed.",
+              summary: null,
+            },
+      });
+      if (finalized === "lost") {
+        // A successor recovered and re-derived this source; it owns the
+        // outcome. End the drain rather than double-processing.
+        return { handled: false };
+      }
+      return { handled: true, ok };
     }
-    await deps.evidenceRepo.putIndexJob({
-      ...job,
-      status: "error",
-      updatedAt: now(),
-      errorKind: result.errorKind ?? "indexing-failed",
-      errorMessage: result.errorMessage ?? "Derivation failed.",
-      summary: null,
-    });
-    return { handled: true, ok: false };
+    return { handled: false };
   }
 
   function schedule(): void {
@@ -781,4 +809,12 @@ export function createDerivationQueue(
       disposed = true;
     },
   };
+}
+
+/** A genuinely unique claim-owner identity per queue instance. Overridable
+ *  via `DerivationQueueOptions.ownerId` for deterministic tests. */
+function uniqueOwnerId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  return `evidence-owner-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

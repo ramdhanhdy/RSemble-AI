@@ -164,7 +164,30 @@ export interface EvidenceRepository {
    * stolen. Returns recovered sourceResultIds in deterministic order.
    */
   recoverStaleIndexJobs(opts: { staleTimeoutMs: number; now: number }): Promise<string[]>;
-  // --- Executed verifier outcomes ----------------------------------------------
+  // --- Exclusive index job claims ----------------------------------------------
+  /** Atomically claim a queued job for one owner: only a "queued" row is
+   *  claimable, and only once — the winner receives the running job with
+   *  `claimOwner` persisted, every other claimant gets null. */
+  claimIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    updatedAt: number;
+  }): Promise<EvidenceIndexJob | null>;
+  /** Owner-checked heartbeat for a running claim. Returns false once the
+   *  owner no longer holds the claim (recovered, reassigned, finalized). */
+  heartbeatIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    updatedAt: number;
+  }): Promise<boolean>;
+  /** Owner-checked finalization: writes the complete/error marker and clears
+   *  the claim only when `ownerId` still holds it. "lost" means a successor
+   *  owns the job and the marker is never overwritten by a stale owner. */
+  finalizeIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    job: EvidenceIndexJob;
+  }): Promise<"finalized" | "unchanged" | "lost">;
   /** Persist one executed verifier outcome, idempotent under the composite
    *  [runId+taskId+modelKey+executedAt] id. A non-identical outcome at the
    *  same id is corruption, never last-write-wins. */
@@ -285,7 +308,10 @@ function validateJob(job: EvidenceIndexJob): void {
  *  - a stale sourceRevision (below the stored marker) is rejected;
  *  - a revision bump replaces the marker and re-triggers indexing;
  *  - at the same revision, a `complete` marker never regresses (duplicate
- *    events stay no-ops) while `error`/`running` rows remain retryable.
+ *    events stay no-ops) while `error`/`running` rows remain retryable;
+ *  - a `running` row is an exclusive claim: generic puts never downgrade it
+ *    to `queued` and never re-mark it `running` (claim/heartbeat/finalize
+ *    are the only owner-scoped writers).
  */
 function applyJobCas(existing: EvidenceIndexJob, incoming: EvidenceIndexJob): PutIndexJobResult {
   if (incoming.sourceRevision < existing.sourceRevision) {
@@ -298,6 +324,13 @@ function applyJobCas(existing: EvidenceIndexJob, incoming: EvidenceIndexJob): Pu
   if (jobEquals(existing, incoming)) return "unchanged";
   if (existing.status === "complete" && incoming.status !== "complete") {
     // Duplicate event at a fixed revision: the source is already indexed.
+    return "unchanged";
+  }
+  if (
+    existing.status === "running" &&
+    (incoming.status === "running" || incoming.status === "queued")
+  ) {
+    // Never steal or downgrade an active claim through the generic put.
     return "unchanged";
   }
   return "updated";
@@ -666,10 +699,103 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
         for (const row of rows) {
           if (row.status !== "running") continue;
           if (row.updatedAt + opts.staleTimeoutMs > opts.now) continue;
-          await db.evidenceIndexJobs.put({ ...row, status: "queued" });
+          // Recovery re-queues AND clears the claim: the stranded owner can
+          // no longer heartbeat or finalize once a successor claims.
+          await db.evidenceIndexJobs.put({ ...row, status: "queued", claimOwner: null });
           recovered.push(row.sourceResultId);
         }
         return recovered.sort((a, b) => a.localeCompare(b));
+      });
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function claimIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    updatedAt: number;
+  }): Promise<EvidenceIndexJob | null> {
+    try {
+      db.assertWritable();
+      if (typeof input.sourceResultId !== "string" || input.sourceResultId.length === 0) {
+        throw new StorageError("validation", "sourceResultId must be a non-blank string.");
+      }
+      if (typeof input.ownerId !== "string" || input.ownerId.length === 0) {
+        throw new StorageError("validation", "ownerId must be a non-blank string.");
+      }
+      if (!Number.isFinite(input.updatedAt) || input.updatedAt < 0) {
+        throw new StorageError("validation", "updatedAt must be a non-negative epoch ms.");
+      }
+      return await db.transaction("rw", db.evidenceIndexJobs, async () => {
+        const row = await db.evidenceIndexJobs.get(input.sourceResultId);
+        if (!row || row.status !== "queued") return null;
+        const claimed: EvidenceIndexJobRow = {
+          ...row,
+          status: "running",
+          updatedAt: input.updatedAt,
+          claimOwner: input.ownerId,
+        };
+        await db.evidenceIndexJobs.put(claimed);
+        return fromJobRow(claimed);
+      });
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function heartbeatIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    updatedAt: number;
+  }): Promise<boolean> {
+    try {
+      db.assertWritable();
+      if (typeof input.ownerId !== "string" || input.ownerId.length === 0) {
+        throw new StorageError("validation", "ownerId must be a non-blank string.");
+      }
+      if (!Number.isFinite(input.updatedAt) || input.updatedAt < 0) {
+        throw new StorageError("validation", "updatedAt must be a non-negative epoch ms.");
+      }
+      return await db.transaction("rw", db.evidenceIndexJobs, async () => {
+        const row = await db.evidenceIndexJobs.get(input.sourceResultId);
+        if (!row || row.status !== "running" || row.claimOwner !== input.ownerId) return false;
+        await db.evidenceIndexJobs.put({ ...row, updatedAt: input.updatedAt });
+        return true;
+      });
+    } catch (err) {
+      throw classifyStorageError(err);
+    }
+  }
+
+  async function finalizeIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    job: EvidenceIndexJob;
+  }): Promise<"finalized" | "unchanged" | "lost"> {
+    try {
+      db.assertWritable();
+      if (typeof input.ownerId !== "string" || input.ownerId.length === 0) {
+        throw new StorageError("validation", "ownerId must be a non-blank string.");
+      }
+      validateJob(input.job);
+      if (input.job.status !== "complete" && input.job.status !== "error") {
+        throw new StorageError(
+          "validation",
+          "finalizeIndexJob accepts only complete or error markers.",
+        );
+      }
+      return await db.transaction("rw", db.evidenceIndexJobs, async () => {
+        const row = await db.evidenceIndexJobs.get(input.sourceResultId);
+        if (!row || row.status !== "running" || row.claimOwner !== input.ownerId) {
+          // A successor recovered and re-derived the source: never overwrite.
+          return "lost";
+        }
+        const existing = fromJobRow(row);
+        const cas = applyJobCas(existing, input.job);
+        if (cas === "unchanged") return "unchanged";
+        await db.evidenceIndexJobs.put({ ...toJobRow(input.job), claimOwner: null });
+        return "finalized";
       });
     } catch (err) {
       throw classifyStorageError(err);
@@ -735,6 +861,9 @@ export function createEvidenceRepository(db: RSembleEvaluationDB): EvidenceRepos
 
   return {
     putModelConfiguration,
+    claimIndexJob,
+    heartbeatIndexJob,
+    finalizeIndexJob,
     getModelConfiguration,
     listModelConfigurations,
     putObservation,
@@ -772,6 +901,8 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
   private readonly decisions = new Map<string, EligibilityDecision>();
   private readonly jobs = new Map<string, EvidenceIndexJob>();
   private readonly verifierOutcomes = new Map<string, ExecutedVerifierOutcome>();
+  /** Exclusive claim owners keyed by sourceResultId (mirrors row.claimOwner). */
+  private readonly jobClaims = new Map<string, string>();
 
   async putModelConfiguration(
     snapshot: ModelConfigurationSnapshot,
@@ -1040,8 +1171,84 @@ export class InMemoryEvidenceRepository implements EvidenceRepository {
       if (job.status !== "running") continue;
       if (job.updatedAt + opts.staleTimeoutMs > opts.now) continue;
       job.status = "queued";
+      this.jobClaims.delete(job.sourceResultId);
       recovered.push(job.sourceResultId);
     }
     return recovered.sort((a, b) => a.localeCompare(b));
+  }
+
+  async claimIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    updatedAt: number;
+  }): Promise<EvidenceIndexJob | null> {
+    if (typeof input.sourceResultId !== "string" || input.sourceResultId.length === 0) {
+      throw new StorageError("validation", "sourceResultId must be a non-blank string.");
+    }
+    if (typeof input.ownerId !== "string" || input.ownerId.length === 0) {
+      throw new StorageError("validation", "ownerId must be a non-blank string.");
+    }
+    if (!Number.isFinite(input.updatedAt) || input.updatedAt < 0) {
+      throw new StorageError("validation", "updatedAt must be a non-negative epoch ms.");
+    }
+    const job = this.jobs.get(input.sourceResultId);
+    if (!job || job.status !== "queued") return null;
+    job.status = "running";
+    job.updatedAt = input.updatedAt;
+    this.jobClaims.set(input.sourceResultId, input.ownerId);
+    return JSON.parse(JSON.stringify(job));
+  }
+
+  async heartbeatIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    updatedAt: number;
+  }): Promise<boolean> {
+    if (typeof input.ownerId !== "string" || input.ownerId.length === 0) {
+      throw new StorageError("validation", "ownerId must be a non-blank string.");
+    }
+    if (!Number.isFinite(input.updatedAt) || input.updatedAt < 0) {
+      throw new StorageError("validation", "updatedAt must be a non-negative epoch ms.");
+    }
+    const job = this.jobs.get(input.sourceResultId);
+    if (
+      !job ||
+      job.status !== "running" ||
+      this.jobClaims.get(input.sourceResultId) !== input.ownerId
+    ) {
+      return false;
+    }
+    job.updatedAt = input.updatedAt;
+    return true;
+  }
+
+  async finalizeIndexJob(input: {
+    sourceResultId: string;
+    ownerId: string;
+    job: EvidenceIndexJob;
+  }): Promise<"finalized" | "unchanged" | "lost"> {
+    if (typeof input.ownerId !== "string" || input.ownerId.length === 0) {
+      throw new StorageError("validation", "ownerId must be a non-blank string.");
+    }
+    validateJob(input.job);
+    if (input.job.status !== "complete" && input.job.status !== "error") {
+      throw new StorageError(
+        "validation",
+        "finalizeIndexJob accepts only complete or error markers.",
+      );
+    }
+    const existing = this.jobs.get(input.sourceResultId);
+    if (
+      !existing ||
+      existing.status !== "running" ||
+      this.jobClaims.get(input.sourceResultId) !== input.ownerId
+    ) {
+      return "lost";
+    }
+    const cas = applyJobCas(existing, input.job);
+    if (cas === "unchanged") return "unchanged";
+    this.jobs.set(input.sourceResultId, JSON.parse(JSON.stringify(input.job)));
+    this.jobClaims.delete(input.sourceResultId);
+    return "finalized";
   }
 }

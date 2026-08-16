@@ -393,6 +393,10 @@ export interface EvidenceIndexJobRow {
   errorMessage: string | null;
   /** Sanitized derived summary; null until the source completes. */
   summary: unknown;
+  /** Exclusive derivation claim owner (plain persisted field, never indexed).
+   *  Set by claimIndexJob, cleared by finalizeIndexJob and stale recovery;
+   *  absent on rows written before the claim protocol existed. */
+  claimOwner?: string | null;
 }
 
 /** Executed verifier outcome row (schema v10, spec §3.4/§7.3). Identity fields
