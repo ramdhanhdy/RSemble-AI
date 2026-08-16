@@ -39,7 +39,11 @@ import {
   classifyEligibility,
   type EligibilityInput,
 } from "../evidence/evidence-eligibility";
-import type { EligibilityDecision, Observation } from "../evidence/evidence-types";
+import type {
+  EligibilityDecision,
+  ExecutedVerifierOutcome,
+  Observation,
+} from "../evidence/evidence-types";
 
 function makeModelConfiguration(idSeed: string, observedAt = 1000) {
   const r = canonicalizeModelConfiguration({
@@ -144,6 +148,23 @@ function makeJob(overrides: Partial<EvidenceIndexJob> = {}): EvidenceIndexJob {
     errorKind: null,
     errorMessage: null,
     summary: null,
+    ...overrides,
+  };
+}
+
+function makeVerifierOutcome(
+  runId = "run-a",
+  overrides: Partial<ExecutedVerifierOutcome> = {},
+): ExecutedVerifierOutcome {
+  return {
+    taskId: "task-1",
+    modelKey: "openrouter:model-m1",
+    runId,
+    kind: "exact_match",
+    configurationDigest: `sha256:${"7".repeat(64)}`,
+    verifierRef: { id: "ver-1", version: 2 },
+    passed: true,
+    executedAt: 5,
     ...overrides,
   };
 }
@@ -500,6 +521,80 @@ function runContract(name: string, makeHarness: RepoFactory) {
             } as unknown as EvidenceIndexJobSummary,
           }),
         ).rejects.toBeInstanceOf(StorageError);
+      });
+    });
+
+    describe("verifier outcomes", () => {
+      it("persists executed outcomes idempotently and lists them deterministically", async () => {
+        const { repo } = harness;
+        await expect(repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 5 })))
+          .resolves.toBe("created");
+        await expect(
+          repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 5 })),
+        ).resolves.toBe("existing");
+        await repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 10 }));
+        await repo.putVerifierOutcome(makeVerifierOutcome("run-b", { executedAt: 7 }));
+        const listed = await repo.listVerifierOutcomes({});
+        expect(listed.map((o) => `${o.runId}:${o.executedAt}`)).toEqual([
+          "run-a:5",
+          "run-b:7",
+          "run-a:10",
+        ]);
+      });
+
+      it("scopes listing by task, model, and lineage run ids", async () => {
+        const { repo } = harness;
+        await repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 5 }));
+        await repo.putVerifierOutcome(
+          makeVerifierOutcome("run-a", { modelKey: "openrouter:other", executedAt: 6 }),
+        );
+        await repo.putVerifierOutcome(makeVerifierOutcome("run-b", { executedAt: 7 }));
+        await repo.putVerifierOutcome(
+          makeVerifierOutcome("run-b", { taskId: "task-9", executedAt: 8 }),
+        );
+        const byRun = await repo.listVerifierOutcomes({ runIds: ["run-a"] });
+        expect(byRun.map((o) => o.modelKey)).toEqual(["openrouter:model-m1", "openrouter:other"]);
+        const byCell = await repo.listVerifierOutcomes({
+          taskId: "task-1",
+          modelKey: "openrouter:model-m1",
+          runIds: ["run-a", "run-b"],
+        });
+        expect(byCell.map((o) => `${o.runId}:${o.executedAt}`)).toEqual(["run-a:5", "run-b:7"]);
+      });
+
+      it("rejects malformed outcomes, kind none, unknown kinds, and prohibited keys", async () => {
+        const { repo } = harness;
+        const base = makeVerifierOutcome("run-a");
+        await expect(
+          repo.putVerifierOutcome({ ...base, kind: "none" } as ExecutedVerifierOutcome),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.putVerifierOutcome({ ...base, kind: "vibes" } as unknown as ExecutedVerifierOutcome),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.putVerifierOutcome({ ...base, configurationDigest: "not-a-digest" }),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.putVerifierOutcome({ ...base, executedAt: -1 }),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.putVerifierOutcome({ ...base, verifierRef: { id: "", version: 1 } }),
+        ).rejects.toBeInstanceOf(StorageError);
+        await expect(
+          repo.putVerifierOutcome({ ...base, apiKey: "sk-x" } as unknown as ExecutedVerifierOutcome),
+        ).rejects.toBeInstanceOf(StorageError);
+        expect(await repo.listVerifierOutcomes({})).toHaveLength(0);
+      });
+
+      it("treats a non-identical outcome at the same composite id as corruption", async () => {
+        const { repo } = harness;
+        await repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 5 }));
+        await expect(
+          repo.putVerifierOutcome(makeVerifierOutcome("run-a", { executedAt: 5, passed: false })),
+        ).rejects.toBeInstanceOf(EvidenceCorruptionError);
+        const listed = await repo.listVerifierOutcomes({});
+        expect(listed).toHaveLength(1);
+        expect(listed[0].passed).toBe(true);
       });
     });
 

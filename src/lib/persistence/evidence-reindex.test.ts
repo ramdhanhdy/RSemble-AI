@@ -401,6 +401,70 @@ describe("reindexEvidence", () => {
     expect(idsAfter).toEqual(idsBefore);
   });
 
+  it("plumbs persisted verifier outcomes through reindex so a frozen pass reaches Verified", async () => {
+    const world = makeWorld();
+    seedCleanEvaluation(world);
+    await world.repo.putVerifierOutcome({
+      taskId: "task-1",
+      modelKey: "openrouter:model-m1",
+      runId: "run-a",
+      kind: "exact_match",
+      configurationDigest: `sha256:${"7".repeat(64)}`,
+      verifierRef: { id: "ver-1", version: 2 },
+      passed: true,
+      executedAt: 5,
+    });
+    const result = await reindexEvidence(
+      depsFor(world, {
+        resolveModelConfiguration: () => ({
+          resolvedModel: "org/model-m1",
+          resolvedVersion: "2025-06-01",
+        }),
+        resolveVerifierOutcomes: async () => [
+          {
+            taskId: "task-1",
+            modelKey: "openrouter:model-m1",
+            runId: "run-a",
+            kind: "exact_match",
+            configurationDigest: `sha256:${"7".repeat(64)}`,
+            verifierRef: { id: "ver-1", version: 2 },
+            passed: true,
+            executedAt: 5,
+          },
+        ],
+      } as unknown as Partial<ReindexDeps>),
+    );
+    expect(result).toMatchObject({ skipped: false, sourcesProcessed: 1, sourcesFailed: 0 });
+    const observations = await world.repo.listObservationsBySource("evaluation", "run-a");
+    expect(observations).toHaveLength(1);
+    const decision = await world.repo.getActiveDecision(observations[0].id);
+    expect(decision?.evidenceClass).toBe("verified");
+    // A repeated run stays identical: Verified is derived, never inferred.
+    const idsBefore = (await world.repo.listObservations({})).items.map((o) => o.id);
+    await reindexEvidence(
+      depsFor(world, {
+        resolveModelConfiguration: () => ({
+          resolvedModel: "org/model-m1",
+          resolvedVersion: "2025-06-01",
+        }),
+        resolveVerifierOutcomes: async () => [
+          {
+            taskId: "task-1",
+            modelKey: "openrouter:model-m1",
+            runId: "run-a",
+            kind: "exact_match",
+            configurationDigest: `sha256:${"7".repeat(64)}`,
+            verifierRef: { id: "ver-1", version: 2 },
+            passed: true,
+            executedAt: 5,
+          },
+        ],
+      } as unknown as Partial<ReindexDeps>),
+    );
+    const idsAfter = (await world.repo.listObservations({})).items.map((o) => o.id);
+    expect(idsAfter).toEqual(idsBefore);
+  });
+
   it("inventories Compare history as exploratory entries without observations or merging", async () => {
     const world = makeWorld();
     world.sources.push(

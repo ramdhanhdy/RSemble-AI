@@ -492,6 +492,149 @@ describe("deriveObservationsForSource", () => {
     expect(world.fusion.terminalEvents).toHaveLength(1);
   });
 
+  it("a persisted executed verifier pass makes the Verified evidence class reachable", async () => {
+    const world = makeWorld();
+    const { run } = seedCleanSource(world);
+    await world.repo.putVerifierOutcome({
+      taskId: "task-1",
+      modelKey: "openrouter:model-m1",
+      runId: run.id,
+      kind: "exact_match",
+      configurationDigest: `sha256:${"7".repeat(64)}`,
+      verifierRef: { id: "ver-1", version: 2 },
+      passed: true,
+      executedAt: 5,
+    });
+    // Production wiring supplies exact model identity facts for the cell;
+    // the derivation itself never invents them.
+    const result = await deriveObservationsForSource(
+      depsFor(world, {
+        resolveModelConfiguration: () => ({
+          resolvedModel: "org/model-m1",
+          resolvedVersion: "2025-06-01",
+        }),
+        resolveVerifierOutcomes: async () => [
+          {
+            taskId: "task-1",
+            modelKey: "openrouter:model-m1",
+            runId: run.id,
+            kind: "exact_match",
+            configurationDigest: `sha256:${"7".repeat(64)}`,
+            verifierRef: { id: "ver-1", version: 2 },
+            passed: true,
+            executedAt: 5,
+          },
+        ],
+      } as unknown as Partial<DerivationDeps>),
+      refFor(run),
+    );
+    expect(result.status).toBe("complete");
+    const observations = await world.repo.listObservationsBySource("evaluation", run.id);
+    expect(observations).toHaveLength(1);
+    const o = observations[0];
+    expect(o.outcome.verifierPassed).toBe(true);
+    expect(o.assessmentRef.verifierOutcome?.passed).toBe(true);
+    expect(o.verifierSnapshot).toEqual({
+      verifierRef: { id: "ver-1", version: 2 },
+      kind: "exact_match",
+      configurationDigest: `sha256:${"7".repeat(64)}`,
+    });
+    const decision = await world.repo.getActiveDecision(o.id);
+    expect(decision?.evidenceClass).toBe("verified");
+    expect(decision?.reasonCodes).toContain("verifier_passed");
+  });
+
+  it("a persisted verifier failure stays honest negative evidence, never Verified", async () => {
+    const world = makeWorld();
+    const { run } = seedCleanSource(world);
+    const result = await deriveObservationsForSource(
+      depsFor(world, {
+        resolveModelConfiguration: () => ({
+          resolvedModel: "org/model-m1",
+          resolvedVersion: "2025-06-01",
+        }),
+        resolveVerifierOutcomes: async () => [
+          {
+            taskId: "task-1",
+            modelKey: "openrouter:model-m1",
+            runId: run.id,
+            kind: "exact_match",
+            configurationDigest: `sha256:${"7".repeat(64)}`,
+            verifierRef: { id: "ver-1", version: 2 },
+            passed: false,
+            executedAt: 5,
+          },
+        ],
+      } as unknown as Partial<DerivationDeps>),
+      refFor(run),
+    );
+    const observations = await world.repo.listObservationsBySource("evaluation", run.id);
+    const decision = await world.repo.getActiveDecision(observations[0].id);
+    expect(observations[0].outcome.verifierPassed).toBe(false);
+    expect(decision?.evidenceClass).toBe("comparable");
+    expect(decision?.reasonCodes).toContain("verifier_failed");
+  });
+
+  it("an unfrozen persisted pass stays comparable, never Verified", async () => {
+    const world = makeWorld();
+    const { run } = seedCleanSource(world);
+    const result = await deriveObservationsForSource(
+      depsFor(world, {
+        resolveModelConfiguration: () => ({
+          resolvedModel: "org/model-m1",
+          resolvedVersion: "2025-06-01",
+        }),
+        resolveVerifierOutcomes: async () => [
+          {
+            taskId: "task-1",
+            modelKey: "openrouter:model-m1",
+            runId: run.id,
+            kind: "exact_match",
+            configurationDigest: `sha256:${"7".repeat(64)}`,
+            verifierRef: null,
+            passed: true,
+            executedAt: 5,
+          },
+        ],
+      } as unknown as Partial<DerivationDeps>),
+      refFor(run),
+    );
+    const observations = await world.repo.listObservationsBySource("evaluation", run.id);
+    const decision = await world.repo.getActiveDecision(observations[0].id);
+    expect(decision?.evidenceClass).toBe("comparable");
+    expect(decision?.reasonCodes).toContain("verifier_passed");
+  });
+
+  it("resolves persisted outcomes for the exact cell and keeps missing data not_declared", async () => {
+    const world = makeWorld();
+    const { run } = seedCleanSource(world);
+    // A persisted outcome for a different source lineage never applies.
+    await world.repo.putVerifierOutcome({
+      taskId: "task-1",
+      modelKey: "openrouter:model-m1",
+      runId: "run-other",
+      kind: "exact_match",
+      configurationDigest: `sha256:${"7".repeat(64)}`,
+      verifierRef: { id: "ver-1", version: 2 },
+      passed: true,
+      executedAt: 5,
+    });
+    const deps = {
+      ...depsFor(world),
+      // Lineage-scoped resolution: the source lineage (run-1) carries no
+      // persisted outcome, so the cell stays not_declared — never inferred.
+      resolveVerifierOutcomes: async () => [],
+    } as unknown as DerivationDeps;
+    const result = await deriveObservationsForSource(deps, refFor(run));
+    expect(result.status).toBe("complete");
+    const observations = await world.repo.listObservationsBySource("evaluation", run.id);
+    expect(observations).toHaveLength(1);
+    expect(observations[0].outcome.verifierPassed).toBeNull();
+    expect(observations[0].verifierSnapshot).toBeNull();
+    const decision = await world.repo.getActiveDecision(observations[0].id);
+    expect(decision?.reasonCodes).toContain("verifier_not_declared");
+  });
+
   it("never invokes a provider and never mutates the source run", async () => {
     const world = makeWorld();
     const { run } = seedCleanSource(world);
