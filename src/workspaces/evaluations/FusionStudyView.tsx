@@ -95,19 +95,28 @@ export function FusionStudyRoute({
   }>();
   const ownerId = taskSetId ?? suiteId;
   const isCanonical = Boolean(taskSetId);
-  const [ownerState, setOwnerState] = useState<"resolving" | "ok" | "blocked">(
-    isCanonical ? "resolving" : "ok",
-  );
-  const [ownerError, setOwnerError] = useState<string | null>(null);
+  // The owner check is keyed to the exact route coordinates it belongs to.
+  // React Router reuses this component instance when only the params change
+  // (back/forward, in-app navigation), so a check recorded for the previous
+  // Task Set/study must never gate — or render — the current one.
+  const [ownerCheck, setOwnerCheck] = useState<{
+    status: "resolving" | "ok" | "blocked";
+    taskSetId: string;
+    studyId: string;
+    error?: string;
+  } | null>(null);
 
   useEffect(() => {
-    if (!isCanonical || !studyId) return;
+    if (!isCanonical || !taskSetId || !studyId) return;
     let cancelled = false;
-    setOwnerState("resolving");
-    setOwnerError(null);
+    setOwnerCheck({ status: "resolving", taskSetId, studyId });
     if (!crosswalk) {
-      setOwnerError("Fusion owner could not be resolved.");
-      setOwnerState("blocked");
+      setOwnerCheck({
+        status: "blocked",
+        taskSetId,
+        studyId,
+        error: "Fusion owner could not be resolved.",
+      });
       return;
     }
     void crosswalk
@@ -115,16 +124,24 @@ export function FusionStudyRoute({
       .then((row) => {
         if (cancelled) return;
         if (isResolvedFusionOwner(row) && row.taskSetId === taskSetId) {
-          setOwnerState("ok");
+          setOwnerCheck({ status: "ok", taskSetId, studyId });
         } else {
-          setOwnerError("This Fusion Study does not belong to this Task Set.");
-          setOwnerState("blocked");
+          setOwnerCheck({
+            status: "blocked",
+            taskSetId,
+            studyId,
+            error: "This Fusion Study does not belong to this Task Set.",
+          });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setOwnerError("Fusion owner could not be resolved.");
-          setOwnerState("blocked");
+          setOwnerCheck({
+            status: "blocked",
+            taskSetId,
+            studyId,
+            error: "Fusion owner could not be resolved.",
+          });
         }
       });
     return () => {
@@ -135,13 +152,24 @@ export function FusionStudyRoute({
   if (!ownerId || !studyId) {
     return <div className="text-sm text-text-muted">Missing task set or study id.</div>;
   }
-  if (ownerState === "resolving") {
+
+  // Only a check whose coordinates match the current params is admitted;
+  // anything stale falls through to "resolving", which blocks the study view.
+  const current =
+    ownerCheck !== null && ownerCheck.taskSetId === taskSetId && ownerCheck.studyId === studyId
+      ? ownerCheck
+      : null;
+  const state: "resolving" | "ok" | "blocked" = !isCanonical
+    ? "ok"
+    : (current?.status ?? "resolving");
+
+  if (state === "resolving") {
     return <div className="text-sm text-text-muted">Resolving Fusion owner…</div>;
   }
-  if (ownerState === "blocked") {
+  if (state === "blocked") {
     return (
       <div className="flex items-center gap-2 text-sm text-red-400">
-        <AlertCircle size={16} /> {ownerError}
+        <AlertCircle size={16} /> {current?.error ?? "Fusion owner could not be resolved."}
       </div>
     );
   }
