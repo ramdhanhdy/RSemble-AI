@@ -914,6 +914,10 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "taskSets")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskSetVersions")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskSetMaterializations")).toBe(true);
+    expect(db.tables.some((t) => t.name === "modelConfigurations")).toBe(true);
+    expect(db.tables.some((t) => t.name === "observations")).toBe(true);
+    expect(db.tables.some((t) => t.name === "evidenceDecisions")).toBe(true);
+    expect(db.tables.some((t) => t.name === "evidenceIndexJobs")).toBe(true);
     expect(db.tables.some((t) => t.name === "suites")).toBe(true);
     expect(db.verno).toBe(9);
   });
