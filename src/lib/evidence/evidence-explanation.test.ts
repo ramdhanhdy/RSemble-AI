@@ -107,6 +107,28 @@ describe("explainDecision", () => {
     ]);
   });
 
+  it("discloses a missing-assessment exploratory limitation contextually", () => {
+    const d = makeDecision({
+      status: "provisional",
+      evidenceClass: "exploratory",
+      allowedUses: ["task_descriptive"],
+      reasonCodes: [
+        "assessment_missing_or_failed",
+        "candidate_selected_completed",
+        "canonical_task_resolved",
+        "instance_reconstructed",
+        "protocol_complete",
+        "rubric_resolved",
+        "verifier_not_declared",
+      ],
+    });
+    const e = explainDecision(d);
+    expect(e.limitationLines.map((l) => l.code)).toEqual([
+      "assessment_missing_or_failed",
+      "verifier_not_declared",
+    ]);
+  });
+
   it("explains an excluded corrupt observation with the corruption limitation", () => {
     const d = makeDecision({
       status: "excluded",

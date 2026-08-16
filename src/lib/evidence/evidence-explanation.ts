@@ -123,6 +123,22 @@ export function explainDecision(decision: EligibilityDecision): EvidenceExplanat
   const limitationLines = reasonLines.filter(
     (line) => LIMITATION_REASON_CODES[line.code as EvidenceReasonCode] === true,
   );
+  // Contextual limitation (spec §8): an output with neither an accepted
+  // assessment nor a declared verifier has no validity evidence, so the
+  // provisional status driven by that conjunction must carry a
+  // plain-language limitation even though neither code is a standalone
+  // limitation (a verifier-only cell is not limited by a missing judge; a
+  // judge-only cell is not limited by a missing verifier).
+  if (
+    reasonLines.some((line) => line.code === "assessment_missing_or_failed") &&
+    reasonLines.some((line) => line.code === "verifier_not_declared")
+  ) {
+    for (const code of ["assessment_missing_or_failed", "verifier_not_declared"] as const) {
+      if (!limitationLines.some((line) => line.code === code)) {
+        limitationLines.push({ code, text: EVIDENCE_REASON_EXPLANATIONS[code] });
+      }
+    }
+  }
   return {
     observationId: decision.observationId,
     ruleVersion: decision.ruleVersion,

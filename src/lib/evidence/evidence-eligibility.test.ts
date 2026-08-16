@@ -16,6 +16,7 @@ import {
   classifyEligibility,
   type EligibilityInput,
 } from "./evidence-eligibility";
+import { explainDecision } from "./evidence-explanation";
 
 const COHORT = `sha256:${"c".repeat(64)}`;
 
@@ -234,6 +235,12 @@ describe("exploratory fallbacks", () => {
     expect(d.reasonCodes).toContain("instance_input_incomplete");
   });
 
+
+  it("a missing assessment with no verifier carries a plain-language limitation", () => {
+    const d = classifyEligibility(baseInput({ assessmentSelectedCompleted: false }));
+    expect(d.status).toBe("provisional");
+    expect(explainDecision(d).limitationLines).not.toHaveLength(0);
+  });
   it("a missing assessment with no verifier limits the cell", () => {
     const d = classifyEligibility(baseInput({ assessmentSelectedCompleted: false }));
     expect(d.evidenceClass).toBe("exploratory");
