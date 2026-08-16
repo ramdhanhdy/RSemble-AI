@@ -542,12 +542,12 @@ export function TaskObservations({
 
       {/* Filter Controls Bar */}
       {!loading && !error && scopedObservations.length > 0 ? (
-        <div className="flex flex-col gap-3 rounded-md border border-edge bg-raised/50 p-3 text-xs">
+        <fieldset className="flex flex-col gap-3 rounded-md border border-edge bg-raised/50 p-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 font-medium text-text">
+            <legend className="flex items-center gap-1.5 font-medium text-text">
               <Filter size={13} className="text-accent" aria-hidden="true" />
               <span>Filters</span>
-            </div>
+            </legend>
             {hasActiveFilters ? (
               <button
                 type="button"
@@ -794,7 +794,7 @@ export function TaskObservations({
               />
             </div>
           </div>
-        </div>
+        </fieldset>
       ) : null}
 
       {/* Empty State (when no observations match or exist) */}
