@@ -14,7 +14,7 @@
 //   - Verified is shown only when a persisted executed verifier passed.
 //   - Retries and roster-extension reuse do not inflate response counts.
 // =============================================================================
-import { useState, useEffect, type ReactElement } from "react";
+import { useState, useEffect, useId, type ReactElement, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -119,6 +119,16 @@ export function EvidenceReceipt({
     () => observation === undefined && Boolean(runId) && Boolean(repo),
   );
   const [asyncError, setAsyncError] = useState<string | null>(null);
+  const baseId = useId();
+  const triggerId = `${baseId}-trigger`;
+  const popoverId = `${baseId}-popover`;
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && open) {
+      e.stopPropagation();
+      setOpen(false);
+    }
+  };
 
   const [open, setOpen] = useState<boolean>(defaultOpen);
   useEffect(() => {
@@ -216,10 +226,12 @@ export function EvidenceReceipt({
   if (isLoading) {
     if (compact) {
       return (
-        <div className={`relative inline-block ${className}`}>
+        <div className={`relative inline-block ${className}`} onKeyDown={handleKeyDown}>
           <button
             type="button"
+            id={triggerId}
             aria-expanded={open}
+            aria-controls={open ? popoverId : undefined}
             aria-label="Loading evidence receipt"
             onClick={() => setOpen((o) => !o)}
             className="inline-flex min-h-[44px] items-center gap-1 px-1 text-xs text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -228,7 +240,12 @@ export function EvidenceReceipt({
             <span className="sr-only">Loading evidence receipt</span>
           </button>
           {open ? (
-            <div className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96">
+            <div
+              id={popoverId}
+              role="region"
+              aria-labelledby={triggerId}
+              className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96"
+            >
               <div
                 data-testid="evidence-receipt"
                 className="rounded-md border border-edge bg-panel p-3 text-xs text-text-secondary shadow-lg"
@@ -265,10 +282,12 @@ export function EvidenceReceipt({
 
     if (compact) {
       return (
-        <div className={`relative inline-block ${className}`}>
+        <div className={`relative inline-block ${className}`} onKeyDown={handleKeyDown}>
           <button
             type="button"
+            id={triggerId}
             aria-expanded={open}
+            aria-controls={open ? popoverId : undefined}
             aria-label={label}
             onClick={() => setOpen((o) => !o)}
             className="inline-flex min-h-[44px] items-center gap-1 px-1 text-xs text-error transition-colors hover:text-error-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -277,7 +296,12 @@ export function EvidenceReceipt({
             <span className="sr-only">{label}</span>
           </button>
           {open ? (
-            <div className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96">
+            <div
+              id={popoverId}
+              role="region"
+              aria-labelledby={triggerId}
+              className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96"
+            >
               <div
                 data-testid="evidence-receipt"
                 className="rounded-md border border-error/40 bg-raised p-3 text-xs text-text shadow-lg"
@@ -385,10 +409,12 @@ export function EvidenceReceipt({
 
     if (compact) {
       return (
-        <div className={`relative inline-block ${className}`}>
+        <div className={`relative inline-block ${className}`} onKeyDown={handleKeyDown}>
           <button
             type="button"
+            id={triggerId}
             aria-expanded={open}
+            aria-controls={open ? popoverId : undefined}
             aria-label={accessibleLabel}
             onClick={() => setOpen((o) => !o)}
             className="inline-flex min-h-[44px] items-center gap-1 px-1 text-xs text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -397,7 +423,12 @@ export function EvidenceReceipt({
             <span className="sr-only">{accessibleLabel}</span>
           </button>
           {open ? (
-            <div className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96">
+            <div
+              id={popoverId}
+              role="region"
+              aria-labelledby={triggerId}
+              className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96"
+            >
               <div
                 data-testid="evidence-receipt"
                 className="rounded-md border border-edge bg-raised p-3 text-xs text-text shadow-lg"
@@ -754,10 +785,12 @@ export function EvidenceReceipt({
 
   if (compact) {
     return (
-      <div className={`relative inline-block ${className}`}>
+      <div className={`relative inline-block ${className}`} onKeyDown={handleKeyDown}>
         <button
           type="button"
+          id={triggerId}
           aria-expanded={open}
+          aria-controls={open ? popoverId : undefined}
           aria-label={summaryAccessibleText}
           onClick={() => setOpen((o) => !o)}
           className="inline-flex min-h-[44px] items-center gap-1 rounded px-1.5 py-1 text-xs text-text-secondary transition-colors hover:bg-card-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -767,7 +800,14 @@ export function EvidenceReceipt({
           <span className="sr-only">{summaryAccessibleText}</span>
         </button>
         {open ? (
-          <div className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96">{receiptBody}</div>
+          <div
+            id={popoverId}
+            role="region"
+            aria-labelledby={triggerId}
+            className="absolute left-0 top-full z-50 mt-1 w-80 sm:w-96"
+          >
+            {receiptBody}
+          </div>
         ) : null}
       </div>
     );
