@@ -949,4 +949,24 @@ describe("TaskObservations — Accessibility and reduced motion", () => {
     const reducedMotionBody = reducedMotionMatch?.[1] ?? "";
     expect(reducedMotionBody).toContain(".animate-spin,");
   });
+
+  it("renders filter controls in a fieldset with a legend for screen reader accessibility", async () => {
+    const repo = new InMemoryEvidenceRepository();
+    const m = makeModelConfig("anthropic", "claude-3-5-sonnet");
+    await repo.putModelConfiguration(m);
+    const o = makeObservation("t-1", 1, "inst-1", m.id);
+    await repo.putObservation(o);
+    await repo.putDecision(makeDecision(o.id));
+
+    const h = render(<TaskObservations taskId="t-1" evidenceRepo={repo} />);
+    await settle();
+
+    const fieldset = h.$("fieldset");
+    expect(fieldset).toBeTruthy();
+    const legend = h.$("fieldset legend");
+    expect(legend).toBeTruthy();
+    expect(legend?.textContent).toMatch(/Filters/i);
+
+    cleanup(h);
+  });
 });
