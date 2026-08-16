@@ -52,12 +52,16 @@ export interface EvidenceCounts {
   versionCountByTask: Record<string, number>;
   instanceCountByTask: Record<string, number>;
   activeObservationCount: number;
-  replicateCount: number;
-  attemptCount: number;
-  assessmentEventCount: number;
   /** Distinct generated outputs among active rows (reuse never inflates). */
   responseSampleCount: number;
   responseSampleCountByConfiguration: Record<string, number>;
+  /**
+   * Generated outputs attributed to more than one model configuration.
+   * One output must belong to exactly one configuration; a shared
+   * candidateAttemptId under multiple configurations hides inflation and is
+   * surfaced here instead of being silently deduplicated (spec §6.3).
+   */
+  responseSampleDivergence: string[];
   /** Active rows whose output was reused from an earlier run (spec §6.3). */
   reusedAssessmentEventCount: number;
   pairedCoverage: {
@@ -152,6 +156,24 @@ export function countEvidence(input: EvidenceCountInput): EvidenceCounts {
       (responseSampleCountByConfiguration[r.modelConfigurationId] ?? 0) + 1;
   }
 
+  const configurationsByAttempt = new Map<string, Set<string>>();
+  for (const r of activeRows) {
+    const seen = configurationsByAttempt.get(r.candidateAttemptId);
+    if (seen) seen.add(r.modelConfigurationId);
+    else configurationsByAttempt.set(r.candidateAttemptId, new Set([r.modelConfigurationId]));
+  }
+  const responseSampleDivergence = [...configurationsByAttempt.entries()]
+    .filter(([, configurations]) => configurations.size > 1)
+    .map(
+      ([attemptId, configurations]) =>
+        `${attemptId} is attributed to ${configurations.size} model configurations (${[
+          ...configurations,
+        ]
+          .sort()
+          .join(", ")}) — one generated output must belong to exactly one configuration.`,
+    )
+    .sort();
+
   // --- Declared paired cells ----------------------------------------------------------
   const activeConfigurations = new Set(activeRows.map((r) => r.modelConfigurationId));
   let completePairCount = 0;
@@ -171,6 +193,7 @@ export function countEvidence(input: EvidenceCountInput): EvidenceCounts {
     assessmentEventCount: assessmentEventIds.size,
     responseSampleCount: activeCandidateAttemptIds.size,
     responseSampleCountByConfiguration,
+    responseSampleDivergence,
     reusedAssessmentEventCount: activeRows.filter((r) => r.reusedCandidateOutput).length,
     pairedCoverage: {
       declaredPairCount: input.declaredPairs.length,

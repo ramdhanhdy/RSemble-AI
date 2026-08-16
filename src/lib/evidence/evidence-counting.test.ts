@@ -247,3 +247,25 @@ describe("one active observation per lineage cell", () => {
     expect(c.lineageCellViolations).toEqual([]);
   });
 });
+
+describe("response sample attribution", () => {
+  it("surfaces a divergence when one output is attributed to multiple configurations", () => {
+    const r1 = row({
+      lineageCellKey: "cell-a",
+      modelConfigurationId: CFG_A,
+      candidateAttemptId: "shared",
+      attemptIds: ["shared"],
+    });
+    const r2 = row({
+      lineageCellKey: "cell-b",
+      modelConfigurationId: CFG_B,
+      candidateAttemptId: "shared",
+      attemptIds: ["shared"],
+    });
+    const c = count([r1, r2]);
+    expect(c.responseSampleCount).toBe(1);
+    expect(c.responseSampleCountByConfiguration).toEqual({ [CFG_A]: 1, [CFG_B]: 1 });
+    expect(c.responseSampleDivergence).toHaveLength(1);
+    expect(c.responseSampleDivergence[0]).toContain("shared");
+  });
+});
