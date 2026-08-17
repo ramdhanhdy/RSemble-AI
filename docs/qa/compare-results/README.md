@@ -1,6 +1,6 @@
 # Compare Results CDP Browser QA Report
 
-Generated: 2026-08-17T18:20:52.618Z
+Generated: 2026-08-17T18:26:11.581Z
 Base URL: http://127.0.0.1:5187/
 
 ## Summary

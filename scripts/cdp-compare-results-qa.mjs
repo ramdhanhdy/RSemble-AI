@@ -161,7 +161,12 @@ function makeJudgeAttempt() {
           deductions: [],
           missedRequirements: [],
           criterionScores: [
-            { criterionId: "crit-correctness", label: "Correctness", score: 5.0, rationale: "100% correct" },
+            {
+              criterionId: "crit-correctness",
+              label: "Correctness",
+              score: 5.0,
+              rationale: "100% correct",
+            },
             { criterionId: "crit-style", label: "Style", score: 4.6, rationale: "Very clean" },
           ],
         },
@@ -175,18 +180,29 @@ function makeJudgeAttempt() {
           deductions: [{ severity: "minor", reason: "Unnecessary helper function" }],
           missedRequirements: [],
           criterionScores: [
-            { criterionId: "crit-correctness", label: "Correctness", score: 4.0, rationale: "Correct" },
+            {
+              criterionId: "crit-correctness",
+              label: "Correctness",
+              score: 4.0,
+              rationale: "Correct",
+            },
             { criterionId: "crit-style", label: "Style", score: 3.8, rationale: "Verbose" },
           ],
         },
       },
       comparisons: [
-        { candidateIds: ["c1", "c2"], blindLabels: ["A", "B"], reason: "Candidate A is much clearer and faster." },
+        {
+          candidateIds: ["c1", "c2"],
+          blindLabels: ["A", "B"],
+          reason: "Candidate A is much clearer and faster.",
+        },
       ],
     },
     consensus: {
       consensus: ["Both models implemented the main algorithm correctly."],
-      contradictions: ["Candidate A used an in-place sort, while Candidate B allocated a new list."],
+      contradictions: [
+        "Candidate A used an in-place sort, while Candidate B allocated a new list.",
+      ],
       uniqueInsights: [{ source: "Candidate A", insight: "Utilized dual-pivot partitioning." }],
     },
   };
@@ -202,14 +218,33 @@ function rubric() {
     createdAt: NOW,
     updatedAt: NOW,
     criteria: [
-      { id: "crit-correctness", name: "Correctness", weight: 0.7, description: "Algorithm accuracy", anchors: { one: "Bad", two: "Poor", three: "Fair", four: "Good", five: "Excellent" } },
-      { id: "crit-style", name: "Style", weight: 0.3, description: "Pythonic style", anchors: { one: "Bad", two: "Poor", three: "Fair", four: "Good", five: "Excellent" } },
+      {
+        id: "crit-correctness",
+        name: "Correctness",
+        weight: 0.7,
+        description: "Algorithm accuracy",
+        anchors: { one: "Bad", two: "Poor", three: "Fair", four: "Good", five: "Excellent" },
+      },
+      {
+        id: "crit-style",
+        name: "Style",
+        weight: 0.3,
+        description: "Pythonic style",
+        anchors: { one: "Bad", two: "Poor", three: "Fair", four: "Good", five: "Excellent" },
+      },
     ],
   };
 }
 
 function makeRankRecord(id, overrides) {
-  const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet", "claude-3-5-sonnet", "Python solution 1", "completed");
+  const c1 = makeCandidate(
+    "c1",
+    "s1",
+    "Claude 3.5 Sonnet",
+    "claude-3-5-sonnet",
+    "Python solution 1",
+    "completed",
+  );
   const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", "Python solution 2", "completed");
   const judgeAttempt = makeJudgeAttempt();
   return {
@@ -232,7 +267,9 @@ function makeRankRecord(id, overrides) {
     attachments: [{ name: "spec.pdf", kind: "pdf", bytes: 1024 }],
     evaluation: {
       profile: rubric(),
-      candidateMessages: [{ role: "user", content: "Implement quicksort in Python with type annotations." }],
+      candidateMessages: [
+        { role: "user", content: "Implement quicksort in Python with type annotations." },
+      ],
     },
     candidates: [c1, c2],
     judge: {
@@ -261,7 +298,8 @@ function makeFuseRecord(id, overrides) {
     finishedAt: NOW + 30000,
     status: "completed",
     error: null,
-    result: "## Fused QuickSort Implementation\\n\\nHere is the unified optimal QuickSort in Python combining the in-place partitioning of Candidate A with the comprehensive docstrings of Candidate B.",
+    result:
+      "## Fused QuickSort Implementation\\n\\nHere is the unified optimal QuickSort in Python combining the in-place partitioning of Candidate A with the comprehensive docstrings of Candidate B.",
   };
   return {
     ...rankBase,
@@ -274,7 +312,14 @@ function makeFuseRecord(id, overrides) {
 
 function makeInterruptedRecord(id, overrides) {
   // One candidate completed, one still running; judge idle; no accepted judge.
-  const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet", "claude-3-5-sonnet", "Python solution 1", "completed");
+  const c1 = makeCandidate(
+    "c1",
+    "s1",
+    "Claude 3.5 Sonnet",
+    "claude-3-5-sonnet",
+    "Python solution 1",
+    "completed",
+  );
   const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", null, "running");
   return {
     schemaVersion: 2,
@@ -293,7 +338,12 @@ function makeInterruptedRecord(id, overrides) {
       systemPrompt: "You are a software engineer.",
       temperature: 0.7,
     },
-    evaluation: { profile: null, candidateMessages: [{ role: "user", content: "Implement merge sort before the timer runs out." }] },
+    evaluation: {
+      profile: null,
+      candidateMessages: [
+        { role: "user", content: "Implement merge sort before the timer runs out." },
+      ],
+    },
     candidates: [c1, c2],
     judge: { status: "idle", acceptedAttemptId: null, report: null, consensus: null, attempts: [] },
     fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
@@ -303,10 +353,24 @@ function makeInterruptedRecord(id, overrides) {
 }
 
 function makeLongFieldsRecord(id, overrides) {
-  const longTitle = "A very long comparison title that exercises line wrapping and overflow handling across the result route header and the previous comparisons list row without truncating the primary action ".repeat(2);
-  const longPrompt = "Implement a comprehensive algorithm that handles edge cases including empty inputs, null values, very large datasets, streaming partial results, retry semantics, and graceful degradation when downstream providers are unavailable or rate limited. ".repeat(3);
-  const longSlug = "claude-3-5-sonnet-with-a-very-long-model-slug-that-could-overflow-narrow-columns-if-not-wrapped-properly";
-  const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet With A Very Long Model Name That Could Overflow", longSlug, "Python solution 1 with a long output", "completed");
+  const longTitle =
+    "A very long comparison title that exercises line wrapping and overflow handling across the result route header and the previous comparisons list row without truncating the primary action ".repeat(
+      2,
+    );
+  const longPrompt =
+    "Implement a comprehensive algorithm that handles edge cases including empty inputs, null values, very large datasets, streaming partial results, retry semantics, and graceful degradation when downstream providers are unavailable or rate limited. ".repeat(
+      3,
+    );
+  const longSlug =
+    "claude-3-5-sonnet-with-a-very-long-model-slug-that-could-overflow-narrow-columns-if-not-wrapped-properly";
+  const c1 = makeCandidate(
+    "c1",
+    "s1",
+    "Claude 3.5 Sonnet With A Very Long Model Name That Could Overflow",
+    longSlug,
+    "Python solution 1 with a long output",
+    "completed",
+  );
   const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", "Python solution 2", "completed");
   const judgeAttempt = makeJudgeAttempt();
   return {
@@ -320,10 +384,21 @@ function makeLongFieldsRecord(id, overrides) {
     status: "completed",
     mode: "rank",
     source: { kind: "adhoc" },
-    task: { title: longTitle, prompt: longPrompt, systemPrompt: "You are a software engineer.", temperature: 0.7 },
+    task: {
+      title: longTitle,
+      prompt: longPrompt,
+      systemPrompt: "You are a software engineer.",
+      temperature: 0.7,
+    },
     evaluation: { profile: rubric(), candidateMessages: [{ role: "user", content: longPrompt }] },
     candidates: [c1, c2],
-    judge: { status: "done", acceptedAttemptId: "j-att-1", report: judgeAttempt.report, consensus: judgeAttempt.consensus, attempts: [judgeAttempt] },
+    judge: {
+      status: "done",
+      acceptedAttemptId: "j-att-1",
+      report: judgeAttempt.report,
+      consensus: judgeAttempt.consensus,
+      attempts: [judgeAttempt],
+    },
     fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
     winnerKeys: [`openrouter:${longSlug}`],
     ...overrides,
@@ -402,9 +477,23 @@ function makeIndex(record, binding, overrides) {
 // Build the full fixture corpus and the IndexedDB seed script.
 function generateSeedScript(secretToken) {
   const rankRecord = makeRankRecord("cmp-rank-adhoc-1");
-  const fuseRecord = makeFuseRecord("cmp-fuse-adhoc-1", { task: { title: "Merge two QuickSort variants", prompt: "Fuse the best parts of both QuickSort implementations into one optimal solution.", systemPrompt: "You are a software engineer.", temperature: 0.7 } });
+  const fuseRecord = makeFuseRecord("cmp-fuse-adhoc-1", {
+    task: {
+      title: "Merge two QuickSort variants",
+      prompt: "Fuse the best parts of both QuickSort implementations into one optimal solution.",
+      systemPrompt: "You are a software engineer.",
+      temperature: 0.7,
+    },
+  });
   const interruptedRecord = makeInterruptedRecord("cmp-rank-interrupted-1");
-  const canonicalRecord = makeRankRecord("cmp-rank-canonical-1", { task: { title: "Canonical QuickSort benchmark", prompt: "Run the canonical QuickSort benchmark task against two models.", systemPrompt: "You are a software engineer.", temperature: 0.7 } });
+  const canonicalRecord = makeRankRecord("cmp-rank-canonical-1", {
+    task: {
+      title: "Canonical QuickSort benchmark",
+      prompt: "Run the canonical QuickSort benchmark task against two models.",
+      systemPrompt: "You are a software engineer.",
+      temperature: 0.7,
+    },
+  });
   const longRecord = makeLongFieldsRecord("cmp-longfields-1");
 
   const records = [rankRecord, fuseRecord, interruptedRecord, canonicalRecord, longRecord];
@@ -436,7 +525,13 @@ function generateSeedScript(secretToken) {
 
   const payload = {
     summaries: summaries.map(summaryToRow),
-    details: records.map((r) => ({ id: r.id, record: r, revision: r.revision, createdAt: r.createdAt, status: r.status })),
+    details: records.map((r) => ({
+      id: r.id,
+      record: r,
+      revision: r.revision,
+      createdAt: r.createdAt,
+      status: r.status,
+    })),
     indexes,
     secretRef: secretToken,
   };
@@ -484,14 +579,26 @@ async function run() {
   const pending = new Map();
 
   const cleanup = () => {
-    try { if (socket) socket.close(); } catch {}
-    try { if (chromeProcess) chromeProcess.kill("SIGKILL"); } catch {}
-    try { if (viteProcess) viteProcess.kill("SIGTERM"); } catch {}
+    try {
+      if (socket) socket.close();
+    } catch {}
+    try {
+      if (chromeProcess) chromeProcess.kill("SIGKILL");
+    } catch {}
+    try {
+      if (viteProcess) viteProcess.kill("SIGTERM");
+    } catch {}
   };
 
   process.on("exit", cleanup);
-  process.on("SIGINT", () => { cleanup(); process.exit(1); });
-  process.on("SIGTERM", () => { cleanup(); process.exit(1); });
+  process.on("SIGINT", () => {
+    cleanup();
+    process.exit(1);
+  });
+  process.on("SIGTERM", () => {
+    cleanup();
+    process.exit(1);
+  });
 
   try {
     // 1. Start dev server if QA_BASE_URL is not provided
@@ -499,7 +606,16 @@ async function run() {
       const viteBin = path.join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
       viteProcess = spawn(
         process.execPath,
-        [viteBin, "--port", String(BROWSER_PORT), "--host", "127.0.0.1", "--strictPort", "--logLevel", "error"],
+        [
+          viteBin,
+          "--port",
+          String(BROWSER_PORT),
+          "--host",
+          "127.0.0.1",
+          "--strictPort",
+          "--logLevel",
+          "error",
+        ],
         { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } },
       );
       await pollReady(BROWSER_PORT);
@@ -527,11 +643,15 @@ async function run() {
       for (let attempt = 0; attempt < 60; attempt += 1) {
         try {
           const pages = await new Promise((resolve, reject) => {
-            http.get(`http://127.0.0.1:${debugPort}/json/list`, (res) => {
-              let body = "";
-              res.on("data", (chunk) => { body += chunk; });
-              res.on("end", () => resolve(JSON.parse(body)));
-            }).on("error", reject);
+            http
+              .get(`http://127.0.0.1:${debugPort}/json/list`, (res) => {
+                let body = "";
+                res.on("data", (chunk) => {
+                  body += chunk;
+                });
+                res.on("end", () => resolve(JSON.parse(body)));
+              })
+              .on("error", reject);
           });
           const page = pages.find((p) => p.type === "page");
           if (page) return page.webSocketDebuggerUrl;
@@ -552,7 +672,9 @@ async function run() {
       resolve(message);
     };
 
-    await new Promise((resolve) => { socket.onopen = resolve; });
+    await new Promise((resolve) => {
+      socket.onopen = resolve;
+    });
 
     const send = (method, params = {}) =>
       new Promise((resolve, reject) => {
@@ -842,9 +964,7 @@ async function run() {
 
     record("interrupted-recovery-state", {
       ...interruptedProbe,
-      pass:
-        interruptedProbe.hasNotice &&
-        interruptedProbe.hasInterruptedStatus,
+      pass: interruptedProbe.hasNotice && interruptedProbe.hasInterruptedStatus,
       reason:
         "Interrupted comparison result renders an explicit interrupted notice; completed candidate outputs are preserved.",
     });
@@ -926,10 +1046,7 @@ async function run() {
       const link = document.querySelector('a[data-action="view-record"]');
       if (link) link.click();
     })()`);
-    await waitFor(
-      "Boolean(document.querySelector('[data-run-detail]'))",
-      "exact record detail",
-    );
+    await waitFor("Boolean(document.querySelector('[data-run-detail]'))", "exact record detail");
 
     const recordProbe = await evaluate(`(() => {
       const detail = document.querySelector('[data-run-detail]');
@@ -1099,7 +1216,8 @@ async function run() {
     record("zoom-200-percent", {
       ...zoomProbe,
       pass: !zoomProbe.overflowX && zoomProbe.hasRoute && zoomProbe.hasRecommendation,
-      reason: "200% zoom at 1440px renders the result route without horizontal overflow and preserves the recommendation surface.",
+      reason:
+        "200% zoom at 1440px renders the result route without horizontal overflow and preserves the recommendation surface.",
     });
     await screenshot("qa-rank-result-200pct-zoom");
 
@@ -1134,7 +1252,8 @@ async function run() {
       ...focusedTag,
       ...keyboardNav,
       pass: focusedTag.isRecordLink && keyboardNav.hasRunDetail,
-      reason: "Keyboard focus reaches the View exact Record link and Enter activates navigation to the run detail.",
+      reason:
+        "Keyboard focus reaches the View exact Record link and Enter activates navigation to the run detail.",
     });
 
     // =========================================================================
@@ -1156,7 +1275,8 @@ async function run() {
     record("reduced-motion", {
       ...reducedMotionProbe,
       pass: reducedMotionProbe.hasRoute && reducedMotionProbe.hasRecommendation,
-      reason: "Reduced-motion emulation renders the result route and recommendation surface without motion-dependent failure.",
+      reason:
+        "Reduced-motion emulation renders the result route and recommendation surface without motion-dependent failure.",
     });
     await send("Emulation.setEmulatedMedia", { features: [] });
 
@@ -1183,7 +1303,11 @@ async function run() {
     })()`);
     record("long-fields-overflow", {
       ...longProbe,
-      pass: !longProbe.overflowX && !longProbe.titleOverflow && !longProbe.promptOverflow && longProbe.hasLongModelName,
+      pass:
+        !longProbe.overflowX &&
+        !longProbe.titleOverflow &&
+        !longProbe.promptOverflow &&
+        longProbe.hasLongModelName,
       reason:
         "Long titles, prompts, and model slugs wrap without element-level or document-level horizontal overflow.",
     });
@@ -1208,8 +1332,13 @@ async function run() {
     })()`);
     record("secret-zero-leakage", {
       ...secretProbe,
-      pass: secretProbe.hasSecret && !secretProbe.leakedInHtml && !secretProbe.leakedInText && !secretProbe.hasSkPrefix,
-      reason: "Credential-shaped token seeded into the harness never leaks into the rendered DOM or body text.",
+      pass:
+        secretProbe.hasSecret &&
+        !secretProbe.leakedInHtml &&
+        !secretProbe.leakedInText &&
+        !secretProbe.hasSkPrefix,
+      reason:
+        "Credential-shaped token seeded into the harness never leaks into the rendered DOM or body text.",
     });
 
     // =========================================================================
@@ -1225,9 +1354,7 @@ async function run() {
     });
     // Aggregate: fail the run if any probe failed (collected, not first-failure).
     if (failures.length > 0) {
-      throw new Error(
-        `${failures.length} probe(s) failed:\n - ` + failures.join("\n - "),
-      );
+      throw new Error(`${failures.length} probe(s) failed:\n - ` + failures.join("\n - "));
     }
 
     // Write final QA results JSON

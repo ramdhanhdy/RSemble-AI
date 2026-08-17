@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T18:19:05.086Z",
+  "generatedAt": "2026-08-17T18:26:10.100Z",
   "baseUrl": "http://127.0.0.1:5186/",
   "determinism": {
     "run1": {
@@ -532,84 +532,14 @@
       "hasForbiddenFusion": false,
       "pass": true,
       "reason": "TaskObservations view displays honest counts, filter controls, and NEVER lists FusionObservation records."
-    },
-    {
-      "name": "exact-record-deep-link",
-      "hasCandidate": true,
-      "hasOutput": true,
-      "overflowX": false,
-      "pass": true,
-      "reason": "Deep link to exact run record focuses candidate and displays output and judge scores."
-    },
-    {
-      "name": "secret-token-leakage-probe",
-      "foundInHtml": false,
-      "foundInText": false,
-      "pass": true,
-      "reason": "Secret tokens stored in database snapshots/decisions are never leaked or surfaced in the rendered DOM."
-    },
-    {
-      "name": "mobile-390-adaptation",
-      "hasSelect": true,
-      "selectOptionCount": 3,
-      "rowCount": 0,
-      "overflowX": false,
-      "pass": true,
-      "reason": "Mobile 390px adaptation switches to native model select, renders one task row per model, and prevents horizontal overflow."
-    },
-    {
-      "name": "tablet-768-boundary",
-      "hasTable": true,
-      "overflowX": false,
-      "pass": true,
-      "reason": "Tablet 768px boundary maintains desktop table matrix layout without horizontal page overflow."
-    },
-    {
-      "name": "zoom-200-percent-1440",
-      "hasTable": true,
-      "overflowX": false,
-      "pass": true,
-      "reason": "200% zoom scaling preserves matrix layout integrity and accessibility."
-    },
-    {
-      "name": "reduced-motion-emulation",
-      "prefersReducedMotion": true,
-      "pass": true,
-      "reason": "Reduced motion preference is active and respected across animations/disclosures."
-    },
-    {
-      "name": "matrix-pagination-50-rows",
-      "renderedRowCount": 50,
-      "hasPageRange": true,
-      "hasNextBtn": true,
-      "pass": true,
-      "reason": "55-task matrix renders exactly 50 rows on page 1 with pagination controls."
-    },
-    {
-      "name": "matrix-pagination-page-2",
-      "page2RowCount": 5,
-      "pass": true,
-      "reason": "Navigating to page 2 displays the remaining 5 tasks (51–55) accurately."
-    },
-    {
-      "name": "zero-provider-egress",
-      "providerCallsCount": 0,
-      "pass": true,
-      "reason": "Harness completed with zero external provider calls (100% intercepted and local)."
     }
   ],
   "screenshots": [
     "qa-matrix-desktop-1440.png",
     "qa-receipt-eligible-popover.png",
-    "qa-task-observations-detail.png",
-    "qa-exact-record-deeplink.png",
-    "qa-mobile-390-results.png",
-    "qa-tablet-768-matrix.png",
-    "qa-zoom-200-scale2.png",
-    "qa-reduced-motion-matrix.png",
-    "qa-large-matrix-page-1.png",
-    "qa-large-matrix-page-2.png"
+    "qa-task-observations-detail.png"
   ],
   "consoleErrors": [],
-  "providerCalls": []
+  "providerCalls": [],
+  "error": "Timed out waiting for run list rows. {\"hash\":\"#/runs\",\"title\":\"RSemble AI — Rank or Fuse AI models\",\"body\":\"RSemble AI\\nCompare\\nRuns\\nEvaluations\\nLive\\n⌘\\nK\\nAlpha Quantum Entanglement\\n\\ntask-evidence-alpha\\nVersion 1 (read-only)\\n\\nBack to tasks\\nVersion\\nv1 (latest)\\nVersion 1 — read-only\\nTitle\\nObjective\\nCandidate instruction\\n\\nCommitted versions are immutable; this view is always read-only. Edit the latest version from the task detail page to create version 2.\\n\\nObservations (v1)\\n\\nDerived canonical observations, comparability cohorts, and eligibility provenance (spec §12.2).\\n\\nRefresh\\nTasks\\n1\\nVersions\\n1\\nInstances\\n1\\nActive Obs.\\n3\\nSelected Attempts\\n3\\nAll Attempts\\n3\\nFilters\\nINSTANCE\\nAll instances (1)\\ninst-task-evidence-alpha-1\\nMODEL\\nAll models (3)\\ngpt-4o (v2024-08-06)\\nclaude-3-5-sonnet (v20241022)\\ngemini-1.5-pro\\nEVIDENCE CLASS\\nAll classes\\nExploratory\\nComparable\\nVerified\\nBenchmark anchor\\nELIGIBILITY STATUS\\nAll \"}"
 }

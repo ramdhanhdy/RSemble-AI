@@ -1597,13 +1597,22 @@ async function run() {
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
       if (message.method === "Runtime.consoleAPICalled") {
-        const text = (message.params.args ?? []).map((a) => a.value ?? a.description ?? "").join(" ");
+        const text = (message.params.args ?? [])
+          .map((a) => a.value ?? a.description ?? "")
+          .join(" ");
         if (message.params.type === "error" && !text.startsWith("Warning:")) {
           results.consoleErrors.push(text);
         }
       }
+      if (message.method === "Network.loadingFailed") {
+        console.error("[NETWORK FAILED]", message.params.requestId, message.params.errorText);
+      }
       if (message.method === "Runtime.exceptionThrown") {
-        const desc = message.params.exceptionDetails?.exception?.description ?? message.params.exceptionDetails?.text ?? "unknown exception";
+        const desc =
+          message.params.exceptionDetails?.exception?.description ??
+          message.params.exceptionDetails?.text ??
+          "unknown exception";
+        console.error("[EXCEPTION THROWN]", desc);
         results.consoleErrors.push(desc);
       }
       const resolve = pending.get(message.id);
@@ -1706,6 +1715,29 @@ async function run() {
         throw new Error(`${name}: ${value.reason ?? "assertion failed"}`);
       }
     };
+    const clickElement = async (selector) => {
+      const box = await evaluate(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`);
+      if (!box) throw new Error("Element not found for click: " + selector);
+      await send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: box.x,
+        y: box.y,
+        button: "left",
+        clickCount: 1,
+      });
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: box.x,
+        y: box.y,
+        button: "left",
+        clickCount: 1,
+      });
+    };
     const press = async (key, code, windowsVirtualKeyCode) => {
       await send("Input.dispatchKeyEvent", {
         type: "keyDown",
@@ -1716,10 +1748,10 @@ async function run() {
       });
       await send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode });
     };
-
     // Enable CDP domains
     await send("Page.enable");
     await send("Runtime.enable");
+    await send("Network.enable");
     await send("Emulation.setEmulatedMedia", { features: [] });
 
     // Intercept network/provider calls
@@ -1991,18 +2023,9 @@ async function run() {
       };
     })()`);
     console.log("Evaluating Exact Record deep-link navigation...");
-    await evaluate(`(() => {
-      const a = document.querySelector('header a[href*="runs"]');
-      if (a) a.click();
-    })()`);
-    await waitFor(
-      "Boolean(document.querySelector('[data-record-row], a[href*=\"/runs/\"]'))",
-      "run list rows",
-    );
-    await evaluate(`(() => {
-      const row = document.querySelector('a[href*="/runs/run-alpha-gpt4o"]');
-      if (row) row.click();
-    })()`);
+    await clickElement('header a[href*="runs"]');
+    await waitFor("Boolean(document.querySelector('[data-record-row]'))", "run list rows");
+    await clickElement('a[data-record-row][href*="run-alpha-gpt4o"]');
     await waitFor(
       "Boolean(document.querySelector('[data-run-detail]'))",
       "run detail for deep link",
