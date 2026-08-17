@@ -20,7 +20,7 @@
 // surfaces are both canonical.
 // =============================================================================
 
-import { lazy, Suspense, useContext, useEffect, useState } from "react";
+import { lazy, Suspense, useContext, useEffect, useMemo, useState } from "react";
 import { Routes, Route, Navigate, Link, useParams, useLocation } from "react-router-dom";
 import {
   RepositoryContext,
@@ -28,6 +28,7 @@ import {
   useFusionStudyRepository,
   useTaskRepository,
 } from "./lib/persistence/repository-context";
+import { createComparisonRepository } from "./lib/persistence/comparison-repository";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
 import type { TaskSetOwnershipCrosswalkRow } from "./lib/persistence/database";
@@ -82,6 +83,11 @@ const TaskDetailRoute = lazy(() =>
 const TaskVersionRoute = lazy(() =>
   import("./workspaces/tasks/TaskRoute").then((m) => ({ default: m.TaskVersionRoute })),
 );
+const ComparisonResultRoute = lazy(() =>
+  import("./workspaces/compare/ComparisonResultRoute").then((m) => ({
+    default: m.ComparisonResultRoute,
+  })),
+);
 
 function RouteFallback() {
   return (
@@ -115,6 +121,12 @@ export function AppRoutes({
     <Routes>
       <Route path="/" element={<Navigate to="/compare" replace />} />
       <Route path="/compare" element={<CompareSlot>{compareOutlet}</CompareSlot>} />
+      <Route
+        path="/compare/results/:comparisonId"
+        element={withSuspense(
+          <ComparisonResultRouteWrapper models={models} onOpenInCompare={onOpenInCompare} />,
+        )}
+      />
       <Route
         path="/runs"
         element={withSuspense(<RunsWorkspace onOpenInCompare={onOpenInCompare} />)}
@@ -463,6 +475,31 @@ function ExperimentRouteWrapper({
   availableProviderIds: ProviderId[];
 }) {
   return <ExperimentRoute models={models} availableProviderIds={availableProviderIds} />;
+}
+/** /compare/results/:comparisonId route wrapper (spec §4, §6.2). Direct-loads
+ *  historical Rank/Fuse comparison results from exact persisted state. */
+function ComparisonResultRouteWrapper({
+  models,
+  onOpenInCompare,
+}: {
+  models: CatalogModel[];
+  onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+}) {
+  const { comparisonId } = useParams<{ comparisonId: string }>();
+  const { db, runRepo } = useContext(RepositoryContext);
+  const comparisonRepo = useMemo(
+    () => (db && runRepo ? createComparisonRepository(db, runRepo) : null),
+    [db, runRepo],
+  );
+  return (
+    <ComparisonResultRoute
+      comparisonId={comparisonId ?? ""}
+      comparisonRepo={comparisonRepo}
+      runRepo={runRepo}
+      models={models}
+      onOpenInCompare={onOpenInCompare}
+    />
+  );
 }
 
 function CompareSlot({ children }: { children: React.ReactNode }) {

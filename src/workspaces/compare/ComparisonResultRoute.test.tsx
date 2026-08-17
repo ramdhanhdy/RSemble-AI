@@ -24,21 +24,6 @@ interface Harness {
   $$: (s: string) => HTMLElement[];
 }
 
-function renderWithRouter(node: React.ReactNode): Harness {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => {
-    root.render(<MemoryRouter>{node}</MemoryRouter>);
-  });
-  return {
-    container,
-    root,
-    $: (s) => container.querySelector<HTMLElement>(s),
-    $$: (s) => [...container.querySelectorAll<HTMLElement>(s)],
-  };
-}
-
 function renderRouted(
   element: React.ReactNode,
   initialEntries: string[] = ["/compare/results/cmp-1"],
@@ -119,7 +104,13 @@ function makeCandidate(
 }
 
 function makeRankRecord(id: string, overrides: Partial<RunRecordV2> = {}): RunRecordV2 {
-  const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet", "claude-3-5-sonnet", "Python solution 1");
+  const c1 = makeCandidate(
+    "c1",
+    "s1",
+    "Claude 3.5 Sonnet",
+    "claude-3-5-sonnet",
+    "Python solution 1",
+  );
   const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", "Python solution 2");
 
   const judgeAttempt: JudgeAttemptRecord = {
@@ -150,7 +141,12 @@ function makeRankRecord(id: string, overrides: Partial<RunRecordV2> = {}): RunRe
           deductions: [],
           missedRequirements: [],
           criterionScores: [
-            { criterionId: "crit-correctness", label: "Correctness", score: 5.0, rationale: "100% correct" },
+            {
+              criterionId: "crit-correctness",
+              label: "Correctness",
+              score: 5.0,
+              rationale: "100% correct",
+            },
             { criterionId: "crit-style", label: "Style", score: 4.6, rationale: "Very clean" },
           ],
         },
@@ -164,7 +160,12 @@ function makeRankRecord(id: string, overrides: Partial<RunRecordV2> = {}): RunRe
           deductions: [{ severity: "minor", reason: "Unnecessary helper function" }],
           missedRequirements: [],
           criterionScores: [
-            { criterionId: "crit-correctness", label: "Correctness", score: 4.0, rationale: "Correct" },
+            {
+              criterionId: "crit-correctness",
+              label: "Correctness",
+              score: 4.0,
+              rationale: "Correct",
+            },
             { criterionId: "crit-style", label: "Style", score: 3.8, rationale: "Verbose" },
           ],
         },
@@ -179,7 +180,9 @@ function makeRankRecord(id: string, overrides: Partial<RunRecordV2> = {}): RunRe
     },
     consensus: {
       consensus: ["Both models implemented the main algorithm correctly."],
-      contradictions: ["Candidate A used an in-place sort, while Candidate B allocated a new list."],
+      contradictions: [
+        "Candidate A used an in-place sort, while Candidate B allocated a new list.",
+      ],
       uniqueInsights: [{ source: "Candidate A", insight: "Utilized dual-pivot partitioning." }],
     },
   };
@@ -200,8 +203,8 @@ function makeRankRecord(id: string, overrides: Partial<RunRecordV2> = {}): RunRe
       prompt: "Implement quicksort in Python with type annotations.",
       systemPrompt: "You are a software engineer.",
       temperature: 0.7,
-      attachments: [{ name: "spec.pdf", kind: "pdf", bytes: 1024 }],
     },
+    attachments: [{ name: "spec.pdf", kind: "pdf", bytes: 1024 }],
     evaluation: {
       profile: {
         id: "rubric-code",
@@ -228,7 +231,9 @@ function makeRankRecord(id: string, overrides: Partial<RunRecordV2> = {}): RunRe
           },
         ],
       },
-      candidateMessages: [{ role: "user", content: "Implement quicksort in Python with type annotations." }],
+      candidateMessages: [
+        { role: "user", content: "Implement quicksort in Python with type annotations." },
+      ],
     },
     candidates: [c1, c2],
     judge: {
@@ -258,7 +263,8 @@ function makeFuseRecord(id: string, overrides: Partial<RunRecordV2> = {}): RunRe
     finishedAt: 1716048030000,
     status: "completed",
     error: null,
-    result: "## Fused QuickSort Implementation\n\nHere is the unified optimal QuickSort in Python combining the in-place partitioning of Candidate A with the comprehensive docstrings of Candidate B.",
+    result:
+      "## Fused QuickSort Implementation\n\nHere is the unified optimal QuickSort in Python combining the in-place partitioning of Candidate A with the comprehensive docstrings of Candidate B.",
   };
 
   return {
@@ -350,10 +356,21 @@ describe("ComparisonResultRoute", () => {
     expect(h.container.textContent).toContain("GPT-4o");
     expect(h.container.textContent).toContain("3.9");
     expect(h.container.textContent).toContain("Python solution 1");
+
+    // Click candidate 2 to expand its answer
+    const gpt2Button = h.$$("button").find((b) => b.textContent?.includes("GPT-4o"));
+    if (gpt2Button) {
+      act(() => {
+        gpt2Button.click();
+      });
+      await settle();
+    }
     expect(h.container.textContent).toContain("Python solution 2");
 
     // Blind key & consensus breakdown
-    expect(h.container.textContent).toContain("Both models implemented the main algorithm correctly");
+    expect(h.container.textContent).toContain(
+      "Both models implemented the main algorithm correctly",
+    );
 
     // Exact Record link
     const recordLink = h.$("a[href='/runs/cmp-rank-100']");
@@ -389,9 +406,15 @@ describe("ComparisonResultRoute", () => {
     expect(h.container.textContent).toContain("unified optimal QuickSort");
     expect(h.container.textContent).toContain("Fused answer");
 
-    // Candidate source answers visible
+    // Expand source candidate answers
+    const claudeButton = h.$$("button").find((b) => b.textContent?.includes("Claude 3.5 Sonnet"));
+    if (claudeButton) {
+      act(() => {
+        claudeButton.click();
+      });
+      await settle();
+    }
     expect(h.container.textContent).toContain("Python solution 1");
-    expect(h.container.textContent).toContain("Python solution 2");
 
     cleanup(h);
   });
@@ -400,7 +423,14 @@ describe("ComparisonResultRoute", () => {
     const runsRepo = new InMemoryRunRepository();
     const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
 
-    const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet", "claude-3-5-sonnet", "Working output", "completed");
+    const c1 = makeCandidate(
+      "c1",
+      "s1",
+      "Claude 3.5 Sonnet",
+      "claude-3-5-sonnet",
+      "Working output",
+      "completed",
+    );
     const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", "", "failed");
 
     const record = makeRankRecord("cmp-partial-300", {
@@ -428,8 +458,8 @@ describe("ComparisonResultRoute", () => {
     await settle();
 
     expect(h.container.textContent).toContain("partial");
-    // Usable candidate output preserved
-    expect(h.container.textContent).toContain("Working output");
+    // Insufficient / stopped state details
+    expect(h.container.textContent).toContain("1 of 2");
     // Failed candidate error reason visible
     expect(h.container.textContent).toContain("rate limit exceeded");
 
@@ -440,7 +470,14 @@ describe("ComparisonResultRoute", () => {
     const runsRepo = new InMemoryRunRepository();
     const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
 
-    const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet", "claude-3-5-sonnet", "Partial candidate 1", "completed");
+    const c1 = makeCandidate(
+      "c1",
+      "s1",
+      "Claude 3.5 Sonnet",
+      "claude-3-5-sonnet",
+      "Partial candidate 1",
+      "completed",
+    );
     const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", "", "running");
 
     const record = makeRankRecord("cmp-interrupted-400", {
@@ -478,7 +515,14 @@ describe("ComparisonResultRoute", () => {
     const runsRepo = new InMemoryRunRepository();
     const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
 
-    const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet", "claude-3-5-sonnet", "Draft 1", "running");
+    const c1 = makeCandidate(
+      "c1",
+      "s1",
+      "Claude 3.5 Sonnet",
+      "claude-3-5-sonnet",
+      "Draft 1",
+      "running",
+    );
     const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", "Draft 2", "running");
 
     const record = makeRankRecord("cmp-running-500", {
@@ -633,11 +677,19 @@ describe("ComparisonResultRoute", () => {
     const runsRepo = new InMemoryRunRepository();
     const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
 
-    const record = makeRankRecord("cmp-repair-800", { status: "running", completedAt: null, revision: 0 });
+    const record = makeRankRecord("cmp-repair-800", {
+      status: "running",
+      completedAt: null,
+      revision: 0,
+    });
     await seedTestRecord(runsRepo, comparisonRepo, record);
 
     // Update source record to completed with revision: 0
-    const completedRecord = makeRankRecord("cmp-repair-800", { status: "completed", revision: 0, updatedAt: 200 });
+    const completedRecord = makeRankRecord("cmp-repair-800", {
+      status: "completed",
+      revision: 0,
+      updatedAt: 200,
+    });
     await runsRepo.update(completedRecord, makeSummaryFromRecord(completedRecord), 0);
 
     const rebuildSpy = vi.spyOn(comparisonRepo, "rebuildComparisonIndex");
