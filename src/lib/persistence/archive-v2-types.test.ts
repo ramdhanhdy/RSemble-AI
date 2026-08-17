@@ -1079,7 +1079,6 @@ describe("archive v2 Comparison payload", () => {
     ).toBe(true);
   });
 
-
   it("accepts an earlier-v2 envelope without the comparisons key (counts treated as zero)", () => {
     const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
     // Fixture manipulation: strip the optional payload key like an earlier-v2
