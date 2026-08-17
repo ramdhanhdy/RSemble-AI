@@ -1422,7 +1422,7 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
 
   it("exports an empty workbench as a valid, count-zero v2 envelope", async () => {
     const archive = await exportWorkbenchArchiveV2(db);
-    expect(Object.values(archive.manifest.counts)).toEqual(new Array(32).fill(0));
+    expect(Object.values(archive.manifest.counts)).toEqual(new Array(35).fill(0));
     const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
     expect(check.valid).toBe(true);
   });
@@ -1927,6 +1927,9 @@ function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
     evidenceDecisions: 0,
     evidenceIndexJobs: 0,
     verifierOutcomes: 0,
+    comparisonIndexes: 0,
+    comparisonInputSnapshots: 0,
+    comparisonLimitations: 0,
   };
   archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
   return archive;
@@ -1997,6 +2000,9 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
       evidenceDecisions: 0,
       evidenceIndexJobs: 0,
       verifierOutcomes: 0,
+      comparisonIndexes: 0,
+      comparisonInputSnapshots: 0,
+      comparisonLimitations: 0,
     };
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 

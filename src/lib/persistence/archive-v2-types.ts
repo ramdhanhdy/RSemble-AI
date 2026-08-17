@@ -2,7 +2,8 @@
 // RSemble AI — Archive v2 contract: envelope, collections, validators
 //
 // Child 02 (Canonical Tasks) Task 10A, extended by Child 03 (Task Sets)
-// Task 11.
+// Task 11, Child 04 (Evidence) Task 12, and Child 05 (Contextual Compare
+// Results) Task 11.
 //
 // Defines the extensible, task-first archive v2 envelope that round-trips the
 // exact current Run and Experiment evidence, all seven Fusion Study stores
@@ -21,6 +22,19 @@
 // graph); when absent (earlier-v2 envelope) the four counts must be zero.
 // The optional payload joins the integrity digest only when present, so
 // earlier-v2 digests remain stable.
+//
+// Child 05 (Contextual Compare Results) Task 11 adds an OPTIONAL top-level
+// `comparisons` payload carrying three collections: `indexes` (summary-only
+// ComparisonResultIndex rows — lineage and canonical/ad-hoc Task bindings
+// live on each index), `inputSnapshots` (immutable input-snapshot
+// metadata/artifact references), and `limitations` (explicit migration
+// limitations). Candidate outputs and judge rationale never enter this
+// payload; exact RunRecordV2 records stay the source payload. When the key is
+// present all three arrays are fully validated (array shape, counts,
+// ordering, duplicates, reference graph, binding/snapshot consistency); when
+// absent (earlier-v2 envelope) the three counts must be zero. The optional
+// payload joins the integrity digest only when present, so earlier-v2 digests
+// remain stable.
 //
 // V1 (`WorkbenchArchiveV1` in `./archive.ts`) remains a distinct, readable
 // shape. V2 is deterministic and integrity-checked: an explicit manifest
@@ -69,6 +83,12 @@ import type {
   PoolManifestVersion,
 } from "../evaluations/fusion-study-types";
 import { isRecord, type RunRecordV2, type RunSummary } from "./run-types";
+import type { ComparisonResultIndex } from "../compare/comparison-result-types";
+import { isComparisonResultIndex } from "../compare/comparison-result-validation";
+import type {
+  ComparisonMigrationLimitation,
+  ComparisonMigrationLimitationReason,
+} from "./comparison-result-migration";
 import type { TaskSetRecord, TaskSetVersion } from "../evaluations/task-set-types";
 import type { TaskSetMaterializationRecord } from "./evaluation-repository";
 import type { TaskSetOwnershipCrosswalkRow } from "./database";
@@ -144,6 +164,9 @@ export interface ArchiveV2EntityCounts {
   evidenceDecisions: number;
   evidenceIndexJobs: number;
   verifierOutcomes: number;
+  comparisonIndexes: number;
+  comparisonInputSnapshots: number;
+  comparisonLimitations: number;
 }
 /** Extensible v2 manifest. Future additive fields must keep older validators
  *  functional; `formatVersion` is the break-glass discriminator. */
@@ -224,6 +247,42 @@ export interface ArchiveV2EvidencePayload {
   verifierOutcomes: ExecutedVerifierOutcome[];
 }
 
+/** Immutable input-snapshot metadata/artifact reference (Child 05 Task 11,
+ *  spec §5, §13). Metadata only: the snapshot's normalized content is never
+ *  duplicated — the exact RunRecordV2 stays the source payload. */
+export interface ArchiveV2ComparisonInputSnapshot {
+  runId: string;
+  /**
+   * - `input_snapshot`: ad-hoc binding's content-addressed ref
+   *   (`snap:sha256:<hex>` or a non-resolving migration-era `migrated:` ref);
+   * - `task_instance`: canonical binding's durable Task Instance id;
+   * - `task_version`: canonical binding without an instance — the version key.
+   */
+  kind: "input_snapshot" | "task_instance" | "task_version";
+  inputRef: string;
+  /** `sha256:<hex>` content digest for resolving snapshot refs; null otherwise. */
+  inputDigest: string | null;
+  /** Canonical artifact ids referenced by the immutable input (task-instance
+   *  inputs only — ad-hoc attachments are sanitized metadata and reference
+   *  nothing). */
+  artifactRefs: string[];
+  /** Explicit limitation for non-resolving inputs; null otherwise. */
+  limitation: ComparisonMigrationLimitationReason | null;
+}
+
+/** Comparison Result payload (Child 05 Task 11, spec §3, §9, §10, §13).
+ *  Carries the summary-only Comparison Result indexes (lineage and canonical/
+ *  ad-hoc Task bindings live on each index), the immutable input-snapshot
+ *  metadata/artifact references, and the explicit migration limitations.
+ *  Candidate outputs and judge rationale never enter this payload. This key
+ *  is OPTIONAL: earlier v2 envelopes without it remain readable, and its
+ *  absence means all three counts are zero. */
+export interface ArchiveV2ComparisonPayload {
+  indexes: ComparisonResultIndex[];
+  inputSnapshots: ArchiveV2ComparisonInputSnapshot[];
+  limitations: ComparisonMigrationLimitation[];
+}
+
 /** The complete, task-first archive v2 envelope. Structurally distinct from
  *  `WorkbenchArchiveV1`: a manifest with format/storage versions, integrity
  *  digest, and local-scope disclosure; Fusion and Task collections are
@@ -240,6 +299,8 @@ export interface WorkbenchArchiveV2 {
   taskSets?: ArchiveV2TaskSetPayload;
   /** Optional Evidence payload (Child 04). Absent => empty. */
   evidence?: ArchiveV2EvidencePayload;
+  /** Optional Comparison Result payload (Child 05). Absent => empty. */
+  comparisons?: ArchiveV2ComparisonPayload;
 }
 
 /** Top-level collection keys, in deterministic declaration order. Used by
@@ -297,6 +358,7 @@ function payloadForDigest(archive: WorkbenchArchiveV2): Record<string, unknown> 
   // digest and remain readable.
   if (archive.taskSets !== undefined) payload.taskSets = archive.taskSets;
   if (archive.evidence !== undefined) payload.evidence = archive.evidence;
+  if (archive.comparisons !== undefined) payload.comparisons = archive.comparisons;
   return payload;
 }
 
@@ -358,6 +420,7 @@ function scanProhibitedContent(archive: WorkbenchArchiveV2): string | null {
   ];
   if (archive.taskSets !== undefined) collections.push(["taskSets", archive.taskSets]);
   if (archive.evidence !== undefined) collections.push(["evidence", archive.evidence]);
+  if (archive.comparisons !== undefined) collections.push(["comparisons", archive.comparisons]);
   for (const [label, value] of collections) {
     if (hasProhibitedKeys(value)) return `prohibited credential/transport key in ${label}`;
     if (hasProhibitedContent(value)) return `credential-like value in ${label}`;
@@ -447,6 +510,10 @@ function byVerifierOutcomeKey(item: {
   executedAt: number;
 }): string {
   return `${item.runId}::${item.taskId}::${item.modelKey}::${item.executedAt}`;
+}
+
+function byRunId(item: { runId: string }): string {
+  return item.runId;
 }
 
 interface OrderingSpec<T> {
@@ -571,6 +638,20 @@ function requireArrays(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationE
       errors.push({ field: "evidence", message: "evidence must be an object." });
     }
   }
+  // Optional Comparison payload: validated only when present. Absence is
+  // legal (earlier-v2 envelope) and means all three counts are zero.
+  const comparisons = archive.comparisons;
+  if (comparisons !== undefined) {
+    if (isRecord(comparisons)) {
+      checks.push(
+        ["comparisons.indexes", comparisons.indexes],
+        ["comparisons.inputSnapshots", comparisons.inputSnapshots],
+        ["comparisons.limitations", comparisons.limitations],
+      );
+    } else {
+      errors.push({ field: "comparisons", message: "comparisons must be an object." });
+    }
+  }
   for (const [field, value] of checks) {
     if (!Array.isArray(value)) {
       errors.push({ field, message: `${field} must be an array.` });
@@ -660,6 +741,9 @@ function validateManifest(archive: WorkbenchArchiveV2, errors: ArchiveV2Validati
     ["evidenceDecisions", archive.evidence?.evidenceDecisions.length ?? 0],
     ["evidenceIndexJobs", archive.evidence?.evidenceIndexJobs.length ?? 0],
     ["verifierOutcomes", archive.evidence?.verifierOutcomes.length ?? 0],
+    ["comparisonIndexes", archive.comparisons?.indexes.length ?? 0],
+    ["comparisonInputSnapshots", archive.comparisons?.inputSnapshots.length ?? 0],
+    ["comparisonLimitations", archive.comparisons?.limitations.length ?? 0],
   ];
   for (const [key, actual] of optionalCounts) {
     const declared = c[key];
@@ -1113,6 +1197,352 @@ function validateReferenceGraph(
   }
 }
 
+// --- Comparison payload validator (Child 05 Task 11) --------------------------
+
+const COMPARISON_SNAP_REF_PATTERN = /^snap:sha256:([0-9a-f]{64})$/;
+const COMPARISON_MIGRATED_REF_PATTERN = /^migrated:sha256:[0-9a-f]{64}$/;
+/** Static membership tables (codebase idiom: readonly string lists, like the
+ *  comparison-result-validation constants). */
+const COMPARISON_SNAPSHOT_KINDS = ["input_snapshot", "task_instance", "task_version"] as const;
+const COMPARISON_LIMITATION_REASONS = [
+  "missing_detail",
+  "corrupt_source",
+  "instance_input_incomplete",
+] as const;
+
+/** Validate the optional Comparison Result payload: summary-only indexes with
+ *  exact RunRecordV2 references, lineage links, canonical/ad-hoc bindings,
+ *  immutable input-snapshot metadata/artifact references, and migration
+ *  limitations (spec §3, §5, §9, §10, §13). */
+function validateComparisonPayload(
+  archive: WorkbenchArchiveV2,
+  errors: ArchiveV2ValidationError[],
+): void {
+  const payload = archive.comparisons;
+  if (payload === undefined) return;
+
+  const exactRunIds = new Set(archive.runs.details.map((d) => d.id));
+  const taskVersionKeys = new Set(
+    archive.tasks.taskVersions.map((v) => `${v.taskId}@${v.version}`),
+  );
+  const instanceById = new Map(archive.tasks.taskInstances.map((i) => [i.id, i]));
+  const artifactIds = new Set(archive.tasks.taskArtifacts.map((a) => a.id));
+  const observationIds =
+    archive.evidence !== undefined ? new Set(archive.evidence.observations.map((o) => o.id)) : null;
+
+  // --- indexes: guards, exact run references, bindings, lineage ---------------
+  const indexById = new Map<string, ComparisonResultIndex>();
+  payload.indexes.forEach((index, i) => {
+    if (!isComparisonResultIndex(index)) {
+      errors.push({
+        field: `comparisons.indexes[${i}]`,
+        message: `invalid comparison index ${(index as { id?: string }).id ?? ""}.`,
+      });
+      return;
+    }
+    indexById.set(index.id, index);
+    // Exact RunRecordV2 reference: the source run must be an exact record —
+    // the index references the payload, it never copies it (spec §3, §13).
+    if (!exactRunIds.has(index.runId)) {
+      errors.push({
+        field: `comparisons.indexes[${i}].runId`,
+        message: `comparison index references unknown exact run ${index.runId}.`,
+      });
+    }
+    if (index.taskBinding.kind === "canonical") {
+      const versionKey = `${index.taskBinding.taskId}@${index.taskBinding.taskVersion}`;
+      if (!taskVersionKeys.has(versionKey)) {
+        errors.push({
+          field: `comparisons.indexes[${i}].taskBinding`,
+          message: `canonical binding references unknown task version ${versionKey}.`,
+        });
+      }
+      if (index.taskInstanceId !== null && !instanceById.has(index.taskInstanceId)) {
+        errors.push({
+          field: `comparisons.indexes[${i}].taskInstanceId`,
+          message: `canonical binding references unknown task instance ${index.taskInstanceId}.`,
+        });
+      }
+    }
+    if (observationIds !== null) {
+      index.activeObservationIds.forEach((oid, j) => {
+        if (!observationIds.has(oid)) {
+          errors.push({
+            field: `comparisons.indexes[${i}].activeObservationIds[${j}]`,
+            message: `comparison index references unknown observation ${oid}.`,
+          });
+        }
+      });
+    }
+  });
+  payload.indexes.forEach((index, i) => {
+    const rawIndex = index as Partial<ComparisonResultIndex> | null;
+    const repeatedFrom = rawIndex?.lineage?.repeatedFrom ?? null;
+    if (repeatedFrom !== null && !indexById.has(repeatedFrom)) {
+      errors.push({
+        field: `comparisons.indexes[${i}].lineage.repeatedFrom`,
+        message: `lineage references unknown comparison ${repeatedFrom}.`,
+      });
+    }
+  });
+
+  // --- input snapshots: structure, 1:1 index coverage, binding consistency ----
+  const snapshotByRunId = new Map<string, ArchiveV2ComparisonInputSnapshot>();
+  payload.inputSnapshots.forEach((snap, i) => {
+    const field = `comparisons.inputSnapshots[${i}]`;
+    const raw = snap as unknown as Record<string, unknown>;
+    if (!isNonEmptyString(raw.runId)) {
+      errors.push({
+        field: `${field}.runId`,
+        message: "input snapshot runId must be a non-empty string.",
+      });
+      return;
+    }
+    const runId = raw.runId;
+    if (!(COMPARISON_SNAPSHOT_KINDS as readonly string[]).includes(raw.kind as string)) {
+      errors.push({
+        field: `${field}.kind`,
+        message: `unknown input snapshot kind ${String(raw.kind)}.`,
+      });
+      return;
+    }
+    if (!isNonEmptyString(raw.inputRef)) {
+      errors.push({ field: `${field}.inputRef`, message: "inputRef must be a non-empty string." });
+      return;
+    }
+    if (raw.inputDigest !== null && !isNonEmptyString(raw.inputDigest)) {
+      errors.push({
+        field: `${field}.inputDigest`,
+        message: "inputDigest must be a string or null.",
+      });
+      return;
+    }
+    if (!Array.isArray(raw.artifactRefs) || raw.artifactRefs.some((r) => !isNonEmptyString(r))) {
+      errors.push({
+        field: `${field}.artifactRefs`,
+        message: "artifactRefs must be an array of strings.",
+      });
+      return;
+    }
+    if (
+      raw.limitation !== null &&
+      !(COMPARISON_LIMITATION_REASONS as readonly string[]).includes(raw.limitation as string)
+    ) {
+      errors.push({
+        field: `${field}.limitation`,
+        message: `unknown limitation reason ${String(raw.limitation)}.`,
+      });
+      return;
+    }
+    const index = indexById.get(runId);
+    if (index === undefined) {
+      errors.push({
+        field: `${field}.runId`,
+        message: `input snapshot references unknown comparison ${runId}.`,
+      });
+      return;
+    }
+    const binding = index.taskBinding;
+    if (raw.kind === "input_snapshot") {
+      if (binding.kind !== "ad_hoc") {
+        errors.push({
+          field: `${field}.kind`,
+          message: `input snapshot record for ${runId} must match the ad-hoc binding.`,
+        });
+        return;
+      }
+      if (raw.inputRef !== binding.inputSnapshotRef) {
+        errors.push({
+          field: `${field}.inputRef`,
+          message: "input ref does not match the binding's inputSnapshotRef.",
+        });
+        return;
+      }
+      const snapMatch = COMPARISON_SNAP_REF_PATTERN.exec(raw.inputRef);
+      const migratedMatch = COMPARISON_MIGRATED_REF_PATTERN.test(raw.inputRef);
+      if (snapMatch) {
+        if (raw.inputDigest !== `sha256:${snapMatch[1]}`) {
+          errors.push({
+            field: `${field}.inputDigest`,
+            message: "inputDigest must equal the digest embedded in the snapshot ref.",
+          });
+        }
+        if (raw.limitation !== null) {
+          errors.push({
+            field: `${field}.limitation`,
+            message: "resolving snapshot refs record no limitation.",
+          });
+        }
+        if ((raw.artifactRefs as string[]).length > 0) {
+          errors.push({
+            field: `${field}.artifactRefs`,
+            message: "ad-hoc snapshot records carry no artifact references.",
+          });
+        }
+      } else if (migratedMatch) {
+        if (raw.inputDigest !== null) {
+          errors.push({
+            field: `${field}.inputDigest`,
+            message: "non-resolving migrated refs carry no input digest.",
+          });
+        }
+        if (raw.limitation !== "instance_input_incomplete") {
+          errors.push({
+            field: `${field}.limitation`,
+            message: 'migrated refs require the "instance_input_incomplete" limitation.',
+          });
+        }
+        if ((raw.artifactRefs as string[]).length > 0) {
+          errors.push({
+            field: `${field}.artifactRefs`,
+            message: "ad-hoc snapshot records carry no artifact references.",
+          });
+        }
+      } else {
+        errors.push({
+          field: `${field}.inputRef`,
+          message: "unsupported snapshot ref shape.",
+        });
+      }
+    } else if (raw.kind === "task_instance") {
+      if (binding.kind !== "canonical" || index.taskInstanceId === null) {
+        errors.push({
+          field: `${field}.kind`,
+          message:
+            "task_instance snapshot records require a canonical binding with a task instance.",
+        });
+        return;
+      }
+      if (raw.inputRef !== index.taskInstanceId) {
+        errors.push({
+          field: `${field}.inputRef`,
+          message: "input ref must equal the canonical binding's taskInstanceId.",
+        });
+        return;
+      }
+      const instance = instanceById.get(raw.inputRef);
+      if (instance === undefined) {
+        errors.push({
+          field: `${field}.inputRef`,
+          message: `input ref references unknown task instance ${String(raw.inputRef)}.`,
+        });
+        return;
+      }
+      const expected = [...instance.normalizedInput.artifactIds].sort();
+      const actual = [...(raw.artifactRefs as string[])].sort();
+      if (expected.join("\u0000") !== actual.join("\u0000")) {
+        errors.push({
+          field: `${field}.artifactRefs`,
+          message: "artifactRefs must match the task instance's input artifacts.",
+        });
+      }
+      if (raw.inputDigest !== null) {
+        errors.push({
+          field: `${field}.inputDigest`,
+          message: "task-instance refs carry no input digest.",
+        });
+      }
+      if (raw.limitation !== null) {
+        errors.push({
+          field: `${field}.limitation`,
+          message: "task-instance refs record no limitation.",
+        });
+      }
+    } else {
+      // task_version
+      if (binding.kind !== "canonical" || index.taskInstanceId !== null) {
+        errors.push({
+          field: `${field}.kind`,
+          message:
+            "task_version snapshot records require a canonical binding without a task instance.",
+        });
+        return;
+      }
+      const versionKey = `${binding.taskId}@${binding.taskVersion}`;
+      if (raw.inputRef !== versionKey) {
+        errors.push({
+          field: `${field}.inputRef`,
+          message: "input ref must equal the canonical binding's task version key.",
+        });
+      }
+      if (
+        raw.inputDigest !== null ||
+        (raw.artifactRefs as string[]).length > 0 ||
+        raw.limitation !== null
+      ) {
+        errors.push({
+          field: `${field}.limitation`,
+          message: "task_version snapshot records carry no digest, artifacts, or limitation.",
+        });
+      }
+    }
+    for (const aid of raw.artifactRefs as string[]) {
+      if (!artifactIds.has(aid)) {
+        errors.push({
+          field: `${field}.artifactRefs`,
+          message: `input snapshot references unknown artifact ${aid}.`,
+        });
+      }
+    }
+    snapshotByRunId.set(runId, snap);
+  });
+
+  // 1:1: every index carries exactly one snapshot record.
+  payload.indexes.forEach((index) => {
+    const indexId = (index as Partial<ComparisonResultIndex> | null)?.id ?? "";
+    if (indexId !== "" && indexById.has(indexId) && !snapshotByRunId.has(indexId)) {
+      errors.push({
+        field: "comparisons.inputSnapshots",
+        message: `missing input snapshot record for comparison ${indexId}.`,
+      });
+    }
+  });
+
+  // --- limitations: 1:1 with non-resolving snapshot records -------------------
+  const limitationByRunId = new Map<string, ComparisonMigrationLimitation>();
+  payload.limitations.forEach((lim, i) => {
+    const field = `comparisons.limitations[${i}]`;
+    const raw = lim as unknown as Record<string, unknown>;
+    if (!isNonEmptyString(raw.runId)) {
+      errors.push({
+        field: `${field}.runId`,
+        message: "limitation runId must be a non-empty string.",
+      });
+      return;
+    }
+    const runId = raw.runId;
+    const index = indexById.get(runId);
+    if (index === undefined) {
+      errors.push({
+        field: `${field}.runId`,
+        message: `limitation references unknown comparison ${runId}.`,
+      });
+      return;
+    }
+    limitationByRunId.set(runId, lim);
+    const expectedReason = snapshotByRunId.get(runId)?.limitation ?? null;
+    if (expectedReason === null) {
+      errors.push({
+        field: `${field}.reason`,
+        message: `comparison ${runId} has no limitation to record.`,
+      });
+    } else if (raw.reason !== expectedReason) {
+      errors.push({
+        field: `${field}.reason`,
+        message: "limitation reason does not match the snapshot record.",
+      });
+    }
+  });
+  for (const snap of snapshotByRunId.values()) {
+    if (snap.limitation !== null && !limitationByRunId.has(snap.runId)) {
+      errors.push({
+        field: "comparisons.limitations",
+        message: `missing limitation record for comparison ${snap.runId}.`,
+      });
+    }
+  }
+}
+
 function validateArtifactBytes(
   archive: WorkbenchArchiveV2,
   errors: ArchiveV2ValidationError[],
@@ -1276,6 +1706,18 @@ function validateOrdering(archive: WorkbenchArchiveV2, errors: ArchiveV2Validati
       errors,
     );
   }
+  const cmp = archive.comparisons;
+  if (cmp !== undefined) {
+    checkOrdering({ field: "comparisons.indexes", items: cmp.indexes, key: byId }, errors);
+    checkOrdering(
+      { field: "comparisons.inputSnapshots", items: cmp.inputSnapshots, key: byRunId },
+      errors,
+    );
+    checkOrdering(
+      { field: "comparisons.limitations", items: cmp.limitations, key: byRunId },
+      errors,
+    );
+  }
 }
 
 function validateDuplicates(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationError[]): void {
@@ -1337,6 +1779,12 @@ function validateDuplicates(archive: WorkbenchArchiveV2, errors: ArchiveV2Valida
       errors,
     );
   }
+  const cmpDup = archive.comparisons;
+  if (cmpDup !== undefined) {
+    checkDuplicates("comparisons.indexes", cmpDup.indexes, byId, errors);
+    checkDuplicates("comparisons.inputSnapshots", cmpDup.inputSnapshots, byRunId, errors);
+    checkDuplicates("comparisons.limitations", cmpDup.limitations, byRunId, errors);
+  }
 }
 
 // --- Public validator --------------------------------------------------------
@@ -1371,6 +1819,7 @@ export function validateArchiveV2(value: unknown): ArchiveV2ValidationResult {
   validateDuplicates(archive, errors);
   validateOrdering(archive, errors);
   validateReferenceGraph(archive, errors);
+  validateComparisonPayload(archive, errors);
   validateArtifactBytes(archive, errors);
 
   const prohibited = scanProhibitedContent(archive);

@@ -150,6 +150,10 @@ import {
   observationSourceKey,
 } from "../evidence/evidence-validation";
 import type { EvidenceIndexJob, EvidenceIndexJobSummary } from "./evidence-repository";
+import type { ComparisonResultIndex } from "../compare/comparison-result-types";
+import { isComparisonResultIndex } from "../compare/comparison-result-validation";
+import type { ComparisonMigrationLimitation } from "./comparison-result-migration";
+import type { ArchiveV2ComparisonInputSnapshot } from "./archive-v2-types";
 // --- Archive shape -------------------------------------------------------------
 
 export interface WorkbenchArchiveV1 {
@@ -965,6 +969,7 @@ export type ArchiveExportStage =
   | "tasks"
   | "task-sets"
   | "evidence"
+  | "comparisons"
   | "artifact-bytes"
   | "scan"
   | "finalize";
@@ -1009,6 +1014,7 @@ const ARCHIVE_V2_STAGES: ArchiveExportStage[] = [
   "tasks",
   "task-sets",
   "evidence",
+  "comparisons",
   "artifact-bytes",
   "scan",
   "finalize",
@@ -1061,7 +1067,9 @@ function v2SortByObservationIdRuleVersion<T extends { observationId: string; rul
 function v2SortBySourceResultId<T extends { sourceResultId: string }>(items: T[]): T[] {
   return [...items].sort((a, b) => v2OrderingKeyString(a.sourceResultId, b.sourceResultId));
 }
-
+function v2SortByRunId<T extends { runId: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.runId, b.runId));
+}
 function v2SortByVerifierOutcomeKey<
   T extends { runId: string; taskId: string; modelKey: string; executedAt: number },
 >(items: T[]): T[] {
@@ -1633,6 +1641,78 @@ export async function exportWorkbenchArchiveV2(
         );
     });
     completeStage("evidence");
+    // --- comparisons (indexes, input snapshots, limitations) -------------------
+    emit("comparisons");
+    throwIfAborted();
+    const comparisonIndexes: ComparisonResultIndex[] = [];
+    await db.comparisonResults.orderBy("id").each((row) => {
+      if (isComparisonResultIndex(row)) comparisonIndexes.push(row);
+      else
+        recordGuardFailure(
+          "comparisons.indexes",
+          (row as { id?: string }).id ?? "",
+          "comparisonResults",
+          guardViolations,
+        );
+    });
+    // Immutable input-snapshot metadata/artifact references derived from
+    // durable state only: the binding's snapshot ref (ad-hoc), or the
+    // Task Instance id + its canonical artifact refs (canonical). Migration
+    // limitations are derived for non-resolving `migrated:` refs; the exact
+    // RunRecordV2 payload is never copied or read here.
+    const inputSnapshots: ArchiveV2ComparisonInputSnapshot[] = [];
+    const comparisonLimitations: ComparisonMigrationLimitation[] = [];
+    const instanceById = new Map(taskInstances.map((i) => [i.id, i]));
+    for (const index of comparisonIndexes) {
+      const binding = index.taskBinding;
+      if (binding.kind === "ad_hoc") {
+        const snapMatch = /^snap:sha256:([0-9a-f]{64})$/.exec(binding.inputSnapshotRef);
+        if (snapMatch) {
+          inputSnapshots.push({
+            runId: index.id,
+            kind: "input_snapshot",
+            inputRef: binding.inputSnapshotRef,
+            inputDigest: `sha256:${snapMatch[1]}`,
+            artifactRefs: [],
+            limitation: null,
+          });
+        } else {
+          // Non-resolving migration-era ref: explicit limitation.
+          inputSnapshots.push({
+            runId: index.id,
+            kind: "input_snapshot",
+            inputRef: binding.inputSnapshotRef,
+            inputDigest: null,
+            artifactRefs: [],
+            limitation: "instance_input_incomplete",
+          });
+          comparisonLimitations.push({
+            runId: index.id,
+            reason: "instance_input_incomplete",
+          });
+        }
+      } else if (index.taskInstanceId !== null) {
+        const instance = instanceById.get(index.taskInstanceId);
+        inputSnapshots.push({
+          runId: index.id,
+          kind: "task_instance",
+          inputRef: index.taskInstanceId,
+          inputDigest: null,
+          artifactRefs: instance ? [...instance.normalizedInput.artifactIds].sort() : [],
+          limitation: null,
+        });
+      } else {
+        inputSnapshots.push({
+          runId: index.id,
+          kind: "task_version",
+          inputRef: `${binding.taskId}@${binding.taskVersion}`,
+          inputDigest: null,
+          artifactRefs: [],
+          limitation: null,
+        });
+      }
+    }
+    completeStage("comparisons");
 
     // Exact store coverage: any persisted canononical row that fails its
     // record guard blocks the whole export. Dexie `.each()` swallows a
@@ -1723,6 +1803,11 @@ export async function exportWorkbenchArchiveV2(
       scanStructured("evidence.evidenceIndexJobs", j.sourceResultId, j);
     for (const vo of verifierOutcomes)
       scanStructured("evidence.verifierOutcomes", verifierOutcomeKey(vo), vo);
+    for (const index of comparisonIndexes) scanStructured("comparisons.indexes", index.id, index);
+    for (const snap of inputSnapshots)
+      scanStructured("comparisons.inputSnapshots", snap.runId, snap);
+    for (const limitation of comparisonLimitations)
+      scanStructured("comparisons.limitations", limitation.runId, limitation);
 
     completeStage("scan");
 
@@ -1775,6 +1860,9 @@ export async function exportWorkbenchArchiveV2(
           evidenceDecisions: evidenceDecisions.length,
           evidenceIndexJobs: evidenceIndexJobs.length,
           verifierOutcomes: verifierOutcomes.length,
+          comparisonIndexes: comparisonIndexes.length,
+          comparisonInputSnapshots: inputSnapshots.length,
+          comparisonLimitations: comparisonLimitations.length,
         },
         payloadDigest: "",
         disclosure: { scope: "local", notes: ARCHIVE_V2_DISCLOSURE_NOTES },
@@ -1822,6 +1910,11 @@ export async function exportWorkbenchArchiveV2(
         evidenceDecisions: v2SortByObservationIdRuleVersion(evidenceDecisions),
         evidenceIndexJobs: v2SortBySourceResultId(evidenceIndexJobs),
         verifierOutcomes: v2SortByVerifierOutcomeKey(verifierOutcomes),
+      },
+      comparisons: {
+        indexes: v2SortById(comparisonIndexes),
+        inputSnapshots: v2SortByRunId(inputSnapshots),
+        limitations: v2SortByRunId(comparisonLimitations),
       },
     };
     // Digest is computed over the final payload (collections only — the
@@ -2731,6 +2824,26 @@ async function previewV2(
       );
     }
   }
+  // --- comparisons (indexes; snapshots/limitations are envelope metadata) -----
+  const comparisons = archive.comparisons;
+  if (comparisons !== undefined) {
+    const part = partitionGuarded(
+      "comparisons.indexes",
+      comparisons.indexes,
+      (index) => index.id,
+      (v) => isComparisonResultIndex(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "comparisons.indexes",
+      part.guarded,
+      (index) => index.id,
+      (k) => db.comparisonResults.get(k),
+      (v) => v,
+      buckets,
+    );
+  }
 
   throwIfAborted();
   return finalizePreview("v2", options.sourceLabel ?? "archive", archive, buckets);
@@ -3161,6 +3274,7 @@ export async function commitPreviewWorkbenchArchiveV2(
         db.evidenceDecisions,
         db.evidenceIndexJobs,
         db.verifierOutcomes,
+        db.comparisonResults,
       ],
       async () => {
         if (options.signal?.aborted) throw new ArchiveImportCancelledError();
@@ -3450,6 +3564,16 @@ export async function commitPreviewWorkbenchArchiveV2(
             const existing = await db.verifierOutcomes.get(key);
             if (existing !== undefined && canonical(fromVerifierRow(existing)) !== canonical(vo)) {
               conflict("evidence.verifierOutcomes", key);
+            }
+          }
+        }
+        // --- comparisons (optional envelope) ----------------------------------
+        if (archive.comparisons !== undefined) {
+          for (const index of archive.comparisons.indexes) {
+            if (!isCreated("comparisons.indexes", index.id)) continue;
+            const existing = await db.comparisonResults.get(index.id);
+            if (existing !== undefined && canonical(existing) !== canonical(index)) {
+              conflict("comparisons.indexes", index.id);
             }
           }
         }
@@ -3794,6 +3918,16 @@ export async function commitPreviewWorkbenchArchiveV2(
               await db.verifierOutcomes.put(toVerifierRow(vo));
               created.push(key);
             } else reused.push(key);
+          }
+        }
+        // --- comparisons (optional envelope) -------------------------------------
+        if (archive.comparisons !== undefined) {
+          for (const index of archive.comparisons.indexes) {
+            if (!isComparisonResultIndex(index)) continue;
+            if (isCreated("comparisons.indexes", index.id)) {
+              await db.comparisonResults.put(index);
+              created.push(index.id);
+            } else reused.push(index.id);
           }
         }
         // `skipped` is a commit-pass no-op channel — currently empty by design

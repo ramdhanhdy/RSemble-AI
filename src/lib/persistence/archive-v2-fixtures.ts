@@ -6,8 +6,10 @@
 // available in Child 02: Runs (summary + detail), Rubrics (identity + version),
 // Suites, Experiments, all seven Fusion Study stores, and every canonical Task
 // collection — including one artifact with real bytes and one legacy migration
-// crosswalk. The manifest carries exact counts, a recomputed payload digest,
-// and a local-scope disclosure.
+// crosswalk. Child 03 adds the Task Set builders, Child 04 the Evidence
+// builders, and Child 05 Task 11 adds the Comparison Result builders plus
+// `buildValidArchiveV2ComparisonFixture`. The manifest carries exact counts, a
+// recomputed payload digest, and a local-scope disclosure.
 //
 // Task 10B exports the entity builders and adds deterministic DB row builders:
 // the exact indexed row shapes the repositories write, so export tests can
@@ -22,11 +24,18 @@ import {
   ARCHIVE_V2_FORMAT_VERSION,
   ARCHIVE_V2_STORAGE_VERSION,
   computeArchiveV2PayloadDigest,
+  type ArchiveV2ComparisonInputSnapshot,
+  type ArchiveV2ComparisonPayload,
   type ArchiveV2EntityCounts,
   type ArchiveV2EvidencePayload,
   type ArchiveV2TaskArtifactBytes,
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
+import type { ComparisonResultIndex } from "../compare/comparison-result-types";
+import {
+  migratedInputSnapshotRef,
+  type ComparisonMigrationLimitation,
+} from "./comparison-result-migration";
 import type {
   EligibilityDecision,
   ExecutedVerifierOutcome,
@@ -1165,6 +1174,55 @@ export function verifierOutcomeRow(outcome: ExecutedVerifierOutcome): VerifierOu
   };
 }
 
+// --- Comparison Result builders (Child 05 Task 11) ----------------------------
+
+/** Summary-only Comparison Result index (comparisonId == runId). Defaults to
+ *  the fixture run with a non-resolving migration-era snapshot ref so the
+ *  limitation derivation is exercised; override the binding for the resolving
+ *  `snap:sha256:` path. */
+export function makeComparisonIndex(
+  id = "run-1",
+  overrides: Partial<ComparisonResultIndex> = {},
+): ComparisonResultIndex {
+  return {
+    id,
+    runId: id,
+    createdAt: 1000,
+    updatedAt: 1000,
+    status: "completed",
+    mode: "rank",
+    title: `Comparison ${id}`,
+    taskBinding: { kind: "ad_hoc", inputSnapshotRef: migratedInputSnapshotRef(id) },
+    taskInstanceId: null,
+    activeObservationIds: [],
+    evidenceReceiptRevision: 0,
+    lineage: { repeatedFrom: null },
+    revision: 0,
+    ...overrides,
+  };
+}
+
+/** Immutable input-snapshot metadata record matching the default migrated
+ *  binding; override for the resolving snap-ref or canonical variants. */
+export function makeComparisonInputSnapshot(
+  runId = "run-1",
+  overrides: Partial<ArchiveV2ComparisonInputSnapshot> = {},
+): ArchiveV2ComparisonInputSnapshot {
+  return {
+    runId,
+    kind: "input_snapshot",
+    inputRef: migratedInputSnapshotRef(runId),
+    inputDigest: null,
+    artifactRefs: [],
+    limitation: "instance_input_incomplete",
+    ...overrides,
+  };
+}
+
+export function makeComparisonLimitation(runId = "run-1"): ComparisonMigrationLimitation {
+  return { runId, reason: "instance_input_incomplete" };
+}
+
 // --- Valid envelope ----------------------------------------------------------
 
 /** Build a complete, valid archive v2 fixture with one representative entity
@@ -1253,6 +1311,28 @@ export function buildValidArchiveV2Fixture(): WorkbenchArchiveV2 {
   return archive;
 }
 
+/** Extend the valid base fixture with the Child 05 Comparison payload: one
+ *  summary-only index (non-resolving migrated binding), its immutable
+ *  input-snapshot metadata record, and the explicit migration limitation.
+ *  The base fixture stays the earlier-v2-readable shape on purpose. */
+export function buildValidArchiveV2ComparisonFixture(): WorkbenchArchiveV2 {
+  const archive = buildValidArchiveV2Fixture();
+  const obsId = archive.evidence!.observations[0].id;
+  const index = makeComparisonIndex("run-1", {
+    activeObservationIds: [obsId],
+    evidenceReceiptRevision: 1,
+  });
+  const comparisons: ArchiveV2ComparisonPayload = {
+    indexes: [index],
+    inputSnapshots: [makeComparisonInputSnapshot("run-1")],
+    limitations: [makeComparisonLimitation("run-1")],
+  };
+  archive.comparisons = comparisons;
+  archive.manifest.counts = countAll(archive);
+  archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+  return archive;
+}
+
 /** Deep-clone an archive so test mutations do not bleed across cases. The
  *  envelope is plain data (no functions), so structuredClone is exact. */
 export function cloneArchiveV2(archive: WorkbenchArchiveV2): WorkbenchArchiveV2 {
@@ -1295,6 +1375,9 @@ function emptyCounts(): ArchiveV2EntityCounts {
     evidenceDecisions: 0,
     evidenceIndexJobs: 0,
     verifierOutcomes: 0,
+    comparisonIndexes: 0,
+    comparisonInputSnapshots: 0,
+    comparisonLimitations: 0,
   };
 }
 
@@ -1332,5 +1415,8 @@ function countAll(archive: WorkbenchArchiveV2): ArchiveV2EntityCounts {
     evidenceDecisions: archive.evidence?.evidenceDecisions.length ?? 0,
     evidenceIndexJobs: archive.evidence?.evidenceIndexJobs.length ?? 0,
     verifierOutcomes: archive.evidence?.verifierOutcomes.length ?? 0,
+    comparisonIndexes: archive.comparisons?.indexes.length ?? 0,
+    comparisonInputSnapshots: archive.comparisons?.inputSnapshots.length ?? 0,
+    comparisonLimitations: archive.comparisons?.limitations.length ?? 0,
   };
 }
