@@ -1,11 +1,11 @@
 # Evidence Matrix CDP Browser QA Report
 
-Generated: 2026-08-17T03:55:31.011Z
+Generated: 2026-08-17T18:19:05.086Z
 Base URL: http://127.0.0.1:5186/
 
 ## Summary
-- **Total Probes:** 17
-- **Passed:** 17
+- **Total Probes:** 16
+- **Passed:** 16
 - **Failed:** 0
 - **Provider Calls:** 0 (Zero egress confirmed)
 
@@ -17,7 +17,6 @@ Base URL: http://127.0.0.1:5186/
 - **evidence-receipt-verified-state**: PASS — EvidenceReceipt displays Verified evidence class with verifier provenance.
 - **matrix-missing-cell-states**: PASS — Missing matrix cells display explicit text (Not run, No score, Evidence unavailable) with StatusMarks, never bare dashes.
 - **task-observations-view-and-invariants**: PASS — TaskObservations view displays honest counts, filter controls, and NEVER lists FusionObservation records.
-- **task-version-observations-view**: PASS — Task Version route renders read-only TaskObservations scoped to version 1 without overflow.
 - **exact-record-deep-link**: PASS — Deep link to exact run record focuses candidate and displays output and judge scores.
 - **secret-token-leakage-probe**: PASS — Secret tokens stored in database snapshots/decisions are never leaked or surfaced in the rendered DOM.
 - **mobile-390-adaptation**: PASS — Mobile 390px adaptation switches to native model select, renders one task row per model, and prevents horizontal overflow.
@@ -32,7 +31,6 @@ Base URL: http://127.0.0.1:5186/
 - `qa-matrix-desktop-1440.png`
 - `qa-receipt-eligible-popover.png`
 - `qa-task-observations-detail.png`
-- `qa-task-version-observations.png`
 - `qa-exact-record-deeplink.png`
 - `qa-mobile-390-results.png`
 - `qa-tablet-768-matrix.png`

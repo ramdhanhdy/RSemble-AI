@@ -1,0 +1,187 @@
+{
+  "generatedAt": "2026-08-17T18:19:33.440Z",
+  "baseUrl": "http://127.0.0.1:5187/",
+  "probes": [
+    {
+      "name": "compare-list-new-and-previous",
+      "hasNewBtn": false,
+      "hasSection": false,
+      "rowCount": 0,
+      "hasRankRow": false,
+      "hasFuseRow": false,
+      "hasInterruptedRow": false,
+      "hasCanonicalRow": false,
+      "hasMissingRow": false,
+      "hasLongRow": false,
+      "hasInterruptedLabel": false,
+      "pass": false,
+      "reason": "Compare workspace shows New comparison action, Previous comparisons section, and semantic result rows for every seeded state (Rank, Fuse, interrupted, canonical, missing-source, long-fields) with interrupted recoverable label."
+    },
+    {
+      "name": "reload-rank-result-reconstruction",
+      "hasRoute": true,
+      "hasAdHocBadge": true,
+      "hasAdHocReceipt": true,
+      "hasViewRecord": true,
+      "viewRecordHref": "#/runs/cmp-rank-adhoc-1",
+      "hasOpenInCompare": true,
+      "hasTitle": true,
+      "hasMode": true,
+      "hasStatus": true,
+      "hasRecommendation": true,
+      "hasRationale": true,
+      "hasScore": true,
+      "hasGpt": true,
+      "hasConsensus": true,
+      "hasExploratory": true,
+      "pass": true,
+      "reason": "Direct-loaded Rank result reconstructs recommendation, leaderboard, scores, consensus, ad hoc badge, exploratory evidence receipt, exact Record link, and Open in Compare from persisted state with zero provider calls."
+    },
+    {
+      "name": "reload-fuse-result-reconstruction",
+      "hasAdHocBadge": true,
+      "hasTitle": true,
+      "hasMode": true,
+      "hasFusedOutput": true,
+      "pass": true,
+      "reason": "Direct-loaded Fuse result reconstructs the fused document output and ad hoc badge from persisted state."
+    },
+    {
+      "name": "interrupted-recovery-state",
+      "hasNotice": true,
+      "hasInterruptedStatus": true,
+      "hasPreservedNotice": true,
+      "pass": true,
+      "reason": "Interrupted comparison result renders an explicit interrupted notice; completed candidate outputs are preserved."
+    },
+    {
+      "name": "canonical-task-binding",
+      "hasBadge": true,
+      "badgeHref": "#/tasks/task-quick-sort/versions/1",
+      "hasCanonicalReceipt": true,
+      "hasTaskLink": true,
+      "pass": true,
+      "reason": "Canonically-bound result renders canonical Task badge linking to the exact version route and canonical evidence receipt."
+    },
+    {
+      "name": "missing-source-state",
+      "hasState": true,
+      "hasTitle": true,
+      "hasNotice": true,
+      "pass": true,
+      "reason": "Comparison index without a source run record renders an explicit missing-source state, never a fabricated merged result."
+    },
+    {
+      "name": "exact-record-drilldown",
+      "hasDetail": true,
+      "hasTaskExcerpt": true,
+      "hasOpenInCompare": true,
+      "hasBackToRuns": true,
+      "pass": true,
+      "reason": "View exact Record navigates to the immutable run detail (data-run-detail) showing the task excerpt, with an Open in Compare continuity action back to the owning workspace."
+    },
+    {
+      "name": "return-to-owner",
+      "hash": "#/compare",
+      "pass": true,
+      "reason": "Open in Compare returns from the exact Record to the Compare owner workspace."
+    },
+    {
+      "name": "promote-link-dialog-surface",
+      "hasDialogMounted": false,
+      "hasSaveAsTaskAction": false,
+      "pass": false,
+      "reason": "PromoteComparisonTaskDialog (spec §7.3) must be mounted in the live result route or Compare command pane with a reachable Save/Link Task action."
+    },
+    {
+      "name": "canonical-edit-version-choice-surface",
+      "hasControl": false,
+      "hasDraftModal": false,
+      "hasCreateVersionBtn": false,
+      "hasRunAdHocBtn": false,
+      "pass": false,
+      "reason": "ComparisonTaskBindingControl (spec §7.2) must be mounted in the live Compare command pane with the Create Task vN+1 and Run as ad hoc choice modal."
+    },
+    {
+      "name": "mobile-390-viewport",
+      "overflowX": false,
+      "hasViewRecord": true,
+      "hasOpenInCompare": true,
+      "hasBack": true,
+      "titleOverflow": false,
+      "pass": true,
+      "reason": "390px mobile result route has no horizontal overflow, no crushed title, and primary actions (View exact Record, Back to Compare) remain reachable."
+    },
+    {
+      "name": "tablet-768-viewport",
+      "overflowX": false,
+      "hasRoute": true,
+      "pass": true,
+      "reason": "768px tablet boundary renders the result route without horizontal overflow."
+    },
+    {
+      "name": "zoom-200-percent",
+      "overflowX": false,
+      "hasRoute": true,
+      "hasRecommendation": true,
+      "pass": true,
+      "reason": "200% zoom at 1440px renders the result route without horizontal overflow and preserves the recommendation surface."
+    },
+    {
+      "name": "keyboard-record-link-activation",
+      "tag": "A",
+      "isRecordLink": true,
+      "hasRunDetail": true,
+      "pass": true,
+      "reason": "Keyboard focus reaches the View exact Record link and Enter activates navigation to the run detail."
+    },
+    {
+      "name": "reduced-motion",
+      "hasRoute": true,
+      "hasRecommendation": true,
+      "pass": true,
+      "reason": "Reduced-motion emulation renders the result route and recommendation surface without motion-dependent failure."
+    },
+    {
+      "name": "long-fields-overflow",
+      "overflowX": false,
+      "titleOverflow": false,
+      "promptOverflow": false,
+      "hasLongModelName": true,
+      "pass": true,
+      "reason": "Long titles, prompts, and model slugs wrap without element-level or document-level horizontal overflow."
+    },
+    {
+      "name": "secret-zero-leakage",
+      "hasSecret": true,
+      "leakedInHtml": false,
+      "leakedInText": false,
+      "hasSkPrefix": false,
+      "pass": true,
+      "reason": "Credential-shaped token seeded into the harness never leaks into the rendered DOM or body text."
+    },
+    {
+      "name": "zero-provider-egress",
+      "callCount": 0,
+      "pass": true,
+      "reason": "Harness completed with zero external provider calls (100% intercepted and local)."
+    }
+  ],
+  "droppedChecks": [],
+  "screenshots": [
+    "qa-compare-list-1440.png",
+    "qa-rank-result-1440.png",
+    "qa-fuse-result-1440.png",
+    "qa-interrupted-result-1440.png",
+    "qa-canonical-result-1440.png",
+    "qa-missing-source-1440.png",
+    "qa-exact-record-drilldown.png",
+    "qa-rank-result-390-mobile.png",
+    "qa-rank-result-768-tablet.png",
+    "qa-rank-result-200pct-zoom.png",
+    "qa-longfields-result-1440.png"
+  ],
+  "consoleErrors": [],
+  "providerCalls": [],
+  "error": "3 probe(s) failed:\n - compare-list-new-and-previous: Compare workspace shows New comparison action, Previous comparisons section, and semantic result rows for every seeded state (Rank, Fuse, interrupted, canonical, missing-source, long-fields) with interrupted recoverable label.\n - promote-link-dialog-surface: PromoteComparisonTaskDialog (spec §7.3) must be mounted in the live result route or Compare command pane with a reachable Save/Link Task action.\n - canonical-edit-version-choice-surface: ComparisonTaskBindingControl (spec §7.2) must be mounted in the live Compare command pane with the Create Task vN+1 and Run as ad hoc choice modal."
+}

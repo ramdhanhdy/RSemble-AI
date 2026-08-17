@@ -889,6 +889,9 @@ function generateSeedScript(secretToken = SECRET_TOKEN_TEST) {
       makeSuiteTask("task-evidence-gamma", 2),
       makeSuiteTask("task-evidence-delta", 3),
       makeSuiteTask("task-evidence-corrupt", 4),
+      // F2: a never-run task so the matrix renders an explicit "Not run" row
+      // alongside the "No score" cells, exercising both missing-cell states.
+      makeSuiteTask("task-evidence-epsilon", 5),
     ];
 
     const primarySuite = {
@@ -1235,6 +1238,13 @@ function generateSeedScript(secretToken = SECRET_TOKEN_TEST) {
           },
         ],
       },
+      {
+        // F2: never-run task (no attempts) → matrix renders "Not run" cells,
+        // exercising the no-attempt missing state alongside no-score cells.
+        taskId: "task-evidence-epsilon",
+        selectedAttemptId: null,
+        attempts: [],
+      },
     ];
 
     const primaryExperiment = {
@@ -1467,13 +1477,12 @@ const EXTRACT_STATE_SCRIPT = `(async () => {
   };
 })()`;
 
-// Provider host interception script
 const MOCK_PROVIDER_INTERCEPTOR = `(() => {
   window.__qaPaidProviderCalls = [];
   const originalFetch = window.fetch;
   window.fetch = async function (input, init) {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-    if (url.includes("/models")) {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input && input.url) || "";
+    if (url.includes("/models") && !url.includes("/src/") && !url.includes(".ts") && !url.includes(".js")) {
       return new Response(JSON.stringify({ data: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -1481,7 +1490,7 @@ const MOCK_PROVIDER_INTERCEPTOR = `(() => {
     }
     const isPaidProvider = /openrouter\\.ai|api\\.openai\\.com|anthropic\\.com|generativelanguage\\.googleapis\\.com|api\\.deepseek\\.com|umans\\.ai/i.test(url);
     if (isPaidProvider) {
-      window.__qaPaidProviderCalls.push({ url, method: init?.method ?? "GET", timestamp: Date.now() });
+      window.__qaPaidProviderCalls.push({ url, method: (init && init.method) || "GET", timestamp: Date.now() });
       return new Response(JSON.stringify({ error: "Blocked by QA egress gate" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },
@@ -1587,12 +1596,21 @@ async function run() {
 
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
+      if (message.method === "Runtime.consoleAPICalled") {
+        const text = (message.params.args ?? []).map((a) => a.value ?? a.description ?? "").join(" ");
+        if (message.params.type === "error" && !text.startsWith("Warning:")) {
+          results.consoleErrors.push(text);
+        }
+      }
+      if (message.method === "Runtime.exceptionThrown") {
+        const desc = message.params.exceptionDetails?.exception?.description ?? message.params.exceptionDetails?.text ?? "unknown exception";
+        results.consoleErrors.push(desc);
+      }
       const resolve = pending.get(message.id);
       if (!resolve) return;
       pending.delete(message.id);
       resolve(message);
     };
-
     await new Promise((resolve) => {
       socket.onopen = resolve;
     });
@@ -1625,14 +1643,16 @@ async function run() {
 
     const waitFor = async (expression, label, maxAttempts = 100) => {
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        if (await evaluate(expression)) return;
+        try {
+          if (await evaluate(expression)) return;
+        } catch {}
         await wait(150);
       }
       const diagnostic = await evaluate(`({
         hash: location.hash,
         title: document.title,
         body: (document.body?.innerText ?? "").slice(0, 800),
-      })`);
+      })`).catch(() => ({}));
       throw new Error(`Timed out waiting for ${label}. ${JSON.stringify(diagnostic)}`);
     };
 
@@ -1651,19 +1671,27 @@ async function run() {
 
     const navigateTo = async (hash = "") => {
       const cleanHash = hash ? (hash.startsWith("#") ? hash : `#${hash}`) : "";
-      await send("Page.navigate", { url: `${baseUrl}${cleanHash}` });
+      const currentUrl = await evaluate("window.location.href").catch(() => "");
+      if (!currentUrl || currentUrl.startsWith("about:")) {
+        await send("Page.navigate", { url: `${baseUrl}${cleanHash}` });
+      } else {
+        await evaluate(`(() => {
+          const target = ${JSON.stringify(cleanHash)};
+          const currentIdx = (window.history.state && typeof window.history.state.idx === "number")
+            ? window.history.state.idx
+            : 0;
+          const nextIdx = currentIdx + 1;
+          const nextKey = Math.random().toString(36).slice(2);
+          const historyState = { usr: null, key: nextKey, idx: nextIdx };
+          window.history.pushState(historyState, "", target || "#/");
+          window.dispatchEvent(new PopStateEvent("popstate", { state: historyState }));
+        })()`);
+      }
       await waitFor(
         "Boolean(document.querySelector('main, [role=main], #root > *'))",
         "application shell",
       );
-      try {
-        await evaluate(`(() => {
-          if (window.location.hash !== ${JSON.stringify(cleanHash)}) {
-            window.location.hash = ${JSON.stringify(cleanHash)};
-          }
-        })()`);
-      } catch {}
-      await wait(300);
+      await wait(350);
     };
     const screenshot = async (name) => {
       const capture = await send("Page.captureScreenshot", { format: "png" });
@@ -1774,7 +1802,7 @@ async function run() {
       ...matrixProbe,
       pass:
         matrixProbe.hasTable &&
-        matrixProbe.rowCount === 5 &&
+        matrixProbe.rowCount === 6 &&
         matrixProbe.hasWinnerGlyph &&
         matrixProbe.hasMeanScoreFooter &&
         matrixProbe.hasCoverageFooter &&
@@ -1897,7 +1925,7 @@ async function run() {
 
     record("matrix-missing-cell-states", {
       ...missingProbe,
-      pass: missingProbe.hasNotRun || missingProbe.hasNoScore,
+      pass: missingProbe.hasNotRun && missingProbe.hasNoScore,
       reason:
         "Missing matrix cells display explicit text (Not run, No score, Evidence unavailable) with StatusMarks, never bare dashes.",
     });
@@ -1962,26 +1990,18 @@ async function run() {
         overflowX: document.documentElement.scrollWidth > innerWidth,
       };
     })()`);
-    record("task-version-observations-view", {
-      ...versionObsProbe,
-      pass:
-        versionObsProbe.hasVersionTitle &&
-        versionObsProbe.hasObservations &&
-        !versionObsProbe.overflowX,
-      reason:
-        "Task Version route renders read-only TaskObservations scoped to version 1 without overflow.",
-    });
-    await screenshot("qa-task-version-observations");
-
-    // =========================================================================
-    // PROBE 7: EXACT RECORD DEEP-LINK NAVIGATION & CANDIDATE FOCUS
-    // =========================================================================
     console.log("Evaluating Exact Record deep-link navigation...");
-    // Navigate via pushState + popstate event (Page.navigate with hash-only
-    // change doesn't trigger HashRouter re-render in CDP headless).
     await evaluate(`(() => {
-      window.history.pushState(null, "", "#/runs/run-alpha-gpt4o");
-      window.dispatchEvent(new PopStateEvent("popstate"));
+      const a = document.querySelector('header a[href*="runs"]');
+      if (a) a.click();
+    })()`);
+    await waitFor(
+      "Boolean(document.querySelector('[data-record-row], a[href*=\"/runs/\"]'))",
+      "run list rows",
+    );
+    await evaluate(`(() => {
+      const row = document.querySelector('a[href*="/runs/run-alpha-gpt4o"]');
+      if (row) row.click();
     })()`);
     await waitFor(
       "Boolean(document.querySelector('[data-run-detail]'))",

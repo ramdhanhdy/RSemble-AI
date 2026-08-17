@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T03:55:31.011Z",
+  "generatedAt": "2026-08-17T18:19:05.086Z",
   "baseUrl": "http://127.0.0.1:5186/",
   "determinism": {
     "run1": {
@@ -479,13 +479,13 @@
     {
       "name": "matrix-table-semantics-1440",
       "hasTable": true,
-      "thCount": 11,
-      "rowCount": 5,
+      "thCount": 12,
+      "rowCount": 6,
       "hasWinnerGlyph": true,
       "footerRowCount": 2,
       "hasMeanScoreFooter": true,
       "hasCoverageFooter": true,
-      "receiptButtonCount": 12,
+      "receiptButtonCount": 15,
       "hasKeyboardScrollRegion": true,
       "overflowX": false,
       "pass": true,
@@ -517,7 +517,7 @@
     },
     {
       "name": "matrix-missing-cell-states",
-      "hasNotRun": false,
+      "hasNotRun": true,
       "hasNoScore": true,
       "hasEvidenceMissing": false,
       "pass": true,
@@ -532,14 +532,6 @@
       "hasForbiddenFusion": false,
       "pass": true,
       "reason": "TaskObservations view displays honest counts, filter controls, and NEVER lists FusionObservation records."
-    },
-    {
-      "name": "task-version-observations-view",
-      "hasVersionTitle": true,
-      "hasObservations": true,
-      "overflowX": false,
-      "pass": true,
-      "reason": "Task Version route renders read-only TaskObservations scoped to version 1 without overflow."
     },
     {
       "name": "exact-record-deep-link",
@@ -610,7 +602,6 @@
     "qa-matrix-desktop-1440.png",
     "qa-receipt-eligible-popover.png",
     "qa-task-observations-detail.png",
-    "qa-task-version-observations.png",
     "qa-exact-record-deeplink.png",
     "qa-mobile-390-results.png",
     "qa-tablet-768-matrix.png",

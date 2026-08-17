@@ -19,6 +19,7 @@
     "qa:evaluations-identity": "node scripts/cdp-evaluations-identity-qa.mjs",
     "qa:roster-extension": "node scripts/cdp-experiment-roster-extension-qa.mjs",
     "qa:suite-reliability": "node scripts/cdp-suite-reliability-qa.mjs",
+    "qa:compare-results": "node scripts/cdp-compare-results-qa.mjs",
     "qa:evidence-matrix": "node scripts/cdp-evidence-matrix-qa.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
