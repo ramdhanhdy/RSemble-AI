@@ -37,7 +37,7 @@ export interface RunConfigPreload {
  *  records; legacy summaries have no frozen config and are handled separately
  *  (no button). */
 export function runConfigFromRecord(record: RunRecordV2): RunConfigPreload {
-  const rubric = record.evaluation.profile;
+  const rubric = record.evaluation?.profile;
   const evaluation: AdHocEvaluationConfig = rubric
     ? {
         kind: "profile",
@@ -49,7 +49,8 @@ export function runConfigFromRecord(record: RunRecordV2): RunConfigPreload {
     : { kind: "holistic" };
 
   // The roster that ran — every persisted candidate is an enabled slot.
-  const slots: ModelSlot[] = record.candidates.map((c) => ({
+  const candidates = record.candidates ?? [];
+  const slots: ModelSlot[] = candidates.map((c) => ({
     id: c.slotId,
     // Persisted candidate ids come from the catalog that ran; the cast is the
     // typed seam (record guards validate strings, catalog mints ProviderIds).
@@ -62,25 +63,27 @@ export function runConfigFromRecord(record: RunRecordV2): RunConfigPreload {
   }));
 
   // Judge target: prefer the accepted attempt, else the most recent attempt.
+  const attempts = record.judge?.attempts ?? [];
   const judgeAttempt =
-    record.judge.attempts.find((a) => a.attemptId === record.judge.acceptedAttemptId) ??
-    record.judge.attempts[record.judge.attempts.length - 1];
+    attempts.find((a) => a.attemptId === record.judge?.acceptedAttemptId) ??
+    attempts[attempts.length - 1];
   const critic: CriticRef | undefined = judgeAttempt
     ? { providerId: judgeAttempt.providerId as ProviderId, model: judgeAttempt.model }
     : undefined;
 
   const reasoningPolicy: ReasoningPolicy | undefined = record.reasoning
     ? {
-        candidates: Object.values(record.reasoning.candidates)[0]?.requested ?? "provider-default",
-        judge: record.reasoning.judge.requested,
+        candidates:
+          Object.values(record.reasoning.candidates ?? {})[0]?.requested ?? "provider-default",
+        judge: record.reasoning.judge?.requested ?? "provider-default",
       }
     : undefined;
 
   return {
     mode: record.mode,
-    prompt: record.task.prompt,
-    systemPrompt: record.task.systemPrompt,
-    temperature: record.task.temperature,
+    prompt: record.task?.prompt ?? "",
+    systemPrompt: record.task?.systemPrompt ?? "",
+    temperature: record.task?.temperature ?? 0.7,
     evaluation,
     slots,
     critic,
