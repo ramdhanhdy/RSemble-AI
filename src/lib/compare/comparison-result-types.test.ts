@@ -55,6 +55,14 @@ function indexErrors(v: unknown): string[] {
   return result.ok ? [] : result.errors.map((e) => `${e.field}: ${e.message}`);
 }
 
+/** Detailed-validator errors as a single searchable text block. */
+function joinedErrors(result: {
+  ok: false;
+  errors: Array<{ field: string; message: string }>;
+}): string {
+  return result.errors.map((e) => `${e.field}: ${e.message}`).join("\n");
+}
+
 describe("id / run id equality", () => {
   it("accepts a valid ad-hoc index", () => {
     const result = validateComparisonResultIndex(makeIndex());
@@ -113,7 +121,7 @@ describe("task binding", () => {
   it("rejects unknown binding kinds", () => {
     const result = validateComparisonTaskBinding({ kind: "fancy", inputSnapshotRef: "x" });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join("\n")).toContain('kind must be "ad_hoc" or "canonical"');
+    if (!result.ok) expect(joinedErrors(result)).toContain('kind must be "ad_hoc" or "canonical"');
   });
 
   it("rejects a non-object binding", () => {
@@ -125,13 +133,13 @@ describe("task binding", () => {
   it("rejects an ad-hoc binding without an inputSnapshotRef", () => {
     const result = validateComparisonTaskBinding({ kind: "ad_hoc" });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join("\n")).toContain("inputSnapshotRef");
+    if (!result.ok) expect(joinedErrors(result)).toContain("inputSnapshotRef");
   });
 
   it("rejects a canonical binding without a taskId", () => {
     const result = validateComparisonTaskBinding({ kind: "canonical", taskVersion: 3 });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join("\n")).toContain("taskId");
+    if (!result.ok) expect(joinedErrors(result)).toContain("taskId");
   });
 
   it("rejects a canonical binding whose taskVersion is not a positive integer", () => {
@@ -142,7 +150,7 @@ describe("task binding", () => {
         taskVersion,
       });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.errors.join("\n")).toContain("taskVersion");
+      if (!result.ok) expect(joinedErrors(result)).toContain("taskVersion");
     }
   });
 
@@ -153,7 +161,7 @@ describe("task binding", () => {
       taskId: "task-42",
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join("\n")).toContain('unknown field "taskId"');
+    if (!result.ok) expect(joinedErrors(result)).toContain('unknown field "taskId"');
   });
 
   it("rejects canonical bindings carrying ad-hoc fields", () => {
@@ -164,11 +172,14 @@ describe("task binding", () => {
       inputSnapshotRef: SNAPSHOT_REF,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join("\n")).toContain('unknown field "inputSnapshotRef"');
+    if (!result.ok) expect(joinedErrors(result)).toContain('unknown field "inputSnapshotRef"');
   });
 
   it("rejects credential-shaped identifiers in either binding kind", () => {
-    const adHoc = validateComparisonTaskBinding({ kind: "ad_hoc", inputSnapshotRef: "sk-live-abc" });
+    const adHoc = validateComparisonTaskBinding({
+      kind: "ad_hoc",
+      inputSnapshotRef: "sk-live-abc",
+    });
     expect(adHoc.ok).toBe(false);
     const canonical = validateComparisonTaskBinding({
       kind: "canonical",
@@ -226,7 +237,7 @@ describe("lineage", () => {
   it("rejects a missing repeatedFrom field", () => {
     const result = validateComparisonLineage({});
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join("\n")).toContain("repeatedFrom");
+    if (!result.ok) expect(joinedErrors(result)).toContain("repeatedFrom");
   });
 
   it("rejects non-null non-string repeatedFrom values", () => {
@@ -242,7 +253,7 @@ describe("lineage", () => {
   it("rejects unknown lineage fields", () => {
     const result = validateComparisonLineage({ repeatedFrom: null, declaredReplicate: true });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join("\n")).toContain('unknown field "declaredReplicate"');
+    if (!result.ok) expect(joinedErrors(result)).toContain('unknown field "declaredReplicate"');
   });
 
   it("rejects a non-object lineage", () => {
@@ -347,7 +358,15 @@ describe("secret-shaped data", () => {
   });
 
   it("rejects the extended evidence prohibited keys", () => {
-    for (const key of ["bearer", "cookie", "cookies", "credential", "credentials", "headers", "proxyUrl"]) {
+    for (const key of [
+      "bearer",
+      "cookie",
+      "cookies",
+      "credential",
+      "credentials",
+      "headers",
+      "proxyUrl",
+    ]) {
       const errors = indexErrors(makeIndex({ [key]: "x" }));
       expect(errors.length).toBeGreaterThan(0);
       expect(errors.join("\n")).toContain(`prohibited key "${key}"`);
@@ -359,12 +378,18 @@ describe("secret-shaped data", () => {
     expect(indexErrors(makeIndex({ runId: "AIzaXYZ" })).length).toBeGreaterThan(0);
     expect(indexErrors(makeIndex({ taskInstanceId: "Bearer xyz" })).length).toBeGreaterThan(0);
   });
-
 });
 
 describe("raw outputs and judge rationale", () => {
   it("rejects indexes carrying raw output fields", () => {
-    for (const key of ["output", "outputs", "candidateOutput", "candidateOutputs", "rawOutput", "streamingText"]) {
+    for (const key of [
+      "output",
+      "outputs",
+      "candidateOutput",
+      "candidateOutputs",
+      "rawOutput",
+      "streamingText",
+    ]) {
       const errors = indexErrors(makeIndex({ [key]: "candidate text" }));
       expect(errors.length).toBeGreaterThan(0);
       expect(errors.join("\n")).toContain(`unknown field "${key}"`);
@@ -372,7 +397,14 @@ describe("raw outputs and judge rationale", () => {
   });
 
   it("rejects indexes carrying judge rationale or report fields", () => {
-    for (const key of ["rationale", "fullRationale", "judgeRationale", "report", "messages", "comparisons"]) {
+    for (const key of [
+      "rationale",
+      "fullRationale",
+      "judgeRationale",
+      "report",
+      "messages",
+      "comparisons",
+    ]) {
       const errors = indexErrors(makeIndex({ [key]: "judge reasoning" }));
       expect(errors.length).toBeGreaterThan(0);
       expect(errors.join("\n")).toContain(`unknown field "${key}"`);
