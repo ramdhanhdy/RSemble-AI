@@ -35,11 +35,35 @@ import {
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
 import * as fx from "./archive-v2-fixtures";
+import { migratedInputSnapshotRef } from "./comparison-result-migration";
+import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import {
   canonicalTaskMigrationMarkerKey,
   migrateEmbeddedLegacyTasks,
 } from "./canonical-task-migration";
 import type { EvaluationSuite, ExperimentRecord } from "../evaluations/evaluation-types";
+
+const COMPARISON_SNAP_REF = `snap:sha256:${"a".repeat(64)}`;
+
+/** Inline Comparison Result index for corpus seeding and collision variants.
+ *  The shared fixture builder lands with the implementation commit. */
+function comparisonIndexFor(id: string, inputSnapshotRef: string): ComparisonResultIndex {
+  return {
+    id,
+    runId: id,
+    createdAt: 1000,
+    updatedAt: 1000,
+    status: "completed",
+    mode: "rank",
+    title: `Comparison ${id}`,
+    taskBinding: { kind: "ad_hoc", inputSnapshotRef },
+    taskInstanceId: null,
+    activeObservationIds: [],
+    evidenceReceiptRevision: 0,
+    lineage: { repeatedFrom: null },
+    revision: 0,
+  };
+}
 
 const dbs: RSembleEvaluationDB[] = [];
 
@@ -126,6 +150,10 @@ async function seedCompleteCorpus(db: RSembleEvaluationDB): Promise<void> {
   await db.evidenceDecisions.put(fx.evidenceDecisionRow(dec));
   await db.evidenceIndexJobs.put(fx.evidenceIndexJobRow(job));
   await db.verifierOutcomes.put(fx.verifierOutcomeRow(vo));
+  // Comparison Result indexes (Child 05 Task 11): one resolving snapshot ref
+  // and one non-resolving migrated ref so both derivation paths round-trip.
+  await db.comparisonResults.put(comparisonIndexFor("run-1", COMPARISON_SNAP_REF));
+  await db.comparisonResults.put(comparisonIndexFor("run-2", migratedInputSnapshotRef("run-2")));
 }
 
 const DETERMINISTIC_NOW = () => 5000;
@@ -746,6 +774,88 @@ describe("archive v2 integration — Evidence payload", () => {
     expect(await target.runSummaries.count()).toBe(0);
   });
 
+  it("non-identical same-key EligibilityDecision record aborts the commit BEFORE any write", async () => {
+    const target = await freshDb("ev-dec-collision");
+    const mc = fx.makeModelConfiguration();
+    const obs = fx.makeEvidenceObservation(mc.id);
+    const dec = fx.makeEligibilityDecision(obs.id, 1);
+    await target.evidenceDecisions.put(fx.evidenceDecisionRow(dec));
+    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    archive.evidence!.evidenceDecisions[0] = {
+      ...archive.evidence!.evidenceDecisions[0],
+      decidedAt: 1601, // different content at the same observationId#ruleVersion key
+    };
+    recomputeDigest(archive);
+
+    const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
+    expect(
+      preview.collisions.some(
+        (c) => c.collection === "evidence.evidenceDecisions" && c.key === `${obs.id}#1`,
+      ),
+    ).toBe(true);
+    await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    // The pre-seeded record is unchanged; nothing else was written.
+    expect((await target.evidenceDecisions.get(`${obs.id}#1`))?.decision).toEqual(dec);
+    expect(await target.runSummaries.count()).toBe(0);
+  });
+
+  it("non-identical same-key EvidenceIndexJob record aborts the commit BEFORE any write", async () => {
+    const target = await freshDb("ev-job-collision");
+    const job = fx.makeEvidenceIndexJob("run-1");
+    await target.evidenceIndexJobs.put(fx.evidenceIndexJobRow(job));
+    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    archive.evidence!.evidenceIndexJobs[0] = {
+      ...archive.evidence!.evidenceIndexJobs[0],
+      updatedAt: 1701, // different content at the same sourceResultId key
+    };
+    recomputeDigest(archive);
+
+    const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
+    expect(
+      preview.collisions.some(
+        (c) => c.collection === "evidence.evidenceIndexJobs" && c.key === "run-1",
+      ),
+    ).toBe(true);
+    await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    expect((await target.evidenceIndexJobs.get("run-1"))?.updatedAt).toBe(1700);
+    expect(await target.runSummaries.count()).toBe(0);
+  });
+
+  it("non-identical same-key ExecutedVerifierOutcome record aborts the commit BEFORE any write", async () => {
+    const target = await freshDb("ev-vo-collision");
+    const vo = fx.makeExecutedVerifierOutcome("run-1", "task-1", "openrouter:m1", 1400);
+    await target.verifierOutcomes.put(fx.verifierOutcomeRow(vo));
+    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    archive.evidence!.verifierOutcomes[0] = {
+      ...archive.evidence!.verifierOutcomes[0],
+      passed: false, // different content at the same composite key
+    };
+    recomputeDigest(archive);
+
+    const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
+    expect(
+      preview.collisions.some(
+        (c) =>
+          c.collection === "evidence.verifierOutcomes" &&
+          c.key === "run-1::task-1::openrouter:m1::1400",
+      ),
+    ).toBe(true);
+    await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    expect((await target.verifierOutcomes.get("run-1::task-1::openrouter:m1::1400"))?.passed).toBe(
+      true,
+    );
+    expect(await target.runSummaries.count()).toBe(0);
+  });
+
   it("Fusion fusionObservations round-trip byte-stable without conversion or ID collision with canonical observations", async () => {
     const source = await freshDb("ev-fusion-iso-src");
     await seedCompleteCorpus(source);
@@ -767,6 +877,144 @@ describe("archive v2 integration — Evidence payload", () => {
     expect(canonicalObs.length).toBe(1);
     expect(fusionObs[0].id).toBe("obs-1");
     expect(canonicalObs[0].id).toMatch(/^obs:sha256:[0-9a-f]{64}$/);
+  });
+});
+
+// =============================================================================
+// 7. Comparison payload (Child 05 Task 11)
+// =============================================================================
+
+describe("archive v2 integration — Comparison payload", () => {
+  it("round-trips Comparison Result indexes with derived input-snapshot metadata and migration limitations", async () => {
+    const source = await freshDb("cmp-rt-src");
+    await seedCompleteCorpus(source);
+    const exported = await exportWorkbenchArchiveV2(source, { now: DETERMINISTIC_NOW });
+
+    // The comparison payload arrives with the implementation commit; read it
+    // through a structural alias until the envelope type declares it.
+    const extensible = exported as unknown as {
+      comparisons?: {
+        indexes: Array<Record<string, unknown>>;
+        inputSnapshots: Array<Record<string, unknown>>;
+        limitations: Array<Record<string, unknown>>;
+      };
+    };
+    const comparisons = extensible.comparisons;
+    const counts = exported.manifest.counts as unknown as Record<string, number>;
+    expect(comparisons?.indexes.map((i) => i.id)).toEqual(["run-1", "run-2"]);
+    expect(counts.comparisonIndexes).toBe(2);
+    expect(comparisons?.inputSnapshots).toEqual([
+      {
+        runId: "run-1",
+        kind: "input_snapshot",
+        inputRef: COMPARISON_SNAP_REF,
+        inputDigest: `sha256:${"a".repeat(64)}`,
+        artifactRefs: [],
+        limitation: null,
+      },
+      {
+        runId: "run-2",
+        kind: "input_snapshot",
+        inputRef: migratedInputSnapshotRef("run-2"),
+        inputDigest: null,
+        artifactRefs: [],
+        limitation: "instance_input_incomplete",
+      },
+    ]);
+    expect(comparisons?.limitations).toEqual([
+      { runId: "run-2", reason: "instance_input_incomplete" },
+    ]);
+    expect(counts.comparisonInputSnapshots).toBe(2);
+    expect(counts.comparisonLimitations).toBe(1);
+
+    const target = await freshDb("cmp-rt-tgt");
+    const preview = await previewWorkbenchArchive(target, exported, { sourceLabel: "memory" });
+    expect(preview.format).toBe("v2");
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+    await commitPreviewWorkbenchArchiveV2(target, preview);
+    expect(await target.comparisonResults.count()).toBe(2);
+    expect((await target.comparisonResults.get("run-1"))?.title).toBe("Comparison run-1");
+    expect((await target.comparisonResults.get("run-2"))?.taskBinding).toEqual({
+      kind: "ad_hoc",
+      inputSnapshotRef: migratedInputSnapshotRef("run-2"),
+    });
+
+    const reexported = await exportWorkbenchArchiveV2(target, { now: DETERMINISTIC_NOW });
+    expect(JSON.stringify(reexported)).toBe(JSON.stringify(exported));
+  });
+
+  it("non-identical same-key ComparisonResultIndex aborts the commit BEFORE any write", async () => {
+    const target = await freshDb("cmp-collision");
+    await target.comparisonResults.put({
+      ...comparisonIndexFor("run-1", COMPARISON_SNAP_REF),
+      title: "pre-seeded different title",
+    });
+    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const extensible = archive as unknown as { comparisons?: unknown };
+    extensible.comparisons = {
+      indexes: [comparisonIndexFor("run-1", COMPARISON_SNAP_REF)],
+      inputSnapshots: [
+        {
+          runId: "run-1",
+          kind: "input_snapshot",
+          inputRef: COMPARISON_SNAP_REF,
+          inputDigest: `sha256:${"a".repeat(64)}`,
+          artifactRefs: [],
+          limitation: null,
+        },
+      ],
+      limitations: [],
+    };
+    const counts = archive.manifest.counts as unknown as Record<string, number>;
+    counts.comparisonIndexes = 1;
+    counts.comparisonInputSnapshots = 1;
+    counts.comparisonLimitations = 0;
+    recomputeDigest(archive);
+
+    const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
+    expect(
+      preview.collisions.some((c) => c.collection === "comparisons.indexes" && c.key === "run-1"),
+    ).toBe(true);
+    await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    // The pre-seeded index is unchanged; nothing else was written.
+    expect((await target.comparisonResults.get("run-1"))?.title).toBe("pre-seeded different title");
+    expect(await target.runSummaries.count()).toBe(0);
+  });
+
+  it("earlier-v2 envelope without the comparisons key still imports with zero comparison rows", async () => {
+    const source = await freshDb("cmp-earlier-src");
+    await seedCompleteCorpus(source);
+    const exported = await exportWorkbenchArchiveV2(source, { now: DETERMINISTIC_NOW });
+    // Simulate an earlier-v2 producer that never emitted comparisons.
+    const extensible = exported as unknown as { comparisons?: unknown };
+    delete extensible.comparisons;
+    const counts = exported.manifest.counts as unknown as Record<string, number>;
+    counts.comparisonIndexes = 0;
+    counts.comparisonInputSnapshots = 0;
+    counts.comparisonLimitations = 0;
+    exported.manifest.payloadDigest = computeArchiveV2PayloadDigest(exported);
+
+    const target = await freshDb("cmp-earlier-tgt");
+    const preview = await previewWorkbenchArchive(target, exported, { sourceLabel: "memory" });
+    expect(preview.format).toBe("v2");
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+    await commitPreviewWorkbenchArchiveV2(target, preview);
+    // No comparison rows were written.
+    expect(await target.comparisonResults.count()).toBe(0);
+  });
+
+  it("v1 import writes no comparison rows", async () => {
+    const source = await freshDb("cmp-v1-src");
+    await dbSeedV1Corpus(source);
+    const v1 = await exportWorkbenchArchive(source);
+    const target = await freshDb("cmp-v1-tgt");
+    await importWorkbenchArchiveAuto(target, v1 as unknown as never);
+    expect(await target.comparisonResults.count()).toBe(0);
   });
 });
 

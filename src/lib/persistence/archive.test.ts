@@ -48,6 +48,8 @@ import {
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
 import * as fx from "./archive-v2-fixtures";
+import { migratedInputSnapshotRef } from "./comparison-result-migration";
+import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "./run-types";
 import type {
   EvaluationRubric,
@@ -55,6 +57,28 @@ import type {
   ExperimentRecord,
   RubricRecord,
 } from "../evaluations/evaluation-types";
+
+const COMPARISON_SNAP_REF = `snap:sha256:${"a".repeat(64)}`;
+
+/** Inline Comparison Result index for seeding and collision variants. The
+ *  shared fixture builder lands with the implementation commit. */
+function comparisonIndexFor(id: string, inputSnapshotRef: string): ComparisonResultIndex {
+  return {
+    id,
+    runId: id,
+    createdAt: 1000,
+    updatedAt: 1000,
+    status: "completed",
+    mode: "rank",
+    title: `Comparison ${id}`,
+    taskBinding: { kind: "ad_hoc", inputSnapshotRef },
+    taskInstanceId: null,
+    activeObservationIds: [],
+    evidenceReceiptRevision: 0,
+    lineage: { repeatedFrom: null },
+    revision: 0,
+  };
+}
 
 // --- Valid baselines ----------------------------------------------------------
 
@@ -1521,6 +1545,81 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
     // Nothing was delivered; the diagnostic names the entity/collection but
     // never echoes the secret-shaped value.
   });
+
+  it("exports Comparison Result indexes with derived immutable input-snapshot metadata and migration limitations", async () => {
+    await seedCompleteCorpus();
+    await db.comparisonResults.put(comparisonIndexFor("run-1", COMPARISON_SNAP_REF));
+    await db.comparisonResults.put(comparisonIndexFor("run-2", migratedInputSnapshotRef("run-2")));
+
+    const archive = await exportWorkbenchArchiveV2(db);
+    // The comparison payload arrives with the implementation commit; read it
+    // through a structural alias until the envelope type declares it.
+    const extensible = archive as unknown as {
+      comparisons?: {
+        indexes: Array<Record<string, unknown>>;
+        inputSnapshots: Array<Record<string, unknown>>;
+        limitations: Array<Record<string, unknown>>;
+      };
+    };
+    const comparisons = extensible.comparisons;
+    expect(comparisons?.indexes.map((i) => i.id)).toEqual(["run-1", "run-2"]);
+    // Immutable input-snapshot metadata derived from durable state only.
+    expect(comparisons?.inputSnapshots).toEqual([
+      {
+        runId: "run-1",
+        kind: "input_snapshot",
+        inputRef: COMPARISON_SNAP_REF,
+        inputDigest: `sha256:${"a".repeat(64)}`,
+        artifactRefs: [],
+        limitation: null,
+      },
+      {
+        runId: "run-2",
+        kind: "input_snapshot",
+        inputRef: migratedInputSnapshotRef("run-2"),
+        inputDigest: null,
+        artifactRefs: [],
+        limitation: "instance_input_incomplete",
+      },
+    ]);
+    // Migration limitations for non-resolving refs only.
+    expect(comparisons?.limitations).toEqual([
+      { runId: "run-2", reason: "instance_input_incomplete" },
+    ]);
+    // Exact RunRecordV2 reference by ID — the index never copies the payload.
+    expect(comparisons?.indexes[0]).not.toHaveProperty("candidates");
+    expect(comparisons?.indexes[0]).not.toHaveProperty("task");
+    const counts = archive.manifest.counts as unknown as Record<string, number>;
+    expect(counts.comparisonIndexes).toBe(2);
+    expect(counts.comparisonInputSnapshots).toBe(2);
+    expect(counts.comparisonLimitations).toBe(1);
+    const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+    expect(check.errors).toEqual([]);
+    expect(check.valid).toBe(true);
+  });
+
+  it("aborts the export with redacted diagnostics when a guard-failing comparison index row is persisted, delivering no archive", async () => {
+    await db.comparisonResults.put({
+      id: "run-1",
+      runId: "run-1",
+      createdAt: 1000,
+      updatedAt: 1000,
+      status: "not-a-real-status",
+      mode: "rank",
+      title: "corrupt",
+      taskBinding: { kind: "ad_hoc", inputSnapshotRef: COMPARISON_SNAP_REF },
+      taskInstanceId: null,
+      activeObservationIds: [],
+      evidenceReceiptRevision: 0,
+      lineage: { repeatedFrom: null },
+      revision: 0,
+    } as unknown as ComparisonResultIndex);
+
+    await expect(exportWorkbenchArchiveV2(db)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+  });
 });
 
 describe("exportWorkbenchArchiveV2 — secret safety", () => {
@@ -1630,6 +1729,22 @@ describe("exportWorkbenchArchiveV2 — secret safety", () => {
       const message = (err as Error).message;
       expect(message).toContain("evidence.modelConfigurations");
       expect(message).toContain(mc.id);
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
+  it("blocks an export whose Comparison Result index carries a credential-like value, with redacted diagnostics", async () => {
+    const index = comparisonIndexFor("run-1", COMPARISON_SNAP_REF);
+    index.title = "contact: sk-live-1234567890abcdef";
+    await db.comparisonResults.put(index);
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("comparisons.indexes");
+      expect(message).toContain("run-1");
       expect(message).toContain("[REDACTED]");
       expect(message).not.toContain("sk-live-1234567890abcdef");
     }
@@ -1986,6 +2101,49 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
     });
     expect(await db.taskArtifacts.count()).toBe(0);
   });
+
+  it("classifies Comparison Result indexes as create, then reuse on a repeat preview", async () => {
+    const archive = makeEmptyV2();
+    archive.runs.summaries = [fx.makeRunSummary("run-pre")];
+    archive.runs.details = [fx.makeRunDetail("run-pre")];
+    const extensible = archive as unknown as { comparisons?: unknown };
+    extensible.comparisons = {
+      indexes: [comparisonIndexFor("run-pre", COMPARISON_SNAP_REF)],
+      inputSnapshots: [
+        {
+          runId: "run-pre",
+          kind: "input_snapshot",
+          inputRef: COMPARISON_SNAP_REF,
+          inputDigest: `sha256:${"a".repeat(64)}`,
+          artifactRefs: [],
+          limitation: null,
+        },
+      ],
+      limitations: [],
+    };
+    const counts = archive.manifest.counts as unknown as Record<string, number>;
+    counts.runSummaries = 1;
+    counts.runDetails = 1;
+    counts.comparisonIndexes = 1;
+    counts.comparisonInputSnapshots = 1;
+    counts.comparisonLimitations = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const first = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(first.create.map((e) => `${e.collection}/${e.key}`)).toContain(
+      "comparisons.indexes/run-pre",
+    );
+
+    await commitPreviewWorkbenchArchiveV2(db, first);
+    expect(await db.comparisonResults.count()).toBe(1);
+    const second = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(second.reuse.map((e) => `${e.collection}/${e.key}`)).toContain(
+      "comparisons.indexes/run-pre",
+    );
+    expect(second.create.map((e) => `${e.collection}/${e.key}`)).not.toContain(
+      "comparisons.indexes/run-pre",
+    );
+  });
 });
 
 describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, cancellation", () => {
@@ -2037,6 +2195,41 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     // Round-trip: re-export the imported database and compare canonically.
     const reexported = await exportWorkbenchArchiveV2(db);
     expect(reexported.manifest.counts).toEqual(archive.manifest.counts);
+  });
+
+  it("imports Comparison Result indexes atomically from a comparison-carrying envelope", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    const extensible = archive as unknown as { comparisons?: unknown };
+    extensible.comparisons = {
+      indexes: [comparisonIndexFor("run-1", COMPARISON_SNAP_REF)],
+      inputSnapshots: [
+        {
+          runId: "run-1",
+          kind: "input_snapshot",
+          inputRef: COMPARISON_SNAP_REF,
+          inputDigest: `sha256:${"a".repeat(64)}`,
+          artifactRefs: [],
+          limitation: null,
+        },
+      ],
+      limitations: [],
+    };
+    const counts = archive.manifest.counts as unknown as Record<string, number>;
+    counts.comparisonIndexes = 1;
+    counts.comparisonInputSnapshots = 1;
+    counts.comparisonLimitations = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+    const commit = await commitPreviewWorkbenchArchiveV2(db, preview);
+    expect(commit.created).toContain("run-1");
+    expect(await db.comparisonResults.count()).toBe(1);
+    expect((await db.comparisonResults.get("run-1"))?.taskBinding).toEqual({
+      kind: "ad_hoc",
+      inputSnapshotRef: COMPARISON_SNAP_REF,
+    });
   });
 
   it("a non-identical ID collision aborts the whole commit BEFORE any write (no remap, no overwrite)", async () => {

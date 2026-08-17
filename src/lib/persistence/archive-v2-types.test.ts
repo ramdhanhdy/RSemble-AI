@@ -22,6 +22,8 @@ import {
   buildValidArchiveV2Fixture,
   cloneArchiveV2,
   credentialLikeText,
+  makeRunDetail,
+  makeRunSummary,
   PROHIBITED_KEY_SAMPLE,
 } from "./archive-v2-fixtures";
 
@@ -642,6 +644,406 @@ describe("archive v2 Evidence payload", () => {
     archive.manifest.counts.evidenceDecisions = 0;
     archive.manifest.counts.evidenceIndexJobs = 0;
     archive.manifest.counts.verifierOutcomes = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+});
+// --- Comparison payload (Child 05 Task 11) ------------------------------------
+
+/** Raw comparison payload shape used while the archive type is extended. */
+interface RawComparisons {
+  indexes: Array<Record<string, unknown>>;
+  inputSnapshots: Array<Record<string, unknown>>;
+  limitations: Array<Record<string, unknown>>;
+}
+
+const COMPARISON_SNAP_REF = `snap:sha256:${"a".repeat(64)}`;
+const COMPARISON_SNAP_DIGEST = `sha256:${"a".repeat(64)}`;
+
+function adHocBinding(ref: string): Record<string, unknown> {
+  return { kind: "ad_hoc", inputSnapshotRef: ref };
+}
+
+function comparisonIndexRecord(
+  id: string,
+  binding: Record<string, unknown>,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    runId: id,
+    createdAt: 1000,
+    updatedAt: 1000,
+    status: "completed",
+    mode: "rank",
+    title: `Comparison ${id}`,
+    taskBinding: binding,
+    taskInstanceId: null,
+    activeObservationIds: [],
+    evidenceReceiptRevision: 0,
+    lineage: { repeatedFrom: null },
+    revision: 0,
+    ...overrides,
+  };
+}
+
+function inputSnapshotRecord(
+  runId: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    runId,
+    kind: "input_snapshot",
+    inputRef: COMPARISON_SNAP_REF,
+    inputDigest: COMPARISON_SNAP_DIGEST,
+    artifactRefs: [],
+    limitation: null,
+    ...overrides,
+  };
+}
+
+/** Attach a comparison payload, sync the three counts, and recompute the
+ *  digest. The archive type gains the key in the implementation commit. */
+function attachComparisons(
+  archive: WorkbenchArchiveV2,
+  payload: RawComparisons,
+): WorkbenchArchiveV2 {
+  // Fixture manipulation: the envelope is plain data; the comparisons key is
+  // declared on the archive type by the implementation commit.
+  const extensible = archive as unknown as { comparisons?: RawComparisons };
+  extensible.comparisons = payload;
+  const counts = archive.manifest.counts as unknown as Record<string, number>;
+  counts.comparisonIndexes = payload.indexes.length;
+  counts.comparisonInputSnapshots = payload.inputSnapshots.length;
+  counts.comparisonLimitations = payload.limitations.length;
+  archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+  return archive;
+}
+
+describe("archive v2 Comparison payload", () => {
+  it("accepts a valid archive carrying comparison indexes with consistent input-snapshot records", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("run-1")],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("accepts a non-resolving migrated snapshot with its explicit instance_input_incomplete limitation", () => {
+    const migratedRef = `migrated:sha256:${"b".repeat(64)}`;
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(migratedRef))],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", {
+          inputRef: migratedRef,
+          inputDigest: null,
+          limitation: "instance_input_incomplete",
+        }),
+      ],
+      limitations: [{ runId: "run-1", reason: "instance_input_incomplete" }],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("accepts a canonical binding whose task-instance input references the exported Task Instance and its artifacts", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [
+        comparisonIndexRecord(
+          "run-1",
+          { kind: "canonical", taskId: "task-1", taskVersion: 1 },
+          { taskInstanceId: "inst-1" },
+        ),
+      ],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", {
+          kind: "task_instance",
+          inputRef: "inst-1",
+          inputDigest: null,
+          artifactRefs: ["art-1"],
+          limitation: null,
+        }),
+      ],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("rejects an index referencing an unknown exact run", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("ghost-run", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("ghost-run")],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown exact run/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a lineage referencing an unknown comparison", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [
+        comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF), {
+          lineage: { repeatedFrom: "cmp-ghost" },
+        }),
+      ],
+      inputSnapshots: [inputSnapshotRecord("run-1")],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown comparison/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a canonical binding referencing an unknown task version", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [
+        comparisonIndexRecord("run-1", { kind: "canonical", taskId: "task-1", taskVersion: 99 }),
+      ],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", {
+          kind: "task_version",
+          inputRef: "task-1@99",
+          inputDigest: null,
+          limitation: null,
+        }),
+      ],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown task version/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a canonical binding referencing an unknown task instance", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [
+        comparisonIndexRecord(
+          "run-1",
+          { kind: "canonical", taskId: "task-1", taskVersion: 1 },
+          { taskInstanceId: "inst-ghost" },
+        ),
+      ],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", {
+          kind: "task_instance",
+          inputRef: "inst-ghost",
+          inputDigest: null,
+          limitation: null,
+        }),
+      ],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown task instance/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a task-instance snapshot whose artifactRefs diverge from the instance inputs", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [
+        comparisonIndexRecord(
+          "run-1",
+          { kind: "canonical", taskId: "task-1", taskVersion: 1 },
+          { taskInstanceId: "inst-1" },
+        ),
+      ],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", {
+          kind: "task_instance",
+          inputRef: "inst-1",
+          inputDigest: null,
+          artifactRefs: [],
+          limitation: null,
+        }),
+      ],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /artifactRefs/.test(e.message))).toBe(true);
+  });
+
+  it("rejects an ad-hoc snapshot record that references a different snapshot ref", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("run-1", { inputRef: `snap:sha256:${"b".repeat(64)}` })],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /does not match the binding/.test(e.message))).toBe(true);
+  });
+
+  it("rejects an inputDigest that does not match the digest embedded in the snapshot ref", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("run-1", { inputDigest: `sha256:${"b".repeat(64)}` })],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /inputDigest/.test(e.message))).toBe(true);
+  });
+
+  it("rejects an unknown snapshot ref shape", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding("snap:not-a-digest"))],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", { inputRef: "snap:not-a-digest", inputDigest: null }),
+      ],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unsupported snapshot ref/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a snapshot record referencing an unknown comparison", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("cmp-ghost")],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field.startsWith("comparisons.inputSnapshots"))).toBe(true);
+  });
+
+  it("rejects a limitation whose reason does not match the snapshot record", () => {
+    const migratedRef = `migrated:sha256:${"b".repeat(64)}`;
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(migratedRef))],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", {
+          inputRef: migratedRef,
+          inputDigest: null,
+          limitation: "instance_input_incomplete",
+        }),
+      ],
+      limitations: [{ runId: "run-1", reason: "missing_detail" }],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /does not match/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a limitation referencing an unknown comparison", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("run-1")],
+      limitations: [{ runId: "cmp-ghost", reason: "instance_input_incomplete" }],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown comparison/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a missing limitation record for a non-resolving snapshot", () => {
+    const migratedRef = `migrated:sha256:${"b".repeat(64)}`;
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(migratedRef))],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", {
+          inputRef: migratedRef,
+          inputDigest: null,
+          limitation: "instance_input_incomplete",
+        }),
+      ],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /missing limitation/.test(e.message))).toBe(true);
+  });
+
+  it("rejects a missing input-snapshot record for an index", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /missing input snapshot/.test(e.message))).toBe(true);
+  });
+
+  it("rejects duplicate comparison index ids", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [
+        comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF)),
+        comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF)),
+      ],
+      inputSnapshots: [inputSnapshotRecord("run-1")],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /duplicate/.test(e.message))).toBe(true);
+  });
+
+  it("rejects duplicate input-snapshot run ids", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("run-1"), inputSnapshotRecord("run-1")],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /duplicate/.test(e.message))).toBe(true);
+  });
+
+  it("rejects out-of-order comparison indexes", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.runs.summaries.push(makeRunSummary("run-2"));
+    archive.runs.details.push(makeRunDetail("run-2"));
+    syncManifest(archive);
+    attachComparisons(archive, {
+      indexes: [
+        comparisonIndexRecord("run-2", adHocBinding(COMPARISON_SNAP_REF)),
+        comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF)),
+      ],
+      inputSnapshots: [inputSnapshotRecord("run-2"), inputSnapshotRecord("run-1")],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /deterministic order/.test(e.message))).toBe(true);
+  });
+
+  it("rejects prohibited credential content inside a comparison index", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [
+        comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF), {
+          title: credentialLikeText(),
+        }),
+      ],
+      inputSnapshots: [inputSnapshotRecord("run-1")],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /credential/i.test(e.message))).toBe(true);
+  });
+
+  it("accepts an earlier-v2 envelope without the comparisons key (counts treated as zero)", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    // Fixture manipulation: strip the optional payload key like an earlier-v2
+    // producer would; the implementation commit declares it on the envelope.
+    const extensible = archive as unknown as { comparisons?: RawComparisons };
+    delete extensible.comparisons;
+    const counts = archive.manifest.counts as unknown as Record<string, number>;
+    counts.comparisonIndexes = 0;
+    counts.comparisonInputSnapshots = 0;
+    counts.comparisonLimitations = 0;
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
     const result = validateArchiveV2(archive);
     expect(result.valid).toBe(true);
