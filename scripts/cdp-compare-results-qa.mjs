@@ -103,8 +103,6 @@ const MOCK_PROVIDER_INTERCEPTOR = `(() => {
 // and every ComparisonResultIndex passes isComparisonResultIndex.
 // -----------------------------------------------------------------------------
 
-const VALID_SHA = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
 function makeCandidate(candidateId, slotId, model, slug, output, status) {
   const isCompleted = status === "completed";
   const isFailed = status === "failed";

@@ -2022,7 +2022,15 @@ async function run() {
         overflowX: document.documentElement.scrollWidth > innerWidth,
       };
     })()`);
-    console.log("Evaluating Exact Record deep-link navigation...");
+    record("version-task-observations", {
+      ...versionObsProbe,
+      pass:
+        versionObsProbe.hasVersionTitle &&
+        versionObsProbe.hasObservations &&
+        !versionObsProbe.overflowX,
+      reason:
+        "Task version page shows version title, observations section, and no horizontal overflow.",
+    });
     await clickElement('header a[href*="runs"]');
     await waitFor("Boolean(document.querySelector('[data-record-row]'))", "run list rows");
     await clickElement('a[data-record-row][href*="run-alpha-gpt4o"]');

@@ -568,8 +568,8 @@ export function PromoteComparisonTaskDialog({
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-400" />
             <div>
               <span className="font-semibold">Historical input content is incomplete.</span> Linking
-              will be recorded for navigation, but evidence profile eligibility will remain limited
-              (<code className="font-mono text-amber-200">instance_input_incomplete</code>).
+              will be recorded for navigation, but evidence eligibility will remain limited (
+              <code className="font-mono text-amber-200">instance_input_incomplete</code>).
             </div>
           </div>
         )}

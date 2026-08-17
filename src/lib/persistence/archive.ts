@@ -90,6 +90,7 @@ import {
   isWorkbenchArchiveV2,
   validateArchiveV2,
   type ArchiveV2TaskArtifactBytes,
+  type ArchiveV2ComparisonInputSnapshot,
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
 import {
@@ -153,7 +154,6 @@ import type { EvidenceIndexJob, EvidenceIndexJobSummary } from "./evidence-repos
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import { isComparisonResultIndex } from "../compare/comparison-result-validation";
 import type { ComparisonMigrationLimitation } from "./comparison-result-migration";
-import type { ArchiveV2ComparisonInputSnapshot } from "./archive-v2-types";
 // --- Archive shape -------------------------------------------------------------
 
 export interface WorkbenchArchiveV1 {
