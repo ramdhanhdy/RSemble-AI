@@ -466,6 +466,29 @@ function scanProhibitedContent(archive: WorkbenchArchiveV2): string | null {
       return `prohibited content in evidence: ${prohibitedPaths[0]}`;
     }
   }
+  // Defense-in-depth (evidence idiom, mirroring the index guard): deep-scan
+  // the comparison metadata records for secret-bearing keys and raw-content
+  // field names, on top of the exact-field checks in validateComparisonPayload.
+  if (archive.comparisons !== undefined) {
+    const prohibitedPaths: string[] = [];
+    for (let i = 0; i < archive.comparisons.inputSnapshots.length; i++) {
+      collectProhibitedFieldPaths(
+        archive.comparisons.inputSnapshots[i],
+        `comparisons.inputSnapshots[${i}]`,
+        prohibitedPaths,
+      );
+    }
+    for (let i = 0; i < archive.comparisons.limitations.length; i++) {
+      collectProhibitedFieldPaths(
+        archive.comparisons.limitations[i],
+        `comparisons.limitations[${i}]`,
+        prohibitedPaths,
+      );
+    }
+    if (prohibitedPaths.length > 0) {
+      return `prohibited content in comparisons: ${prohibitedPaths[0]}`;
+    }
+  }
   return null;
 }
 
@@ -1210,6 +1233,23 @@ const COMPARISON_LIMITATION_REASONS = [
   "instance_input_incomplete",
 ] as const;
 
+/** Exact ArchiveV2ComparisonInputSnapshot field set (spec §5, §13) — no
+ *  free-form fields, mirroring COMPARISON_INDEX_FIELDS. */
+const COMPARISON_SNAPSHOT_FIELDS: Record<string, true> = {
+  runId: true,
+  kind: true,
+  inputRef: true,
+  inputDigest: true,
+  artifactRefs: true,
+  limitation: true,
+};
+
+/** Exact ComparisonMigrationLimitation field set (spec §9). */
+const COMPARISON_LIMITATION_FIELDS: Record<string, true> = {
+  runId: true,
+  reason: true,
+};
+
 /** Validate the optional Comparison Result payload: summary-only indexes with
  *  exact RunRecordV2 references, lineage links, canonical/ad-hoc bindings,
  *  immutable input-snapshot metadata/artifact references, and migration
@@ -1291,6 +1331,14 @@ function validateComparisonPayload(
   payload.inputSnapshots.forEach((snap, i) => {
     const field = `comparisons.inputSnapshots[${i}]`;
     const raw = snap as unknown as Record<string, unknown>;
+    for (const key of Object.keys(raw)) {
+      if (COMPARISON_SNAPSHOT_FIELDS[key] !== true) {
+        errors.push({
+          field: `${field}.${key}`,
+          message: `unknown field "${key}" on input snapshot record.`,
+        });
+      }
+    }
     if (!isNonEmptyString(raw.runId)) {
       errors.push({
         field: `${field}.runId`,
@@ -1503,6 +1551,14 @@ function validateComparisonPayload(
   payload.limitations.forEach((lim, i) => {
     const field = `comparisons.limitations[${i}]`;
     const raw = lim as unknown as Record<string, unknown>;
+    for (const key of Object.keys(raw)) {
+      if (COMPARISON_LIMITATION_FIELDS[key] !== true) {
+        errors.push({
+          field: `${field}.${key}`,
+          message: `unknown field "${key}" on limitation record.`,
+        });
+      }
+    }
     if (!isNonEmptyString(raw.runId)) {
       errors.push({
         field: `${field}.runId`,
