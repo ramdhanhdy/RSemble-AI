@@ -1,7 +1,7 @@
 # PRODUCT.md — RSemble AI Product Specification
 
-> Status: Implemented (three workspaces, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped, canonical Task Sets + ownership crosswalks shipped, Observations and Evidence provenance shipped)
-> Last reconciled: 2026-08-17 at commit `affb043` (Child 04 — Observations and Evidence)
+> Status: Implemented (three workspaces, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped, canonical Task Sets + ownership crosswalks shipped, Observations and Evidence provenance shipped, Contextual Compare Results and task promotion shipped)
+> Last reconciled: 2026-08-18 at commit `439b8b6` (Child 05 — Contextual Compare Results)
 >
 > **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
 > "Profiles" are now "Rubrics" in all user-facing surfaces, domain code, routes,
@@ -68,6 +68,36 @@
 > scanning, and collision-abort-before-write import; earlier-v2 envelopes without
 > the key remain readable, and Fusion Study observations stay strictly isolated
 > as separate study-owned collections without conversion or ID collision.
+
+> **Reconciliation note (Child 05, 2026-08-18):** Contextual Compare Results
+> and task promotion are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 05-contextual-compare-results/contextual-compare-results-spec.md`). Compare
+> owns a lightweight `ComparisonResultIndex` (`id == runId`) with status, mode,
+> title, task binding (`ad_hoc` or `canonical` with taskId/version), active
+> observation IDs, evidence receipt revision, and lineage. Canonical routes
+> `/compare` and `/compare/results/:comparisonId` reconstruct Rank/Fuse output
+> from exact persisted state on reload without in-memory reducer state. A
+> pre-call persistence step creates the RunRecordV2 and Comparison Result index
+> with immutable input-snapshot reference before any provider call; if
+> canonically bound, the Task Version and Instance are resolved atomically or
+> the run aborts. Previous comparisons list with filters (title, model, status,
+> mode, Task binding, date) and pagination is available in Compare. Task
+> binding control supports search/select canonical Task and version, latest
+> version by default with visible pin, clear binding, and editing a bound Task
+> requires creating a new Task version or running as ad hoc. Promotion dialog
+> supports Save-as-Task (create new or link to existing) with exact-match
+> validation and CAS binding update. Evidence receipt integration reuses
+> Child 04 `EvidenceReceipt` to show evidence class, allowed uses, roster
+> coverage, and reasoned eligibility explanation. Recovery and lineage
+> preserve retry/re-judge/re-fuse semantics; "Run again as new comparison"
+> creates a new Result linked as `repeatedFrom`. Legacy migration creates
+> idempotent Comparison Result indexes for all existing full Compare
+> RunRecordV2 records. The archive v2 envelope gains Comparison Result
+> indexes, lineages, bindings, and input-snapshot metadata with
+> collision-abort-before-write import. Browser QA harnesses
+> (`qa:compare-results`, `qa:evidence-matrix`) verify 18 probes across
+> desktop, mobile, tablet, zoom, keyboard, reduced-motion, long-fields, and
+> zero-provider-egress with local fixtures only.
 
 > **The source of truth for what RSemble AI is and is not.**
 > Authority: PRODUCT.md defines *what the product is*. `PROVIDERS.md` defines *how models are reached*.

@@ -77,6 +77,18 @@ This document records architectural decisions made for RSemble AI.
 > import; earlier-v2 envelopes without the key remain readable, and Fusion Study
 > observations stay strictly isolated without conversion or ID collision.
 > See Decision #14 for the load-bearing contract.
+
+> **Reconciliation note (Child 05, 2026-08-18):** Contextual Compare Results
+> and task promotion are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 05-contextual-compare-results/contextual-compare-results-spec.md`). Compare
+> owns a `ComparisonResultIndex` (`id == runId`) with task binding, lineage,
+> and evidence receipt revision. Canonical routes `/compare` and
+> `/compare/results/:comparisonId` reconstruct results from persisted state.
+> Pre-call persistence creates the index and input snapshot before any provider
+> call. Promotion/linking uses exact-match validation and CAS binding updates.
+> Legacy migration creates idempotent indexes for existing full Compare records.
+> The archive v2 envelope gains Comparison Result indexes, lineages, bindings,
+> and input-snapshot metadata. See Decision #15 for the load-bearing contract.
 >
 ---
 
@@ -257,3 +269,20 @@ This document records architectural decisions made for RSemble AI.
   - **(g) Archive v2 evidence payload extension.** The archive v2 envelope gains an optional `evidence` payload (`modelConfigurations`, `observations`, `evidenceDecisions`, `evidenceIndexJobs`, `verifierOutcomes`) with deterministic ordering, exact counts, reference-graph validation, prohibited-content scanning, and collision-abort-before-write import. Format version stays 2; earlier-v2 envelopes without evidence validate and import as no-ops; v1 imports write zero evidence rows.
 - **Authority changes:** `PRODUCT.md` and this file amended to describe canonical Task Observations, Eligibility Decisions, Model Configurations, and archive v2 evidence extension as shipped.
 - **Rationale:** Separating immutable evidence records from derived observations prevents raw text bloat, guarantees deterministic re-evaluation without provider calls, enforces statistical honesty (no retry/reuse sample inflation), and allows safe local export/import without credential leakage.
+
+---
+
+## Decision #15: Contextual Compare Results, Task Promotion, and Archive v2 Comparison Extension
+- **Date:** 2026-08-18
+- **Context:** Compare runs produced exact RunRecordV2 evidence but had no semantic result identity, no result route, no task binding, no promotion workflow, no evidence receipt, and no recovery lineage. Users had to visit the raw run ledger to revisit a comparison. Spec: `docs/specs/pending/task-first-evidence-workbench/05-contextual-compare-results/contextual-compare-results-spec.md`; plan: `docs/specs/pending/task-first-evidence-workbench/05-contextual-compare-results/implementation-plan.md`.
+- **Decision:** Ship contextual Compare Results with the following load-bearing choices:
+  - **(a) Comparison Result identity.** A lightweight `ComparisonResultIndex` (`id == runId`) carries status, mode, title, task binding (`ad_hoc` with input-snapshot ref or `canonical` with taskId/version), active observation IDs, evidence receipt revision, and lineage. The index never copies candidate outputs or judge rationale; RunRecordV2 remains exact result authority.
+  - **(b) Canonical routes and reload.** `/compare` and `/compare/results/:comparisonId` reconstruct Rank/Fuse output from exact persisted state on reload without in-memory reducer state. `/runs/:runId` remains an exact-record route and links back to the Compare result when source is Compare.
+  - **(c) Pre-call persistence.** Before any provider call: validate roster/judge/context/mode, create RunRecordV2 through the existing atomic recorder, create or update the Comparison Result index with immutable input-snapshot reference, resolve Task Version and Instance if canonically bound, and persist linkage atomically or abort before paid execution.
+  - **(d) Task binding and promotion.** Task binding control supports search/select canonical Task and version, latest by default with visible pin, clear binding, and editing a bound Task requires creating a new Task version or running as ad hoc. Promotion dialog supports Save-as-Task (create new or link to existing) with exact-match validation and CAS binding update; semantic similarity never creates identity.
+  - **(e) Evidence receipt integration.** Each result shows evidence class, allowed uses, roster coverage, Rubric/protocol/evaluator/verifier status, retries/reused evidence/unknown versions/failures, and reasoned eligibility explanation via Child 04 `EvidenceReceipt`. Ad hoc results state plainly that they are exploratory until saved or linked.
+  - **(f) Recovery and lineage.** Existing retry/re-judge/re-fuse semantics remain inside Compare. Recovery appends attempts and updates the same Comparison Result lineage. "Run again as new comparison" creates a new Result linked as `repeatedFrom` but not declared an independent replicate. "Open in Compare" restores configuration only and never injects historical outputs.
+  - **(g) Legacy migration.** For every existing full Compare RunRecordV2: create an idempotent Comparison Result index with `id == runId`, derive title/status/mode/time from existing summary, set Task binding to `ad_hoc`, and retain exploratory evidence limitation. Repeated migration startup produces no duplicate indexes.
+  - **(h) Archive v2 comparison extension.** The archive v2 envelope gains Comparison Result indexes, lineages, canonical/ad-hoc Task bindings, immutable input-snapshot metadata/artifact references, and migration limitations with collision-abort-before-write import. Format version stays 2; earlier-v2 and v1 imports remain readable.
+- **Authority changes:** `PRODUCT.md` and this file amended to describe contextual Compare Results, task promotion, evidence receipt integration, recovery lineage, legacy migration, and archive v2 comparison extension as shipped.
+- **Rationale:** Semantic result ownership, routes, task linkage, and evidence receipts make Compare history meaningful result history rather than requiring a trip to a raw run ledger. Pre-call persistence guarantees no paid execution without durable source/index/task linkage. Exact-match promotion prevents semantic deduplication from creating false identity.

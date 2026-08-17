@@ -1,6 +1,6 @@
 # Contextual Compare Results and Task Promotion Specification
 
-**Status:** Pending
+**Status:** Shipped
 **Parent:** [`../task-first-evidence-workbench-spec.md`](../task-first-evidence-workbench-spec.md)
 **Order:** 05
 **Dependencies:** 02 Canonical Tasks; 04 Observations and Evidence
