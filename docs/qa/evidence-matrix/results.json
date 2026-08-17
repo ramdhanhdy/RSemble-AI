@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T03:01:31.528Z",
+  "generatedAt": "2026-08-17T03:08:59.360Z",
   "baseUrl": "http://127.0.0.1:5186/",
   "determinism": {
     "run1": {
@@ -544,7 +544,7 @@
     {
       "name": "exact-record-deep-link",
       "hasCandidate": true,
-      "hasOutput": true,
+      "hasOutput": false,
       "overflowX": false,
       "pass": true,
       "reason": "Deep link to exact run record focuses candidate and displays output and judge scores."
