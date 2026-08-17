@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ComparisonResultRoute } from "./ComparisonResultRoute";
 import { InMemoryComparisonRepository } from "../../lib/persistence/in-memory-comparison-repository";
 import { InMemoryRunRepository } from "../../lib/persistence/run-repository";
+import { InMemoryEvidenceRepository } from "../../lib/persistence/evidence-repository";
 import type {
   RunRecordV2,
   FullRunSummaryV2,
@@ -14,6 +15,14 @@ import type {
   FusionAttemptRecord,
 } from "../../lib/persistence/run-types";
 import type { ComparisonTaskBinding } from "../../lib/compare/comparison-result-types";
+import {
+  OBSERVATION_SCHEMA_VERSION,
+  type EligibilityDecision,
+  type ModelConfigurationSnapshot,
+  type Observation,
+} from "../../lib/evidence/evidence-types";
+import { observationIdFor } from "../../lib/evidence/evidence-validation";
+import { canonicalizeModelConfiguration } from "../../lib/evidence/model-configuration";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -39,6 +48,7 @@ function renderRouted(
           <Route path="/compare" element={<div>Compare workspace draft</div>} />
           <Route path="/runs/:runId" element={<div>Run detail view</div>} />
           <Route path="/tasks/:taskId/versions/:version" element={<div>Task version view</div>} />
+          <Route path="/evaluations/rubrics/:rubricId" element={<div>Rubric detail view</div>} />
         </Routes>
       </MemoryRouter>,
     );
@@ -68,6 +78,119 @@ afterEach(() => {
 });
 
 // --- Fixtures ----------------------------------------------------------------
+const VALID_SHA = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+
+function makeTestModelConfig(
+  overrides: {
+    providerId?: string;
+    requestedModel?: string;
+    resolvedModel?: string | null;
+    resolvedVersion?: string | null;
+    observedAt?: number;
+  } = {},
+): ModelConfigurationSnapshot {
+  const res = canonicalizeModelConfiguration({
+    providerId: overrides.providerId ?? "openrouter",
+    requestedModel: overrides.requestedModel ?? "claude-3-5-sonnet",
+    resolvedModel: overrides.resolvedModel !== undefined ? overrides.resolvedModel : "claude-3-5-sonnet",
+    resolvedVersion: overrides.resolvedVersion !== undefined ? overrides.resolvedVersion : "20241022",
+    observedAt: overrides.observedAt ?? 1716048000000,
+  });
+  if (!res.ok) throw new Error(res.reason);
+  return res.snapshot;
+}
+
+const VALID_MC_ID = makeTestModelConfig().id;
+
+function makeTestObservation(overrides: Partial<Observation> = {}): Observation {
+  const runId = overrides.runId ?? overrides.sourceResultId ?? "cmp-evidence-1";
+  const candidateAttemptId = overrides.candidateAttemptId ?? "att-c1";
+  const modelConfigurationId = overrides.modelConfigurationId ?? VALID_MC_ID;
+  const partial = {
+    observationSchemaVersion: OBSERVATION_SCHEMA_VERSION,
+    sourceKind: overrides.sourceKind ?? ("evaluation" as const),
+    sourceResultId: runId,
+    executionLineageId: overrides.executionLineageId ?? "eval:lineage:1",
+    runId,
+    sourceTaskCellId: overrides.sourceTaskCellId ?? `cell:${candidateAttemptId}`,
+    taskId: overrides.taskId ?? "task-sentiment",
+    taskVersion: overrides.taskVersion ?? 2,
+    taskInstanceId: overrides.taskInstanceId ?? "inst-001",
+    taskFamilyId: overrides.taskFamilyId ?? "family-nlp",
+    modelConfigurationId,
+    candidateAttemptId,
+    assessmentRef: overrides.assessmentRef ?? {
+      judgeAttemptId: "j-att-1",
+      judgeProviderId: "openrouter",
+      judgeModel: "claude-3-5-sonnet",
+      blindLabelMapping: { A: "c1", B: "c2" },
+      candidateAttemptIdsByCandidateId: { c1: "att-c1", c2: "att-c2" },
+      rubricRef: { id: "rubric_accuracy", version: 1 },
+      verifierRef: { id: "verifier_exact", version: 1 },
+      verifierOutcome: {
+        taskId: "task-sentiment",
+        modelKey: "openrouter:claude-3-5-sonnet",
+        passed: true,
+        executedAt: 1716048000000,
+      },
+    },
+    protocolFingerprint: overrides.protocolFingerprint ?? VALID_SHA,
+    rubricRef: overrides.rubricRef ?? { id: "rubric_accuracy", version: 1 },
+    evaluatorSnapshot: overrides.evaluatorSnapshot ?? {
+      kind: "model_judge" as const,
+      providerId: "openrouter",
+      model: "claude-3-5-sonnet",
+      resolvedVersion: "20241022",
+      instructionDigest: VALID_SHA,
+      reasoningEffort: null,
+      toolScaffoldSignature: null,
+    },
+    verifierSnapshot: overrides.verifierSnapshot ?? {
+      verifierRef: { id: "verifier_exact", version: 1 },
+      kind: "exact_match",
+      configurationDigest: VALID_SHA,
+    },
+    outcome: overrides.outcome ?? {
+      judgeAccepted: true,
+      overallScore: 4.8,
+      criterionValues: [{ criterionId: "crit-correctness", value: 5.0 }],
+      verifierPassed: true,
+    },
+    observedAt: overrides.observedAt ?? 1716048000000,
+    ...overrides,
+  };
+  return {
+    ...partial,
+    id: overrides.id ?? observationIdFor(partial as Observation),
+  };
+}
+
+function makeTestDecision(overrides: Partial<EligibilityDecision> = {}): EligibilityDecision {
+  return {
+    observationId: overrides.observationId ?? "obs:sha256:obs-1",
+    ruleVersion: 1,
+    evidenceClass: overrides.evidenceClass ?? "comparable",
+    status: overrides.status ?? "eligible",
+    allowedUses: overrides.allowedUses ?? [
+      "task_descriptive",
+      "within_model_profile",
+      "paired_model_comparison",
+    ],
+    reasonCodes: overrides.reasonCodes ?? [
+      "canonical_task_resolved",
+      "instance_reconstructed",
+      "candidate_selected_completed",
+      "assessment_selected_completed",
+      "model_configuration_exact",
+      "protocol_complete",
+      "rubric_resolved",
+    ],
+    comparabilityCohortId: VALID_SHA,
+    decidedAt: 1716048000000,
+    ...overrides,
+  };
+}
 
 function makeCandidate(
   candidateId: string,
@@ -807,5 +930,423 @@ describe("ComparisonResultRoute", () => {
     );
 
     cleanup(h);
+  });
+
+  describe("ComparisonResultRoute — Evidence Receipt (spec §8)", () => {
+    it("discloses ad hoc comparison as exploratory evidence without profile eligibility", async () => {
+      const runsRepo = new InMemoryRunRepository();
+      const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+      const evidenceRepo = new InMemoryEvidenceRepository();
+
+      const record = makeRankRecord("cmp-adhoc-receipt");
+      await seedTestRecord(runsRepo, comparisonRepo, record);
+
+      // Seed exploratory observation in evidenceRepo
+      const obs = makeTestObservation({
+        sourceResultId: "cmp-adhoc-receipt",
+        runId: "cmp-adhoc-receipt",
+        taskId: "ad_hoc_task",
+        candidateAttemptId: "att-c1",
+      });
+      const dec = makeTestDecision({
+        observationId: obs.id,
+        evidenceClass: "exploratory",
+        status: "provisional",
+        allowedUses: ["task_descriptive"],
+        reasonCodes: [
+          "canonical_task_unresolved",
+          "instance_input_incomplete",
+          "candidate_selected_completed",
+          "assessment_selected_completed",
+          "protocol_complete",
+          "rubric_resolved",
+        ],
+      });
+      await evidenceRepo.putObservation(obs);
+      await evidenceRepo.putDecision(dec);
+      await evidenceRepo.putModelConfiguration(makeTestModelConfig());
+
+      const h = renderRouted(
+        <ComparisonResultRoute
+          comparisonId="cmp-adhoc-receipt"
+          comparisonRepo={comparisonRepo}
+          runRepo={runsRepo}
+          evidenceRepo={evidenceRepo}
+        />,
+        ["/compare/results/cmp-adhoc-receipt"],
+      );
+      await settle();
+
+      // Plain language ad hoc notice (spec §8)
+      expect(h.container.textContent).toContain(
+        "Preserved as exploratory evidence. Save or link this work to a canonical Task before it can contribute to a model evidence profile.",
+      );
+
+      // Shared EvidenceReceipt rendered
+      const receipts = h.$$("[data-testid='evidence-receipt']");
+      expect(receipts.length).toBeGreaterThanOrEqual(1);
+
+      // Ad hoc task is provisional exploratory and not eligible for within_model_profile
+      expect(h.container.textContent).toContain("Exploratory");
+      expect(h.container.textContent).toContain(
+        "This record has no canonical Task identity yet — it is shown for inspection only.",
+      );
+      expect(h.container.textContent).not.toContain("Eligible for all declared uses");
+
+      cleanup(h);
+    });
+
+    it("discloses canonical comparison evidence eligibility with task version and instance provenance", async () => {
+      const runsRepo = new InMemoryRunRepository();
+      const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+      const evidenceRepo = new InMemoryEvidenceRepository();
+
+      const binding: ComparisonTaskBinding = {
+        kind: "canonical",
+        taskId: "task-sentiment",
+        taskVersion: 2,
+      };
+      const record = makeRankRecord("cmp-canon-receipt");
+      await seedTestRecord(runsRepo, comparisonRepo, record, binding);
+
+      const obs = makeTestObservation({
+        sourceResultId: "cmp-canon-receipt",
+        runId: "cmp-canon-receipt",
+        taskId: "task-sentiment",
+        taskVersion: 2,
+        taskInstanceId: "inst-001",
+        candidateAttemptId: "att-c1",
+      });
+      const dec = makeTestDecision({
+        observationId: obs.id,
+        evidenceClass: "comparable",
+        status: "eligible",
+        allowedUses: [
+          "task_descriptive",
+          "within_model_profile",
+          "paired_model_comparison",
+        ],
+        reasonCodes: [
+          "canonical_task_resolved",
+          "instance_reconstructed",
+          "candidate_selected_completed",
+          "assessment_selected_completed",
+          "model_configuration_exact",
+          "protocol_complete",
+          "rubric_resolved",
+        ],
+      });
+      await evidenceRepo.putObservation(obs);
+      await evidenceRepo.putDecision(dec);
+      await evidenceRepo.putModelConfiguration(makeTestModelConfig());
+
+      const h = renderRouted(
+        <ComparisonResultRoute
+          comparisonId="cmp-canon-receipt"
+          comparisonRepo={comparisonRepo}
+          runRepo={runsRepo}
+          evidenceRepo={evidenceRepo}
+        />,
+        ["/compare/results/cmp-canon-receipt"],
+      );
+      await settle();
+
+      // Status and provenance checks
+      expect(h.container.textContent).toContain("task-sentiment");
+      expect(h.container.textContent).toContain("inst-001");
+      expect(h.container.textContent).toContain("Comparable");
+
+      // Why it counts items
+      expect(h.container.textContent).toContain(
+        "This record resolves to a canonical Task identity.",
+      );
+      expect(h.container.textContent).toContain(
+        "An accepted completed candidate output exists for this cell.",
+      );
+      expect(h.container.textContent).toContain(
+        "An accepted assessment exists for this output.",
+      );
+
+      // Allowed uses
+      expect(h.container.textContent).toContain(
+        "Contribute to this model configuration's profile.",
+      );
+      expect(h.container.textContent).toContain(
+        "Compare paired models within one protocol cohort.",
+      );
+
+      // Links
+      const taskLink = h.$("a[href='/tasks/task-sentiment/versions/2']");
+      expect(taskLink).not.toBeNull();
+      const runLink = h.$("a[href='/runs/cmp-canon-receipt']");
+      expect(runLink).not.toBeNull();
+
+      cleanup(h);
+    });
+
+    it("discloses incomplete roster coverage and failed candidate attempts honestly", async () => {
+      const runsRepo = new InMemoryRunRepository();
+      const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+      const evidenceRepo = new InMemoryEvidenceRepository();
+
+      const binding: ComparisonTaskBinding = {
+        kind: "canonical",
+        taskId: "task-sentiment",
+        taskVersion: 2,
+      };
+      const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet", "claude-3-5-sonnet", "output 1", "completed");
+      const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", "", "failed");
+      const record = makeRankRecord("cmp-partial-receipt", {
+        status: "partial",
+        candidates: [c1, c2],
+        judge: {
+          status: "idle",
+          acceptedAttemptId: null,
+          report: null,
+          consensus: null,
+          attempts: [],
+        },
+      });
+      await seedTestRecord(runsRepo, comparisonRepo, record, binding);
+
+      const obs = makeTestObservation({
+        sourceResultId: "cmp-partial-receipt",
+        runId: "cmp-partial-receipt",
+        candidateAttemptId: "att-c1",
+      });
+      const dec = makeTestDecision({
+        observationId: obs.id,
+        reasonCodes: [
+          "canonical_task_resolved",
+          "candidate_selected_completed",
+          "incomplete_task_set_coverage",
+          "paired_cell_missing",
+        ],
+      });
+      await evidenceRepo.putObservation(obs);
+      await evidenceRepo.putDecision(dec);
+      await evidenceRepo.putModelConfiguration(makeTestModelConfig());
+
+      const h = renderRouted(
+        <ComparisonResultRoute
+          comparisonId="cmp-partial-receipt"
+          comparisonRepo={comparisonRepo}
+          runRepo={runsRepo}
+          evidenceRepo={evidenceRepo}
+        />,
+        ["/compare/results/cmp-partial-receipt"],
+      );
+      await settle();
+
+      // Failed candidate gets Excluded / No accepted attempt receipt
+      expect(h.container.textContent).toContain("No accepted attempt");
+      expect(h.container.textContent).toContain(
+        "Execution produced no accepted candidate attempt for this task cell.",
+      );
+
+      // Incomplete roster coverage limitations disclosed
+      expect(h.container.textContent).toContain("Some declared roster cells are missing evidence.");
+
+      cleanup(h);
+    });
+
+    it("discloses unknown / unreported model version qualifications", async () => {
+      const runsRepo = new InMemoryRunRepository();
+      const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+      const evidenceRepo = new InMemoryEvidenceRepository();
+
+      const record = makeRankRecord("cmp-unreported-version");
+      await seedTestRecord(runsRepo, comparisonRepo, record);
+
+      const cfg = makeTestModelConfig({ resolvedVersion: null });
+      const obs = makeTestObservation({
+        sourceResultId: "cmp-unreported-version",
+        runId: "cmp-unreported-version",
+        candidateAttemptId: "att-c1",
+        modelConfigurationId: cfg.id,
+      });
+      const dec = makeTestDecision({
+        observationId: obs.id,
+        status: "provisional",
+        reasonCodes: [
+          "canonical_task_resolved",
+          "candidate_selected_completed",
+          "model_version_unreported",
+        ],
+      });
+      await evidenceRepo.putObservation(obs);
+      await evidenceRepo.putDecision(dec);
+      await evidenceRepo.putModelConfiguration(cfg);
+
+      const h = renderRouted(
+        <ComparisonResultRoute
+          comparisonId="cmp-unreported-version"
+          comparisonRepo={comparisonRepo}
+          runRepo={runsRepo}
+          evidenceRepo={evidenceRepo}
+        />,
+        ["/compare/results/cmp-unreported-version"],
+      );
+      await settle();
+
+      expect(h.container.textContent).toContain("unreported version");
+      expect(h.container.textContent).toContain(
+        "The resolved model version was not reported — comparisons split cohorts on this.",
+      );
+
+      cleanup(h);
+    });
+
+    it("discloses retry and reused candidate assessment qualifications", async () => {
+      const runsRepo = new InMemoryRunRepository();
+      const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+      const evidenceRepo = new InMemoryEvidenceRepository();
+
+      const record = makeRankRecord("cmp-reuse-receipt");
+      await seedTestRecord(runsRepo, comparisonRepo, record);
+
+      const obs = makeTestObservation({
+        sourceResultId: "cmp-reuse-receipt",
+        runId: "cmp-reuse-receipt",
+        candidateAttemptId: "att-c1",
+      });
+      const dec = makeTestDecision({
+        observationId: obs.id,
+        reasonCodes: [
+          "canonical_task_resolved",
+          "candidate_selected_completed",
+          "reused_candidate_assessment",
+          "undeclared_repeat",
+        ],
+      });
+      await evidenceRepo.putObservation(obs);
+      await evidenceRepo.putDecision(dec);
+      await evidenceRepo.putModelConfiguration(makeTestModelConfig());
+
+      const h = renderRouted(
+        <ComparisonResultRoute
+          comparisonId="cmp-reuse-receipt"
+          comparisonRepo={comparisonRepo}
+          runRepo={runsRepo}
+          evidenceRepo={evidenceRepo}
+        />,
+        ["/compare/results/cmp-reuse-receipt"],
+      );
+      await settle();
+
+      expect(h.container.textContent).toContain(
+        "This assessment reused an earlier candidate output — it is not a new response sample.",
+      );
+      expect(h.container.textContent).toContain(
+        "This is a repeated execution that was not planned as a replicate before running.",
+      );
+
+      cleanup(h);
+    });
+
+    it("discloses rubric, protocol, evaluator, and verifier provenance with deep links", async () => {
+      const runsRepo = new InMemoryRunRepository();
+      const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+      const evidenceRepo = new InMemoryEvidenceRepository();
+
+      const record = makeRankRecord("cmp-verifier-receipt");
+      await seedTestRecord(runsRepo, comparisonRepo, record);
+
+      const obs = makeTestObservation({
+        sourceResultId: "cmp-verifier-receipt",
+        runId: "cmp-verifier-receipt",
+        candidateAttemptId: "att-c1",
+        rubricRef: { id: "rubric_accuracy", version: 1 },
+        outcome: {
+          judgeAccepted: true,
+          overallScore: 5.0,
+          criterionValues: [{ criterionId: "c1", value: 5.0 }],
+          verifierPassed: true,
+        },
+      });
+      const dec = makeTestDecision({
+        observationId: obs.id,
+        evidenceClass: "verified",
+        status: "eligible",
+        reasonCodes: [
+          "canonical_task_resolved",
+          "candidate_selected_completed",
+          "verifier_passed",
+          "rubric_resolved",
+        ],
+      });
+      await evidenceRepo.putObservation(obs);
+      await evidenceRepo.putDecision(dec);
+      await evidenceRepo.putModelConfiguration(makeTestModelConfig());
+
+      const h = renderRouted(
+        <ComparisonResultRoute
+          comparisonId="cmp-verifier-receipt"
+          comparisonRepo={comparisonRepo}
+          runRepo={runsRepo}
+          evidenceRepo={evidenceRepo}
+        />,
+        ["/compare/results/cmp-verifier-receipt"],
+      );
+      await settle();
+
+      // Verified status
+      expect(h.container.textContent).toContain("Verified");
+
+      // Rubric link
+      const rubricLink = h.$("a[href='/evaluations/rubrics/rubric_accuracy']");
+      expect(rubricLink).not.toBeNull();
+      expect(rubricLink?.textContent).toContain("rubric_accuracy v1");
+
+      // Evaluator & Verifier
+      expect(h.container.textContent).toContain("Judge: claude-3-5-sonnet");
+      expect(h.container.textContent).toContain("Verifier: exact_match (Passed)");
+
+      cleanup(h);
+    });
+
+    it("ensures keyboard and screen-reader accessibility parity for evidence status and disclosures", async () => {
+      const runsRepo = new InMemoryRunRepository();
+      const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+      const evidenceRepo = new InMemoryEvidenceRepository();
+
+      const record = makeRankRecord("cmp-a11y-receipt");
+      await seedTestRecord(runsRepo, comparisonRepo, record);
+
+      const obs = makeTestObservation({
+        sourceResultId: "cmp-a11y-receipt",
+        runId: "cmp-a11y-receipt",
+        candidateAttemptId: "att-c1",
+      });
+      const dec = makeTestDecision({
+        observationId: obs.id,
+      });
+      await evidenceRepo.putObservation(obs);
+      await evidenceRepo.putDecision(dec);
+      await evidenceRepo.putModelConfiguration(makeTestModelConfig());
+
+      const h = renderRouted(
+        <ComparisonResultRoute
+          comparisonId="cmp-a11y-receipt"
+          comparisonRepo={comparisonRepo}
+          runRepo={runsRepo}
+          evidenceRepo={evidenceRepo}
+        />,
+        ["/compare/results/cmp-a11y-receipt"],
+      );
+      await settle();
+
+      const article = h.$("article[aria-label='Evidence receipt']");
+      expect(article).not.toBeNull();
+
+      // Accessible headings inside receipt
+      const headings = h.$$("article[aria-label='Evidence receipt'] h4");
+      const headingTexts = headings.map((heading) => heading.textContent);
+      expect(headingTexts).toContain("Why it counts");
+      expect(headingTexts).toContain("Allowed Uses");
+      expect(headingTexts).toContain("Evidence Provenance");
+
+      cleanup(h);
+    });
   });
 });
