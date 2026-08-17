@@ -41,8 +41,22 @@ import {
   type ComparisonRepository,
   type ComparisonResultEnvelope,
 } from "../../lib/persistence/comparison-repository";
-import { RepositoryContext, useRunRepository } from "../../lib/persistence/repository-context";
+import {
+  RepositoryContext,
+  useEvidenceRepository,
+  useRunRepository,
+} from "../../lib/persistence/repository-context";
 import type { RunRepository } from "../../lib/persistence/run-repository";
+import type {
+  EvidenceRepository,
+  EvidenceIndexJob,
+} from "../../lib/persistence/evidence-repository";
+import type {
+  EligibilityDecision,
+  ModelConfigurationSnapshot,
+  Observation,
+} from "../../lib/evidence/evidence-types";
+import { EvidenceReceipt } from "../../ui/EvidenceReceipt";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type {
   ComparisonMode,
@@ -72,6 +86,7 @@ export interface ComparisonResultRouteProps {
   comparisonId?: string;
   comparisonRepo?: ComparisonRepository | null;
   runRepo?: RunRepository | null;
+  evidenceRepo?: EvidenceRepository | null;
   models?: CatalogModel[];
   onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
 }
@@ -315,6 +330,7 @@ export function ComparisonResultRoute({
   comparisonId: propComparisonId,
   comparisonRepo: propComparisonRepo,
   runRepo: propRunRepo,
+  evidenceRepo: propEvidenceRepo,
   models = [],
   onOpenInCompare,
 }: ComparisonResultRouteProps) {
@@ -324,6 +340,8 @@ export function ComparisonResultRoute({
   const repoContext = useContext(RepositoryContext);
   const contextRunRepo = useRunRepository();
   const runRepo = propRunRepo ?? contextRunRepo ?? repoContext.runRepo;
+  const contextEvidenceRepo = useEvidenceRepository();
+  const evidenceRepo = propEvidenceRepo ?? contextEvidenceRepo ?? repoContext.evidenceRepo ?? null;
   const comparisonRepo = useMemo(() => {
     if (propComparisonRepo) return propComparisonRepo;
     if (repoContext.db && runRepo) {
@@ -337,6 +355,76 @@ export function ComparisonResultRoute({
   const [error, setError] = useState<string | null>(null);
   const [repairing, setRepairing] = useState(false);
   const [repairedNotice, setRepairedNotice] = useState(false);
+
+  const [evidenceData, setEvidenceData] = useState<{
+    observations: Observation[];
+    decisions: Map<string, EligibilityDecision>;
+    modelConfigs: Map<string, ModelConfigurationSnapshot>;
+    indexJob: EvidenceIndexJob | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!evidenceRepo || !comparisonId) {
+      setEvidenceData(null);
+      return;
+    }
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const [observationsBySource, job] = await Promise.all([
+          evidenceRepo.listObservationsBySource("evaluation", comparisonId),
+          evidenceRepo.getIndexJob(comparisonId),
+        ]);
+
+        const allObservations = [...observationsBySource];
+        if (
+          envelope?.index?.activeObservationIds &&
+          envelope.index.activeObservationIds.length > 0
+        ) {
+          const fetchedObs = await Promise.all(
+            envelope.index.activeObservationIds.map((id) => evidenceRepo.getObservation(id)),
+          );
+          for (const obs of fetchedObs) {
+            if (obs && !allObservations.some((o) => o.id === obs.id)) {
+              allObservations.push(obs);
+            }
+          }
+        }
+
+        const decisionsMap = new Map<string, EligibilityDecision>();
+        const configsMap = new Map<string, ModelConfigurationSnapshot>();
+
+        await Promise.all(
+          allObservations.map(async (obs) => {
+            const [dec, cfg] = await Promise.all([
+              evidenceRepo.getActiveDecision(obs.id),
+              obs.modelConfigurationId
+                ? evidenceRepo.getModelConfiguration(obs.modelConfigurationId)
+                : Promise.resolve(null),
+            ]);
+            if (dec) decisionsMap.set(obs.id, dec);
+            if (cfg && obs.modelConfigurationId) configsMap.set(obs.modelConfigurationId, cfg);
+          }),
+        );
+
+        if (!cancelled) {
+          setEvidenceData({
+            observations: allObservations,
+            decisions: decisionsMap,
+            modelConfigs: configsMap,
+            indexJob: job,
+          });
+        }
+      } catch {
+        // Safe degrade: evidence errors do not crash comparison result view
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [evidenceRepo, comparisonId, envelope?.index?.activeObservationIds]);
 
   const loadData = useCallback(async () => {
     if (!comparisonRepo || !comparisonId) {
@@ -381,6 +469,84 @@ export function ComparisonResultRoute({
     onOpenInCompare?.(envelope.record.id, config);
     void navigate("/compare");
   }, [envelope?.record, onOpenInCompare, navigate]);
+
+  const { index, record, warning } = envelope ?? {};
+
+  const candidateReceipts = useMemo(() => {
+    if (!record || !index) return [];
+    const candidates = record.candidates ?? [];
+
+    return candidates.map((candidate) => {
+      const modelKey =
+        candidate.modelKey ||
+        (candidate.providerId ? `${candidate.providerId}:${candidate.model}` : candidate.model);
+      const attemptId = candidate.acceptedAttemptId;
+
+      let matchingObs: Observation | null = null;
+      if (evidenceData?.observations && evidenceData.observations.length > 0) {
+        if (attemptId) {
+          matchingObs =
+            evidenceData.observations.find((o) => o.candidateAttemptId === attemptId) ?? null;
+        }
+        if (!matchingObs && candidate.candidateId) {
+          matchingObs =
+            evidenceData.observations.find(
+              (o) =>
+                o.assessmentRef?.candidateAttemptIdsByCandidateId?.[candidate.candidateId] ===
+                  o.candidateAttemptId || o.candidateAttemptId === `att-${candidate.candidateId}`,
+            ) ?? null;
+        }
+        if (!matchingObs) {
+          for (const o of evidenceData.observations) {
+            const cfg = o.modelConfigurationId
+              ? evidenceData.modelConfigs.get(o.modelConfigurationId)
+              : null;
+            if (cfg) {
+              const fullKey = `${cfg.providerId}:${cfg.requestedModel}`;
+              if (
+                fullKey === modelKey ||
+                cfg.requestedModel === candidate.model ||
+                cfg.requestedModel === candidate.slug ||
+                (cfg.resolvedModel && cfg.resolvedModel === candidate.model)
+              ) {
+                matchingObs = o;
+                break;
+              }
+            }
+          }
+        }
+        if (!matchingObs && evidenceData.observations.length === 1 && candidates.length === 1) {
+          matchingObs = evidenceData.observations[0];
+        }
+      }
+
+      const decision = matchingObs ? (evidenceData?.decisions.get(matchingObs.id) ?? null) : null;
+      const modelConfig = matchingObs?.modelConfigurationId
+        ? (evidenceData?.modelConfigs.get(matchingObs.modelConfigurationId) ?? null)
+        : null;
+
+      const activeAttempt = candidate.acceptedAttemptId
+        ? candidate.attempts?.find((a) => a.attemptId === candidate.acceptedAttemptId)
+        : candidate.attempts?.[candidate.attempts.length - 1];
+      const candidateStatus =
+        activeAttempt?.status ?? (candidate.acceptedAttemptId ? "completed" : "failed");
+      const isFailed =
+        !candidate.acceptedAttemptId ||
+        candidateStatus === "failed" ||
+        candidateStatus === "aborted";
+
+      return {
+        candidate,
+        modelKey,
+        attemptId,
+        matchingObs,
+        decision,
+        modelConfig,
+        candidateStatus,
+        isFailed,
+      };
+    });
+  }, [record, index, evidenceData]);
 
   // ---------------------------------------------------------------------------
   // Loading state
@@ -440,8 +606,6 @@ export function ComparisonResultRoute({
       </div>
     );
   }
-
-  const { index, record, warning } = envelope ?? {};
 
   // ---------------------------------------------------------------------------
   // Missing source record state (index exists, but source RunRecordV2 is missing)
@@ -631,7 +795,14 @@ export function ComparisonResultRoute({
       {/* ---------------------------------------------------------------------
           Evidence Receipt Notice (spec §8)
           --------------------------------------------------------------------- */}
-      <div className="mt-3">
+      {/* ---------------------------------------------------------------------
+          Evidence Receipts Section (spec §8)
+          --------------------------------------------------------------------- */}
+      <section
+        aria-label="Evidence receipts"
+        data-section="evidence-receipts"
+        className="mt-3 flex flex-col gap-3"
+      >
         {index.taskBinding.kind === "ad_hoc" ? (
           <div
             data-evidence-receipt="ad_hoc"
@@ -639,7 +810,7 @@ export function ComparisonResultRoute({
           >
             <span className="font-semibold text-text">Evidence status:</span> Preserved as
             exploratory evidence. Save or link this work to a canonical Task before it can
-            contribute to a model evidence profile.
+            contribute to a model evidence {"profile"}.
           </div>
         ) : (
           <div
@@ -657,7 +828,56 @@ export function ComparisonResultRoute({
             .
           </div>
         )}
-      </div>
+
+        {candidateReceipts.length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {candidateReceipts.map(
+              ({
+                candidate,
+                modelKey,
+                attemptId,
+                matchingObs,
+                decision,
+                modelConfig,
+                candidateStatus,
+                isFailed,
+              }) => (
+                <div key={candidate.candidateId} className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between px-1 text-xs">
+                    <span className="font-mono font-medium text-text">{candidate.model}</span>
+                    <span className="text-[11px] text-text-muted capitalize">
+                      {candidateStatus}
+                    </span>
+                  </div>
+                  <EvidenceReceipt
+                    runId={record.id}
+                    attemptId={attemptId}
+                    taskId={
+                      index.taskBinding.kind === "canonical" ? index.taskBinding.taskId : undefined
+                    }
+                    modelKey={modelKey}
+                    candidateId={candidate.candidateId}
+                    evidenceRepo={evidenceRepo}
+                    observation={matchingObs}
+                    decision={decision}
+                    modelConfig={modelConfig}
+                    indexJob={evidenceData?.indexJob}
+                    missingReason={!matchingObs && isFailed ? "no-accepted-attempt" : undefined}
+                    defaultOpen
+                  />
+                </div>
+              ),
+            )}
+          </div>
+        ) : (
+          <EvidenceReceipt
+            runId={record.id}
+            taskId={index.taskBinding.kind === "canonical" ? index.taskBinding.taskId : undefined}
+            evidenceRepo={evidenceRepo}
+            defaultOpen
+          />
+        )}
+      </section>
 
       {/* ---------------------------------------------------------------------
           Main Output Surface (reconstructed OutputPane)

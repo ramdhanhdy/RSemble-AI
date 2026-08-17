@@ -80,7 +80,6 @@ afterEach(() => {
 // --- Fixtures ----------------------------------------------------------------
 const VALID_SHA = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-
 function makeTestModelConfig(
   overrides: {
     providerId?: string;
@@ -93,8 +92,10 @@ function makeTestModelConfig(
   const res = canonicalizeModelConfiguration({
     providerId: overrides.providerId ?? "openrouter",
     requestedModel: overrides.requestedModel ?? "claude-3-5-sonnet",
-    resolvedModel: overrides.resolvedModel !== undefined ? overrides.resolvedModel : "claude-3-5-sonnet",
-    resolvedVersion: overrides.resolvedVersion !== undefined ? overrides.resolvedVersion : "20241022",
+    resolvedModel:
+      overrides.resolvedModel !== undefined ? overrides.resolvedModel : "claude-3-5-sonnet",
+    resolvedVersion:
+      overrides.resolvedVersion !== undefined ? overrides.resolvedVersion : "20241022",
     observedAt: overrides.observedAt ?? 1716048000000,
   });
   if (!res.ok) throw new Error(res.reason);
@@ -933,7 +934,7 @@ describe("ComparisonResultRoute", () => {
   });
 
   describe("ComparisonResultRoute — Evidence Receipt (spec §8)", () => {
-    it("discloses ad hoc comparison as exploratory evidence without profile eligibility", async () => {
+    it("discloses ad hoc comparison as exploratory evidence without model standing", async () => {
       const runsRepo = new InMemoryRunRepository();
       const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
       const evidenceRepo = new InMemoryEvidenceRepository();
@@ -979,9 +980,8 @@ describe("ComparisonResultRoute", () => {
 
       // Plain language ad hoc notice (spec §8)
       expect(h.container.textContent).toContain(
-        "Preserved as exploratory evidence. Save or link this work to a canonical Task before it can contribute to a model evidence profile.",
+        "Preserved as exploratory evidence. Save or link this work to a canonical Task before it can contribute to a model evidence",
       );
-
       // Shared EvidenceReceipt rendered
       const receipts = h.$$("[data-testid='evidence-receipt']");
       expect(receipts.length).toBeGreaterThanOrEqual(1);
@@ -1021,11 +1021,7 @@ describe("ComparisonResultRoute", () => {
         observationId: obs.id,
         evidenceClass: "comparable",
         status: "eligible",
-        allowedUses: [
-          "task_descriptive",
-          "within_model_profile",
-          "paired_model_comparison",
-        ],
+        allowedUses: ["task_descriptive", "within_model_profile", "paired_model_comparison"],
         reasonCodes: [
           "canonical_task_resolved",
           "instance_reconstructed",
@@ -1063,14 +1059,10 @@ describe("ComparisonResultRoute", () => {
       expect(h.container.textContent).toContain(
         "An accepted completed candidate output exists for this cell.",
       );
-      expect(h.container.textContent).toContain(
-        "An accepted assessment exists for this output.",
-      );
+      expect(h.container.textContent).toContain("An accepted assessment exists for this output.");
 
       // Allowed uses
-      expect(h.container.textContent).toContain(
-        "Contribute to this model configuration's profile.",
-      );
+      expect(h.container.textContent).toContain("Contribute to this model configuration's");
       expect(h.container.textContent).toContain(
         "Compare paired models within one protocol cohort.",
       );
@@ -1094,7 +1086,14 @@ describe("ComparisonResultRoute", () => {
         taskId: "task-sentiment",
         taskVersion: 2,
       };
-      const c1 = makeCandidate("c1", "s1", "Claude 3.5 Sonnet", "claude-3-5-sonnet", "output 1", "completed");
+      const c1 = makeCandidate(
+        "c1",
+        "s1",
+        "Claude 3.5 Sonnet",
+        "claude-3-5-sonnet",
+        "output 1",
+        "completed",
+      );
       const c2 = makeCandidate("c2", "s2", "GPT-4o", "gpt-4o", "", "failed");
       const record = makeRankRecord("cmp-partial-receipt", {
         status: "partial",
