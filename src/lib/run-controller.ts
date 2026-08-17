@@ -15,6 +15,12 @@ import { rankValueFromResults, isComplianceOnlyRubric } from "./evaluations/eval
 import { evaluateComparePreflight, type ComparePreflight } from "./compare-preflight";
 import type { RunRecorder } from "./persistence/run-recorder";
 import type { ExecutionFence } from "./persistence/run-types";
+import type { ComparisonRepository } from "./persistence/comparison-repository";
+import type { TaskRepository } from "./persistence/task-repository";
+import {
+  executePreCallPersistence,
+  type PreCallPersistenceResult,
+} from "./compare/pre-call-persistence";
 import { HEARTBEAT_INTERVAL, type ExecutionLease, type LeaseInfo } from "./execution-lease";
 import { createExecutionHeartbeat, type ExecutionHeartbeat } from "./execution-heartbeat";
 import { createRunExecutor, type RunExecutorEvents } from "./run-executor";
@@ -42,6 +48,10 @@ export interface RunControllerDeps {
    *  localStorage addRun calls. When absent (storage unavailable), the
    *  controller keeps evidence in memory only — never falls back to addRun. */
   recorder?: RunRecorder;
+  /** Comparison read-model repository for atomic pre-call envelope persistence (spec §5). */
+  comparisonRepo?: ComparisonRepository | null;
+  /** Canonical Task repository for resolving Task Versions and instances (spec §5). */
+  taskRepo?: TaskRepository | null;
   /** Root-provided readiness snapshot so every paid entry point uses the same
    * deterministic preflight result. Tests may omit it; the local fallback still
    * enforces task/cardinality/attachment gates without network calls. */
@@ -276,14 +286,14 @@ export function createRunController(deps: RunControllerDeps) {
             attachmentsToJudge: s.attachmentsToJudge,
             reasoningPolicy: s.reasoningPolicy,
           });
-        const runId = `run-${now()}-${random().toString(36).slice(2, 8)}`;
+        const runId = runIdRef.current ?? `run-${now()}-${random().toString(36).slice(2, 8)}`;
         runIdRef.current = runId;
         // The eligibility gate may have filtered slots for this run
         // (spec §5.1 auto-disable) — placeholders must match what the executor
         // actually fans out, or the candidate roster would include ghosts.
         const jobs = buildFanoutJobs(slotsOverride ?? s.slots);
         const placeholders = buildPlaceholders(jobs, now());
-        if (recorder) {
+        if (recorder && !runIdRef.current) {
           await assertCurrentLease(leaseToken);
           await recorder.begin({
             runId,
@@ -549,11 +559,59 @@ export function createRunController(deps: RunControllerDeps) {
       attachmentsToJudge: s.attachmentsToJudge,
       reasoningPolicy: s.reasoningPolicy,
     });
+
+    // Atomic pre-call persistence sequence (spec §5 steps 1–5):
+    // Persist envelope, immutable input snapshot, and canonical Task Instance/linkage
+    // BEFORE any paid provider call.
+    const shouldPersist = Boolean(
+      recorder || deps.comparisonRepo || deps.taskRepo || s.taskBinding,
+    );
+    let preCallResult: PreCallPersistenceResult | null = null;
+    if (shouldPersist) {
+      try {
+        preCallResult = await executePreCallPersistence(
+          {
+            recorder,
+            comparisonRepo: deps.comparisonRepo,
+            taskRepo: deps.taskRepo,
+            now,
+            mintRunId: () => `run-${now()}-${random().toString(36).slice(2, 8)}`,
+          },
+          {
+            mode: s.mode,
+            prompt: s.prompt,
+            systemPrompt: s.systemPrompt,
+            temperature: s.temperature,
+            slots,
+            critic: s.critic,
+            judgeInstruction: s.judgeInstruction,
+            evaluation: s.evaluation,
+            attachments: s.attachments,
+            attachmentsToJudge: s.attachmentsToJudge,
+            reasoningPolicy: s.reasoningPolicy,
+            taskBinding: s.taskBinding ?? null,
+          },
+        );
+        runIdRef.current = preCallResult.runId;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        dispatch({ type: "FANOUT_BLOCKED", reason: `Pre-call persistence failed: ${message}` });
+        return;
+      }
+    }
+
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
 
     if (!(await acquireSharedLease(`compare-${epoch}`, abort))) {
+      if (recorder && runIdRef.current) {
+        try {
+          await recorder.markAborted(runIdRef.current);
+        } catch {
+          // best-effort
+        }
+      }
       dispatch({
         type: "FANOUT_BLOCKED",
         reason:

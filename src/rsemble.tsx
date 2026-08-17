@@ -8,7 +8,7 @@
 // UI components live in ./ui; state + reducer in ./studio-engine.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { FileText, RotateCcw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -48,7 +48,12 @@ import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
 import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts";
-import { useRunRepository } from "./lib/persistence/repository-context";
+import {
+  RepositoryContext,
+  useRunRepository,
+  useTaskRepository,
+} from "./lib/persistence/repository-context";
+import { createComparisonRepository } from "./lib/persistence/comparison-repository";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import { useExecutionOwner } from "./lib/execution-owner-context";
 import {
@@ -172,6 +177,12 @@ export default function RSemble() {
   // never falls back to the legacy localStorage addRun path (spec §7.7).
   // ---------------------------------------------------------------------------
   const runRepo = useRunRepository();
+  const taskRepo = useTaskRepository();
+  const db = useContext(RepositoryContext).db;
+  const comparisonRepo = useMemo(
+    () => (db && runRepo ? createComparisonRepository(db, runRepo) : null),
+    [db, runRepo],
+  );
   const comparePreflightRef = useRef<
     ((current: StudioState) => ReturnType<typeof evaluateComparePreflight>) | null
   >(null);
@@ -188,6 +199,8 @@ export default function RSemble() {
         abortControllersRef,
         streamBuffer,
         recorder: recorder ?? undefined,
+        comparisonRepo: comparisonRepo ?? undefined,
+        taskRepo: taskRepo ?? undefined,
         preflight: (current) =>
           comparePreflightRef.current?.(current) ?? {
             ok: false,
@@ -196,7 +209,7 @@ export default function RSemble() {
           },
         lease: crossTabLease,
       }),
-    [dispatch, streamBuffer, recorder, crossTabLease],
+    [dispatch, streamBuffer, recorder, comparisonRepo, taskRepo, crossTabLease],
   );
   const { runFanout, abortRun, retryCandidate, retryJudge, triggerFusion } = runController;
 

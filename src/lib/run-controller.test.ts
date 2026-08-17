@@ -2574,7 +2574,9 @@ describe("run-controller — pre-call persistence and zero-paid-call boundary (s
     const comparisonRepo = {
       listComparisonResults: vi.fn().mockResolvedValue([]),
       getComparisonResult: vi.fn().mockResolvedValue(null),
-      createComparisonEnvelope: vi.fn().mockRejectedValueOnce(new StorageError("conflict", "Duplicate index")),
+      createComparisonEnvelope: vi
+        .fn()
+        .mockRejectedValueOnce(new StorageError("conflict", "Duplicate index")),
       bindComparisonToTask: vi.fn(),
       recordComparisonLineage: vi.fn(),
       rebuildComparisonIndex: vi.fn().mockResolvedValue(null),
@@ -2616,7 +2618,7 @@ describe("run-controller — pre-call persistence and zero-paid-call boundary (s
     const state = stateWithSlots(TWO_SLOTS);
     const { deps, dispatched } = makeDeps(state);
     const recorder = makeRecorderSpies();
-    const shared = { lease: null };
+    const shared = { lease: null, fence: 0 };
     const lease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-1" });
     // Pre-occupy lease with another owner so acquire fails
     const otherLease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-2" });
@@ -2636,10 +2638,10 @@ describe("run-controller — pre-call persistence and zero-paid-call boundary (s
 
   it("stream deltas are buffered to UI actions and never passed to the persistence recorder queue", async () => {
     const state = stateWithSlots(TWO_SLOTS);
-    const { deps, dispatched } = makeDeps(state);
+    const { deps } = makeDeps(state);
     const recorder = makeRecorderSpies();
 
-    chatStreamMock.mockImplementation(() => streamOf("delta1", "delta2", "delta3"));
+    chatStreamMock.mockImplementation(() => streamOf("delta1 delta2 delta3"));
     chatCompletionMock.mockResolvedValue(
       judgeResponse([
         ["A", 4],

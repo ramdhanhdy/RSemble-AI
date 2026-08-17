@@ -9,7 +9,7 @@ import {
 } from "./pre-call-persistence";
 import type { ModelSlot } from "../../studio-data";
 import type { CriticRef } from "../providers/types";
-import { HOLISTIC_EVALUATION } from "../evaluations/evaluation-profile-adhoc";
+import { HOLISTIC_EVALUATION } from "../evaluations/evaluation-rubric-adhoc";
 import type { RunRecorder } from "../persistence/run-recorder";
 import type { ComparisonRepository } from "../persistence/comparison-repository";
 import type { TaskRepository } from "../persistence/task-repository";
@@ -36,10 +36,8 @@ const VALID_SLOTS: ModelSlot[] = [
 ];
 
 const VALID_CRITIC: CriticRef = {
-  provider: "OpenRouter",
   providerId: "openrouter",
   model: "Judge Prime",
-  slug: "judge-prime",
 };
 
 function makeValidInput(overrides: Partial<PreCallPersistenceInput> = {}): PreCallPersistenceInput {
@@ -60,37 +58,40 @@ function makeValidInput(overrides: Partial<PreCallPersistenceInput> = {}): PreCa
 
 function makeMockRecord(runId: string, overrides: Partial<RunRecordV2> = {}): RunRecordV2 {
   return {
+    schemaVersion: 2,
     id: runId,
+    revision: 0,
+    execution: { ownerId: "tab-1", fence: 0 },
     createdAt: 1000,
     updatedAt: 1000,
+    completedAt: null,
     source: { kind: "adhoc" },
     status: "running",
     mode: "rank",
     task: {
+      title: "Compare these two models on clarity and conciseness.",
       prompt: "Compare these two models on clarity and conciseness.",
       systemPrompt: "You are a helpful assistant.",
       temperature: 0.7,
-      title: "Compare these two models on clarity and conciseness.",
-      family: "general",
     },
-    evaluation: { ...HOLISTIC_EVALUATION },
-    critic: { ...VALID_CRITIC },
-    judgeInstruction: "Be strict and objective.",
+    evaluation: {
+      profile: null,
+      candidateMessages: [],
+    },
     candidates: [],
     judge: {
-      candidateOrder: [],
       status: "idle",
-      attempts: [],
       acceptedAttemptId: null,
-      error: null,
+      report: null,
+      consensus: null,
+      attempts: [],
     },
     fusion: {
       status: "idle",
-      attempts: [],
       acceptedAttemptId: null,
-      error: null,
+      attempts: [],
     },
-    revision: 0,
+    winnerKeys: [],
     ...overrides,
   };
 }
@@ -117,11 +118,10 @@ function makeMockDeps(overrides: Partial<PreCallPersistenceDeps> = {}): MockDeps
     createdRecord = makeMockRecord(input.runId || "run-100", {
       mode: input.mode,
       task: {
+        title: input.task.prompt.slice(0, 40),
         prompt: input.task.prompt,
         systemPrompt: input.task.systemPrompt,
         temperature: input.task.temperature,
-        title: input.task.prompt.slice(0, 40),
-        family: "general",
       },
     });
     return createdRecord.id;
@@ -235,7 +235,7 @@ function makeMockDeps(overrides: Partial<PreCallPersistenceDeps> = {}): MockDeps
     comparisonRepo,
     taskRepo,
     now: () => 1000,
-    mintRunId: () => "cmp-100",
+    mintRunId: () => "run-100",
     ...overrides,
   };
 
@@ -320,7 +320,9 @@ describe("pre-call-persistence: pure snapshot builder", () => {
     ).toThrow(/credential/i);
 
     expect(() =>
-      buildComparisonInputSnapshot(makeValidInput({ judgeInstruction: "AIza12345678901234567890123456789012345" })),
+      buildComparisonInputSnapshot(
+        makeValidInput({ judgeInstruction: "AIza12345678901234567890123456789012345" }),
+      ),
     ).toThrow(/credential/i);
   });
 });
@@ -340,7 +342,10 @@ describe("pre-call-persistence: pure validation", () => {
   it("rejects fewer than 2 enabled slots", () => {
     const res = validatePreCallPersistence(
       makeValidInput({
-        slots: [{ ...VALID_SLOTS[0], enabled: true }, { ...VALID_SLOTS[1], enabled: false }],
+        slots: [
+          { ...VALID_SLOTS[0], enabled: true },
+          { ...VALID_SLOTS[1], enabled: false },
+        ],
       }),
     );
     expect(res.ok).toBe(false);
@@ -365,14 +370,18 @@ describe("pre-call-persistence: pure validation", () => {
     expect(invalidVersion.ok).toBe(false);
 
     const invalidId = validatePreCallPersistence(
-      makeValidInput({ taskBinding: { kind: "canonical", taskId: "sk-live-secret", taskVersion: 1 } }),
+      makeValidInput({
+        taskBinding: { kind: "canonical", taskId: "sk-live-secret", taskVersion: 1 },
+      }),
     );
     expect(invalidId.ok).toBe(false);
   });
 
   it("validates ad_hoc task binding", () => {
     const validAdHoc = validatePreCallPersistence(
-      makeValidInput({ taskBinding: { kind: "ad_hoc", inputSnapshotRef: `snap:sha256:${"a".repeat(64)}` } }),
+      makeValidInput({
+        taskBinding: { kind: "ad_hoc", inputSnapshotRef: `snap:sha256:${"a".repeat(64)}` },
+      }),
     );
     expect(validAdHoc.ok).toBe(true);
 
@@ -451,7 +460,9 @@ describe("pre-call-persistence: atomic execution and failure boundaries (spec §
       taskBinding: { kind: "canonical", taskId: "task-42", taskVersion: 99 }, // version 99 does not exist
     });
 
-    await expect(executePreCallPersistence(harness.deps, input)).rejects.toThrow(/Task version.*not found/i);
+    await expect(executePreCallPersistence(harness.deps, input)).rejects.toThrow(
+      /Task version.*not found/i,
+    );
 
     // Run was created
     expect(harness.spies.recorderBegin).toHaveBeenCalledTimes(1);
@@ -539,7 +550,9 @@ describe("pre-call-persistence: atomic execution and failure boundaries (spec §
     harness.spies.createComparisonEnvelope.mockRejectedValueOnce(
       new StorageError("unavailable", "Storage locked"),
     );
-    await expect(executePreCallPersistence(harness.deps, makeValidInput())).rejects.toThrow(/Storage locked/i);
+    await expect(executePreCallPersistence(harness.deps, makeValidInput())).rejects.toThrow(
+      /Storage locked/i,
+    );
     expect(harness.spies.recorderMarkAborted).toHaveBeenCalledTimes(1);
 
     // 2nd run succeeds cleanly
