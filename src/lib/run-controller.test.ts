@@ -7,6 +7,11 @@ import type { StreamDeltaBuffer } from "./stream-buffer";
 import { ProviderError, type ProviderId } from "./providers/types";
 import type { RubricSnapshot } from "./evaluations/evaluation-types";
 import { InMemoryExecutionLease, type ExecutionLease } from "./execution-lease";
+import { InMemoryComparisonRepository } from "./persistence/in-memory-comparison-repository";
+import { InMemoryTaskRepository } from "./persistence/in-memory-task-repository";
+import { InMemoryRunRepository } from "./persistence/run-repository";
+import { createRunRecorder } from "./persistence/run-recorder";
+import { StorageError } from "./persistence/database";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -2511,5 +2516,145 @@ describe("run-controller — cross-tab paid execution lease", () => {
     expect(shared.lease).toMatchObject(ownerB);
     await tabA.release(stale);
     expect(shared.lease).toMatchObject(ownerB);
+  });
+});
+
+describe("run-controller — pre-call persistence and zero-paid-call boundary (spec §5)", () => {
+  it("persists RunRecordV2 and ComparisonResultIndex before ANY candidate provider stream is started", async () => {
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps } = makeDeps(state);
+    const runRepo = new InMemoryRunRepository();
+    const comparisonRepo = new InMemoryComparisonRepository(runRepo);
+    const recorder = createRunRecorder(runRepo);
+
+    let providerCalled = false;
+    chatStreamMock.mockImplementation(() => {
+      providerCalled = true;
+      return streamOf("sample candidate answer");
+    });
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
+
+    deps.recorder = recorder;
+    deps.comparisonRepo = comparisonRepo;
+
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    expect(providerCalled).toBe(true);
+    const comparisonIndexes = await comparisonRepo.listComparisonResults({});
+    expect(comparisonIndexes.length).toBe(1);
+    expect(comparisonIndexes[0].mode).toBe("rank");
+    expect(comparisonIndexes[0].taskBinding.kind).toBe("ad_hoc");
+  });
+
+  it("recorder.begin failure blocks run with zero provider calls", async () => {
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps, dispatched } = makeDeps(state);
+    const recorder = makeRecorderSpies();
+    recorder.begin.mockRejectedValueOnce(new StorageError("blocked", "Disk locked"));
+
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
+  });
+
+  it("comparisonRepo.createComparisonEnvelope failure marks run aborted and makes zero provider calls", async () => {
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps, dispatched } = makeDeps(state);
+    const recorder = makeRecorderSpies();
+    const comparisonRepo = {
+      listComparisonResults: vi.fn().mockResolvedValue([]),
+      getComparisonResult: vi.fn().mockResolvedValue(null),
+      createComparisonEnvelope: vi.fn().mockRejectedValueOnce(new StorageError("conflict", "Duplicate index")),
+      bindComparisonToTask: vi.fn(),
+      recordComparisonLineage: vi.fn(),
+      rebuildComparisonIndex: vi.fn().mockResolvedValue(null),
+      subscribe: vi.fn().mockReturnValue(() => undefined),
+    };
+
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+    deps.comparisonRepo = comparisonRepo as unknown as RunControllerDeps["comparisonRepo"];
+
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(recorder.markAborted).toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
+  });
+
+  it("canonical task version failure marks run aborted and makes zero provider calls", async () => {
+    const state = stateWithSlots(TWO_SLOTS);
+    state.taskBinding = { kind: "canonical", taskId: "missing-task", taskVersion: 1 };
+    const { deps, dispatched } = makeDeps(state);
+    const recorder = makeRecorderSpies();
+    const taskRepo = new InMemoryTaskRepository(); // empty task repo
+
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+    deps.taskRepo = taskRepo;
+
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(recorder.markAborted).toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
+  });
+
+  it("lease acquisition failure marks run aborted and makes zero provider calls", async () => {
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps, dispatched } = makeDeps(state);
+    const recorder = makeRecorderSpies();
+    const shared = { lease: null };
+    const lease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-1" });
+    // Pre-occupy lease with another owner so acquire fails
+    const otherLease = new InMemoryExecutionLease(shared, null, { ownerId: "tab-2" });
+    await otherLease.acquire({ kind: "compare", executionId: "other-run" });
+
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+    deps.lease = lease;
+
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(recorder.markAborted).toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
+  });
+
+  it("stream deltas are buffered to UI actions and never passed to the persistence recorder queue", async () => {
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps, dispatched } = makeDeps(state);
+    const recorder = makeRecorderSpies();
+
+    chatStreamMock.mockImplementation(() => streamOf("delta1", "delta2", "delta3"));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
+
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    // Tokens were pushed to streamBuffer
+    expect(deps.streamBuffer.push).toHaveBeenCalled();
+    // None of the recorder methods receive stream deltas
+    expect(recorder.beginCandidateAttempt).toHaveBeenCalledTimes(2);
+    expect(recorder.finishCandidateAttempt).toHaveBeenCalledTimes(2);
   });
 });
