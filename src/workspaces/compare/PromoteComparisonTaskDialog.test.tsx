@@ -25,8 +25,8 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-repository";
 import { InMemoryComparisonRepository } from "../../lib/persistence/in-memory-comparison-repository";
+import { InMemoryRunRepository } from "../../lib/persistence/run-repository";
 import type { TaskRecord, TaskVersion, TaskFamily } from "../../lib/tasks/task-types";
-import type { ComparisonResultIndex } from "../../lib/compare/comparison-result-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import { PromoteComparisonTaskDialog } from "./PromoteComparisonTaskDialog";
 
@@ -92,35 +92,41 @@ function makeMockRecord(id: string, prompt: string): RunRecordV2 {
   return {
     schemaVersion: 2,
     id,
+    revision: 0,
+    execution: { ownerId: "owner", fence: 1 },
     createdAt: NOW,
     updatedAt: NOW,
+    completedAt: NOW + 1000,
     status: "completed",
     mode: "rank",
+    source: { kind: "adhoc" },
     task: {
-      prompt,
+      title: "Comparison " + id,
+      prompt: prompt ?? "",
       systemPrompt: "You are a helpful assistant.",
       temperature: 0.7,
     },
     evaluation: {
-      rubricId: "rubric-default",
-      rubricVersion: 1,
+      profile: null,
+      candidateMessages: [{ role: "user", content: prompt || "hi" }],
     },
     candidates: [],
     judge: {
-      attempts: [],
-      verdict: "accepted",
+      status: "idle",
+      acceptedAttemptId: null,
       report: null,
+      consensus: null,
+      attempts: [],
     },
-    lineage: {
-      originRunId: null,
-      repeatedFrom: null,
-    },
+    fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    winnerKeys: [],
   };
 }
 
 async function setupRepos(runId: string, prompt: string) {
   const taskRepo = new InMemoryTaskRepository();
-  const comparisonRepo = new InMemoryComparisonRepository();
+  const runRepo = new InMemoryRunRepository();
+  const comparisonRepo = new InMemoryComparisonRepository(runRepo);
 
   const record = makeMockRecord(runId, prompt);
   const index = await comparisonRepo.createComparisonEnvelope(record, {
@@ -128,7 +134,7 @@ async function setupRepos(runId: string, prompt: string) {
     inputSnapshotRef: "snap:test",
   });
 
-  return { taskRepo, comparisonRepo, record, index };
+  return { taskRepo, comparisonRepo, runRepo, record, index };
 }
 
 describe("PromoteComparisonTaskDialog", () => {
@@ -253,7 +259,9 @@ describe("PromoteComparisonTaskDialog", () => {
     expect(suggestionBox?.textContent).toContain("task-existing-1");
 
     // But default mode is still "create" (never auto-merged)
-    expect(h.$("input[name='promotion-mode'][value='create']") as HTMLInputElement).toBeChecked();
+    expect((h.$("input[name='promotion-mode'][value='create']") as HTMLInputElement).checked).toBe(
+      true,
+    );
 
     // User can explicitly click "Select to Link"
     const selectLinkBtn = h.$("[data-testid='select-exact-match-task-existing-1-1']");
@@ -264,7 +272,9 @@ describe("PromoteComparisonTaskDialog", () => {
     await settle();
 
     // Now mode should be switched to "link" with that task selected
-    expect(h.$("input[name='promotion-mode'][value='link']") as HTMLInputElement).toBeChecked();
+    expect((h.$("input[name='promotion-mode'][value='link']") as HTMLInputElement).checked).toBe(
+      true,
+    );
   });
 
   it("creates a new canonical Task and updates CAS binding (spec §7.3)", async () => {
@@ -551,7 +561,7 @@ describe("PromoteComparisonTaskDialog", () => {
   });
 
   it("warns about missing historical input (instance_input_incomplete) when input is missing (spec §7.3)", async () => {
-    const { taskRepo, comparisonRepo } = await setupRepos("run-missing-input", "");
+    const { taskRepo, comparisonRepo } = await setupRepos("run-missing-input", "   ");
 
     const onOpenChange = vi.fn();
 
@@ -561,7 +571,7 @@ describe("PromoteComparisonTaskDialog", () => {
         onOpenChange={onOpenChange}
         comparisonId="run-missing-input"
         expectedRevision={0}
-        prompt="" // Empty / missing input
+        prompt="   " // Empty / missing input
         taskRepo={taskRepo}
         comparisonRepo={comparisonRepo}
       />,
