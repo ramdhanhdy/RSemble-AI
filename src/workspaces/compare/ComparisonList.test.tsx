@@ -38,6 +38,30 @@ function cleanup(h: Harness) {
   h.container.remove();
 }
 
+async function settle() {
+  await act(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+async function settleWithDebounce() {
+  await act(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+  });
+}
+
+/** Type into a React controlled input by bypassing React's value tracker. */
+function typeInto(input: HTMLInputElement, value: string) {
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
   vi.clearAllMocks();
@@ -160,11 +184,7 @@ describe("ComparisonList", () => {
     const h = renderWithRouter(
       <ComparisonList repo={comparisonRepo} onNewComparison={onNewComparison} />,
     );
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     const newBtn = h.$("[data-action='new-comparison']");
     expect(newBtn).not.toBeNull();
@@ -194,11 +214,7 @@ describe("ComparisonList", () => {
     });
 
     const h = renderWithRouter(<ComparisonList repo={comparisonRepo} />);
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     const rows = h.$$("[data-record-row]");
     expect(rows.length).toBe(2);
@@ -238,11 +254,7 @@ describe("ComparisonList", () => {
     });
 
     const h = renderWithRouter(<ComparisonList repo={comparisonRepo} />);
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     const rows = h.$$("[data-record-row]");
     expect(rows.length).toBe(2);
@@ -270,11 +282,7 @@ describe("ComparisonList", () => {
     });
 
     const h = renderWithRouter(<ComparisonList repo={comparisonRepo} />);
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     const row = h.$("[data-record-row]");
     expect(row).not.toBeNull();
@@ -300,11 +308,7 @@ describe("ComparisonList", () => {
     const h = renderWithRouter(
       <ComparisonList repo={comparisonRepo} onNewComparison={onNewComparison} />,
     );
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     const empty = h.$("[data-state='empty']");
     expect(empty).not.toBeNull();
@@ -330,25 +334,13 @@ describe("ComparisonList", () => {
     });
 
     const h = renderWithRouter(<ComparisonList repo={comparisonRepo} />);
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     // Enter search text that matches nothing
     const searchInput = h.$("input[type='search']") as HTMLInputElement;
-    act(() => {
-      searchInput.value = "Quantum Physics";
-      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-      searchInput.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    typeInto(searchInput, "Quantum Physics");
 
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 250);
-      await promise;
-    });
+    await settleWithDebounce();
 
     const noMatch = h.$("[data-state='no-match']");
     expect(noMatch).not.toBeNull();
@@ -361,11 +353,7 @@ describe("ComparisonList", () => {
       clearBtn?.click();
     });
 
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 250);
-      await promise;
-    });
+    await settleWithDebounce();
 
     // Restores original rows
     expect(h.$$("[data-record-row]").length).toBe(1);
@@ -399,11 +387,7 @@ describe("ComparisonList", () => {
         modelKeys={["openai:gpt-4o", "anthropic:claude-3-5-sonnet"]}
       />,
     );
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     expect(h.$$("[data-record-row]").length).toBe(2);
 
@@ -413,11 +397,7 @@ describe("ComparisonList", () => {
       modeSelect.value = "fuse";
       modeSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     const rowsAfterMode = h.$$("[data-record-row]");
     expect(rowsAfterMode.length).toBe(1);
@@ -429,11 +409,7 @@ describe("ComparisonList", () => {
       bindingSelect.value = "canonical";
       bindingSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     expect(h.$$("[data-record-row]").length).toBe(1);
 
@@ -452,11 +428,7 @@ describe("ComparisonList", () => {
     });
 
     const h = renderWithRouter(<ComparisonList repo={comparisonRepo} selectedId="cmp-2" />);
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     const selectedWrapper = h.$("[data-selected='true']");
     expect(selectedWrapper).not.toBeNull();
@@ -473,24 +445,17 @@ describe("ComparisonList", () => {
     const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
 
     const h = renderWithRouter(<ComparisonList repo={comparisonRepo} />);
-    await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
-    });
+    await settle();
 
     expect(h.$("[data-state='empty']")).not.toBeNull();
 
-    // Add a comparison to repo
-    await seedTestComparison(runsRepo, comparisonRepo, "cmp-live", 5000, {
-      title: "Live Dynamically Added",
-    });
-
+    // Add a comparison to repo wrapped in act
     await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 0);
-      await promise;
+      await seedTestComparison(runsRepo, comparisonRepo, "cmp-live", 5000, {
+        title: "Live Dynamically Added",
+      });
     });
+    await settle();
 
     expect(h.$$("[data-record-row]").length).toBe(1);
     expect(h.$("[data-record-row]")?.textContent).toContain("Live Dynamically Added");

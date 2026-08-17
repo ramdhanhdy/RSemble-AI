@@ -37,6 +37,18 @@ function cleanup(h: Harness) {
   h.container.remove();
 }
 
+/** Type into a React controlled input by bypassing React's value tracker. */
+function typeInto(input: HTMLInputElement, value: string) {
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
   vi.clearAllMocks();
@@ -60,11 +72,7 @@ describe("ComparisonFilters", () => {
     const h = render(<ComparisonFilters value={EMPTY_COMPARISON_FILTERS} onChange={onChange} />);
 
     const searchInput = h.$("input[type='search']") as HTMLInputElement;
-    act(() => {
-      searchInput.value = "Sorting algorithm";
-      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-      searchInput.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    typeInto(searchInput, "Sorting algorithm");
 
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
