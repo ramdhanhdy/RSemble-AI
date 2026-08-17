@@ -50,9 +50,7 @@ export const comparisonResultMigrationMarkerKey = "comparison-result-migration:v
 
 /** Explicit limitation reasons recorded by the migration (spec §7.3, §10). */
 export type ComparisonMigrationLimitationReason =
-  | "missing_detail"
-  | "corrupt_source"
-  | "instance_input_incomplete";
+  "missing_detail" | "corrupt_source" | "instance_input_incomplete";
 
 export interface ComparisonMigrationLimitation {
   runId: string;
