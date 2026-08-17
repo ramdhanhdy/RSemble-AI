@@ -1033,6 +1033,52 @@ describe("archive v2 Comparison payload", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => /credential/i.test(e.message))).toBe(true);
   });
+  it("rejects an unknown field on an input snapshot record", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("run-1", { candidateOutput: "candidate summary" })],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown field "candidateOutput"/.test(e.message))).toBe(true);
+  });
+
+  it("rejects an unknown field on a limitation record", () => {
+    const migratedRef = `migrated:sha256:${"b".repeat(64)}`;
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(migratedRef))],
+      inputSnapshots: [
+        inputSnapshotRecord("run-1", {
+          inputRef: migratedRef,
+          inputDigest: null,
+          limitation: "instance_input_incomplete",
+        }),
+      ],
+      limitations: [
+        { runId: "run-1", reason: "instance_input_incomplete", judgeRationale: "full reasoning" },
+      ],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown field "judgeRationale"/.test(e.message))).toBe(true);
+  });
+
+  it("deep-scans comparison metadata for prohibited raw-content fields", () => {
+    const archive = attachComparisons(cloneArchiveV2(buildValidArchiveV2Fixture()), {
+      indexes: [comparisonIndexRecord("run-1", adHocBinding(COMPARISON_SNAP_REF))],
+      inputSnapshots: [inputSnapshotRecord("run-1", { rawOutput: "raw model output" })],
+      limitations: [],
+    });
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some(
+        (e) => e.field === "payload" && /prohibited content in comparisons/.test(e.message),
+      ),
+    ).toBe(true);
+  });
+
 
   it("accepts an earlier-v2 envelope without the comparisons key (counts treated as zero)", () => {
     const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
