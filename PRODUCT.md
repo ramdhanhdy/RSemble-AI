@@ -1,7 +1,7 @@
 # PRODUCT.md — RSemble AI Product Specification
 
-> Status: Implemented (three workspaces, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped, canonical Task Sets + ownership crosswalks shipped)
-> Last reconciled: 2026-08-16 at commit `36a5a3b` (Child 03 — Task Sets)
+> Status: Implemented (three workspaces, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped, canonical Task Sets + ownership crosswalks shipped, Observations and Evidence provenance shipped)
+> Last reconciled: 2026-08-17 at commit `affb043` (Child 04 — Observations and Evidence)
 >
 > **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
 > "Profiles" are now "Rubrics" in all user-facing surfaces, domain code, routes,
@@ -49,6 +49,25 @@
 > without the key remain readable and Fusion payloads are untouched. In this
 > document, "suite" language describing shipped behavior means Task Set
 > ownership; the legacy Evaluation Suite remains a compatibility surface.
+
+> **Reconciliation note (Child 04, 2026-08-17):** Canonical Task Observations,
+> immutable Eligibility Decisions, exact Model Configuration snapshots,
+> evidence rule/version metadata, and the archive v2 optional `evidence` payload
+> extension are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 04-observations-and-evidence/observations-and-evidence-spec.md`). An
+> Observation is an immutable reference/index over exact RunRecordV2 /
+> ExperimentRecord evidence, never duplicating raw candidate outputs or full judge
+> rationale. Operational retry and reused output never inflate sample counts (one
+> active observation per lineage cell). Evidence classes (exploratory, comparable,
+> verified, benchmark_anchor) and profile allowed uses are automatically
+> classified from stored facts. Derivation runs post-commit with resumable
+> idempotent reindex isolated from paid execution. The archive v2 envelope gains
+> an optional `evidence` payload (modelConfigurations, observations,
+> evidenceDecisions, evidenceIndexJobs, verifierOutcomes) with exact counts,
+> deterministic ordering, reference-graph validation, prohibited-content
+> scanning, and collision-abort-before-write import; earlier-v2 envelopes without
+> the key remain readable, and Fusion Study observations stay strictly isolated
+> as separate study-owned collections without conversion or ID collision.
 
 > **The source of truth for what RSemble AI is and is not.**
 > Authority: PRODUCT.md defines *what the product is*. `PROVIDERS.md` defines *how models are reached*.

@@ -62,6 +62,22 @@ This document records architectural decisions made for RSemble AI.
 >   those sentences describe the Child 02 canonical Task migration, which is
 >   unchanged; Child 03 adds the Task Set layer above it.
 
+> **Reconciliation note (Child 04, 2026-08-17):** Canonical Task Observations,
+> immutable Eligibility Decisions, exact Model Configuration snapshots,
+> evidence rule/version metadata, and the archive v2 optional `evidence` payload
+> extension are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 04-observations-and-evidence/observations-and-evidence-spec.md`). Observations
+> are immutable references/indexes over exact evidence without duplicating
+> candidate output or full rationale. Operational retries and reused outputs
+> never inflate sample counts. Decision revisions append deterministically.
+> The archive v2 envelope gains an optional `evidence` payload
+> (modelConfigurations, observations, evidenceDecisions, evidenceIndexJobs,
+> verifierOutcomes) with exact counts, deterministic ordering, reference-graph
+> validation, prohibited-content scanning, and collision-abort-before-write
+> import; earlier-v2 envelopes without the key remain readable, and Fusion Study
+> observations stay strictly isolated without conversion or ID collision.
+> See Decision #14 for the load-bearing contract.
+>
 ---
 
 ## Decision #1: Focused Direction (Split Workspace / Variation B)
@@ -225,3 +241,19 @@ This document records architectural decisions made for RSemble AI.
   - **(f) Archive v2 base.** The extensible v2 envelope round-trips exact current Run and Experiment evidence, all seven Fusion Study stores, and canonical Rubrics, Tasks, Task Versions, Task Artifacts, Task Instances, families/facets, annotations, and migration crosswalks; disposable indexes are omitted. Archive v1 remains importable. V2 import validates the complete payload and referenced artifacts before writes; until a later child adds full collision remapping, a non-identical ID collision is reported in preview and aborts without mutation — it never overwrites or partially imports. Artifact bytes are scanned for prohibited credential/auth content before export; an unsafe export is blocked without echoing the value.
 - **Authority changes:** `PRODUCT.md` and this file amended to describe canonical Tasks, immutable versions, instances, families/facets, conservative migration, and archive v2 as shipped. Existing Run/Experiment/Fusion evidence and the fanout → Judge → Rank/Fuse spine are unchanged.
 - **Rationale:** Global, immutable task identity is the prerequisite for Task Set ownership (next child), observations, contextual Compare results, and model evidence profiles. Pinning opaque identity, digest-gated instance reuse, conservative no-rewrite migration, and a collision-aborting v2 envelope now prevents later children from accidentally merging across scopes, inflating coverage with near-duplicates, or overwriting evidence on import.
+
+---
+
+## Decision #14: Observations, Eligibility Decisions, Model Configuration Snapshots, and Archive v2 Evidence Extension
+- **Date:** 2026-08-17
+- **Context:** Evaluation runs produced exact candidate and judge/verifier evidence, but there was no immutable Task Observation index, canonical model configuration identity, automatic evidence eligibility classification, comparability cohort fingerprinting, or evidence receipt disclosure. Repeated attempts, operational retries, and roster extensions risked inflating sample counts or masking execution variability. Spec: `docs/specs/pending/task-first-evidence-workbench/04-observations-and-evidence/observations-and-evidence-spec.md`; plan: `docs/specs/pending/task-first-evidence-workbench/04-observations-and-evidence/implementation-plan.md`.
+- **Decision:** Ship canonical Task Observations and evidence provenance with the following load-bearing choices:
+  - **(a) Reference-only indexing, no raw content duplication.** An Observation is an immutable reference/index over exact RunRecordV2 / ExperimentRecord evidence. It never embeds candidate messages, candidate output text, full judge rationale, or streaming buffers. Prohibited field paths are rejected by runtime guards.
+  - **(b) Canonical Model Configuration identity.** Snapshots resolve only stored facts (providerId, requestedModel, resolvedModel, resolvedVersion, reasoning settings, tool scaffolds, sanitized runtime settings). Unknown resolved versions remain unknown; no speculative version rollup. Content collisions on duplicate IDs abort with corruption errors.
+  - **(c) Invariant counting and active selection.** Operational retries, repeated judging, missing-cell repair, and roster extension reuse never inflate sample counts: one active observation per execution lineage/task/model cell. Unique Task coverage counts Task identity once regardless of versions, instances, or attempts. Reused outputs retain original candidateAttemptId.
+  - **(d) Pure eligibility classification and explanation.** Evidence classes (`exploratory`, `comparable`, `verified`, `benchmark_anchor`) and allowed uses (`task_descriptive`, `within_model_profile`, `paired_model_comparison`, `task_set_standing`, `benchmark_anchor_analysis`) are purely derived from stored facts. Explanations compile from constant dictionaries without embedding raw source text. Decisions are keyed by `[observationId + ruleVersion]` allowing deterministic append-only re-evaluation.
+  - **(e) Post-commit derivation and isolated reindex.** Derivation runs after source transaction commit; derivation failures create recoverable indexing markers without mutating or corrupting exact source records. Reindex is resumable, deterministic, and isolated from paid execution.
+  - **(f) Fusion isolation.** Fusion Study `fusionObservations` remain distinct study-owned entities with disjoint ID namespaces (`obs:<hash>` vs `obs-N`). They are neither converted nor counted as canonical Task Observations.
+  - **(g) Archive v2 evidence payload extension.** The archive v2 envelope gains an optional `evidence` payload (`modelConfigurations`, `observations`, `evidenceDecisions`, `evidenceIndexJobs`, `verifierOutcomes`) with deterministic ordering, exact counts, reference-graph validation, prohibited-content scanning, and collision-abort-before-write import. Format version stays 2; earlier-v2 envelopes without evidence validate and import as no-ops; v1 imports write zero evidence rows.
+- **Authority changes:** `PRODUCT.md` and this file amended to describe canonical Task Observations, Eligibility Decisions, Model Configurations, and archive v2 evidence extension as shipped.
+- **Rationale:** Separating immutable evidence records from derived observations prevents raw text bloat, guarantees deterministic re-evaluation without provider calls, enforces statistical honesty (no retry/reuse sample inflation), and allows safe local export/import without credential leakage.
