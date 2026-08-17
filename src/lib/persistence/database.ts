@@ -2,11 +2,12 @@
 // RSemble AI — Dexie persistence database
 //
 // Single IndexedDB database hosting the run, evaluation rubric, suite,
-// experiment, storage-meta, Fusion Study, canonical Task, and Task Set
-// tables. Owns the storage lifecycle: classified StorageError for
-// quota/unavailable/blocked states and a StorageState surface so React
-// providers can react when the database is blocked by another tab or
-// upgraded out from under it.
+// experiment, storage-meta, Fusion Study, canonical Task, Task Set, and
+// Comparison Result tables. Owns the storage lifecycle: classified
+// StorageError for quota/unavailable/blocked states and a StorageState
+// surface so React providers can react when the database is blocked by
+// another tab or upgraded out from under it.
+
 //
 // Schema versions:
 //   v1 — run/evaluation/suite/experiment/storage-meta (7 tables).
@@ -33,8 +34,13 @@
 //   v10 — additive executed verifier-outcome store (1 table): verifierOutcomes
 //         (spec §3.4/§7.3). Persisted by the verifier execution path and
 //         resolved locally by canonical derivation; never by the fusion stores.
+//   v11 — additive Comparison Result index store (1 table):
+//         comparisonResults (child 05 Task 2, spec §3). Summary-only rows
+//         keyed by the source run id (comparisonId == runId); candidate
+//         outputs and judge rationale never enter this store.
 import Dexie, { type Table } from "dexie";
 import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
+import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { ObservationSourceKind } from "../evidence/evidence-types";
 import type { VerificationKind } from "../evaluations/evaluation-types";
 import type { VersionRef } from "../tasks/task-types";
@@ -474,6 +480,8 @@ export class RSembleEvaluationDB extends Dexie {
   evidenceIndexJobs!: Table<EvidenceIndexJobRow, string>;
   // Executed verifier outcomes (schema v10)
   verifierOutcomes!: Table<VerifierOutcomeRow, string>;
+  // Comparison Result index rows (schema v11)
+  comparisonResults!: Table<ComparisonResultIndex, string>;
   // Fusion Study tables (schema v2)
   fusionRecipes!: Table<FusionRecipeRow, [string, number]>;
   poolManifests!: Table<PoolManifestRow, [string, number]>;
@@ -610,6 +618,14 @@ export class RSembleEvaluationDB extends Dexie {
     // path and read locally by canonical derivation — never the fusion stores.
     this.version(10).stores({
       verifierOutcomes: "id, taskId, modelKey, runId, executedAt",
+    });
+    // v11: additive Comparison Result index store (child 05 Task 2, spec §3).
+    // No existing table is redefined. Rows are summary-only indexes keyed by
+    // the source run id (comparisonId == runId): lifecycle, task linkage,
+    // evidence pointers, and lineage. Candidate outputs and judge rationale
+    // never enter this store — RunRecordV2 remains the exact result authority.
+    this.version(11).stores({
+      comparisonResults: "id, runId, status, mode, createdAt, updatedAt, revision",
     });
 
     this.on("blocked", () => {

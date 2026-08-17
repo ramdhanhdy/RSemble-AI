@@ -26,22 +26,15 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RSembleEvaluationDB, StorageError } from "./database";
-import {
-  InMemoryRunRepository,
-  createRunRepository,
-  type RunRepository,
-} from "./run-repository";
+import { InMemoryRunRepository, createRunRepository, type RunRepository } from "./run-repository";
 import type { FullRunSummaryV2, RunRecordV2, RunStatus } from "./run-types";
 import {
   createComparisonRepository,
   type ComparisonListQuery,
   type ComparisonRepository,
 } from "./comparison-repository";
+import type { ComparisonTaskBinding } from "../compare/comparison-result-types";
 import { InMemoryComparisonRepository } from "./in-memory-comparison-repository";
-import type {
-  ComparisonResultIndex,
-  ComparisonTaskBinding,
-} from "../compare/comparison-result-types";
 
 // ---------------------------------------------------------------------------
 // Valid baselines (mirrors run-repository.test.ts so records pass validators)
@@ -135,12 +128,13 @@ async function seedSourceRun(
   const title = options.title ?? `Task ${id}`;
   const record = makeRunRecord(id, { status, mode, createdAt, updatedAt });
   record.task = { ...record.task, title };
-  const summary = makeFullSummary(id, createdAt, {
+  const summaryOverrides: Partial<FullRunSummaryV2> = {
     status,
     mode,
-    modelKeys: options.modelKeys,
     taskTitle: title,
-  });
+  };
+  if (options.modelKeys) summaryOverrides.modelKeys = options.modelKeys;
+  const summary = makeFullSummary(id, createdAt, summaryOverrides);
   await runs.create(record, summary);
   return { record, summary };
 }
@@ -157,15 +151,13 @@ interface ComparisonHarness {
 type ComparisonFactory = () => Promise<ComparisonHarness>;
 
 const dexieFactory: ComparisonFactory = async () => {
-  const db = new RSembleEvaluationDB(
-    `comparison-repo-test-${Math.random().toString(36).slice(2)}`,
-  );
+  const db = new RSembleEvaluationDB(`comparison-repo-test-${Math.random().toString(36).slice(2)}`);
   await db.open();
   const runs = createRunRepository(db);
   return {
     repo: createComparisonRepository(db, runs, { now: () => 5000 }),
     runs,
-    close: () => db.close(),
+    close: async () => db.close(),
     simulateUnavailable: () => db.setState("unavailable"),
   };
 };
@@ -259,9 +251,9 @@ function runContract(name: string, makeHarness: ComparisonFactory) {
         const { repo } = harness;
         const record = makeRunRecord("run-1");
         record.id = "";
-        await expect(repo.createComparisonEnvelope(record, adHocBinding())).rejects.toMatchObject(
-          { kind: "validation" },
-        );
+        await expect(repo.createComparisonEnvelope(record, adHocBinding())).rejects.toMatchObject({
+          kind: "validation",
+        });
       });
     });
 
@@ -655,9 +647,9 @@ function runContract(name: string, makeHarness: ComparisonFactory) {
         const { repo, runs } = harness;
         const { record } = await seedSourceRun(runs, "run-1");
         harness.simulateUnavailable();
-        await expect(repo.createComparisonEnvelope(record, adHocBinding())).rejects.toMatchObject(
-          { kind: "unavailable" },
-        );
+        await expect(repo.createComparisonEnvelope(record, adHocBinding())).rejects.toMatchObject({
+          kind: "unavailable",
+        });
         await expect(
           repo.bindComparisonToTask(
             "run-1",
