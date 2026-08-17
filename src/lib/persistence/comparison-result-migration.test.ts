@@ -561,9 +561,12 @@ describe("migrateComparisonResults", () => {
       limitations: first.limitations,
     });
 
-    // Same injected clock: the pass is byte-stable, marker included.
+    // Same injected clock: the repeated pass performs no new work — every
+    // index row is skipped by the resume crosswalk (never duplicated) and
+    // the stored rows, limitations, and marker stay byte-stable.
     const second = await migrateComparisonResults(db, { now: () => 500 });
-    expect(second).toEqual(first);
+    expect(second).toEqual({ ...first, indexed: 0, skippedExisting: 1 });
+    expect(await db.comparisonResults.count()).toBe(1);
     expect(await migrationMarker(db)).toEqual(marker);
   });
 
