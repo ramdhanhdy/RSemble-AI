@@ -1051,9 +1051,9 @@ function v2SortByKey<T extends { key: string }>(items: T[]): T[] {
   return [...items].sort((a, b) => v2OrderingKeyString(a.key, b.key));
 }
 
-function v2SortByObservationIdRuleVersion<
-  T extends { observationId: string; ruleVersion: number },
->(items: T[]): T[] {
+function v2SortByObservationIdRuleVersion<T extends { observationId: string; ruleVersion: number }>(
+  items: T[],
+): T[] {
   const key = (t: T) => `${t.observationId}\u0000${t.ruleVersion.toString().padStart(10, "0")}`;
   return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
 }
@@ -1595,8 +1595,7 @@ export async function exportWorkbenchArchiveV2(
     const evidenceObservations: Observation[] = [];
     await db.observations.orderBy("id").each((row) => {
       if (isObservation(row.observation)) evidenceObservations.push(row.observation);
-      else
-        recordGuardFailure("evidence.observations", row.id, "observations", guardViolations);
+      else recordGuardFailure("evidence.observations", row.id, "observations", guardViolations);
     });
     const evidenceDecisions: EligibilityDecision[] = [];
     await db.evidenceDecisions.orderBy("id").each((row) => {
@@ -2649,7 +2648,8 @@ async function previewV2(
         "evidence.modelConfigurations",
         part.guarded,
         (mc) => mc.id,
-        (k) => db.modelConfigurations.get(k).then((r) => (r === undefined ? undefined : r.snapshot)),
+        (k) =>
+          db.modelConfigurations.get(k).then((r) => (r === undefined ? undefined : r.snapshot)),
         (v) => v,
         buckets,
       );
@@ -2703,7 +2703,8 @@ async function previewV2(
         "evidence.evidenceIndexJobs",
         part.guarded,
         (j) => j.sourceResultId,
-        (k) => db.evidenceIndexJobs.get(k).then((r) => (r === undefined ? undefined : fromJobRow(r))),
+        (k) =>
+          db.evidenceIndexJobs.get(k).then((r) => (r === undefined ? undefined : fromJobRow(r))),
         (v) => v,
         buckets,
       );
@@ -2721,7 +2722,10 @@ async function previewV2(
         "evidence.verifierOutcomes",
         part.guarded,
         (vo) => verifierOutcomeKey(vo),
-        (k) => db.verifierOutcomes.get(k).then((r) => (r === undefined ? undefined : fromVerifierRow(r))),
+        (k) =>
+          db.verifierOutcomes
+            .get(k)
+            .then((r) => (r === undefined ? undefined : fromVerifierRow(r))),
         (v) => v,
         buckets,
       );

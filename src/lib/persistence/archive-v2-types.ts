@@ -1258,10 +1258,7 @@ function validateOrdering(archive: WorkbenchArchiveV2, errors: ArchiveV2Validati
       { field: "evidence.modelConfigurations", items: ev.modelConfigurations, key: byId },
       errors,
     );
-    checkOrdering(
-      { field: "evidence.observations", items: ev.observations, key: byId },
-      errors,
-    );
+    checkOrdering({ field: "evidence.observations", items: ev.observations, key: byId }, errors);
     checkOrdering(
       {
         field: "evidence.evidenceDecisions",

@@ -1,0 +1,624 @@
+{
+  "generatedAt": "2026-08-17T03:01:31.528Z",
+  "baseUrl": "http://127.0.0.1:5186/",
+  "determinism": {
+    "run1": {
+      "observationCount": 8,
+      "observationIds": [
+        "obs:sha256:1284a50f8ab818bbc42a00ce10191b209d9ac941f3950db88a6c5661503bc656",
+        "obs:sha256:15b3d5d1f4ba966b9e9387520b4dc44c9a85069b924d429baab7bf4912063e29",
+        "obs:sha256:2c0ea99b3d5ebddad3a75bdf782da2e55d938a07667b26ef83d40ff81febcc67",
+        "obs:sha256:4bee0ee2e031456a4043833d26503a854f9ddf3b9c580cdec98b79c97dce0520",
+        "obs:sha256:9f9420fb440dcb3649a03b2c656a71dd55c15eb17ae85d7fc9dc0d4681625b38",
+        "obs:sha256:a83fe975b9ef03f98c64bc312a0d5a97963c924a228d8300693f16355c6f5c51",
+        "obs:sha256:c21d4152adf2bfa001359dacfd6b1f98c9b445c984a0bc4f5332c911b1cc8c35",
+        "obs:sha256:c2667965293365c2df7f5150aa6502a03be8003711295ca697111f14eff019c0"
+      ],
+      "sourceKeys": [
+        "[\"evaluation\",\"run-alpha-gpt4o\",\"cell-alpha-claude\",\"mc:sha256:1b99548c5c0aa3705da18264242b0501e337a31921e0d3be551f181915bf8210\",\"cand-claude-3-5-sonnet-task-evidence-alpha\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-alpha-gpt4o\",\"cell-alpha-gemini\",\"mc:sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993\",\"cand-gemini-1.5-pro-task-evidence-alpha\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-alpha-gpt4o\",\"cell-alpha-gpt4o\",\"mc:sha256:8f691efd6f3ec0cc6038a0a45271b574b5fe9f50b6d1a1ca890ce6028dc7d0f1\",\"cand-gpt-4o-task-evidence-alpha\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-beta-gpt4o\",\"cell-beta-gpt4o\",\"mc:sha256:8f691efd6f3ec0cc6038a0a45271b574b5fe9f50b6d1a1ca890ce6028dc7d0f1\",\"cand-gpt-4o-task-evidence-beta\",\"[\\\"judge-att-1\\\",[\\\"task-evidence-beta\\\",\\\"openai:gpt-4o\\\",true,1700000000000]]\"]",
+        "[\"evaluation\",\"run-corrupt-gpt4o\",\"cell-corrupt-gpt4o\",\"mc:sha256:8f691efd6f3ec0cc6038a0a45271b574b5fe9f50b6d1a1ca890ce6028dc7d0f1\",\"cand-gpt-4o-task-evidence-corrupt\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-delta-reused\",\"cell-delta-claude\",\"mc:sha256:1b99548c5c0aa3705da18264242b0501e337a31921e0d3be551f181915bf8210\",\"cand-claude-3-5-sonnet-task-evidence-delta\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-delta-reused\",\"cell-delta-gpt4o\",\"mc:sha256:8f691efd6f3ec0cc6038a0a45271b574b5fe9f50b6d1a1ca890ce6028dc7d0f1\",\"cand-gpt-4o-task-evidence-delta\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-gamma-gemini\",\"cell-gamma-gemini\",\"mc:sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993\",\"cand-gemini-1.5-pro-task-evidence-gamma\",\"[\\\"judge-att-1\\\",null]\"]"
+      ],
+      "decisions": [
+        {
+          "id": "obs:sha256:1284a50f8ab818bbc42a00ce10191b209d9ac941f3950db88a6c5661503bc656#1",
+          "observationId": "obs:sha256:1284a50f8ab818bbc42a00ce10191b209d9ac941f3950db88a6c5661503bc656",
+          "status": "eligible",
+          "evidenceClass": "comparable",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison"
+          ],
+          "reasonCodes": [
+            "reused_candidate_assessment",
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:15b3d5d1f4ba966b9e9387520b4dc44c9a85069b924d429baab7bf4912063e29#1",
+          "observationId": "obs:sha256:15b3d5d1f4ba966b9e9387520b4dc44c9a85069b924d429baab7bf4912063e29",
+          "status": "excluded",
+          "evidenceClass": "exploratory",
+          "allowedUses": [],
+          "reasonCodes": [
+            "source_corrupt",
+            "canonical_task_resolved"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:2c0ea99b3d5ebddad3a75bdf782da2e55d938a07667b26ef83d40ff81febcc67#1",
+          "observationId": "obs:sha256:2c0ea99b3d5ebddad3a75bdf782da2e55d938a07667b26ef83d40ff81febcc67",
+          "status": "eligible",
+          "evidenceClass": "comparable",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison",
+            "task_set_standing"
+          ],
+          "reasonCodes": [
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed",
+            "assessment_selected_completed",
+            "rubric_resolved",
+            "protocol_complete",
+            "model_configuration_exact",
+            "full_pair_coverage",
+            "full_task_set_coverage"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:4bee0ee2e031456a4043833d26503a854f9ddf3b9c580cdec98b79c97dce0520#1",
+          "observationId": "obs:sha256:4bee0ee2e031456a4043833d26503a854f9ddf3b9c580cdec98b79c97dce0520",
+          "status": "eligible",
+          "evidenceClass": "comparable",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison",
+            "task_set_standing"
+          ],
+          "reasonCodes": [
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed",
+            "assessment_selected_completed",
+            "rubric_resolved",
+            "protocol_complete",
+            "model_configuration_exact",
+            "full_pair_coverage",
+            "full_task_set_coverage"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:9f9420fb440dcb3649a03b2c656a71dd55c15eb17ae85d7fc9dc0d4681625b38#1",
+          "observationId": "obs:sha256:9f9420fb440dcb3649a03b2c656a71dd55c15eb17ae85d7fc9dc0d4681625b38",
+          "status": "provisional",
+          "evidenceClass": "exploratory",
+          "allowedUses": [
+            "task_descriptive"
+          ],
+          "reasonCodes": [
+            "model_version_unreported",
+            "paired_cell_missing",
+            "incomplete_task_set_coverage",
+            "canonical_task_resolved"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:a83fe975b9ef03f98c64bc312a0d5a97963c924a228d8300693f16355c6f5c51#1",
+          "observationId": "obs:sha256:a83fe975b9ef03f98c64bc312a0d5a97963c924a228d8300693f16355c6f5c51",
+          "status": "provisional",
+          "evidenceClass": "exploratory",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile"
+          ],
+          "reasonCodes": [
+            "model_version_unreported",
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:c21d4152adf2bfa001359dacfd6b1f98c9b445c984a0bc4f5332c911b1cc8c35#1",
+          "observationId": "obs:sha256:c21d4152adf2bfa001359dacfd6b1f98c9b445c984a0bc4f5332c911b1cc8c35",
+          "status": "eligible",
+          "evidenceClass": "verified",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison",
+            "task_set_standing"
+          ],
+          "reasonCodes": [
+            "verifier_passed",
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed",
+            "assessment_selected_completed",
+            "rubric_resolved",
+            "protocol_complete",
+            "model_configuration_exact"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:c2667965293365c2df7f5150aa6502a03be8003711295ca697111f14eff019c0#1",
+          "observationId": "obs:sha256:c2667965293365c2df7f5150aa6502a03be8003711295ca697111f14eff019c0",
+          "status": "eligible",
+          "evidenceClass": "comparable",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison"
+          ],
+          "reasonCodes": [
+            "undeclared_repeat",
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        }
+      ],
+      "indexJobs": [
+        {
+          "sourceResultId": "run-alpha-gpt4o",
+          "status": "complete",
+          "errorKind": null,
+          "summary": {
+            "observationCount": 3,
+            "eligibleCount": 3,
+            "provisionalCount": 0,
+            "excludedCount": 0
+          }
+        },
+        {
+          "sourceResultId": "run-beta-gpt4o",
+          "status": "complete",
+          "errorKind": null,
+          "summary": {
+            "observationCount": 1,
+            "eligibleCount": 1,
+            "provisionalCount": 0,
+            "excludedCount": 0
+          }
+        },
+        {
+          "sourceResultId": "run-corrupt-gpt4o",
+          "status": "error",
+          "errorKind": "CORRUPT_PAYLOAD",
+          "summary": null
+        },
+        {
+          "sourceResultId": "run-delta-reused",
+          "status": "complete",
+          "errorKind": null,
+          "summary": {
+            "observationCount": 2,
+            "eligibleCount": 2,
+            "provisionalCount": 0,
+            "excludedCount": 0
+          }
+        },
+        {
+          "sourceResultId": "run-gamma-gemini",
+          "status": "complete",
+          "errorKind": null,
+          "summary": {
+            "observationCount": 1,
+            "eligibleCount": 1,
+            "provisionalCount": 0,
+            "excludedCount": 0
+          }
+        }
+      ],
+      "verifierCount": 1,
+      "taskCount": 60
+    },
+    "run2": {
+      "observationCount": 8,
+      "observationIds": [
+        "obs:sha256:1284a50f8ab818bbc42a00ce10191b209d9ac941f3950db88a6c5661503bc656",
+        "obs:sha256:15b3d5d1f4ba966b9e9387520b4dc44c9a85069b924d429baab7bf4912063e29",
+        "obs:sha256:2c0ea99b3d5ebddad3a75bdf782da2e55d938a07667b26ef83d40ff81febcc67",
+        "obs:sha256:4bee0ee2e031456a4043833d26503a854f9ddf3b9c580cdec98b79c97dce0520",
+        "obs:sha256:9f9420fb440dcb3649a03b2c656a71dd55c15eb17ae85d7fc9dc0d4681625b38",
+        "obs:sha256:a83fe975b9ef03f98c64bc312a0d5a97963c924a228d8300693f16355c6f5c51",
+        "obs:sha256:c21d4152adf2bfa001359dacfd6b1f98c9b445c984a0bc4f5332c911b1cc8c35",
+        "obs:sha256:c2667965293365c2df7f5150aa6502a03be8003711295ca697111f14eff019c0"
+      ],
+      "sourceKeys": [
+        "[\"evaluation\",\"run-alpha-gpt4o\",\"cell-alpha-claude\",\"mc:sha256:1b99548c5c0aa3705da18264242b0501e337a31921e0d3be551f181915bf8210\",\"cand-claude-3-5-sonnet-task-evidence-alpha\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-alpha-gpt4o\",\"cell-alpha-gemini\",\"mc:sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993\",\"cand-gemini-1.5-pro-task-evidence-alpha\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-alpha-gpt4o\",\"cell-alpha-gpt4o\",\"mc:sha256:8f691efd6f3ec0cc6038a0a45271b574b5fe9f50b6d1a1ca890ce6028dc7d0f1\",\"cand-gpt-4o-task-evidence-alpha\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-beta-gpt4o\",\"cell-beta-gpt4o\",\"mc:sha256:8f691efd6f3ec0cc6038a0a45271b574b5fe9f50b6d1a1ca890ce6028dc7d0f1\",\"cand-gpt-4o-task-evidence-beta\",\"[\\\"judge-att-1\\\",[\\\"task-evidence-beta\\\",\\\"openai:gpt-4o\\\",true,1700000000000]]\"]",
+        "[\"evaluation\",\"run-corrupt-gpt4o\",\"cell-corrupt-gpt4o\",\"mc:sha256:8f691efd6f3ec0cc6038a0a45271b574b5fe9f50b6d1a1ca890ce6028dc7d0f1\",\"cand-gpt-4o-task-evidence-corrupt\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-delta-reused\",\"cell-delta-claude\",\"mc:sha256:1b99548c5c0aa3705da18264242b0501e337a31921e0d3be551f181915bf8210\",\"cand-claude-3-5-sonnet-task-evidence-delta\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-delta-reused\",\"cell-delta-gpt4o\",\"mc:sha256:8f691efd6f3ec0cc6038a0a45271b574b5fe9f50b6d1a1ca890ce6028dc7d0f1\",\"cand-gpt-4o-task-evidence-delta\",\"[\\\"judge-att-1\\\",null]\"]",
+        "[\"evaluation\",\"run-gamma-gemini\",\"cell-gamma-gemini\",\"mc:sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993\",\"cand-gemini-1.5-pro-task-evidence-gamma\",\"[\\\"judge-att-1\\\",null]\"]"
+      ],
+      "decisions": [
+        {
+          "id": "obs:sha256:1284a50f8ab818bbc42a00ce10191b209d9ac941f3950db88a6c5661503bc656#1",
+          "observationId": "obs:sha256:1284a50f8ab818bbc42a00ce10191b209d9ac941f3950db88a6c5661503bc656",
+          "status": "eligible",
+          "evidenceClass": "comparable",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison"
+          ],
+          "reasonCodes": [
+            "reused_candidate_assessment",
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:15b3d5d1f4ba966b9e9387520b4dc44c9a85069b924d429baab7bf4912063e29#1",
+          "observationId": "obs:sha256:15b3d5d1f4ba966b9e9387520b4dc44c9a85069b924d429baab7bf4912063e29",
+          "status": "excluded",
+          "evidenceClass": "exploratory",
+          "allowedUses": [],
+          "reasonCodes": [
+            "source_corrupt",
+            "canonical_task_resolved"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:2c0ea99b3d5ebddad3a75bdf782da2e55d938a07667b26ef83d40ff81febcc67#1",
+          "observationId": "obs:sha256:2c0ea99b3d5ebddad3a75bdf782da2e55d938a07667b26ef83d40ff81febcc67",
+          "status": "eligible",
+          "evidenceClass": "comparable",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison",
+            "task_set_standing"
+          ],
+          "reasonCodes": [
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed",
+            "assessment_selected_completed",
+            "rubric_resolved",
+            "protocol_complete",
+            "model_configuration_exact",
+            "full_pair_coverage",
+            "full_task_set_coverage"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:4bee0ee2e031456a4043833d26503a854f9ddf3b9c580cdec98b79c97dce0520#1",
+          "observationId": "obs:sha256:4bee0ee2e031456a4043833d26503a854f9ddf3b9c580cdec98b79c97dce0520",
+          "status": "eligible",
+          "evidenceClass": "comparable",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison",
+            "task_set_standing"
+          ],
+          "reasonCodes": [
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed",
+            "assessment_selected_completed",
+            "rubric_resolved",
+            "protocol_complete",
+            "model_configuration_exact",
+            "full_pair_coverage",
+            "full_task_set_coverage"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:9f9420fb440dcb3649a03b2c656a71dd55c15eb17ae85d7fc9dc0d4681625b38#1",
+          "observationId": "obs:sha256:9f9420fb440dcb3649a03b2c656a71dd55c15eb17ae85d7fc9dc0d4681625b38",
+          "status": "provisional",
+          "evidenceClass": "exploratory",
+          "allowedUses": [
+            "task_descriptive"
+          ],
+          "reasonCodes": [
+            "model_version_unreported",
+            "paired_cell_missing",
+            "incomplete_task_set_coverage",
+            "canonical_task_resolved"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:a83fe975b9ef03f98c64bc312a0d5a97963c924a228d8300693f16355c6f5c51#1",
+          "observationId": "obs:sha256:a83fe975b9ef03f98c64bc312a0d5a97963c924a228d8300693f16355c6f5c51",
+          "status": "provisional",
+          "evidenceClass": "exploratory",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile"
+          ],
+          "reasonCodes": [
+            "model_version_unreported",
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:c21d4152adf2bfa001359dacfd6b1f98c9b445c984a0bc4f5332c911b1cc8c35#1",
+          "observationId": "obs:sha256:c21d4152adf2bfa001359dacfd6b1f98c9b445c984a0bc4f5332c911b1cc8c35",
+          "status": "eligible",
+          "evidenceClass": "verified",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison",
+            "task_set_standing"
+          ],
+          "reasonCodes": [
+            "verifier_passed",
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed",
+            "assessment_selected_completed",
+            "rubric_resolved",
+            "protocol_complete",
+            "model_configuration_exact"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        },
+        {
+          "id": "obs:sha256:c2667965293365c2df7f5150aa6502a03be8003711295ca697111f14eff019c0#1",
+          "observationId": "obs:sha256:c2667965293365c2df7f5150aa6502a03be8003711295ca697111f14eff019c0",
+          "status": "eligible",
+          "evidenceClass": "comparable",
+          "allowedUses": [
+            "task_descriptive",
+            "within_model_profile",
+            "paired_model_comparison"
+          ],
+          "reasonCodes": [
+            "undeclared_repeat",
+            "canonical_task_resolved",
+            "instance_reconstructed",
+            "candidate_selected_completed"
+          ],
+          "comparabilityCohortId": "sha256:4b88c674e9b5e936369d601d64d0069a2e2ce0b43a7a0307fd1dfab60d500993"
+        }
+      ],
+      "indexJobs": [
+        {
+          "sourceResultId": "run-alpha-gpt4o",
+          "status": "complete",
+          "errorKind": null,
+          "summary": {
+            "observationCount": 3,
+            "eligibleCount": 3,
+            "provisionalCount": 0,
+            "excludedCount": 0
+          }
+        },
+        {
+          "sourceResultId": "run-beta-gpt4o",
+          "status": "complete",
+          "errorKind": null,
+          "summary": {
+            "observationCount": 1,
+            "eligibleCount": 1,
+            "provisionalCount": 0,
+            "excludedCount": 0
+          }
+        },
+        {
+          "sourceResultId": "run-corrupt-gpt4o",
+          "status": "error",
+          "errorKind": "CORRUPT_PAYLOAD",
+          "summary": null
+        },
+        {
+          "sourceResultId": "run-delta-reused",
+          "status": "complete",
+          "errorKind": null,
+          "summary": {
+            "observationCount": 2,
+            "eligibleCount": 2,
+            "provisionalCount": 0,
+            "excludedCount": 0
+          }
+        },
+        {
+          "sourceResultId": "run-gamma-gemini",
+          "status": "complete",
+          "errorKind": null,
+          "summary": {
+            "observationCount": 1,
+            "eligibleCount": 1,
+            "provisionalCount": 0,
+            "excludedCount": 0
+          }
+        }
+      ],
+      "verifierCount": 1,
+      "taskCount": 60
+    },
+    "match": true
+  },
+  "probes": [
+    {
+      "name": "determinism-double-run",
+      "observationCount": 8,
+      "verifierCount": 1,
+      "taskCount": 60,
+      "match": true,
+      "pass": true,
+      "reason": "Deterministic fixture seeded twice produces 100% identical observation IDs, sourceKeys, decisions, and index jobs."
+    },
+    {
+      "name": "matrix-table-semantics-1440",
+      "hasTable": true,
+      "thCount": 11,
+      "rowCount": 5,
+      "hasWinnerGlyph": true,
+      "footerRowCount": 2,
+      "hasMeanScoreFooter": true,
+      "hasCoverageFooter": true,
+      "receiptButtonCount": 12,
+      "hasKeyboardScrollRegion": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "ResultMatrix renders real table, sticky headers, winner crown, mean/coverage footer, and receipts without overflow at 1440px."
+    },
+    {
+      "name": "evidence-receipt-eligible-disclosure",
+      "found": true,
+      "hasWhyItCounts": true,
+      "hasAllowedUses": true,
+      "hasModelConfig": true,
+      "hasExactRecordLink": true,
+      "textSnippet": "Eligible — ComparableCloseEligible for all declared uses of its class.Comparable evidence — controlled foundations are in place.Why it countsThis record resolves to a canonical Task identity.The concrete Task Instance input is reconstructable.An accepted completed candidate output exists for this ce",
+      "pass": true,
+      "reason": "EvidenceReceipt popover displays eligibility status, reason codes, allowed uses, model configuration, and exact run link."
+    },
+    {
+      "name": "evidence-receipt-keyboard-escape",
+      "closed": true,
+      "pass": true,
+      "reason": "Escape key closes the EvidenceReceipt popover."
+    },
+    {
+      "name": "evidence-receipt-verified-state",
+      "isVerified": true,
+      "hasPassedReason": true,
+      "pass": true,
+      "reason": "EvidenceReceipt displays Verified evidence class with verifier provenance."
+    },
+    {
+      "name": "matrix-missing-cell-states",
+      "hasNotRun": false,
+      "hasNoScore": true,
+      "hasEvidenceMissing": false,
+      "pass": true,
+      "reason": "Missing matrix cells display explicit text (Not run, No score, Evidence unavailable) with StatusMarks, never bare dashes."
+    },
+    {
+      "name": "task-observations-view-and-invariants",
+      "hasSection": true,
+      "hasHonestCounts": true,
+      "filterCount": 15,
+      "obsRowCount": 3,
+      "hasForbiddenFusion": false,
+      "pass": true,
+      "reason": "TaskObservations view displays honest counts, filter controls, and NEVER lists FusionObservation records."
+    },
+    {
+      "name": "task-version-observations-view",
+      "hasVersionTitle": true,
+      "hasObservations": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "Task Version route renders read-only TaskObservations scoped to version 1 without overflow."
+    },
+    {
+      "name": "exact-record-deep-link",
+      "hasCandidate": true,
+      "hasOutput": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "Deep link to exact run record focuses candidate and displays output and judge scores."
+    },
+    {
+      "name": "secret-token-leakage-probe",
+      "foundInHtml": false,
+      "foundInText": false,
+      "pass": true,
+      "reason": "Secret tokens stored in database snapshots/decisions are never leaked or surfaced in the rendered DOM."
+    },
+    {
+      "name": "mobile-390-adaptation",
+      "hasSelect": true,
+      "selectOptionCount": 3,
+      "rowCount": 0,
+      "overflowX": false,
+      "pass": true,
+      "reason": "Mobile 390px adaptation switches to native model select, renders one task row per model, and prevents horizontal overflow."
+    },
+    {
+      "name": "tablet-768-boundary",
+      "hasTable": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "Tablet 768px boundary maintains desktop table matrix layout without horizontal page overflow."
+    },
+    {
+      "name": "zoom-200-percent-1440",
+      "hasTable": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "200% zoom scaling preserves matrix layout integrity and accessibility."
+    },
+    {
+      "name": "reduced-motion-emulation",
+      "prefersReducedMotion": true,
+      "pass": true,
+      "reason": "Reduced motion preference is active and respected across animations/disclosures."
+    },
+    {
+      "name": "matrix-pagination-50-rows",
+      "renderedRowCount": 50,
+      "hasPageRange": true,
+      "hasNextBtn": true,
+      "pass": true,
+      "reason": "55-task matrix renders exactly 50 rows on page 1 with pagination controls."
+    },
+    {
+      "name": "matrix-pagination-page-2",
+      "page2RowCount": 5,
+      "pass": true,
+      "reason": "Navigating to page 2 displays the remaining 5 tasks (51–55) accurately."
+    },
+    {
+      "name": "zero-provider-egress",
+      "providerCallsCount": 0,
+      "pass": true,
+      "reason": "Harness completed with zero external provider calls (100% intercepted and local)."
+    }
+  ],
+  "screenshots": [
+    "qa-matrix-desktop-1440.png",
+    "qa-receipt-eligible-popover.png",
+    "qa-task-observations-detail.png",
+    "qa-task-version-observations.png",
+    "qa-exact-record-deeplink.png",
+    "qa-mobile-390-results.png",
+    "qa-tablet-768-matrix.png",
+    "qa-zoom-200-scale2.png",
+    "qa-reduced-motion-matrix.png",
+    "qa-large-matrix-page-1.png",
+    "qa-large-matrix-page-2.png"
+  ],
+  "consoleErrors": [],
+  "providerCalls": []
+}

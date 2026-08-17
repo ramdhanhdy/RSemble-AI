@@ -23,11 +23,9 @@ import {
   ARCHIVE_V2_STORAGE_VERSION,
   computeArchiveV2PayloadDigest,
   type ArchiveV2EntityCounts,
+  type ArchiveV2EvidencePayload,
   type ArchiveV2TaskArtifactBytes,
   type WorkbenchArchiveV2,
-} from "./archive-v2-types";
-import type {
-  ArchiveV2EvidencePayload,
 } from "./archive-v2-types";
 import type {
   EligibilityDecision,
@@ -1082,7 +1080,8 @@ export function makeEligibilityDecision(
       "protocol_complete",
       "rubric_resolved",
     ],
-    comparabilityCohortId: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    comparabilityCohortId:
+      "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     decidedAt: 1600,
   };
 }
@@ -1105,7 +1104,6 @@ export function makeEvidenceIndexJob(sourceResultId = "run-1"): EvidenceIndexJob
     },
   };
 }
-
 
 export function modelConfigurationRow(snapshot: ModelConfigurationSnapshot): ModelConfigurationRow {
   return {
@@ -1166,7 +1164,6 @@ export function verifierOutcomeRow(outcome: ExecutedVerifierOutcome): VerifierOu
     ...outcome,
   };
 }
-
 
 // --- Valid envelope ----------------------------------------------------------
 
@@ -1230,7 +1227,6 @@ export function buildValidArchiveV2Fixture(): WorkbenchArchiveV2 {
     evidenceIndexJobs: [job],
     verifierOutcomes: [vo],
   };
-
 
   const archive: WorkbenchArchiveV2 = {
     manifest: {

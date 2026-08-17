@@ -331,7 +331,7 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
         .map((el) => el.textContent ?? "")
         .join("\n");
       expect(status).toContain("format v2");
-      expect(status).toContain("27 to create");
+      expect(status).toContain("32 to create");
       expect(status).toContain("suites: 1");
 
       await act(async () => {
@@ -347,7 +347,7 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
         .$$('[role="status"]')
         .map((el) => el.textContent ?? "")
         .join("\n");
-      expect(result).toContain('Imported 27 records — 0 reused ("v2.json")');
+      expect(result).toContain('Imported 32 records — 0 reused ("v2.json")');
     } finally {
       console.error = originalError;
     }

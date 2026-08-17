@@ -196,7 +196,9 @@ describe("archive v2 integration — complete corpus round trip", () => {
     expect(reexported.manifest.counts.evidenceDecisions).toBe(1);
     expect(reexported.manifest.counts.evidenceIndexJobs).toBe(1);
     expect(reexported.manifest.counts.verifierOutcomes).toBe(1);
-    expect(reexported.evidence?.modelConfigurations).toEqual(exported.evidence?.modelConfigurations);
+    expect(reexported.evidence?.modelConfigurations).toEqual(
+      exported.evidence?.modelConfigurations,
+    );
     expect(reexported.evidence?.observations).toEqual(exported.evidence?.observations);
     expect(reexported.evidence?.evidenceDecisions).toEqual(exported.evidence?.evidenceDecisions);
     expect(reexported.evidence?.evidenceIndexJobs).toEqual(exported.evidence?.evidenceIndexJobs);
@@ -735,9 +737,7 @@ describe("archive v2 integration — Evidence payload", () => {
 
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     expect(
-      preview.collisions.some(
-        (c) => c.collection === "evidence.observations" && c.key === obs.id,
-      ),
+      preview.collisions.some((c) => c.collection === "evidence.observations" && c.key === obs.id),
     ).toBe(true);
     await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
       name: "StorageError",
