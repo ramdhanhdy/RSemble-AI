@@ -479,6 +479,175 @@ describe("archive v2 Task Set identity", () => {
     expect(result.errors).toEqual([]);
   });
 });
+// --- Evidence payload (Child 04 Task 12) -------------------------------------
+
+describe("archive v2 Evidence payload", () => {
+  it("accepts a valid archive fixture carrying the evidence payload", () => {
+    const archive = buildValidArchiveV2Fixture();
+    expect(archive.evidence).toBeDefined();
+    expect(archive.evidence?.modelConfigurations.length).toBe(1);
+    expect(archive.evidence?.observations.length).toBe(1);
+    expect(archive.evidence?.evidenceDecisions.length).toBe(1);
+    expect(archive.evidence?.evidenceIndexJobs.length).toBe(1);
+    expect(archive.evidence?.verifierOutcomes.length).toBe(1);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("rejects a prohibited credential key inside a ModelConfiguration snapshot", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    (archive.evidence!.modelConfigurations[0].runtimeSettings as Record<string, unknown>)[
+      PROHIBITED_KEY_SAMPLE
+    ] = "secret-token";
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /prohibited/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a credential-like value inside an Observation payload", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.observations[0].sourceTaskCellId = `exp-1:task-1:${credentialLikeText()}`;
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /credential/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects raw candidate output or full judge rationale embedded in an Observation", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    Object.assign(archive.evidence!.observations[0], {
+      candidateOutput: "raw candidate text should not be here",
+    });
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /raw content|prohibited|Observation/i.test(e.message))).toBe(
+      true,
+    );
+  });
+
+  it("rejects an Observation referencing an unknown task", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.observations[0].taskId = "unknown-task";
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown task/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an Observation referencing an unknown task version", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.observations[0].taskVersion = 99;
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown task version/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an Observation referencing an unknown modelConfiguration", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.observations[0].modelConfigurationId =
+      "mc:sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown model configuration/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an Observation referencing an unknown rubric version", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.observations[0].rubricRef = { id: "rubric-1", version: 99 };
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown rubric/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an EligibilityDecision referencing an unknown observation", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.evidenceDecisions[0].observationId =
+      "obs:sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown observation/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an ExecutedVerifierOutcome referencing an unknown run", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.verifierOutcomes[0].runId = "unknown-run";
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown run/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an ExecutedVerifierOutcome referencing an unknown task", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.verifierOutcomes[0].taskId = "unknown-task";
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /unknown task/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a duplicate ModelConfiguration id", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.modelConfigurations.push({ ...archive.evidence!.modelConfigurations[0] });
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /duplicate/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a duplicate Observation id", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.observations.push({ ...archive.evidence!.observations[0] });
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /duplicate/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a duplicate EligibilityDecision key", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    archive.evidence!.evidenceDecisions.push({ ...archive.evidence!.evidenceDecisions[0] });
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /duplicate/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an out-of-order evidence collection", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    const mc1 = archive.evidence!.modelConfigurations[0];
+    const mc2 = {
+      ...mc1,
+      id: "mc:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    };
+    archive.evidence!.modelConfigurations = [mc1, mc2]; // mc1 > mc2 so not sorted ascending
+    syncManifest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /deterministic order/i.test(e.message))).toBe(true);
+  });
+
+  it("accepts an earlier-v2 envelope without the evidence key (counts treated as zero)", () => {
+    const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
+    delete archive.evidence;
+    archive.manifest.counts.modelConfigurations = 0;
+    archive.manifest.counts.observations = 0;
+    archive.manifest.counts.evidenceDecisions = 0;
+    archive.manifest.counts.evidenceIndexJobs = 0;
+    archive.manifest.counts.verifierOutcomes = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+    const result = validateArchiveV2(archive);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+});
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -513,6 +682,11 @@ function syncManifest(archive: WorkbenchArchiveV2): void {
     taskSetVersions: archive.taskSets?.versions.length ?? 0,
     taskSetMaterializations: archive.taskSets?.materializations.length ?? 0,
     taskSetOwnershipCrosswalks: archive.taskSets?.ownershipCrosswalks.length ?? 0,
+    modelConfigurations: archive.evidence?.modelConfigurations.length ?? 0,
+    observations: archive.evidence?.observations.length ?? 0,
+    evidenceDecisions: archive.evidence?.evidenceDecisions.length ?? 0,
+    evidenceIndexJobs: archive.evidence?.evidenceIndexJobs.length ?? 0,
+    verifierOutcomes: archive.evidence?.verifierOutcomes.length ?? 0,
   };
   archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 }

@@ -72,6 +72,13 @@ import { isRecord, type RunRecordV2, type RunSummary } from "./run-types";
 import type { TaskSetRecord, TaskSetVersion } from "../evaluations/task-set-types";
 import type { TaskSetMaterializationRecord } from "./evaluation-repository";
 import type { TaskSetOwnershipCrosswalkRow } from "./database";
+import type {
+  EligibilityDecision,
+  ExecutedVerifierOutcome,
+  ModelConfigurationSnapshot,
+  Observation,
+} from "../evidence/evidence-types";
+import type { EvidenceIndexJob } from "./evidence-repository";
 
 // --- Versions ----------------------------------------------------------------
 
@@ -125,8 +132,12 @@ export interface ArchiveV2EntityCounts {
   taskSetVersions: number;
   taskSetMaterializations: number;
   taskSetOwnershipCrosswalks: number;
+  modelConfigurations: number;
+  observations: number;
+  evidenceDecisions: number;
+  evidenceIndexJobs: number;
+  verifierOutcomes: number;
 }
-
 /** Extensible v2 manifest. Future additive fields must keep older validators
  *  functional; `formatVersion` is the break-glass discriminator. */
 export interface ArchiveV2Manifest {
@@ -193,6 +204,19 @@ export interface ArchiveV2TaskSetPayload {
   ownershipCrosswalks: TaskSetOwnershipCrosswalkRow[];
 }
 
+/** Evidence collections (Child 04 Task 12, spec §3, §10). Carries canonical
+ *  Model Configuration snapshots, Task Observations, Eligibility Decisions,
+ *  indexing job markers, and executed verifier outcomes. This key is
+ *  OPTIONAL: earlier v2 envelopes without it remain readable, and its absence
+ *  means all five counts are zero. */
+export interface ArchiveV2EvidencePayload {
+  modelConfigurations: ModelConfigurationSnapshot[];
+  observations: Observation[];
+  evidenceDecisions: EligibilityDecision[];
+  evidenceIndexJobs: EvidenceIndexJob[];
+  verifierOutcomes: ExecutedVerifierOutcome[];
+}
+
 /** The complete, task-first archive v2 envelope. Structurally distinct from
  *  `WorkbenchArchiveV1`: a manifest with format/storage versions, integrity
  *  digest, and local-scope disclosure; Fusion and Task collections are
@@ -207,6 +231,8 @@ export interface WorkbenchArchiveV2 {
   tasks: ArchiveV2TaskPayload;
   /** Optional Task Set identity payload (Child 03). Absent => empty. */
   taskSets?: ArchiveV2TaskSetPayload;
+  /** Optional Evidence payload (Child 04). Absent => empty. */
+  evidence?: ArchiveV2EvidencePayload;
 }
 
 /** Top-level collection keys, in deterministic declaration order. Used by

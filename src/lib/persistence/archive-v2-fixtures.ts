@@ -26,6 +26,17 @@ import {
   type ArchiveV2TaskArtifactBytes,
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
+import type {
+  ArchiveV2EvidencePayload,
+} from "./archive-v2-types";
+import type {
+  EligibilityDecision,
+  ExecutedVerifierOutcome,
+  ModelConfigurationSnapshot,
+  Observation,
+} from "../evidence/evidence-types";
+import { observationIdFor } from "../evidence/evidence-validation";
+import type { EvidenceIndexJob } from "./evidence-repository";
 import { computeArtifactDigest } from "../tasks/task-instance";
 import type { TaskMigrationCrosswalk } from "../tasks/task-references";
 import type {
@@ -86,6 +97,11 @@ import type {
   TaskSetOwnershipCrosswalkRow,
   TaskSetRecordRow,
   TaskSetVersionRow,
+  ModelConfigurationRow,
+  EvidenceObservationRow,
+  EvidenceDecisionRow,
+  EvidenceIndexJobRow,
+  VerifierOutcomeRow,
 } from "./database";
 
 // --- Shared constants --------------------------------------------------------
@@ -956,6 +972,201 @@ export function taskSetMaterializationRow(
   };
 }
 
+// --- Evidence domain builders (Child 04 Task 12) -----------------------------
+
+export function makeModelConfiguration(
+  id = "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+): ModelConfigurationSnapshot {
+  return {
+    id,
+    providerId: "openrouter",
+    requestedModel: "anthropic/claude-3.5-sonnet",
+    resolvedModel: "anthropic/claude-3.5-sonnet-20241022",
+    resolvedVersion: "20241022",
+    reasoningRequested: null,
+    reasoningEffective: null,
+    toolScaffoldSignature: null,
+    runtimeSettings: { temperature: 0.7 },
+    observedFrom: 1000,
+    observedTo: 2000,
+    identityCompleteness: "exact",
+  };
+}
+
+export function makeEvidenceObservation(
+  modelConfigurationId: string,
+  overrides: Partial<Observation> = {},
+): Observation {
+  const base: Omit<Observation, "id"> = {
+    sourceKind: "evaluation",
+    sourceResultId: "run-1",
+    executionLineageId: "eval:exp-1:task-1",
+    runId: "run-1",
+    sourceTaskCellId: "exp-1:task-1:openrouter:m1",
+    taskId: "task-1",
+    taskVersion: 1,
+    taskInstanceId: "inst-1",
+    taskFamilyId: "fam-1",
+    modelConfigurationId,
+    candidateAttemptId: "attempt-1",
+    assessmentRef: {
+      judgeAttemptId: "judge-att-1",
+      judgeProviderId: "openrouter",
+      judgeModel: "judge-1",
+      blindLabelMapping: { A: "openrouter:m1" },
+      candidateAttemptIdsByCandidateId: { "openrouter:m1": "attempt-1" },
+      rubricRef: { id: "rubric-1", version: 1 },
+      verifierRef: null,
+      verifierOutcome: null,
+    },
+    protocolFingerprint: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    rubricRef: { id: "rubric-1", version: 1 },
+    evaluatorSnapshot: {
+      kind: "model_judge",
+      providerId: "openrouter",
+      model: "judge-1",
+      resolvedVersion: null,
+      instructionDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      reasoningEffort: null,
+      toolScaffoldSignature: null,
+    },
+    verifierSnapshot: null,
+    outcome: {
+      judgeAccepted: true,
+      overallScore: 4.5,
+      criterionValues: [{ criterionId: "crit-1", value: 4.5 }],
+      verifierPassed: null,
+    },
+    observedAt: 1500,
+    observationSchemaVersion: 1,
+    ...overrides,
+  };
+  const id = overrides.id ?? observationIdFor(base);
+  return { id, ...base };
+}
+
+export function makeEligibilityDecision(
+  observationId: string,
+  ruleVersion = 1,
+): EligibilityDecision {
+  return {
+    observationId,
+    ruleVersion,
+    status: "eligible",
+    evidenceClass: "comparable",
+    allowedUses: ["task_descriptive", "within_model_profile", "paired_model_comparison"],
+    reasonCodes: [
+      "assessment_selected_completed",
+      "candidate_selected_completed",
+      "canonical_task_resolved",
+      "instance_reconstructed",
+      "model_configuration_exact",
+      "protocol_complete",
+      "rubric_resolved",
+    ],
+    comparabilityCohortId: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    decidedAt: 1600,
+  };
+}
+
+export function makeEvidenceIndexJob(sourceResultId = "run-1"): EvidenceIndexJob {
+  return {
+    sourceResultId,
+    sourceKind: "evaluation",
+    status: "complete",
+    ruleVersion: 1,
+    sourceRevision: 1,
+    updatedAt: 1700,
+    errorKind: null,
+    errorMessage: null,
+    summary: {
+      observationCount: 1,
+      gapCount: 0,
+      limitationCount: 0,
+      integrityIssues: [],
+    },
+  };
+}
+
+export function makeExecutedVerifierOutcome(
+  runId = "run-1",
+  taskId = "task-1",
+  modelKey = "openrouter:m1",
+  executedAt = 1400,
+): ExecutedVerifierOutcome {
+  return {
+    taskId,
+    modelKey,
+    runId,
+    kind: "unit_test",
+    configurationDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    verifierRef: { id: "verifier-1", version: 1 },
+    passed: true,
+    executedAt,
+  };
+}
+
+export function modelConfigurationRow(snapshot: ModelConfigurationSnapshot): ModelConfigurationRow {
+  return {
+    id: snapshot.id,
+    snapshot,
+    providerId: snapshot.providerId,
+    requestedModel: snapshot.requestedModel,
+    resolvedVersion: snapshot.resolvedVersion,
+    observedTo: snapshot.observedTo,
+  };
+}
+
+export function evidenceObservationRow(observation: Observation): EvidenceObservationRow {
+  return {
+    id: observation.id,
+    sourceKey: observation.id,
+    sourceKind: observation.sourceKind,
+    sourceResultId: observation.sourceResultId,
+    sourceTaskCellId: observation.sourceTaskCellId,
+    taskId: observation.taskId,
+    taskInstanceId: observation.taskInstanceId,
+    modelConfigurationId: observation.modelConfigurationId,
+    observedAt: observation.observedAt,
+    observation,
+  };
+}
+
+export function evidenceDecisionRow(decision: EligibilityDecision): EvidenceDecisionRow {
+  return {
+    id: `${decision.observationId}#${decision.ruleVersion}`,
+    observationId: decision.observationId,
+    ruleVersion: decision.ruleVersion,
+    status: decision.status,
+    evidenceClass: decision.evidenceClass,
+    comparabilityCohortId: decision.comparabilityCohortId,
+    decidedAt: decision.decidedAt,
+    decision,
+  };
+}
+
+export function evidenceIndexJobRow(job: EvidenceIndexJob): EvidenceIndexJobRow {
+  return {
+    sourceResultId: job.sourceResultId,
+    sourceKind: job.sourceKind,
+    status: job.status,
+    ruleVersion: job.ruleVersion,
+    sourceRevision: job.sourceRevision,
+    updatedAt: job.updatedAt,
+    errorKind: job.errorKind,
+    errorMessage: job.errorMessage,
+    summary: job.summary,
+  };
+}
+
+export function verifierOutcomeRow(outcome: ExecutedVerifierOutcome): VerifierOutcomeRow {
+  return {
+    id: `${outcome.runId}::${outcome.taskId}::${outcome.modelKey}::${outcome.executedAt}`,
+    ...outcome,
+  };
+}
+
+
 // --- Valid envelope ----------------------------------------------------------
 
 /** Build a complete, valid archive v2 fixture with one representative entity
@@ -1005,6 +1216,20 @@ export function buildValidArchiveV2Fixture(): WorkbenchArchiveV2 {
       makeFusionOwnerCrosswalk("study-1", "suite-1"),
     ].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)),
   };
+  const mc = makeModelConfiguration();
+  const obs = makeEvidenceObservation(mc.id);
+  const dec = makeEligibilityDecision(obs.id, 1);
+  const job = makeEvidenceIndexJob("run-1");
+  const vo = makeExecutedVerifierOutcome("run-1", "task-1", "openrouter:m1", 1400);
+
+  const evidence: ArchiveV2EvidencePayload = {
+    modelConfigurations: [mc],
+    observations: [obs],
+    evidenceDecisions: [dec],
+    evidenceIndexJobs: [job],
+    verifierOutcomes: [vo],
+  };
+
 
   const archive: WorkbenchArchiveV2 = {
     manifest: {
@@ -1023,6 +1248,7 @@ export function buildValidArchiveV2Fixture(): WorkbenchArchiveV2 {
     fusion,
     tasks,
     taskSets,
+    evidence,
   };
 
   archive.manifest.counts = countAll(archive);
@@ -1067,6 +1293,11 @@ function emptyCounts(): ArchiveV2EntityCounts {
     taskSetVersions: 0,
     taskSetMaterializations: 0,
     taskSetOwnershipCrosswalks: 0,
+    modelConfigurations: 0,
+    observations: 0,
+    evidenceDecisions: 0,
+    evidenceIndexJobs: 0,
+    verifierOutcomes: 0,
   };
 }
 
@@ -1099,5 +1330,10 @@ function countAll(archive: WorkbenchArchiveV2): ArchiveV2EntityCounts {
     taskSetVersions: archive.taskSets?.versions.length ?? 0,
     taskSetMaterializations: archive.taskSets?.materializations.length ?? 0,
     taskSetOwnershipCrosswalks: archive.taskSets?.ownershipCrosswalks.length ?? 0,
+    modelConfigurations: archive.evidence?.modelConfigurations.length ?? 0,
+    observations: archive.evidence?.observations.length ?? 0,
+    evidenceDecisions: archive.evidence?.evidenceDecisions.length ?? 0,
+    evidenceIndexJobs: archive.evidence?.evidenceIndexJobs.length ?? 0,
+    verifierOutcomes: archive.evidence?.verifierOutcomes.length ?? 0,
   };
 }

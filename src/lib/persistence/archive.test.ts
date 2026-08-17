@@ -1301,6 +1301,18 @@ async function seedCompleteCorpus(): Promise<void> {
   await db.taskSetOwnershipCrosswalk.put(fx.makeSuiteManifestCrosswalk("suite-1"));
   await db.taskSetOwnershipCrosswalk.put(fx.makeExperimentOwnerCrosswalk("exp-1", "suite-1"));
   await db.taskSetOwnershipCrosswalk.put(fx.makeFusionOwnerCrosswalk("study-1", "suite-1"));
+  // Evidence collections (Child 04 Task 12).
+  const mc = fx.makeModelConfiguration();
+  const obs = fx.makeEvidenceObservation(mc.id);
+  const dec = fx.makeEligibilityDecision(obs.id, 1);
+  const job = fx.makeEvidenceIndexJob("run-1");
+  const vo = fx.makeExecutedVerifierOutcome("run-1", "task-1", "openrouter:m1", 1400);
+
+  await db.modelConfigurations.put(fx.modelConfigurationRow(mc));
+  await db.observations.put(fx.evidenceObservationRow(obs));
+  await db.evidenceDecisions.put(fx.evidenceDecisionRow(dec));
+  await db.evidenceIndexJobs.put(fx.evidenceIndexJobRow(job));
+  await db.verifierOutcomes.put(fx.verifierOutcomeRow(vo));
 
   // Unrestricted storage metadata must never cross the archive boundary.
   await db.storageMeta.put({ key: "execution-lease", value: { ownerId: "owner-1" } });
@@ -1356,6 +1368,13 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
       "ts-xwalk:fusion:study-1",
       "ts-xwalk:suite:suite-1:sha256:" + "b".repeat(64),
     ]);
+    expect(archive.evidence?.modelConfigurations.map((m) => m.id)).toEqual([
+      "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    ]);
+    expect(archive.evidence?.observations.length).toBe(1);
+    expect(archive.evidence?.evidenceDecisions.length).toBe(1);
+    expect(archive.evidence?.evidenceIndexJobs.map((j) => j.sourceResultId)).toEqual(["run-1"]);
+    expect(archive.evidence?.verifierOutcomes.map((v) => v.runId)).toEqual(["run-1"]);
 
     // Source evidence is semantically unchanged: deep equality with the seeded
     // domain records, and artifact bytes decode byte-equal.
@@ -1379,7 +1398,7 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
 
   it("exports an empty workbench as a valid, count-zero v2 envelope", async () => {
     const archive = await exportWorkbenchArchiveV2(db);
-    expect(Object.values(archive.manifest.counts)).toEqual(new Array(27).fill(0));
+    expect(Object.values(archive.manifest.counts)).toEqual(new Array(32).fill(0));
     const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
     expect(check.valid).toBe(true);
   });
@@ -1415,6 +1434,11 @@ describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
     expect(archive.manifest.counts.taskSetVersions).toBe(1);
     expect(archive.manifest.counts.taskSetMaterializations).toBe(1);
     expect(archive.manifest.counts.taskSetOwnershipCrosswalks).toBe(3);
+    expect(archive.manifest.counts.modelConfigurations).toBe(1);
+    expect(archive.manifest.counts.observations).toBe(1);
+    expect(archive.manifest.counts.evidenceDecisions).toBe(1);
+    expect(archive.manifest.counts.evidenceIndexJobs).toBe(1);
+    expect(archive.manifest.counts.verifierOutcomes).toBe(1);
 
     expect(archive.manifest.payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(archive.manifest.payloadDigest).toBe(computeArchiveV2PayloadDigest(archive));
@@ -1594,6 +1618,22 @@ describe("exportWorkbenchArchiveV2 — secret safety", () => {
       expect(message).not.toContain("sk-live-1234567890abcdef");
     }
   });
+  it("blocks an export whose ModelConfiguration snapshot carries a credential-like value, with redacted diagnostics", async () => {
+    const mc = fx.makeModelConfiguration();
+    mc.runtimeSettings.apiKey = "sk-live-1234567890abcdef";
+    await db.modelConfigurations.put(fx.modelConfigurationRow(mc));
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("evidence.modelConfigurations");
+      expect(message).toContain(mc.id);
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
 });
 
 describe("exportWorkbenchArchiveV2 — progress and cancellation", () => {
@@ -1760,6 +1800,11 @@ function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
     taskSetVersions: 0,
     taskSetMaterializations: 0,
     taskSetOwnershipCrosswalks: 0,
+    modelConfigurations: 0,
+    observations: 0,
+    evidenceDecisions: 0,
+    evidenceIndexJobs: 0,
+    verifierOutcomes: 0,
   };
   archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
   return archive;

@@ -114,6 +114,18 @@ async function seedCompleteCorpus(db: RSembleEvaluationDB): Promise<void> {
   await db.taskSetOwnershipCrosswalk.put(fx.makeSuiteManifestCrosswalk("suite-1"));
   await db.taskSetOwnershipCrosswalk.put(fx.makeExperimentOwnerCrosswalk("exp-1", "suite-1"));
   await db.taskSetOwnershipCrosswalk.put(fx.makeFusionOwnerCrosswalk("study-1", "suite-1"));
+  // Evidence collections (Child 04 Task 12).
+  const mc = fx.makeModelConfiguration();
+  const obs = fx.makeEvidenceObservation(mc.id);
+  const dec = fx.makeEligibilityDecision(obs.id, 1);
+  const job = fx.makeEvidenceIndexJob("run-1");
+  const vo = fx.makeExecutedVerifierOutcome("run-1", "task-1", "openrouter:m1", 1400);
+
+  await db.modelConfigurations.put(fx.modelConfigurationRow(mc));
+  await db.observations.put(fx.evidenceObservationRow(obs));
+  await db.evidenceDecisions.put(fx.evidenceDecisionRow(dec));
+  await db.evidenceIndexJobs.put(fx.evidenceIndexJobRow(job));
+  await db.verifierOutcomes.put(fx.verifierOutcomeRow(vo));
 }
 
 const DETERMINISTIC_NOW = () => 5000;
@@ -178,6 +190,17 @@ describe("archive v2 integration — complete corpus round trip", () => {
     expect(reexported.taskSets?.ownershipCrosswalks.map((c) => c.key).sort()).toEqual(
       exported.taskSets?.ownershipCrosswalks.map((c) => c.key).sort(),
     );
+    // Evidence payload round-trips with exact counts and equality.
+    expect(reexported.manifest.counts.modelConfigurations).toBe(1);
+    expect(reexported.manifest.counts.observations).toBe(1);
+    expect(reexported.manifest.counts.evidenceDecisions).toBe(1);
+    expect(reexported.manifest.counts.evidenceIndexJobs).toBe(1);
+    expect(reexported.manifest.counts.verifierOutcomes).toBe(1);
+    expect(reexported.evidence?.modelConfigurations).toEqual(exported.evidence?.modelConfigurations);
+    expect(reexported.evidence?.observations).toEqual(exported.evidence?.observations);
+    expect(reexported.evidence?.evidenceDecisions).toEqual(exported.evidence?.evidenceDecisions);
+    expect(reexported.evidence?.evidenceIndexJobs).toEqual(exported.evidence?.evidenceIndexJobs);
+    expect(reexported.evidence?.verifierOutcomes).toEqual(exported.evidence?.verifierOutcomes);
 
     // The seven Fusion collections round-trip byte-stable (semantic equality is
     // already asserted via JSON.stringify above); the Fusion owner crosswalk
@@ -624,6 +647,125 @@ describe("archive v2 integration — Task Set identity", () => {
     expect(await target.runSummaries.count()).toBe(0);
   });
 });
+// =============================================================================
+// 6. Evidence payload (Child 04 Task 12)
+// =============================================================================
+
+describe("archive v2 integration — Evidence payload", () => {
+  it("earlier-v2 envelope without the evidence key still imports with zero new-collection writes", async () => {
+    const source = await freshDb("ev-earlier-src");
+    await seedCompleteCorpus(source);
+    const exported = await exportWorkbenchArchiveV2(source, { now: DETERMINISTIC_NOW });
+    // Simulate an earlier-v2 producer that never emitted evidence.
+    delete (exported as unknown as Record<string, unknown>).evidence;
+    exported.manifest.counts.modelConfigurations = 0;
+    exported.manifest.counts.observations = 0;
+    exported.manifest.counts.evidenceDecisions = 0;
+    exported.manifest.counts.evidenceIndexJobs = 0;
+    exported.manifest.counts.verifierOutcomes = 0;
+    exported.manifest.payloadDigest = computeArchiveV2PayloadDigest(exported);
+
+    const target = await freshDb("ev-earlier-tgt");
+    const preview = await previewWorkbenchArchive(target, exported, { sourceLabel: "memory" });
+    expect(preview.format).toBe("v2");
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+    await commitPreviewWorkbenchArchiveV2(target, preview);
+    // No Evidence rows were written.
+    expect(await target.modelConfigurations.count()).toBe(0);
+    expect(await target.observations.count()).toBe(0);
+    expect(await target.evidenceDecisions.count()).toBe(0);
+    expect(await target.evidenceIndexJobs.count()).toBe(0);
+    expect(await target.verifierOutcomes.count()).toBe(0);
+  });
+
+  it("v1 import writes no Evidence rows", async () => {
+    const source = await freshDb("ev-v1-src");
+    await dbSeedV1Corpus(source);
+    const v1 = await exportWorkbenchArchive(source);
+    const target = await freshDb("ev-v1-tgt");
+    await importWorkbenchArchiveAuto(target, v1 as unknown as never);
+    expect(await target.modelConfigurations.count()).toBe(0);
+    expect(await target.observations.count()).toBe(0);
+    expect(await target.evidenceDecisions.count()).toBe(0);
+    expect(await target.evidenceIndexJobs.count()).toBe(0);
+    expect(await target.verifierOutcomes.count()).toBe(0);
+  });
+
+  it("non-identical same-key ModelConfiguration record aborts the commit BEFORE any write", async () => {
+    const target = await freshDb("ev-mc-collision");
+    const mc = fx.makeModelConfiguration();
+    await target.modelConfigurations.put(fx.modelConfigurationRow(mc));
+    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    archive.evidence!.modelConfigurations[0] = {
+      ...archive.evidence!.modelConfigurations[0],
+      requestedModel: "anthropic/claude-3-opus", // different content at same ID
+    };
+    recomputeDigest(archive);
+
+    const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
+    expect(
+      preview.collisions.some(
+        (c) => c.collection === "evidence.modelConfigurations" && c.key === mc.id,
+      ),
+    ).toBe(true);
+    await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    // The pre-seeded record is unchanged; nothing else was written.
+    expect((await target.modelConfigurations.get(mc.id))?.snapshot).toEqual(mc);
+    expect(await target.runSummaries.count()).toBe(0);
+  });
+
+  it("non-identical same-key Observation record aborts the commit BEFORE any write", async () => {
+    const target = await freshDb("ev-obs-collision");
+    const mc = fx.makeModelConfiguration();
+    const obs = fx.makeEvidenceObservation(mc.id);
+    await target.observations.put(fx.evidenceObservationRow(obs));
+    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    archive.evidence!.observations[0] = {
+      ...archive.evidence!.observations[0],
+      sourceTaskCellId: "different-cell-id", // different content
+    };
+    recomputeDigest(archive);
+
+    const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
+    expect(
+      preview.collisions.some(
+        (c) => c.collection === "evidence.observations" && c.key === obs.id,
+      ),
+    ).toBe(true);
+    await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    expect(await target.runSummaries.count()).toBe(0);
+  });
+
+  it("Fusion fusionObservations round-trip byte-stable without conversion or ID collision with canonical observations", async () => {
+    const source = await freshDb("ev-fusion-iso-src");
+    await seedCompleteCorpus(source);
+    const exported = await exportWorkbenchArchiveV2(source, { now: DETERMINISTIC_NOW });
+
+    // Verify disjoint ID namespaces and separate payload collections.
+    expect(exported.fusion.observations[0].id).toBe("obs-1");
+    expect(exported.evidence?.observations[0].id).toMatch(/^obs:sha256:[0-9a-f]{64}$/);
+    expect(exported.fusion.observations[0].id).not.toEqual(exported.evidence?.observations[0].id);
+
+    const target = await freshDb("ev-fusion-iso-tgt");
+    const preview = await previewWorkbenchArchive(target, exported, { sourceLabel: "memory" });
+    await commitPreviewWorkbenchArchiveV2(target, preview);
+
+    // Verify stored tables are completely isolated.
+    const fusionObs = await target.fusionObservations.toArray();
+    const canonicalObs = await target.observations.toArray();
+    expect(fusionObs.length).toBe(1);
+    expect(canonicalObs.length).toBe(1);
+    expect(fusionObs[0].id).toBe("obs-1");
+    expect(canonicalObs[0].id).toMatch(/^obs:sha256:[0-9a-f]{64}$/);
+  });
+});
 
 // =============================================================================
 // Helpers — legacy seeding, v1 corpus, count snapshots
@@ -737,6 +879,11 @@ interface CountSnapshot {
   taskArtifactBytes: number;
   taskInstances: number;
   taskMigrationCrosswalk: number;
+  modelConfigurations: number;
+  observations: number;
+  evidenceDecisions: number;
+  evidenceIndexJobs: number;
+  verifierOutcomes: number;
 }
 
 async function snapshotCounts(db: RSembleEvaluationDB): Promise<CountSnapshot> {
@@ -752,6 +899,11 @@ async function snapshotCounts(db: RSembleEvaluationDB): Promise<CountSnapshot> {
     taskArtifactBytes: await db.taskArtifactBytes.count(),
     taskInstances: await db.taskInstances.count(),
     taskMigrationCrosswalk: await db.taskMigrationCrosswalk.count(),
+    modelConfigurations: await db.modelConfigurations.count(),
+    observations: await db.observations.count(),
+    evidenceDecisions: await db.evidenceDecisions.count(),
+    evidenceIndexJobs: await db.evidenceIndexJobs.count(),
+    verifierOutcomes: await db.verifierOutcomes.count(),
   };
 }
 
@@ -768,5 +920,10 @@ function emptyCounts(): CountSnapshot {
     taskArtifactBytes: 0,
     taskInstances: 0,
     taskMigrationCrosswalk: 0,
+    modelConfigurations: 0,
+    observations: 0,
+    evidenceDecisions: 0,
+    evidenceIndexJobs: 0,
+    verifierOutcomes: 0,
   };
 }
