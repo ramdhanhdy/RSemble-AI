@@ -38,6 +38,10 @@ import { FusionStudyRoute } from "./workspaces/evaluations/FusionStudyView";
 import "./workspaces/evaluations/ExperimentRoute";
 import "./workspaces/tasks/TaskCatalog";
 import "./workspaces/tasks/TaskRoute";
+import "./workspaces/compare/ComparisonResultRoute";
+import { InMemoryRunRepository } from "./lib/persistence/run-repository";
+import { InMemoryComparisonRepository } from "./lib/persistence/in-memory-comparison-repository";
+import type { RunRecordV2, FullRunSummaryV2 } from "./lib/persistence/run-types";
 import { AppRoutes } from "./app-router";
 import { RepositoryContext } from "./lib/persistence/repository-context";
 import { InMemoryEvaluationRepository } from "./lib/persistence/evaluation-repository";
@@ -161,6 +165,7 @@ interface RenderOptions {
   initialIndex?: number;
   repo?: InMemoryEvaluationRepository;
   taskRepo?: TaskRepository | null;
+  runRepo?: InMemoryRunRepository | null;
   fusionRepo?: FusionStudyRepository | null;
   db?: { taskSetOwnershipCrosswalk: { get: (key: string) => Promise<unknown> } } | null;
   models?: CatalogModel[];
@@ -225,7 +230,7 @@ function renderRouter(opts: RenderOptions): Harness {
         <RepositoryContext.Provider
           value={{
             taskRepo,
-            runRepo: null,
+            runRepo: opts.runRepo ?? null,
             evalRepo: repo,
             fusionRepo,
             db: db as never,
@@ -1625,6 +1630,102 @@ describe("AppRouter — Evaluation execution results routes (spec §5.1, §4)", 
       initialEntries: ["/evaluations/results"],
     });
     expect(h.loc.current?.pathname).not.toBe("/evaluations/sets/results");
+    cleanup(h);
+  });
+});
+
+describe("AppRouter — canonical Comparison Result route (spec §4, §6.2)", () => {
+  it("renders /compare/results/:comparisonId route", async () => {
+    const runRepo = new InMemoryRunRepository();
+    const comparisonRepo = new InMemoryComparisonRepository(runRepo);
+
+    const record: RunRecordV2 = {
+      schemaVersion: 2,
+      id: "cmp-route-1",
+      revision: 1,
+      execution: { ownerId: "tab-1", fence: 1 },
+      createdAt: 1716048000000,
+      updatedAt: 1716048025000,
+      completedAt: 1716048025000,
+      status: "completed",
+      mode: "rank",
+      source: { kind: "adhoc" },
+      task: {
+        title: "Route Test Task",
+        prompt: "Prompt for route test",
+        systemPrompt: "",
+        temperature: 0.7,
+      },
+      evaluation: { profile: null, candidateMessages: [] },
+      candidates: [],
+      judge: {
+        status: "done",
+        acceptedAttemptId: null,
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    };
+
+    const summary: FullRunSummaryV2 = {
+      kind: "full",
+      schemaVersion: 2,
+      id: "cmp-route-1",
+      revision: 1,
+      createdAt: 1716048000000,
+      completedAt: 1716048025000,
+      status: "completed",
+      mode: "rank",
+      source: { kind: "adhoc" },
+      taskTitle: "Route Test Task",
+      taskExcerpt: "Prompt for route test",
+      modelKeys: [],
+      winnerKeys: [],
+      scoresByModelKey: {},
+      judgeModelKey: null,
+      evaluationProfileId: null,
+      evaluationProfileVersion: null,
+      detailAvailable: true,
+      searchText: "Route Test Task",
+    };
+
+    await runRepo.create(record, summary);
+    await comparisonRepo.createComparisonEnvelope(record, {
+      kind: "ad_hoc",
+      inputSnapshotRef: "snap:sha256:route-1",
+    });
+
+    const h = await renderRouterAsync({
+      initialEntries: ["/compare/results/cmp-route-1"],
+      runRepo,
+    });
+
+    expect(h.loc.current?.pathname).toBe("/compare/results/cmp-route-1");
+    cleanup(h);
+  });
+
+  it("back/forward navigation between /compare and /compare/results/:comparisonId", async () => {
+    const runRepo = new InMemoryRunRepository();
+    const h = await renderRouterAsync({
+      initialEntries: ["/compare"],
+      runRepo,
+    });
+    expect(h.loc.current?.pathname).toBe("/compare");
+
+    void act(() => h.nav.current!("/compare/results/cmp-nav-test"));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/compare/results/cmp-nav-test");
+
+    void act(() => h.nav.current!(-1));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/compare");
+
+    void act(() => h.nav.current!(1));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/compare/results/cmp-nav-test");
+
     cleanup(h);
   });
 });
