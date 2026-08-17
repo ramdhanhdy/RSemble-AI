@@ -1045,6 +1045,24 @@ export function makeEvidenceObservation(
   return { id, ...base };
 }
 
+export function makeExecutedVerifierOutcome(
+  runId = "run-1",
+  taskId = "task-1",
+  modelKey = "openrouter:m1",
+  executedAt = 1400,
+): ExecutedVerifierOutcome {
+  return {
+    taskId,
+    modelKey,
+    runId,
+    kind: "unit_tests",
+    configurationDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    verifierRef: { id: "verifier-1", version: 1 },
+    passed: true,
+    executedAt,
+  };
+}
+
 export function makeEligibilityDecision(
   observationId: string,
   ruleVersion = 1,
@@ -1088,23 +1106,6 @@ export function makeEvidenceIndexJob(sourceResultId = "run-1"): EvidenceIndexJob
   };
 }
 
-export function makeExecutedVerifierOutcome(
-  runId = "run-1",
-  taskId = "task-1",
-  modelKey = "openrouter:m1",
-  executedAt = 1400,
-): ExecutedVerifierOutcome {
-  return {
-    taskId,
-    modelKey,
-    runId,
-    kind: "unit_test",
-    configurationDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    verifierRef: { id: "verifier-1", version: 1 },
-    passed: true,
-    executedAt,
-  };
-}
 
 export function modelConfigurationRow(snapshot: ModelConfigurationSnapshot): ModelConfigurationRow {
   return {

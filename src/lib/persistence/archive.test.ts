@@ -1772,6 +1772,13 @@ function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
     materializations: [],
     ownershipCrosswalks: [],
   };
+  archive.evidence = {
+    modelConfigurations: [],
+    observations: [],
+    evidenceDecisions: [],
+    evidenceIndexJobs: [],
+    verifierOutcomes: [],
+  };
   archive.manifest.counts = {
     runSummaries: 0,
     runDetails: 0,
@@ -1870,6 +1877,11 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
       taskSetVersions: 0,
       taskSetMaterializations: 0,
       taskSetOwnershipCrosswalks: 0,
+      modelConfigurations: 0,
+      observations: 0,
+      evidenceDecisions: 0,
+      evidenceIndexJobs: 0,
+      verifierOutcomes: 0,
     };
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 
@@ -2062,11 +2074,11 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     expect(secondPreview.create).toEqual([]);
     expect(secondPreview.collisions).toEqual([]);
     expect(secondPreview.invalid).toEqual([]);
-    expect(secondPreview.totalEntities).toBe(27);
+    expect(secondPreview.totalEntities).toBe(32);
 
     const second = await commitPreviewWorkbenchArchiveV2(db, secondPreview);
     expect(second.created).toEqual([]);
-    expect(second.reused.length).toBe(27);
+    expect(second.reused.length).toBe(32);
     expect(second.skipped).toEqual([]);
     // No duplicate rows from a second pass.
     expect(await db.suites.count()).toBe(1);

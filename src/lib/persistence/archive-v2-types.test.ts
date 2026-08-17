@@ -508,7 +508,7 @@ describe("archive v2 Evidence payload", () => {
 
   it("rejects a credential-like value inside an Observation payload", () => {
     const archive = cloneArchiveV2(buildValidArchiveV2Fixture());
-    archive.evidence!.observations[0].sourceTaskCellId = `exp-1:task-1:${credentialLikeText()}`;
+    archive.evidence!.observations[0].executionLineageId = credentialLikeText();
     syncManifest(archive);
     const result = validateArchiveV2(archive);
     expect(result.valid).toBe(false);

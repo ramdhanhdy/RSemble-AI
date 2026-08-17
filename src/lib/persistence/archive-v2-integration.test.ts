@@ -726,7 +726,10 @@ describe("archive v2 integration — Evidence payload", () => {
     const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
     archive.evidence!.observations[0] = {
       ...archive.evidence!.observations[0],
-      sourceTaskCellId: "different-cell-id", // different content
+      outcome: {
+        ...archive.evidence!.observations[0].outcome,
+        overallScore: 2.0, // different content with same source key and same ID
+      },
     };
     recomputeDigest(archive);
 

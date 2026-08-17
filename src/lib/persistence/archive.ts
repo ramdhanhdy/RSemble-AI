@@ -43,6 +43,11 @@ import {
   type RunDetailRow,
   type RunSummaryRow,
   type TaskSetOwnershipCrosswalkRow,
+  type ModelConfigurationRow,
+  type EvidenceObservationRow,
+  type EvidenceDecisionRow,
+  type EvidenceIndexJobRow,
+  type VerifierOutcomeRow,
 } from "./database";
 import {
   isFullRunSummaryV2,
@@ -131,6 +136,20 @@ import {
 } from "../evaluations/task-set-types";
 import type { TaskSetMaterializationRecord } from "./evaluation-repository";
 
+import type {
+  ModelConfigurationSnapshot,
+  Observation,
+  EligibilityDecision,
+  ExecutedVerifierOutcome,
+} from "../evidence/evidence-types";
+import {
+  isModelConfigurationSnapshot,
+  isObservation,
+  isEligibilityDecision,
+  isExecutedVerifierOutcome,
+  observationSourceKey,
+} from "../evidence/evidence-validation";
+import type { EvidenceIndexJob, EvidenceIndexJobSummary } from "./evidence-repository";
 // --- Archive shape -------------------------------------------------------------
 
 export interface WorkbenchArchiveV1 {
@@ -945,6 +964,7 @@ export type ArchiveExportStage =
   | "fusion"
   | "tasks"
   | "task-sets"
+  | "evidence"
   | "artifact-bytes"
   | "scan"
   | "finalize";
@@ -988,6 +1008,7 @@ const ARCHIVE_V2_STAGES: ArchiveExportStage[] = [
   "fusion",
   "tasks",
   "task-sets",
+  "evidence",
   "artifact-bytes",
   "scan",
   "finalize",
@@ -1028,6 +1049,98 @@ function v2SortByTaskSetIdVersion<T extends { taskSetId: string; version: number
 
 function v2SortByKey<T extends { key: string }>(items: T[]): T[] {
   return [...items].sort((a, b) => v2OrderingKeyString(a.key, b.key));
+}
+
+function v2SortByObservationIdRuleVersion<
+  T extends { observationId: string; ruleVersion: number },
+>(items: T[]): T[] {
+  const key = (t: T) => `${t.observationId}\u0000${t.ruleVersion.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v2SortBySourceResultId<T extends { sourceResultId: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.sourceResultId, b.sourceResultId));
+}
+
+function v2SortByVerifierOutcomeKey<
+  T extends { runId: string; taskId: string; modelKey: string; executedAt: number },
+>(items: T[]): T[] {
+  const key = (t: T) => `${t.runId}::${t.taskId}::${t.modelKey}::${t.executedAt}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+const JOB_STATUSES: ReadonlySet<string> = new Set(["queued", "running", "complete", "error"]);
+
+function isEvidenceIndexJob(job: unknown): job is EvidenceIndexJob {
+  if (!isRecord(job)) return false;
+  if (typeof job.sourceResultId !== "string" || job.sourceResultId.trim().length === 0)
+    return false;
+  if (job.sourceKind !== "comparison" && job.sourceKind !== "evaluation") return false;
+  if (!JOB_STATUSES.has(job.status as string)) return false;
+  if (!Number.isInteger(job.ruleVersion) || (job.ruleVersion as number) < 1) return false;
+  if (!Number.isInteger(job.sourceRevision) || (job.sourceRevision as number) < 0) return false;
+  if (
+    typeof job.updatedAt !== "number" ||
+    !Number.isFinite(job.updatedAt) ||
+    (job.updatedAt as number) < 0
+  )
+    return false;
+  if (job.errorKind !== null && typeof job.errorKind !== "string") return false;
+  if (job.errorMessage !== null && typeof job.errorMessage !== "string") return false;
+  const summary = job.summary;
+  if (summary !== null && summary !== undefined) {
+    if (!isRecord(summary) || Array.isArray(summary)) return false;
+    for (const field of ["observationCount", "gapCount", "limitationCount"]) {
+      const value = summary[field];
+      if (!Number.isInteger(value) || (value as number) < 0) return false;
+    }
+    if (
+      !Array.isArray(summary.integrityIssues) ||
+      !summary.integrityIssues.every((issue) => typeof issue === "string")
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function fromJobRow(row: EvidenceIndexJobRow): EvidenceIndexJob {
+  return {
+    sourceResultId: row.sourceResultId,
+    sourceKind: row.sourceKind,
+    status: row.status,
+    ruleVersion: row.ruleVersion,
+    sourceRevision: row.sourceRevision,
+    updatedAt: row.updatedAt,
+    errorKind: row.errorKind,
+    errorMessage: row.errorMessage,
+    summary: row.summary as EvidenceIndexJobSummary | null,
+  };
+}
+
+function toJobRow(job: EvidenceIndexJob): EvidenceIndexJobRow {
+  return { ...job, summary: job.summary };
+}
+
+function fromVerifierRow(row: VerifierOutcomeRow): ExecutedVerifierOutcome {
+  return {
+    taskId: row.taskId,
+    modelKey: row.modelKey,
+    runId: row.runId,
+    kind: row.kind,
+    configurationDigest: row.configurationDigest,
+    verifierRef: row.verifierRef,
+    passed: row.passed,
+    executedAt: row.executedAt,
+  };
+}
+
+function verifierOutcomeKey(outcome: ExecutedVerifierOutcome): string {
+  return `${outcome.runId}::${outcome.taskId}::${outcome.modelKey}::${outcome.executedAt}`;
+}
+
+function toVerifierRow(outcome: ExecutedVerifierOutcome): VerifierOutcomeRow {
+  return { id: verifierOutcomeKey(outcome), ...outcome };
 }
 
 /** Collects export guard-failing rows so the export can abort with redacted
@@ -1158,7 +1271,22 @@ function v2ScanForCredentialValue(value: unknown): boolean {
           key === "trialId" ||
           key === "legacyScopeKey" ||
           key === "supersedesId" ||
-          key === "originId"
+          key === "originId" ||
+          key === "modelConfigurationId" ||
+          key === "sourceResultId" ||
+          key === "sourceTaskCellId" ||
+          key === "executionLineageId" ||
+          key === "taskInstanceId" ||
+          key === "taskFamilyId" ||
+          key === "candidateAttemptId" ||
+          key === "judgeAttemptId" ||
+          key === "comparabilityCohortId" ||
+          key === "protocolFingerprint" ||
+          key === "instructionDigest" ||
+          key === "configurationDigest" ||
+          key === "criterionId" ||
+          key === "modelKey" ||
+          key === "runId"
         ) {
           continue;
         }
@@ -1450,6 +1578,62 @@ export async function exportWorkbenchArchiveV2(
         );
     });
     completeStage("task-sets");
+    // --- evidence (modelConfigurations, observations, evidenceDecisions, evidenceIndexJobs, verifierOutcomes) ---
+    emit("evidence");
+    throwIfAborted();
+    const modelConfigurations: ModelConfigurationSnapshot[] = [];
+    await db.modelConfigurations.orderBy("id").each((row) => {
+      if (isModelConfigurationSnapshot(row.snapshot)) modelConfigurations.push(row.snapshot);
+      else
+        recordGuardFailure(
+          "evidence.modelConfigurations",
+          row.id,
+          "modelConfigurations",
+          guardViolations,
+        );
+    });
+    const evidenceObservations: Observation[] = [];
+    await db.observations.orderBy("id").each((row) => {
+      if (isObservation(row.observation)) evidenceObservations.push(row.observation);
+      else
+        recordGuardFailure("evidence.observations", row.id, "observations", guardViolations);
+    });
+    const evidenceDecisions: EligibilityDecision[] = [];
+    await db.evidenceDecisions.orderBy("id").each((row) => {
+      if (isEligibilityDecision(row.decision)) evidenceDecisions.push(row.decision);
+      else
+        recordGuardFailure(
+          "evidence.evidenceDecisions",
+          row.id,
+          "evidenceDecisions",
+          guardViolations,
+        );
+    });
+    const evidenceIndexJobs: EvidenceIndexJob[] = [];
+    await db.evidenceIndexJobs.orderBy("sourceResultId").each((row) => {
+      const job = fromJobRow(row);
+      if (isEvidenceIndexJob(job)) evidenceIndexJobs.push(job);
+      else
+        recordGuardFailure(
+          "evidence.evidenceIndexJobs",
+          row.sourceResultId,
+          "evidenceIndexJobs",
+          guardViolations,
+        );
+    });
+    const verifierOutcomes: ExecutedVerifierOutcome[] = [];
+    await db.verifierOutcomes.orderBy("id").each((row) => {
+      const outcome = fromVerifierRow(row);
+      if (isExecutedVerifierOutcome(outcome)) verifierOutcomes.push(outcome);
+      else
+        recordGuardFailure(
+          "evidence.verifierOutcomes",
+          row.id,
+          "verifierOutcomes",
+          guardViolations,
+        );
+    });
+    completeStage("evidence");
 
     // Exact store coverage: any persisted canononical row that fails its
     // record guard blocks the whole export. Dexie `.each()` swallows a
@@ -1532,6 +1716,14 @@ export async function exportWorkbenchArchiveV2(
     for (const m of taskSetMaterializations) scanStructured("taskSets.materializations", m.id, m);
     for (const c of taskSetOwnershipCrosswalks)
       scanStructured("taskSets.ownershipCrosswalks", c.key, c);
+    for (const mc of modelConfigurations) scanStructured("evidence.modelConfigurations", mc.id, mc);
+    for (const obs of evidenceObservations) scanStructured("evidence.observations", obs.id, obs);
+    for (const d of evidenceDecisions)
+      scanStructured("evidence.evidenceDecisions", `${d.observationId}#${d.ruleVersion}`, d);
+    for (const j of evidenceIndexJobs)
+      scanStructured("evidence.evidenceIndexJobs", j.sourceResultId, j);
+    for (const vo of verifierOutcomes)
+      scanStructured("evidence.verifierOutcomes", verifierOutcomeKey(vo), vo);
 
     completeStage("scan");
 
@@ -1579,6 +1771,11 @@ export async function exportWorkbenchArchiveV2(
           taskSetVersions: taskSetVersions.length,
           taskSetMaterializations: taskSetMaterializations.length,
           taskSetOwnershipCrosswalks: taskSetOwnershipCrosswalks.length,
+          modelConfigurations: modelConfigurations.length,
+          observations: evidenceObservations.length,
+          evidenceDecisions: evidenceDecisions.length,
+          evidenceIndexJobs: evidenceIndexJobs.length,
+          verifierOutcomes: verifierOutcomes.length,
         },
         payloadDigest: "",
         disclosure: { scope: "local", notes: ARCHIVE_V2_DISCLOSURE_NOTES },
@@ -1619,6 +1816,13 @@ export async function exportWorkbenchArchiveV2(
         versions: v2SortByTaskSetIdVersion(taskSetVersions),
         materializations: v2SortById(taskSetMaterializations),
         ownershipCrosswalks: v2SortByKey(taskSetOwnershipCrosswalks),
+      },
+      evidence: {
+        modelConfigurations: v2SortById(modelConfigurations),
+        observations: v2SortById(evidenceObservations),
+        evidenceDecisions: v2SortByObservationIdRuleVersion(evidenceDecisions),
+        evidenceIndexJobs: v2SortBySourceResultId(evidenceIndexJobs),
+        verifierOutcomes: v2SortByVerifierOutcomeKey(verifierOutcomes),
       },
     };
     // Digest is computed over the final payload (collections only — the
@@ -2429,6 +2633,100 @@ async function previewV2(
       );
     }
   }
+  // --- evidence (modelConfigurations, observations, evidenceDecisions, evidenceIndexJobs, verifierOutcomes) ---
+  const evidence = archive.evidence;
+  if (evidence !== undefined) {
+    {
+      const part = partitionGuarded(
+        "evidence.modelConfigurations",
+        evidence.modelConfigurations,
+        (mc) => mc.id,
+        (v) => isModelConfigurationSnapshot(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.modelConfigurations",
+        part.guarded,
+        (mc) => mc.id,
+        (k) => db.modelConfigurations.get(k).then((r) => (r === undefined ? undefined : r.snapshot)),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "evidence.observations",
+        evidence.observations,
+        (o) => o.id,
+        (v) => isObservation(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.observations",
+        part.guarded,
+        (o) => o.id,
+        (k) => db.observations.get(k).then((r) => (r === undefined ? undefined : r.observation)),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "evidence.evidenceDecisions",
+        evidence.evidenceDecisions,
+        (d) => `${d.observationId}#${d.ruleVersion}`,
+        (v) => isEligibilityDecision(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.evidenceDecisions",
+        part.guarded,
+        (d) => `${d.observationId}#${d.ruleVersion}`,
+        (k) => db.evidenceDecisions.get(k).then((r) => (r === undefined ? undefined : r.decision)),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "evidence.evidenceIndexJobs",
+        evidence.evidenceIndexJobs,
+        (j) => j.sourceResultId,
+        (v) => isEvidenceIndexJob(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.evidenceIndexJobs",
+        part.guarded,
+        (j) => j.sourceResultId,
+        (k) => db.evidenceIndexJobs.get(k).then((r) => (r === undefined ? undefined : fromJobRow(r))),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "evidence.verifierOutcomes",
+        evidence.verifierOutcomes,
+        (vo) => verifierOutcomeKey(vo),
+        (v) => isExecutedVerifierOutcome(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.verifierOutcomes",
+        part.guarded,
+        (vo) => verifierOutcomeKey(vo),
+        (k) => db.verifierOutcomes.get(k).then((r) => (r === undefined ? undefined : fromVerifierRow(r))),
+        (v) => v,
+        buckets,
+      );
+    }
+  }
 
   throwIfAborted();
   return finalizePreview("v2", options.sourceLabel ?? "archive", archive, buckets);
@@ -2544,6 +2842,44 @@ function taskSetVersionRowFor(version: TaskSetVersion) {
     version: version.version,
     version_: version,
     createdAt: version.createdAt,
+  };
+}
+function modelConfigurationRowFor(snapshot: ModelConfigurationSnapshot): ModelConfigurationRow {
+  return {
+    id: snapshot.id,
+    snapshot,
+    providerId: snapshot.providerId,
+    requestedModel: snapshot.requestedModel,
+    resolvedVersion: snapshot.resolvedVersion,
+    observedTo: snapshot.observedTo,
+  };
+}
+
+function evidenceObservationRowFor(observation: Observation): EvidenceObservationRow {
+  return {
+    id: observation.id,
+    sourceKey: observationSourceKey(observation),
+    sourceKind: observation.sourceKind,
+    sourceResultId: observation.sourceResultId,
+    sourceTaskCellId: observation.sourceTaskCellId,
+    taskId: observation.taskId,
+    taskInstanceId: observation.taskInstanceId,
+    modelConfigurationId: observation.modelConfigurationId,
+    observedAt: observation.observedAt,
+    observation,
+  };
+}
+
+function evidenceDecisionRowFor(decision: EligibilityDecision): EvidenceDecisionRow {
+  return {
+    id: `${decision.observationId}#${decision.ruleVersion}`,
+    observationId: decision.observationId,
+    ruleVersion: decision.ruleVersion,
+    status: decision.status,
+    evidenceClass: decision.evidenceClass,
+    comparabilityCohortId: decision.comparabilityCohortId,
+    decidedAt: decision.decidedAt,
+    decision,
   };
 }
 
@@ -2816,6 +3152,11 @@ export async function commitPreviewWorkbenchArchiveV2(
         db.taskSetVersions,
         db.taskSetMaterializations,
         db.taskSetOwnershipCrosswalk,
+        db.modelConfigurations,
+        db.observations,
+        db.evidenceDecisions,
+        db.evidenceIndexJobs,
+        db.verifierOutcomes,
       ],
       async () => {
         if (options.signal?.aborted) throw new ArchiveImportCancelledError();
@@ -3065,6 +3406,46 @@ export async function commitPreviewWorkbenchArchiveV2(
             const existing = await db.taskSetOwnershipCrosswalk.get(cw.key);
             if (existing !== undefined && canonical(existing) !== canonical(cw)) {
               conflict("taskSets.ownershipCrosswalks", cw.key);
+            }
+          }
+        }
+        // --- evidence (optional envelope) -------------------------------------
+        if (archive.evidence !== undefined) {
+          for (const mc of archive.evidence.modelConfigurations) {
+            if (!isCreated("evidence.modelConfigurations", mc.id)) continue;
+            const existing = await db.modelConfigurations.get(mc.id);
+            if (existing !== undefined && canonical(existing.snapshot) !== canonical(mc)) {
+              conflict("evidence.modelConfigurations", mc.id);
+            }
+          }
+          for (const obs of archive.evidence.observations) {
+            if (!isCreated("evidence.observations", obs.id)) continue;
+            const existing = await db.observations.get(obs.id);
+            if (existing !== undefined && canonical(existing.observation) !== canonical(obs)) {
+              conflict("evidence.observations", obs.id);
+            }
+          }
+          for (const dec of archive.evidence.evidenceDecisions) {
+            const key = `${dec.observationId}#${dec.ruleVersion}`;
+            if (!isCreated("evidence.evidenceDecisions", key)) continue;
+            const existing = await db.evidenceDecisions.get(key);
+            if (existing !== undefined && canonical(existing.decision) !== canonical(dec)) {
+              conflict("evidence.evidenceDecisions", key);
+            }
+          }
+          for (const job of archive.evidence.evidenceIndexJobs) {
+            if (!isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) continue;
+            const existing = await db.evidenceIndexJobs.get(job.sourceResultId);
+            if (existing !== undefined && canonical(fromJobRow(existing)) !== canonical(job)) {
+              conflict("evidence.evidenceIndexJobs", job.sourceResultId);
+            }
+          }
+          for (const vo of archive.evidence.verifierOutcomes) {
+            const key = verifierOutcomeKey(vo);
+            if (!isCreated("evidence.verifierOutcomes", key)) continue;
+            const existing = await db.verifierOutcomes.get(key);
+            if (existing !== undefined && canonical(fromVerifierRow(existing)) !== canonical(vo)) {
+              conflict("evidence.verifierOutcomes", key);
             }
           }
         }
@@ -3369,6 +3750,46 @@ export async function commitPreviewWorkbenchArchiveV2(
               await db.taskSetOwnershipCrosswalk.put(cw);
               created.push(cw.key);
             } else reused.push(cw.key);
+          }
+        }
+        // --- evidence (optional envelope) -------------------------------------
+        if (archive.evidence !== undefined) {
+          for (const mc of archive.evidence.modelConfigurations) {
+            if (!isModelConfigurationSnapshot(mc)) continue;
+            if (isCreated("evidence.modelConfigurations", mc.id)) {
+              await db.modelConfigurations.put(modelConfigurationRowFor(mc));
+              created.push(mc.id);
+            } else reused.push(mc.id);
+          }
+          for (const obs of archive.evidence.observations) {
+            if (!isObservation(obs)) continue;
+            if (isCreated("evidence.observations", obs.id)) {
+              await db.observations.put(evidenceObservationRowFor(obs));
+              created.push(obs.id);
+            } else reused.push(obs.id);
+          }
+          for (const dec of archive.evidence.evidenceDecisions) {
+            if (!isEligibilityDecision(dec)) continue;
+            const key = `${dec.observationId}#${dec.ruleVersion}`;
+            if (isCreated("evidence.evidenceDecisions", key)) {
+              await db.evidenceDecisions.put(evidenceDecisionRowFor(dec));
+              created.push(key);
+            } else reused.push(key);
+          }
+          for (const job of archive.evidence.evidenceIndexJobs) {
+            if (!isEvidenceIndexJob(job)) continue;
+            if (isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) {
+              await db.evidenceIndexJobs.put(toJobRow(job));
+              created.push(job.sourceResultId);
+            } else reused.push(job.sourceResultId);
+          }
+          for (const vo of archive.evidence.verifierOutcomes) {
+            if (!isExecutedVerifierOutcome(vo)) continue;
+            const key = verifierOutcomeKey(vo);
+            if (isCreated("evidence.verifierOutcomes", key)) {
+              await db.verifierOutcomes.put(toVerifierRow(vo));
+              created.push(key);
+            } else reused.push(key);
           }
         }
         // `skipped` is a commit-pass no-op channel — currently empty by design

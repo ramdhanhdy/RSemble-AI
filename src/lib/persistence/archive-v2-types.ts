@@ -78,6 +78,13 @@ import type {
   ModelConfigurationSnapshot,
   Observation,
 } from "../evidence/evidence-types";
+import {
+  collectProhibitedFieldPaths,
+  isEligibilityDecision,
+  isExecutedVerifierOutcome,
+  isModelConfigurationSnapshot,
+  validateObservation,
+} from "../evidence/evidence-validation";
 import type { EvidenceIndexJob } from "./evidence-repository";
 
 // --- Versions ----------------------------------------------------------------
@@ -289,6 +296,7 @@ function payloadForDigest(archive: WorkbenchArchiveV2): Record<string, unknown> 
   // present, so earlier-v2 envelopes (no taskSets key) keep their original
   // digest and remain readable.
   if (archive.taskSets !== undefined) payload.taskSets = archive.taskSets;
+  if (archive.evidence !== undefined) payload.evidence = archive.evidence;
   return payload;
 }
 
@@ -349,9 +357,51 @@ function scanProhibitedContent(archive: WorkbenchArchiveV2): string | null {
     ["tasks", archive.tasks],
   ];
   if (archive.taskSets !== undefined) collections.push(["taskSets", archive.taskSets]);
+  if (archive.evidence !== undefined) collections.push(["evidence", archive.evidence]);
   for (const [label, value] of collections) {
     if (hasProhibitedKeys(value)) return `prohibited credential/transport key in ${label}`;
     if (hasProhibitedContent(value)) return `credential-like value in ${label}`;
+  }
+  if (archive.evidence !== undefined) {
+    const prohibitedPaths: string[] = [];
+    for (let i = 0; i < archive.evidence.observations.length; i++) {
+      collectProhibitedFieldPaths(
+        archive.evidence.observations[i],
+        `evidence.observations[${i}]`,
+        prohibitedPaths,
+      );
+    }
+    for (let i = 0; i < archive.evidence.modelConfigurations.length; i++) {
+      collectProhibitedFieldPaths(
+        archive.evidence.modelConfigurations[i],
+        `evidence.modelConfigurations[${i}]`,
+        prohibitedPaths,
+      );
+    }
+    for (let i = 0; i < archive.evidence.evidenceDecisions.length; i++) {
+      collectProhibitedFieldPaths(
+        archive.evidence.evidenceDecisions[i],
+        `evidence.evidenceDecisions[${i}]`,
+        prohibitedPaths,
+      );
+    }
+    for (let i = 0; i < archive.evidence.evidenceIndexJobs.length; i++) {
+      collectProhibitedFieldPaths(
+        archive.evidence.evidenceIndexJobs[i],
+        `evidence.evidenceIndexJobs[${i}]`,
+        prohibitedPaths,
+      );
+    }
+    for (let i = 0; i < archive.evidence.verifierOutcomes.length; i++) {
+      collectProhibitedFieldPaths(
+        archive.evidence.verifierOutcomes[i],
+        `evidence.verifierOutcomes[${i}]`,
+        prohibitedPaths,
+      );
+    }
+    if (prohibitedPaths.length > 0) {
+      return `prohibited content in evidence: ${prohibitedPaths[0]}`;
+    }
   }
   return null;
 }
@@ -380,6 +430,23 @@ function byTaskSetIdVersion(item: { taskSetId: string; version: number }): strin
 
 function byKey(item: { key: string }): string {
   return item.key;
+}
+
+function byObservationIdRuleVersion(item: { observationId: string; ruleVersion: number }): string {
+  return `${item.observationId}\u0000${item.ruleVersion.toString().padStart(10, "0")}`;
+}
+
+function bySourceResultId(item: { sourceResultId: string }): string {
+  return item.sourceResultId;
+}
+
+function byVerifierOutcomeKey(item: {
+  runId: string;
+  taskId: string;
+  modelKey: string;
+  executedAt: number;
+}): string {
+  return `${item.runId}::${item.taskId}::${item.modelKey}::${item.executedAt}`;
 }
 
 interface OrderingSpec<T> {
@@ -488,6 +555,22 @@ function requireArrays(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationE
       errors.push({ field: "taskSets", message: "taskSets must be an object." });
     }
   }
+  // Optional Evidence payload: validated only when present. Absence is
+  // legal (earlier-v2 envelope) and means all five counts are zero.
+  const evidence = archive.evidence;
+  if (evidence !== undefined) {
+    if (isRecord(evidence)) {
+      checks.push(
+        ["evidence.modelConfigurations", evidence.modelConfigurations],
+        ["evidence.observations", evidence.observations],
+        ["evidence.evidenceDecisions", evidence.evidenceDecisions],
+        ["evidence.evidenceIndexJobs", evidence.evidenceIndexJobs],
+        ["evidence.verifierOutcomes", evidence.verifierOutcomes],
+      );
+    } else {
+      errors.push({ field: "evidence", message: "evidence must be an object." });
+    }
+  }
   for (const [field, value] of checks) {
     if (!Array.isArray(value)) {
       errors.push({ field, message: `${field} must be an array.` });
@@ -572,6 +655,11 @@ function validateManifest(archive: WorkbenchArchiveV2, errors: ArchiveV2Validati
     ["taskSetVersions", ts?.versions.length ?? 0],
     ["taskSetMaterializations", ts?.materializations.length ?? 0],
     ["taskSetOwnershipCrosswalks", ts?.ownershipCrosswalks.length ?? 0],
+    ["modelConfigurations", archive.evidence?.modelConfigurations.length ?? 0],
+    ["observations", archive.evidence?.observations.length ?? 0],
+    ["evidenceDecisions", archive.evidence?.evidenceDecisions.length ?? 0],
+    ["evidenceIndexJobs", archive.evidence?.evidenceIndexJobs.length ?? 0],
+    ["verifierOutcomes", archive.evidence?.verifierOutcomes.length ?? 0],
   ];
   for (const [key, actual] of optionalCounts) {
     const declared = c[key];
@@ -920,6 +1008,109 @@ function validateReferenceGraph(
       }
     });
   }
+
+  // --- Evidence payload (optional) -------------------------------------------
+  const evidencePayload = archive.evidence;
+  if (evidencePayload !== undefined) {
+    const modelConfigIds = new Set(evidencePayload.modelConfigurations.map((m) => m.id));
+    const observationIds = new Set(evidencePayload.observations.map((o) => o.id));
+    const runIds = new Set([
+      ...archive.runs.details.map((r) => r.id),
+      ...archive.runs.summaries.map((s) => s.id),
+    ]);
+    const rubricVersionKeys = new Set(archive.rubrics.versions.map((r) => `${r.id}@${r.version}`));
+
+    evidencePayload.modelConfigurations.forEach((mc, i) => {
+      const mcId = (mc as { id?: string }).id ?? "";
+      if (!isModelConfigurationSnapshot(mc)) {
+        errors.push({
+          field: `evidence.modelConfigurations[${i}]`,
+          message: `invalid model configuration ${mcId}.`,
+        });
+      }
+    });
+
+    evidencePayload.observations.forEach((obs, i) => {
+      const vRes = validateObservation(obs);
+      if (!vRes.ok) {
+        errors.push({
+          field: `evidence.observations[${i}]`,
+          message: `invalid observation ${obs.id}: ${vRes.errors.join("; ")}`,
+        });
+      }
+      if (!taskIds.has(obs.taskId)) {
+        errors.push({
+          field: `evidence.observations[${i}].taskId`,
+          message: `observation references unknown task ${obs.taskId}.`,
+        });
+      }
+      if (!versionKeys.has(`${obs.taskId}@${obs.taskVersion}`)) {
+        errors.push({
+          field: `evidence.observations[${i}].taskVersion`,
+          message: `observation references unknown task version ${obs.taskId}@${obs.taskVersion}.`,
+        });
+      }
+      if (!modelConfigIds.has(obs.modelConfigurationId)) {
+        errors.push({
+          field: `evidence.observations[${i}].modelConfigurationId`,
+          message: `observation references unknown model configuration ${obs.modelConfigurationId}.`,
+        });
+      }
+      if (
+        obs.rubricRef !== null &&
+        !rubricVersionKeys.has(`${obs.rubricRef.id}@${obs.rubricRef.version}`)
+      ) {
+        errors.push({
+          field: `evidence.observations[${i}].rubricRef`,
+          message: `observation references unknown rubric ${obs.rubricRef.id}@${obs.rubricRef.version}.`,
+        });
+      }
+      if (!runIds.has(obs.sourceResultId)) {
+        errors.push({
+          field: `evidence.observations[${i}].sourceResultId`,
+          message: `observation references unknown run ${obs.sourceResultId}.`,
+        });
+      }
+    });
+
+    evidencePayload.evidenceDecisions.forEach((dec, i) => {
+      const obsId = (dec as { observationId?: string }).observationId ?? "";
+      if (!isEligibilityDecision(dec)) {
+        errors.push({
+          field: `evidence.evidenceDecisions[${i}]`,
+          message: `invalid eligibility decision for observation ${obsId}.`,
+        });
+      }
+      if (!observationIds.has(dec.observationId)) {
+        errors.push({
+          field: `evidence.evidenceDecisions[${i}].observationId`,
+          message: `decision references unknown observation ${dec.observationId}.`,
+        });
+      }
+    });
+
+    evidencePayload.verifierOutcomes.forEach((vo, i) => {
+      const taskId = (vo as { taskId?: string }).taskId ?? "";
+      if (!isExecutedVerifierOutcome(vo)) {
+        errors.push({
+          field: `evidence.verifierOutcomes[${i}]`,
+          message: `invalid verifier outcome for task ${taskId}.`,
+        });
+      }
+      if (!runIds.has(vo.runId)) {
+        errors.push({
+          field: `evidence.verifierOutcomes[${i}].runId`,
+          message: `verifier outcome references unknown run ${vo.runId}.`,
+        });
+      }
+      if (!taskIds.has(vo.taskId)) {
+        errors.push({
+          field: `evidence.verifierOutcomes[${i}].taskId`,
+          message: `verifier outcome references unknown task ${vo.taskId}.`,
+        });
+      }
+    });
+  }
 }
 
 function validateArtifactBytes(
@@ -1061,6 +1252,33 @@ function validateOrdering(archive: WorkbenchArchiveV2, errors: ArchiveV2Validati
       errors,
     );
   }
+  const ev = archive.evidence;
+  if (ev !== undefined) {
+    checkOrdering(
+      { field: "evidence.modelConfigurations", items: ev.modelConfigurations, key: byId },
+      errors,
+    );
+    checkOrdering(
+      { field: "evidence.observations", items: ev.observations, key: byId },
+      errors,
+    );
+    checkOrdering(
+      {
+        field: "evidence.evidenceDecisions",
+        items: ev.evidenceDecisions,
+        key: byObservationIdRuleVersion,
+      },
+      errors,
+    );
+    checkOrdering(
+      { field: "evidence.evidenceIndexJobs", items: ev.evidenceIndexJobs, key: bySourceResultId },
+      errors,
+    );
+    checkOrdering(
+      { field: "evidence.verifierOutcomes", items: ev.verifierOutcomes, key: byVerifierOutcomeKey },
+      errors,
+    );
+  }
 }
 
 function validateDuplicates(archive: WorkbenchArchiveV2, errors: ArchiveV2ValidationError[]): void {
@@ -1098,6 +1316,29 @@ function validateDuplicates(archive: WorkbenchArchiveV2, errors: ArchiveV2Valida
     checkDuplicates("taskSets.versions", taskSets.versions, byTaskSetIdVersion, errors);
     checkDuplicates("taskSets.materializations", taskSets.materializations, byId, errors);
     checkDuplicates("taskSets.ownershipCrosswalks", taskSets.ownershipCrosswalks, byKey, errors);
+  }
+  const evDup = archive.evidence;
+  if (evDup !== undefined) {
+    checkDuplicates("evidence.modelConfigurations", evDup.modelConfigurations, byId, errors);
+    checkDuplicates("evidence.observations", evDup.observations, byId, errors);
+    checkDuplicates(
+      "evidence.evidenceDecisions",
+      evDup.evidenceDecisions,
+      byObservationIdRuleVersion,
+      errors,
+    );
+    checkDuplicates(
+      "evidence.evidenceIndexJobs",
+      evDup.evidenceIndexJobs,
+      bySourceResultId,
+      errors,
+    );
+    checkDuplicates(
+      "evidence.verifierOutcomes",
+      evDup.verifierOutcomes,
+      byVerifierOutcomeKey,
+      errors,
+    );
   }
 }
 
