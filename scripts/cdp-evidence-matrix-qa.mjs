@@ -1656,7 +1656,14 @@ async function run() {
         "Boolean(document.querySelector('main, [role=main], #root > *'))",
         "application shell",
       );
-      await wait(500);
+      try {
+        await evaluate(`(() => {
+          if (window.location.hash !== ${JSON.stringify(cleanHash)}) {
+            window.location.hash = ${JSON.stringify(cleanHash)};
+          }
+        })()`);
+      } catch {}
+      await wait(300);
     };
     const screenshot = async (name) => {
       const capture = await send("Page.captureScreenshot", { format: "png" });
@@ -1873,7 +1880,7 @@ async function run() {
 
     record("evidence-receipt-verified-state", {
       ...verifiedProbe,
-      pass: verifiedProbe.isVerified,
+      pass: verifiedProbe.isVerified && verifiedProbe.hasPassedReason,
       reason: "EvidenceReceipt displays Verified evidence class with verifier provenance.",
     });
     await press("Escape", "Escape", 27);
@@ -1967,41 +1974,51 @@ async function run() {
     await screenshot("qa-task-version-observations");
 
     // =========================================================================
+    // PROBE 7: EXACT RECORD DEEP-LINK NAVIGATION & CANDIDATE FOCUS
+    // =========================================================================
     console.log("Evaluating Exact Record deep-link navigation...");
+    // Navigate via pushState + popstate event (Page.navigate with hash-only
+    // change doesn't trigger HashRouter re-render in CDP headless).
     await evaluate(`(() => {
-      const primaryNavLink = document.querySelector('nav[aria-label="Primary"] a[href*="/runs"]');
-      if (primaryNavLink) { primaryNavLink.focus(); primaryNavLink.click(); }
+      window.history.pushState(null, "", "#/runs/run-alpha-gpt4o");
+      window.dispatchEvent(new PopStateEvent("popstate"));
     })()`);
     await waitFor(
-      "Boolean(document.querySelector('a[href*=\"run-alpha-gpt4o\"]'))",
-      "runs workspace list with run-alpha-gpt4o",
+      "Boolean(document.querySelector('[data-run-detail]'))",
+      "run detail for deep link",
     );
-
-    await evaluate(`(() => {
-      const link = document.querySelector('a[href*="run-alpha-gpt4o"]');
-      if (link) { link.focus(); link.click(); }
-    })()`);
-    await wait(600);
-
+    await wait(500);
     const recordDeepLinkProbe = await evaluate(`(() => {
       const text = document.body.textContent ?? "";
-      const hasCandidate = text.includes("cand-gpt-4o") || text.includes("GPT-4o") || text.includes("openai:gpt-4o") || text.includes("task-evidence-alpha");
-      const hasOutput = text.includes("Deterministic model output") || text.includes("output") || text.includes("Prompt for");
+      const selectedCandidate = document.querySelector('[data-section="selected-candidate"]');
+      const hasCandidate =
+        text.includes("cand-gpt-4o") ||
+        text.includes("GPT-4o") ||
+        text.includes("openai:gpt-4o") ||
+        text.includes("task-evidence-alpha");
+      const hasOutput =
+        text.includes("Deterministic model output") ||
+        text.includes("Selected candidate") ||
+        text.includes("SELECTED CANDIDATE") ||
+        text.includes("output") ||
+        text.includes("Prompt for") ||
+        (selectedCandidate !== null && (selectedCandidate.textContent ?? "").length > 0);
       return {
         hasCandidate,
-        hasOutput,
+        hasOutput: Boolean(hasOutput),
         overflowX: document.documentElement.scrollWidth > innerWidth,
       };
     })()`);
-
     record("exact-record-deep-link", {
       ...recordDeepLinkProbe,
-      pass: recordDeepLinkProbe.hasCandidate && !recordDeepLinkProbe.overflowX,
+      pass:
+        recordDeepLinkProbe.hasCandidate &&
+        recordDeepLinkProbe.hasOutput &&
+        !recordDeepLinkProbe.overflowX,
       reason:
         "Deep link to exact run record focuses candidate and displays output and judge scores.",
     });
     await screenshot("qa-exact-record-deeplink");
-
     // =========================================================================
     // PROBE 8: SECRET PROBE (ZERO LEAKAGE IN DOM)
     // =========================================================================
