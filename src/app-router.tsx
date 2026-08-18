@@ -25,7 +25,6 @@ import { Routes, Route, Navigate, Link, useParams, useLocation } from "react-rou
 import {
   RepositoryContext,
   useEvaluationRepository,
-  useFusionStudyRepository,
   useTaskRepository,
 } from "./lib/persistence/repository-context";
 import { createComparisonRepository } from "./lib/persistence/comparison-repository";
@@ -35,8 +34,8 @@ import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
 import { ModelProbeProvider } from "./ui/ModelProbeContext";
 
 // Route-level code splitting: Compare is the default surface and stays in the
-// main chunk; Runs, Evaluations (task sets, rubrics, fusion study), and
-// experiment results load on first navigation to them.
+// main chunk; Runs, Evaluations (task sets, rubrics), and experiment results
+// load on first navigation to them.
 const RunsWorkspace = lazy(() =>
   import("./workspaces/RunsWorkspace").then((m) => ({ default: m.RunsWorkspace })),
 );
@@ -60,9 +59,7 @@ const RubricList = lazy(() =>
 const RubricDetail = lazy(() =>
   import("./workspaces/evaluations/RubricDetail").then((m) => ({ default: m.RubricDetail })),
 );
-const FusionStudyRoute = lazy(() =>
-  import("./workspaces/evaluations/FusionStudyView").then((m) => ({ default: m.FusionStudyRoute })),
-);
+
 const ExperimentRoute = lazy(() =>
   import("./workspaces/evaluations/ExperimentRoute").then((m) => ({ default: m.ExperimentRoute })),
 );
@@ -161,10 +158,9 @@ export function AppRoutes({
           path="sets/:taskSetId/tasks/:taskId"
           element={withSuspense(<SuiteTaskEditorRouteWrapper models={models} />)}
         />
-        <Route
-          path="sets/:taskSetId/fusion/:studyId"
-          element={withSuspense(<FusionStudyRouteWrapper />)}
-        />
+        {/* REV-6 (Child 06 T12): the live /evaluations/sets/:taskSetId/fusion/:studyId
+            route is removed — the Research Lab owns policy study authority now.
+            The retired :suiteId/fusion/:studyId static notice stays below. */}
 
         {/* Canonical Rubric routes (rubric-terminology spec §4). */}
         <Route path="rubrics" element={withSuspense(<RubricListRoute />)} />
@@ -301,14 +297,6 @@ function RetiredFusionRoute() {
         </Link>
       </div>
     </div>
-  );
-}
-
-function FusionStudyRouteWrapper() {
-  const fusionRepo = useFusionStudyRepository();
-  const { db } = useContext(RepositoryContext);
-  return (
-    <FusionStudyRoute fusionRepo={fusionRepo} crosswalk={db?.taskSetOwnershipCrosswalk ?? null} />
   );
 }
 

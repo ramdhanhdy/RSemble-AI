@@ -2,11 +2,7 @@
 import { describe, expect, it, afterEach, vi, type Mock } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  deriveWorkspace,
-  useActionShortcuts,
-  type WorkspaceKind,
-} from "./useActionShortcuts";
+import { deriveWorkspace, useActionShortcuts, type WorkspaceKind } from "./useActionShortcuts";
 import { initialState, type StudioState, type Action } from "../studio-engine";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;

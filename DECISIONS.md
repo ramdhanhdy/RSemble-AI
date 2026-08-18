@@ -90,6 +90,27 @@ This document records architectural decisions made for RSemble AI.
 > The archive v2 envelope gains Comparison Result indexes, lineages, bindings,
 > and input-snapshot metadata. See Decision #15 for the load-bearing contract.
 >
+> **Reconciliation note (Child 06 T12, 2026-08-19):** The executable Fusion
+> Study seams are retired (REV-5/REV-6, spec:
+> `docs/specs/pending/task-first-evidence-workbench/
+> 06-research-lab-policy-studies/`). The live
+> `/evaluations/sets/:taskSetId/fusion/:studyId` route, `FusionStudyView` /
+> `FusionStudyPanel`, and the Dexie-backed Fusion Study repository phenotype
+> are removed; the Research Lab (`/lab`) owns policy study authority and the
+> allowlisted in-memory methodology substrate (`InMemoryFusionStudyRepository`)
+> stays behind the Policy Study adapter. The retired
+> `/evaluations/:suiteId/fusion/:studyId` static notice stays as a semantic
+> receipt. Compare pipeline shortcuts (⌘Enter, ⌘/, ⌘1–9, ⌘F, ⌘C) now fire
+> only on routes that own live Compare execution (`/compare`, `/`) via an
+> explicit `deriveWorkspace` ownership rule; `/lab`, `/tasks`,
+> `/compare/results/*`, and unknown routes inherit no Compare shortcuts.
+> Historical decisions below (notably #9, #13, #14) preserve the original
+> "Fusion Study" / "suite" terminology for provenance; the methodology
+> contracts (recipe family, stage A/B/C, MPID, holdout, anti-circularity,
+> playbook) are unchanged and now run behind canonical Lab authority. The
+> word "fusion" remains a method term (Fusion Recipe, Fuse mode, Fusion
+> Result); "Fusion Study" as a live product authority is gone.
+>
 ---
 
 ## Decision #1: Focused Direction (Split Workspace / Variation B)

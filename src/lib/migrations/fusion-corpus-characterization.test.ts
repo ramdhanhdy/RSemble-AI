@@ -23,7 +23,7 @@
 // =============================================================================
 
 import "fake-indexeddb/auto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "../persistence/database";
 import {
@@ -45,7 +45,6 @@ import {
   FUSION_CORPUS_FIXTURE,
   FUSION_RECIPE_FAMILIES_IN_FIXTURE,
   FUSION_REPOSITORY_METHODS,
-  FUSION_ROUTE_BRANCHES,
   FUSION_STAGES_IN_FIXTURE,
   FUSION_STORE_NAMES,
   FUSION_UI_ACTIONS,
@@ -86,22 +85,30 @@ describe("Fusion source inventory", () => {
     }
   });
 
-  it("registers the two live Fusion route branches in app-router.tsx", () => {
+  it("keeps only the retired Fusion route branch after the T12 seam removal (REV-6)", () => {
     const source = readFileSync("src/app-router.tsx", "utf8");
-    for (const branch of FUSION_ROUTE_BRANCHES) {
-      // The literal path template appears verbatim in the route definition.
-      expect(source, `route branch ${branch} present`).toContain(branch);
-    }
-    // The legacy redirect resolves via the Suite→Task Set crosswalk key.
-    expect(source).toContain("ts-xwalk:fusion:");
-    expect(source).toContain("LegacyFusionRedirect");
+    // The live /evaluations/sets/:taskSetId/fusion/:studyId route branch is
+    // gone — the Research Lab owns policy study authority now.
+    expect(source).not.toContain('path="sets/:taskSetId/fusion/:studyId"');
+    expect(source).not.toContain("FusionStudyRouteWrapper");
+    // The retired :suiteId/fusion/:studyId static notice stays (Lab spec §11.1).
+    expect(source).toContain(":suiteId/fusion/:studyId");
+    expect(source).toContain("RetiredFusionRoute");
+    // The legacy crosswalk redirect machinery is gone as live code; the
+    // RetiredFusionRoute header comment still names the replaced identifiers
+    // as migration history, which is allowlisted compatibility material.
   });
 
-  it("registers the three live Fusion UI actions in FusionStudyPanel.tsx", () => {
-    const source = readFileSync("src/workspaces/evaluations/FusionStudyPanel.tsx", "utf8");
-    for (const action of FUSION_UI_ACTIONS) {
-      expect(source, `UI action ${action} present`).toContain(action);
-    }
+  it("the live Fusion Study UI panel is gone after the T12 seam removal (REV-6)", () => {
+    // FusionStudyPanel.tsx and FusionStudyView.tsx are deleted — the Lab
+    // replaces them. The three live UI actions no longer have a product
+    // surface to register in.
+    expect(existsSync("src/workspaces/evaluations/FusionStudyPanel.tsx")).toBe(false);
+    expect(existsSync("src/workspaces/evaluations/FusionStudyView.tsx")).toBe(false);
+    // The UI action names are still referenced by the allowlisted methodology
+    // (the controller/orchestration surface), so the fixture constant stays
+    // meaningful as a baseline inventory of the removed product surface.
+    expect(FUSION_UI_ACTIONS.length).toBeGreaterThan(0);
   });
 });
 

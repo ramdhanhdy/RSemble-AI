@@ -77,7 +77,7 @@ describe("REV-6 — live Fusion Study route removed from app-router", () => {
   it("keeps the RetiredFusionRoute static notice for :suiteId/fusion/:studyId", () => {
     const src = readSrc("app-router.tsx");
     expect(src).toContain("RetiredFusionRoute");
-    expect(src).toContain(':suiteId/fusion/:studyId');
+    expect(src).toContain(":suiteId/fusion/:studyId");
     expect(src).toContain("Fusion Study pages no longer exist");
   });
 });

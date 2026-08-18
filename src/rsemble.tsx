@@ -47,7 +47,7 @@ import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
-import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts";
+import { deriveWorkspace, useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts";
 import {
   RepositoryContext,
   useRunRepository,
@@ -97,15 +97,11 @@ export default function RSemble() {
   const navigate = useNavigate();
   const experimentController = useExperimentController();
   const isCompareRoute = location.pathname === "/compare" || location.pathname === "/";
-  // Workspace derivation (plan 8.2): gates the command palette and the
-  // Compare-only keyboard shortcuts (spec §15.12).
-  const workspace: WorkspaceKind = location.pathname.startsWith("/runs")
-    ? "runs"
-    : location.pathname.startsWith("/evaluations")
-      ? "evaluations"
-      : location.pathname.startsWith("/experiments")
-        ? "experiments"
-        : "compare";
+  // Workspace derivation (REV-5, plan 8.2 / spec §15.12): explicit routing/
+  // ownership rule — Compare shortcuts fire only on routes that own live
+  // Compare execution. /lab, /tasks, /compare/results/*, and unknown routes
+  // map to "other" and inherit no Compare pipeline shortcuts.
+  const workspace: WorkspaceKind = deriveWorkspace(location.pathname);
   // Keep a live ref so the shortcut listener reads the current workspace per
   // keystroke without re-registering on every navigation.
   const workspaceRef = useRef<WorkspaceKind>(workspace);

@@ -1,13 +1,51 @@
 // =============================================================================
 // Action shortcuts — extracted keyboard shortcut effect from rsemble.tsx.
+//
+// REV-5 (Child 06 T12, spec §15.12): Compare pipeline shortcuts fire ONLY on
+// routes that own live Compare execution. `deriveWorkspace` is the explicit
+// routing/ownership rule — an opt-in whitelist, not a "compare" default with a
+// "lab" arm bolted on. Every route that does not own live Compare execution
+// (/runs, /evaluations, /experiments, /lab, /tasks, /compare/results/*, and
+// unknown routes) maps to a non-compare workspace so the listener below and
+// the command palette suppress Compare-only actions there.
 // =============================================================================
 
 import { useEffect } from "react";
 import type { StudioState, Action } from "../studio-engine";
 
 /** Workspaces routed by the app shell. Compare is the only workspace whose
- *  pipeline shortcuts (⌘Enter, ⌘/, ⌘1–9, ⌘F, ⌘C) may fire. */
-export type WorkspaceKind = "compare" | "runs" | "evaluations" | "experiments";
+ *  pipeline shortcuts (⌘Enter, ⌘/, ⌘1–9, ⌘F, ⌘C) may fire. `"other"` covers
+ *  every route that owns no named workspace and must not inherit Compare
+ *  shortcuts — /lab, /tasks, /compare/results/*, and unknown routes. */
+export type WorkspaceKind = "compare" | "runs" | "evaluations" | "experiments" | "other";
+
+/**
+ * Explicit routing/ownership rule (REV-5, spec §15.12). Compare pipeline
+ * shortcuts are enabled only on routes that own live Compare execution —
+ * Compare home (`/compare`, and `/` which redirects there). The named
+ * non-compare workspaces are matched by their route prefix; every other route
+ * (including `/lab`, `/tasks`, `/compare/results/*`, and unknown paths) maps
+ * to `"other"` so Compare actions are suppressed there.
+ *
+ * This is a pure function so route-classifier tests can probe it directly
+ * without mounting the listener.
+ */
+export function deriveWorkspace(pathname: string): WorkspaceKind {
+  // Compare home owns live execution. `/` redirects to `/compare` (app-router)
+  // so it is treated as Compare home too. `/compare/results/*` is a historical
+  // result viewer — it does NOT own live execution and must fall through to
+  // "other".
+  if (pathname === "/compare" || pathname === "/" || pathname === "/compare/") {
+    return "compare";
+  }
+  if (pathname.startsWith("/runs")) return "runs";
+  if (pathname.startsWith("/evaluations")) return "evaluations";
+  if (pathname.startsWith("/experiments")) return "experiments";
+  // Every remaining route owns no live Compare execution: /lab, /tasks,
+  // /compare/results/*, and unknown paths. Shortcuts and the command palette
+  // suppress Compare-only actions here.
+  return "other";
+}
 
 interface ShortcutDeps {
   stateRef: React.MutableRefObject<StudioState>;
