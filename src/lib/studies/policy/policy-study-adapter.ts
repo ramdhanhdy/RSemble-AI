@@ -29,6 +29,8 @@ import type { CriticRef } from "../../providers/types";
 import type { ModelSlot } from "../../../studio-data";
 import type { RubricSnapshot, EvaluationSuite } from "../../evaluations/evaluation-types";
 import type {
+  FusionAttempt,
+  FusionTrial,
   FusionPlaybook,
   FusionPlaybookRow,
   FusionRecipeRef,
@@ -41,9 +43,11 @@ import type {
   StageCResult,
   SuiteSnapshotRef,
 } from "../../evaluations/fusion-study-types";
+import type { EvaluationObservation } from "../../evaluations/fusion-study-types";
 import type { FusionPolicyExecutor } from "../../evaluations/fusion-study-controller";
 import { createFusionStudyController } from "../../evaluations/fusion-study-controller";
 import { runFusionStudy } from "../../evaluations/fusion-study-orchestration";
+import { runConfirmationStudy as runMethodConfirmationStudy } from "../../evaluations/fusion-confirmation";
 import { InMemoryFusionStudyRepository } from "../../persistence/fusion-study-repository";
 import type { LabAssetRepository } from "../../persistence/lab-asset-repository";
 import type { StudyRepository } from "../../persistence/study-repository";
@@ -51,19 +55,26 @@ import type { LabRecipeVersion } from "../lab-recipe-types";
 import type { ModelPoolVersion } from "../model-pool-types";
 import { getStudyTypeRegistration, isRegisteredStudyKind } from "../study-registry";
 import { fingerprintStudyValue } from "../study-fingerprint";
+import type { StudyAttempt, StudyArtifactRef } from "../study-types";
 import {
   POLICY_DEFINITION_SCHEMA_VERSION,
+  POLICY_MEASUREMENT_SCHEMA_VERSION,
   POLICY_REPORT_SCHEMA_VERSION,
   POLICY_STUDY_KIND,
+  POLICY_TRIAL_PAYLOAD_SCHEMA_VERSION,
   isPolicyStudyDefinition,
   policyStudyRegistration,
   type ExactModelConfigurationRef,
   type PolicyKind,
+  type PolicyMeasurementPayload,
   type PolicyPlaybookRow,
   type PolicyRecommendation,
   type PolicyReportPayload,
   type PolicyStudyDefinition,
+  type PolicyStudyObservation,
   type PolicyStudyRecord,
+  type PolicyStudyTrial,
+  type PolicyTrialPayload,
 } from "./policy-study-types";
 
 // --- Asset projections (Lab ↔ method) ----------------------------------------
@@ -224,15 +235,13 @@ function fusionRecommendationToPolicy(rec: FusionPlaybook["recommendation"]): Po
     rationale: rec.rationale,
   };
 }
-
 function poolAdequacyToPolicy(a: PoolAdequacyOutcome): PolicyReportPayload["poolAdequacy"] {
   return {
     probed: a.probed,
-    outcome: a.outcome === "confirmed" ? "confirmed" : "rejected",
-    note: a.note,
+    outcome: a.outcome === "confirmed" ? "confirmed" : "unconfirmed",
+    note: a.note && a.note.trim().length > 0 ? a.note : "Pool adequacy not probed.",
   };
 }
-
 /**
  * Derive the recipe-sensitivity finding from a Stage C result. When Stage C
  * ran, `checked` is true and the note records whether any ranking was
@@ -334,16 +343,226 @@ export function buildMethodStudyHandle(args: {
     recipeRefs,
     stageResults: { stageA: null, stageB: null, stageC: null },
     playbookRef: null,
-    claimLevel: record.claimLevel,
     confirmationOf: record.confirmationOf,
+    claimLevel: record.claimLevel,
     status: "in_progress",
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
 }
+// --- Method → Lab lineage mapping (spec §4.3, §5) ----------------------------
+
+/**
+ * Resolves a method-domain CriticRef (providerId + model) back to the
+ * canonical ExactModelConfigurationRef the generic Lab stores require. The
+ * judgeResolver goes Lab → method; this is the inverse for candidate members
+ * and synthesizers. Required when the adapter persists method-domain trials
+ * onto StudyRepository.
+ */
+export type ModelConfigResolver = (critic: CriticRef) => ExactModelConfigurationRef | null;
+
+/** Default resolver: returns null (cannot resolve). Production wiring supplies one. */
+const nullModelConfigResolver: ModelConfigResolver = () => null;
+
+/**
+ * Build a recipeId+version → digest lookup from a PolicyStudyDefinition's
+ * pinned recipe refs. Used when mapping method-domain FusionRecipeRef (which
+ * carries no digest) to the digest-bearing PolicyTrialPayload.recipeRef.
+ */
+function recipeDigestLookup(
+  definition: PolicyStudyDefinition,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const r of definition.fusionRecipes) {
+    map.set(`${r.recipeId}:${r.version}`, r.digest);
+  }
+  return map;
+}
+
+/**
+ * Map a method-domain FusionTrial into a generic PolicyStudyTrial for
+ * persistence on StudyRepository. Candidate slots and synthesizer are
+ * resolved to ExactModelConfigurationRef via the modelConfigResolver; the
+ * recipe digest is looked up from the study definition. Artifact refs are
+ * mapped from the trial's synthesisArtifact child (spec §4.3).
+ */
+function fusionTrialToPolicyTrial(
+  t: FusionTrial,
+  studyId: string,
+  modelConfigResolver: ModelConfigResolver,
+  recipeDigests: Map<string, string>,
+): PolicyStudyTrial {
+  const members: ExactModelConfigurationRef[] = [];
+  for (const slot of t.candidateConfig.slots) {
+    const mc = modelConfigResolver({ providerId: slot.providerId, model: slot.model });
+    if (!mc) {
+      throw new Error(
+        `Cannot resolve candidate ${slot.providerId}:${slot.model} to an exact model configuration.`,
+      );
+    }
+    members.push(mc);
+  }
+
+  let synthesizer: ExactModelConfigurationRef | null = null;
+  if (t.synthesizer) {
+    const mc = modelConfigResolver(t.synthesizer);
+    if (!mc) {
+      throw new Error(
+        `Cannot resolve synthesizer ${t.synthesizer.providerId}:${t.synthesizer.model} to an exact model configuration.`,
+      );
+    }
+    synthesizer = mc;
+  }
+
+  let recipeRef: { recipeId: string; version: number; digest: string } | null = null;
+  if (t.recipe) {
+    const digest = recipeDigests.get(`${t.recipe.id}:${t.recipe.version}`);
+    if (!digest) {
+      throw new Error(`Recipe ${t.recipe.id} v${t.recipe.version} digest not found.`);
+    }
+    recipeRef = { recipeId: t.recipe.id, version: t.recipe.version, digest };
+  }
+
+  const payload: PolicyTrialPayload = {
+    policy: t.policy as PolicyKind,
+    stage: t.stage,
+    candidateConfig: { members },
+    recipeRef,
+    synthesizer,
+  };
+
+  const artifactRefs: StudyArtifactRef[] = [];
+  if (t.children.synthesisArtifact) {
+    const sa = t.children.synthesisArtifact;
+    artifactRefs.push({
+      runId: sa.runId,
+      attemptId: sa.fusionAttemptId,
+      contentHash: sa.contentHash,
+    });
+  }
+
+  return {
+    id: t.id,
+    studyId,
+    payloadKind: "policy",
+    payloadSchemaVersion: POLICY_TRIAL_PAYLOAD_SCHEMA_VERSION,
+    payloadFingerprint: fingerprintStudyValue(payload),
+    payload,
+    status: t.status,
+    sampleIndex: t.sampleIndex,
+    artifactRefs,
+    observationIds: [],
+    policyCost: t.cost.policy,
+    experimentalCost: t.cost.experimental,
+    createdAt: t.createdAt,
+    sealedAt: t.sealedAt,
+  };
+}
+
+/**
+ * Map a method-domain EvaluationObservation into a generic
+ * PolicyStudyObservation for persistence on StudyRepository. The judge
+ * CriticRef is resolved to ExactModelConfigurationRef via the
+ * modelConfigResolver (spec §4.3).
+ */
+function fusionObservationToPolicyObservation(
+  o: EvaluationObservation,
+  studyId: string,
+  modelConfigResolver: ModelConfigResolver,
+): PolicyStudyObservation {
+  const judge = modelConfigResolver(o.judge);
+  if (!judge) {
+    throw new Error(
+      `Cannot resolve judge ${o.judge.providerId}:${o.judge.model} to an exact model configuration.`,
+    );
+  }
+  const payload: PolicyMeasurementPayload = {
+    judge,
+    overallScore: o.overallScore,
+    tokensIn: o.tokensIn,
+    tokensOut: o.tokensOut,
+    error: o.error,
+  };
+  return {
+    id: o.id,
+    studyId,
+    trialId: o.trialId,
+    payloadKind: "policy_measurement",
+    payloadSchemaVersion: POLICY_MEASUREMENT_SCHEMA_VERSION,
+    payload,
+    status: o.status,
+    sourceRunId: o.runId,
+    createdAt: o.startedAt,
+    finishedAt: o.finishedAt,
+  };
+}
+
+/**
+ * Persist method-domain trials, attempts, and observations from a
+ * FusionStudyRepository onto the canonical StudyRepository. Trials are
+ * replayed in sampleIndex order: each trial is created (or linked via
+ * createAttempt for successors), sealed if the method sealed it, then its
+ * observations are appended. This gives the generic Lab stores durable
+ * Trial/Attempt/Observation lineage with candidate artifact refs (spec §4.3,
+ * §5).
+ */
+async function persistMethodLineage(
+  studyRepo: StudyRepository,
+  methodRepo: InMemoryFusionStudyRepository,
+  studyId: string,
+  modelConfigResolver: ModelConfigResolver,
+  recipeDigests: Map<string, string>,
+): Promise<void> {
+  const methodTrials = await methodRepo.listTrials(studyId);
+  const methodAttempts: FusionAttempt[] = await methodRepo.listTrialAttempts(studyId);
+  const successorAttemptByToId = new Map(
+    methodAttempts.map((a) => [a.toTrialId, a] as const),
+  );
+
+  for (const mt of methodTrials) {
+    const genericTrial = fusionTrialToPolicyTrial(
+      mt,
+      studyId,
+      modelConfigResolver,
+      recipeDigests,
+    );
+    // Always create in_progress; seal separately if the method sealed it.
+    const inProgressTrial: PolicyStudyTrial = {
+      ...genericTrial,
+      status: "in_progress",
+      sealedAt: null,
+    };
+    const attempt = successorAttemptByToId.get(mt.id);
+    if (attempt) {
+      // Successor trial — linked via createAttempt (atomic successor + link).
+      const genericAttempt: StudyAttempt = {
+        id: attempt.id,
+        studyId,
+        fromTrialId: attempt.fromTrialId,
+        toTrialId: attempt.toTrialId,
+        reason: attempt.reason,
+        createdAt: attempt.createdAt,
+      };
+      await studyRepo.createAttempt(genericAttempt, inProgressTrial);
+    } else {
+      await studyRepo.createTrial(inProgressTrial);
+    }
+    if (mt.status === "sealed") {
+      await studyRepo.sealTrial(mt.id, 0, mt.sealedAt ?? 0);
+    }
+    const methodObs = await methodRepo.listObservations(mt.id);
+    for (const mo of methodObs) {
+      const genericObs = fusionObservationToPolicyObservation(
+        mo,
+        studyId,
+        modelConfigResolver,
+      );
+      await studyRepo.appendObservation(genericObs);
+    }
+  }
+}
 
 // --- Adapter ------------------------------------------------------------------
-
 export interface PolicyStudyAdapterDeps {
   studyRepo: StudyRepository;
   labAssetRepo: LabAssetRepository;
@@ -351,6 +570,13 @@ export interface PolicyStudyAdapterDeps {
   judgeResolver: JudgeResolver;
   /** Mock in tests; live provider-backed in production. */
   executor: FusionPolicyExecutor;
+  /**
+   * Resolves method-domain CriticRef → canonical ExactModelConfigurationRef.
+   * Required for persisting method trials/observations onto StudyRepository
+   * (candidate members, synthesizer, observation judge). Defaults to a
+   * null-returning resolver — supply one in production and lineage tests.
+   */
+  modelConfigResolver?: ModelConfigResolver;
   now?: () => number;
   generateId?: () => string;
 }
@@ -369,7 +595,6 @@ export interface RunPolicyStudyInput {
   outsideChallengers?: ModelSlot[];
   alternateSynthesizer?: CriticRef | null;
 }
-
 export interface RunPolicyStudyResult {
   /** Generic playbook persisted to the canonical Lab store. */
   playbook: PolicyReportPayload;
@@ -377,9 +602,11 @@ export interface RunPolicyStudyResult {
   sealedRecord: PolicyStudyRecord;
   /** Method-domain playbook produced by the methodology (for inspection). */
   methodPlaybook: FusionPlaybook;
-  /** Method-domain trial ids that supported the playbook. */
+  /** Method-domain study handle (with stage results) for confirmation runs. */
+  methodStudy: FusionStudy;
+  /** Generic trial ids that supported the playbook (resolve via listTrials). */
   supportingTrialIds: string[];
-  /** Method-domain observation ids that supported the playbook. */
+  /** Generic observation ids that supported the playbook (resolve via listObservations). */
   supportingObservationIds: string[];
 }
 
@@ -399,6 +626,7 @@ export class PolicyStudyAdapter {
   private readonly labAssetRepo: LabAssetRepository;
   private readonly judgeResolver: JudgeResolver;
   private readonly executor: FusionPolicyExecutor;
+  private readonly modelConfigResolver: ModelConfigResolver;
   private readonly now: () => number;
   private readonly generateId: () => string;
 
@@ -407,22 +635,32 @@ export class PolicyStudyAdapter {
     this.labAssetRepo = deps.labAssetRepo;
     this.judgeResolver = deps.judgeResolver;
     this.executor = deps.executor;
+    this.modelConfigResolver = deps.modelConfigResolver ?? nullModelConfigResolver;
     this.now = deps.now ?? Date.now;
     this.generateId = deps.generateId ?? (() => crypto.randomUUID());
   }
 
   /**
    * Create a draft Policy Study record from a definition. Rejects unknown /
-   * unregistered payloads before any write (spec §4.1).
+   * unregistered payloads before any write (spec §4.1). For confirmation
+   * studies, pass the source exploration study id as `confirmationOf`.
    */
   async createStudy(
     definition: PolicyStudyDefinition,
     title: string,
     createdAt: number = this.now(),
+    confirmationOf: string | null = null,
   ): Promise<PolicyStudyRecord> {
     assertRegisteredDefinition(definition);
     if (!isPolicyStudyDefinition(definition)) {
       throw new Error("Invalid policy study definition.");
+    }
+    // Confirmation linkage consistency (spec §4.2).
+    if (definition.claimPlan === "confirmation" && !confirmationOf) {
+      throw new Error("A confirmation study must reference its exploration source.");
+    }
+    if (definition.claimPlan === "exploration" && confirmationOf) {
+      throw new Error("An exploration study cannot reference a confirmation source.");
     }
     const id = this.generateId();
     const record: PolicyStudyRecord = {
@@ -436,7 +674,7 @@ export class PolicyStudyAdapter {
       definitionFingerprint: policyStudyRegistration.fingerprintDefinition(definition),
       definition,
       reportRef: null,
-      confirmationOf: null,
+      confirmationOf,
       createdAt,
       updatedAt: createdAt,
       archivedAt: null,
@@ -450,18 +688,23 @@ export class PolicyStudyAdapter {
     const newRev = await this.studyRepo.startStudy(record.id, record.revision, this.now());
     return { ...record, revision: newRev, status: "in_progress", updatedAt: this.now() };
   }
-
   /**
    * Run the full staged methodology (Stage A → B → C → playbook) against the
    * Lab assets pinned by the study definition, then persist the generic
-   * PolicyReportPayload playbook and seal the study. Returns the generic
-   * playbook + the sealed record.
+   * PolicyReportPayload playbook, the method-domain trial/attempt/observation
+   * lineage onto the canonical StudyRepository, and seal the study. Returns
+   * the generic playbook + the sealed record.
    */
   async runExplorationStudy(input: RunPolicyStudyInput): Promise<RunPolicyStudyResult> {
     const { record, suite, rubric } = input;
     if (record.status !== "in_progress") {
       throw new Error(`Policy study ${record.id} must be in_progress to run.`);
     }
+    // Registered-payload boundary (spec §4.1, plan T6 RED): reject unknown
+    // kind / schema version BEFORE any provider call.
+    assertRegisteredDefinition(record.definition);
+    assertRegisteredPayloadKind(record.kind, record.definitionSchemaVersion);
+
     // F1 (adapter-level): load + project Lab assets, rejecting missing refs.
     const assets = await loadPolicyStudyAssets(this.labAssetRepo, record.definition);
     const judge1 = this.judgeResolver(record.definition.judge1);
@@ -469,8 +712,9 @@ export class PolicyStudyAdapter {
 
     // The methodology runs against its own in-memory lifecycle repo, seeded
     // with the projected Lab assets. Trials/observations/attempts and the
-    // method-domain playbook are produced here; the durable generic playbook +
-    // study seal are persisted to the canonical Lab store below.
+    // method-domain playbook are produced here; the durable generic playbook,
+    // study seal, and trial/observation lineage are persisted to the canonical
+    // Lab store below.
     const methodRepo = new InMemoryFusionStudyRepository();
     for (const recipe of assets.recipes) {
       await methodRepo.createRecipe(recipe);
@@ -514,11 +758,24 @@ export class PolicyStudyAdapter {
       },
     );
 
-    // Supporting Trial/Observation refs from the methodology run.
-    const trials = await methodRepo.listTrials(handle.id);
-    const supportingTrialIds = trials.map((t) => t.id);
+    // Persist method-domain trial/attempt/observation lineage onto the
+    // canonical StudyRepository so Lab stores carry durable Trial/Attempt/
+    // Observation refs with candidate artifact links (spec §4.3, §5).
+    const recipeDigests = recipeDigestLookup(record.definition);
+    await persistMethodLineage(
+      this.studyRepo,
+      methodRepo,
+      record.id,
+      this.modelConfigResolver,
+      recipeDigests,
+    );
+
+    // Supporting Trial/Observation refs — now generic ids that resolve via
+    // studyRepo.listTrials / listObservations.
+    const genericTrials = await this.studyRepo.listTrials(record.id);
+    const supportingTrialIds = genericTrials.map((t) => t.id);
     const supportingObservationIds: string[] = [];
-    for (const t of trials) {
+    for (const t of genericTrials) {
       for (const oid of t.observationIds) supportingObservationIds.push(oid);
     }
 
@@ -555,6 +812,123 @@ export class PolicyStudyAdapter {
       playbook,
       sealedRecord,
       methodPlaybook,
+      methodStudy: updatedStudy ?? handle,
+      supportingTrialIds,
+      supportingObservationIds,
+    };
+  }
+
+  /**
+   * Run a confirmation study: evaluate the preselected configuration from a
+   * completed exploration study on a fresh suite version's tasks, then
+   * persist the confirmation trial/observation lineage and playbook onto the
+   * canonical StudyRepository. The confirmation study record must be
+   * in_progress and linked to its exploration source via confirmationOf
+   * (spec §5).
+   */
+  async runConfirmationStudy(input: {
+    record: PolicyStudyRecord;
+    sourceRecord: PolicyStudyRecord;
+    sourceMethodStudy: FusionStudy;
+    sourceMethodPlaybook: FusionPlaybook;
+    suite: EvaluationSuite;
+    rubric: RubricSnapshot | null;
+    tasksPerPair: number;
+    mpid: number;
+  }): Promise<RunPolicyStudyResult> {
+    const { record, sourceRecord, sourceMethodStudy, sourceMethodPlaybook, suite, rubric } = input;
+    if (record.status !== "in_progress") {
+      throw new Error(`Policy study ${record.id} must be in_progress to run.`);
+    }
+    // Registered-payload boundary (spec §4.1).
+    assertRegisteredDefinition(record.definition);
+    assertRegisteredPayloadKind(record.kind, record.definitionSchemaVersion);
+
+    const assets = await loadPolicyStudyAssets(this.labAssetRepo, record.definition);
+    const judge1 = this.judgeResolver(record.definition.judge1);
+    const judge2 = this.judgeResolver(record.definition.judge2);
+
+    // Seed the method-domain repo with the source study + playbook (for
+    // runConfirmationStudy to read) and the confirmation study handle.
+    const methodRepo = new InMemoryFusionStudyRepository();
+    for (const recipe of assets.recipes) {
+      await methodRepo.createRecipe(recipe);
+    }
+    await methodRepo.createPoolManifest(assets.pool);
+    await methodRepo.createStudy(sourceMethodStudy);
+    await methodRepo.createPlaybook(sourceMethodPlaybook);
+    const confirmHandle = buildMethodStudyHandle({
+      record,
+      assets,
+      judge1,
+      judge2,
+      kind: "confirmation",
+    });
+    await methodRepo.createStudy(confirmHandle);
+
+    const controller = createFusionStudyController({
+      repo: methodRepo,
+      generateId: this.generateId,
+      now: this.now,
+    });
+    const outcome = await runMethodConfirmationStudy(
+      { controller, executor: this.executor, repo: methodRepo },
+      {
+        sourceStudyId: sourceRecord.id,
+        confirmationStudyId: confirmHandle.id,
+        suite,
+        rubric,
+        tasksPerPair: input.tasksPerPair,
+        mpid: input.mpid,
+      },
+    );
+
+    // Persist confirmation trial/observation lineage onto the canonical store.
+    const recipeDigests = recipeDigestLookup(record.definition);
+    await persistMethodLineage(
+      this.studyRepo,
+      methodRepo,
+      record.id,
+      this.modelConfigResolver,
+      recipeDigests,
+    );
+
+    const genericTrials = await this.studyRepo.listTrials(record.id);
+    const supportingTrialIds = genericTrials.map((t) => t.id);
+    const supportingObservationIds: string[] = [];
+    for (const t of genericTrials) {
+      for (const oid of t.observationIds) supportingObservationIds.push(oid);
+    }
+
+    const updatedConfirmStudy = await methodRepo.getStudy(confirmHandle.id);
+    const playbook = fusionPlaybookToPolicyReport(
+      outcome.playbook,
+      record.definitionFingerprint,
+      null,
+      supportingTrialIds,
+      supportingObservationIds,
+    );
+    const playbookId = "pb:sha256:" + fingerprintStudyValue(playbook).slice("sha256:".length);
+    await this.studyRepo.createPlaybook(playbookId, playbook);
+
+    const sealedRev = await this.studyRepo.sealStudy(
+      record.id,
+      record.revision,
+      playbookId,
+      this.now(),
+    );
+    const sealedRecord: PolicyStudyRecord = {
+      ...record,
+      revision: sealedRev,
+      status: "completed",
+      reportRef: playbookId,
+      updatedAt: this.now(),
+    };
+    return {
+      playbook,
+      sealedRecord,
+      methodPlaybook: outcome.playbook,
+      methodStudy: updatedConfirmStudy ?? confirmHandle,
       supportingTrialIds,
       supportingObservationIds,
     };

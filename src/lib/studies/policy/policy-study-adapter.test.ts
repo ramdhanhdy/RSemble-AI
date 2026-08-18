@@ -65,9 +65,8 @@ import {
   labPoolToMethodRef,
   loadPolicyStudyAssets,
   recipeSensitivityFromStageC,
+  type ModelConfigResolver,
 } from "./policy-study-adapter";
-
-// --- Deterministic fixtures --------------------------------------------------
 
 const judge1: CriticRef = { providerId: "openrouter", model: "acme/judge-1" };
 const judge2: CriticRef = { providerId: "gemini", model: "acme/judge-2" };
@@ -78,7 +77,29 @@ const JUDGE1_MC: ExactModelConfigurationRef = {
 const JUDGE2_MC: ExactModelConfigurationRef = {
   id: "mc:sha256:" + "b".repeat(64),
 };
+const SYNTH_MC: ExactModelConfigurationRef = {
+  id: "mc:sha256:" + "c".repeat(64),
+};
 
+/**
+ * Deterministic ModelConfigResolver for tests: maps every method-domain
+ * CriticRef to a canonical mc:sha256 ref. Judges and the default synthesizer
+ * have fixed refs; pool-slot models get a deterministic per-model ref.
+ */
+function makeModelConfigResolver(): ModelConfigResolver {
+  return (critic: CriticRef) => {
+    if (critic.providerId === judge1.providerId && critic.model === judge1.model) return JUDGE1_MC;
+    if (critic.providerId === judge2.providerId && critic.model === judge2.model) return JUDGE2_MC;
+    if (critic.model === "z-ai/glm-5.2") return SYNTH_MC;
+    // Pool-slot models: deterministic 64-hex from providerId:model.
+    const seed = `${critic.providerId}:${critic.model}`;
+    const hex = Array.from(seed, (ch) => ch.charCodeAt(0).toString(16).padStart(2, "0"))
+      .join("")
+      .padEnd(64, "0")
+      .slice(0, 64);
+    return { id: `mc:sha256:${hex}` };
+  };
+}
 function slot(n: number, slug: string): ModelSlot {
   return {
     id: `s${n}`,
@@ -262,6 +283,21 @@ function makeDefinition(): PolicyStudyDefinition {
   };
 }
 
+const CONFIRM_SUITE: EvaluationSuite = {
+  ...SUITE,
+  version: 5,
+  tasks: [taskOf(4), taskOf(5), taskOf(6)],
+};
+
+function makeConfirmationDefinition(): PolicyStudyDefinition {
+  return {
+    ...makeDefinition(),
+    workload: { taskSetId: "suite-1", version: 5, manifestDigest: "sha256:" + "1".repeat(64) },
+    protocolFingerprint: "sha256:" + "b".repeat(64),
+    claimPlan: "confirmation",
+  };
+}
+
 // --- Mock executor (mirrors fusion-study.integration.test.ts) -----------------
 
 function evaluationFor(candidateId: string, blindLabel: string, modelKey: string): CandidateEvaluation {
@@ -357,6 +393,7 @@ function makeAdapter(labAssets: InMemoryLabAssetRepository, executor: FusionPoli
     labAssetRepo: labAssets,
     judgeResolver: (mc) => (mc.id === JUDGE1_MC.id ? judge1 : judge2),
     executor,
+    modelConfigResolver: makeModelConfigResolver(),
     now: () => ++clock,
     generateId: () => `id-${++counter}`,
   });
@@ -667,6 +704,7 @@ describe("Policy Study adapter — staged methodology through generic Lab entiti
       studyRepo,
       labAssetRepo: labAssets,
       judgeResolver: (mc) => (mc.id === JUDGE1_MC.id ? judge1 : judge2),
+      modelConfigResolver: makeModelConfigResolver(),
       executor: makeMockExecutor(),
       now: () => ++clock,
       generateId: () => `id-${++counter}`,
@@ -712,6 +750,7 @@ describe("Policy Study adapter — Run 20 repair (Lab lineage + payload boundary
       studyRepo,
       labAssetRepo: labAssets,
       judgeResolver: (mc) => (mc.id === JUDGE1_MC.id ? judge1 : judge2),
+      modelConfigResolver: makeModelConfigResolver(),
       executor: makeMockExecutor(),
       now: () => ++clock,
       generateId: () => `id-${++counter}`,
@@ -823,5 +862,72 @@ describe("Policy Study adapter — Run 20 repair (Lab lineage + payload boundary
       }),
     ).rejects.toThrow(/Unknown payload schema version/);
     expect(executorCalled).toBe(false);
+  });
+
+  it("runs a confirmation study and persists its lineage onto the canonical StudyRepository", async () => {
+    const labAssets = await seedLabAssets();
+    const studyRepo = new InMemoryStudyRepository(null);
+    let counter = 0;
+    let clock = 1000;
+    const adapter = new PolicyStudyAdapter({
+      studyRepo,
+      labAssetRepo: labAssets,
+      judgeResolver: (mc) => (mc.id === JUDGE1_MC.id ? judge1 : judge2),
+      modelConfigResolver: makeModelConfigResolver(),
+      executor: makeMockExecutor(),
+      now: () => ++clock,
+      generateId: () => `id-${++counter}`,
+    });
+    // Run the exploration study first.
+    const draft = await adapter.createStudy(makeDefinition(), "E2E exploration");
+    const started = await adapter.startStudy(draft);
+    const exploration = await adapter.runExplorationStudy({
+      record: started,
+      suite: SUITE,
+      rubric: RUBRIC,
+      stratificationTasks: 3,
+      tasksPerPairA: 2,
+      tasksPerPairB: 2,
+      tasksPerPairC: 2,
+      sequentialPairs: 2,
+      mpid: 0.2,
+    });
+    expect(exploration.sealedRecord.status).toBe("completed");
+
+    // Create and run the confirmation study on a fresh suite version.
+    const confirmDraft = await adapter.createStudy(
+      makeConfirmationDefinition(),
+      "E2E confirmation",
+      undefined,
+      exploration.sealedRecord.id,
+    );
+    const confirmStarted = await adapter.startStudy(confirmDraft);
+    const confirmation = await adapter.runConfirmationStudy({
+      record: confirmStarted,
+      sourceRecord: exploration.sealedRecord,
+      sourceMethodStudy: exploration.methodStudy,
+      sourceMethodPlaybook: exploration.methodPlaybook,
+      suite: CONFIRM_SUITE,
+      rubric: RUBRIC,
+      tasksPerPair: 2,
+      mpid: 0.2,
+    });
+    expect(confirmation.sealedRecord.status).toBe("completed");
+    expect(confirmation.sealedRecord.reportRef).toMatch(/^pb:sha256:/);
+    // Lab stores carry confirmation trial lineage.
+    const confirmTrials = await studyRepo.listTrials(confirmStarted.id);
+    expect(confirmTrials.length).toBeGreaterThan(0);
+    // Supporting Trial refs resolve via the canonical store.
+    for (const tid of confirmation.playbook.supportingTrialIds) {
+      const trial = await studyRepo.getTrial(tid);
+      expect(trial).not.toBeNull();
+    }
+    // Lab stores carry confirmation observation lineage.
+    const confirmObs = await studyRepo.listObservations(confirmStarted.id);
+    expect(confirmObs.length).toBeGreaterThan(0);
+    for (const oid of confirmation.playbook.supportingObservationIds) {
+      const obs = confirmObs.find((o) => o.id === oid);
+      expect(obs).toBeDefined();
+    }
   });
 });
