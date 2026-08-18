@@ -30,6 +30,7 @@ import { RSembleEvaluationDB } from "./database";
 import {
   createStudyRepository,
   InMemoryStudyRepository,
+  type StudyAssetRefResolver,
   type StudyRepository,
 } from "./study-repository";
 import {
@@ -113,6 +114,32 @@ function makeMeasurementPayload(
     error: null,
     ...overrides,
   };
+}
+
+
+// --- Asset ref resolver fixture (F1) -----------------------------------------
+
+/** Map-backed resolver for tests: registers exactly the recipe/pool refs the
+ *  fixtures reference (r1@1, p1@3). Tests that want to assert F1 rejection
+ *  build a resolver without those keys. */
+class MapRefResolver implements StudyAssetRefResolver {
+  private readonly recipes: Set<string>;
+  private readonly pools: Set<string>;
+  constructor(recipes: Array<[string, number]> = [], pools: Array<[string, number]> = []) {
+    this.recipes = new Set(recipes.map(([id, v]) => `${id}@${v}`));
+    this.pools = new Set(pools.map(([id, v]) => `${id}@${v}`));
+  }
+  async recipeVersionExists(id: string, version: number): Promise<boolean> {
+    return this.recipes.has(`${id}@${version}`);
+  }
+  async poolVersionExists(id: string, version: number): Promise<boolean> {
+    return this.pools.has(`${id}@${version}`);
+  }
+}
+
+/** Resolver that knows about the default fixture refs (r1@1, p1@3). */
+function fixtureResolver(): MapRefResolver {
+  return new MapRefResolver([["r1", 1]], [["p1", 3]]);
 }
 
 const ZERO_COST: TokenCost = { tokensIn: 0, tokensOut: 0 };
@@ -933,7 +960,7 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
 
 // --- Run suites against both implementations ----------------------------------
 
-repositorySuite("InMemoryStudyRepository", () => new InMemoryStudyRepository());
+repositorySuite("InMemoryStudyRepository", () => new InMemoryStudyRepository(fixtureResolver()));
 
 const dbs: RSembleEvaluationDB[] = [];
 afterEach(async () => {
@@ -947,7 +974,132 @@ afterEach(async () => {
 repositorySuite("Dexie study repository", () => {
   const db = new RSembleEvaluationDB(`study-repo-test-${crypto.randomUUID()}`);
   dbs.push(db);
-  return createStudyRepository(db);
+  // Pass a map resolver so the parity suite does not need real Lab asset rows;
+  // F1 is still enforced (rejects refs the resolver does not know).
+  return createStudyRepository(db, fixtureResolver());
+});
+
+
+// --- F1: create/seal trial rejects missing recipe/pool refs -------------------
+
+describe("study repository F1 — trial seal rejects missing recipe/pool refs", () => {
+  it("createTrial rejects when the study's pinned modelPool does not resolve", async () => {
+    const repo = new InMemoryStudyRepository(new MapRefResolver([], []));
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 2000);
+    await expect(repo.createTrial(makeTrial())).rejects.toThrow(/pool.*not found|not found/i);
+  });
+
+  it("createTrial rejects when the trial's recipeRef does not resolve (fuse)", async () => {
+    // Pool resolves but recipe does not.
+    const repo = new InMemoryStudyRepository(new MapRefResolver([], [["p1", 3]]));
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 2000);
+    await expect(repo.createTrial(makeTrial())).rejects.toThrow(/recipe.*not found|not found/i);
+  });
+
+  it("sealTrial rejects when refs go missing between create and seal", async () => {
+    // Resolver that knows the refs at create time but "forgets" them by seal
+    // time — simulates a deleted/archived-then-purged asset version.
+    let knowRecipe = true;
+    let knowPool = true;
+    const flaky: StudyAssetRefResolver = {
+      async recipeVersionExists(id, v) {
+        return knowRecipe && id === "r1" && v === 1;
+      },
+      async poolVersionExists(id, v) {
+        return knowPool && id === "p1" && v === 3;
+      },
+    };
+    const repo = new InMemoryStudyRepository(flaky);
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 2000);
+    await repo.createTrial(makeTrial());
+    knowRecipe = false;
+    await expect(repo.sealTrial("trial-1", 0, 3500)).rejects.toThrow(
+      /recipe.*not found|not found/i,
+    );
+  });
+
+  it("happy path: a valid recipe/pool ref allows trial create and seal", async () => {
+    const repo = new InMemoryStudyRepository(fixtureResolver());
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 2000);
+    await repo.createTrial(makeTrial());
+    const newRev = await repo.sealTrial("trial-1", 0, 3500);
+    expect(newRev).toBe(1);
+    const got = (await repo.getTrial("trial-1"))!;
+    expect(got.status).toBe("sealed");
+    expect(got.sealedAt).toBe(3500);
+  });
+
+  it("a rank trial (no recipeRef) seals when only the pool resolves", async () => {
+    const repo = new InMemoryStudyRepository(fixtureResolver());
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 2000);
+    const rankTrial = makeTrial({
+      id: "rank-1",
+      payload: makeTrialPayload({ policy: "rank", recipeRef: null, synthesizer: null }),
+    });
+    await repo.createTrial(rankTrial);
+    await repo.sealTrial("rank-1", 0, 3500);
+    const got = (await repo.getTrial("rank-1"))!;
+    expect(got.status).toBe("sealed");
+  });
+
+  it("Dexie: createTrial rejects a missing pool ref via the default Dexie resolver", async () => {
+    const db = new RSembleEvaluationDB(`study-f1-${crypto.randomUUID()}`);
+    dbs.push(db);
+    // No Lab asset rows written → default Dexie resolver cannot resolve refs.
+    const repo = createStudyRepository(db);
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 2000);
+    await expect(repo.createTrial(makeTrial())).rejects.toThrow(/not found/i);
+    db.close();
+    await db.delete();
+  });
+});
+
+// --- F2: payloadFingerprint stable across appendObservation -------------------
+
+describe("study repository F2 — payloadFingerprint stable across appendObservation", () => {
+  it("appendObservation does not change the trial payloadFingerprint", async () => {
+    const repo = new InMemoryStudyRepository(fixtureResolver());
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 2000);
+    await repo.createTrial(makeTrial({ id: "t1" }));
+    await repo.sealTrial("t1", 0, 3500);
+    const before = (await repo.getTrial("t1"))!;
+    const fpBefore = before.payloadFingerprint;
+    await repo.appendObservation(
+      makeStudyObservation({ id: "o1", trialId: "t1", createdAt: 4000, finishedAt: 4100 }),
+    );
+    await repo.appendObservation(
+      makeStudyObservation({ id: "o2", trialId: "t1", createdAt: 4200, finishedAt: 4300 }),
+    );
+    const after = (await repo.getTrial("t1"))!;
+    expect(after.payloadFingerprint).toBe(fpBefore);
+    expect(after.payload).toEqual(before.payload);
+    expect(after.observationIds).toEqual(["o1", "o2"]);
+  });
+
+  it("Dexie: appendObservation preserves payloadFingerprint", async () => {
+    const db = new RSembleEvaluationDB(`study-f2-${crypto.randomUUID()}`);
+    dbs.push(db);
+    const repo = createStudyRepository(db, fixtureResolver());
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 2000);
+    await repo.createTrial(makeTrial({ id: "t1" }));
+    await repo.sealTrial("t1", 0, 3500);
+    const fpBefore = (await repo.getTrial("t1"))!.payloadFingerprint;
+    await repo.appendObservation(
+      makeStudyObservation({ id: "o1", trialId: "t1", createdAt: 4000, finishedAt: 4100 }),
+    );
+    const after = (await repo.getTrial("t1"))!;
+    expect(after.payloadFingerprint).toBe(fpBefore);
+    db.close();
+    await db.delete();
+  });
 });
 
 // --- Registry-backed validation -----------------------------------------------

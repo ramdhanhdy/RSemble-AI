@@ -3,8 +3,8 @@
 //
 // Persists the generic first-party study lifecycle and immutable Policy
 // Playbooks (spec §4, §5, §12). Stores: studies, studyTrials, studyAttempts,
-// studyObservations, policyPlaybooks (Dexie v12, additive — old Fusion stores
-// remain the live authority until the one-time migration).
+// studyObservations, policyPlaybooks. Lab asset stores (labRecipeVersions,
+// modelPoolVersions) are read for ref-existence checks but not owned here.
 //
 // Invariants:
 //  - registered payload validation at the repository boundary (exactly one
@@ -23,6 +23,13 @@
 //    content, no update/delete path);
 //  - missing refs rejected (unknown study/trial/parent; playbook studyId and
 //    definitionFingerprint must match an existing study);
+//  - F1: createTrial / sealTrial reject when the trial's recipeRef or the
+//    study's pinned modelPool do not resolve to a stored Lab asset version —
+//    a trial cannot seal against missing recipe/pool refs (old Fusion did
+//    this at seal time; the generic substrate enforces it at both create and
+//    seal);
+//  - F2: appendObservation never mutates payload / payloadFingerprint — the
+//    trial's payload fingerprint stays valid across measurement-only retries;
 //  - archive-only after any paid execution; no ordinary delete API for started
 //    evidence; no unarchive API;
 //  - no repository method performs provider calls.
@@ -44,6 +51,76 @@ import {
 import { getStudyTypeRegistration } from "../studies/study-registry";
 import { fingerprintStudyValue } from "../studies/study-fingerprint";
 import { isStudyAttempt, type StudyAttempt } from "../studies/study-types";
+
+// --- Asset ref resolver (F1) --------------------------------------------------
+
+/**
+ * Resolves whether a pinned Lab asset version exists. Used by createTrial /
+ * sealTrial to reject trials that reference a missing recipe or model-pool
+ * version before the trial can seal (F1, spec §12 — old Fusion checked this at
+ * seal time). The Dexie factory wires a default resolver that reads the shared
+ * Lab asset tables; tests and the in-memory repository may inject a map-backed
+ * resolver. When no resolver is available the check is skipped ONLY for the
+ * in-memory repository used outside production wiring — the Dexie path always
+ * resolves against the canonical Lab stores.
+ */
+export interface StudyAssetRefResolver {
+  recipeVersionExists(recipeId: string, version: number): Promise<boolean>;
+  poolVersionExists(poolId: string, version: number): Promise<boolean>;
+}
+
+/**
+ * Default Dexie resolver: reads the canonical Lab asset tables on the same DB
+ * handle. Production wiring (`createStudyRepository(handle.db)`) gets this for
+ * free, so F1 is always enforced at runtime.
+ */
+function defaultDexieResolver(db: RSembleEvaluationDB): StudyAssetRefResolver {
+  return {
+    async recipeVersionExists(recipeId, version) {
+      const row = await db.labRecipeVersions.get([recipeId, version]);
+      return row != null;
+    },
+    async poolVersionExists(poolId, version) {
+      const row = await db.modelPoolVersions.get([poolId, version]);
+      return row != null;
+    },
+  };
+}
+
+/**
+ * F1 check: a trial cannot be created or sealed when its recipeRef or the
+ * parent study's pinned modelPool do not resolve to a stored Lab asset version.
+ * Matches the old Fusion seal-time recipe-existence check and extends it to the
+ * pool pinned on the study definition.
+ */
+async function assertTrialAssetRefsResolve(
+  study: PolicyStudyRecord,
+  trialPayload: PolicyStudyTrial["payload"],
+  resolver: StudyAssetRefResolver,
+): Promise<void> {
+  const poolOk = await resolver.poolVersionExists(
+    study.definition.modelPool.poolId,
+    study.definition.modelPool.version,
+  );
+  if (!poolOk) {
+    throw new StorageError(
+      "validation",
+      `Model pool ${study.definition.modelPool.poolId} v${study.definition.modelPool.version} referenced by study ${study.id} not found.`,
+    );
+  }
+  if (trialPayload.recipeRef !== null) {
+    const recipeOk = await resolver.recipeVersionExists(
+      trialPayload.recipeRef.recipeId,
+      trialPayload.recipeRef.version,
+    );
+    if (!recipeOk) {
+      throw new StorageError(
+        "validation",
+        `Recipe ${trialPayload.recipeRef.recipeId} v${trialPayload.recipeRef.version} referenced by trial not found.`,
+      );
+    }
+  }
+}
 
 // --- Repository interface -----------------------------------------------------
 
@@ -130,7 +207,10 @@ function playbookDigest(playbook: PolicyReportPayload): string {
 
 // --- Dexie implementation -----------------------------------------------------
 
-export function createStudyRepository(db: RSembleEvaluationDB): StudyRepository {
+export function createStudyRepository(
+  db: RSembleEvaluationDB,
+  resolver: StudyAssetRefResolver = defaultDexieResolver(db),
+): StudyRepository {
   // --- Study lifecycle ------------------------------------------------------
 
   async function createStudy(record: PolicyStudyRecord): Promise<void> {
@@ -514,36 +594,45 @@ export function createStudyRepository(db: RSembleEvaluationDB): StudyRepository 
     validateTrial(trial);
     db.assertWritable();
     try {
-      await db.transaction("rw", db.studies, db.studyTrials, async () => {
-        const studyRow = await db.studies.get(trial.studyId);
-        if (!studyRow) {
-          throw new StorageError("conflict", `Study ${trial.studyId} not found`);
-        }
-        const study = isPolicyStudyRecord(studyRow.record) ? studyRow.record : null;
-        if (!study) {
-          throw new StorageError("validation", `Study ${trial.studyId} record corrupted`);
-        }
-        if (study.status !== "in_progress") {
-          throw new StorageError(
-            "conflict",
-            `Study ${trial.studyId} is not in_progress (status=${study.status})`,
-          );
-        }
-        const existing = await db.studyTrials.get(trial.id);
-        if (existing) {
-          throw new StorageError("conflict", `Trial ${trial.id} already exists`);
-        }
-        await db.studyTrials.put({
-          id: trial.id,
-          trial,
-          studyId: trial.studyId,
-          status: trial.status,
-          sampleIndex: trial.sampleIndex,
-          revision: 0,
-          createdAt: trial.createdAt,
-          sealedAt: trial.sealedAt,
-        });
-      });
+      await db.transaction(
+        "rw",
+        db.studies,
+        db.studyTrials,
+        db.labRecipeVersions,
+        db.modelPoolVersions,
+        async () => {
+          const studyRow = await db.studies.get(trial.studyId);
+          if (!studyRow) {
+            throw new StorageError("conflict", `Study ${trial.studyId} not found`);
+          }
+          const study = isPolicyStudyRecord(studyRow.record) ? studyRow.record : null;
+          if (!study) {
+            throw new StorageError("validation", `Study ${trial.studyId} record corrupted`);
+          }
+          if (study.status !== "in_progress") {
+            throw new StorageError(
+              "conflict",
+              `Study ${trial.studyId} is not in_progress (status=${study.status})`,
+            );
+          }
+          // F1: reject missing recipe/pool refs before the trial can seal.
+          await assertTrialAssetRefsResolve(study, trial.payload, resolver);
+          const existing = await db.studyTrials.get(trial.id);
+          if (existing) {
+            throw new StorageError("conflict", `Trial ${trial.id} already exists`);
+          }
+          await db.studyTrials.put({
+            id: trial.id,
+            trial,
+            studyId: trial.studyId,
+            status: trial.status,
+            sampleIndex: trial.sampleIndex,
+            revision: 0,
+            createdAt: trial.createdAt,
+            sealedAt: trial.sealedAt,
+          });
+        },
+      );
     } catch (err) {
       if (err instanceof StorageError) throw err;
       throw classifyStorageError(err);
@@ -558,33 +647,52 @@ export function createStudyRepository(db: RSembleEvaluationDB): StudyRepository 
     db.assertWritable();
     const newRevision = expectedRevision + 1;
     try {
-      await db.transaction("rw", db.studyTrials, async () => {
-        const row = await db.studyTrials.get(id);
-        if (!row) throw new StorageError("conflict", `Trial ${id} not found`);
-        const trial = isPolicyStudyTrial(row.trial) ? row.trial : null;
-        if (!trial) throw new StorageError("validation", `Trial ${id} record corrupted`);
-        if (trial.status !== "in_progress") {
-          throw new StorageError("conflict", `Trial ${id} is already sealed`);
-        }
-        if (row.revision !== expectedRevision) {
-          throw new StorageError(
-            "conflict",
-            `Stale revision: expected ${expectedRevision}, got ${row.revision}`,
-          );
-        }
-        const sealed: PolicyStudyTrial = { ...trial, status: "sealed", sealedAt };
-        validateTrial(sealed);
-        await db.studyTrials.put({
-          id: row.id,
-          trial: sealed,
-          studyId: row.studyId,
-          status: "sealed",
-          sampleIndex: row.sampleIndex,
-          revision: newRevision,
-          createdAt: row.createdAt,
-          sealedAt,
-        });
-      });
+      await db.transaction(
+        "rw",
+        db.studies,
+        db.studyTrials,
+        db.labRecipeVersions,
+        db.modelPoolVersions,
+        async () => {
+          const row = await db.studyTrials.get(id);
+          if (!row) throw new StorageError("conflict", `Trial ${id} not found`);
+          const trial = isPolicyStudyTrial(row.trial) ? row.trial : null;
+          if (!trial) throw new StorageError("validation", `Trial ${id} record corrupted`);
+          if (trial.status !== "in_progress") {
+            throw new StorageError("conflict", `Trial ${id} is already sealed`);
+          }
+          if (row.revision !== expectedRevision) {
+            throw new StorageError(
+              "conflict",
+              `Stale revision: expected ${expectedRevision}, got ${row.revision}`,
+            );
+          }
+          // F1: re-verify recipe/pool refs resolve before sealing. The study
+          // is loaded for its pinned modelPool ref (and to confirm the trial
+          // still belongs to an in_progress study).
+          const studyRow = await db.studies.get(trial.studyId);
+          if (!studyRow) {
+            throw new StorageError("conflict", `Study ${trial.studyId} not found`);
+          }
+          const study = isPolicyStudyRecord(studyRow.record) ? studyRow.record : null;
+          if (!study) {
+            throw new StorageError("validation", `Study ${trial.studyId} record corrupted`);
+          }
+          await assertTrialAssetRefsResolve(study, trial.payload, resolver);
+          const sealed: PolicyStudyTrial = { ...trial, status: "sealed", sealedAt };
+          validateTrial(sealed);
+          await db.studyTrials.put({
+            id: row.id,
+            trial: sealed,
+            studyId: row.studyId,
+            status: "sealed",
+            sampleIndex: row.sampleIndex,
+            revision: newRevision,
+            createdAt: row.createdAt,
+            sealedAt,
+          });
+        },
+      );
       return newRevision;
     } catch (err) {
       if (err instanceof StorageError) throw err;
@@ -912,6 +1020,17 @@ export class InMemoryStudyRepository implements StudyRepository {
     string,
     { id: string; playbook: PolicyReportPayload; digest: string }
   >();
+  private readonly assetResolver: StudyAssetRefResolver | null;
+
+  /**
+   * @param assetResolver When provided, createTrial / sealTrial enforce F1
+   *   (reject missing recipe/pool refs). When omitted the check is skipped —
+   *   use only in tests that do not exercise ref-existence. Production wiring
+   *   always supplies a resolver.
+   */
+  constructor(assetResolver: StudyAssetRefResolver | null = null) {
+    this.assetResolver = assetResolver;
+  }
 
   // --- Study lifecycle ------------------------------------------------------
 
@@ -1136,12 +1255,15 @@ export class InMemoryStudyRepository implements StudyRepository {
         `Study ${trial.studyId} is not in_progress (status=${study.status})`,
       );
     }
+    // F1: reject missing recipe/pool refs before the trial can seal.
+    if (this.assetResolver) {
+      await assertTrialAssetRefsResolve(study, trial.payload, this.assetResolver);
+    }
     if (this.trials.has(trial.id)) {
       throw new StorageError("conflict", `Trial ${trial.id} already exists`);
     }
     this.trials.set(trial.id, { trial, revision: 0 });
   }
-
   async sealTrial(id: string, expectedRevision: number, sealedAt: number): Promise<number> {
     const entry = this.trials.get(id);
     if (!entry) throw new StorageError("conflict", `Trial ${id} not found`);
@@ -1153,6 +1275,14 @@ export class InMemoryStudyRepository implements StudyRepository {
         "conflict",
         `Stale revision: expected ${expectedRevision}, got ${entry.revision}`,
       );
+    }
+    // F1: re-verify recipe/pool refs resolve before sealing.
+    if (this.assetResolver) {
+      const study = this.studies.get(entry.trial.studyId);
+      if (!study) {
+        throw new StorageError("conflict", `Study ${entry.trial.studyId} not found`);
+      }
+      await assertTrialAssetRefsResolve(study, entry.trial.payload, this.assetResolver);
     }
     const newRevision = expectedRevision + 1;
     const sealed: PolicyStudyTrial = { ...entry.trial, status: "sealed", sealedAt };
