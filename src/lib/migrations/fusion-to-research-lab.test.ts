@@ -16,22 +16,13 @@
 
 import { describe, expect, it } from "vitest";
 import { FUSION_CORPUS_FIXTURE } from "./fusion-corpus-fixture";
-import {
-  previewFusionToResearchLab,
-  type FusionCorpusSource,
-} from "./fusion-to-research-lab";
+import { previewFusionToResearchLab, type FusionCorpusSource } from "./fusion-to-research-lab";
 import {
   isFusionToResearchLabReceipt,
   canonicalReceiptJson,
 } from "./fusion-to-research-lab-receipt";
-import {
-  isLabRecipeRecord,
-  isLabRecipeVersion,
-} from "../studies/lab-recipe-types";
-import {
-  isModelPoolRecord,
-  isModelPoolVersion,
-} from "../studies/model-pool-types";
+import { isLabRecipeRecord, isLabRecipeVersion } from "../studies/lab-recipe-types";
+import { isModelPoolRecord, isModelPoolVersion } from "../studies/model-pool-types";
 import {
   isPolicyReportPayload,
   isPolicyStudyObservation,
@@ -511,6 +502,14 @@ describe("Fusion → Research Lab migration preview (lossless conversion paths)"
           stageProtocolVersion: 1,
         },
       },
+      playbookExtensions: {
+        "playbook-1": {
+          recipeSensitivity: {
+            checked: true,
+            note: "Sensitivity verified robust",
+          },
+        },
+      },
     });
 
     expect(result.receipt.status).toBe("preview_completed");
@@ -615,10 +614,9 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
     const result = previewFusionToResearchLab(source);
     const decision = result.receipt.decisions.find((d) => d.id === "playbook-unconfirmed");
     expect(decision?.status).toBe("discard");
-    expect([
-      "pool_adequacy_unconfirmed_not_supported",
-      "parent_study_discarded",
-    ]).toContain(decision?.reasonCode);
+    expect(["pool_adequacy_unconfirmed_not_supported", "parent_study_discarded"]).toContain(
+      decision?.reasonCode,
+    );
   });
 
   it("cascades discard: child trials and observations are discarded if parent study is discarded", () => {
@@ -717,10 +715,9 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
 
     const obsDecision = result.receipt.decisions.find((d) => d.id === "obs-orphan");
     expect(obsDecision?.status).toBe("discard");
-    expect([
-      "referenced_trial_discarded",
-      "critic_ref_not_mc_sha256",
-    ]).toContain(obsDecision?.reasonCode);
+    expect(["referenced_trial_discarded", "critic_ref_not_mc_sha256"]).toContain(
+      obsDecision?.reasonCode,
+    );
   });
 
   it("discards a study with missing_recipe_refs when no fusion recipes can be resolved (does not invent recipe-default with zero digest)", () => {
@@ -1310,7 +1307,9 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
       },
     });
 
-    const trialDecision = resultInvalid.receipt.decisions.find((d) => d.id === "trial-invalid-hash");
+    const trialDecision = resultInvalid.receipt.decisions.find(
+      (d) => d.id === "trial-invalid-hash",
+    );
     expect(trialDecision?.status).toBe("discard");
     expect(trialDecision?.reasonCode).toBe("invalid_artifact_hash");
     expect(resultInvalid.staged.studyTrials).toHaveLength(0);

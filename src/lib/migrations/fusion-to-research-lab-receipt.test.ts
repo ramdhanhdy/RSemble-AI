@@ -192,7 +192,6 @@ describe("Fusion → Research Lab migration receipt", () => {
       },
     ];
 
-
     const counts = {
       fusionRecipes: 1,
       poolManifests: 0,

@@ -24,6 +24,7 @@ import type {
   PoolManifestVersion,
 } from "../evaluations/fusion-study-types";
 import type { TaskSetOwnershipCrosswalkRow } from "../persistence/database";
+import { isNonBlankString, isRecord } from "../persistence/run-types";
 import {
   canonicalRecipePayload,
   isLabRecipeRecord,
@@ -57,13 +58,11 @@ import {
   type PolicyStudyTrial,
   type PolicyTrialPayload,
 } from "../studies/policy/policy-study-types";
-import {
-  fingerprintStudyValue,
-  isStudyFingerprint,
-} from "../studies/study-fingerprint";
+import { fingerprintStudyValue, isStudyFingerprint } from "../studies/study-fingerprint";
 import {
   hasProhibitedStudyKeys,
   isStudyAttempt,
+  type StudyArtifactRef,
   type StudyAttempt,
 } from "../studies/study-types";
 import {
@@ -112,6 +111,13 @@ export interface PreviewOptions {
       rubric: { rubricId: string; version: number };
       policies: PolicyKind[];
       stageProtocolVersion: number;
+    }
+  >;
+  /** Authoritative extension properties for playbooks that lack recipeSensitivity in legacy schema. */
+  playbookExtensions?: Record<
+    string,
+    {
+      recipeSensitivity: { checked: boolean; note: string };
     }
   >;
 }
@@ -348,7 +354,12 @@ export function previewFusionToResearchLab(
 
     // Check crosswalk
     const crosswalk = crosswalkByFusionStudyId.get(s.id);
-    if (!crosswalk || crosswalk.status === "unresolved" || !crosswalk.taskSetId || crosswalk.version === null) {
+    if (
+      !crosswalk ||
+      crosswalk.status === "unresolved" ||
+      !crosswalk.taskSetId ||
+      crosswalk.version === null
+    ) {
       decisions.push({
         store: "fusionStudies",
         id: s.id,
@@ -383,10 +394,14 @@ export function previewFusionToResearchLab(
     }
 
     // Judges: resolve mc:sha256 exact model configuration
-    const resolveJudgeRef = (j: CriticRef | ExactModelConfigurationRef): ExactModelConfigurationRef | null => {
+    const resolveJudgeRef = (
+      j: CriticRef | ExactModelConfigurationRef,
+    ): ExactModelConfigurationRef | null => {
       if (isExactModelConfigurationRef(j)) return j;
       if ("model" in j) {
-        const mapped = options.exactModelConfigurations?.[j.model] ?? options.exactModelConfigurations?.[`${j.providerId}:${j.model}`];
+        const mapped =
+          options.exactModelConfigurations?.[j.model] ??
+          options.exactModelConfigurations?.[`${j.providerId}:${j.model}`];
         if (mapped && isExactModelConfigurationRef({ id: mapped })) {
           return { id: mapped };
         }
@@ -403,7 +418,8 @@ export function previewFusionToResearchLab(
         id: s.id,
         status: "discard",
         reasonCode: "critic_ref_not_mc_sha256",
-        details: "Study judges are CriticRef rather than exact mc:sha256 model configuration references",
+        details:
+          "Study judges are CriticRef rather than exact mc:sha256 model configuration references",
       });
       continue;
     }
@@ -423,7 +439,9 @@ export function previewFusionToResearchLab(
 
     // Pool digest resolution
     const stagedPool = stagedPoolVersionsById.get(`${s.poolRef.id}:${s.poolRef.version}`);
-    const poolDigestVal = stagedPool?.digest ?? (options.exactModelConfigurations?.[`pool:${s.poolRef.id}:${s.poolRef.version}`]);
+    const poolDigestVal =
+      stagedPool?.digest ??
+      options.exactModelConfigurations?.[`pool:${s.poolRef.id}:${s.poolRef.version}`];
     if (!poolDigestVal || !isStudyFingerprint(poolDigestVal)) {
       decisions.push({
         store: "fusionStudies",
@@ -437,29 +455,69 @@ export function previewFusionToResearchLab(
 
     // Fusion recipes resolution
     const recipeRefs: Array<{ recipeId: string; version: number; digest: string }> = [];
-    const sourceTrialsForStudy = source.trials.filter((t) => t.studyId === s.id && t.recipe !== null);
+    const candidateRecipes: Array<{ id: string; version: number }> = [];
+
+    if (Array.isArray(s.recipeRefs)) {
+      for (const r of s.recipeRefs) {
+        if (r && typeof r.id === "string" && typeof r.version === "number") {
+          if (!candidateRecipes.some((c) => c.id === r.id && c.version === r.version)) {
+            candidateRecipes.push({ id: r.id, version: r.version });
+          }
+        }
+      }
+    }
+
+    const sourceTrialsForStudy = source.trials.filter(
+      (t) => t.studyId === s.id && t.recipe !== null,
+    );
     for (const t of sourceTrialsForStudy) {
-      if (t.recipe) {
-        const stagedRecipe = stagedRecipeVersionsById.get(`${t.recipe.id}:${t.recipe.version}`);
-        const rDigest = stagedRecipe?.digest;
-        if (rDigest && !recipeRefs.some((r) => r.recipeId === t.recipe?.id && r.version === t.recipe?.version)) {
+      if (t.recipe && typeof t.recipe.id === "string" && typeof t.recipe.version === "number") {
+        if (
+          !candidateRecipes.some((c) => c.id === t.recipe?.id && c.version === t.recipe?.version)
+        ) {
+          candidateRecipes.push({ id: t.recipe.id, version: t.recipe.version });
+        }
+      }
+    }
+
+    for (const cr of candidateRecipes) {
+      const stagedRecipe = stagedRecipeVersionsById.get(`${cr.id}:${cr.version}`);
+      const rDigest =
+        stagedRecipe?.digest ?? options.exactModelConfigurations?.[`recipe:${cr.id}:${cr.version}`];
+      if (rDigest && isStudyFingerprint(rDigest)) {
+        if (!recipeRefs.some((r) => r.recipeId === cr.id && r.version === cr.version)) {
           recipeRefs.push({
-            recipeId: t.recipe.id,
-            version: t.recipe.version,
+            recipeId: cr.id,
+            version: cr.version,
             digest: rDigest,
           });
         }
       }
     }
 
-    // If study used recipes but none resolved
-    if (sourceTrialsForStudy.length > 0 && recipeRefs.length === 0) {
+    // Studies must have at least one valid resolved recipe ref per PolicyStudyDefinition
+    if (recipeRefs.length === 0) {
       decisions.push({
         store: "fusionStudies",
         id: s.id,
         status: "discard",
         reasonCode: "missing_recipe_refs",
-        details: "Referenced recipe digests could not be resolved",
+        details: "Study has no resolved fusion recipes",
+      });
+      continue;
+    }
+
+    // Completed study requires a non-blank playbookRef
+    if (
+      s.status === "completed" &&
+      (!s.playbookRef || typeof s.playbookRef !== "string" || s.playbookRef.trim() === "")
+    ) {
+      decisions.push({
+        store: "fusionStudies",
+        id: s.id,
+        status: "discard",
+        reasonCode: "missing_supporting_ids",
+        details: "Completed study lacks required playbookRef / report id",
       });
       continue;
     }
@@ -475,13 +533,7 @@ export function previewFusionToResearchLab(
         version: s.poolRef.version,
         digest: poolDigestVal,
       },
-      fusionRecipes: recipeRefs.length > 0 ? recipeRefs : [
-        {
-          recipeId: "recipe-default",
-          version: 1,
-          digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-        },
-      ],
+      fusionRecipes: recipeRefs,
       judge1: judge1Ref,
       judge2: judge2Ref,
       rubric: studyExt.rubric,
@@ -503,7 +555,7 @@ export function previewFusionToResearchLab(
       definitionSchemaVersion: 1,
       definitionFingerprint: defFingerprint,
       definition,
-      reportRef: s.status === "completed" ? (s.playbookRef ?? "playbook-report") : null,
+      reportRef: s.status === "completed" ? s.playbookRef : null,
       confirmationOf: s.confirmationOf,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
@@ -582,7 +634,8 @@ export function previewFusionToResearchLab(
         id: t.id,
         status: "discard",
         reasonCode: "candidate_members_not_mc_sha256",
-        details: "Trial candidate slots could not be resolved to mc:sha256 exact model configuration references",
+        details:
+          "Trial candidate slots could not be resolved to mc:sha256 exact model configuration references",
       });
       continue;
     }
@@ -601,7 +654,8 @@ export function previewFusionToResearchLab(
           id: t.id,
           status: "discard",
           reasonCode: "synthesizer_not_mc_sha256",
-          details: "Trial synthesizer could not be resolved to mc:sha256 exact model configuration reference",
+          details:
+            "Trial synthesizer could not be resolved to mc:sha256 exact model configuration reference",
         });
         continue;
       }
@@ -637,6 +691,31 @@ export function previewFusionToResearchLab(
       synthesizer: synthRef,
     };
 
+    const artifactRefs: StudyArtifactRef[] = [];
+    if (t.children?.synthesisArtifact) {
+      const sa = t.children.synthesisArtifact;
+      if (
+        !sa.runId ||
+        !sa.fusionAttemptId ||
+        !sa.contentHash ||
+        !isStudyFingerprint(sa.contentHash)
+      ) {
+        decisions.push({
+          store: "fusionTrials",
+          id: t.id,
+          status: "discard",
+          reasonCode: "invalid_artifact_hash",
+          details: "Synthesis artifact contentHash is not a valid SHA-256 fingerprint",
+        });
+        continue;
+      }
+      artifactRefs.push({
+        runId: sa.runId,
+        attemptId: sa.fusionAttemptId,
+        contentHash: sa.contentHash,
+      });
+    }
+
     const trialRecord: PolicyStudyTrial = {
       id: t.id,
       studyId: t.studyId,
@@ -646,7 +725,7 @@ export function previewFusionToResearchLab(
       payload,
       status: t.status,
       sampleIndex: t.sampleIndex,
-      artifactRefs: [],
+      artifactRefs,
       observationIds: [],
       policyCost: t.cost?.policy ?? { tokensIn: 0, tokensOut: 0 },
       experimentalCost: t.cost?.experimental ?? { tokensIn: 0, tokensOut: 0 },
@@ -781,7 +860,8 @@ export function previewFusionToResearchLab(
         id: o.id,
         status: "discard",
         reasonCode: "critic_ref_not_mc_sha256",
-        details: "Observation judge is CriticRef rather than exact mc:sha256 model configuration reference",
+        details:
+          "Observation judge is CriticRef rather than exact mc:sha256 model configuration reference",
       });
       continue;
     }
@@ -883,8 +963,31 @@ export function previewFusionToResearchLab(
             rationale: pb.recommendation.rationale,
           };
 
-    const supportingTrials = staged.studyTrials.filter((t) => t.studyId === pb.studyId).map((t) => t.id);
-    const supportingObservations = staged.studyObservations.filter((o) => o.studyId === pb.studyId).map((o) => o.id);
+    const supportingTrials = staged.studyTrials
+      .filter((t) => t.studyId === pb.studyId)
+      .map((t) => t.id);
+    const supportingObservations = staged.studyObservations
+      .filter((o) => o.studyId === pb.studyId)
+      .map((o) => o.id);
+
+    const rawPb = pb as unknown as Record<string, unknown>;
+    const sourceSensitivity =
+      isRecord(rawPb.recipeSensitivity) &&
+      typeof (rawPb.recipeSensitivity as Record<string, unknown>).checked === "boolean" &&
+      isNonBlankString((rawPb.recipeSensitivity as Record<string, unknown>).note)
+        ? (rawPb.recipeSensitivity as { checked: boolean; note: string })
+        : options.playbookExtensions?.[pb.id]?.recipeSensitivity;
+
+    if (!sourceSensitivity) {
+      decisions.push({
+        store: "fusionPlaybooks",
+        id: pb.id,
+        status: "discard",
+        reasonCode: "missing_recipe_sensitivity",
+        details: "Playbook lacks authoritative recipeSensitivity metadata",
+      });
+      continue;
+    }
 
     const reportPayload: PolicyReportPayload = {
       studyId: pb.studyId,
@@ -896,10 +999,7 @@ export function previewFusionToResearchLab(
         outcome: pb.poolAdequacy.outcome,
         note: pb.poolAdequacy.note,
       },
-      recipeSensitivity: {
-        checked: false,
-        note: "Migrated from legacy Fusion playbook",
-      },
+      recipeSensitivity: sourceSensitivity,
       claimLevel: pb.claimLevel,
       conclusion: pb.conclusion,
       supportingTrialIds: supportingTrials,

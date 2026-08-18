@@ -70,13 +70,23 @@ export function isDiscardReasonCode(v: unknown): v is DiscardReasonCode {
   return typeof v === "string" && (DISCARD_REASON_CODES as readonly string[]).includes(v);
 }
 
-export interface RecordDecision {
+export interface LosslessConvertDecision {
   store: FusionStoreName;
   id: string;
-  status: "lossless_convert" | "discard";
-  reasonCode?: DiscardReasonCode;
+  status: "lossless_convert";
+  reasonCode?: undefined;
   details?: string;
 }
+
+export interface DiscardDecision {
+  store: FusionStoreName;
+  id: string;
+  status: "discard";
+  reasonCode: DiscardReasonCode;
+  details?: string;
+}
+
+export type RecordDecision = LosslessConvertDecision | DiscardDecision;
 
 export function isRecordDecision(v: unknown): v is RecordDecision {
   if (!isRecord(v)) return false;
@@ -88,7 +98,7 @@ export function isRecordDecision(v: unknown): v is RecordDecision {
   if (!isNonBlankString(v.id)) return false;
   if (v.status !== "lossless_convert" && v.status !== "discard") return false;
   if (v.status === "discard") {
-    if (v.reasonCode !== undefined && !isDiscardReasonCode(v.reasonCode)) return false;
+    if (!isDiscardReasonCode(v.reasonCode)) return false;
   }
   if (v.details !== undefined && typeof v.details !== "string") return false;
   return true;
@@ -209,7 +219,9 @@ export interface CreateReceiptParams {
   note?: string;
 }
 
-export function createDeterministicReceipt(params: CreateReceiptParams): FusionToResearchLabReceipt {
+export function createDeterministicReceipt(
+  params: CreateReceiptParams,
+): FusionToResearchLabReceipt {
   let totalSource = 0;
   for (const store of FUSION_STORE_NAMES) {
     totalSource += params.sourceCounts[store] ?? 0;
