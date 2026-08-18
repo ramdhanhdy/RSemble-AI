@@ -298,8 +298,10 @@ describe("PolicyStudy recovery — failed", () => {
 
   it("renders an honest failure state on fresh load without inventing a message", async () => {
     const repo = new InMemoryStudyRepository();
-    await repo.createStudy(makeStudyRecord({ status: "failed" }));
+    await repo.createStudy(makeStudyRecord({ status: "in_progress" }));
     await repo.createTrial(makeTrial("trial-a1", { stage: "A" }));
+    const failed = await repo.getStudy("study-1");
+    await repo.failStudy("study-1", failed!.revision, 8_000);
     const h = renderPage(repo, "study-1", null);
     await settle();
 
