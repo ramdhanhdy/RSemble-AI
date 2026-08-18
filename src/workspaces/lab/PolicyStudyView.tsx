@@ -320,16 +320,24 @@ export function PolicyStudyView({
         rubricName: rubric?.name ?? null,
       });
 
-      // Count qualified observations in Evidence store
+      // Count qualified observations in Evidence store (F2): dedup trial
+      // artifact refs by runId and exclude synthesis/Fusion/Refine refs.
+      // Synthesis refs are stamped with attemptId `fa-${trialId}` (the method
+      // domain's artifactFor convention); they are Lab-authored policy
+      // evidence, never single-model candidates (spec §9, §6.10).
       if (evidenceRepo) {
-        let count = 0;
+        const candidateRunIds = new Set<string>();
         for (const t of foundTrials) {
           for (const ref of t.artifactRefs) {
-            if (ref.runId) {
-              const obs = await evidenceRepo.listObservationsBySource("evaluation", ref.runId);
-              count += obs.length;
-            }
+            if (!ref.runId) continue;
+            if (ref.attemptId.startsWith("fa-")) continue;
+            candidateRunIds.add(ref.runId);
           }
+        }
+        let count = 0;
+        for (const runId of candidateRunIds) {
+          const obs = await evidenceRepo.listObservationsBySource("evaluation", runId);
+          count += obs.length;
         }
         if (!cancelled) {
           setQualifiedCount(count);
@@ -1389,12 +1397,14 @@ function PlaybookSection({
 // --- Evidence Boundary Section (§6.10) -------------------------------------------
 
 function BoundarySection({ qualifiedCount }: { qualifiedCount: number | null }) {
+  const count = qualifiedCount ?? 0;
+  const qualifiedLinkText = `${count} candidate response${count === 1 ? "" : "s"} from this study qualified as canonical Observations →`;
   return (
     <section
       id="boundary"
       tabIndex={-1}
       aria-label="Evidence Boundary"
-      className="flex flex-col gap-3 rounded-md border border-edge bg-panel p-4 focus-visible:outline-none"
+      className="boundary-rule flex flex-col gap-3 rounded-md border border-edge border-t-0 bg-panel p-4 focus-visible:outline-none"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-edge pb-2">
         <h2 className="text-sm font-semibold text-text">Evidence Boundary</h2>
@@ -1403,32 +1413,39 @@ function BoundarySection({ qualifiedCount }: { qualifiedCount: number | null }) 
         </span>
       </header>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="flex flex-col gap-1 rounded border border-edge/60 bg-panel/60 p-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* Left side — policy evidence stays in the Lab. */}
+        <div className="flex flex-col gap-2 rounded border border-edge/60 bg-panel/60 p-3">
           <span className="text-xs font-semibold text-text">
             Stays in the Lab — policy evidence
           </span>
-          <p className="text-xs text-text-secondary">
-            StudyObservation, rank winners, FusionResult, RefinedResult, playbook rows, policy
-            scores, and reports never enter model evidence records.
+          <ul className="flex flex-col gap-1 text-xs text-text-secondary">
+            <li>Study observations, policy rows, playbook scores</li>
+            <li>Rank selections, Fusion Results, Refined Results</li>
+            <li>Recipe comparisons, study conclusions</li>
+          </ul>
+          <p className="text-xs italic text-text-muted">
+            Never attributed — wholly, fractionally, or collectively — to any participating model.
           </p>
         </div>
 
-        <div className="flex flex-col gap-1 rounded border border-edge/60 bg-panel/60 p-3">
+        {/* Right side — single-model candidates may leave via ordinary eligibility. */}
+        <div className="flex flex-col gap-2 rounded border border-edge/60 bg-panel/60 p-3">
           <span className="text-xs font-semibold text-text">
             May leave the Lab — via ordinary eligibility
           </span>
-          <p className="text-xs text-text-secondary">
-            Single-model candidate runs qualifying under child-04 rules become canonical Task
-            Observations.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1 rounded border border-edge/60 bg-panel/60 p-3">
-          <span className="text-xs font-semibold text-text">Never attributed</span>
-          <p className="text-xs text-text-secondary">
-            Unresolvable model configurations or synthetic outputs are never attributed to models.
-          </p>
+          <ul className="flex flex-col gap-1 text-xs text-text-secondary">
+            <li>Single-model candidate responses underlying trials</li>
+            <li>— only through child-04 canonical Observation eligibility</li>
+            <li>— reuse, never duplicate: same source identity = one Observation</li>
+          </ul>
+          <a
+            data-testid="qualified-link"
+            href="#records"
+            className="font-mono text-xs text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {qualifiedLinkText}
+          </a>
         </div>
       </div>
     </section>

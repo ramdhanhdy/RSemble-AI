@@ -1263,7 +1263,7 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
     expect(convertedTrial.artifactRefs).toHaveLength(1);
     expect(convertedTrial.artifactRefs[0]).toEqual({
       runId: "run-synth-1",
-      attemptId: "attempt-synth-1",
+      attemptId: `fa-${convertedTrial.id}`,
       contentHash: VALID_SHA256,
     });
 

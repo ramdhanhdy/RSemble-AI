@@ -157,6 +157,12 @@ body {
 .rsemble-divider:focus-visible::before {
   background-color: #00e5ff;
 }
+/* Evidence boundary rule (Fable §6.10/§4.3): a labeled dashed divider that
+   separates policy-evidence content from model-evidence eligibility content.
+   The dashed line IS the boundary made visible. */
+.boundary-rule {
+  border-top: 1px dashed #3a3a3a;
+}
 
 /* Reduced motion: remove movement/loops; keep short opacity/color feedback. */
 @media (prefers-reduced-motion: reduce) {

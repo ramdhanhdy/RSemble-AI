@@ -726,9 +726,14 @@ export function previewFusionToResearchLab(
         });
         continue;
       }
+      // F3: normalize the synthesis ref's attemptId to the canonical
+      // `fa-${trialId}` shape used by the live executor (fusion-study-stages
+      // artifactFor) and the candidate adapter's synthesis-ref filter. The
+      // legacy fusionAttemptId is an opaque id; mapping it verbatim would let
+      // the reindex treat a synthesis run as a single-model candidate.
       artifactRefs.push({
         runId: sa.runId,
-        attemptId: sa.fusionAttemptId,
+        attemptId: `fa-${t.id}`,
         contentHash: sa.contentHash,
       });
     }

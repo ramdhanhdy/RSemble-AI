@@ -218,7 +218,7 @@ interface Seeded {
   repo: InMemoryStudyRepository;
   evalRepo: InMemoryEvaluationRepository;
   labAssetRepo: InMemoryLabAssetRepository;
-  evidenceRepo: InMemoryEvidenceRepository;
+  evidenceRepo: import("../../lib/persistence/evidence-repository").EvidenceRepository;
 }
 
 /** Seed a completed exploratory study with trials, observations, an attempt,
@@ -729,7 +729,7 @@ describe("PolicyStudyView — playbook, boundary, records", () => {
       ["run-cand-2", 1],
       ["run-synth-1", 5],
     ]);
-    const mockEvidence = {
+    const mockEvidence: import("../../lib/persistence/evidence-repository").EvidenceRepository = {
       listObservationsBySource: async (_kind: string, runId: string) =>
         new Array(obsByRun.get(runId) ?? 0).fill(null),
     } as unknown as import("../../lib/persistence/evidence-repository").EvidenceRepository;
