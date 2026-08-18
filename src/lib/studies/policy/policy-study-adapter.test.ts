@@ -52,6 +52,7 @@ import {
   POLICY_STUDY_KIND,
   type ExactModelConfigurationRef,
   type PolicyStudyDefinition,
+  type PolicyStudyRecord,
 } from "./policy-study-types";
 import {
   PolicyStudyAdapter,
@@ -479,7 +480,7 @@ describe("Policy Study adapter — playbook mapping", () => {
     expect(report.rows[0].meanOutcome).toBe(4.5);
     expect(report.rows[0].policy).toBe("fuse");
     expect(report.recommendation.kind).toBe("adopt");
-    expect(report.poolAdequacy.outcome).toBe("rejected");
+    expect(report.poolAdequacy.outcome).toBe("unconfirmed");
     expect(report.recipeSensitivity.checked).toBe(false);
     expect(report.claimLevel).toBe("exploratory");
     expect(report.supportingTrialIds).toEqual(["t1"]);
@@ -501,7 +502,7 @@ describe("Policy Study adapter — playbook mapping", () => {
     };
     const report = fusionPlaybookToPolicyReport(methodPb as never, "sha256:" + "0".repeat(64), null, [], []);
     expect(report.recommendation.kind).toBe("do_not_fuse");
-    expect(report.poolAdequacy.outcome).toBe("rejected");
+    expect(report.poolAdequacy.outcome).toBe("unconfirmed");
   });
 });
 
@@ -694,5 +695,133 @@ describe("Policy Study adapter — staged methodology through generic Lab entiti
       "rank",
       "refine",
     ]);
+  });
+});
+
+// =============================================================================
+// Run 20 repair: Lab store lineage, payload boundary, pool-adequacy qualifier
+// =============================================================================
+
+describe("Policy Study adapter — Run 20 repair (Lab lineage + payload boundary)", () => {
+  it("persists method trials and observations onto the canonical StudyRepository", async () => {
+    const labAssets = await seedLabAssets();
+    const studyRepo = new InMemoryStudyRepository(null);
+    let counter = 0;
+    let clock = 1000;
+    const adapter = new PolicyStudyAdapter({
+      studyRepo,
+      labAssetRepo: labAssets,
+      judgeResolver: (mc) => (mc.id === JUDGE1_MC.id ? judge1 : judge2),
+      executor: makeMockExecutor(),
+      now: () => ++clock,
+      generateId: () => `id-${++counter}`,
+    });
+    const draft = await adapter.createStudy(makeDefinition(), "E2E lineage");
+    const started = await adapter.startStudy(draft);
+    const result = await adapter.runExplorationStudy({
+      record: started,
+      suite: SUITE,
+      rubric: RUBRIC,
+      stratificationTasks: 3,
+      tasksPerPairA: 2,
+      tasksPerPairB: 2,
+      tasksPerPairC: 2,
+      sequentialPairs: 2,
+      mpid: 0.2,
+    });
+    // Lab stores carry trial lineage — not just the method-domain throwaway repo.
+    const trials = await studyRepo.listTrials(started.id);
+    expect(trials.length).toBeGreaterThan(0);
+    // Supporting Trial refs in the playbook resolve via the canonical store.
+    for (const tid of result.playbook.supportingTrialIds) {
+      const trial = await studyRepo.getTrial(tid);
+      expect(trial).not.toBeNull();
+    }
+    // Lab stores carry observation lineage.
+    const observations = await studyRepo.listObservations(started.id);
+    expect(observations.length).toBeGreaterThan(0);
+    // Supporting Observation refs resolve via the canonical store.
+    for (const oid of result.playbook.supportingObservationIds) {
+      const obs = observations.find((o) => o.id === oid);
+      expect(obs).toBeDefined();
+    }
+  });
+
+  it("blocks an unknown payload kind before any provider call", async () => {
+    const labAssets = await seedLabAssets();
+    let executorCalled = false;
+    const trackingExecutor = makeMockExecutor({
+      async runPoolSweep(task, slots) {
+        executorCalled = true;
+        return {
+          taskId: task.id,
+          outputs: slots.map((s) => ({
+            slot: s,
+            modelKey: `${s.providerId}:${s.slug}`,
+            candidateId: candidateIdForSlot(s.id),
+            text: `out:${task.id}:${s.slug}`,
+            cost: { tokensIn: 100, tokensOut: 50 },
+          })),
+        };
+      },
+    });
+    const adapter = makeAdapter(labAssets, trackingExecutor);
+    const draft = await adapter.createStudy(makeDefinition(), "E2E unknown kind");
+    const started = await adapter.startStudy(draft);
+    // Forge a record with an unregistered kind.
+    const forged: PolicyStudyRecord = { ...started, kind: "routing" as never };
+    await expect(
+      adapter.runExplorationStudy({
+        record: forged,
+        suite: SUITE,
+        rubric: RUBRIC,
+        stratificationTasks: 3,
+        tasksPerPairA: 2,
+        tasksPerPairB: 2,
+        tasksPerPairC: 2,
+        sequentialPairs: 0,
+        mpid: 0.2,
+      }),
+    ).rejects.toThrow(/Unknown study kind/);
+    expect(executorCalled).toBe(false);
+  });
+
+  it("blocks a wrong schema version before any provider call", async () => {
+    const labAssets = await seedLabAssets();
+    let executorCalled = false;
+    const trackingExecutor = makeMockExecutor({
+      async runPoolSweep(task, slots) {
+        executorCalled = true;
+        return {
+          taskId: task.id,
+          outputs: slots.map((s) => ({
+            slot: s,
+            modelKey: `${s.providerId}:${s.slug}`,
+            candidateId: candidateIdForSlot(s.id),
+            text: `out:${task.id}:${s.slug}`,
+            cost: { tokensIn: 100, tokensOut: 50 },
+          })),
+        };
+      },
+    });
+    const adapter = makeAdapter(labAssets, trackingExecutor);
+    const draft = await adapter.createStudy(makeDefinition(), "E2E wrong schema");
+    const started = await adapter.startStudy(draft);
+    // Forge a record with a wrong schema version.
+    const forged: PolicyStudyRecord = { ...started, definitionSchemaVersion: 999 as never };
+    await expect(
+      adapter.runExplorationStudy({
+        record: forged,
+        suite: SUITE,
+        rubric: RUBRIC,
+        stratificationTasks: 3,
+        tasksPerPairA: 2,
+        tasksPerPairB: 2,
+        tasksPerPairC: 2,
+        sequentialPairs: 0,
+        mpid: 0.2,
+      }),
+    ).rejects.toThrow(/Unknown payload schema version/);
+    expect(executorCalled).toBe(false);
   });
 });
