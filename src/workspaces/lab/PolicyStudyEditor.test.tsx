@@ -505,4 +505,64 @@ describe("PolicyStudyEditor — confirmation claim plan", () => {
     expect((await studyRepo.getStudy(confirmation.id))?.status).toBe("draft");
     cleanup(h);
   });
+
+  it("renders claim plan radio cards with distinct exploration (dashed/warning) and confirmation (solid/success) styling", async () => {
+    const studyRepo = new InMemoryStudyRepository();
+    const draft = makeStudyRecord({ id: "study-draft", confirmationOf: null });
+    await studyRepo.createStudy(draft);
+    const { evalRepo, labAssetRepo } = await seedAssets();
+    const h = renderEditor(studyRepo, draft, { evalRepo, labAssetRepo });
+    await settle();
+
+    // Exploration card has dashed border and warning styling
+    const expCard = h.$("[data-testid='claim-plan-exploration']");
+    expect(expCard).toBeTruthy();
+    expect(expCard?.className).toMatch(/border-dashed/);
+    expect(expCard?.className).toMatch(/border-warning/);
+    expect(expCard?.textContent).toMatch(/Exploration/);
+    expect(expCard?.textContent).toMatch(/Findings will be marked Exploratory/);
+
+    // Confirmation card has solid border and success styling, but disabled because confirmationOf is null
+    const confCard = h.$("[data-testid='claim-plan-confirmation']");
+    expect(confCard).toBeTruthy();
+    expect(confCard?.className).toMatch(/border-solid/);
+    expect(confCard?.className).toMatch(/border-success/);
+    expect(confCard?.className).toMatch(/cursor-not-allowed/);
+    expect(confCard?.textContent).toMatch(/Confirmation/);
+    expect(confCard?.textContent).toMatch(/Requires a completed exploratory study/);
+    const confInput = confCard?.querySelector("input") as HTMLInputElement;
+    expect(confInput?.disabled).toBe(true);
+
+    cleanup(h);
+  });
+
+  it("restates pinned assets, digests, cost estimate, and mandatory seal warning in seal dialog", async () => {
+    const studyRepo = new InMemoryStudyRepository();
+    const draft = makeStudyRecord({ id: "study-seal-test" });
+    await studyRepo.createStudy(draft);
+    const { evalRepo, labAssetRepo } = await seedAssets();
+    const h = renderEditor(studyRepo, draft, { evalRepo, labAssetRepo });
+    await settle();
+
+    await pinAllInputs(h);
+    click(h.$("[data-action='seal-study']") as HTMLElement);
+    await settle();
+
+    // Dialog is open
+    const dialog = document.querySelector("[role='dialog']");
+    expect(dialog).toBeTruthy();
+    expect(dialog?.textContent).toMatch(/Seal inputs & start study/);
+    expect(dialog?.textContent).toMatch(/claim plan: exploration/);
+    expect(dialog?.textContent).toMatch(/Estimated experimental cost:/);
+    expect(dialog?.textContent).toMatch(/\(estimate\)/);
+    expect(dialog?.textContent).toMatch(
+      /Sealing is permanent\. Treatment changes after this point create new trials — the definition can never be edited\./,
+    );
+
+    // Cancel button and confirm button are present
+    expect(dialog?.querySelector("[data-action='cancel-seal']")).toBeTruthy();
+    expect(dialog?.querySelector("[data-action='confirm-seal']")).toBeTruthy();
+
+    cleanup(h);
+  });
 });

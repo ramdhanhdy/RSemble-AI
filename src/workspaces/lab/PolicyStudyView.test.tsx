@@ -99,6 +99,7 @@ const MC_JUDGE = `mc:sha256:${"3".repeat(64)}`;
 function makeTrial(
   id: string,
   overrides: {
+    studyId?: string;
     stage?: "A" | "B" | "C";
     policy?: PolicyTrialPayload["policy"];
     recipeId?: string;
@@ -124,7 +125,7 @@ function makeTrial(
   const createdAt = overrides.createdAt ?? 2_000;
   return {
     id,
-    studyId: "study-1",
+    studyId: overrides.studyId ?? "study-1",
     payloadKind: "policy",
     payloadSchemaVersion: POLICY_TRIAL_PAYLOAD_SCHEMA_VERSION,
     payloadFingerprint: fingerprintStudyValue(payload),
@@ -147,10 +148,11 @@ function makeObservation(
   trialId: string,
   score: number | null,
   failed = false,
+  studyId = "study-1",
 ): PolicyStudyObservation {
   return {
     id,
-    studyId: "study-1",
+    studyId,
     trialId,
     payloadKind: "policy_measurement",
     payloadSchemaVersion: POLICY_MEASUREMENT_SCHEMA_VERSION,
@@ -706,6 +708,468 @@ describe("PolicyStudyView — one-document dossier", () => {
       expect(nav?.querySelector(`a[href='${anchor}']`)).toBeTruthy();
     }
     expect(h.$("#verdict")).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+// --- Extra Viewport, Responsive, and State Tests (T9) -------------------------------
+
+describe("PolicyStudyView — responsive viewport and mobile policy cards (Fable §6.6, §8.2, §8.3)", () => {
+  it("renders mobile policy cards (<=768px) with role=list, 4 listitems in fixed order, and all metrics", async () => {
+    const seeded = await seedCompleted();
+    const h = renderView(seeded);
+    await settle();
+
+    const cards = h.$("[data-testid='policy-cards']");
+    expect(cards).toBeTruthy();
+    expect(cards?.getAttribute("role")).toBe("list");
+    expect(cards?.className).toMatch(/md:hidden/);
+
+    const items = [...(cards?.querySelectorAll("[role='listitem']") ?? [])];
+    expect(items).toHaveLength(4);
+
+    // Fixed order: Best fixed, Rank, Fuse, Refine
+    expect(items[0]?.textContent).toMatch(/Best fixed/);
+    expect(items[1]?.textContent).toMatch(/Rank/);
+    expect(items[2]?.textContent).toMatch(/Fuse/);
+    expect(items[3]?.textContent).toMatch(/Refine/);
+
+    // Metrics are present on each card
+    expect(items[0]?.textContent).toMatch(/Mean:/);
+    expect(items[0]?.textContent).toMatch(/Δ:\s*—/);
+    expect(items[0]?.textContent).toMatch(/Cost:\s*1(\.0)?×/);
+
+    expect(items[3]?.textContent).toMatch(/Mean:/);
+    expect(items[3]?.textContent).toMatch(/Δ:\s*\+0\.15/);
+    expect(items[3]?.textContent).toMatch(/Cost:\s*1\.8×/);
+    expect(items[3]?.textContent).toMatch(/Recommended/);
+    expect(items[3]?.className).toMatch(/border-accent/);
+    // Mobile cards container has md:hidden responsive class
+    expect(cards?.className).toMatch(/md:hidden/);
+
+    cleanup(h);
+  });
+
+  it("mobile policy cards handle do_not_fuse verdict correctly (Best fixed recommended, Fuse not recommended)", async () => {
+    const seeded = await seedCompleted({
+      recommendation: {
+        kind: "do_not_fuse",
+        rationale: "Rank matches Fuse within MPID at lower cost.",
+      },
+    });
+    const h = renderView(seeded);
+    await settle();
+
+    const cards = h.$("[data-testid='policy-cards']");
+    const items = [...(cards?.querySelectorAll("[role='listitem']") ?? [])];
+    expect(items).toHaveLength(4);
+
+    // Best fixed is recommended
+    const bestFixedCard = items[0]!;
+    expect(bestFixedCard.textContent).toMatch(/Best fixed/);
+    expect(bestFixedCard.textContent).toMatch(/Recommended/);
+    expect(bestFixedCard.className).toMatch(/border-accent/);
+    expect(bestFixedCard.className).toMatch(/bg-accent\/5/);
+
+    // Fuse is NOT recommended
+    const fuseCard = items[2]!;
+    expect(fuseCard.textContent).toMatch(/Fuse/);
+    expect(fuseCard.textContent).not.toMatch(/Recommended/);
+    expect(fuseCard.className).not.toMatch(/border-accent/);
+
+    cleanup(h);
+  });
+
+  it("contains labeled scroll regions with accessibility attributes and focus rings on all tables", async () => {
+    const seeded = await seedCompleted();
+    const h = renderView(seeded);
+    await settle();
+
+    const regions = h.$$("[role='region']");
+    expect(regions.length).toBeGreaterThanOrEqual(3);
+
+    for (const region of regions) {
+      expect(region.getAttribute("tabindex")).toBe("0");
+      expect(region.getAttribute("aria-label")).toMatch(/— scrollable$/);
+      expect(region.className).toMatch(/overflow-x-auto|overflow-y-auto|overflow/);
+      expect(region.className).toMatch(/focus-visible:ring-accent|focus:ring-accent/);
+    }
+
+    cleanup(h);
+  });
+
+  it("maintains sticky first column styling on Stage A, Stage B, and Policy tables", async () => {
+    const seeded = await seedCompleted();
+    const h = renderView(seeded);
+    await settle();
+
+    // Stage A Family table
+    const stageA = h.$("#stage-a");
+    const stageAStickyHeaders = stageA?.querySelectorAll("th.sticky.left-0");
+    expect(stageAStickyHeaders?.length).toBeGreaterThan(0);
+
+    // Stage B Pair table
+    const stageB = h.$("#stage-b");
+    const stageBStickyHeaders = stageB?.querySelectorAll("th.sticky.left-0");
+    expect(stageBStickyHeaders?.length).toBeGreaterThan(0);
+
+    // Policy table
+    const policyTable = h.$("[data-testid='policy-table']");
+    const policyStickyHeaders = policyTable?.querySelectorAll("th.sticky.left-0");
+    expect(policyStickyHeaders?.length).toBeGreaterThan(0);
+
+    cleanup(h);
+  });
+
+  it("renders responsive grid classes for sealed inputs, playbook costs, and evidence boundary", async () => {
+    const seeded = await seedCompleted();
+    const h = renderView(seeded);
+    await settle();
+
+    // Sealed inputs grid
+    const inputs = h.$("#inputs");
+    const inputsGrid = inputs?.querySelector(".grid");
+    expect(inputsGrid?.className).toMatch(/grid-cols-1/);
+    expect(inputsGrid?.className).toMatch(/lg:grid-cols-3/);
+
+    // Playbook costs grid
+    const playbook = h.$("#playbook");
+    const costsGrid = playbook?.querySelector(".grid");
+    expect(costsGrid?.className).toMatch(/grid-cols-1/);
+    expect(costsGrid?.className).toMatch(/sm:grid-cols-2/);
+
+    // Evidence boundary grid
+    const boundary = h.$("#boundary");
+    const boundaryGrid = boundary?.querySelector(".grid");
+    expect(boundaryGrid?.className).toMatch(/grid-cols-1/);
+    expect(boundaryGrid?.className).toMatch(/sm:grid-cols-3/);
+
+    cleanup(h);
+  });
+
+  it("renders sticky top and flex-wrap layout for section navigation", async () => {
+    const seeded = await seedCompleted();
+    const h = renderView(seeded);
+    await settle();
+
+    const nav = h.$("nav[aria-label='Study sections']");
+    expect(nav).toBeTruthy();
+    expect(nav?.className).toMatch(/sticky/);
+    expect(nav?.className).toMatch(/top-0/);
+    expect(nav?.className).toMatch(/flex-wrap/);
+
+    cleanup(h);
+  });
+});
+
+describe("PolicyStudyView — stage progression and partial stages state (Fable §6.5, §6.12)", () => {
+  it("renders only Stage A and its section nav link when only Stage A trials exist", async () => {
+    const repo = new InMemoryStudyRepository();
+    await repo.createStudy(makeStudyRecord({ id: "study-1", status: "draft" }));
+    await repo.startStudy("study-1", 0, 1_500);
+    await repo.createTrial(makeTrial("trial-a1", { stage: "A", recipeId: "recipe-1" }));
+    await repo.appendObservation(makeObservation("obs-a1", "trial-a1", 0.75));
+
+    const labAssetRepo = new InMemoryLabAssetRepository();
+    await labAssetRepo.createRecipeRecord(
+      makeRecipeRecord("recipe-1"),
+      makeRecipeVersion("recipe-1", 1),
+    );
+    await labAssetRepo.createPoolRecord(makePoolRecord("pool-1"), makePoolVersion("pool-1", 1));
+
+    const seeded: Seeded = {
+      repo,
+      evalRepo: new InMemoryEvaluationRepository(),
+      labAssetRepo,
+      evidenceRepo: new InMemoryEvidenceRepository(),
+    };
+
+    const h = renderView(seeded);
+    await settle();
+
+    // Stage A renders
+    expect(h.$("#stage-a")).toBeTruthy();
+
+    // Stages B, C, verdict, and playbook DO NOT render
+    expect(h.$("#stage-b")).toBeNull();
+    expect(h.$("#stage-c")).toBeNull();
+    expect(h.$("#verdict")).toBeNull();
+    expect(h.$("#playbook")).toBeNull();
+
+    // Nav links include only sections with data
+    const nav = h.$("nav[aria-label='Study sections']");
+    expect(nav?.querySelector("a[href='#inputs']")).toBeTruthy();
+    expect(nav?.querySelector("a[href='#stage-a']")).toBeTruthy();
+    expect(nav?.querySelector("a[href='#boundary']")).toBeTruthy();
+    expect(nav?.querySelector("a[href='#records']")).toBeTruthy();
+    expect(nav?.querySelector("a[href='#stage-b']")).toBeNull();
+    expect(nav?.querySelector("a[href='#stage-c']")).toBeNull();
+    expect(nav?.querySelector("a[href='#verdict']")).toBeNull();
+    expect(nav?.querySelector("a[href='#playbook']")).toBeNull();
+
+    cleanup(h);
+  });
+
+  it("renders Stage A and Stage B but omits Stage C when Stage C has not started", async () => {
+    const repo = new InMemoryStudyRepository();
+    await repo.createStudy(makeStudyRecord({ id: "study-1", status: "draft" }));
+    await repo.startStudy("study-1", 0, 1_500);
+    await repo.createTrial(makeTrial("trial-a1", { stage: "A", recipeId: "recipe-1" }));
+    await repo.createTrial(makeTrial("trial-b1", { stage: "B", policy: "fuse" }));
+    await repo.appendObservation(makeObservation("obs-a1", "trial-a1", 0.75));
+    await repo.appendObservation(makeObservation("obs-b1", "trial-b1", 0.8));
+
+    const labAssetRepo = new InMemoryLabAssetRepository();
+    await labAssetRepo.createRecipeRecord(
+      makeRecipeRecord("recipe-1"),
+      makeRecipeVersion("recipe-1", 1),
+    );
+    await labAssetRepo.createPoolRecord(makePoolRecord("pool-1"), makePoolVersion("pool-1", 1));
+
+    const seeded: Seeded = {
+      repo,
+      evalRepo: new InMemoryEvaluationRepository(),
+      labAssetRepo,
+      evidenceRepo: new InMemoryEvidenceRepository(),
+    };
+
+    const h = renderView(seeded);
+    await settle();
+
+    // Stage A and B render
+    expect(h.$("#stage-a")).toBeTruthy();
+    expect(h.$("#stage-b")).toBeTruthy();
+
+    // Stage C and Playbook do not render
+    expect(h.$("#stage-c")).toBeNull();
+    expect(h.$("#playbook")).toBeNull();
+
+    // Nav links
+    const nav = h.$("nav[aria-label='Study sections']");
+    expect(nav?.querySelector("a[href='#stage-a']")).toBeTruthy();
+    expect(nav?.querySelector("a[href='#stage-b']")).toBeTruthy();
+    expect(nav?.querySelector("a[href='#stage-c']")).toBeNull();
+
+    cleanup(h);
+  });
+  it("renders blind candidate tokens (candidate-A, candidate-B) before judging and unblinds after judging", async () => {
+    const repo = new InMemoryStudyRepository();
+    const definition = makeDefinition({
+      modelPool: { poolId: "pool-1", version: 1, digest: DIGEST },
+    });
+    await repo.createStudy(makeStudyRecord({ id: "study-1", definition }));
+    await repo.startStudy("study-1", 0, 1_500);
+    await repo.createTrial(
+      makeTrial("trial-b-blind", {
+        stage: "B",
+        policy: "fuse",
+        members: [MC_A, MC_B],
+      }),
+    );
+
+    const labAssetRepo = new InMemoryLabAssetRepository();
+    await labAssetRepo.createPoolRecord(
+      makePoolRecord("pool-1"),
+      makePoolVersion("pool-1", 1, {
+        core: [
+          { id: MC_A, providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "gpt-4o", enabled: true },
+          { id: MC_B, providerId: "openrouter", provider: "OpenRouter", model: "claude-3-5-sonnet", slug: "claude-3-5-sonnet", enabled: true },
+        ],
+      }),
+    );
+    await labAssetRepo.createRecipeRecord(
+      makeRecipeRecord("recipe-1"),
+      makeRecipeVersion("recipe-1", 1),
+    );
+
+    const seeded: Seeded = {
+      repo,
+      evalRepo: new InMemoryEvaluationRepository(),
+      labAssetRepo,
+      evidenceRepo: new InMemoryEvidenceRepository(),
+    };
+
+    const h = renderView(seeded);
+    await settle();
+
+    // While trial has no completed observation, candidate identities are blind tokens
+    const stageB = h.$("#stage-b");
+    expect(stageB?.textContent).toMatch(/candidate-A \+ candidate-B/);
+    expect(stageB?.textContent).not.toMatch(/openrouter:gpt-4o/);
+
+    // Now complete the observation and re-render
+    await repo.appendObservation(makeObservation("obs-done", "trial-b-blind", 0.88));
+
+    cleanup(h);
+    const h2 = renderView(seeded);
+    await settle();
+
+    const stageB2 = h2.$("#stage-b");
+    expect(stageB2?.textContent).toMatch(/openrouter:gpt-4o \+ openrouter:claude-3-5-sonnet/);
+    cleanup(h2);
+  });
+
+  it("renders pool adequacy in limited state with reason", async () => {
+    const seeded = await seedCompleted({
+      poolAdequacy: {
+        probed: true,
+        outcome: "unconfirmed",
+        note: "Challenger config pool lacked diversity across failure modes.",
+      },
+    });
+    const h = renderView(seeded);
+    await settle();
+
+    const banner = h.$("[data-testid='verdict-banner']");
+    expect(banner?.textContent).toMatch(/pool adequacy:\s*unconfirmed/i);
+
+    const stageB = h.$("#stage-b");
+    expect(stageB?.textContent).toMatch(/pool adequacy:\s*unconfirmed/i);
+
+    cleanup(h);
+  });
+});
+
+describe("PolicyStudyView — four-channel epistemic distinction (Fable §6.2, §6.3, §16 #13)", () => {
+  it("verifies all four epistemic channels simultaneously on exploratory vs confirmed studies", async () => {
+    // 1. Exploratory study
+    const seededExploratory = await seedCompleted();
+    const hExp = renderView(seededExploratory);
+    await settle();
+
+    const expBanner = hExp.$("[data-testid='verdict-banner']");
+    expect(expBanner).toBeTruthy();
+
+    // Channel 1: Badge text
+    const expBadge = hExp.$("[data-testid='claim-badge']");
+    expect(expBadge?.textContent).toMatch(/Exploratory/);
+    expect(expBadge?.textContent).not.toMatch(/Confirmed/);
+
+    // Channel 2: Icon
+    const expIcon = expBadge?.querySelector("svg");
+    expect(expIcon).toBeTruthy();
+
+    // Channel 3: Border style (dashed)
+    expect(expBadge?.className).toMatch(/border-dashed/);
+    expect(expBadge?.className).toMatch(/border-warning/);
+    expect(expBanner?.className).toMatch(/border-dashed/);
+    expect(expBanner?.className).toMatch(/border-warning/);
+
+    // Channel 4: Mandatory copy sentence
+    expect(expBanner?.textContent).toMatch(
+      /Exploratory finding — confirm on a fresh Task Set Version before adopting\./,
+    );
+    cleanup(hExp);
+
+    // 2. Confirmed study
+    const repo = new InMemoryStudyRepository();
+    await repo.createStudy(
+      makeStudyRecord({ id: "study-0", status: "completed", reportRef: "pb-0" }),
+    );
+    const confirmedDefinition = makeDefinition({ claimPlan: "confirmation" });
+    await repo.createStudy(
+      makeStudyRecord({
+        id: "study-1",
+        claimLevel: "confirmed",
+        confirmationOf: "study-0",
+        definition: confirmedDefinition,
+      }),
+    );
+    await repo.startStudy("study-1", 0, 1_500);
+    await repo.createTrial(makeTrial("trial-a1", { stage: "A" }));
+    await repo.appendObservation(makeObservation("obs-a1", "trial-a1", 0.85));
+    await repo.createPlaybook(
+      "pb-conf",
+      makePlaybook({
+        rows: FOUR_ROWS,
+        claimLevel: "confirmed",
+        definitionFingerprint: fingerprintStudyValue(confirmedDefinition),
+      }),
+    );
+    await repo.sealStudy("study-1", 1, "pb-conf", 4_000);
+
+    const seededConfirmed: Seeded = {
+      repo,
+      evalRepo: new InMemoryEvaluationRepository(),
+      labAssetRepo: new InMemoryLabAssetRepository(),
+      evidenceRepo: new InMemoryEvidenceRepository(),
+    };
+
+    const hConf = renderView(seededConfirmed);
+    await settle();
+
+    const confBanner = hConf.$("[data-testid='verdict-banner']");
+    expect(confBanner).toBeTruthy();
+
+    // Channel 1: Badge text
+    const confBadge = hConf.$("[data-testid='claim-badge']");
+    expect(confBadge?.textContent).toMatch(/Confirmed/);
+    expect(confBadge?.textContent).not.toMatch(/Exploratory/);
+
+    // Channel 2: Icon
+    const confIcon = confBadge?.querySelector("svg");
+    expect(confIcon).toBeTruthy();
+
+    // Channel 3: Border style (solid)
+    expect(confBadge?.className).toMatch(/border-solid/);
+    expect(confBadge?.className).toMatch(/border-success/);
+    expect(confBanner?.className).toMatch(/border-solid/);
+    expect(confBanner?.className).toMatch(/border-success/);
+
+    // Channel 4: Mandatory copy sentence
+    expect(confBanner?.textContent).toMatch(
+      /Confirmed on Task Set v6 \(fresh holdout\) — scope: this pinned configuration and workload only\./,
+    );
+    cleanup(hConf);
+  });
+});
+
+describe("PolicyStudyView — densification caps and accessibility semantics (Fable §9.1, §9.3, §13, §16 #15, #21)", () => {
+  it("includes sr-only captions and scoped headers on all dossier tables", async () => {
+    const seeded = await seedCompleted();
+    const h = renderView(seeded);
+    await settle();
+
+    const tables = h.$$("table");
+    expect(tables.length).toBeGreaterThanOrEqual(3);
+
+    for (const table of tables) {
+      const caption = table.querySelector("caption.sr-only");
+      expect(caption).toBeTruthy();
+      expect(caption?.textContent?.length).toBeGreaterThan(0);
+
+      const colHeaders = table.querySelectorAll("th[scope='col']");
+      expect(colHeaders.length).toBeGreaterThan(0);
+
+      const rowHeaders = table.querySelectorAll("th[scope='row']");
+      expect(rowHeaders.length).toBeGreaterThan(0);
+    }
+
+    cleanup(h);
+  });
+
+  it("adheres to densification caps for policy table columns and fixed rows", async () => {
+    const seeded = await seedCompleted();
+    const h = renderView(seeded);
+    await settle();
+
+    const table = h.$("[data-testid='policy-table']");
+    expect(table).toBeTruthy();
+
+    // Policy table cap: at most 7 columns (§13 #4)
+    const headers = table?.querySelectorAll("thead th");
+    expect(headers?.length).toBeLessThanOrEqual(7);
+    expect(headers?.length).toBe(7);
+
+    // Fixed 4 policy rows in table
+    const rows = table?.querySelectorAll("tbody tr");
+    expect(rows?.length).toBe(4);
+
+    // Fixed 4 policy cards in mobile view
+    const cards = h.$("[data-testid='policy-cards']");
+    const cardItems = cards?.querySelectorAll("[role='listitem']");
+    expect(cardItems?.length).toBe(4);
+
     cleanup(h);
   });
 });
