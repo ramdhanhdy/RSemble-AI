@@ -165,3 +165,51 @@ export function estimatePlaybookCostPreflight(
     partial,
   };
 }
+/**
+ * Re-estimate the playbook cost preflight at run start and compare it to the
+ * binding's confirmed preflight. A mismatch means pricing changed (or the
+ * preflight was tampered with) between confirmation and run start; the run
+ * must block rather than execute a cost the user never approved.
+ *
+ * Returns `{ ok: true }` when the preflight still holds, or `{ ok: false,
+ * reason }` describing the drift. Partial preflights (some pricing was
+ * unavailable at confirmation) are allowed through — there was no concrete
+ * number to tamper with.
+ */
+export function revalidatePlaybookCostPreflight(
+  binding: PlaybookRunBinding,
+  input: PlaybookCostPreflightInput,
+): { ok: true } | { ok: false; reason: string } {
+  const stored = binding.costPreflight;
+  const live = estimatePlaybookCostPreflight(input);
+
+  if (stored.partial) return { ok: true };
+
+  if (live.partial) {
+    return {
+      ok: false,
+      reason:
+        "Playbook cost preflight is stale: pricing that was available at confirmation is now unavailable.",
+    };
+  }
+
+  const storedTotal = stored.policyCostUsd;
+  const liveTotal = live.policyCostUsd;
+  if (storedTotal === null || liveTotal === null) {
+    return { ok: false, reason: "Playbook cost preflight is stale: missing cost total." };
+  }
+
+  const tolerance = 1e-4;
+  const relative =
+    storedTotal > 0
+      ? Math.abs(storedTotal - liveTotal) / storedTotal
+      : Math.abs(storedTotal - liveTotal);
+  if (relative > tolerance) {
+    return {
+      ok: false,
+      reason: `Playbook cost preflight is stale: confirmed $${storedTotal.toFixed(6)} but live re-estimate is $${liveTotal.toFixed(6)} (pricing changed).`,
+    };
+  }
+
+  return { ok: true };
+}

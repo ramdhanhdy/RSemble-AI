@@ -124,6 +124,8 @@ function makeWorld(options: WorldOptions = {}) {
   });
   const definition = makeDefinition({
     modelPool: { poolId: pool.poolId, version: pool.version, digest: pool.digest },
+    // F4: pin judge1 to the session critic so the judge-pin check passes.
+    judge1: modelConfigRefForIdentity("openrouter", "judge-model"),
   });
   const study = makeStudyRecord({
     id: "study-1",

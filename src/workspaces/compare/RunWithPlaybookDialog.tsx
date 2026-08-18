@@ -14,6 +14,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BookOpen, X } from "lucide-react";
 import { DialogSurface } from "../../ui/DialogSurface";
+import { ClaimBadge } from "../../ui/ClaimBadge";
 import type { ModelSlot } from "../../studio-data";
 import type { CriticRef } from "../../lib/providers/types";
 import type { StudyRepository } from "../../lib/persistence/study-repository";
@@ -285,7 +286,7 @@ export function RunWithPlaybookDialog({
           <button
             type="button"
             onClick={handleCancel}
-            className="flex h-11 w-11 items-center justify-center rounded-md text-dim hover:text-text hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-card-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -295,16 +296,16 @@ export function RunWithPlaybookDialog({
         {/* Dialog Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {loading ? (
-            <div className="py-12 text-center text-sm text-dim">Loading available playbooks...</div>
+            <div className="py-12 text-center text-sm text-text-muted">Loading available playbooks...</div>
           ) : items.length === 0 ? (
-            <div className="py-12 text-center text-sm text-dim">
+            <div className="py-12 text-center text-sm text-text-muted">
               No sealed policy playbooks found. Create and complete a Policy Study in Research Lab
               to generate playbooks.
             </div>
           ) : (
             <div className="space-y-4">
               <div>
-                <div className="block text-xs font-semibold uppercase tracking-wider text-dim mb-2">
+                <div className="block text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
                   Select Sealed Playbook
                 </div>
                 <div className="space-y-2">
@@ -325,22 +326,14 @@ export function RunWithPlaybookDialog({
                         className={`w-full min-h-[44px] text-left p-3 rounded-lg border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                           isSelected
                             ? "border-accent bg-accent/5"
-                            : "border-edge hover:border-edge-bright bg-surface"
+                            : "border-edge hover:border-edge-bright bg-panel"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="font-medium text-sm text-text">{item.study.title}</div>
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                              item.study.claimLevel === "confirmed"
-                                ? "bg-green-500/10 text-green-400 border border-green-500/20"
-                                : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                            }`}
-                          >
-                            {item.study.claimLevel === "confirmed" ? "Confirmed" : "Exploratory"}
-                          </span>
+                          <ClaimBadge level={item.study.claimLevel} />
                         </div>
-                        <div className="mt-1 flex items-center justify-between text-xs text-dim">
+                        <div className="mt-1 flex items-center justify-between text-xs text-text-muted">
                           <span>{recLabel}</span>
                           {"configuration" in rec && rec.configuration && (
                             <span className="font-mono">{rec.configuration}</span>
@@ -356,27 +349,19 @@ export function RunWithPlaybookDialog({
               {selectedItem && (
                 <div
                   data-testid="playbook-preflight"
-                  className="rounded-lg border border-edge bg-surface p-4 space-y-4"
-                >
+                   className="rounded-lg border border-edge bg-panel p-4 space-y-4"
+                 >
                   <div className="flex items-center justify-between pb-2 border-b border-edge">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-dim">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
                       Preflight Analysis
                     </span>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        selectedItem.study.claimLevel === "confirmed"
-                          ? "bg-green-500/10 text-green-400 border border-green-500/20"
-                          : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                      }`}
-                    >
-                      {selectedItem.study.claimLevel === "confirmed" ? "Confirmed" : "Exploratory"}
-                    </span>
+                    <ClaimBadge level={selectedItem.study.claimLevel} />
                   </div>
 
                   {/* Recommendation details */}
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <span className="text-dim block">Recommended policy</span>
+                      <span className="text-text-muted block">Recommended policy</span>
                       <span className="font-semibold text-text">
                         {selectedItem.playbook.recommendation.kind === "adopt"
                           ? `Adopt ${selectedItem.playbook.recommendation.policy.charAt(0).toUpperCase() + selectedItem.playbook.recommendation.policy.slice(1).replace("_", " ")}`
@@ -384,17 +369,17 @@ export function RunWithPlaybookDialog({
                       </span>
                     </div>
                     <div>
-                      <span className="text-dim block">Predeclared Threshold</span>
+                      <span className="text-text-muted block">Predeclared Threshold</span>
                       <span className="font-semibold text-text">MPID 0.2</span>
                     </div>
                     <div>
-                      <span className="text-dim block">Pool Adequacy</span>
+                      <span className="text-text-muted block">Pool Adequacy</span>
                       <span className="font-semibold text-text capitalize">
                         pool adequacy: {selectedItem.playbook.poolAdequacy?.outcome ?? "unprobed"}
                       </span>
                     </div>
                     <div>
-                      <span className="text-dim block">Recipe Sensitivity</span>
+                      <span className="text-text-muted block">Recipe Sensitivity</span>
                       <span className="font-semibold text-text">
                         {selectedItem.playbook.recipeSensitivity?.checked ? "Checked" : "Unchecked"}
                       </span>
@@ -404,7 +389,7 @@ export function RunWithPlaybookDialog({
                   {/* Cost estimates */}
                   <div className="pt-2 border-t border-edge space-y-1 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="text-dim">Estimated policy cost:</span>
+                      <span className="text-text-muted">Estimated policy cost:</span>
                       <span className="font-mono text-text">
                         {costPreflight && costPreflight.policyCostUsd !== null
                           ? `$${costPreflight.policyCostUsd.toFixed(4)}${costPreflight.multiplier ? ` (${costPreflight.multiplier.toFixed(1)}x)` : ""}`
@@ -412,7 +397,7 @@ export function RunWithPlaybookDialog({
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-dim">Experimental baseline:</span>
+                      <span className="text-text-muted">Experimental baseline:</span>
                       <span className="font-mono text-text">
                         {costPreflight && costPreflight.baselineCostUsd !== null
                           ? `$${costPreflight.baselineCostUsd.toFixed(4)}`
@@ -422,7 +407,7 @@ export function RunWithPlaybookDialog({
                   </div>
 
                   {/* Scope Statement */}
-                  <div className="pt-2 border-t border-edge text-xs text-dim italic">
+                  <div className="pt-2 border-t border-edge text-xs text-text-muted italic">
                     A policy playbook is a local recommendation for this specific workload and pool;
                     it never applies itself automatically.
                   </div>
@@ -461,7 +446,7 @@ export function RunWithPlaybookDialog({
             type="button"
             data-action="cancel-playbook-run"
             onClick={handleCancel}
-            className="min-h-[44px] min-w-[44px] px-4 py-2 rounded-md border border-edge bg-surface text-sm font-medium text-text hover:bg-surface-elevated focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="min-h-[44px] min-w-[44px] px-4 py-2 rounded-md border border-edge bg-panel text-sm font-medium text-text hover:bg-card-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             Cancel
           </button>
@@ -482,8 +467,8 @@ export function RunWithPlaybookDialog({
               !compatibility.ok ||
               missingRequiredRecipe ||
               running
-                ? "bg-muted text-dim cursor-not-allowed border border-edge"
-                : "bg-accent text-white hover:bg-accent-hover shadow"
+                ? "bg-panel text-text-muted cursor-not-allowed border border-edge"
+                : "bg-accent text-on-accent hover:bg-accent/90 shadow"
             }`}
           >
             Run with Playbook

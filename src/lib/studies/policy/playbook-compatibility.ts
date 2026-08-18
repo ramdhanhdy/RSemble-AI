@@ -257,6 +257,34 @@ export function evaluatePlaybookCompatibility(
       }
     }
   }
+  // F4: judge and rubric pin enforcement. The session's judge (critic) must
+  // match study.definition.judge1 or judge2 by exact model configuration id,
+  // and the session's rubric pin must match study.definition.rubric.
+  if (input.judge) {
+    const judgeRef = modelConfigRefForIdentity(input.judge.providerId, input.judge.model);
+    const pinnedJudgeIds = new Set([
+      input.study.definition.judge1?.id,
+      input.study.definition.judge2?.id,
+    ]);
+    if (!pinnedJudgeIds.has(judgeRef.id)) {
+      return {
+        ok: false,
+        code: "judge_pin_mismatch",
+        reason: `Session judge "${judgeRef.id}" does not match the study's pinned judges.`,
+      };
+    }
+  }
+
+  if (input.rubric) {
+    const pinned = input.study.definition.rubric;
+    if (!pinned || pinned.rubricId !== input.rubric.rubricId || pinned.version !== input.rubric.version) {
+      return {
+        ok: false,
+        code: "rubric_pin_mismatch",
+        reason: `Session rubric "${input.rubric.rubricId}@v${input.rubric.version}" does not match the study's pinned rubric.`,
+      };
+    }
+  }
 
   const matchedCandidateIds = (input.candidateConfigurations ?? []).map((c) => c.id).sort();
 

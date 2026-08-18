@@ -33,7 +33,11 @@ import {
 } from "./run-context-builders";
 import type { StudioState, Action, RunEvaluationContext } from "../studio-engine";
 import type { StreamDeltaBuffer } from "./stream-buffer";
-import type { PlaybookRunBinding } from "./compare/playbook-execution";
+import {
+  revalidatePlaybookCostPreflight,
+  type PlaybookCostPreflightInput,
+  type PlaybookRunBinding,
+} from "./compare/playbook-execution";
 import {
   evaluatePlaybookCompatibility,
   modelConfigRefForIdentity,
@@ -996,6 +1000,13 @@ export function createRunController(deps: RunControllerDeps) {
         : binding.taskBinding?.kind === "ad_hoc"
           ? binding.taskBinding
           : null);
+    // F4: pin the session judge (critic) and rubric against the study's
+    // sealed judge1/judge2 and rubric so the run record stays truthful about
+    // the judge/rubric actually used.
+    const sessionRubric =
+      s.evaluation.kind === "profile" && s.evaluation.ref
+        ? { rubricId: s.evaluation.ref.id, version: s.evaluation.ref.version }
+        : null;
     const compatibility = evaluatePlaybookCompatibility({
       playbookId: binding.playbookId,
       playbook: binding.playbook,
@@ -1005,6 +1016,8 @@ export function createRunController(deps: RunControllerDeps) {
       candidateConfigurations,
       taskBinding: resolvedTaskBinding,
       taskSetContext: taskSetCtx,
+      judge: { providerId: s.critic.providerId, model: s.critic.model },
+      rubric: sessionRubric,
     });
 
     if (!compatibility.ok) {
@@ -1022,6 +1035,27 @@ export function createRunController(deps: RunControllerDeps) {
         type: "FANOUT_BLOCKED",
         reason: `Playbook policy '${rec.policy}' requires a resolved fusion recipe version.`,
       });
+      return;
+    }
+    // F5: revalidate the confirmed cost preflight at run start. Pricing may
+    // have changed (or the preflight been tampered with) between confirmation
+    // and execution; block before any provider call when the live re-estimate
+    // no longer matches the confirmed total.
+    const preflightInput: PlaybookCostPreflightInput = {
+      prompt: s.prompt,
+      slots,
+      critic: { providerId: s.critic.providerId, model: s.critic.model },
+      recommendation: rec,
+      synthesizer: isAdoptSynthesis && binding.recipeVersion
+        ? {
+            providerId: binding.recipeVersion.synthesizer.providerId,
+            model: binding.recipeVersion.synthesizer.model,
+          }
+        : null,
+    };
+    const preflightCheck = revalidatePlaybookCostPreflight(binding, preflightInput);
+    if (!preflightCheck.ok) {
+      dispatch({ type: "FANOUT_BLOCKED", reason: preflightCheck.reason });
       return;
     }
     const runMode: ComparisonMode = isAdoptSynthesis ? "fuse" : "rank";
