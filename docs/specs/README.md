@@ -31,5 +31,5 @@ spec is stale, read its grounding audit first.
 
 | Spec | Status |
 | --- | --- |
-| [task-first-evidence-workbench/](./pending/task-first-evidence-workbench/) | **Pending.** Governing parent plus remaining child specs. Children 01 (Rubric terminology) and 02 (Canonical Tasks) are archived; Children 03–10 remain pending. |
+| [task-first-evidence-workbench/](./pending/task-first-evidence-workbench/) | **In progress.** Governing parent plus remaining child specs. Children 01 (Rubric terminology) and 02 (Canonical Tasks) are archived; Children 03–05 shipped (specs remain in `pending/` per the Child 03+ folder-move precedent); Child 06 (Research Lab and Policy Studies) is in progress; Children 07–10 remain pending. |
 | ui-redesign-spec.md | **Stale (audit 2026-08-04)** — predates 140 commits; most items already shipped via other components; palette and icon-rail sections conflict with current DESIGN.md. See `ui-redesign-grounding-audit.md`. Genuinely unshipped remnants: gradient CTA, focus mode (⌘\), self-judge warning, compare diff highlighting. |

@@ -25,7 +25,8 @@ function read(rel) {
   return readFileSync(join(root, rel), "utf8");
 }
 
-const SPEC = "docs/specs/pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md";
+const SPEC =
+  "docs/specs/pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md";
 const README = "docs/specs/pending/task-first-evidence-workbench/README.md";
 const SPECS_README = "docs/specs/README.md";
 const PRODUCT = "PRODUCT.md";
@@ -51,27 +52,27 @@ const assertions = [
   {
     file: SPEC,
     label: "§15 row 06 is Research Lab / Policy Studies (not Model Profiles)",
-    test: (t) => /^\| 06 Research Lab/i.test(t),
+    test: (t) => /^\| 06 Research Lab/im.test(t),
   },
   {
     file: SPEC,
     label: "§15 row 07 is Model evidence profiles",
-    test: (t) => /^\| 07 Model evidence profiles/i.test(t),
+    test: (t) => /^\| 07 Model evidence profiles/im.test(t),
   },
   {
     file: SPEC,
     label: "§15 row 08 is Shell / Records",
-    test: (t) => /^\| 08 Shell \/ Records/i.test(t),
+    test: (t) => /^\| 08 Shell \/ Records/im.test(t),
   },
   {
     file: SPEC,
     label: "§15 row 09 is Attention",
-    test: (t) => /^\| 09 Attention/i.test(t),
+    test: (t) => /^\| 09 Attention/im.test(t),
   },
   {
     file: SPEC,
     label: "§15 row 10 is Hardening (program has ten children)",
-    test: (t) => /^\| 10 Hardening/i.test(t),
+    test: (t) => /^\| 10 Hardening/im.test(t),
   },
   {
     file: SPEC,
@@ -81,17 +82,17 @@ const assertions = [
   {
     file: SPEC,
     label: "§15 row 03 status is Shipped (not Pending)",
-    test: (t) => /^\| 03 Task Sets\/Evaluations \|.*\| Shipped/im.test(t),
+    test: (t) => /^\| 03 Task Sets\/Evaluations \|.*Shipped/im.test(t),
   },
   {
     file: SPEC,
     label: "§15 row 04 status is Shipped (not Pending)",
-    test: (t) => /^\| 04 Observations\/Evidence \|.*\| Shipped/im.test(t),
+    test: (t) => /^\| 04 Observations\/Evidence \|.*Shipped/im.test(t),
   },
   {
     file: SPEC,
     label: "§15 row 05 status is Shipped (not Pending)",
-    test: (t) => /^\| 05 Compare Results \|.*\| Shipped/im.test(t),
+    test: (t) => /^\| 05 Compare Results \|.*Shipped/im.test(t),
   },
   {
     file: SPEC,
@@ -173,6 +174,8 @@ if (failures === 0) {
   console.log("REV-11 authority consistency: all golden statements present.");
   process.exit(0);
 } else {
-  console.log(`REV-11 authority consistency: ${failures} drift(s) detected — authority tables disagree with shipped reality.`);
+  console.log(
+    `REV-11 authority consistency: ${failures} drift(s) detected — authority tables disagree with shipped reality.`,
+  );
   process.exit(1);
 }

@@ -98,6 +98,23 @@
 > (`qa:compare-results`, `qa:evidence-matrix`) verify 18 probes across
 > desktop, mobile, tablet, zoom, keyboard, reduced-motion, long-fields, and
 > zero-provider-egress with local fixtures only.
+>
+> **Reconciled (Child 06, 2026-08-19):** The Research Lab and Policy Studies
+> child is in progress (spec:
+> `docs/specs/pending/task-first-evidence-workbench/
+> 06-research-lab-policy-studies/`). The current product topology after
+> Child 06 is **Compare · Evaluations · Runs** in primary navigation, with
+> the Research Lab reachable at direct routes (`/lab`,
+> `/lab/studies/:studyId`, `/lab/recipes`, `/lab/model-pools`) plus Task Set
+> backlinks — no inert primary destination. The authorized **target**
+> topology after Child 08 is **Compare · Evaluations · Lab · Models**, with
+> Records as a secondary typed audit ledger and `/runs/:runId` compatibility;
+> that target is not implemented in Child 06. Old Fusion Study routes,
+> stores, and archive shapes are retired; archive v3 is the canonical
+> format. The program roadmap now numbers ten children (06 Lab / 07 Model
+> evidence profiles / 08 Shell+Records / 09 Attention / 10 Hardening);
+> parent spec §15, §4.1, P03, and the spec index are reconciled to this
+> order.
 
 > **The source of truth for what RSemble AI is and is not.**
 > Authority: PRODUCT.md defines *what the product is*. `PROVIDERS.md` defines *how models are reached*.

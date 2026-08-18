@@ -52,6 +52,11 @@ For this program, the future target explicitly supersedes these current assumpti
 
 The supersession becomes current product authority only as the corresponding children complete.
 
+**Current vs. target topology (reconciled Child 06, 2026-08-19):**
+
+- **Current state (after Child 06):** primary navigation is Compare · Evaluations · Runs. The Research Lab is reachable at direct routes (`/lab`, `/lab/studies/:studyId`, `/lab/recipes`, `/lab/model-pools`) plus Task Set backlinks; it is not an inert primary destination.
+- **Authorized target (after Child 08):** primary navigation becomes Compare · Evaluations · Lab · Models, with Records as a secondary typed audit ledger and `/runs/:runId` compatibility. This target is not implemented in Child 06.
+
 ---
 
 ## 3. Product outcomes
@@ -77,11 +82,15 @@ A complete implementation lets a user:
 
 ### 4.1 Primary topology
 
-The final primary navigation is:
+**Current state (after Child 06):** primary navigation is Compare · Evaluations · Runs. The Research Lab is reachable at direct routes (`/lab`, `/lab/studies/:studyId`, `/lab/recipes`, `/lab/model-pools`) plus Task Set backlinks; it is not an inert primary destination.
+
+**Authorized target (after Child 08):** the final primary navigation becomes:
 
 ```text
-Compare · Evaluations · Models
+Compare · Evaluations · Lab · Models
 ```
+
+Records remains a secondary typed audit ledger with `/runs/:runId` compatibility. This target is not implemented in Child 06; Child 08 switches primary navigation only after Compare, Evaluations, Lab, and Models are all functional.
 
 Secondary global utilities are:
 
@@ -551,15 +560,15 @@ Existing Compare records remain complete Records. They are not automatically mer
 
 ### 11.5 Archive progression
 
-A child that introduces canonical persisted data must extend the canonical archive export/import round trip in the same child; no user-facing child may depend on child 09 to make its data recoverable.
+A child that introduces canonical persisted data must extend the canonical archive export/import round trip in the same child; no user-facing child may depend on child 10 to make its data recoverable.
 
 - Child 01 keeps archive v1 readable while Rubric names remain adapters.
 - Child 02 introduces the extensible archive v2 envelope and round-trips current exact Run/Experiment/Fusion Study evidence—including recipes, pool manifests, studies, trials, attempts, experimental observations, and playbooks—plus canonical Rubrics, Tasks, Task Versions, Task Artifacts, Task Instances, families/facets, and migration crosswalks.
-- Children 03–06 extend the same major format with Task Set/Evaluation links, Observations/eligibility/model identities, Comparison Result indexes, and versioned Model Rollup definitions before their own completion gates.
+- Children 03–05 extend archive v2 with Task Set/Evaluation links, Observations/eligibility/model identities, and Comparison Result indexes. Child 06 introduces archive v3 (the deliberate Fusion-shape break) with the generic Lab graph and referenced exact evidence. Child 07 extends v3 with versioned Model Rollup definitions.
 - Any later child that adds canonical persisted preferences/entities must do the same; disposable caches and search indexes are omitted and rebuilt.
-- Child 09 completes full-corpus collision remapping, resumable large import, diagnostics, security/performance hardening, and final manifest verification. Earlier v2 exports remain readable.
+- Child 10 completes full-corpus collision remapping, resumable large import, diagnostics, security/performance hardening, and final manifest verification. Earlier v2/v3 exports remain readable.
 
-Before child 09, a non-identical ID collision may be rejected during preview before writes; it may never overwrite or partially import. Child 09 must implement full cross-reference remapping.
+Before child 10, a non-identical ID collision may be rejected during preview before writes; it may never overwrite or partially import. Child 10 must implement full cross-reference remapping.
 
 ### 11.6 Route compatibility
 
@@ -636,7 +645,7 @@ No test may make a real paid provider call. Browser QA uses deterministic mocks 
 
 ### 14.2 Cross-child invariant suite
 
-Child 09 must create or consolidate executable invariant tests proving:
+Child 10 must create or consolidate executable invariant tests proving:
 
 - historical exact Run, Experiment, and Fusion Study records are unchanged and reachable;
 - all current Fusion Study entities archive round-trip and Suite→Task Set route/reference adapters preserve study ownership;
@@ -657,14 +666,15 @@ Child 09 must create or consolidate executable invariant tests proving:
 | Child | Entry gate | Completion gate | Status |
 |---|---|---|---|
 | 01 Rubrics | Parent accepted | All user/domain terminology migrated; legacy data/routes/archive read; no model profiles introduced | ✅ Shipped (2026-08-12) |
-| 02 Tasks | 01 complete | Canonical schema, immutability, task UI, legacy scoped migration, archive v2 base round-trip, and version/artifact/instance tests pass | Pending |
-| 03 Task Sets/Evaluations | 01 + 02 complete | Set versions reference canonical Task Versions; ordinary executions and Fusion Studies preserve exact snapshots/results/recovery/extension and route/archive compatibility | Pending |
-| 04 Observations/Evidence | 01–03 complete | Idempotent derivation, eligibility reason codes, counting and comparability invariants pass | Pending |
-| 05 Compare Results | 02 + 04 complete | Compare owns durable history, promotion/linking, evidence receipts, retry/recovery, exact record links | Pending |
-| 06 Model Profiles | 04 + 05 complete | Qualified evidence views, coverage, uncertainty, cohort filtering, drilldown, prohibited-claim tests pass | Pending |
-| 07 Shell/Records | 03 + 05 + 06 complete | Final topology ships without inert destinations; Records and all legacy deep links work | Pending |
-| 08 Attention | 03 + 05 + 07 complete | Membership/supersession/handoff semantics pass; no execution lives in Attention | Pending |
-| 09 Hardening | 01–08 complete | Search, archive v2 completion/collision hardening, migration repair, performance, responsive/a11y QA, and authority reconciliation pass | Pending |
+| 02 Tasks | 01 complete | Canonical schema, immutability, task UI, legacy scoped migration, archive v2 base round-trip, and version/artifact/instance tests pass | Archived (2026-08-14) |
+| 03 Task Sets/Evaluations | 01 + 02 complete | Set versions reference canonical Task Versions; ordinary executions and Fusion Studies preserve exact snapshots/results/recovery/extension and route/archive compatibility | ✅ Shipped (2026-08-16) |
+| 04 Observations/Evidence | 01–03 complete | Idempotent derivation, eligibility reason codes, counting and comparability invariants pass | ✅ Shipped (2026-08-17) |
+| 05 Compare Results | 02 + 04 complete | Compare owns durable history, promotion/linking, evidence receipts, retry/recovery, exact record links | ✅ Shipped (2026-08-18) |
+| 06 Research Lab / Policy Studies | 01–05 complete | Generic first-party study substrate powers complete Policy Studies; Fusion is one tested method, reusable assets live in Lab, playbooks hand off explicitly to Compare, archive v3 replaces Fusion shapes | In progress |
+| 07 Model evidence profiles | 04 + 05 + 06 complete | Qualified evidence views, coverage, uncertainty, cohort filtering, drilldown, prohibited-claim tests pass | Pending |
+| 08 Shell / Records | 03 + 05 + 06 + 07 complete | Final topology ships without inert destinations; Records and all legacy deep links work | Pending |
+| 09 Attention | 03 + 05 + 06 + 08 complete | Membership/supersession/handoff semantics pass; no execution lives in Attention | Pending |
+| 10 Hardening | 01–09 complete | Search, archive compatibility, collision hardening, migration repair, performance, responsive/a11y QA, and authority reconciliation pass | Pending |
 
 Children may not be marked complete with placeholder controls, hidden compatibility debt, or a later child required to make their core outcome truthful.
 
@@ -698,7 +708,7 @@ Deferred concepts receive no inert navigation, placeholder dashboards, or schema
 |---|---|
 | P01 | Task-level evidence is the durable analytical foundation; Task Set totals are contextual summaries. |
 | P02 | Tasks have explicit stable identity, immutable executable versions, and concrete instances. Prompt hashes do not define semantic identity. |
-| P03 | Primary navigation becomes Compare · Evaluations · Models; Records is secondary. |
+| P03 | Primary navigation becomes Compare · Evaluations · Lab · Models; Records is secondary. (Current state after Child 06: Compare · Evaluations · Runs with Lab at direct routes; target after Child 08.) |
 | P04 | Exact RunRecordV2, ExperimentRecord, and existing Fusion Study evidence is preserved and indexed, not rewritten into a universal replacement object. |
 | P05 | Comparison Results belong to Compare; Evaluation Results belong to their Task Set; observations belong to task/model evidence; attempts stay subordinate. |
 | P06 | Existing scoring Profiles become Rubrics before model evidence profiles ship. |
@@ -720,7 +730,7 @@ Deferred concepts receive no inert navigation, placeholder dashboards, or schema
 
 ## 18. Parent completion criteria
 
-This governing specification is fulfilled only when all nine children are archived and:
+This governing specification is fulfilled only when all ten children are archived and:
 
 - the final topology and vocabulary are consistent across UI, routes, code, exports, and authority documents;
 - every meaningful result and profile claim has an exact evidence path;
