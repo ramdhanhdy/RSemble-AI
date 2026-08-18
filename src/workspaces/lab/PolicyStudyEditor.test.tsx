@@ -28,6 +28,7 @@ import type {
 import type { ModelSlot } from "../../studio-data";
 import type { PolicyStudyRecord } from "../../lib/studies/policy/policy-study-types";
 import { PolicyStudyEditor } from "./PolicyStudyEditor";
+import { draftPolicyStudyDefinition } from "./lab-draft";
 import {
   makeDefinition,
   makePoolRecord,
@@ -216,13 +217,13 @@ async function pinAllInputs(h: Harness) {
 describe("PolicyStudyEditor — identity and six-part form", () => {
   it("renders the draft identity header and all six define-inputs parts", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
     await settle();
 
-    expect(h.text()).toMatch(/POLICY STUDY/);
+    expect(h.text()).toMatch(/POLICY STUDY/i);
     expect(h.$("[data-testid='claim-badge']")?.textContent).toMatch(/Exploratory/);
     expect(h.$("[data-status-mark]")?.textContent).toMatch(/Draft/);
     expect(h.$("input[aria-label='Title & research question']")).toBeTruthy();
@@ -244,7 +245,7 @@ describe("PolicyStudyEditor — identity and six-part form", () => {
 
   it("marks judges as blind and disables the confirmation card without a source study", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
@@ -265,7 +266,7 @@ describe("PolicyStudyEditor — identity and six-part form", () => {
 describe("PolicyStudyEditor — CAS draft persistence", () => {
   it("persists edits with revision increments and shows the saved revision", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
@@ -283,7 +284,7 @@ describe("PolicyStudyEditor — CAS draft persistence", () => {
 
   it("persists pinned workload, pool, recipe, judges, and rubric into the definition", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
@@ -307,7 +308,7 @@ describe("PolicyStudyEditor — CAS draft persistence", () => {
 
   it("excludes recipe synthesizers and Judge 1 from the Judge 2 options", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const evalRepo = new InMemoryEvaluationRepository();
     const suite = makeEditorSuite("ts1", 6);
@@ -344,7 +345,7 @@ describe("PolicyStudyEditor — CAS draft persistence", () => {
 describe("PolicyStudyEditor — delete untouched draft", () => {
   it("shows Delete draft only while untouched and deletes through the repository", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     let deleted = false;
@@ -367,7 +368,7 @@ describe("PolicyStudyEditor — delete untouched draft", () => {
 
   it("hides Delete draft once an input has been saved", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
@@ -385,7 +386,7 @@ describe("PolicyStudyEditor — delete untouched draft", () => {
 describe("PolicyStudyEditor — seal validation and confirmation", () => {
   it("lists unmet requirements in plain text when sealing an incomplete draft", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
@@ -408,7 +409,7 @@ describe("PolicyStudyEditor — seal validation and confirmation", () => {
 
   it("opens the seal dialog with pinned refs, digests, and the permanence sentence", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
@@ -434,7 +435,7 @@ describe("PolicyStudyEditor — seal validation and confirmation", () => {
 
   it("seals the study immutably on confirm — later draft writes are rejected", async () => {
     const studyRepo = new InMemoryStudyRepository();
-    const study = makeStudyRecord();
+    const study = makeStudyRecord({ definition: draftPolicyStudyDefinition() });
     await studyRepo.createStudy(study);
     const { evalRepo, labAssetRepo } = await seedAssets();
     const sealed: PolicyStudyRecord[] = [];

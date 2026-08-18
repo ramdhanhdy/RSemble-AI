@@ -1,18 +1,36 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { AlertCircle, Loader2 } from "lucide-react";
 import type { StudyRepository } from "../../lib/persistence/study-repository";
-import { useStudyRepository } from "../../lib/persistence/repository-context";
+import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
+import type { LabAssetRepository } from "../../lib/persistence/lab-asset-repository";
+import {
+  useEvaluationRepository,
+  useLabAssetRepository,
+  useStudyRepository,
+} from "../../lib/persistence/repository-context";
 import type { PolicyStudyRecord } from "../../lib/studies/policy/policy-study-types";
 import { KindEyebrow } from "../../ui/KindEyebrow";
+import { PolicyStudyEditor } from "./PolicyStudyEditor";
 
 interface PolicyStudyPageProps {
   studyRepo?: StudyRepository | null;
+  evalRepo?: EvaluationRepository | null;
+  labAssetRepo?: LabAssetRepository | null;
 }
 
-export function PolicyStudyPage({ studyRepo: studyRepoProp }: PolicyStudyPageProps) {
+export function PolicyStudyPage({
+  studyRepo: studyRepoProp,
+  evalRepo: evalRepoProp,
+  labAssetRepo: labAssetRepoProp,
+}: PolicyStudyPageProps) {
   const ctx = useStudyRepository();
+  const ctxEval = useEvaluationRepository();
+  const ctxAssets = useLabAssetRepository();
   const studyRepo = studyRepoProp !== undefined ? studyRepoProp : ctx;
+  const evalRepo = evalRepoProp !== undefined ? evalRepoProp : ctxEval;
+  const labAssetRepo = labAssetRepoProp !== undefined ? labAssetRepoProp : ctxAssets;
+  const navigate = useNavigate();
   const { studyId = "" } = useParams<{ studyId: string }>();
   const [study, setStudy] = useState<PolicyStudyRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,6 +95,28 @@ export function PolicyStudyPage({ studyRepo: studyRepoProp }: PolicyStudyPagePro
         >
           Back to Policy Studies
         </Link>
+      </div>
+    );
+  }
+
+  if (study.status === "draft") {
+    return (
+      <div className="flex flex-col gap-4">
+        <nav className="text-xs text-text-secondary">
+          <Link to="/lab" className="text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            Lab
+          </Link>
+          {" / "}
+          Policy Studies
+        </nav>
+        <PolicyStudyEditor
+          studyRepo={studyRepo}
+          evalRepo={evalRepo}
+          labAssetRepo={labAssetRepo}
+          study={study}
+          onSealed={(started) => setStudy(started)}
+          onDeleted={() => void navigate("/lab")}
+        />
       </div>
     );
   }
