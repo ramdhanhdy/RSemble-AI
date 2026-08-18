@@ -17,6 +17,7 @@ import {
   isPolicyKind,
   isPolicyMeasurementPayload,
   isPolicyPlaybookRow,
+  isPolicyTrialPayload,
   isPolicyRecommendation,
   isPolicyReportPayload,
   isPolicyStudyDefinition,
@@ -27,7 +28,6 @@ import {
   type ExactModelConfigurationRef,
   type PolicyMeasurementPayload,
   type PolicyPlaybookRow,
-  type PolicyRecommendation,
   type PolicyReportPayload,
   type PolicyStudyDefinition,
   type PolicyStudyRecord,
@@ -184,7 +184,7 @@ describe("fixed four policies", () => {
   it("a definition must carry at least one policy from the fixed four", () => {
     expect(isPolicyStudyDefinition(makeDefinition({ policies: [] }))).toBe(false);
     expect(isPolicyStudyDefinition(makeDefinition({ policies: ["best_fixed"] }))).toBe(true);
-    expect(isPolicyStudyDefinition(makeDefinition({ policies: ["do_not_fuse"] }))).toBe(false);
+    expect(isPolicyStudyDefinition(makeDefinition({ policies: ["do_not_fuse" as never] }))).toBe(false);
     expect(
       isPolicyStudyDefinition(
         makeDefinition({ policies: ["best_fixed", "rank", "fuse", "refine"] }),
@@ -319,7 +319,7 @@ describe("PolicyTrialPayload", () => {
   });
 
   it("rejects unknown stage", () => {
-    expect(isPolicyTrialPayload(makeTrialPayload({ stage: "D" }))).toBe(false);
+    expect(isPolicyTrialPayload(makeTrialPayload({ stage: "D" as never }))).toBe(false);
     expect(isPolicyTrialPayload(makeTrialPayload({ stage: "B" }))).toBe(true);
   });
 });
@@ -368,8 +368,8 @@ describe("PolicyReportPayload", () => {
 
   it("a playbook row must reference one of the fixed four policies", () => {
     expect(isPolicyPlaybookRow(makePlaybookRow({ policy: "best_fixed" }))).toBe(true);
-    expect(isPolicyPlaybookRow(makePlaybookRow({ policy: "do_not_fuse" }))).toBe(false);
-    expect(isPolicyPlaybookRow(makePlaybookRow({ policy: "routing" }))).toBe(false);
+    expect(isPolicyPlaybookRow(makePlaybookRow({ policy: "do_not_fuse" as never }))).toBe(false);
+    expect(isPolicyPlaybookRow(makePlaybookRow({ policy: "routing" as never }))).toBe(false);
   });
 
   it("rejects a report with a mismatched definition fingerprint", () => {

@@ -18,8 +18,8 @@ import {
 describe("study registry", () => {
   it("registers exactly one kind: policy", () => {
     expect(REGISTERED_STUDY_KINDS).toEqual(["policy"]);
-    expect(STUDY_REGISTRY.size).toBe(1);
-    expect(STUDY_REGISTRY.has("policy")).toBe(true);
+    expect(Object.keys(STUDY_REGISTRY)).toEqual(["policy"]);
+    expect("policy" in STUDY_REGISTRY).toBe(true);
   });
 
   it("does not register routing, judge, or workflow placeholders", () => {

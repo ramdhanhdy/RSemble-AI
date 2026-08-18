@@ -127,24 +127,24 @@ describe("study envelope round trips", () => {
 describe("registered kind and discriminant", () => {
   it("accepts only kind = policy on the record", () => {
     expect(isStudyRecordEnvelope(makeRecord({ kind: "policy" }))).toBe(true);
-    expect(isStudyRecordEnvelope(makeRecord({ kind: "routing" }))).toBe(false);
-    expect(isStudyRecordEnvelope(makeRecord({ kind: "judge" }))).toBe(false);
-    expect(isStudyRecordEnvelope(makeRecord({ kind: "workflow" }))).toBe(false);
-    expect(isStudyRecordEnvelope(makeRecord({ kind: "" }))).toBe(false);
+    expect(isStudyRecordEnvelope(makeRecord({ kind: "routing" as never }))).toBe(false);
+    expect(isStudyRecordEnvelope(makeRecord({ kind: "judge" as never }))).toBe(false);
+    expect(isStudyRecordEnvelope(makeRecord({ kind: "workflow" as never }))).toBe(false);
+    expect(isStudyRecordEnvelope(makeRecord({ kind: "" as never }))).toBe(false);
   });
 
   it("accepts only payloadKind = policy on trials", () => {
     expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "policy" }))).toBe(true);
-    expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "routing" }))).toBe(false);
-    expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "policy_measurement" }))).toBe(false);
+    expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "routing" as never }))).toBe(false);
+    expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "policy_measurement" as never }))).toBe(false);
   });
 
   it("accepts only payloadKind = policy_measurement on observations", () => {
     expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "policy_measurement" }))).toBe(
       true,
     );
-    expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "policy" }))).toBe(false);
-    expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "judge" }))).toBe(false);
+    expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "policy" as never }))).toBe(false);
+    expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "judge" as never }))).toBe(false);
   });
 
   it("rejects unknown schema versions", () => {
