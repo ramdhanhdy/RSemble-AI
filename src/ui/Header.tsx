@@ -122,7 +122,7 @@ export function Header({
               onClick={onOpenConnections}
               aria-label={`Connection status: ${pillLabel}. Manage connections.`}
               title="Provider connections"
-              className="flex min-h-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex min-h-[44px] min-w-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <span className={`size-2 rounded-full ${pill.dot}`} aria-hidden="true" />
               <span className={`hidden lg:inline ${pill.text}`} aria-live="polite">
