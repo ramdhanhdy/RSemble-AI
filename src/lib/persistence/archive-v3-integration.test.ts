@@ -37,18 +37,15 @@ import {
   validateArchiveV3,
   type WorkbenchArchiveV3,
 } from "./archive-v3-types";
-import {
-  buildValidArchiveV3Fixture,
-  seedCompleteV3Corpus,
-} from "./archive-v3-fixtures";
+import { seedCompleteV3Corpus } from "./archive-v3-fixtures";
+import * as fx from "./archive-v2-fixtures";
 import {
   commitPreviewWorkbenchArchiveV3,
   exportWorkbenchArchiveV3,
   importWorkbenchArchiveAuto,
   previewWorkbenchArchive,
 } from "./archive";
-import { RSembleEvaluationDB, StorageError } from "./database";
-
+import { RSembleEvaluationDB } from "./database";
 const DETERMINISTIC_NOW = 1_700_000_000_000;
 
 async function freshDb(name: string): Promise<RSembleEvaluationDB> {
@@ -70,7 +67,9 @@ describe("archive v3 integration — complete canonical corpus round trip (REV-1
 
     // Import into a FRESH database with zero prior state
     const target = await freshDb("target");
-    const preview = await previewWorkbenchArchive(target, exported, { sourceLabel: "source-v3.json" });
+    const preview = await previewWorkbenchArchive(target, exported, {
+      sourceLabel: "source-v3.json",
+    });
     expect(preview.format).toBe("v3");
     expect(preview.collisions).toEqual([]);
     expect(preview.invalid).toEqual([]);
@@ -88,33 +87,49 @@ describe("archive v3 integration — complete canonical corpus round trip (REV-1
     // Verify tested reconciliation: exact counts match across all Dexie tables
     expect(reexported.manifest.counts).toEqual(exported.manifest.counts);
     expect(await target.labRecipeRecords.count()).toBe(reexported.manifest.counts.labRecipeRecords);
-    expect(await target.labRecipeVersions.count()).toBe(reexported.manifest.counts.labRecipeVersions);
+    expect(await target.labRecipeVersions.count()).toBe(
+      reexported.manifest.counts.labRecipeVersions,
+    );
     expect(await target.modelPoolRecords.count()).toBe(reexported.manifest.counts.modelPoolRecords);
-    expect(await target.modelPoolVersions.count()).toBe(reexported.manifest.counts.modelPoolVersions);
+    expect(await target.modelPoolVersions.count()).toBe(
+      reexported.manifest.counts.modelPoolVersions,
+    );
     expect(await target.studies.count()).toBe(reexported.manifest.counts.studies);
     expect(await target.studyTrials.count()).toBe(reexported.manifest.counts.studyTrials);
     expect(await target.studyAttempts.count()).toBe(reexported.manifest.counts.studyAttempts);
-    expect(await target.studyObservations.count()).toBe(reexported.manifest.counts.studyObservations);
+    expect(await target.studyObservations.count()).toBe(
+      reexported.manifest.counts.studyObservations,
+    );
     expect(await target.policyPlaybooks.count()).toBe(reexported.manifest.counts.policyPlaybooks);
 
     // Evidence & task tables
-    expect(await target.modelConfigurations.count()).toBe(reexported.manifest.counts.modelConfigurations);
+    expect(await target.modelConfigurations.count()).toBe(
+      reexported.manifest.counts.modelConfigurations,
+    );
     expect(await target.observations.count()).toBe(reexported.manifest.counts.evidenceObservations);
-    expect(await target.evidenceDecisions.count()).toBe(reexported.manifest.counts.evidenceDecisions);
-    expect(await target.evidenceIndexJobs.count()).toBe(reexported.manifest.counts.evidenceIndexJobs);
+    expect(await target.evidenceDecisions.count()).toBe(
+      reexported.manifest.counts.evidenceDecisions,
+    );
+    expect(await target.evidenceIndexJobs.count()).toBe(
+      reexported.manifest.counts.evidenceIndexJobs,
+    );
     expect(await target.verifierOutcomes.count()).toBe(reexported.manifest.counts.verifierOutcomes);
-    expect(await target.comparisonResults.count()).toBe(reexported.manifest.counts.comparisonIndexes);
+    expect(await target.comparisonResults.count()).toBe(
+      reexported.manifest.counts.comparisonIndexes,
+    );
     expect(await target.tasks.count()).toBe(reexported.manifest.counts.tasks);
     expect(await target.taskVersions.count()).toBe(reexported.manifest.counts.taskVersions);
     expect(await target.taskArtifacts.count()).toBe(reexported.manifest.counts.taskArtifacts);
-    expect(await target.taskArtifactBytes.count()).toBe(reexported.manifest.counts.taskArtifactBytes);
+    expect(await target.taskArtifactBytes.count()).toBe(
+      reexported.manifest.counts.taskArtifactBytes,
+    );
     expect(await target.taskSets.count()).toBe(reexported.manifest.counts.taskSetRecords);
     expect(await target.taskSetVersions.count()).toBe(reexported.manifest.counts.taskSetVersions);
     expect(await target.runSummaries.count()).toBe(reexported.manifest.counts.runSummaries);
     expect(await target.runDetails.count()).toBe(reexported.manifest.counts.runDetails);
 
-    await source.close();
-    await target.close();
+    source.close();
+    target.close();
   });
 });
 
@@ -135,7 +150,7 @@ describe("archive v3 integration — REV-2 deleted stores stay deleted", () => {
     expect(manifestCounts).not.toHaveProperty("fusionStudies");
     expect(manifestCounts).not.toHaveProperty("fusionPlaybooks");
 
-    await db.close();
+    db.close();
   });
 });
 
@@ -198,7 +213,9 @@ describe("archive v3 integration — REV-3 deterministic legacy fusion rejection
       },
     };
 
-    const preview = await previewWorkbenchArchive(db, legacyArchive, { sourceLabel: "legacy.json" });
+    const preview = await previewWorkbenchArchive(db, legacyArchive, {
+      sourceLabel: "legacy.json",
+    });
     expect(preview.format).toBe("unsupported_fusion_archive_shape");
     expect(preview.unsupportedReceipt).toBeDefined();
     expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionRecipes");
@@ -214,77 +231,17 @@ describe("archive v3 integration — REV-3 deterministic legacy fusion rejection
     );
     expect(await db.suites.count()).toBe(0);
 
-    await db.close();
+    db.close();
   });
 
   it("still imports valid non-fusion v2 archives cleanly", async () => {
     const db = await freshDb("non-fusion-v2");
-    const nonFusionV2 = {
-      manifest: {
-        formatVersion: 2,
-        storageVersion: 1,
-        exportedAt: 1000,
-        producer: "rsemble-ai",
-        counts: {
-          runSummaries: 0,
-          runDetails: 0,
-          rubricIdentities: 0,
-          rubricVersions: 0,
-          suites: 1,
-          experiments: 0,
-          fusionRecipes: 0,
-          fusionPoolManifests: 0,
-          fusionStudies: 0,
-          fusionTrials: 0,
-          fusionAttempts: 0,
-          fusionObservations: 0,
-          fusionPlaybooks: 0,
-          taskRecords: 0,
-          taskVersions: 0,
-          taskArtifacts: 0,
-          taskArtifactBytes: 0,
-          taskInstances: 0,
-          taskFamilies: 0,
-          taskFamilyAssignments: 0,
-          taskFamilyRelations: 0,
-          taskFacetAnnotations: 0,
-          taskMigrationCrosswalks: 0,
-        },
-        payloadDigest: "sha256:0000",
-        disclosure: { scope: "local", notes: null },
-      },
-      runs: { summaries: [], details: [] },
-      rubrics: { identities: [], versions: [] },
-      suites: [{ id: "suite-nf", revision: 1, version: 1, updatedAt: 1000, archivedAt: null, tasks: [], modelSlots: [] }],
-      experiments: [],
-      fusion: {
-        recipes: [],
-        poolManifests: [],
-        studies: [],
-        trials: [],
-        attempts: [],
-        observations: [],
-        playbooks: [],
-      },
-      tasks: {
-        tasks: [],
-        taskVersions: [],
-        taskArtifacts: [],
-        taskArtifactBytes: [],
-        taskInstances: [],
-        taskFamilies: [],
-        taskFamilyAssignments: [],
-        taskFamilyRelations: [],
-        taskFacetAnnotations: [],
-        taskMigrationCrosswalks: [],
-      },
-    };
-
+    const nonFusionV2 = fx.buildValidNonFusionArchiveV2Fixture();
     const preview = await previewWorkbenchArchive(db, nonFusionV2, { sourceLabel: "nf.json" });
     expect(preview.format).toBe("v2");
-    expect(preview.create.some((c) => c.key === "suite-nf")).toBe(true);
+    expect(preview.create.some((c) => c.key === "suite-1")).toBe(true);
 
-    await db.close();
+    db.close();
   });
 });
 
@@ -304,7 +261,7 @@ describe("archive v3 integration — collision rejection and idempotency", () =>
     expect(commitResult.created.length).toBe(0);
     expect(commitResult.reused.length).toBe(preview.reuse.length);
 
-    await db.close();
+    db.close();
   });
 
   it("colliding record with different content is classified as collision and not overwritten", async () => {
@@ -321,14 +278,12 @@ describe("archive v3 integration — collision rejection and idempotency", () =>
     expect(preview.format).toBe("v3");
     expect(preview.collisions.some((c) => c.key === modified.lab.studies[0].id)).toBe(true);
 
-    const commitResult = await commitPreviewWorkbenchArchiveV3(db, preview);
-    expect(commitResult.collisions).toContain(modified.lab.studies[0].id);
-
+    await expect(commitPreviewWorkbenchArchiveV3(db, preview)).rejects.toThrow(/collision/i);
     // Existing record unchanged in database
     const stored = await db.studies.get(modified.lab.studies[0].id);
     expect(stored).toBeDefined();
     expect((stored!.record as { title: string }).title).not.toBe("Modified Colliding Title");
 
-    await db.close();
+    db.close();
   });
 });

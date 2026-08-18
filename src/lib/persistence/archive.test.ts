@@ -34,6 +34,7 @@ import {
   commitPreviewWorkbenchArchiveV2,
   exportWorkbenchArchive,
   exportWorkbenchArchiveV2,
+  exportWorkbenchArchiveV3,
   IMPORT_LIMITS,
   importWorkbenchArchive,
   importWorkbenchArchiveAuto,
@@ -2048,13 +2049,15 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
     archive.rubrics.versions = [fx.makeRubricVersion("rubric-1", 1)];
     archive.suites = [fx.makeSuite("suite-1")]; // canonically identical → reuse
     archive.experiments = [fx.makeExperiment("exp-1", "suite-1")];
-    archive.fusion.recipes = [fx.makeRecipe("recipe-1", 1)];
-    archive.fusion.poolManifests = [fx.makePoolManifest("pool-1", 1)];
-    archive.fusion.studies = [fx.makeStudy("study-1")];
-    archive.fusion.trials = [fx.makeTrial("trial-1", "study-1")];
-    archive.fusion.attempts = [fx.makeAttempt("attempt-1", "study-1")];
-    archive.fusion.observations = [fx.makeObservation("obs-1", "trial-1")];
-    archive.fusion.playbooks = [fx.makePlaybook("playbook-1", "study-1")];
+    archive.fusion = {
+      recipes: [],
+      poolManifests: [],
+      studies: [],
+      trials: [],
+      attempts: [],
+      observations: [],
+      playbooks: [],
+    };
     archive.tasks.tasks = [fx.makeTaskRecord("task-1")];
     archive.tasks.taskVersions = [fx.makeTaskVersion("task-1", 1, "art-1")];
     archive.tasks.taskArtifacts = [fx.makeTaskArtifact("art-1", artifactBytes)];
@@ -2074,13 +2077,13 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
       rubricVersions: 1,
       suites: 1,
       experiments: 1,
-      fusionRecipes: 1,
-      poolManifests: 1,
-      fusionStudies: 1,
-      fusionTrials: 1,
-      fusionAttempts: 1,
-      fusionObservations: 1,
-      fusionPlaybooks: 1,
+      fusionRecipes: 0,
+      poolManifests: 0,
+      fusionStudies: 0,
+      fusionTrials: 0,
+      fusionAttempts: 0,
+      fusionObservations: 0,
+      fusionPlaybooks: 0,
       tasks: 1,
       taskVersions: 1,
       taskArtifacts: 1,
@@ -2105,17 +2108,16 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
       comparisonLimitations: 0,
     };
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
-
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
 
     expect(preview.format).toBe("v2");
-    // 21 importable collections carry exactly one entity.
-    expect(preview.totalEntities).toBe(21);
+    // 14 importable collections carry exactly one entity.
+    expect(preview.totalEntities).toBe(14);
     expect(preview.invalid.length).toBe(0);
     expect(preview.collisions.map((c) => c.key)).toEqual([]);
     // Exactly the pre-existing suite is reusable.
     expect(preview.reuse.map((e) => `${e.collection}/${e.key}`)).toEqual(["suites/suite-1"]);
-    expect(preview.create.length).toBe(20);
+    expect(preview.create.length).toBe(13);
     // One artifact is pre-materialized so the commit can verify bytes.
     expect(preview.artifactBytes.length).toBe(1);
     expect(preview.artifactBytes[0].id).toBe("art-1");
@@ -2250,11 +2252,21 @@ describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
       "comparisons.indexes/run-pre",
     );
   });
+
+  it("rejects legacy v2 archive containing fusion collections as unsupported_fusion_archive_shape with a receipt (REV-3)", async () => {
+    const archive = fx.buildLegacyFusionV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "legacy.json" });
+    expect(preview.format).toBe("unsupported_fusion_archive_shape");
+    expect(preview.unsupportedReceipt).toBeDefined();
+    expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionRecipes");
+    expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionStudies");
+    expect(await db.suites.count()).toBe(0);
+  });
 });
 
 describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, cancellation", () => {
-  it("imports the complete fixture into an empty database atomically with exact source Run/Experiment/Fusion evidence", async () => {
-    const archive = fx.buildValidArchiveV2Fixture();
+  it("imports the complete non-fusion v2 fixture into an empty database atomically with exact source Run/Experiment evidence", async () => {
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
     expect(preview.format).toBe("v2");
     expect(preview.collisions).toEqual([]);
@@ -2265,20 +2277,13 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     expect(result.created.length).toBe(preview.create.length);
     expect(result.reused).toEqual([]);
     expect(result.skipped).toEqual([]);
-    // Every imported entity appears exactly once across the whole store README.
+    // Every imported entity appears exactly once across surviving tables.
     expect(await db.runSummaries.count()).toBe(1);
     expect(await db.runDetails.count()).toBe(1);
     expect(await db.profiles.count()).toBe(1);
     expect(await db.profileVersions.count()).toBe(1);
     expect(await db.suites.count()).toBe(1);
     expect(await db.experiments.count()).toBe(1);
-    expect(await (db as any).fusionRecipes.count()).toBe(1);
-    expect(await (db as any).poolManifests.count()).toBe(1);
-    expect(await (db as any).fusionStudies.count()).toBe(1);
-    expect(await (db as any).fusionTrials.count()).toBe(1);
-    expect(await (db as any).fusionAttempts.count()).toBe(1);
-    expect(await (db as any).fusionObservations.count()).toBe(1);
-    expect(await (db as any).fusionPlaybooks.count()).toBe(1);
     expect(await db.tasks.count()).toBe(1);
     expect(await db.taskVersions.count()).toBe(1);
     expect(await db.taskArtifacts.count()).toBe(1);
@@ -2289,22 +2294,19 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     expect(await db.taskFamilyRelations.count()).toBe(1);
     expect(await db.taskFacetAnnotations.count()).toBe(1);
     expect(await db.taskMigrationCrosswalk.count()).toBe(1);
-    // Exact source evidence is semantically unchanged.
-    const importedStudy = await (db as any).fusionStudies.get("study-1");
-    expect((importedStudy?.study as Record<string, unknown>).claimLevel).toBe("exploratory");
     const importedRun = await db.runDetails.get("run-1");
     expect((importedRun?.record as RunRecordV2).status).toBe("completed");
     const importedExperiment = await db.experiments.get("exp-1");
     expect((importedExperiment?.experiment as ExperimentRecord).protocolFingerprint).toBe(
       "sha256:abc",
     );
-    // Round-trip: re-export the imported database and compare canonically.
-    const reexported = await exportWorkbenchArchiveV2(db);
-    expect(reexported.manifest.counts).toEqual(archive.manifest.counts);
+    // Round-trip: re-export the imported database as v3 (the canonical format).
+    const reexported = await exportWorkbenchArchiveV3(db);
+    expect(reexported.manifest.counts.runSummaries).toBe(1);
+    expect(reexported.manifest.counts.suites).toBe(1);
   });
-
   it("imports Comparison Result indexes atomically from a comparison-carrying envelope", async () => {
-    const archive = fx.buildValidArchiveV2Fixture();
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
     const extensible = archive as unknown as { comparisons?: unknown };
     extensible.comparisons = {
       indexes: [comparisonIndexFor("run-1", COMPARISON_SNAP_REF)],
@@ -2341,7 +2343,7 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
   it("a non-identical ID collision aborts the whole commit BEFORE any write (no remap, no overwrite)", async () => {
     await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
     // Rewrite the incoming suite content so the same ID is NOT canonically identical.
-    const archive = fx.buildValidArchiveV2Fixture();
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
     archive.suites[0] = { ...archive.suites[0], name: "suite-1 — renamed" };
     archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
 
@@ -2362,7 +2364,7 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
   });
 
   it("repeated import is idempotent: second commit reuses/skips everything and writes nothing", async () => {
-    const archive = fx.buildValidArchiveV2Fixture();
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
     const first = await commitPreviewWorkbenchArchiveV2(
       db,
       await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" }),
@@ -2373,19 +2375,18 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     expect(secondPreview.create).toEqual([]);
     expect(secondPreview.collisions).toEqual([]);
     expect(secondPreview.invalid).toEqual([]);
-    expect(secondPreview.totalEntities).toBe(32);
+    expect(secondPreview.totalEntities).toBe(24);
 
     const second = await commitPreviewWorkbenchArchiveV2(db, secondPreview);
     expect(second.created).toEqual([]);
-    expect(second.reused.length).toBe(32);
+    expect(second.reused.length).toBe(24);
     expect(second.skipped).toEqual([]);
     // No duplicate rows from a second pass.
     expect(await db.suites.count()).toBe(1);
     expect(await db.tasks.count()).toBe(1);
   });
-
   it("cancellation before commit leaves source and target unchanged and throws the cancellation error", async () => {
-    const archive = fx.buildValidArchiveV2Fixture();
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
     const controller = new AbortController();
     controller.abort();
@@ -2397,9 +2398,8 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     expect(await db.suites.count()).toBe(0);
     expect(await db.tasks.count()).toBe(0);
   });
-
   it("an injected mid-commit failure rolls the transaction back — nothing is written", async () => {
-    const archive = fx.buildValidArchiveV2Fixture();
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
     vi.spyOn(db.experiments, "put").mockRejectedValueOnce(new Error("boom"));
 
@@ -2444,8 +2444,7 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
   });
 
   it("a preview-to-commit race inserting a non-identical same-key row aborts inside the transaction and never overwrites (F1)", async () => {
-    const archive = fx.buildValidArchiveV2Fixture();
-    // Preview against an EMPTY DB → suites.suite-1 is classified as create.
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
     expect(preview.create.some((c) => c.collection === "suites" && c.key === "suite-1")).toBe(true);
     expect(preview.collisions).toEqual([]);
@@ -2468,9 +2467,8 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
     expect(await db.tasks.count()).toBe(0);
     expect(await db.runDetails.count()).toBe(0);
   });
-
   it("mutating preview.payload after preview aborts the commit with zero writes and a validation StorageError (F2)", async () => {
-    const archive = fx.buildValidArchiveV2Fixture();
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
     const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
     expect(preview.collisions).toEqual([]);
     expect(preview.invalid).toEqual([]);

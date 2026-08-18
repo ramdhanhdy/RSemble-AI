@@ -20,11 +20,11 @@ import {
 } from "../lib/persistence/repository-context";
 import { RSembleEvaluationDB } from "../lib/persistence/database";
 import { importWorkbenchArchive, type WorkbenchArchiveV1 } from "../lib/persistence/archive";
-import { computeArchiveV2PayloadDigest } from "../lib/persistence/archive-v2-types";
+import { computeArchiveV3PayloadDigest } from "../lib/persistence/archive-v3-types";
 import type { EvaluationSuite } from "../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../lib/persistence/run-types";
 import * as fx from "../lib/persistence/archive-v2-fixtures";
-
+import * as v3fx from "../lib/persistence/archive-v3-fixtures";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 interface Harness {
@@ -62,6 +62,20 @@ async function settle() {
   await act(async () => {
     for (let i = 0; i < 20; i++) await flush();
   });
+}
+
+/** Poll until `arr` reaches the expected length, with a generous timeout. */
+async function waitForDownload(
+  arr: { length: number },
+  expected: number,
+  maxTicks = 200,
+): Promise<void> {
+  for (let i = 0; i < maxTicks; i++) {
+    if (arr.length >= expected) return;
+    await act(async () => {
+      await flush();
+    });
+  }
 }
 
 // --- Fixtures -------------------------------------------------------------------
@@ -301,16 +315,43 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     expect(document.activeElement).toBe(h.$('button[data-action="import"]'));
   });
 
-  it("a v2 archive previews all collections and confirms atomically", async () => {
+  it("a legacy v2 fusion archive renders unsupported rejection banner with Close button and writes nothing (REV-3)", async () => {
     const h = renderActions(contextValue(db, "ready"));
     const archive = fx.buildValidArchiveV2Fixture();
-    const file = new File([JSON.stringify(archive)], "v2.json", { type: "application/json" });
-    // The v2 fixture now carries 27 entities (6 Task Set); the async preview's
-    // setPreview/setBusy state updates fire across many IDB transaction
-    // boundaries and escape any single act block. Suppress the React act()
-    // warning for this test's file-selection phase — the state updates are
-    // benign (preview rendering, not user-visible side effects) and the
-    // alternative (mocking previewWorkbenchArchive) would weaken the test.
+    const file = new File([JSON.stringify(archive)], "legacy-fusion.json", {
+      type: "application/json",
+    });
+    await chooseFile(h, file);
+
+    // No writes
+    expect(await db.suites.count()).toBe(0);
+    const status = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
+    expect(status).toContain("Unsupported legacy archive format");
+    expect(status).toContain("retired Fusion Study collections");
+    expect(status).toContain("fusionRecipes");
+    expect(status).toContain("fusionPlaybooks");
+
+    // Confirm import is NOT present; Close button is present
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+    const closeBtn = h.$('button[data-action="close-unsupported"]') as HTMLButtonElement | null;
+    expect(closeBtn).not.toBeNull();
+
+    await act(async () => {
+      closeBtn!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(await db.suites.count()).toBe(0);
+  });
+
+  it("a v3 archive previews all collections and confirms atomically (REV-1)", async () => {
+    const h = renderActions(contextValue(db, "ready"));
+    const archive = v3fx.buildValidArchiveV3Fixture();
+    const file = new File([JSON.stringify(archive)], "v3.json", { type: "application/json" });
     const originalError = console.error;
     const actWarnings: string[] = [];
     console.error = (...args: unknown[]) => {
@@ -326,13 +367,15 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
       // No writes during preview.
       expect(await db.suites.count()).toBe(0);
       expect(await db.tasks.count()).toBe(0);
+      expect(await db.labRecipeRecords.count()).toBe(0);
       const status = h
         .$$('[role="status"]')
         .map((el) => el.textContent ?? "")
         .join("\n");
-      expect(status).toContain("format v2");
-      expect(status).toContain("32 to create");
+      expect(status).toContain("format v3");
       expect(status).toContain("suites: 1");
+      expect(status).toContain("lab.recipeRecords: 1");
+      expect(status).toContain("lab.studies: 1");
 
       await act(async () => {
         (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
@@ -343,23 +386,26 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
       expect(await db.suites.count()).toBe(1);
       expect(await db.tasks.count()).toBe(1);
       expect(await db.taskArtifactBytes.count()).toBe(1);
+      expect(await db.labRecipeRecords.count()).toBe(1);
+      expect(await db.studies.count()).toBe(1);
       const result = h
         .$$('[role="status"]')
         .map((el) => el.textContent ?? "")
         .join("\n");
-      expect(result).toContain('Imported 25 records — 0 reused ("v2.json")');
+      expect(result).toContain("Imported");
+      expect(result).toContain('"v3.json"');
     } finally {
       console.error = originalError;
     }
   });
 
-  it("a non-identical collision is previewed with IDs and the commit aborts without any write", async () => {
+  it("a non-identical collision in v3 is previewed with IDs and the commit aborts without any write", async () => {
     await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
-    const incoming = fx.buildValidArchiveV2Fixture();
+    const incoming = v3fx.buildValidArchiveV3Fixture();
     incoming.suites[0] = { ...incoming.suites[0], name: "changed" };
-    incoming.manifest.payloadDigest = computeArchiveV2PayloadDigest(incoming);
+    incoming.manifest.payloadDigest = computeArchiveV3PayloadDigest(incoming);
     const h = renderActions(contextValue(db, "ready"));
-    const file = new File([JSON.stringify(incoming)], "v2.json", { type: "application/json" });
+    const file = new File([JSON.stringify(incoming)], "v3.json", { type: "application/json" });
     await chooseFile(h, file);
 
     const status = h
@@ -390,11 +436,11 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     expect(h.$('button[data-action="confirm-import"]')).toBeNull();
   });
 
-  it("surfaces v2 validation failure without echoing prohibited content and writes nothing", async () => {
+  it("surfaces v3 validation failure without echoing prohibited content and writes nothing", async () => {
     const secret = "sk-ant-oat01-not-a-real-key";
-    const poisoned = fx.buildValidArchiveV2Fixture();
-    (poisoned.suites[0] as unknown as Record<string, unknown>).notes = secret;
-    poisoned.manifest.payloadDigest = computeArchiveV2PayloadDigest(poisoned);
+    const poisoned = v3fx.buildValidArchiveV3Fixture();
+    (poisoned.lab.recipeRecords[0] as unknown as Record<string, unknown>).notes = secret;
+    poisoned.manifest.payloadDigest = computeArchiveV3PayloadDigest(poisoned);
 
     const h = renderActions(contextValue(db, "ready"));
     const file = new File([JSON.stringify(poisoned)], "poisoned.json", {
@@ -593,6 +639,62 @@ describe("DataArchiveActions — v2 export flow", () => {
     expect(alert!.textContent).toContain("runs.details");
     expect(alert!.textContent).toContain("run-secret");
     expect(alert!.textContent).not.toContain("Bearer abc123def456");
+    clickSpy.mockRestore();
+  });
+});
+
+describe("DataArchiveActions — v3 export flow (REV-1)", () => {
+  it("downloads the complete canonical v3 archive and reports the exported entity total", async () => {
+    await v3fx.seedCompleteV3Corpus(db);
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v3"]') as HTMLButtonElement | null;
+    expect(exportButton).not.toBeNull();
+    await act(async () => {
+      exportButton!.click();
+      await flush();
+    });
+    await waitForDownload(downloaded, 1);
+
+    expect(downloaded.length).toBe(1);
+    expect(downloaded[0].download).toMatch(/^rsemble-archive-v3-\d{8}-\d{6}\.json$/);
+    const status = h.$('[role="status"]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toMatch(/exported/i);
+    clickSpy.mockRestore();
+  });
+
+  it("cancels a running v3 export before delivery — no download, truthful guidance", async () => {
+    await v3fx.seedCompleteV3Corpus(db);
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v3"]') as HTMLButtonElement;
+    await act(async () => {
+      exportButton.click();
+      await flush();
+    });
+    const cancelButton = h.$('button[data-action="cancel-export-v3"]') as HTMLButtonElement | null;
+    expect(cancelButton).not.toBeNull();
+    await act(async () => {
+      cancelButton!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(downloaded.length).toBe(0);
+    expect(h.container.textContent).toContain("Export was cancelled — no archive was delivered.");
     clickSpy.mockRestore();
   });
 });

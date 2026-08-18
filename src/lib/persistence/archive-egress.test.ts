@@ -5,6 +5,10 @@
 // Asserts that:
 //   1. Archive v3 export and import cause exactly ZERO provider/network execution.
 //      Instruments every registered provider and global fetch to assert 0 calls.
+//   2. Archive v3 export and import load/execute NO retired Fusion repository
+//      authority (fusion-study-repository.ts).
+// =============================================================================
+
 import "fake-indexeddb/auto";
 import { describe, expect, it, vi, type MockInstance } from "vitest";
 import { listProviders } from "../providers/registry";
@@ -16,7 +20,7 @@ import {
   exportWorkbenchArchive,
   importWorkbenchArchive,
 } from "./archive";
-import { buildValidArchiveV3Fixture, seedCompleteV3Corpus } from "./archive-v3-fixtures";
+import { seedCompleteV3Corpus } from "./archive-v3-fixtures";
 import { RSembleEvaluationDB } from "./database";
 
 async function freshDb(name: string): Promise<RSembleEvaluationDB> {
@@ -32,14 +36,17 @@ describe("archive v3 — zero provider egress probe (REV-4)", () => {
 
     // Instrument every provider method
     for (const provider of providers) {
-      if (typeof provider.complete === "function") {
-        spies.push(vi.spyOn(provider, "complete"));
-      }
-      if (typeof provider.streamChat === "function") {
-        spies.push(vi.spyOn(provider, "streamChat"));
-      }
       if (typeof provider.readiness === "function") {
         spies.push(vi.spyOn(provider, "readiness"));
+      }
+      if (typeof provider.testConnection === "function") {
+        spies.push(vi.spyOn(provider, "testConnection"));
+      }
+      if (typeof provider.chatCompletion === "function") {
+        spies.push(vi.spyOn(provider, "chatCompletion"));
+      }
+      if (typeof provider.chatCompletionStream === "function") {
+        spies.push(vi.spyOn(provider, "chatCompletionStream"));
       }
     }
 
@@ -81,16 +88,16 @@ describe("archive v3 — zero provider egress probe (REV-4)", () => {
     fetchSpy.mockRestore();
     for (const spy of spies) spy.mockRestore();
 
-    await source.close();
-    await target.close();
-    await autoTarget.close();
-    await v1Target.close();
+    source.close();
+    target.close();
+    autoTarget.close();
+    v1Target.close();
   });
 });
 
 describe("archive v3 — no authority resurrection (REV-4)", () => {
   it("does not touch or instantiate fusion-study-repository during v3 export/import", async () => {
-    // Assert that the database handle used by archive operations does not invoke fusion repository
+    // Assert that the database handle used by archive operations does not touch fusion tables
     const db = await freshDb("no-fusion-auth");
     await seedCompleteV3Corpus(db);
 
@@ -103,6 +110,6 @@ describe("archive v3 — no authority resurrection (REV-4)", () => {
     expect(tableNames).not.toContain("fusionStudies");
     expect(tableNames).not.toContain("fusionPlaybooks");
 
-    await db.close();
+    db.close();
   });
 });

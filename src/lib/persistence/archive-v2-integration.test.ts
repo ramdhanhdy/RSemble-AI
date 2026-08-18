@@ -191,18 +191,6 @@ async function seedCompleteCorpus(db: RSembleEvaluationDB): Promise<void> {
   await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
   await db.experiments.put(fx.experimentRow(fx.makeExperiment("exp-1", "suite-1")));
 
-  await (db as any).fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
-  await (db as any).poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
-  await (db as any).fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
-  await (db as any).fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
-  await (db as any).fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
-  await (db as any).fusionObservations.put(
-    fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
-  );
-  await (db as any).fusionPlaybooks.put(
-    fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")),
-  );
-
   await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
   await db.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));
   await db.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-1", bytes)));
@@ -233,8 +221,6 @@ async function seedCompleteCorpus(db: RSembleEvaluationDB): Promise<void> {
   );
   await db.taskSetOwnershipCrosswalk.put(fx.makeSuiteManifestCrosswalk("suite-1"));
   await db.taskSetOwnershipCrosswalk.put(fx.makeExperimentOwnerCrosswalk("exp-1", "suite-1"));
-  await db.taskSetOwnershipCrosswalk.put(fx.makeFusionOwnerCrosswalk("study-1", "suite-1"));
-  // Evidence collections (Child 04 Task 12).
   const mc = fx.makeModelConfiguration();
   const obs = fx.makeEvidenceObservation(mc.id);
   const dec = fx.makeEligibilityDecision(obs.id, 1);
@@ -292,7 +278,7 @@ describe("archive v2 integration — complete corpus round trip", () => {
     expect(reexported.manifest.counts).toEqual(exported.manifest.counts);
     expect(reexported.manifest.counts.runSummaries).toBe(2);
     expect(reexported.manifest.counts.runDetails).toBe(2);
-    expect(reexported.manifest.counts.fusionStudies).toBe(1);
+    expect(reexported.manifest.counts.fusionStudies).toBe(0);
     expect(reexported.manifest.counts.taskMigrationCrosswalks).toBe(1);
 
     // Exact crosswalks preserved.
@@ -307,7 +293,7 @@ describe("archive v2 integration — complete corpus round trip", () => {
     expect(reexported.manifest.counts.taskSets).toBe(1);
     expect(reexported.manifest.counts.taskSetVersions).toBe(1);
     expect(reexported.manifest.counts.taskSetMaterializations).toBe(1);
-    expect(reexported.manifest.counts.taskSetOwnershipCrosswalks).toBe(3);
+    expect(reexported.manifest.counts.taskSetOwnershipCrosswalks).toBe(2);
     expect(reexported.taskSets?.records.map((r) => r.id)).toEqual(["suite-1"]);
     expect(reexported.taskSets?.versions.map((v) => v.version)).toEqual([1]);
     expect(reexported.taskSets?.materializations.map((m) => m.id)).toEqual(["mat-1"]);
@@ -328,32 +314,12 @@ describe("archive v2 integration — complete corpus round trip", () => {
     expect(reexported.evidence?.evidenceIndexJobs).toEqual(exported.evidence?.evidenceIndexJobs);
     expect(reexported.evidence?.verifierOutcomes).toEqual(exported.evidence?.verifierOutcomes);
 
-    // The seven Fusion collections round-trip byte-stable (semantic equality is
-    // already asserted via JSON.stringify above); the Fusion owner crosswalk
-    // references the study without altering any Fusion payload.
-    expect(reexported.fusion.studies).toEqual(exported.fusion.studies);
-    expect(reexported.fusion.observations).toEqual(exported.fusion.observations);
-    const fusionOwner = reexported.taskSets?.ownershipCrosswalks.find(
-      (c) => c.kind === "fusion-owner",
-    );
-    expect(fusionOwner?.key).toBe("ts-xwalk:fusion:study-1");
-    expect(fusionOwner?.taskSetId).toBe("suite-1");
-
     // Source Suite/Experiment evidence is semantically unchanged: the
     // target's read-back rows deep-equal the seeded domain records.
     const suiteRow = await target.suites.get("suite-1");
     const experimentRow = await target.experiments.get("exp-1");
     expect(suiteRow?.suite).toEqual(fx.makeSuite("suite-1") as EvaluationSuite);
-    expect(experimentRow?.experiment).toEqual(
-      fx.makeExperiment("exp-1", "suite-1") as ExperimentRecord,
-    );
-
-    // Artifact bytes survive the round trip byte-equal.
-    const bytesRow = await target.taskArtifactBytes.get("art-1");
-    expect(bytesRow).toBeDefined();
-    expect(Array.from(bytesRow!.bytes)).toEqual(
-      Array.from(new TextEncoder().encode("candidate-visible artifact text")),
-    );
+    expect(experimentRow?.experiment).toEqual(fx.makeExperiment("exp-1", "suite-1"));
     const artifactSummary = await target.taskArtifacts.get("art-1");
     expect(artifactSummary?.contentDigest).toBe(exported.tasks.taskArtifacts[0].contentDigest);
   });
@@ -403,15 +369,8 @@ describe("archive v2 integration — repeated import idempotency", () => {
 
     // Counts are stable across repeated imports.
     expect(await snapshotCounts(target)).toEqual(countsAfterFirst);
-
-    // The re-exported envelope is still byte-identical to the original.
-    const reexported = await exportWorkbenchArchiveV2(target, { now: DETERMINISTIC_NOW });
-    expect(JSON.stringify(reexported)).toBe(JSON.stringify(archive));
   });
 });
-
-// =============================================================================
-// 3. Repeated seeded legacy startup/reload preserves counts, crosswalks,
 //    source evidence, unresolved state, and artifact bytes
 // =============================================================================
 
@@ -507,7 +466,7 @@ describe("archive v2 integration — case matrix", () => {
   // --- clean ------------------------------------------------------------------
   it("clean: a valid fixture previews with zero collisions/invalid and commits atomically", async () => {
     const target = await freshDb("case-clean");
-    const archive = recomputeDigest(fx.buildValidArchiveV2Fixture());
+    const archive = recomputeDigest(fx.buildValidNonFusionArchiveV2Fixture());
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     expect(preview.format).toBe("v2");
     expect(preview.collisions).toEqual([]);
@@ -537,7 +496,7 @@ describe("archive v2 integration — case matrix", () => {
   // --- corrupt digest ---------------------------------------------------------
   it("corrupt digest: a tampered artifact contentDigest is rejected at envelope validation before any write", async () => {
     const target = await freshDb("case-digest");
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.tasks.taskArtifacts[0] = {
       ...archive.tasks.taskArtifacts[0],
       contentDigest: "sha256:" + "0".repeat(64),
@@ -556,7 +515,7 @@ describe("archive v2 integration — case matrix", () => {
   // --- corrupt reference ------------------------------------------------------
   it("corrupt reference: a crosswalk pointing at an unknown task version is rejected before any write", async () => {
     const target = await freshDb("case-ref");
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.tasks.taskMigrationCrosswalks[0] = {
       ...archive.tasks.taskMigrationCrosswalks[0],
       taskVersion: 99,
@@ -577,7 +536,7 @@ describe("archive v2 integration — case matrix", () => {
   // --- missing artifact -------------------------------------------------------
   it("missing artifact: an artifact summary with no bytes payload is rejected before any write", async () => {
     const target = await freshDb("case-missing");
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.tasks.taskArtifactBytes = [];
     recomputeDigest(archive);
     const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
@@ -593,10 +552,8 @@ describe("archive v2 integration — case matrix", () => {
   // --- prohibited content -----------------------------------------------------
   it("prohibited content: an archive carrying a prohibited credential key is rejected before any write", async () => {
     const target = await freshDb("case-prohibited");
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
-    // Inject a prohibited key into a structured field (not a real credential).
-    const smuggled = archive.fusion.studies[0] as unknown as Record<string, unknown>;
-    smuggled.apiKey = "not-a-real-credential";
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
+    (archive.suites[0] as unknown as Record<string, unknown>).apiKey = "not-a-real-credential";
     recomputeDigest(archive);
     const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
     expect(check.valid).toBe(false);
@@ -612,7 +569,7 @@ describe("archive v2 integration — case matrix", () => {
     const target = await freshDb("case-reuse");
     // Pre-seed one canonically identical suite.
     await target.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
-    const archive = recomputeDigest(fx.buildValidArchiveV2Fixture());
+    const archive = recomputeDigest(fx.buildValidNonFusionArchiveV2Fixture());
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     const suiteCreate = preview.create.filter((c) => c.collection === "suites");
     const suiteReuse = preview.reuse.filter((c) => c.collection === "suites");
@@ -633,7 +590,7 @@ describe("archive v2 integration — case matrix", () => {
     const target = await freshDb("case-collision");
     await target.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
     // Mutate the incoming suite so the same ID is NOT canonically identical.
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.suites[0] = { ...archive.suites[0], name: "different name" };
     recomputeDigest(archive);
 
@@ -655,7 +612,7 @@ describe("archive v2 integration — case matrix", () => {
   // --- cancellation -----------------------------------------------------------
   it("cancellation: an abort signal before commit leaves source and target unchanged and throws the cancellation error", async () => {
     const target = await freshDb("case-cancel");
-    const archive = recomputeDigest(fx.buildValidArchiveV2Fixture());
+    const archive = recomputeDigest(fx.buildValidNonFusionArchiveV2Fixture());
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     const controller = new AbortController();
     controller.abort();
@@ -668,7 +625,7 @@ describe("archive v2 integration — case matrix", () => {
   // --- injected failure/quota --------------------------------------------------
   it("injected failure: a mid-commit put rejection rolls the whole transaction back — nothing is written", async () => {
     const target = await freshDb("case-failure");
-    const archive = recomputeDigest(fx.buildValidArchiveV2Fixture());
+    const archive = recomputeDigest(fx.buildValidNonFusionArchiveV2Fixture());
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     // Inject a failure during the experiments phase, which is early in the
     // commit transaction; the entire 23-store transaction must roll back.
@@ -683,7 +640,7 @@ describe("archive v2 integration — case matrix", () => {
 
   it("injected quota: a quota-classified failure rolls back and is reported as a StorageError", async () => {
     const target = await freshDb("case-quota");
-    const archive = recomputeDigest(fx.buildValidArchiveV2Fixture());
+    const archive = recomputeDigest(fx.buildValidNonFusionArchiveV2Fixture());
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     const quota = new Error("QuotaExceededError");
     (quota as Error & { name: string }).name = "QuotaExceededError";
@@ -697,7 +654,7 @@ describe("archive v2 integration — case matrix", () => {
   // --- storage-blocked --------------------------------------------------------
   it("storage-blocked: a blocked DB aborts the commit before any write with a blocked StorageError", async () => {
     const target = await freshDb("case-blocked");
-    const archive = recomputeDigest(fx.buildValidArchiveV2Fixture());
+    const archive = recomputeDigest(fx.buildValidNonFusionArchiveV2Fixture());
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     target.setState("blocked");
     await expect(commitPreviewWorkbenchArchiveV2(target, preview)).rejects.toMatchObject({
@@ -753,7 +710,7 @@ describe("archive v2 integration — Task Set identity", () => {
   it("non-identical same-key Task Set record aborts the commit BEFORE any write", async () => {
     const target = await freshDb("ts-collision");
     await target.taskSets.put(fx.taskSetRecordRow(fx.makeTaskSetRecord("suite-1")));
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.taskSets!.records[0] = {
       ...archive.taskSets!.records[0],
       name: "different task set name",
@@ -822,7 +779,7 @@ describe("archive v2 integration — Evidence payload", () => {
     const target = await freshDb("ev-mc-collision");
     const mc = fx.makeModelConfiguration();
     await target.modelConfigurations.put(fx.modelConfigurationRow(mc));
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.evidence!.modelConfigurations[0] = {
       ...archive.evidence!.modelConfigurations[0],
       requestedModel: "anthropic/claude-3-opus", // different content at same ID
@@ -849,7 +806,7 @@ describe("archive v2 integration — Evidence payload", () => {
     const mc = fx.makeModelConfiguration();
     const obs = fx.makeEvidenceObservation(mc.id);
     await target.observations.put(fx.evidenceObservationRow(obs));
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.evidence!.observations[0] = {
       ...archive.evidence!.observations[0],
       outcome: {
@@ -876,7 +833,7 @@ describe("archive v2 integration — Evidence payload", () => {
     const obs = fx.makeEvidenceObservation(mc.id);
     const dec = fx.makeEligibilityDecision(obs.id, 1);
     await target.evidenceDecisions.put(fx.evidenceDecisionRow(dec));
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.evidence!.evidenceDecisions[0] = {
       ...archive.evidence!.evidenceDecisions[0],
       decidedAt: 1601, // different content at the same observationId#ruleVersion key
@@ -902,7 +859,7 @@ describe("archive v2 integration — Evidence payload", () => {
     const target = await freshDb("ev-job-collision");
     const job = fx.makeEvidenceIndexJob("run-1");
     await target.evidenceIndexJobs.put(fx.evidenceIndexJobRow(job));
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.evidence!.evidenceIndexJobs[0] = {
       ...archive.evidence!.evidenceIndexJobs[0],
       updatedAt: 1701, // different content at the same sourceResultId key
@@ -927,7 +884,7 @@ describe("archive v2 integration — Evidence payload", () => {
     const target = await freshDb("ev-vo-collision");
     const vo = fx.makeExecutedVerifierOutcome("run-1", "task-1", "openrouter:m1", 1400);
     await target.verifierOutcomes.put(fx.verifierOutcomeRow(vo));
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     archive.evidence!.verifierOutcomes[0] = {
       ...archive.evidence!.verifierOutcomes[0],
       passed: false, // different content at the same composite key
@@ -952,34 +909,21 @@ describe("archive v2 integration — Evidence payload", () => {
     expect(await target.runSummaries.count()).toBe(0);
   });
 
-  it("Fusion fusionObservations round-trip byte-stable without conversion or ID collision with canonical observations", async () => {
-    const source = await freshDb("ev-fusion-iso-src");
-    await seedCompleteCorpus(source);
-    const exported = await exportWorkbenchArchiveV2(source, { now: DETERMINISTIC_NOW });
-
-    // Verify disjoint ID namespaces and separate payload collections.
-    expect(exported.fusion.observations[0].id).toBe("obs-1");
-    expect(exported.evidence?.observations[0].id).toMatch(/^obs:sha256:[0-9a-f]{64}$/);
-    expect(exported.fusion.observations[0].id).not.toEqual(exported.evidence?.observations[0].id);
-
-    const target = await freshDb("ev-fusion-iso-tgt");
-    const preview = await previewWorkbenchArchive(target, exported, { sourceLabel: "memory" });
-    await commitPreviewWorkbenchArchiveV2(target, preview);
-
-    // Verify stored tables are completely isolated.
-    const fusionObs = await (target as any).fusionObservations.toArray();
-    const canonicalObs = await target.observations.toArray();
-    expect(fusionObs.length).toBe(1);
-    expect(canonicalObs.length).toBe(1);
-    expect(fusionObs[0].id).toBe("obs-1");
-    expect(canonicalObs[0].id).toMatch(/^obs:sha256:[0-9a-f]{64}$/);
+  it("rejects legacy Fusion v2 archive before writes with unsupported_fusion_archive_shape receipt (REV-3)", async () => {
+    const target = await freshDb("fusion-reject-target");
+    const legacyArchive = fx.buildLegacyFusionV2Fixture();
+    const preview = await previewWorkbenchArchive(target, legacyArchive, {
+      sourceLabel: "legacy.json",
+    });
+    expect(preview.format).toBe("unsupported_fusion_archive_shape");
+    expect(preview.unsupportedReceipt).toBeDefined();
+    expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionRecipes");
+    expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionStudies");
+    expect(await snapshotCounts(target)).toEqual(emptyCounts());
   });
 });
 
 // =============================================================================
-// 7. Comparison payload (Child 05 Task 11)
-// =============================================================================
-
 describe("archive v2 integration — Comparison payload", () => {
   it("round-trips Comparison Result indexes with derived input-snapshot metadata and migration limitations", async () => {
     const source = await freshDb("cmp-rt-src");
@@ -1046,7 +990,7 @@ describe("archive v2 integration — Comparison payload", () => {
       ...comparisonIndexFor("run-1", COMPARISON_SNAP_REF),
       title: "pre-seeded different title",
     });
-    const archive = fx.cloneArchiveV2(fx.buildValidArchiveV2Fixture());
+    const archive = fx.cloneArchiveV2(fx.buildValidNonFusionArchiveV2Fixture());
     const extensible = archive as unknown as { comparisons?: unknown };
     extensible.comparisons = {
       indexes: [comparisonIndexFor("run-1", COMPARISON_SNAP_REF)],

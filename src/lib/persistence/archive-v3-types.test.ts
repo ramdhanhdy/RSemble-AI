@@ -16,15 +16,8 @@ import {
   detectLegacyFusionArchive,
   isWorkbenchArchiveV3,
   validateArchiveV3,
-  type ArchiveV3EntityCounts,
-  type ArchiveV3LabPayload,
-  type WorkbenchArchiveV3,
 } from "./archive-v3-types";
-import {
-  buildValidArchiveV3Fixture,
-  cloneArchiveV3,
-  makeValidLabPayload,
-} from "./archive-v3-fixtures";
+import { buildValidArchiveV3Fixture, cloneArchiveV3 } from "./archive-v3-fixtures";
 
 describe("archive v3 — constants and structure", () => {
   it("defines format version 3 and storage version 1", () => {
@@ -69,7 +62,7 @@ describe("validateArchiveV3 — happy path fixture validation", () => {
 describe("validateArchiveV3 — manifest & count integrity", () => {
   it("rejects when formatVersion is not 3", () => {
     const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
-    const manifest = fixture.manifest as Record<string, unknown>;
+    const manifest = fixture.manifest as unknown as Record<string, unknown>;
     manifest.formatVersion = 2;
     fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
     const result = validateArchiveV3(fixture);
@@ -82,12 +75,15 @@ describe("validateArchiveV3 — manifest & count integrity", () => {
     fixture.manifest.counts.labRecipeRecords += 1;
     const result = validateArchiveV3(fixture);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.field.includes("manifest.counts.labRecipeRecords"))).toBe(true);
+    expect(result.errors.some((e) => e.field.includes("manifest.counts.labRecipeRecords"))).toBe(
+      true,
+    );
   });
 
   it("rejects when payload digest is tampered", () => {
     const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
-    fixture.manifest.payloadDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    fixture.manifest.payloadDigest =
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000";
     const result = validateArchiveV3(fixture);
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.field.includes("payloadDigest"))).toBe(true);
@@ -97,11 +93,18 @@ describe("validateArchiveV3 — manifest & count integrity", () => {
 describe("validateArchiveV3 — REV-2 deleted stores stay deleted", () => {
   it("rejects if any legacy fusion key is attached at top level", () => {
     const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
-    const raw: Record<string, unknown> = fixture;
+    const raw = fixture as unknown as Record<string, unknown>;
     raw.fusion = { recipes: [] };
     const result = validateArchiveV3(fixture);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.message.includes("legacy") || e.message.includes("fusion") || e.field.includes("fusion"))).toBe(true);
+    expect(
+      result.errors.some(
+        (e) =>
+          e.message.includes("legacy") ||
+          e.message.includes("fusion") ||
+          e.field.includes("fusion"),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -212,7 +215,7 @@ describe("detectLegacyFusionArchive — REV-3 rejection with receipt", () => {
 describe("validateArchiveV3 — prohibited content scan", () => {
   it("rejects credentials embedded in Lab Recipe fields", () => {
     const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
-    const record: Record<string, unknown> = fixture.lab.recipeRecords[0];
+    const record = fixture.lab.recipeRecords[0] as unknown as Record<string, unknown>;
     record.apiKey = "sk-prohibited-key-123456";
     const result = validateArchiveV3(fixture);
     expect(result.valid).toBe(false);
@@ -221,7 +224,7 @@ describe("validateArchiveV3 — prohibited content scan", () => {
 
   it("rejects credentials embedded in Policy Study definition", () => {
     const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
-    const def: Record<string, unknown> = fixture.lab.studies[0].definition;
+    const def = fixture.lab.studies[0].definition as unknown as Record<string, unknown>;
     def.secret = "sk-prohibited-key-123456";
     const result = validateArchiveV3(fixture);
     expect(result.valid).toBe(false);
@@ -261,7 +264,8 @@ describe("validateArchiveV3 — reference graph validation", () => {
 
   it("rejects when recipe version digest does not match recomputed digest", () => {
     const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
-    fixture.lab.recipeVersions[0].digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    fixture.lab.recipeVersions[0].digest =
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000";
     fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
     const result = validateArchiveV3(fixture);
     expect(result.valid).toBe(false);

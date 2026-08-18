@@ -1333,6 +1333,46 @@ export function buildValidArchiveV2ComparisonFixture(): WorkbenchArchiveV2 {
   return archive;
 }
 
+/** Build a valid non-Fusion v2 archive (empty fusion collections, no fusion-owner crosswalk)
+ *  that remains supported under the post-v13 cutover. */
+export function buildValidNonFusionArchiveV2Fixture(): WorkbenchArchiveV2 {
+  const archive = buildValidArchiveV2Fixture();
+  archive.fusion = {
+    recipes: [],
+    poolManifests: [],
+    studies: [],
+    trials: [],
+    attempts: [],
+    observations: [],
+    playbooks: [],
+  };
+  if (archive.taskSets) {
+    archive.taskSets.ownershipCrosswalks = archive.taskSets.ownershipCrosswalks.filter(
+      (cw) => cw.kind !== "fusion-owner",
+    );
+  }
+  archive.manifest.counts = countAll(archive);
+  archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+  return archive;
+}
+
+/** Build a legacy Fusion v2 fixture specifically for testing REV-3 rejection. */
+export function buildLegacyFusionV2Fixture(): WorkbenchArchiveV2 {
+  const archive = buildValidArchiveV2Fixture();
+  archive.fusion = {
+    recipes: [makeRecipe("recipe-1", 1)],
+    poolManifests: [makePoolManifest("pool-1", 1)],
+    studies: [makeStudy("study-1")],
+    trials: [makeTrial("trial-1", "study-1")],
+    attempts: [makeAttempt("attempt-1", "study-1")],
+    observations: [makeObservation("obs-1", "trial-1")],
+    playbooks: [makePlaybook("playbook-1", "study-1")],
+  };
+  archive.manifest.counts = countAll(archive);
+  archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+  return archive;
+}
+
 /** Deep-clone an archive so test mutations do not bleed across cases. The
  *  envelope is plain data (no functions), so structuredClone is exact. */
 export function cloneArchiveV2(archive: WorkbenchArchiveV2): WorkbenchArchiveV2 {

@@ -1,16 +1,15 @@
 // =============================================================================
 // RSemble AI — Data archive actions (plan 8.1, spec §13/§14/§18/§20;
-// Child 02 Task 10C)
+// Child 02 Task 10C, Child 06 Task 11)
 //
 // Export/import controls for the whole workbench. Export downloads the
-// allowlisted archive JSON. Import is preview-first (Task 10C): selecting a
-// file validates bytes BEFORE decoding, validates the complete payload, and
-// renders a deterministic preview (format, per-collection create/reuse/
-// collision counts, conflicting IDs). Nothing is written until the user
-// explicitly confirms. Cancel closes the preview without writes and restores
-// focus to the Import trigger. Commit is atomic — any non-identical ID
-// collision aborts the whole import and errors are surfaced without echoing
-// archive content.
+// allowlisted archive JSON (canonical v3 format). Import is preview-first:
+// selecting a file validates bytes BEFORE decoding, validates the complete payload,
+// and renders a deterministic preview (format, per-collection create/reuse/
+// collision counts, conflicting IDs).
+//
+// Unsupported legacy Fusion archives (REV-3) reject deterministically with a
+// receipt before any writes, showing the collections and a single Close action.
 // =============================================================================
 
 import { useContext, useRef, useState, type ReactElement } from "react";
@@ -22,12 +21,15 @@ import {
   ArchiveExportCancelledError,
   ArchiveImportCancelledError,
   commitPreviewWorkbenchArchiveV2,
+  commitPreviewWorkbenchArchiveV3,
   exportWorkbenchArchive,
   exportWorkbenchArchiveV2,
+  exportWorkbenchArchiveV3,
   importWorkbenchArchive,
   previewWorkbenchArchive,
   validateArchiveBytes,
   type ArchiveExportProgress,
+  type ArchiveExportV3Progress,
   type ArchiveImportPreview,
 } from "../lib/persistence/archive";
 
@@ -46,12 +48,13 @@ export function serializeWorkbenchArchive(archive: unknown): string {
   return `${JSON.stringify(archive, null, 2)}\n`;
 }
 
-/** Human-readable v2 archive serialization. Deterministic for a deterministic
- *  envelope: `JSON.stringify` preserves the adapter's declaration/sort order,
- *  and the payload digest is recomputed over canonical JSON (recursive key
- *  sort) so key order here cannot corrupt integrity. Presentation-only: v2
- *  validation re-parses the exact same JSON data model. */
+/** Human-readable v2 archive serialization. */
 export function serializeWorkbenchArchiveV2(archive: unknown): string {
+  return `${JSON.stringify(archive, null, 2)}\n`;
+}
+
+/** Human-readable v3 archive serialization. */
+export function serializeWorkbenchArchiveV3(archive: unknown): string {
   return `${JSON.stringify(archive, null, 2)}\n`;
 }
 
@@ -64,6 +67,10 @@ export function DataArchiveActions(): ReactElement | null {
   const [exportV2Progress, setExportV2Progress] = useState<ArchiveExportProgress | null>(null);
   const [exportV2Total, setExportV2Total] = useState<number | null>(null);
   const exportV2AbortRef = useRef<AbortController | null>(null);
+  const [exportV3Busy, setExportV3Busy] = useState(false);
+  const [exportV3Progress, setExportV3Progress] = useState<ArchiveExportV3Progress | null>(null);
+  const [exportV3Total, setExportV3Total] = useState<number | null>(null);
+  const exportV3AbortRef = useRef<AbortController | null>(null);
   const [preview, setPreview] = useState<ArchiveImportPreview | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -75,6 +82,7 @@ export function DataArchiveActions(): ReactElement | null {
     storageState === "unavailable";
   const controlsDisabled = busy || db === null || storageBlocked;
   const exportV2Disabled = controlsDisabled || exportV2Busy;
+  const exportV3Disabled = controlsDisabled || exportV3Busy;
 
   const resetFeedback = () => {
     setResult(null);
@@ -100,6 +108,43 @@ export function DataArchiveActions(): ReactElement | null {
     URL.revokeObjectURL(url);
   }
 
+  async function onExportV3() {
+    if (db === null || exportV3AbortRef.current !== null) return;
+    const controller = new AbortController();
+    exportV3AbortRef.current = controller;
+    setExportV3Busy(true);
+    setExportV3Progress(null);
+    resetFeedback();
+    try {
+      const archive = await exportWorkbenchArchiveV3(db, {
+        signal: controller.signal,
+        onProgress: (p) => setExportV3Progress(p),
+      });
+      deliverArchive(
+        `rsemble-archive-v3-${archiveTimestamp()}.json`,
+        serializeWorkbenchArchiveV3(archive),
+      );
+      const total = Object.values(archive.manifest.counts).reduce((sum, n) => sum + n, 0);
+      setExportV3Total(total);
+    } catch (err) {
+      if (err instanceof ArchiveExportCancelledError) {
+        setFailure(archiveFailureGuidance(err));
+      } else if (err instanceof StorageError && err.kind === "validation") {
+        setErrors([err.message]);
+      } else {
+        setFailure(archiveFailureGuidance(err));
+      }
+    } finally {
+      exportV3AbortRef.current = null;
+      setExportV3Busy(false);
+      setExportV3Progress(null);
+    }
+  }
+
+  function onExportV3Cancel() {
+    exportV3AbortRef.current?.abort();
+  }
+
   async function onExportV2() {
     if (db === null || exportV2AbortRef.current !== null) return;
     const controller = new AbortController();
@@ -112,8 +157,6 @@ export function DataArchiveActions(): ReactElement | null {
         signal: controller.signal,
         onProgress: (p) => setExportV2Progress(p),
       });
-      // The export resolved — the signal was never aborted (a pre-delivery
-      // abort rejects with ArchiveExportCancelledError inside the adapter).
       deliverArchive(
         `rsemble-archive-v2-${archiveTimestamp()}.json`,
         serializeWorkbenchArchiveV2(archive),
@@ -193,9 +236,7 @@ export function DataArchiveActions(): ReactElement | null {
     }
   }
 
-  /** Confirm the current preview: v1 routes through the preserved adapter,
-   *  v2 through the collision-safe atomic commit. Focus is restored to the
-   *  Import trigger in every outcome. */
+  /** Confirm the current preview. */
   async function onConfirmImport() {
     if (db === null || preview === null) return;
     const confirmed = preview;
@@ -207,8 +248,13 @@ export function DataArchiveActions(): ReactElement | null {
         setResult(
           `Imported ${report.created.length} records — ${report.skipped.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
         );
-      } else {
+      } else if (confirmed.format === "v2") {
         const commit = await commitPreviewWorkbenchArchiveV2(db, confirmed);
+        setResult(
+          `Imported ${commit.created.length} records — ${commit.reused.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
+        );
+      } else if (confirmed.format === "v3") {
+        const commit = await commitPreviewWorkbenchArchiveV3(db, confirmed);
         setResult(
           `Imported ${commit.created.length} records — ${commit.reused.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
         );
@@ -244,6 +290,29 @@ export function DataArchiveActions(): ReactElement | null {
   return (
     <section aria-label="Data archive" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-action="export-v3"
+          className={buttonClass}
+          disabled={exportV3Disabled}
+          onClick={() => {
+            void onExportV3();
+          }}
+        >
+          <Download size={16} aria-hidden="true" />
+          Export archive
+        </button>
+        {exportV3Busy && (
+          <button
+            type="button"
+            data-action="cancel-export-v3"
+            className={buttonClass}
+            onClick={onExportV3Cancel}
+          >
+            <XCircle size={16} aria-hidden="true" />
+            Cancel export
+          </button>
+        )}
         <button
           type="button"
           data-action="export"
@@ -287,7 +356,7 @@ export function DataArchiveActions(): ReactElement | null {
             onClick={onExportV2Cancel}
           >
             <XCircle size={16} aria-hidden="true" />
-            Cancel export
+            Cancel export v2
           </button>
         )}
         <input
@@ -330,7 +399,36 @@ export function DataArchiveActions(): ReactElement | null {
         </p>
       )}
 
-      {preview !== null && (
+      {preview !== null && preview.format === "unsupported_fusion_archive_shape" && (
+        <div
+          role="status"
+          className="flex flex-col gap-2 rounded border border-edge bg-card p-3 text-xs text-text-secondary"
+        >
+          <p className="font-medium text-text">Unsupported legacy archive format</p>
+          <p className="text-text">
+            This archive contains retired Fusion Study collections (
+            {preview.unsupportedReceipt?.rejectedCollections.map((c, i) => (
+              <span key={c}>
+                {i > 0 ? ", " : ""}
+                <code className="font-mono text-text">{c}</code>
+              </span>
+            ))}
+            ) and cannot be imported. Export a new archive from an upgraded RSemble instead.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-action="close-unsupported"
+              className={buttonClass}
+              onClick={onCancelImport}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {preview !== null && preview.format !== "unsupported_fusion_archive_shape" && (
         <div
           role="status"
           className="flex flex-col gap-2 rounded border border-edge bg-card p-3 text-xs text-text-secondary"
@@ -413,6 +511,21 @@ export function DataArchiveActions(): ReactElement | null {
       {!exportV2Busy && exportV2Total !== null && (
         <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
           <p>Exported complete v2 archive — {exportV2Total} entities.</p>
+        </div>
+      )}
+
+      {exportV3Busy && exportV3Progress !== null && (
+        <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
+          <p>
+            Exporting archive — stage {exportV3Progress.stage} · {exportV3Progress.done}/
+            {exportV3Progress.total}
+          </p>
+        </div>
+      )}
+
+      {!exportV3Busy && exportV3Total !== null && (
+        <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
+          <p>Exported complete archive — {exportV3Total} entities.</p>
         </div>
       )}
     </section>
