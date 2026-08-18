@@ -15,6 +15,7 @@ import {
   computeReceiptDigest,
   createDeterministicReceipt,
   isFusionToResearchLabReceipt,
+  isRecordDecision,
   type DiscardReasonCode,
   type FusionToResearchLabReceipt,
   type RecordDecision,
@@ -71,6 +72,46 @@ describe("Fusion → Research Lab migration receipt", () => {
     for (const code of requiredCodes) {
       expect(DISCARD_REASON_CODES).toContain(code);
     }
+  });
+
+  it("validates record decisions: discard requires a valid reasonCode", () => {
+    // Discard without reasonCode must be rejected
+    expect(
+      isRecordDecision({
+        store: "fusionStudies",
+        id: "study-1",
+        status: "discard",
+      }),
+    ).toBe(false);
+
+    // Discard with invalid reasonCode must be rejected
+    expect(
+      isRecordDecision({
+        store: "fusionStudies",
+        id: "study-1",
+        status: "discard",
+        reasonCode: "not_a_valid_reason_code",
+      }),
+    ).toBe(false);
+
+    // Discard with valid reasonCode must be accepted
+    expect(
+      isRecordDecision({
+        store: "fusionStudies",
+        id: "study-1",
+        status: "discard",
+        reasonCode: "missing_recipe_refs",
+      }),
+    ).toBe(true);
+
+    // Lossless convert without reasonCode is valid
+    expect(
+      isRecordDecision({
+        store: "fusionStudies",
+        id: "study-1",
+        status: "lossless_convert",
+      }),
+    ).toBe(true);
   });
 
   it("creates a valid deterministic receipt for an all-discard preview", () => {

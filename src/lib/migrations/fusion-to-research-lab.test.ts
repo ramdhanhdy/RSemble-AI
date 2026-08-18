@@ -722,4 +722,597 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
       "critic_ref_not_mc_sha256",
     ]).toContain(obsDecision?.reasonCode);
   });
+
+  it("discards a study with missing_recipe_refs when no fusion recipes can be resolved (does not invent recipe-default with zero digest)", () => {
+    const crosswalkRow: TaskSetOwnershipCrosswalkRow = {
+      key: "ts-xwalk:fusion:study-no-recipes",
+      kind: "fusion-owner",
+      taskSetId: "task-set-1",
+      version: 1,
+      digest: VALID_SHA256,
+      status: "resolved",
+      suiteRef: {
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: VALID_SHA256,
+      },
+      note: "Resolved crosswalk",
+      updatedAt: 1000,
+    };
+    const source: FusionCorpusSource = {
+      recipes: [],
+      pools: [
+        {
+          id: "pool-1",
+          version: 1,
+          core: [
+            {
+              id: "slot-1",
+              providerId: "openrouter",
+              provider: "OpenRouter",
+              model: "model-1",
+              slug: "slug-1",
+              enabled: true,
+            },
+          ],
+          challengers: [],
+          diversityChecklist: ["diversity"],
+          rationale: "Core pool",
+          supersedesVersion: null,
+          createdAt: 1000,
+        },
+      ],
+      studies: [
+        {
+          id: "study-no-recipes",
+          revision: 1,
+          kind: "exploration",
+          suiteRef: {
+            suiteId: "suite-1",
+            suiteVersion: 1,
+            protocolFingerprint: VALID_SHA256,
+          },
+          poolRef: { id: "pool-1", version: 1 },
+          judge1: { providerId: "openrouter", model: "judge-1" },
+          judge2: { providerId: "openrouter", model: "judge-2" },
+          recipeRefs: [],
+          status: "in_progress",
+          claimLevel: "exploratory",
+          confirmationOf: null,
+          playbookRef: null,
+          createdAt: 1000,
+          updatedAt: 2000,
+          stageResults: { stageA: null, stageB: null, stageC: null },
+        },
+      ],
+      trials: [],
+      attempts: [],
+      observations: [],
+      playbooks: [],
+      crosswalk: [crosswalkRow],
+    };
+
+    const result = previewFusionToResearchLab(source, {
+      now: 2000,
+      poolMetadata: {
+        "pool-1": {
+          name: "Pool 1",
+          purpose: "Pool purpose",
+          createdAt: 1000,
+        },
+      },
+      exactModelConfigurations: {
+        "judge-1": VALID_MC_ID_1,
+        "judge-2": VALID_MC_ID_2,
+      },
+      studyExtensions: {
+        "study-no-recipes": {
+          title: "Study Without Recipes",
+          rubric: { rubricId: "rubric-1", version: 1 },
+          policies: ["best_fixed"],
+          stageProtocolVersion: 1,
+        },
+      },
+    });
+
+    const studyDecision = result.receipt.decisions.find((d) => d.id === "study-no-recipes");
+    expect(studyDecision?.status).toBe("discard");
+    expect(studyDecision?.reasonCode).toBe("missing_recipe_refs");
+    expect(result.staged.studies).toHaveLength(0);
+  });
+
+  it("discards a playbook with missing_recipe_sensitivity when recipeSensitivity is not provided (does not invent synthetic recipeSensitivity)", () => {
+    const crosswalkRow: TaskSetOwnershipCrosswalkRow = {
+      key: "ts-xwalk:fusion:study-with-pb",
+      kind: "fusion-owner",
+      taskSetId: "task-set-1",
+      version: 1,
+      digest: VALID_SHA256,
+      status: "resolved",
+      suiteRef: {
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: VALID_SHA256,
+      },
+      note: "Resolved crosswalk",
+      updatedAt: 1000,
+    };
+    const source: FusionCorpusSource = {
+      recipes: [
+        {
+          id: "recipe-1",
+          version: 1,
+          recipeFamily: "AnalysisFed",
+          promptVersion: "v1",
+          judgeAnalysisMode: "qualitative",
+          rubricAccess: false,
+          verification: false,
+          synthesizer: { providerId: "openrouter", model: "openai/gpt-4o" },
+        },
+      ],
+      pools: [
+        {
+          id: "pool-1",
+          version: 1,
+          core: [
+            {
+              id: "slot-1",
+              providerId: "openrouter",
+              provider: "OpenRouter",
+              model: "model-1",
+              slug: "slug-1",
+              enabled: true,
+            },
+          ],
+          challengers: [],
+          diversityChecklist: ["diversity"],
+          rationale: "Core pool",
+          supersedesVersion: null,
+          createdAt: 1000,
+        },
+      ],
+      studies: [
+        {
+          id: "study-with-pb",
+          revision: 1,
+          kind: "exploration",
+          suiteRef: {
+            suiteId: "suite-1",
+            suiteVersion: 1,
+            protocolFingerprint: VALID_SHA256,
+          },
+          poolRef: { id: "pool-1", version: 1 },
+          judge1: { providerId: "openrouter", model: "judge-1" },
+          judge2: { providerId: "openrouter", model: "judge-2" },
+          recipeRefs: [{ id: "recipe-1", version: 1 }],
+          status: "completed",
+          claimLevel: "exploratory",
+          confirmationOf: null,
+          playbookRef: "playbook-no-sens",
+          createdAt: 1000,
+          updatedAt: 2000,
+          stageResults: { stageA: null, stageB: null, stageC: null },
+        },
+      ],
+      trials: [],
+      attempts: [],
+      observations: [],
+      playbooks: [
+        {
+          id: "playbook-no-sens",
+          studyId: "study-with-pb",
+          suiteRef: {
+            suiteId: "suite-1",
+            suiteVersion: 1,
+            protocolFingerprint: VALID_SHA256,
+          },
+          rows: [
+            {
+              policy: "fuse",
+              configuration: "Fuse Config 1",
+              score: 0.85,
+              lift: 0.12,
+              costMultiplier: 1.5,
+              confidence: "high",
+            },
+          ],
+          recommendation: {
+            kind: "adopt",
+            policy: "fuse",
+            configuration: "Fuse Config 1",
+            rationale: "Strong lift",
+          },
+          poolAdequacy: {
+            probed: true,
+            outcome: "confirmed",
+            challengerKeys: [],
+            note: "Adequate pool",
+          },
+          claimLevel: "exploratory",
+          conclusion: "Synthesis recommended",
+          createdAt: 1900,
+        },
+      ],
+      crosswalk: [crosswalkRow],
+    };
+
+    const result = previewFusionToResearchLab(source, {
+      now: 2000,
+      recipeMetadata: {
+        "recipe-1": {
+          name: "Recipe 1",
+          description: "Recipe desc",
+          createdAt: 1000,
+        },
+      },
+      poolMetadata: {
+        "pool-1": {
+          name: "Pool 1",
+          purpose: "Pool purpose",
+          createdAt: 1000,
+        },
+      },
+      exactModelConfigurations: {
+        "judge-1": VALID_MC_ID_1,
+        "judge-2": VALID_MC_ID_2,
+      },
+      studyExtensions: {
+        "study-with-pb": {
+          title: "Study With Playbook",
+          rubric: { rubricId: "rubric-1", version: 1 },
+          policies: ["fuse"],
+          stageProtocolVersion: 1,
+        },
+      },
+    });
+
+    const pbDecision = result.receipt.decisions.find((d) => d.id === "playbook-no-sens");
+    expect(pbDecision?.status).toBe("discard");
+    expect(pbDecision?.reasonCode).toBe("missing_recipe_sensitivity");
+    expect(result.staged.policyPlaybooks).toHaveLength(0);
+  });
+
+  it("discards a completed study with missing_supporting_ids when playbookRef is missing or blank (does not invent 'playbook-report')", () => {
+    const crosswalkRow: TaskSetOwnershipCrosswalkRow = {
+      key: "ts-xwalk:fusion:study-completed-no-pb",
+      kind: "fusion-owner",
+      taskSetId: "task-set-1",
+      version: 1,
+      digest: VALID_SHA256,
+      status: "resolved",
+      suiteRef: {
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: VALID_SHA256,
+      },
+      note: "Resolved crosswalk",
+      updatedAt: 1000,
+    };
+    const source: FusionCorpusSource = {
+      recipes: [
+        {
+          id: "recipe-1",
+          version: 1,
+          recipeFamily: "AnalysisFed",
+          promptVersion: "v1",
+          judgeAnalysisMode: "qualitative",
+          rubricAccess: false,
+          verification: false,
+          synthesizer: { providerId: "openrouter", model: "openai/gpt-4o" },
+        },
+      ],
+      pools: [
+        {
+          id: "pool-1",
+          version: 1,
+          core: [
+            {
+              id: "slot-1",
+              providerId: "openrouter",
+              provider: "OpenRouter",
+              model: "model-1",
+              slug: "slug-1",
+              enabled: true,
+            },
+          ],
+          challengers: [],
+          diversityChecklist: ["diversity"],
+          rationale: "Core pool",
+          supersedesVersion: null,
+          createdAt: 1000,
+        },
+      ],
+      studies: [
+        {
+          id: "study-completed-no-pb",
+          revision: 1,
+          kind: "exploration",
+          suiteRef: {
+            suiteId: "suite-1",
+            suiteVersion: 1,
+            protocolFingerprint: VALID_SHA256,
+          },
+          poolRef: { id: "pool-1", version: 1 },
+          judge1: { providerId: "openrouter", model: "judge-1" },
+          judge2: { providerId: "openrouter", model: "judge-2" },
+          recipeRefs: [{ id: "recipe-1", version: 1 }],
+          status: "completed",
+          claimLevel: "exploratory",
+          confirmationOf: null,
+          playbookRef: null,
+          createdAt: 1000,
+          updatedAt: 2000,
+          stageResults: { stageA: null, stageB: null, stageC: null },
+        },
+      ],
+      trials: [],
+      attempts: [],
+      observations: [],
+      playbooks: [],
+      crosswalk: [crosswalkRow],
+    };
+
+    const result = previewFusionToResearchLab(source, {
+      now: 2000,
+      recipeMetadata: {
+        "recipe-1": {
+          name: "Recipe 1",
+          description: "Recipe desc",
+          createdAt: 1000,
+        },
+      },
+      poolMetadata: {
+        "pool-1": {
+          name: "Pool 1",
+          purpose: "Pool purpose",
+          createdAt: 1000,
+        },
+      },
+      exactModelConfigurations: {
+        "judge-1": VALID_MC_ID_1,
+        "judge-2": VALID_MC_ID_2,
+      },
+      studyExtensions: {
+        "study-completed-no-pb": {
+          title: "Completed Study Without Playbook Ref",
+          rubric: { rubricId: "rubric-1", version: 1 },
+          policies: ["fuse"],
+          stageProtocolVersion: 1,
+        },
+      },
+    });
+
+    const studyDecision = result.receipt.decisions.find((d) => d.id === "study-completed-no-pb");
+    expect(studyDecision?.status).toBe("discard");
+    expect(studyDecision?.reasonCode).toBe("missing_supporting_ids");
+    expect(result.staged.studies).toHaveLength(0);
+  });
+
+  it("maps synthesis artifact to artifactRefs when valid, and discards trial with invalid_artifact_hash when contentHash is invalid", () => {
+    const crosswalkRow: TaskSetOwnershipCrosswalkRow = {
+      key: "ts-xwalk:fusion:study-with-artifact",
+      kind: "fusion-owner",
+      taskSetId: "task-set-1",
+      version: 1,
+      digest: VALID_SHA256,
+      status: "resolved",
+      suiteRef: {
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: VALID_SHA256,
+      },
+      note: "Resolved crosswalk",
+      updatedAt: 1000,
+    };
+    const sourceValid: FusionCorpusSource = {
+      recipes: [
+        {
+          id: "recipe-1",
+          version: 1,
+          recipeFamily: "AnalysisFed",
+          promptVersion: "v1",
+          judgeAnalysisMode: "qualitative",
+          rubricAccess: false,
+          verification: false,
+          synthesizer: { providerId: "openrouter", model: "openai/gpt-4o" },
+        },
+      ],
+      pools: [
+        {
+          id: "pool-1",
+          version: 1,
+          core: [
+            {
+              id: "slot-1",
+              providerId: "openrouter",
+              provider: "OpenRouter",
+              model: "model-1",
+              slug: "slug-1",
+              enabled: true,
+            },
+          ],
+          challengers: [],
+          diversityChecklist: ["diversity"],
+          rationale: "Core pool",
+          supersedesVersion: null,
+          createdAt: 1000,
+        },
+      ],
+      studies: [
+        {
+          id: "study-with-artifact",
+          revision: 1,
+          kind: "exploration",
+          suiteRef: {
+            suiteId: "suite-1",
+            suiteVersion: 1,
+            protocolFingerprint: VALID_SHA256,
+          },
+          poolRef: { id: "pool-1", version: 1 },
+          judge1: { providerId: "openrouter", model: "judge-1" },
+          judge2: { providerId: "openrouter", model: "judge-2" },
+          recipeRefs: [{ id: "recipe-1", version: 1 }],
+          status: "in_progress",
+          claimLevel: "exploratory",
+          confirmationOf: null,
+          playbookRef: null,
+          createdAt: 1000,
+          updatedAt: 2000,
+          stageResults: { stageA: null, stageB: null, stageC: null },
+        },
+      ],
+      trials: [
+        {
+          id: "trial-with-artifact",
+          studyId: "study-with-artifact",
+          suiteRef: {
+            suiteId: "suite-1",
+            suiteVersion: 1,
+            protocolFingerprint: VALID_SHA256,
+          },
+          poolRef: { id: "pool-1", version: 1 },
+          policy: "fuse",
+          stage: "A",
+          candidateConfig: {
+            slots: [
+              {
+                id: "slot-1",
+                providerId: "openrouter",
+                provider: "OpenRouter",
+                model: "model-1",
+                slug: "slug-1",
+                enabled: true,
+              },
+            ],
+          },
+          recipe: { id: "recipe-1", version: 1 },
+          synthesizer: { providerId: "openrouter", model: "synth-1" },
+          judge1: { providerId: "openrouter", model: "judge-1" },
+          judge2: { providerId: "openrouter", model: "judge-2" },
+          sampleIndex: 0,
+          status: "sealed",
+          revision: 1,
+          observationIds: [],
+          children: {
+            candidateRunId: "run-cand-1",
+            devJudgeRunId: "run-judge-1",
+            synthesisArtifact: {
+              runId: "run-synth-1",
+              fusionAttemptId: "attempt-synth-1",
+              contentHash: VALID_SHA256,
+            },
+          },
+          cost: {
+            policy: { tokensIn: 100, tokensOut: 50 },
+            experimental: { tokensIn: 200, tokensOut: 100 },
+          },
+          createdAt: 1100,
+          updatedAt: 1200,
+          sealedAt: 1200,
+        },
+      ],
+      attempts: [],
+      observations: [],
+      playbooks: [],
+      crosswalk: [crosswalkRow],
+    };
+
+    const resultValid = previewFusionToResearchLab(sourceValid, {
+      now: 2000,
+      recipeMetadata: {
+        "recipe-1": {
+          name: "Recipe 1",
+          description: "Recipe desc",
+          createdAt: 1000,
+        },
+      },
+      poolMetadata: {
+        "pool-1": {
+          name: "Pool 1",
+          purpose: "Pool purpose",
+          createdAt: 1000,
+        },
+      },
+      exactModelConfigurations: {
+        "judge-1": VALID_MC_ID_1,
+        "judge-2": VALID_MC_ID_2,
+        "synth-1": VALID_MC_SYNTH,
+        "model-1": VALID_MC_ID_1,
+      },
+      studyExtensions: {
+        "study-with-artifact": {
+          title: "Study With Artifact",
+          rubric: { rubricId: "rubric-1", version: 1 },
+          policies: ["fuse"],
+          stageProtocolVersion: 1,
+        },
+      },
+    });
+
+    expect(resultValid.staged.studyTrials).toHaveLength(1);
+    const convertedTrial = resultValid.staged.studyTrials[0];
+    expect(convertedTrial.artifactRefs).toHaveLength(1);
+    expect(convertedTrial.artifactRefs[0]).toEqual({
+      runId: "run-synth-1",
+      attemptId: "attempt-synth-1",
+      contentHash: VALID_SHA256,
+    });
+
+    // Test invalid artifact hash
+    const sourceInvalid: FusionCorpusSource = {
+      ...sourceValid,
+      trials: [
+        {
+          ...sourceValid.trials[0],
+          id: "trial-invalid-hash",
+          children: {
+            candidateRunId: "run-1",
+            devJudgeRunId: "run-judge-1",
+            synthesisArtifact: {
+              runId: "run-synth-1",
+              fusionAttemptId: "attempt-synth-1",
+              contentHash: "not-a-sha256-hash",
+            },
+          },
+        },
+      ],
+    };
+
+    const resultInvalid = previewFusionToResearchLab(sourceInvalid, {
+      now: 2000,
+      recipeMetadata: {
+        "recipe-1": {
+          name: "Recipe 1",
+          description: "Recipe desc",
+          createdAt: 1000,
+        },
+      },
+      poolMetadata: {
+        "pool-1": {
+          name: "Pool 1",
+          purpose: "Pool purpose",
+          createdAt: 1000,
+        },
+      },
+      exactModelConfigurations: {
+        "judge-1": VALID_MC_ID_1,
+        "judge-2": VALID_MC_ID_2,
+        "synth-1": VALID_MC_SYNTH,
+        "model-1": VALID_MC_ID_1,
+      },
+      studyExtensions: {
+        "study-with-artifact": {
+          title: "Study With Artifact",
+          rubric: { rubricId: "rubric-1", version: 1 },
+          policies: ["fuse"],
+          stageProtocolVersion: 1,
+        },
+      },
+    });
+
+    const trialDecision = resultInvalid.receipt.decisions.find((d) => d.id === "trial-invalid-hash");
+    expect(trialDecision?.status).toBe("discard");
+    expect(trialDecision?.reasonCode).toBe("invalid_artifact_hash");
+    expect(resultInvalid.staged.studyTrials).toHaveLength(0);
+  });
 });
