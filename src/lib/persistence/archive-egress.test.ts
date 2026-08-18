@@ -9,6 +9,8 @@
 //      authority (fusion-study-repository.ts).
 // =============================================================================
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import "fake-indexeddb/auto";
 import { describe, expect, it, vi, type MockInstance } from "vitest";
 import { listProviders } from "../providers/registry";
@@ -111,5 +113,38 @@ describe("archive v3 — no authority resurrection (REV-4)", () => {
     expect(tableNames).not.toContain("fusionPlaybooks");
 
     db.close();
+  });
+
+  /** Strip comments so prose mentioning the module cannot false-positive. */
+  function codeOnly(source: string): string {
+    return source
+      .split("\n")
+      .filter((line) => {
+        const t = line.trim();
+        return !t.startsWith("//") && !t.startsWith("*") && t.length > 0;
+      })
+      .join("\n");
+  }
+
+  it("archive source never imports the retired fusion-study-repository module (REV-4 module-load guard)", () => {
+    // The table-name assertions above are fixed by database.ts v13 and would
+    // pass even if a regression statically imported the retired Dexie Fusion
+    // repository. Guard the load itself: none of the archive-path sources may
+    // import (statically or dynamically) the module that reads/writes the
+    // seven stores deleted in schema v13.
+    const archiveSourceFiles = [
+      "src/lib/persistence/archive.ts",
+      "src/lib/persistence/archive-v3-types.ts",
+      "src/lib/persistence/archive-v3-fixtures.ts",
+      "src/ui/DataArchiveActions.tsx",
+    ];
+
+    for (const rel of archiveSourceFiles) {
+      const source = readFileSync(join(process.cwd(), rel), "utf8");
+      const code = codeOnly(source);
+      // Static import/re-export and dynamic import both load the module.
+      expect(code, rel).not.toMatch(/from\s+["'][^"']*fusion-study-repository["']/);
+      expect(code, rel).not.toMatch(/import\s*\(\s*["'][^"']*fusion-study-repository["']/);
+    }
   });
 });
