@@ -151,6 +151,7 @@ describe("Fusion → Research Lab migration receipt", () => {
       },
     ];
 
+
     const counts = {
       fusionRecipes: 1,
       poolManifests: 0,
@@ -194,6 +195,44 @@ describe("Fusion → Research Lab migration receipt", () => {
 
     expect(r1.receiptDigest).toBe(r2.receiptDigest);
     expect(canonicalReceiptJson(r1)).toBe(canonicalReceiptJson(r2));
+  });
+  it("computes expected digest with computeReceiptDigest", () => {
+    const receipt = createDeterministicReceipt({
+      generatedAt: 1000,
+      sourceCounts: {
+        fusionRecipes: 0,
+        poolManifests: 0,
+        fusionStudies: 0,
+        fusionTrials: 0,
+        fusionAttempts: 0,
+        fusionObservations: 0,
+        fusionPlaybooks: 0,
+      },
+      convertedCounts: {
+        labRecipeRecords: 0,
+        labRecipeVersions: 0,
+        modelPoolRecords: 0,
+        modelPoolVersions: 0,
+        studies: 0,
+        studyTrials: 0,
+        studyAttempts: 0,
+        studyObservations: 0,
+        policyPlaybooks: 0,
+      },
+      discardedCounts: {
+        fusionRecipes: 0,
+        poolManifests: 0,
+        fusionStudies: 0,
+        fusionTrials: 0,
+        fusionAttempts: 0,
+        fusionObservations: 0,
+        fusionPlaybooks: 0,
+      },
+      decisions: [],
+      status: "preview_completed",
+    });
+    const digest = computeReceiptDigest(receipt);
+    expect(digest).toBe(receipt.receiptDigest);
   });
 
   it("tamper detection: rejects receipt with modified count or decision", () => {

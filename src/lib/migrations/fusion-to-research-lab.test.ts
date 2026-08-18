@@ -61,13 +61,13 @@ describe("Fusion → Research Lab migration preview (frozen T0 corpus)", () => {
 
     // Assert exact source counts matching T0 characterization fixture
     expect(result.receipt.sourceCounts).toEqual({
-      fusionRecipes: 3,
-      poolManifests: 2,
+      fusionRecipes: 6,
+      poolManifests: 4,
       fusionStudies: 5,
       fusionTrials: 16,
-      fusionAttempts: 2,
-      fusionObservations: 14,
-      fusionPlaybooks: 4,
+      fusionAttempts: 1,
+      fusionObservations: 4,
+      fusionPlaybooks: 3,
     });
 
     // Destination graph is completely empty
@@ -82,9 +82,9 @@ describe("Fusion → Research Lab migration preview (frozen T0 corpus)", () => {
     expect(result.staged.studyObservations).toHaveLength(0);
     expect(result.staged.policyPlaybooks).toHaveLength(0);
 
-    // Total discarded equals total source records (46)
-    expect(result.receipt.totalDiscardedRecords).toBe(46);
-    expect(result.receipt.totalSourceRecords).toBe(46);
+    // Total discarded equals total source records (39)
+    expect(result.receipt.totalDiscardedRecords).toBe(39);
+    expect(result.receipt.totalSourceRecords).toBe(39);
   });
 
   it("classifies specific T0 records with correct discard reason codes", () => {
@@ -116,7 +116,7 @@ describe("Fusion → Research Lab migration preview (frozen T0 corpus)", () => {
     expect(recipeDecision?.reasonCode).toBe("missing_recipe_metadata");
 
     // 4. T0 pools without metadata discarded with missing_pool_metadata
-    const poolDecision = decisionMap.get("pool-diversity-v1:v1");
+    const poolDecision = decisionMap.get("pool-core-6:v1");
     expect(poolDecision).toBeDefined();
     expect(poolDecision?.status).toBe("discard");
     expect(poolDecision?.reasonCode).toBe("missing_pool_metadata");
@@ -265,8 +265,8 @@ describe("Fusion → Research Lab migration preview (lossless conversion paths)"
         protocolFingerprint: VALID_SHA256,
       },
       note: "Resolved crosswalk",
+      updatedAt: 1000,
     };
-
     const source: FusionCorpusSource = {
       recipes: [
         {
@@ -304,6 +304,8 @@ describe("Fusion → Research Lab migration preview (lossless conversion paths)"
       studies: [
         {
           id: "study-valid-1",
+          revision: 1,
+          kind: "exploration",
           suiteRef: {
             suiteId: "suite-1",
             suiteVersion: 1,
@@ -312,14 +314,14 @@ describe("Fusion → Research Lab migration preview (lossless conversion paths)"
           poolRef: { id: "pool-1", version: 1 },
           judge1: { providerId: "openrouter", model: "judge-1" },
           judge2: { providerId: "openrouter", model: "judge-2" },
+          recipeRefs: [{ id: "recipe-1", version: 1 }],
           status: "completed",
           claimLevel: "exploratory",
           confirmationOf: null,
           playbookRef: "playbook-1",
           createdAt: 1000,
           updatedAt: 2000,
-          archivedAt: null,
-          stageResults: null,
+          stageResults: { stageA: null, stageB: null, stageC: null },
         },
       ],
       trials: [
@@ -353,16 +355,15 @@ describe("Fusion → Research Lab migration preview (lossless conversion paths)"
           sampleIndex: 0,
           status: "sealed",
           revision: 1,
+          observationIds: [],
           children: {
             candidateRunId: "run-1",
             devJudgeRunId: "run-judge-1",
-            synthesisRunId: "run-synth-1",
-            holdoutJudgeRunId: "run-judge-2",
             synthesisArtifact: null,
           },
           cost: {
-            policyCost: { tokensIn: 100, tokensOut: 50 },
-            experimentalCost: { tokensIn: 200, tokensOut: 100 },
+            policy: { tokensIn: 100, tokensOut: 50 },
+            experimental: { tokensIn: 200, tokensOut: 100 },
           },
           createdAt: 1100,
           updatedAt: 1200,
@@ -398,16 +399,15 @@ describe("Fusion → Research Lab migration preview (lossless conversion paths)"
           sampleIndex: 1,
           status: "sealed",
           revision: 1,
+          observationIds: [],
           children: {
             candidateRunId: "run-2",
             devJudgeRunId: "run-judge-1",
-            synthesisRunId: "run-synth-2",
-            holdoutJudgeRunId: "run-judge-2",
             synthesisArtifact: null,
           },
           cost: {
-            policyCost: { tokensIn: 100, tokensOut: 50 },
-            experimentalCost: { tokensIn: 200, tokensOut: 100 },
+            policy: { tokensIn: 100, tokensOut: 50 },
+            experimental: { tokensIn: 200, tokensOut: 100 },
           },
           createdAt: 1300,
           updatedAt: 1400,
@@ -429,6 +429,7 @@ describe("Fusion → Research Lab migration preview (lossless conversion paths)"
           id: "obs-1",
           trialId: "trial-1",
           judge: { providerId: "openrouter", model: "judge-2" },
+          status: "completed",
           startedAt: 1150,
           finishedAt: 1190,
           overallScore: 0.85,
@@ -627,6 +628,8 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
       studies: [
         {
           id: "study-broken",
+          revision: 1,
+          kind: "exploration",
           suiteRef: {
             suiteId: "suite-unresolved",
             suiteVersion: 1,
@@ -635,14 +638,14 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
           poolRef: { id: "p1", version: 1 },
           judge1: { providerId: "openrouter", model: "j1" },
           judge2: { providerId: "openrouter", model: "j2" },
+          recipeRefs: [],
           status: "in_progress",
           claimLevel: "exploratory",
           confirmationOf: null,
           playbookRef: null,
           createdAt: 1000,
           updatedAt: 1000,
-          archivedAt: null,
-          stageResults: null,
+          stageResults: { stageA: null, stageB: null, stageC: null },
         },
       ],
       trials: [
@@ -665,16 +668,15 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
           sampleIndex: 0,
           status: "in_progress",
           revision: 0,
+          observationIds: [],
           children: {
             candidateRunId: null,
             devJudgeRunId: null,
-            synthesisRunId: null,
-            holdoutJudgeRunId: null,
             synthesisArtifact: null,
           },
           cost: {
-            policyCost: { tokensIn: 0, tokensOut: 0 },
-            experimentalCost: { tokensIn: 0, tokensOut: 0 },
+            policy: { tokensIn: 0, tokensOut: 0 },
+            experimental: { tokensIn: 0, tokensOut: 0 },
           },
           createdAt: 1000,
           updatedAt: 1000,
@@ -687,6 +689,7 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
           id: "obs-orphan",
           trialId: "trial-orphan",
           judge: { providerId: "openrouter", model: "j1" },
+          status: "completed",
           startedAt: 1000,
           finishedAt: 1000,
           overallScore: 0.5,
