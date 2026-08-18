@@ -16,14 +16,8 @@
 // =============================================================================
 
 import { describe, expect, it } from "vitest";
-import {
-  InMemoryEvidenceRepository,
-  type EvidenceRepository,
-} from "../persistence/evidence-repository";
-import {
-  InMemoryStudyRepository,
-  type StudyRepository,
-} from "../persistence/study-repository";
+import { InMemoryEvidenceRepository } from "../persistence/evidence-repository";
+import { InMemoryStudyRepository } from "../persistence/study-repository";
 import {
   adaptPolicyStudy,
   adaptStudyCandidateRun,
@@ -43,7 +37,6 @@ import type {
   PersistedCandidate,
 } from "../persistence/run-types";
 import type {
-  StudyRecord,
   StudyTrial,
   StudyObservation,
 } from "../studies/study-types";
@@ -76,7 +69,7 @@ function candidate(
 ): PersistedCandidate {
   const [providerId, model] = modelKey.split(":");
   const attemptId = `att-${id}`;
-  return {
+  const cand = {
     candidateId: id,
     slotId: `slot-${id}`,
     modelKey,
@@ -94,7 +87,7 @@ function candidate(
         messages: [{ role: "user", content: "solve" }],
         startedAt: 0,
         finishedAt: 10,
-        status: opts.failed ? "failed" : "completed",
+        status: opts.failed ? ("failed" as const) : ("completed" as const),
         output: opts.output !== undefined ? opts.output : "candidate output text",
         tokensIn: 100,
         tokensOut: 50,
@@ -102,6 +95,7 @@ function candidate(
       },
     ],
   };
+  return cand as unknown as PersistedCandidate;
 }
 
 function judgeAttempt(attemptId: string, candId: string): JudgeAttemptRecord {
@@ -204,6 +198,8 @@ function makeExperiment(overrides: Partial<ExperimentRecord> = {}): ExperimentRe
     suiteVersion: 1,
     protocolFingerprint: FP,
     status: "completed",
+    createdAt: 1000,
+    updatedAt: 1010,
     execution: null,
     snapshot: {
       suiteId: "suite-lab-1",
@@ -243,6 +239,7 @@ function makeExperiment(overrides: Partial<ExperimentRecord> = {}): ExperimentRe
         attempts: [
           {
             id: "att-1",
+            trial: 0,
             runId: "run-cand-1",
             status: "completed",
             startedAt: 1000,
@@ -639,7 +636,7 @@ describe("policy-study-candidate-adapter", () => {
       expect(result.limitationCode).toBe("assessment_missing_or_failed");
     });
 
-    it("qualifies rolling-alias candidate with model_configuration_incomplete limitation", () => {
+    it("qualifies rolling-alias candidate with model_version_unreported limitation", () => {
       const run = makeRun();
       const result = qualifyStudyCandidateObservation({
         candidateRun: run,
@@ -654,6 +651,30 @@ describe("policy-study-candidate-adapter", () => {
         resolveModelConfiguration: () => ({
           resolvedModel: "model-a",
           resolvedVersion: null, // Unversioned rolling alias
+        }),
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.decision.reasonCodes).toContain("model_version_unreported");
+      expect(result.decision.evidenceClass).toBe("comparable");
+    });
+
+    it("qualifies partial configuration candidate with model_configuration_incomplete limitation", () => {
+      const run = makeRun();
+      const result = qualifyStudyCandidateObservation({
+        candidateRun: run,
+        candidateId: "cand-1",
+        identity: {
+          taskId: "task-canon-1",
+          taskVersion: 1,
+          taskInstanceId: "inst-1",
+          taskFamilyId: null,
+          inputComplete: true,
+        },
+        resolveModelConfiguration: () => ({
+          resolvedModel: null, // Unknown resolved model -> partial
+          resolvedVersion: null,
         }),
       });
 
