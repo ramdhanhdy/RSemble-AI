@@ -221,7 +221,9 @@ interface Seeded {
 
 /** Seed a completed exploratory study with trials, observations, an attempt,
  *  and a four-row playbook. */
-async function seedCompleted(playbookOverrides: Parameters<typeof makePlaybook>[0] = {}): Promise<Seeded> {
+async function seedCompleted(
+  playbookOverrides: Parameters<typeof makePlaybook>[0] = {},
+): Promise<Seeded> {
   const repo = new InMemoryStudyRepository();
   await repo.createStudy(makeStudyRecord());
   await repo.startStudy("study-1", 0, 1_500);
@@ -269,6 +271,8 @@ async function seedCompleted(playbookOverrides: Parameters<typeof makePlaybook>[
       rationale:
         "Refine exceeds the predeclared MPID on holdout tasks at 1.8× policy cost; Fuse remains within uncertainty and is not justified.",
     },
+    supportingTrialIds: ["trial-a1"],
+    supportingObservationIds: ["obs-a1"],
     ...playbookOverrides,
   });
   await repo.createPlaybook("pb-1", playbook);
@@ -308,7 +312,10 @@ async function seedCompleted(playbookOverrides: Parameters<typeof makePlaybook>[
     rubricRecord.revision,
   );
   const labAssetRepo = new InMemoryLabAssetRepository();
-  await labAssetRepo.createRecipeRecord(makeRecipeRecord("recipe-1"), makeRecipeVersion("recipe-1", 1));
+  await labAssetRepo.createRecipeRecord(
+    makeRecipeRecord("recipe-1"),
+    makeRecipeVersion("recipe-1", 1),
+  );
   await labAssetRepo.createRecipeRecord(
     makeRecipeRecord("recipe-2", { name: "Analysis Scores" }),
     makeRecipeVersion("recipe-2", 1),
@@ -424,7 +431,9 @@ describe("PolicyStudyView — verdict banner", () => {
     const seeded = await seedCompleted();
     // Re-seed as a confirmed study linked to an exploratory source.
     const repo = new InMemoryStudyRepository();
-    await repo.createStudy(makeStudyRecord({ id: "study-0", status: "completed", reportRef: "pb-0" }));
+    await repo.createStudy(
+      makeStudyRecord({ id: "study-0", status: "completed", reportRef: "pb-0" }),
+    );
     const confirmedDefinition = makeDefinition({ claimPlan: "confirmation" });
     await repo.createStudy(
       makeStudyRecord({
@@ -488,14 +497,18 @@ describe("PolicyStudyView — sealed inputs", () => {
   it("marks archived assets and unresolvable refs honestly", async () => {
     const seeded = await seedCompleted();
     // Archive the pool record; drop the recipe record entirely.
-    await seeded.labAssetRepo.archivePoolRecord("pool-1", 0, 9_000);
+    const pool = await seeded.labAssetRepo.getPoolRecord("pool-1");
+    await seeded.labAssetRepo.archivePoolRecord("pool-1", pool!.revision, 9_000);
     const definition = makeDefinition({
       fusionRecipes: [{ recipeId: "recipe-77", version: 4, digest: DIGEST }],
     });
     const repo = new InMemoryStudyRepository();
     await repo.createStudy(makeStudyRecord({ definition }));
     await repo.startStudy("study-1", 0, 1_500);
-    await repo.createPlaybook("pb-1", makePlaybook({ rows: FOUR_ROWS, definitionFingerprint: fingerprintStudyValue(definition) }));
+    await repo.createPlaybook(
+      "pb-1",
+      makePlaybook({ rows: FOUR_ROWS, definitionFingerprint: fingerprintStudyValue(definition) }),
+    );
     await repo.sealStudy("study-1", 1, "pb-1", 4_000);
     seeded.repo = repo;
 
@@ -680,7 +693,16 @@ describe("PolicyStudyView — one-document dossier", () => {
     expect(h.$$("[role='tab']")).toHaveLength(0);
     const nav = h.$("nav[aria-label='Study sections']");
     expect(nav).toBeTruthy();
-    for (const anchor of ["#verdict", "#inputs", "#stage-a", "#stage-b", "#stage-c", "#playbook", "#boundary", "#records"]) {
+    for (const anchor of [
+      "#verdict",
+      "#inputs",
+      "#stage-a",
+      "#stage-b",
+      "#stage-c",
+      "#playbook",
+      "#boundary",
+      "#records",
+    ]) {
       expect(nav?.querySelector(`a[href='${anchor}']`)).toBeTruthy();
     }
     expect(h.$("#verdict")).toBeTruthy();

@@ -30,7 +30,7 @@ import { createLiveFusionExecutor } from "../../lib/evaluations/fusion-live-exec
 import { PolicyStudyAdapter } from "../../lib/studies/policy/policy-study-adapter";
 import type { PolicyStudyRecord } from "../../lib/studies/policy/policy-study-types";
 import type { CriticRef } from "../../lib/providers/types";
-import { PREDECLARED_MPID, exactModelConfigRefFor } from "./lab-draft";
+import { PREDECLARED_MPID, confirmationDraftFrom, exactModelConfigRefFor } from "./lab-draft";
 import { PolicyStudyEditor } from "./PolicyStudyEditor";
 import {
   PolicyStudyView,
@@ -87,17 +87,13 @@ function createAdapterRunner(deps: {
         judgeResolver: (ref) => {
           const found = byMcId.get(ref.id);
           if (!found) {
-            throw new Error(
-              `Judge configuration ${ref.id} is not on the pinned Task Set roster.`,
-            );
+            throw new Error(`Judge configuration ${ref.id} is not on the pinned Task Set roster.`);
           }
           return found;
         },
         executor: createLiveFusionExecutor(),
         modelConfigResolver: (critic) => exactModelConfigRefFor(critic),
-        runResolver: deps.runRepo
-          ? { getRun: (id) => deps.runRepo!.get(id) }
-          : undefined,
+        runResolver: deps.runRepo ? { getRun: (id) => deps.runRepo!.get(id) } : undefined,
       });
       const record = study.status === "in_progress" ? study : await adapter.startStudy(study);
       await adapter.runExplorationStudy({
@@ -225,6 +221,16 @@ export function PolicyStudyPage({
     }
   }, [studyRepo, study, reload]);
 
+  const startConfirmation = useCallback(
+    async (source: PolicyStudyRecord) => {
+      if (!studyRepo) return;
+      const record = confirmationDraftFrom(source, Date.now());
+      await studyRepo.createStudy(record);
+      void navigate(`/lab/studies/${record.id}`);
+    },
+    [studyRepo, navigate],
+  );
+
   if (loading) {
     return (
       <div className="flex min-h-[140px] items-center justify-center gap-2 text-sm text-text-secondary">
@@ -316,6 +322,11 @@ export function PolicyStudyPage({
         onInterrupt: () => setPhase("interrupted"),
         onArchive: () => void archive(),
       }}
+      onStartConfirmation={
+        study.status === "completed" && study.claimLevel === "exploratory"
+          ? (source) => void startConfirmation(source)
+          : undefined
+      }
     />
   );
 }

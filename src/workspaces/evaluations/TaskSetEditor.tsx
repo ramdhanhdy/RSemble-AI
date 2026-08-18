@@ -39,12 +39,7 @@ import { SuitePreflightDialog, type SuitePreflightEntry } from "./SuitePreflight
 import { useExecutionOwner } from "../../lib/execution-owner-context";
 import type { ExecutionOwner } from "../../lib/execution-owner";
 import { TaskSetExecutionHistory } from "./TaskSetExecutionHistory";
-import { FusionStudyPanel } from "./FusionStudyPanel";
-import {
-  useFusionStudyRepository,
-  useTaskRepository,
-  useTaskSetRepository,
-} from "../../lib/persistence/repository-context";
+import { useTaskRepository, useTaskSetRepository } from "../../lib/persistence/repository-context";
 import type { TaskSetRepository } from "../../lib/persistence/task-set-repository";
 import { suiteToTaskSetRecord, suiteToTaskSetVersion } from "../../lib/evaluations/suite-compat";
 import {
@@ -131,7 +126,6 @@ export function TaskSetEditor({
   const ctxTaskSetRepo = useTaskSetRepository();
   const taskSetRepo = taskSetRepoProp !== undefined ? taskSetRepoProp : ctxTaskSetRepo;
   const executionOwner = ownerProp !== undefined ? ownerProp : ctxOwner;
-  const fusionRepo = useFusionStudyRepository();
 
   const [persisted, setPersisted] = useState<EvaluationSuite | null>(null);
   const [draft, setDraft] = useState<EvaluationSuite | null>(null);
@@ -805,12 +799,13 @@ export function TaskSetEditor({
             <TaskSetExecutionHistory repo={repo} taskSetId={persisted.id} />
           </div>
           <div className="mt-3 min-w-0 border-t border-edge pt-3">
-            <FusionStudyPanel
-              fusionRepo={fusionRepo}
-              evalRepo={repo}
-              suite={persisted}
-              models={models}
-            />
+            <Link
+              to={`/lab?startPolicyStudy=1&taskSetId=${encodeURIComponent(persisted.id)}&version=${persisted.version}`}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 py-1.5 text-xs font-medium text-text hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              data-testid="start-policy-study-link"
+            >
+              Start Policy Study in Research Lab →
+            </Link>
           </div>
         </section>
 

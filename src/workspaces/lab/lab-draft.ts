@@ -56,9 +56,41 @@ export function generateLabId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function draftPolicyStudyDefinition(
-  workload?: { taskSetId: string; version: number; manifestDigest?: string },
-): PolicyStudyDefinition {
+/**
+ * Build a confirmation-plan draft from a completed exploratory study
+ * (Fable §6.9 footer action). Inherits every pin — the claim plan flips to
+ * confirmation and the record links its source; the editor then requires a
+ * fresh Task Set Version before sealing.
+ */
+export function confirmationDraftFrom(
+  source: PolicyStudyRecord,
+  now: number,
+  id = generateLabId("study"),
+): PolicyStudyRecord {
+  const definition: PolicyStudyDefinition = { ...source.definition, claimPlan: "confirmation" };
+  return {
+    id,
+    revision: 0,
+    kind: "policy",
+    title: `Confirm: ${source.title}`,
+    status: "draft",
+    claimLevel: "confirmed",
+    definitionSchemaVersion: source.definitionSchemaVersion,
+    definitionFingerprint: fingerprintStudyValue(definition),
+    definition,
+    reportRef: null,
+    confirmationOf: source.id,
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
+  };
+}
+
+export function draftPolicyStudyDefinition(workload?: {
+  taskSetId: string;
+  version: number;
+  manifestDigest?: string;
+}): PolicyStudyDefinition {
   return {
     workload: {
       taskSetId: workload?.taskSetId ?? "unspecified",

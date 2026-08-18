@@ -21,6 +21,7 @@
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { AlertTriangle, Plus } from "lucide-react";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
 import type { LabAssetRepository } from "../../lib/persistence/lab-asset-repository";
@@ -309,9 +310,7 @@ export function PolicyStudyEditor({
     [suites, def.workload.taskSetId],
   );
   const judgeOptions = useMemo(() => judgeOptionsFor(pinnedSuite), [pinnedSuite]);
-  const selectedRecipeKeys = new Set(
-    def.fusionRecipes.map((r) => `${r.recipeId}@${r.version}`),
-  );
+  const selectedRecipeKeys = new Set(def.fusionRecipes.map((r) => `${r.recipeId}@${r.version}`));
   const selectedRecipes = recipeOptions.filter((o) => selectedRecipeKeys.has(o.key));
   const synthesizerKeys = new Set(selectedRecipes.map((o) => criticKey(o.synthesizer)));
   const synthesizerMcIds = new Set(
@@ -414,9 +413,22 @@ export function PolicyStudyEditor({
     if (next.length === 0) {
       // Structural validity requires ≥1 recipe; keep the placeholder so the
       // draft stays persistable and seal validation reports the gap.
-      applyChange({ ...def, fusionRecipes: def.fusionRecipes.filter((r) => r.recipeId === "unspecified").length > 0
-        ? def.fusionRecipes.filter((r) => r.recipeId === "unspecified")
-        : [{ recipeId: "unspecified", version: 1, digest: def.fusionRecipes[0]?.digest ?? "" }] }, title);
+      applyChange(
+        {
+          ...def,
+          fusionRecipes:
+            def.fusionRecipes.filter((r) => r.recipeId === "unspecified").length > 0
+              ? def.fusionRecipes.filter((r) => r.recipeId === "unspecified")
+              : [
+                  {
+                    recipeId: "unspecified",
+                    version: 1,
+                    digest: def.fusionRecipes[0]?.digest ?? "",
+                  },
+                ],
+        },
+        title,
+      );
       return;
     }
     applyChange({ ...def, fusionRecipes: next }, title);
@@ -425,10 +437,7 @@ export function PolicyStudyEditor({
   function handleRubricChange(key: string) {
     const option = rubricOptions.find((o) => o.key === key);
     if (!option) return;
-    applyChange(
-      { ...def, rubric: { rubricId: option.rubricId, version: option.version } },
-      title,
-    );
+    applyChange({ ...def, rubric: { rubricId: option.rubricId, version: option.version } }, title);
   }
 
   // --- Validation -------------------------------------------------------------------
@@ -526,8 +535,7 @@ export function PolicyStudyEditor({
   // --- Render -------------------------------------------------------------------------
 
   const fieldsetClass = "flex flex-col gap-2 rounded-md border border-edge bg-panel p-3";
-  const legendClass =
-    "font-mono text-xs font-semibold uppercase tracking-wider text-text-muted";
+  const legendClass = "font-mono text-xs font-semibold uppercase tracking-wider text-text-muted";
   const selectClass =
     "min-h-[44px] w-full rounded-md border border-edge bg-panel px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
   const inlineError = (message: string | null) =>
@@ -553,12 +561,12 @@ export function PolicyStudyEditor({
         </p>
         {study.confirmationOf !== null && (
           <p className="font-mono text-xs">
-            <a
-              href={`#/lab/studies/${study.confirmationOf}`}
+            <Link
+              to={`/lab/studies/${study.confirmationOf}`}
               className="text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               Confirms {study.confirmationOf} →
-            </a>
+            </Link>
           </p>
         )}
       </header>
@@ -643,7 +651,9 @@ export function PolicyStudyEditor({
           </button>
         </div>
         {selectedPool && (
-          <p className="font-mono text-xs text-text-muted">digest {shortDigest(selectedPool.digest)}</p>
+          <p className="font-mono text-xs text-text-muted">
+            digest {shortDigest(selectedPool.digest)}
+          </p>
         )}
         {inlineError(fieldError("pool"))}
       </fieldset>
@@ -687,8 +697,8 @@ export function PolicyStudyEditor({
       <fieldset className={fieldsetClass}>
         <legend className={legendClass}>5 · Judges &amp; Rubric</legend>
         <p className="text-xs text-text-secondary">
-          Judges are blind: candidate identities stay hidden until judging completes. Judge
-          choices come from the pinned Task Set roster.
+          Judges are blind: candidate identities stay hidden until judging completes. Judge choices
+          come from the pinned Task Set roster.
         </p>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           <div className="flex flex-col gap-1">
@@ -739,7 +749,9 @@ export function PolicyStudyEditor({
         <select
           aria-label="Rubric"
           value={
-            def.rubric.rubricId === "unspecified" ? "" : `${def.rubric.rubricId}@${def.rubric.version}`
+            def.rubric.rubricId === "unspecified"
+              ? ""
+              : `${def.rubric.rubricId}@${def.rubric.version}`
           }
           onChange={(e) => handleRubricChange(e.target.value)}
           className={selectClass}
@@ -775,7 +787,11 @@ export function PolicyStudyEditor({
           (predeclared) · stage protocol v{def.stageProtocolVersion} · protocol{" "}
           <span className="font-mono">{shortDigest(def.protocolFingerprint)}</span>
         </p>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2" role="radiogroup" aria-label="Claim plan">
+        <div
+          className="grid grid-cols-1 gap-2 md:grid-cols-2"
+          role="radiogroup"
+          aria-label="Claim plan"
+        >
           <label
             data-testid="claim-plan-exploration"
             className={`flex min-h-[44px] cursor-pointer items-start gap-2 rounded-md border border-dashed border-warning/50 bg-warning/10 p-3 text-sm ${
@@ -819,8 +835,8 @@ export function PolicyStudyEditor({
             <span>
               <span className="font-semibold text-success">Confirmation</span>
               <span className="block text-xs text-text-secondary">
-                Confirm an exploratory finding on a fresh Task Set Version. Findings will be
-                marked Confirmed.
+                Confirm an exploratory finding on a fresh Task Set Version. Findings will be marked
+                Confirmed.
               </span>
               {study.confirmationOf === null && (
                 <span className="block text-xs text-text-muted">
@@ -887,21 +903,21 @@ export function PolicyStudyEditor({
           <h2 className="text-base font-semibold text-text">Seal inputs &amp; start study</h2>
           <div className="flex items-center gap-2">
             <ClaimBadge level={study.claimLevel} />
-            <span className="text-xs text-text-secondary">
-              claim plan: {def.claimPlan}
-            </span>
+            <span className="text-xs text-text-secondary">claim plan: {def.claimPlan}</span>
           </div>
           <dl className="flex flex-col gap-1 font-mono text-xs text-text-secondary">
             <div className="flex justify-between gap-2">
               <dt>Task Set</dt>
               <dd>
-                {def.workload.taskSetId} v{def.workload.version} · {shortDigest(def.workload.manifestDigest)}
+                {def.workload.taskSetId} v{def.workload.version} ·{" "}
+                {shortDigest(def.workload.manifestDigest)}
               </dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt>Model Pool</dt>
               <dd>
-                {def.modelPool.poolId} v{def.modelPool.version} · {shortDigest(def.modelPool.digest)}
+                {def.modelPool.poolId} v{def.modelPool.version} ·{" "}
+                {shortDigest(def.modelPool.digest)}
               </dd>
             </div>
             {def.fusionRecipes.map((r) => (
