@@ -9,6 +9,8 @@
 // at any depth.
 // =============================================================================
 
+import type { CriticRef } from "../providers/types";
+
 import { describe, expect, it } from "vitest";
 import {
   LAB_RECIPE_KINDS,
@@ -25,8 +27,8 @@ import {
   type LabRecipeVersion,
 } from "./lab-recipe-types";
 
-const SYNTH = { providerId: "openrouter", model: "acme/synth-1" };
-const SYNTH_2 = { providerId: "gemini", model: "acme/synth-2" };
+const SYNTH: CriticRef = { providerId: "openrouter", model: "acme/synth-1" };
+const SYNTH_2: CriticRef = { providerId: "gemini", model: "acme/synth-2" };
 
 function makeRecord(overrides: Partial<LabRecipeRecord> = {}): LabRecipeRecord {
   return {

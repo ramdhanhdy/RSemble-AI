@@ -164,16 +164,12 @@ describe("isModelPoolVersion", () => {
   });
 
   it("rejects invalid model slots in core", () => {
-    const v = makeVersion({ core: [{ ...S1, providerId: "" }] });
-    v.canonicalPayload = canonicalPoolPayload(v);
-    v.digest = poolDigest(v);
+    const v = makeVersion({ core: [{ ...S1, providerId: 123 } as unknown as ModelSlot] });
     expect(isModelPoolVersion(v)).toBe(false);
   });
 
   it("rejects invalid model slots in challengers", () => {
-    const v = makeVersion({ challengers: [{ ...CH, model: "" }] });
-    v.canonicalPayload = canonicalPoolPayload(v);
-    v.digest = poolDigest(v);
+    const v = makeVersion({ challengers: [{ ...CH, model: 123 } as unknown as ModelSlot] });
     expect(isModelPoolVersion(v)).toBe(false);
   });
 

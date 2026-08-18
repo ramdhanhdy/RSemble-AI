@@ -38,6 +38,11 @@
 //         comparisonResults (child 05 Task 2, spec §3). Summary-only rows
 //         keyed by the source run id (comparisonId == runId); candidate
 //         outputs and judge rationale never enter this store.
+//   v12 — additive Lab asset stores (4 tables, child 06 Task 2, spec §6):
+//         labRecipeRecords, labRecipeVersions, modelPoolRecords,
+//         modelPoolVersions. Reusable versioned Lab Recipes (kind: "fusion")
+//         and Model Pools. Old Fusion readers stay; these stores are additive
+//         and not yet read by old code paths.
 import Dexie, { type Table } from "dexie";
 import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
@@ -418,6 +423,54 @@ export interface VerifierOutcomeRow {
   passed: boolean;
   executedAt: number;
 }
+
+// --- Lab asset rows (schema v12, spec §6) -------------------------------------
+//
+// Reusable versioned Lab assets: Lab Recipes (kind: "fusion") and Model Pools.
+// Each asset is a stable record plus immutable versions. Old Fusion readers
+// (fusionRecipes, poolManifests) remain the live authority until the one-time
+// migration; these stores are additive and not yet read by old code paths.
+
+/** Stable Lab Recipe record row (spec §6.1). Mutable metadata via CAS revision. */
+export interface LabRecipeRecordRow {
+  id: string;
+  record: unknown;
+  kind: string;
+  latestVersion: number;
+  archivedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  revision: number;
+}
+
+/** Immutable Lab Recipe version row (spec §6.1). Compound [recipeId+version] key. */
+export interface LabRecipeVersionRow {
+  recipeId: string;
+  version: number;
+  version_: unknown;
+  digest: string;
+  createdAt: number;
+}
+
+/** Stable Model Pool record row (spec §6.2). Mutable metadata via CAS revision. */
+export interface ModelPoolRecordRow {
+  id: string;
+  record: unknown;
+  latestVersion: number;
+  archivedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  revision: number;
+}
+
+/** Immutable Model Pool version row (spec §6.2). Compound [poolId+version] key. */
+export interface ModelPoolVersionRow {
+  poolId: string;
+  version: number;
+  version_: unknown;
+  digest: string;
+  createdAt: number;
+}
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -482,6 +535,11 @@ export class RSembleEvaluationDB extends Dexie {
   verifierOutcomes!: Table<VerifierOutcomeRow, string>;
   // Comparison Result index rows (schema v11)
   comparisonResults!: Table<ComparisonResultIndex, string>;
+  // Lab asset tables (schema v12, spec §6)
+  labRecipeRecords!: Table<LabRecipeRecordRow, string>;
+  labRecipeVersions!: Table<LabRecipeVersionRow, [string, number]>;
+  modelPoolRecords!: Table<ModelPoolRecordRow, string>;
+  modelPoolVersions!: Table<ModelPoolVersionRow, [string, number]>;
   // Fusion Study tables (schema v2)
   fusionRecipes!: Table<FusionRecipeRow, [string, number]>;
   poolManifests!: Table<PoolManifestRow, [string, number]>;
@@ -626,6 +684,20 @@ export class RSembleEvaluationDB extends Dexie {
     // never enter this store — RunRecordV2 remains the exact result authority.
     this.version(11).stores({
       comparisonResults: "id, runId, status, mode, createdAt, updatedAt, revision",
+    });
+    // v12: additive Lab asset stores (child 06 Task 2, spec §6). No existing
+    // table is redefined — this block only adds the four new stores for
+    // reusable versioned Lab Recipes (kind: "fusion") and Model Pools. Old
+    // Fusion readers (fusionRecipes, poolManifests) remain the live authority
+    // until the one-time migration; these stores are not yet read by old code
+    // paths. Records are stable metadata keyed by id; versions are immutable
+    // compound-keyed rows carrying a content digest for byte-equivalent
+    // idempotency.
+    this.version(12).stores({
+      labRecipeRecords: "id, kind, latestVersion, archivedAt, updatedAt",
+      labRecipeVersions: "[recipeId+version], recipeId, digest, createdAt",
+      modelPoolRecords: "id, latestVersion, archivedAt, updatedAt",
+      modelPoolVersions: "[poolId+version], poolId, digest, createdAt",
     });
 
     this.on("blocked", () => {

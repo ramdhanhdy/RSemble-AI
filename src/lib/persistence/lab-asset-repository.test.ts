@@ -36,6 +36,7 @@ import {
   type ModelPoolRecord,
   type ModelPoolVersion,
 } from "../studies/model-pool-types";
+import type { CriticRef } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
 
 // --- Fixtures -----------------------------------------------------------------
@@ -44,7 +45,7 @@ function slot(id: string, slug: string): ModelSlot {
   return { id, providerId: "openrouter", provider: "Test", model: id, slug, enabled: true };
 }
 
-const SYNTH = { providerId: "openrouter", model: "acme/synth-1" };
+const SYNTH: CriticRef = { providerId: "openrouter", model: "acme/synth-1" };
 const SLOTS = Array.from({ length: 6 }, (_, i) => slot(`s${i + 1}`, `p/m${i + 1}`));
 const CH = slot("ch1", "q/m7");
 
@@ -223,15 +224,15 @@ function repositorySuite(name: string, makeRepo: () => LabAssetRepository & obje
     it("version collision with byte-equivalent content is idempotent", async () => {
       const repo = makeRepo();
       await repo.createRecipeRecord(makeRecipeRecord(), makeRecipeVersion());
-      // Re-create version 1 with identical content (same digest).
+      // Re-append version 1 with identical content (same digest) — idempotent.
       const same = makeRecipeVersion("recipe-1", 1);
-      // This should NOT throw — byte-equivalent idempotency.
-      await expect(repo.appendRecipeVersion(same, 0)).rejects.toThrow(/contiguous|version/i);
-      // Actually, version 1 already exists; append expects version 2.
-      // Idempotency is tested via re-calling append with the same v2:
+      const rev0 = await repo.appendRecipeVersion(same, 0);
+      expect(rev0).toBe(0); // no revision change
+      const record0 = (await repo.getRecipeRecord("recipe-1"))!;
+      expect(record0.latestVersion).toBe(1); // unchanged
+      // Now append v2, then retry the same append — idempotent.
       const v2 = makeRecipeVersion("recipe-1", 2, { promptVersion: "v2" });
       const rev1 = await repo.appendRecipeVersion(v2, 0);
-      // Retry the same append — should be idempotent (no throw, no revision change).
       const rev2 = await repo.appendRecipeVersion(v2, 0);
       expect(rev2).toBe(rev1);
       const record = (await repo.getRecipeRecord("recipe-1"))!;
