@@ -1030,4 +1030,125 @@ describe("Policy Study adapter — Run 20 repair (Lab lineage + payload boundary
       expect(obs).toBeDefined();
     }
   });
+
+  it("resolves children.candidateRunId to a full StudyArtifactRef via run lookup (F1)", async () => {
+    const labAssets = await seedLabAssets();
+    const studyRepo = new InMemoryStudyRepository(null);
+    // The mock executor stamps children.candidateRunId = run-cand-<taskId>.
+    // The store-side run lookup returns the minimal RunRecordV2 facts the F1
+    // resolution may read: exactly one accepted candidate whose accepted
+    // attempt completed with an output (attemptId catt-<runId>). Nothing else
+    // is legal to consume.
+    let counter = 0;
+    let clock = 1000;
+    const adapter = new PolicyStudyAdapter({
+      studyRepo,
+      labAssetRepo: labAssets,
+      judgeResolver: (mc) => (mc.id === JUDGE1_MC.id ? judge1 : judge2),
+      modelConfigResolver: makeModelConfigResolver(),
+      executor: makeMockExecutor(),
+      now: () => ++clock,
+      generateId: () => `id-${++counter}`,
+      runResolver: {
+        getRun: async (id) => {
+          if (!id.startsWith("run-cand-")) return null;
+          return {
+            id,
+            source: { kind: "adhoc" },
+            candidates: [
+              {
+                acceptedAttemptId: `catt-${id}`,
+                attempts: [
+                  {
+                    attemptId: `catt-${id}`,
+                    status: "completed",
+                    output: `output of ${id}`,
+                  },
+                ],
+              },
+            ],
+          } as never;
+        },
+      },
+    });
+    const draft = await adapter.createStudy(makeDefinition(), "E2E candidate refs");
+    const started = await adapter.startStudy(draft);
+    await adapter.runExplorationStudy({
+      record: started,
+      suite: SUITE,
+      rubric: RUBRIC,
+      stratificationTasks: 3,
+      tasksPerPairA: 2,
+      tasksPerPairB: 2,
+      tasksPerPairC: 2,
+      sequentialPairs: 2,
+      mpid: 0.2,
+    });
+
+    const trials = await studyRepo.listTrials(started.id);
+    expect(trials.length).toBeGreaterThan(0);
+    let candidateRefCount = 0;
+    for (const trial of trials) {
+      // Fuse/refine trials carry a full synthesis ref (runId + attemptId +
+      // contentHash); best_fixed/rank trials produce no synthesis artifact.
+      const synthesisRefs = trial.artifactRefs.filter((r) => r.attemptId.startsWith("fa-"));
+      const expectsSynthesis = trial.payload.policy === "fuse" || trial.payload.policy === "refine";
+      expect(synthesisRefs).toHaveLength(expectsSynthesis ? 1 : 0);
+      // Trials stamped with children.candidateRunId carry a candidate artifact
+      // ref resolved via the run lookup (never dropped & never invented). The
+      // best-fixed baseline reuses pool content with no backing candidate run
+      // (children.candidateRunId === null), so its ref is honestly skipped.
+      const candidateRefs = trial.artifactRefs.filter((r) => !r.attemptId.startsWith("fa-"));
+      candidateRefCount += candidateRefs.length;
+      for (const ref of candidateRefs) {
+        expect(ref.runId).toMatch(/^run-cand-/);
+        expect(ref.attemptId).toBe(`catt-${ref.runId}`);
+        expect(ref.contentHash).toMatch(/^sha256:[0-9a-f]{64}$/);
+      }
+      if (trial.payload.policy === "best_fixed") {
+        expect(candidateRefs).toHaveLength(0);
+      } else {
+        expect(candidateRefs).toHaveLength(1);
+      }
+    }
+    expect(candidateRefCount).toBeGreaterThan(0);
+  });
+
+  it("skips the candidate artifact ref when the run lookup cannot supply facts (F1)", async () => {
+    const labAssets = await seedLabAssets();
+    const studyRepo = new InMemoryStudyRepository(null);
+    let counter = 0;
+    let clock = 1000;
+    const adapter = new PolicyStudyAdapter({
+      studyRepo,
+      labAssetRepo: labAssets,
+      judgeResolver: (mc) => (mc.id === JUDGE1_MC.id ? judge1 : judge2),
+      modelConfigResolver: makeModelConfigResolver(),
+      executor: makeMockExecutor(),
+      now: () => ++clock,
+      generateId: () => `id-${++counter}`,
+      // No resolvable runs — facts missing, so nothing may be invented.
+      runResolver: { getRun: async () => null },
+    });
+    const draft = await adapter.createStudy(makeDefinition(), "E2E missing run facts");
+    const started = await adapter.startStudy(draft);
+    await adapter.runExplorationStudy({
+      record: started,
+      suite: SUITE,
+      rubric: RUBRIC,
+      stratificationTasks: 3,
+      tasksPerPairA: 2,
+      tasksPerPairB: 2,
+      tasksPerPairC: 2,
+      sequentialPairs: 2,
+      mpid: 0.2,
+    });
+
+    const trials = await studyRepo.listTrials(started.id);
+    expect(trials.length).toBeGreaterThan(0);
+    const candidateRefs = trials.flatMap((t) =>
+      t.artifactRefs.filter((r) => !r.attemptId.startsWith("fa-")),
+    );
+    expect(candidateRefs).toHaveLength(0);
+  });
 });

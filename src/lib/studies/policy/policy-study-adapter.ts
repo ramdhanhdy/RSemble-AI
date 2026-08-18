@@ -28,6 +28,7 @@
 import type { CriticRef } from "../../providers/types";
 import type { ModelSlot } from "../../../studio-data";
 import type { RubricSnapshot, EvaluationSuite } from "../../evaluations/evaluation-types";
+import type { RunRecordV2 } from "../../persistence/run-types";
 import type {
   FusionAttempt,
   FusionTrial,
@@ -58,6 +59,8 @@ import type { ModelPoolVersion } from "../model-pool-types";
 import { getStudyTypeRegistration, isRegisteredStudyKind } from "../study-registry";
 import { fingerprintStudyValue } from "../study-fingerprint";
 import type { StudyAttempt, StudyArtifactRef } from "../study-types";
+import type { EvaluationSourceResolver } from "../../evidence/derive-observations";
+import { hashArtifactContent } from "../../evaluations/protocol-fingerprint";
 import {
   POLICY_DEFINITION_SCHEMA_VERSION,
   POLICY_MEASUREMENT_SCHEMA_VERSION,
@@ -365,6 +368,53 @@ export type ModelConfigResolver = (critic: CriticRef) => ExactModelConfiguration
 const nullModelConfigResolver: ModelConfigResolver = () => null;
 
 /**
+ * Narrow read-only run lookup used to resolve a method trial's
+ * `children.candidateRunId` into a full StudyArtifactRef. Runs are only ever
+ * surfaced through this port when they are genuine single-model candidate
+ * runs — see `isCandidateStudyRun`.
+ */
+export interface StudyCandidateRunResolver {
+  getRun(runId: string): Promise<RunRecordV2 | null>;
+}
+
+/**
+ * Whether a stored run is a genuine single-model candidate run that may be
+ * surfaced as a candidate artifact ref / eligibility source — as opposed to a
+ * Lab-authored synthesis / Fusion / Refine artifact run, which is policy
+ * evidence and must never be treated as a single-model candidate (spec §9).
+ */
+export function isCandidateStudyRun(run: RunRecordV2): boolean {
+  return run.source.kind === "adhoc" || run.source.kind === "experiment";
+}
+
+/**
+ * Resolve one single-model candidate run record into a full StudyArtifactRef.
+ * Returns null — skipping rather than inventing — when any required fact is
+ * missing or ambiguous: the run must be a genuine candidate run (never a
+ * Lab-authored synthesis / Fusion / Refine artifact), and it must carry
+ * exactly one accepted candidate whose accepted attempt completed with an
+ * output to hash (spec §9, Run 21 F1).
+ */
+export function candidateArtifactRefFromRun(run: RunRecordV2): StudyArtifactRef | null {
+  if (!isCandidateStudyRun(run)) return null;
+  const accepted = run.candidates.filter((c) => c.acceptedAttemptId !== null);
+  if (accepted.length !== 1) return null;
+  const candidate = accepted[0];
+  const acceptedAttemptId = candidate.acceptedAttemptId!;
+  const attempt = candidate.attempts.find(
+    (a) => a.attemptId === acceptedAttemptId && a.status === "completed",
+  );
+  const output = attempt?.output;
+  if (!output) return null;
+  const contentHash = hashArtifactContent(output);
+  if (!/^sha256:[0-9a-f]{64}$/.test(contentHash)) return null;
+  return { runId: run.id, attemptId: acceptedAttemptId, contentHash };
+}
+
+/** Alias of the evidence-adapter resolver contract, re-exported for wiring call sites. */
+export type { EvaluationSourceResolver as StudySourceResolver };
+
+/**
  * Build a recipeId+version → digest lookup from a PolicyStudyDefinition's
  * pinned recipe refs. Used when mapping method-domain FusionRecipeRef (which
  * carries no digest) to the digest-bearing PolicyTrialPayload.recipeRef.
@@ -384,12 +434,13 @@ function recipeDigestLookup(definition: PolicyStudyDefinition): Map<string, stri
  * recipe digest is looked up from the study definition. Artifact refs are
  * mapped from the trial's synthesisArtifact child (spec §4.3).
  */
-function fusionTrialToPolicyTrial(
+async function fusionTrialToPolicyTrial(
   t: FusionTrial,
   studyId: string,
   modelConfigResolver: ModelConfigResolver,
   recipeDigests: Map<string, string>,
-): PolicyStudyTrial {
+  runResolver: StudyCandidateRunResolver | null,
+): Promise<PolicyStudyTrial> {
   const members: ExactModelConfigurationRef[] = [];
   for (const slot of t.candidateConfig.slots) {
     const mc = modelConfigResolver({ providerId: slot.providerId, model: slot.model });
@@ -437,6 +488,18 @@ function fusionTrialToPolicyTrial(
       attemptId: sa.fusionAttemptId,
       contentHash: sa.contentHash,
     });
+  }
+  // F1 (Run 21): lossless candidate lineage — resolve children.candidateRunId
+  // to a full StudyArtifactRef via run lookup. The synthesisArtifact ref above
+  // already maps runId → attemptId + contentHash losslessly; the candidate
+  // run reference loses attemptId + contentHash unless we look the run up.
+  // Missing/ambiguous facts skip the ref — they are never invented (spec §9).
+  if (t.children.candidateRunId && runResolver) {
+    const run = await runResolver.getRun(t.children.candidateRunId);
+    if (run) {
+      const candidateRef = candidateArtifactRefFromRun(run);
+      if (candidateRef) artifactRefs.push(candidateRef);
+    }
   }
 
   return {
@@ -510,13 +573,20 @@ async function persistMethodLineage(
   studyId: string,
   modelConfigResolver: ModelConfigResolver,
   recipeDigests: Map<string, string>,
+  runResolver: StudyCandidateRunResolver | null,
 ): Promise<void> {
   const methodTrials = await methodRepo.listTrials(studyId);
   const methodAttempts: FusionAttempt[] = await methodRepo.listTrialAttempts(studyId);
   const successorAttemptByToId = new Map(methodAttempts.map((a) => [a.toTrialId, a] as const));
 
   for (const mt of methodTrials) {
-    const genericTrial = fusionTrialToPolicyTrial(mt, studyId, modelConfigResolver, recipeDigests);
+    const genericTrial = await fusionTrialToPolicyTrial(
+      mt,
+      studyId,
+      modelConfigResolver,
+      recipeDigests,
+      runResolver,
+    );
     // Always create in_progress; seal separately if the method sealed it.
     const inProgressTrial: PolicyStudyTrial = {
       ...genericTrial,
@@ -564,6 +634,13 @@ export interface PolicyStudyAdapterDeps {
    * null-returning resolver — supply one in production and lineage tests.
    */
   modelConfigResolver?: ModelConfigResolver;
+  /**
+   * Read-only run lookup used to resolve children.candidateRunId into a full
+   * StudyArtifactRef (runId + attemptId + contentHash) when persisting method
+   * lineage onto StudyRepository (F1). When absent, candidate refs are skipped
+   * rather than invented.
+   */
+  runResolver?: StudyCandidateRunResolver;
   now?: () => number;
   generateId?: () => string;
 }
@@ -614,6 +691,7 @@ export class PolicyStudyAdapter {
   private readonly judgeResolver: JudgeResolver;
   private readonly executor: FusionPolicyExecutor;
   private readonly modelConfigResolver: ModelConfigResolver;
+  private readonly runResolver: StudyCandidateRunResolver | null;
   private readonly now: () => number;
   private readonly generateId: () => string;
 
@@ -623,6 +701,7 @@ export class PolicyStudyAdapter {
     this.judgeResolver = deps.judgeResolver;
     this.executor = deps.executor;
     this.modelConfigResolver = deps.modelConfigResolver ?? nullModelConfigResolver;
+    this.runResolver = deps.runResolver ?? null;
     this.now = deps.now ?? Date.now;
     this.generateId = deps.generateId ?? (() => crypto.randomUUID());
   }
@@ -754,6 +833,7 @@ export class PolicyStudyAdapter {
       record.id,
       this.modelConfigResolver,
       recipeDigests,
+      this.runResolver,
     );
 
     // Supporting Trial/Observation refs — now generic ids that resolve via
@@ -877,6 +957,7 @@ export class PolicyStudyAdapter {
       record.id,
       this.modelConfigResolver,
       recipeDigests,
+      this.runResolver,
     );
 
     const genericTrials = await this.studyRepo.listTrials(record.id);
