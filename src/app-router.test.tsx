@@ -39,6 +39,7 @@ import "./workspaces/evaluations/ExperimentRoute";
 import "./workspaces/tasks/TaskCatalog";
 import "./workspaces/tasks/TaskRoute";
 import "./workspaces/compare/ComparisonResultRoute";
+import "./workspaces/lab/LabWorkspace";
 import { InMemoryRunRepository } from "./lib/persistence/run-repository";
 import { InMemoryComparisonRepository } from "./lib/persistence/in-memory-comparison-repository";
 import type { RunRecordV2, FullRunSummaryV2 } from "./lib/persistence/run-types";
@@ -52,6 +53,14 @@ import {
   type FusionStudyRepository,
 } from "./lib/persistence/fusion-study-repository";
 import type { TaskRepository } from "./lib/persistence/task-repository";
+import {
+  InMemoryStudyRepository,
+  type StudyRepository,
+} from "./lib/persistence/study-repository";
+import {
+  InMemoryLabAssetRepository,
+  type LabAssetRepository,
+} from "./lib/persistence/lab-asset-repository";
 import type { TaskRecord, TaskVersion } from "./lib/tasks/task-types";
 import type {
   EvaluationCriterion,
@@ -167,6 +176,8 @@ interface RenderOptions {
   taskRepo?: TaskRepository | null;
   runRepo?: InMemoryRunRepository | null;
   fusionRepo?: FusionStudyRepository | null;
+  studyRepo?: StudyRepository | null;
+  labAssetRepo?: LabAssetRepository | null;
   db?: { taskSetOwnershipCrosswalk: { get: (key: string) => Promise<unknown> } } | null;
   models?: CatalogModel[];
   availableProviderIds?: ProviderId[];
@@ -233,6 +244,8 @@ function renderRouter(opts: RenderOptions): Harness {
             runRepo: opts.runRepo ?? null,
             evalRepo: repo,
             fusionRepo,
+            studyRepo: opts.studyRepo ?? null,
+            labAssetRepo: opts.labAssetRepo ?? null,
             db: db as never,
             storageState: "ready",
             retry: () => undefined,
@@ -938,171 +951,66 @@ describe("AppRouter — /evaluations/:suiteId legacy redirects (spec §4)", () =
   });
 });
 
+describe("AppRouter — retired Fusion Study route (Lab spec §11.1)", () => {
+  it("does not redirect or resolve /evaluations/:suiteId/fusion/:studyId to Fusion UI", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    const db = {
+      taskSetOwnershipCrosswalk: {
+        get: async (key: string) =>
+          key === "ts-xwalk:fusion:study-1"
+            ? {
+                key,
+                kind: "fusion-owner",
+                taskSetId: "s1",
+                version: 2,
+                digest: null,
+                status: "resolved",
+                suiteRef: {
+                  suiteId: "s1",
+                  suiteVersion: 2,
+                  protocolFingerprint: "sha256:0123456789abcdef",
+                },
+              }
+            : undefined,
+      },
+    };
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/s1/fusion/study-1"],
+      repo,
+      fusionRepo,
+      db,
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/s1/fusion/study-1");
+    expect(h.$("[data-testid='fusion-study-view']")).toBeNull();
+    expect(h.container.textContent).toMatch(/Fusion Study pages no longer exist/);
+    expect(h.container.textContent).toMatch(/Research Lab/);
+    expect(h.$("a[href='/lab']")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("does not fetch or guess a study id on the retired route", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const fusionRepo = new InMemoryFusionStudyRepository();
+    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
+    const get = vi.fn(async () => undefined);
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/s1/fusion/study-1"],
+      repo,
+      fusionRepo,
+      db: { taskSetOwnershipCrosswalk: { get } },
+    });
+    expect(h.loc.current?.pathname).toBe("/evaluations/s1/fusion/study-1");
+    expect(get).not.toHaveBeenCalled();
+    expect(h.container.textContent).not.toMatch(/unresolved/i);
+    cleanup(h);
+  });
+});
+
 describe("AppRouter — Fusion owner redirects (spec §4, §8.2)", () => {
-  it("redirects /evaluations/:suiteId/fusion/:studyId only after exact crosswalk resolution", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
-    const fusionRepo = new InMemoryFusionStudyRepository();
-    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
-    const db = {
-      taskSetOwnershipCrosswalk: {
-        get: async (key: string) =>
-          key === "ts-xwalk:fusion:study-1"
-            ? {
-                key,
-                kind: "fusion-owner",
-                taskSetId: "s1",
-                version: 2,
-                digest: null,
-                status: "resolved",
-                suiteRef: {
-                  suiteId: "s1",
-                  suiteVersion: 2,
-                  protocolFingerprint: "sha256:0123456789abcdef",
-                },
-              }
-            : undefined,
-      },
-    };
-    const h = await renderRouterAsync({
-      initialEntries: ["/evaluations/s1/fusion/study-1"],
-      repo,
-      fusionRepo,
-      db,
-    });
-    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/fusion/study-1");
-    cleanup(h);
-  });
-
-  it("preserves search and state on a resolved Fusion redirect", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
-    const fusionRepo = new InMemoryFusionStudyRepository();
-    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
-    const returnState = { from: "legacy" };
-    const db = {
-      taskSetOwnershipCrosswalk: {
-        get: async (key: string) =>
-          key === "ts-xwalk:fusion:study-1"
-            ? {
-                key,
-                kind: "fusion-owner",
-                taskSetId: "s1",
-                version: 2,
-                digest: null,
-                status: "resolved",
-                suiteRef: {
-                  suiteId: "s1",
-                  suiteVersion: 2,
-                  protocolFingerprint: "sha256:0123456789abcdef",
-                },
-              }
-            : undefined,
-      },
-    };
-    const h = await renderRouterAsync({
-      initialEntries: [
-        { pathname: "/evaluations/s1/fusion/study-1", search: "?tab=playbook", state: returnState },
-      ],
-      repo,
-      fusionRepo,
-      db,
-    });
-    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/fusion/study-1");
-    expect(h.loc.current?.search).toBe("?tab=playbook");
-    expect(h.loc.current?.state).toEqual(returnState);
-    cleanup(h);
-  });
-
-  it("keeps an unresolved Fusion owner on the legacy route with an explicit warning", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
-    const fusionRepo = new InMemoryFusionStudyRepository();
-    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
-    const db = {
-      taskSetOwnershipCrosswalk: {
-        get: async (key: string) =>
-          key === "ts-xwalk:fusion:study-1"
-            ? {
-                key,
-                kind: "fusion-owner",
-                taskSetId: "s1",
-                version: null,
-                digest: null,
-                status: "unresolved",
-              }
-            : undefined,
-      },
-    };
-    const h = await renderRouterAsync({
-      initialEntries: ["/evaluations/s1/fusion/study-1"],
-      repo,
-      fusionRepo,
-      db,
-    });
-    expect(h.loc.current?.pathname).toBe("/evaluations/s1/fusion/study-1");
-    expect(h.container.textContent).toMatch(/unresolved/i);
-    cleanup(h);
-  });
-
-  it("does not invent a Fusion redirect when no crosswalk row exists", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
-    const fusionRepo = new InMemoryFusionStudyRepository();
-    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
-    const db = {
-      taskSetOwnershipCrosswalk: {
-        get: async () => undefined,
-      },
-    };
-    const h = await renderRouterAsync({
-      initialEntries: ["/evaluations/s1/fusion/study-1"],
-      repo,
-      fusionRepo,
-      db,
-    });
-    expect(h.loc.current?.pathname).toBe("/evaluations/s1/fusion/study-1");
-    expect(h.container.textContent).toMatch(/unresolved/i);
-    cleanup(h);
-  });
-  it("keeps a legacy Fusion link unresolved when the resolved suiteRef mismatches the route suiteId", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
-    const fusionRepo = new InMemoryFusionStudyRepository();
-    await fusionRepo.createStudy(makeFusionStudy("study-1", "s1"));
-    // The crosswalk resolves study-1 to taskSetId "s1" but its frozen suiteRef
-    // points at a different suiteId ("s2"), so the legacy /evaluations/s1/
-    // fusion/study-1 route must remain unresolved rather than redirect.
-    const db = {
-      taskSetOwnershipCrosswalk: {
-        get: async (key: string) =>
-          key === "ts-xwalk:fusion:study-1"
-            ? {
-                key,
-                kind: "fusion-owner",
-                taskSetId: "s1",
-                version: 2,
-                digest: null,
-                status: "resolved",
-                suiteRef: {
-                  suiteId: "s2",
-                  suiteVersion: 2,
-                  protocolFingerprint: "sha256:0123456789abcdef",
-                },
-              }
-            : undefined,
-      },
-    };
-    const h = await renderRouterAsync({
-      initialEntries: ["/evaluations/s1/fusion/study-1"],
-      repo,
-      fusionRepo,
-      db,
-    });
-    expect(h.loc.current?.pathname).toBe("/evaluations/s1/fusion/study-1");
-    expect(h.container.textContent).toMatch(/unresolved/i);
-    cleanup(h);
-  });
 
   it("canonical Fusion route stays put and renders the study under its exact owner", async () => {
     const repo = new InMemoryEvaluationRepository();
@@ -1726,6 +1634,55 @@ describe("AppRouter — canonical Comparison Result route (spec §4, §6.2)", ()
     await settle();
     expect(h.loc.current?.pathname).toBe("/compare/results/cmp-nav-test");
 
+    cleanup(h);
+  });
+});
+
+describe("AppRouter — Research Lab routes (spec §7)", () => {
+  it("renders /lab as the Policy Studies home", async () => {
+    const h = await renderRouterAsync({
+      initialEntries: ["/lab"],
+      studyRepo: new InMemoryStudyRepository(),
+      labAssetRepo: new InMemoryLabAssetRepository(),
+    });
+    expect(h.loc.current?.pathname).toBe("/lab");
+    expect(h.container.textContent).toMatch(/Policy Studies/);
+    expect(h.container.textContent).toMatch(/RESEARCH LAB/);
+    cleanup(h);
+  });
+
+  it("renders /lab/recipes and /lab/model-pools without leaving /lab", async () => {
+    const recipes = await renderRouterAsync({
+      initialEntries: ["/lab/recipes"],
+      studyRepo: new InMemoryStudyRepository(),
+      labAssetRepo: new InMemoryLabAssetRepository(),
+    });
+    expect(recipes.loc.current?.pathname).toBe("/lab/recipes");
+    expect(recipes.container.textContent).toMatch(/Fusion Recipes/);
+    cleanup(recipes);
+
+    const pools = await renderRouterAsync({
+      initialEntries: ["/lab/model-pools"],
+      studyRepo: new InMemoryStudyRepository(),
+      labAssetRepo: new InMemoryLabAssetRepository(),
+    });
+    expect(pools.loc.current?.pathname).toBe("/lab/model-pools");
+    expect(pools.container.textContent).toMatch(/Model Pools/);
+    cleanup(pools);
+  });
+
+  it("back/forward between Lab sections", async () => {
+    const h = await renderRouterAsync({
+      initialEntries: ["/lab"],
+      studyRepo: new InMemoryStudyRepository(),
+      labAssetRepo: new InMemoryLabAssetRepository(),
+    });
+    void act(() => h.nav.current!("/lab/recipes"));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/lab/recipes");
+    void act(() => h.nav.current!(-1));
+    await settle();
+    expect(h.loc.current?.pathname).toBe("/lab");
     cleanup(h);
   });
 });

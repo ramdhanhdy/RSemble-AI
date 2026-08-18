@@ -333,6 +333,20 @@ describe("CommandPalette cmdk interaction contract", () => {
     cleanup(h);
   });
 
+  it("offers Go to Lab in the Navigate group and routes to /lab on click", async () => {
+    const { h, spies } = renderPalette();
+    await settle();
+
+    const goLab = findOption(h, "Go to Lab");
+    expect(goLab).toBeTruthy();
+    act(() => {
+      goLab!.click();
+    });
+    expect(spies.onClose).toHaveBeenCalledTimes(1);
+    expect(spies.onNavigate).toHaveBeenCalledWith("/lab");
+    cleanup(h);
+  });
+
   it("does not execute disabled commands", async () => {
     const { h, spies } = renderPalette({ canRun: false });
     await settle();
