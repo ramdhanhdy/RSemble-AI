@@ -14,10 +14,19 @@
 //  - Preview execution is side-effect free (no writes, no source mutations).
 // =============================================================================
 
-import { describe, expect, it } from "vitest";
+import "fake-indexeddb/auto";
+import { afterEach, describe, expect, it } from "vitest";
+import Dexie from "dexie";
 import { FUSION_CORPUS_FIXTURE } from "./fusion-corpus-fixture";
-import { previewFusionToResearchLab, type FusionCorpusSource } from "./fusion-to-research-lab";
 import {
+  fusionToResearchLabReceiptKey,
+  getFusionToResearchLabReceipt,
+  previewFusionToResearchLab,
+  verifyFusionToResearchLabCutover,
+  type FusionCorpusSource,
+} from "./fusion-to-research-lab";
+import {
+  FUSION_STORE_NAMES,
   isFusionToResearchLabReceipt,
   canonicalReceiptJson,
 } from "./fusion-to-research-lab-receipt";
@@ -30,8 +39,11 @@ import {
   isPolicyStudyTrial,
 } from "../studies/policy/policy-study-types";
 import { isStudyAttempt } from "../studies/study-types";
-import type { TaskSetOwnershipCrosswalkRow } from "../persistence/database";
-
+import {
+  createDatabase,
+  RSembleEvaluationDB,
+  type TaskSetOwnershipCrosswalkRow,
+} from "../persistence/database";
 // --- Valid test hashes / IDs --------------------------------------------------
 
 const VALID_64_HEX = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
@@ -1313,5 +1325,526 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
     expect(trialDecision?.status).toBe("discard");
     expect(trialDecision?.reasonCode).toBe("invalid_artifact_hash");
     expect(resultInvalid.staged.studyTrials).toHaveLength(0);
+  });
+});
+
+// --- Helpers for v12 and v13 Cutover Tests -----------------------------------
+
+const testDbs: (Dexie | RSembleEvaluationDB)[] = [];
+afterEach(async () => {
+  while (testDbs.length > 0) {
+    const d = testDbs.pop();
+    try {
+      d?.close();
+    } catch {
+      // ignore close errors
+    }
+  }
+});
+
+function trackDb<T extends Dexie | RSembleEvaluationDB>(db: T): T {
+  testDbs.push(db);
+  return db;
+}
+
+function createV12Dexie(dbName: string): Dexie {
+  const db = new Dexie(dbName);
+  db.version(1).stores({
+    runSummaries: "id",
+    runDetails: "id",
+    profiles: "id",
+    profileVersions: "[id+version]",
+    suites: "id",
+    experiments: "id",
+    storageMeta: "key",
+  });
+  db.version(2).stores({
+    fusionRecipes: "[id+version], id, version",
+    poolManifests: "[id+version], id, version",
+    fusionStudies: "id, revision, suiteId, suiteVersion, status, updatedAt",
+    fusionTrials: "id, revision, studyId, stage, status, createdAt",
+    fusionAttempts: "id, studyId, createdAt",
+    fusionObservations: "id, trialId, createdAt",
+    fusionPlaybooks: "id, studyId, createdAt",
+  });
+  db.version(3).stores({
+    tasks: "id",
+    taskVersions: "[taskId+version]",
+    taskArtifacts: "id",
+    taskArtifactBytes: "id",
+    taskInstances: "id",
+    taskFamilies: "id",
+    taskFamilyAssignments: "id",
+    taskFacetAnnotations: "id",
+    taskMigrationCrosswalk: "legacyScopeKey",
+  });
+  db.version(4).stores({ taskFamilyRelations: "id" });
+  db.version(5).stores({ taskSets: "id", taskSetVersions: "[taskSetId+version]" });
+  db.version(6).stores({ taskSetOwnershipCrosswalk: "key, kind, taskSetId" });
+  db.version(7).stores({ taskSetMaterializations: "id" });
+  db.version(8).stores({
+    modelConfigurations: "id",
+    observations: "id",
+    evidenceDecisions: "id",
+    evidenceIndexJobs: "sourceResultId",
+  });
+  db.version(9).stores({ observations: "id, &sourceKey" });
+  db.version(10).stores({ verifierOutcomes: "id" });
+  db.version(11).stores({ comparisonResults: "id" });
+  db.version(12).stores({
+    labRecipeRecords: "id, kind, latestVersion, archivedAt, updatedAt",
+    labRecipeVersions: "[recipeId+version], recipeId, digest, createdAt",
+    modelPoolRecords: "id, latestVersion, archivedAt, updatedAt",
+    modelPoolVersions: "[poolId+version], poolId, digest, createdAt",
+    studies: "id, kind, status, claimLevel, confirmationOf, updatedAt, archivedAt",
+    studyTrials: "id, studyId, status, sampleIndex, createdAt",
+    studyAttempts: "id, studyId, fromTrialId, toTrialId, createdAt",
+    studyObservations: "id, studyId, trialId, status, createdAt",
+    policyPlaybooks: "id, studyId, definitionFingerprint, createdAt",
+  });
+  return trackDb(db);
+}
+
+async function seedV12FusionCorpus(db: Dexie): Promise<void> {
+  for (const r of FUSION_CORPUS_FIXTURE.recipes) {
+    await db.table("fusionRecipes").put({
+      id: r.id,
+      version: r.version,
+      recipe: r,
+      createdAt: 1000,
+    });
+  }
+  for (const p of FUSION_CORPUS_FIXTURE.pools) {
+    await db.table("poolManifests").put({
+      id: p.id,
+      version: p.version,
+      manifest: p,
+      createdAt: 1000,
+    });
+  }
+  for (const s of FUSION_CORPUS_FIXTURE.studies) {
+    await db.table("fusionStudies").put({
+      id: s.id,
+      study: s,
+      revision: s.revision,
+      suiteId: s.suiteRef?.suiteId ?? "suite-default",
+      suiteVersion: s.suiteRef?.suiteVersion ?? 1,
+      status: s.status,
+      updatedAt: s.updatedAt,
+    });
+  }
+  for (const t of FUSION_CORPUS_FIXTURE.trials) {
+    await db.table("fusionTrials").put({
+      id: t.id,
+      trial: t,
+      revision: t.revision,
+      studyId: t.studyId,
+      stage: t.stage,
+      status: t.status,
+      createdAt: t.createdAt,
+    });
+  }
+  for (const a of FUSION_CORPUS_FIXTURE.attempts) {
+    await db.table("fusionAttempts").put({
+      id: a.id,
+      attempt: a,
+      studyId: a.studyId,
+      createdAt: a.createdAt,
+    });
+  }
+  for (const o of FUSION_CORPUS_FIXTURE.observations) {
+    await db.table("fusionObservations").put({
+      id: o.id,
+      observation: o,
+      trialId: o.trialId,
+      createdAt: o.createdAt,
+    });
+  }
+  for (const pb of FUSION_CORPUS_FIXTURE.playbooks) {
+    await db.table("fusionPlaybooks").put({
+      id: pb.id,
+      playbook: pb,
+      studyId: pb.studyId,
+      createdAt: pb.createdAt,
+    });
+  }
+  if (FUSION_CORPUS_FIXTURE.crosswalk) {
+    for (const x of FUSION_CORPUS_FIXTURE.crosswalk) {
+      await db.table("taskSetOwnershipCrosswalk").put(x);
+    }
+  }
+}
+
+describe("Fusion → Research Lab Dexie v13 atomic cutover (Task 5)", () => {
+  it("upgrades a v12 database to v13 in one atomic step: deletes the seven Fusion stores and retains Lab stores", async () => {
+    const dbName = `test-cutover-atomic-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const v12 = createV12Dexie(dbName);
+    await v12.open();
+    await seedV12FusionCorpus(v12);
+    expect(await v12.table("fusionStudies").count()).toBe(5);
+    expect(await v12.table("fusionRecipes").count()).toBe(6);
+    expect(v12.verno).toBe(12);
+    v12.close();
+
+    // Open via RSembleEvaluationDB (v13 cutover)
+    const db13 = trackDb(new RSembleEvaluationDB(dbName));
+    await db13.open();
+
+    expect(db13.verno).toBe(13);
+
+    // The seven Fusion stores MUST NOT exist in db.tables
+    const currentTableNames = db13.tables.map((t) => t.name);
+    for (const store of FUSION_STORE_NAMES) {
+      expect(currentTableNames).not.toContain(store);
+    }
+
+    // All canonical Lab stores MUST exist
+    expect(currentTableNames).toContain("labRecipeRecords");
+    expect(currentTableNames).toContain("labRecipeVersions");
+    expect(currentTableNames).toContain("modelPoolRecords");
+    expect(currentTableNames).toContain("modelPoolVersions");
+    expect(currentTableNames).toContain("studies");
+    expect(currentTableNames).toContain("studyTrials");
+    expect(currentTableNames).toContain("studyAttempts");
+    expect(currentTableNames).toContain("studyObservations");
+    expect(currentTableNames).toContain("policyPlaybooks");
+    expect(currentTableNames).toContain("storageMeta");
+  });
+
+  it("happy path: frozen development corpus upgrades to an empty destination graph + complete discard receipt", async () => {
+    const dbName = `test-cutover-discard-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const v12 = createV12Dexie(dbName);
+    await v12.open();
+    await seedV12FusionCorpus(v12);
+    v12.close();
+
+    const db13 = trackDb(new RSembleEvaluationDB(dbName));
+    await db13.open();
+
+    // 1. Destination stores must be completely empty (empty migrated study graph is success)
+    expect(await db13.studies.count()).toBe(0);
+    expect(await db13.studyTrials.count()).toBe(0);
+    expect(await db13.studyAttempts.count()).toBe(0);
+    expect(await db13.studyObservations.count()).toBe(0);
+    expect(await db13.policyPlaybooks.count()).toBe(0);
+    expect(await db13.labRecipeRecords.count()).toBe(0);
+    expect(await db13.labRecipeVersions.count()).toBe(0);
+    expect(await db13.modelPoolRecords.count()).toBe(0);
+    expect(await db13.modelPoolVersions.count()).toBe(0);
+
+    // 2. Receipt in storageMeta must be present, valid, and show all 39 discarded
+    const receipt = await getFusionToResearchLabReceipt(db13);
+    expect(receipt).not.toBeNull();
+    expect(isFusionToResearchLabReceipt(receipt)).toBe(true);
+    expect(receipt!.totalSourceRecords).toBe(39);
+    expect(receipt!.totalConvertedRecords).toBe(0);
+    expect(receipt!.totalDiscardedRecords).toBe(39);
+    expect(receipt!.sourceCounts).toEqual({
+      fusionRecipes: 6,
+      poolManifests: 4,
+      fusionStudies: 5,
+      fusionTrials: 16,
+      fusionAttempts: 1,
+      fusionObservations: 4,
+      fusionPlaybooks: 3,
+    });
+    expect(receipt!.decisions).toHaveLength(39);
+    expect(receipt!.decisions.every((d) => d.status === "discard")).toBe(true);
+
+    // 3. Verification function confirms the cutover
+    const verification = await verifyFusionToResearchLabCutover(db13);
+    expect(verification.valid).toBe(true);
+    expect(verification.errors).toHaveLength(0);
+  });
+
+  it("happy path: convertible Fusion records are losslessly converted to canonical Lab destination entities", async () => {
+    const dbName = `test-cutover-convert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const v12 = createV12Dexie(dbName);
+    await v12.open();
+
+    // Seed a convertible recipe
+    const recipePayload = {
+      id: "recipe-convertible",
+      version: 1,
+      recipeFamily: "AnalysisFed",
+      promptVersion: "recipe-convertible-v1",
+      judgeAnalysisMode: "qualitative",
+      rubricAccess: true,
+      verification: false,
+      synthesizer: { providerId: "openrouter", model: "openai/gpt-4o" },
+    };
+    await v12.table("fusionRecipes").put({
+      id: "recipe-convertible",
+      version: 1,
+      recipe: recipePayload,
+      createdAt: 1000,
+    });
+
+    // Seed metadata in storageMeta or options
+    await v12.table("storageMeta").put({
+      key: "fusion-migration:recipe-metadata",
+      value: {
+        "recipe-convertible": {
+          name: "Convertible Recipe",
+          description: "Lossless conversion test",
+          createdAt: 1000,
+        },
+      },
+    });
+
+    v12.close();
+
+    const db13 = trackDb(new RSembleEvaluationDB(dbName));
+    await db13.open();
+
+    expect(await db13.labRecipeRecords.count()).toBe(1);
+    expect(await db13.labRecipeVersions.count()).toBe(1);
+
+    const record = await db13.labRecipeRecords.get("recipe-convertible");
+    expect(record).toBeDefined();
+    expect(record?.kind).toBe("fusion");
+    expect(isLabRecipeRecord(record?.record)).toBe(true);
+
+    const versionRow = await db13.labRecipeVersions.get(["recipe-convertible", 1]);
+    expect(versionRow).toBeDefined();
+    expect(isLabRecipeVersion(versionRow?.version_)).toBe(true);
+
+    const receipt = await getFusionToResearchLabReceipt(db13);
+    expect(receipt).not.toBeNull();
+    expect(receipt!.totalConvertedRecords).toBe(2); // record + version
+    expect(receipt!.convertedCounts.labRecipeRecords).toBe(1);
+    expect(receipt!.convertedCounts.labRecipeVersions).toBe(1);
+
+    const verification = await verifyFusionToResearchLabCutover(db13);
+    expect(verification.valid).toBe(true);
+  });
+
+  it("source stores are unavailable after commit: no dual writes and no read fallback", async () => {
+    const dbName = `test-cutover-unavailable-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const v12 = createV12Dexie(dbName);
+    await v12.open();
+    await seedV12FusionCorpus(v12);
+    v12.close();
+
+    const db13 = trackDb(new RSembleEvaluationDB(dbName));
+    await db13.open();
+
+    // 1. Attempting to access deleted tables via Dexie throws or returns undefined
+    for (const store of FUSION_STORE_NAMES) {
+      expect(() => db13.table(store)).toThrow();
+    }
+
+    // 2. Writing to Lab stores never interacts with old stores
+    await db13.studies.put({
+      id: "new-lab-study",
+      record: {
+        id: "new-lab-study",
+        kind: "policy",
+        title: "New Lab Study",
+        status: "draft",
+        claimLevel: "exploratory",
+        confirmationOf: null,
+        revision: 1,
+        createdAt: 2000,
+        updatedAt: 2000,
+        archivedAt: null,
+        reportRef: null,
+        definition: {
+          taskSetRef: { id: "ts-1", version: 1 },
+          rubricRef: { id: "rubric-1", version: 1 },
+          modelPoolRef: { id: "pool-1", version: 1, digest: `sha256:${VALID_64_HEX}` },
+          judge1: { modelConfigurationId: VALID_MC_ID_1 },
+          judge2: { modelConfigurationId: VALID_MC_ID_2 },
+          policies: ["fuse"],
+          fusionRecipes: [{ recipeId: "recipe-1", version: 1, digest: `sha256:${VALID_64_HEX}` }],
+          stageProtocolVersion: 1,
+        },
+      },
+      kind: "policy",
+      status: "draft",
+      claimLevel: "exploratory",
+      confirmationOf: null,
+      revision: 1,
+      createdAt: 2000,
+      updatedAt: 2000,
+      archivedAt: null,
+    });
+
+    const storedStudy = await db13.studies.get("new-lab-study");
+    expect(storedStudy).toBeDefined();
+    expect(storedStudy?.id).toBe("new-lab-study");
+
+    // Old stores remain completely non-existent
+    expect(db13.tables.some((t) => FUSION_STORE_NAMES.includes(t.name as never))).toBe(false);
+  });
+
+  it("failed upgrade transaction leaves source v12 schema and Fusion content intact and usable", async () => {
+    const dbName = `test-cutover-fail-rollback-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const v12 = createV12Dexie(dbName);
+    await v12.open();
+    await seedV12FusionCorpus(v12);
+    const studyCountBefore = await v12.table("fusionStudies").count();
+    expect(studyCountBefore).toBe(5);
+    v12.close();
+
+    // Create a database that attempts upgrade to v13 but fails inside upgrade()
+    const failingDb = new Dexie(dbName);
+    failingDb.version(1).stores({
+      runSummaries: "id",
+      runDetails: "id",
+      profiles: "id",
+      profileVersions: "[id+version]",
+      suites: "id",
+      experiments: "id",
+      storageMeta: "key",
+    });
+    failingDb.version(2).stores({
+      fusionRecipes: "[id+version], id, version",
+      poolManifests: "[id+version], id, version",
+      fusionStudies: "id, revision, suiteId, suiteVersion, status, updatedAt",
+      fusionTrials: "id, revision, studyId, stage, status, createdAt",
+      fusionAttempts: "id, studyId, createdAt",
+      fusionObservations: "id, trialId, createdAt",
+      fusionPlaybooks: "id, studyId, createdAt",
+    });
+    failingDb.version(12).stores({
+      labRecipeRecords: "id",
+    });
+    failingDb.version(13).stores({
+      fusionRecipes: null,
+      poolManifests: null,
+      fusionStudies: null,
+      fusionTrials: null,
+      fusionAttempts: null,
+      fusionObservations: null,
+      fusionPlaybooks: null,
+    }).upgrade(async () => {
+      throw new Error("Simulated upgrade failure before commit");
+    });
+    await expect(failingDb.open()).rejects.toThrow("Simulated upgrade failure before commit");
+    failingDb.close();
+
+    // Re-open with v12 — all 7 Fusion stores and their data must remain intact
+    const v12After = createV12Dexie(dbName);
+    await v12After.open();
+    expect(v12After.verno).toBe(12);
+    expect(await v12After.table("fusionStudies").count()).toBe(studyCountBefore);
+    expect(await v12After.table("fusionRecipes").count()).toBe(6);
+    v12After.close();
+  });
+
+  it("repeat startup on an already-upgraded v13 database is idempotent with no duplicate writes", async () => {
+    const dbName = `test-cutover-idempotent-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const v12 = createV12Dexie(dbName);
+    await v12.open();
+    await seedV12FusionCorpus(v12);
+    v12.close();
+
+    // 1. First upgrade to v13
+    const dbFirst = trackDb(new RSembleEvaluationDB(dbName));
+    await dbFirst.open();
+    const receipt1 = await getFusionToResearchLabReceipt(dbFirst);
+    expect(receipt1).toBeDefined();
+    const studyCount1 = await dbFirst.studies.count();
+    const receiptDigest1 = receipt1!.receiptDigest;
+    const generatedAt1 = receipt1!.generatedAt;
+    dbFirst.close();
+
+    // 2. Second open (repeat startup)
+    const dbSecond = trackDb(new RSembleEvaluationDB(dbName));
+    await dbSecond.open();
+    const receipt2 = await getFusionToResearchLabReceipt(dbSecond);
+    expect(receipt2).toBeDefined();
+    expect(receipt2!.receiptDigest).toBe(receiptDigest1);
+    expect(receipt2!.generatedAt).toBe(generatedAt1);
+    expect(await dbSecond.studies.count()).toBe(studyCount1);
+    dbSecond.close();
+
+    // 3. Third open via createDatabase
+    const handle = createDatabase(dbName);
+    await handle.ready;
+    trackDb(handle.db);
+    const receipt3 = await getFusionToResearchLabReceipt(handle.db);
+    expect(receipt3!.receiptDigest).toBe(receiptDigest1);
+    handle.db.close();
+  });
+
+  it("destination re-read verification: rejects and flags inconsistent marker vs destination graph", async () => {
+    const dbName = `test-cutover-verify-fail-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const db13 = trackDb(new RSembleEvaluationDB(dbName));
+    await db13.open();
+
+    // Forged receipt claiming 5 converted studies when 0 exist in db13.studies
+    const forgedReceipt = {
+      receiptSchemaVersion: 1,
+      generatedAt: 1000,
+      sourceCounts: {
+        fusionRecipes: 0,
+        poolManifests: 0,
+        fusionStudies: 5,
+        fusionTrials: 0,
+        fusionAttempts: 0,
+        fusionObservations: 0,
+        fusionPlaybooks: 0,
+      },
+      convertedCounts: {
+        labRecipeRecords: 0,
+        labRecipeVersions: 0,
+        modelPoolRecords: 0,
+        modelPoolVersions: 0,
+        studies: 5,
+        studyTrials: 0,
+        studyAttempts: 0,
+        studyObservations: 0,
+        policyPlaybooks: 0,
+      },
+      discardedCounts: {
+        fusionRecipes: 0,
+        poolManifests: 0,
+        fusionStudies: 0,
+        fusionTrials: 0,
+        fusionAttempts: 0,
+        fusionObservations: 0,
+        fusionPlaybooks: 0,
+      },
+      totalSourceRecords: 5,
+      totalConvertedRecords: 5,
+      totalDiscardedRecords: 0,
+      decisions: [],
+      receiptDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      status: "preview_completed" as const,
+    };
+
+    await db13.storageMeta.put({
+      key: fusionToResearchLabReceiptKey,
+      value: forgedReceipt,
+    });
+
+    const verification = await verifyFusionToResearchLabCutover(db13);
+    expect(verification.valid).toBe(false);
+    expect(verification.errors.length).toBeGreaterThan(0);
+  });
+
+  it("clean startup: a fresh database opens directly at v13 with all Lab stores ready", async () => {
+    const dbName = `test-clean-startup-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const handle = createDatabase(dbName);
+    await handle.ready;
+    trackDb(handle.db);
+
+    expect(handle.db.verno).toBe(13);
+    expect(handle.state).toBe("ready");
+    expect(handle.taskMigrationError).toBeNull();
+
+    // No Fusion tables
+    for (const store of FUSION_STORE_NAMES) {
+      expect(handle.db.tables.some((t) => t.name === store)).toBe(false);
+    }
+
+    // All Lab tables ready
+    expect(await handle.db.studies.count()).toBe(0);
+    expect(await handle.db.labRecipeRecords.count()).toBe(0);
+    expect(await handle.db.modelPoolRecords.count()).toBe(0);
+
+    handle.db.close();
   });
 });
