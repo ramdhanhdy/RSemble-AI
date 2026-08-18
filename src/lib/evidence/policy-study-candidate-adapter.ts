@@ -5,8 +5,8 @@
 // pipeline.
 //
 // Invariants enforced here (spec §9):
-//  - StudyObservation is Lab-owned policy evidence. It NEVER enters Model
-//    Evidence Profiles directly.
+//  - StudyObservation is Lab-owned policy evidence. It NEVER enters model
+//    evidence profiles directly.
 //  - Underlying single-model candidate responses qualify as canonical Task
 //    Observations only when all ordinary requirements pass (exact canonical Task
 //    Version and Task Instance, complete digest-addressed response, exact Model
@@ -50,7 +50,11 @@ import {
 } from "./derive-observations";
 import type { EvidenceRepository } from "../persistence/evidence-repository";
 import type { StudyRepository } from "../persistence/study-repository";
-import { isStudyObservationEnvelope, isStudyRecordEnvelope, isStudyTrialEnvelope } from "../studies/study-types";
+import {
+  isStudyObservationEnvelope,
+  isStudyRecordEnvelope,
+  isStudyTrialEnvelope,
+} from "../studies/study-types";
 
 /** Error thrown when a policy output is incorrectly submitted as model evidence. */
 export class PolicyOutputEvidenceError extends Error {
@@ -72,7 +76,8 @@ export function isPolicyOutputEvidence(payload: unknown): boolean {
 
   // Policy report / Playbook
   if ("reportSchemaVersion" in rec && "definitionFingerprint" in rec && "rows" in rec) return true;
-  if ("policy" in rec && "meanOutcome" in rec && "lift" in rec && "costMultiplier" in rec) return true;
+  if ("policy" in rec && "meanOutcome" in rec && "lift" in rec && "costMultiplier" in rec)
+    return true;
   if ("recommendation" in rec && "supportingTrialIds" in rec) return true;
 
   // Rank selection winner
@@ -118,7 +123,10 @@ export type QualifyStudyCandidateResult =
     };
 
 /** Extract normalized criterion values from candidate evaluation report. */
-function extractCriterionValues(run: RunRecordV2, candidateId: string): ObservationOutcome["criterionValues"] {
+function extractCriterionValues(
+  run: RunRecordV2,
+  candidateId: string,
+): ObservationOutcome["criterionValues"] {
   const evalReport = run.judge.report?.evaluationsById[candidateId];
   if (!evalReport) return [];
   const values: ObservationOutcome["criterionValues"] = [];
@@ -169,7 +177,12 @@ export function qualifyStudyCandidateObservation(
   }
 
   const attempt = candidate.attempts.find((a) => a.attemptId === candidate.acceptedAttemptId);
-  if (!attempt || attempt.status !== "completed" || !attempt.output || attempt.output.trim().length === 0) {
+  if (
+    !attempt ||
+    attempt.status !== "completed" ||
+    !attempt.output ||
+    attempt.output.trim().length === 0
+  ) {
     return {
       ok: false,
       reason: `Candidate attempt ${candidate.acceptedAttemptId} is incomplete or failed.`,
@@ -248,10 +261,10 @@ export function qualifyStudyCandidateObservation(
   }
 
   // 4. Rubric & verifier provenance
-  const rubricProfile = candidateRun.evaluation.profile;
+  const rubricSnapshot = candidateRun.evaluation.profile;
   const rubricRef =
-    rubricProfile && rubricProfile.id && rubricProfile.version
-      ? { id: rubricProfile.id, version: rubricProfile.version }
+    rubricSnapshot && rubricSnapshot.id && rubricSnapshot.version
+      ? { id: rubricSnapshot.id, version: rubricSnapshot.version }
       : null;
   const rubricResolved = rubricRef !== null;
 
@@ -284,9 +297,7 @@ export function qualifyStudyCandidateObservation(
 
   // 6. Protocol fingerprint
   const rawProtocolFingerprint =
-    candidateRun.source.kind === "experiment"
-      ? candidateRun.source.protocolFingerprint
-      : "";
+    candidateRun.source.kind === "experiment" ? candidateRun.source.protocolFingerprint : "";
   const protocolComplete = isCohortFingerprint(rawProtocolFingerprint);
   const protocolFingerprint = protocolComplete
     ? rawProtocolFingerprint
@@ -563,7 +574,7 @@ export async function adaptPolicyStudy(
   }
 
   let candidateRunsProcessed = 0;
-  let candidateRunsSkipped = 0;
+  const candidateRunsSkipped = 0;
   let observationsCreated = 0;
   let observationsReused = 0;
   let limitations = 0;

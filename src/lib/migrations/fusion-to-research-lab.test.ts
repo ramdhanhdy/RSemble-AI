@@ -1710,17 +1710,20 @@ describe("Fusion → Research Lab Dexie v13 atomic cutover (Task 5)", () => {
     failingDb.version(12).stores({
       labRecipeRecords: "id",
     });
-    failingDb.version(13).stores({
-      fusionRecipes: null,
-      poolManifests: null,
-      fusionStudies: null,
-      fusionTrials: null,
-      fusionAttempts: null,
-      fusionObservations: null,
-      fusionPlaybooks: null,
-    }).upgrade(async () => {
-      throw new Error("Simulated upgrade failure before commit");
-    });
+    failingDb
+      .version(13)
+      .stores({
+        fusionRecipes: null,
+        poolManifests: null,
+        fusionStudies: null,
+        fusionTrials: null,
+        fusionAttempts: null,
+        fusionObservations: null,
+        fusionPlaybooks: null,
+      })
+      .upgrade(async () => {
+        throw new Error("Simulated upgrade failure before commit");
+      });
     await expect(failingDb.open()).rejects.toThrow("Simulated upgrade failure before commit");
     failingDb.close();
 

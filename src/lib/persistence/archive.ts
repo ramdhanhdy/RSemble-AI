@@ -1426,34 +1426,61 @@ export async function exportWorkbenchArchiveV2(
 
     const hasFusionStores = db.tables.some((t) => t.name === "fusionRecipes");
     if (hasFusionStores) {
-      await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").orderBy("id").each((row) => {
-        if (isFusionRecipeVersion(row.recipe)) recipes.push(row.recipe);
-        else recordGuardFailure("fusion.recipes", row.id, "fusionRecipes", guardViolations);
-      });
-      await db.table<PoolManifestRow, [string, number]>("poolManifests").orderBy("id").each((row) => {
-        if (isPoolManifestVersion(row.manifest)) poolManifests.push(row.manifest);
-        else recordGuardFailure("fusion.poolManifests", row.id, "poolManifests", guardViolations);
-      });
-      await db.table<FusionStudyRow, string>("fusionStudies").orderBy("id").each((row) => {
-        if (isFusionStudy(row.study)) studies.push(row.study);
-        else recordGuardFailure("fusion.studies", row.id, "fusionStudies", guardViolations);
-      });
-      await db.table<FusionTrialRow, string>("fusionTrials").orderBy("id").each((row) => {
-        if (isFusionTrial(row.trial)) trials.push(row.trial);
-        else recordGuardFailure("fusion.trials", row.id, "fusionTrials", guardViolations);
-      });
-      await db.table<FusionAttemptRow, string>("fusionAttempts").orderBy("id").each((row) => {
-        if (isFusionAttempt(row.attempt)) attempts.push(row.attempt);
-        else recordGuardFailure("fusion.attempts", row.id, "fusionAttempts", guardViolations);
-      });
-      await db.table<FusionObservationRow, string>("fusionObservations").orderBy("id").each((row) => {
-        if (isEvaluationObservation(row.observation)) observations.push(row.observation);
-        else recordGuardFailure("fusion.observations", row.id, "fusionObservations", guardViolations);
-      });
-      await db.table<FusionPlaybookRow, string>("fusionPlaybooks").orderBy("id").each((row) => {
-        if (isFusionPlaybook(row.playbook)) playbooks.push(row.playbook);
-        else recordGuardFailure("fusion.playbooks", row.id, "fusionPlaybooks", guardViolations);
-      });
+      await db
+        .table<FusionRecipeRow, [string, number]>("fusionRecipes")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionRecipeVersion(row.recipe)) recipes.push(row.recipe);
+          else recordGuardFailure("fusion.recipes", row.id, "fusionRecipes", guardViolations);
+        });
+      await db
+        .table<PoolManifestRow, [string, number]>("poolManifests")
+        .orderBy("id")
+        .each((row) => {
+          if (isPoolManifestVersion(row.manifest)) poolManifests.push(row.manifest);
+          else recordGuardFailure("fusion.poolManifests", row.id, "poolManifests", guardViolations);
+        });
+      await db
+        .table<FusionStudyRow, string>("fusionStudies")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionStudy(row.study)) studies.push(row.study);
+          else recordGuardFailure("fusion.studies", row.id, "fusionStudies", guardViolations);
+        });
+      await db
+        .table<FusionTrialRow, string>("fusionTrials")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionTrial(row.trial)) trials.push(row.trial);
+          else recordGuardFailure("fusion.trials", row.id, "fusionTrials", guardViolations);
+        });
+      await db
+        .table<FusionAttemptRow, string>("fusionAttempts")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionAttempt(row.attempt)) attempts.push(row.attempt);
+          else recordGuardFailure("fusion.attempts", row.id, "fusionAttempts", guardViolations);
+        });
+      await db
+        .table<FusionObservationRow, string>("fusionObservations")
+        .orderBy("id")
+        .each((row) => {
+          if (isEvaluationObservation(row.observation)) observations.push(row.observation);
+          else
+            recordGuardFailure(
+              "fusion.observations",
+              row.id,
+              "fusionObservations",
+              guardViolations,
+            );
+        });
+      await db
+        .table<FusionPlaybookRow, string>("fusionPlaybooks")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionPlaybook(row.playbook)) playbooks.push(row.playbook);
+          else recordGuardFailure("fusion.playbooks", row.id, "fusionPlaybooks", guardViolations);
+        });
     }
     completeStage("fusion");
 
@@ -3297,673 +3324,672 @@ export async function commitPreviewWorkbenchArchiveV2(
       db.verifierOutcomes,
       db.comparisonResults,
     ];
-    await db.transaction(
-      "rw",
-      tablesToLock,
-      async () => {
-        if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+    await db.transaction("rw", tablesToLock, async () => {
+      if (options.signal?.aborted) throw new ArchiveImportCancelledError();
 
-        // --- F1: re-check every CREATE destination inside the transaction ---
-        // The preview's create/reuse classification is stale by the time the
-        // commit runs: a racing writer may have inserted (or replaced) a row
-        // under a key this commit plans to create. Before ANY put, re-read
-        // every destination key this commit will write and, if a row exists,
-        // canonically compare it to the incoming payload. An identical race is
-        // reused (no write); any non-identical race aborts the whole commit
-        // BEFORE a write — preserving the no-overwrite/no-partial-mutation
-        // contract. Reads inside the transaction see the committed state, so
-        // this closes the TOCTOU hole.
-        const canonical = (v: unknown) => canonicalJsonString(v);
-        const conflict = (collection: string, key: string) => {
-          throw new StorageError(
-            "conflict",
-            `Import aborted: ${collection}[${key}] was changed after the preview — colliding records were left unchanged.`,
-          );
-        };
+      // --- F1: re-check every CREATE destination inside the transaction ---
+      // The preview's create/reuse classification is stale by the time the
+      // commit runs: a racing writer may have inserted (or replaced) a row
+      // under a key this commit plans to create. Before ANY put, re-read
+      // every destination key this commit will write and, if a row exists,
+      // canonically compare it to the incoming payload. An identical race is
+      // reused (no write); any non-identical race aborts the whole commit
+      // BEFORE a write — preserving the no-overwrite/no-partial-mutation
+      // contract. Reads inside the transaction see the committed state, so
+      // this closes the TOCTOU hole.
+      const canonical = (v: unknown) => canonicalJsonString(v);
+      const conflict = (collection: string, key: string) => {
+        throw new StorageError(
+          "conflict",
+          `Import aborted: ${collection}[${key}] was changed after the preview — colliding records were left unchanged.`,
+        );
+      };
 
-        // runs.details (paired summaries): reuse iff the stored detail+summary
-        // are identical to the incoming pair.
-        const fullById2 = new Map<string, FullRunSummaryV2>();
-        for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById2.set(s.id, s);
-        for (const record of archive.runs.details) {
-          if (!isCreated("runs.details", record.id)) continue;
-          const compatible =
-            repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
-          if (compatible === null) continue;
-          const existingDetail = await db.runDetails.get(record.id);
-          const incomingSummary = fullById2.get(record.id);
-          if (existingDetail !== undefined) {
-            const existingCompatible =
-              repairRunRecordForCompatibility(existingDetail.record) ??
-              (isRunRecordV2(existingDetail.record)
-                ? (existingDetail.record as RunRecordV2)
-                : null);
-            const detailSame =
-              existingCompatible !== null &&
-              canonical(existingCompatible) === canonical(compatible);
-            const summarySame =
-              incomingSummary === undefined ||
-              ((await db.runSummaries.get(record.id))?.summary !== undefined &&
-                canonical((await db.runSummaries.get(record.id))!.summary) ===
-                  canonical(incomingSummary));
-            if (!detailSame || !summarySame) conflict("runs.details", record.id);
-          } else if (incomingSummary !== undefined) {
-            const existingSummary = await db.runSummaries.get(record.id);
-            if (
-              existingSummary !== undefined &&
-              canonical(existingSummary.summary) !== canonical(incomingSummary)
-            ) {
-              conflict("runs.summaries", record.id);
-            }
-          }
-        }
-        // Standalone (legacy) summaries.
-        for (const s of archive.runs.summaries) {
-          if (isFullRunSummaryV2(s)) continue;
-          if (!isLegacyRunSummary(s)) continue;
-          if (!isCreated("runs.summaries", s.id)) continue;
-          const existing = await db.runSummaries.get(s.id);
-          if (existing !== undefined && canonical(existing.summary) !== canonical(s)) {
-            conflict("runs.summaries", s.id);
-          }
-        }
-        // rubrics.identities / rubrics.versions.
-        for (const r of archive.rubrics.identities) {
-          if (!isCreated("rubrics.identities", r.id)) continue;
-          const existing = await db.profiles.get(r.id);
-          if (existing !== undefined && canonical(existing.record) !== canonical(r)) {
-            conflict("rubrics.identities", r.id);
-          }
-        }
-        for (const v of archive.rubrics.versions) {
-          const key = versionKey(v.id, v.version);
-          if (!isCreated("rubrics.versions", key)) continue;
-          const existing = await db.profileVersions.get([v.id, v.version]);
-          if (existing !== undefined && canonical(existing.profile) !== canonical(v)) {
-            conflict("rubrics.versions", key);
-          }
-        }
-        // suites.
-        for (const suite of archive.suites) {
-          if (!isCreated("suites", suite.id)) continue;
-          const existing = await db.suites.get(suite.id);
-          if (existing !== undefined && canonical(existing.suite) !== canonical(suite)) {
-            conflict("suites", suite.id);
-          }
-        }
-        // experiments.
-        for (const experiment of archive.experiments) {
-          if (!isCreated("experiments", experiment.id)) continue;
-          const existing = await db.experiments.get(experiment.id);
-          if (existing !== undefined && canonical(existing.experiment) !== canonical(experiment)) {
-            conflict("experiments", experiment.id);
-          }
-        }
-        // fusion (seven stores).
-        if (hasFusionStores) {
-          for (const r of archive.fusion.recipes) {
-            const key = versionKey(r.id, r.version);
-            if (!isCreated("fusion.recipes", key)) continue;
-            const existing = await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").get([r.id, r.version]);
-            if (existing !== undefined && canonical(existing.recipe) !== canonical(r)) {
-              conflict("fusion.recipes", key);
-            }
-          }
-          for (const p of archive.fusion.poolManifests) {
-            const key = versionKey(p.id, p.version);
-            if (!isCreated("fusion.poolManifests", key)) continue;
-            const existing = await db.table<PoolManifestRow, [string, number]>("poolManifests").get([p.id, p.version]);
-            if (existing !== undefined && canonical(existing.manifest) !== canonical(p)) {
-              conflict("fusion.poolManifests", key);
-            }
-          }
-          for (const s of archive.fusion.studies) {
-            if (!isCreated("fusion.studies", s.id)) continue;
-            const existing = await db.table<FusionStudyRow, string>("fusionStudies").get(s.id);
-            if (existing !== undefined && canonical(existing.study) !== canonical(s)) {
-              conflict("fusion.studies", s.id);
-            }
-          }
-          for (const t of archive.fusion.trials) {
-            if (!isCreated("fusion.trials", t.id)) continue;
-            const existing = await db.table<FusionTrialRow, string>("fusionTrials").get(t.id);
-            if (existing !== undefined && canonical(existing.trial) !== canonical(t)) {
-              conflict("fusion.trials", t.id);
-            }
-          }
-          for (const a of archive.fusion.attempts) {
-            if (!isCreated("fusion.attempts", a.id)) continue;
-            const existing = await db.table<FusionAttemptRow, string>("fusionAttempts").get(a.id);
-            if (existing !== undefined && canonical(existing.attempt) !== canonical(a)) {
-              conflict("fusion.attempts", a.id);
-            }
-          }
-          for (const o of archive.fusion.observations) {
-            if (!isCreated("fusion.observations", o.id)) continue;
-            const existing = await db.table<FusionObservationRow, string>("fusionObservations").get(o.id);
-            if (existing !== undefined && canonical(existing.observation) !== canonical(o)) {
-              conflict("fusion.observations", o.id);
-            }
-          }
-          for (const p of archive.fusion.playbooks) {
-            if (!isCreated("fusion.playbooks", p.id)) continue;
-            const existing = await db.table<FusionPlaybookRow, string>("fusionPlaybooks").get(p.id);
-            if (existing !== undefined && canonical(existing.playbook) !== canonical(p)) {
-              conflict("fusion.playbooks", p.id);
-            }
-          }
-        }
-        // tasks.
-        for (const t of archive.tasks.tasks) {
-          if (!isCreated("tasks.tasks", t.id)) continue;
-          const existing = await db.tasks.get(t.id);
-          if (existing !== undefined && canonical(existing.record) !== canonical(t)) {
-            conflict("tasks.tasks", t.id);
-          }
-        }
-        for (const v of archive.tasks.taskVersions) {
-          const key = versionKey(v.taskId, v.version);
-          if (!isCreated("tasks.taskVersions", key)) continue;
-          const existing = await db.taskVersions.get([v.taskId, v.version]);
-          if (existing !== undefined && canonical(existing.version_) !== canonical(v)) {
-            conflict("tasks.taskVersions", key);
-          }
-        }
-        for (const artifact of archive.tasks.taskArtifacts) {
-          if (!isCreated("tasks.taskArtifacts", artifact.id)) continue;
-          const existing = await db.taskArtifacts.get(artifact.id);
-          if (existing !== undefined && canonical(existing) !== canonical(artifact)) {
-            conflict("tasks.taskArtifacts", artifact.id);
-          }
-        }
-        for (const i of archive.tasks.taskInstances) {
-          if (!isCreated("tasks.taskInstances", i.id)) continue;
-          const existing = await db.taskInstances.get(i.id);
-          if (existing !== undefined && canonical(existing.instance) !== canonical(i)) {
-            conflict("tasks.taskInstances", i.id);
-          }
-        }
-        for (const f of archive.tasks.taskFamilies) {
-          if (!isCreated("tasks.taskFamilies", f.id)) continue;
-          const existing = await db.taskFamilies.get(f.id);
-          if (existing !== undefined && canonical(existing.family) !== canonical(f)) {
-            conflict("tasks.taskFamilies", f.id);
-          }
-        }
-        for (const a of archive.tasks.taskFamilyAssignments) {
-          if (!isCreated("tasks.taskFamilyAssignments", a.id)) continue;
-          const existing = await db.taskFamilyAssignments.get(a.id);
-          if (existing !== undefined && canonical(existing.assignment) !== canonical(a)) {
-            conflict("tasks.taskFamilyAssignments", a.id);
-          }
-        }
-        for (const r of archive.tasks.taskFamilyRelations) {
-          if (!isCreated("tasks.taskFamilyRelations", r.id)) continue;
-          const existing = await db.taskFamilyRelations.get(r.id);
-          if (existing !== undefined && canonical(existing.relation) !== canonical(r)) {
-            conflict("tasks.taskFamilyRelations", r.id);
-          }
-        }
-        for (const a of archive.tasks.taskFacetAnnotations) {
-          if (!isCreated("tasks.taskFacetAnnotations", a.id)) continue;
-          const existing = await db.taskFacetAnnotations.get(a.id);
-          if (existing !== undefined && canonical(existing.annotation) !== canonical(a)) {
-            conflict("tasks.taskFacetAnnotations", a.id);
-          }
-        }
-        for (const cw of archive.tasks.taskMigrationCrosswalks) {
-          if (!isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) continue;
-          const existing = await db.taskMigrationCrosswalk.get(cw.legacyScopeKey);
+      // runs.details (paired summaries): reuse iff the stored detail+summary
+      // are identical to the incoming pair.
+      const fullById2 = new Map<string, FullRunSummaryV2>();
+      for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById2.set(s.id, s);
+      for (const record of archive.runs.details) {
+        if (!isCreated("runs.details", record.id)) continue;
+        const compatible =
+          repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+        if (compatible === null) continue;
+        const existingDetail = await db.runDetails.get(record.id);
+        const incomingSummary = fullById2.get(record.id);
+        if (existingDetail !== undefined) {
+          const existingCompatible =
+            repairRunRecordForCompatibility(existingDetail.record) ??
+            (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null);
+          const detailSame =
+            existingCompatible !== null && canonical(existingCompatible) === canonical(compatible);
+          const summarySame =
+            incomingSummary === undefined ||
+            ((await db.runSummaries.get(record.id))?.summary !== undefined &&
+              canonical((await db.runSummaries.get(record.id))!.summary) ===
+                canonical(incomingSummary));
+          if (!detailSame || !summarySame) conflict("runs.details", record.id);
+        } else if (incomingSummary !== undefined) {
+          const existingSummary = await db.runSummaries.get(record.id);
           if (
-            existing !== undefined &&
-            (existing.taskId !== cw.taskId || existing.taskVersion !== cw.taskVersion)
+            existingSummary !== undefined &&
+            canonical(existingSummary.summary) !== canonical(incomingSummary)
           ) {
-            conflict("tasks.taskMigrationCrosswalks", cw.legacyScopeKey);
+            conflict("runs.summaries", record.id);
           }
         }
-        // --- taskSets (optional envelope) -------------------------------------
-        if (archive.taskSets !== undefined) {
-          for (const r of archive.taskSets.records) {
-            if (!isCreated("taskSets.records", r.id)) continue;
-            const existing = await db.taskSets.get(r.id);
-            if (existing !== undefined && canonical(existing.record) !== canonical(r)) {
-              conflict("taskSets.records", r.id);
-            }
-          }
-          for (const v of archive.taskSets.versions) {
-            const key = versionKey(v.taskSetId, v.version);
-            if (!isCreated("taskSets.versions", key)) continue;
-            const existing = await db.taskSetVersions.get([v.taskSetId, v.version]);
-            if (existing !== undefined && canonical(existing.version_) !== canonical(v)) {
-              conflict("taskSets.versions", key);
-            }
-          }
-          for (const m of archive.taskSets.materializations) {
-            if (!isCreated("taskSets.materializations", m.id)) continue;
-            const existing = await db.taskSetMaterializations.get(m.id);
-            if (existing !== undefined && canonical(existing) !== canonical(m)) {
-              conflict("taskSets.materializations", m.id);
-            }
-          }
-          for (const cw of archive.taskSets.ownershipCrosswalks) {
-            if (!isCreated("taskSets.ownershipCrosswalks", cw.key)) continue;
-            const existing = await db.taskSetOwnershipCrosswalk.get(cw.key);
-            if (existing !== undefined && canonical(existing) !== canonical(cw)) {
-              conflict("taskSets.ownershipCrosswalks", cw.key);
-            }
+      }
+      // Standalone (legacy) summaries.
+      for (const s of archive.runs.summaries) {
+        if (isFullRunSummaryV2(s)) continue;
+        if (!isLegacyRunSummary(s)) continue;
+        if (!isCreated("runs.summaries", s.id)) continue;
+        const existing = await db.runSummaries.get(s.id);
+        if (existing !== undefined && canonical(existing.summary) !== canonical(s)) {
+          conflict("runs.summaries", s.id);
+        }
+      }
+      // rubrics.identities / rubrics.versions.
+      for (const r of archive.rubrics.identities) {
+        if (!isCreated("rubrics.identities", r.id)) continue;
+        const existing = await db.profiles.get(r.id);
+        if (existing !== undefined && canonical(existing.record) !== canonical(r)) {
+          conflict("rubrics.identities", r.id);
+        }
+      }
+      for (const v of archive.rubrics.versions) {
+        const key = versionKey(v.id, v.version);
+        if (!isCreated("rubrics.versions", key)) continue;
+        const existing = await db.profileVersions.get([v.id, v.version]);
+        if (existing !== undefined && canonical(existing.profile) !== canonical(v)) {
+          conflict("rubrics.versions", key);
+        }
+      }
+      // suites.
+      for (const suite of archive.suites) {
+        if (!isCreated("suites", suite.id)) continue;
+        const existing = await db.suites.get(suite.id);
+        if (existing !== undefined && canonical(existing.suite) !== canonical(suite)) {
+          conflict("suites", suite.id);
+        }
+      }
+      // experiments.
+      for (const experiment of archive.experiments) {
+        if (!isCreated("experiments", experiment.id)) continue;
+        const existing = await db.experiments.get(experiment.id);
+        if (existing !== undefined && canonical(existing.experiment) !== canonical(experiment)) {
+          conflict("experiments", experiment.id);
+        }
+      }
+      // fusion (seven stores).
+      if (hasFusionStores) {
+        for (const r of archive.fusion.recipes) {
+          const key = versionKey(r.id, r.version);
+          if (!isCreated("fusion.recipes", key)) continue;
+          const existing = await db
+            .table<FusionRecipeRow, [string, number]>("fusionRecipes")
+            .get([r.id, r.version]);
+          if (existing !== undefined && canonical(existing.recipe) !== canonical(r)) {
+            conflict("fusion.recipes", key);
           }
         }
-        // --- evidence (optional envelope) -------------------------------------
-        if (archive.evidence !== undefined) {
-          for (const mc of archive.evidence.modelConfigurations) {
-            if (!isCreated("evidence.modelConfigurations", mc.id)) continue;
-            const existing = await db.modelConfigurations.get(mc.id);
-            if (existing !== undefined && canonical(existing.snapshot) !== canonical(mc)) {
-              conflict("evidence.modelConfigurations", mc.id);
-            }
-          }
-          for (const obs of archive.evidence.observations) {
-            if (!isCreated("evidence.observations", obs.id)) continue;
-            const existing = await db.observations.get(obs.id);
-            if (existing !== undefined && canonical(existing.observation) !== canonical(obs)) {
-              conflict("evidence.observations", obs.id);
-            }
-          }
-          for (const dec of archive.evidence.evidenceDecisions) {
-            const key = `${dec.observationId}#${dec.ruleVersion}`;
-            if (!isCreated("evidence.evidenceDecisions", key)) continue;
-            const existing = await db.evidenceDecisions.get(key);
-            if (existing !== undefined && canonical(existing.decision) !== canonical(dec)) {
-              conflict("evidence.evidenceDecisions", key);
-            }
-          }
-          for (const job of archive.evidence.evidenceIndexJobs) {
-            if (!isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) continue;
-            const existing = await db.evidenceIndexJobs.get(job.sourceResultId);
-            if (existing !== undefined && canonical(fromJobRow(existing)) !== canonical(job)) {
-              conflict("evidence.evidenceIndexJobs", job.sourceResultId);
-            }
-          }
-          for (const vo of archive.evidence.verifierOutcomes) {
-            const key = verifierOutcomeKey(vo);
-            if (!isCreated("evidence.verifierOutcomes", key)) continue;
-            const existing = await db.verifierOutcomes.get(key);
-            if (existing !== undefined && canonical(fromVerifierRow(existing)) !== canonical(vo)) {
-              conflict("evidence.verifierOutcomes", key);
-            }
+        for (const p of archive.fusion.poolManifests) {
+          const key = versionKey(p.id, p.version);
+          if (!isCreated("fusion.poolManifests", key)) continue;
+          const existing = await db
+            .table<PoolManifestRow, [string, number]>("poolManifests")
+            .get([p.id, p.version]);
+          if (existing !== undefined && canonical(existing.manifest) !== canonical(p)) {
+            conflict("fusion.poolManifests", key);
           }
         }
-        // --- comparisons (optional envelope) ----------------------------------
-        if (archive.comparisons !== undefined) {
-          for (const index of archive.comparisons.indexes) {
-            if (!isCreated("comparisons.indexes", index.id)) continue;
-            const existing = await db.comparisonResults.get(index.id);
-            if (existing !== undefined && canonical(existing) !== canonical(index)) {
-              conflict("comparisons.indexes", index.id);
-            }
+        for (const s of archive.fusion.studies) {
+          if (!isCreated("fusion.studies", s.id)) continue;
+          const existing = await db.table<FusionStudyRow, string>("fusionStudies").get(s.id);
+          if (existing !== undefined && canonical(existing.study) !== canonical(s)) {
+            conflict("fusion.studies", s.id);
           }
         }
+        for (const t of archive.fusion.trials) {
+          if (!isCreated("fusion.trials", t.id)) continue;
+          const existing = await db.table<FusionTrialRow, string>("fusionTrials").get(t.id);
+          if (existing !== undefined && canonical(existing.trial) !== canonical(t)) {
+            conflict("fusion.trials", t.id);
+          }
+        }
+        for (const a of archive.fusion.attempts) {
+          if (!isCreated("fusion.attempts", a.id)) continue;
+          const existing = await db.table<FusionAttemptRow, string>("fusionAttempts").get(a.id);
+          if (existing !== undefined && canonical(existing.attempt) !== canonical(a)) {
+            conflict("fusion.attempts", a.id);
+          }
+        }
+        for (const o of archive.fusion.observations) {
+          if (!isCreated("fusion.observations", o.id)) continue;
+          const existing = await db
+            .table<FusionObservationRow, string>("fusionObservations")
+            .get(o.id);
+          if (existing !== undefined && canonical(existing.observation) !== canonical(o)) {
+            conflict("fusion.observations", o.id);
+          }
+        }
+        for (const p of archive.fusion.playbooks) {
+          if (!isCreated("fusion.playbooks", p.id)) continue;
+          const existing = await db.table<FusionPlaybookRow, string>("fusionPlaybooks").get(p.id);
+          if (existing !== undefined && canonical(existing.playbook) !== canonical(p)) {
+            conflict("fusion.playbooks", p.id);
+          }
+        }
+      }
+      // tasks.
+      for (const t of archive.tasks.tasks) {
+        if (!isCreated("tasks.tasks", t.id)) continue;
+        const existing = await db.tasks.get(t.id);
+        if (existing !== undefined && canonical(existing.record) !== canonical(t)) {
+          conflict("tasks.tasks", t.id);
+        }
+      }
+      for (const v of archive.tasks.taskVersions) {
+        const key = versionKey(v.taskId, v.version);
+        if (!isCreated("tasks.taskVersions", key)) continue;
+        const existing = await db.taskVersions.get([v.taskId, v.version]);
+        if (existing !== undefined && canonical(existing.version_) !== canonical(v)) {
+          conflict("tasks.taskVersions", key);
+        }
+      }
+      for (const artifact of archive.tasks.taskArtifacts) {
+        if (!isCreated("tasks.taskArtifacts", artifact.id)) continue;
+        const existing = await db.taskArtifacts.get(artifact.id);
+        if (existing !== undefined && canonical(existing) !== canonical(artifact)) {
+          conflict("tasks.taskArtifacts", artifact.id);
+        }
+      }
+      for (const i of archive.tasks.taskInstances) {
+        if (!isCreated("tasks.taskInstances", i.id)) continue;
+        const existing = await db.taskInstances.get(i.id);
+        if (existing !== undefined && canonical(existing.instance) !== canonical(i)) {
+          conflict("tasks.taskInstances", i.id);
+        }
+      }
+      for (const f of archive.tasks.taskFamilies) {
+        if (!isCreated("tasks.taskFamilies", f.id)) continue;
+        const existing = await db.taskFamilies.get(f.id);
+        if (existing !== undefined && canonical(existing.family) !== canonical(f)) {
+          conflict("tasks.taskFamilies", f.id);
+        }
+      }
+      for (const a of archive.tasks.taskFamilyAssignments) {
+        if (!isCreated("tasks.taskFamilyAssignments", a.id)) continue;
+        const existing = await db.taskFamilyAssignments.get(a.id);
+        if (existing !== undefined && canonical(existing.assignment) !== canonical(a)) {
+          conflict("tasks.taskFamilyAssignments", a.id);
+        }
+      }
+      for (const r of archive.tasks.taskFamilyRelations) {
+        if (!isCreated("tasks.taskFamilyRelations", r.id)) continue;
+        const existing = await db.taskFamilyRelations.get(r.id);
+        if (existing !== undefined && canonical(existing.relation) !== canonical(r)) {
+          conflict("tasks.taskFamilyRelations", r.id);
+        }
+      }
+      for (const a of archive.tasks.taskFacetAnnotations) {
+        if (!isCreated("tasks.taskFacetAnnotations", a.id)) continue;
+        const existing = await db.taskFacetAnnotations.get(a.id);
+        if (existing !== undefined && canonical(existing.annotation) !== canonical(a)) {
+          conflict("tasks.taskFacetAnnotations", a.id);
+        }
+      }
+      for (const cw of archive.tasks.taskMigrationCrosswalks) {
+        if (!isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) continue;
+        const existing = await db.taskMigrationCrosswalk.get(cw.legacyScopeKey);
+        if (
+          existing !== undefined &&
+          (existing.taskId !== cw.taskId || existing.taskVersion !== cw.taskVersion)
+        ) {
+          conflict("tasks.taskMigrationCrosswalks", cw.legacyScopeKey);
+        }
+      }
+      // --- taskSets (optional envelope) -------------------------------------
+      if (archive.taskSets !== undefined) {
+        for (const r of archive.taskSets.records) {
+          if (!isCreated("taskSets.records", r.id)) continue;
+          const existing = await db.taskSets.get(r.id);
+          if (existing !== undefined && canonical(existing.record) !== canonical(r)) {
+            conflict("taskSets.records", r.id);
+          }
+        }
+        for (const v of archive.taskSets.versions) {
+          const key = versionKey(v.taskSetId, v.version);
+          if (!isCreated("taskSets.versions", key)) continue;
+          const existing = await db.taskSetVersions.get([v.taskSetId, v.version]);
+          if (existing !== undefined && canonical(existing.version_) !== canonical(v)) {
+            conflict("taskSets.versions", key);
+          }
+        }
+        for (const m of archive.taskSets.materializations) {
+          if (!isCreated("taskSets.materializations", m.id)) continue;
+          const existing = await db.taskSetMaterializations.get(m.id);
+          if (existing !== undefined && canonical(existing) !== canonical(m)) {
+            conflict("taskSets.materializations", m.id);
+          }
+        }
+        for (const cw of archive.taskSets.ownershipCrosswalks) {
+          if (!isCreated("taskSets.ownershipCrosswalks", cw.key)) continue;
+          const existing = await db.taskSetOwnershipCrosswalk.get(cw.key);
+          if (existing !== undefined && canonical(existing) !== canonical(cw)) {
+            conflict("taskSets.ownershipCrosswalks", cw.key);
+          }
+        }
+      }
+      // --- evidence (optional envelope) -------------------------------------
+      if (archive.evidence !== undefined) {
+        for (const mc of archive.evidence.modelConfigurations) {
+          if (!isCreated("evidence.modelConfigurations", mc.id)) continue;
+          const existing = await db.modelConfigurations.get(mc.id);
+          if (existing !== undefined && canonical(existing.snapshot) !== canonical(mc)) {
+            conflict("evidence.modelConfigurations", mc.id);
+          }
+        }
+        for (const obs of archive.evidence.observations) {
+          if (!isCreated("evidence.observations", obs.id)) continue;
+          const existing = await db.observations.get(obs.id);
+          if (existing !== undefined && canonical(existing.observation) !== canonical(obs)) {
+            conflict("evidence.observations", obs.id);
+          }
+        }
+        for (const dec of archive.evidence.evidenceDecisions) {
+          const key = `${dec.observationId}#${dec.ruleVersion}`;
+          if (!isCreated("evidence.evidenceDecisions", key)) continue;
+          const existing = await db.evidenceDecisions.get(key);
+          if (existing !== undefined && canonical(existing.decision) !== canonical(dec)) {
+            conflict("evidence.evidenceDecisions", key);
+          }
+        }
+        for (const job of archive.evidence.evidenceIndexJobs) {
+          if (!isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) continue;
+          const existing = await db.evidenceIndexJobs.get(job.sourceResultId);
+          if (existing !== undefined && canonical(fromJobRow(existing)) !== canonical(job)) {
+            conflict("evidence.evidenceIndexJobs", job.sourceResultId);
+          }
+        }
+        for (const vo of archive.evidence.verifierOutcomes) {
+          const key = verifierOutcomeKey(vo);
+          if (!isCreated("evidence.verifierOutcomes", key)) continue;
+          const existing = await db.verifierOutcomes.get(key);
+          if (existing !== undefined && canonical(fromVerifierRow(existing)) !== canonical(vo)) {
+            conflict("evidence.verifierOutcomes", key);
+          }
+        }
+      }
+      // --- comparisons (optional envelope) ----------------------------------
+      if (archive.comparisons !== undefined) {
+        for (const index of archive.comparisons.indexes) {
+          if (!isCreated("comparisons.indexes", index.id)) continue;
+          const existing = await db.comparisonResults.get(index.id);
+          if (existing !== undefined && canonical(existing) !== canonical(index)) {
+            conflict("comparisons.indexes", index.id);
+          }
+        }
+      }
 
-        // --- runs.details (paired full summaries committed first) -------------
+      // --- runs.details (paired full summaries committed first) -------------
 
-        for (const record of archive.runs.details) {
-          const key = record.id;
-          const compatible =
-            repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
-          if (compatible === null) continue; // invalid → excluded from commit set
-          const incomingSummary = fullById.get(record.id);
-          if (isCreated("runs.details", key)) {
-            if (incomingSummary !== undefined) {
-              await db.runSummaries.put(summaryRowFor(incomingSummary));
-            }
-            await db.runDetails.put(detailRowFor(compatible));
-            created.push(key);
-          } else {
-            reused.push(key);
+      for (const record of archive.runs.details) {
+        const key = record.id;
+        const compatible =
+          repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+        if (compatible === null) continue; // invalid → excluded from commit set
+        const incomingSummary = fullById.get(record.id);
+        if (isCreated("runs.details", key)) {
+          if (incomingSummary !== undefined) {
+            await db.runSummaries.put(summaryRowFor(incomingSummary));
           }
+          await db.runDetails.put(detailRowFor(compatible));
+          created.push(key);
+        } else {
+          reused.push(key);
         }
-        // Standalone full summaries with a detail count as part of their run
-        // pair (committed above). Remaining summaries are legacy-only.
-        for (const s of archive.runs.summaries) {
-          if (isFullRunSummaryV2(s)) continue; // handled with details
-          if (!isLegacyRunSummary(s)) continue; // invalid → excluded
-          const key = s.id;
-          if (isCreated("runs.summaries", key)) {
-            await db.runSummaries.put(summaryRowFor(s));
-            created.push(key);
-          } else {
-            reused.push(key);
-          }
+      }
+      // Standalone full summaries with a detail count as part of their run
+      // pair (committed above). Remaining summaries are legacy-only.
+      for (const s of archive.runs.summaries) {
+        if (isFullRunSummaryV2(s)) continue; // handled with details
+        if (!isLegacyRunSummary(s)) continue; // invalid → excluded
+        const key = s.id;
+        if (isCreated("runs.summaries", key)) {
+          await db.runSummaries.put(summaryRowFor(s));
+          created.push(key);
+        } else {
+          reused.push(key);
         }
+      }
 
-        // --- rubrics / suites / experiments -----------------------------------
-        for (const r of archive.rubrics.identities) {
-          if (!isRubricRecord(r)) continue;
-          if (isCreated("rubrics.identities", r.id)) {
-            await db.profiles.put({
+      // --- rubrics / suites / experiments -----------------------------------
+      for (const r of archive.rubrics.identities) {
+        if (!isRubricRecord(r)) continue;
+        if (isCreated("rubrics.identities", r.id)) {
+          await db.profiles.put({
+            id: r.id,
+            record: r,
+            revision: 1,
+            latestVersion: r.latestVersion,
+            updatedAt: r.updatedAt,
+            archivedAt: r.archivedAt,
+          });
+          created.push(r.id);
+        } else reused.push(r.id);
+      }
+      for (const v of archive.rubrics.versions) {
+        if (!isEvaluationRubric(v)) continue;
+        const key = versionKey(v.id, v.version);
+        if (isCreated("rubrics.versions", key)) {
+          await db.profileVersions.put({
+            id: v.id,
+            version: v.version,
+            profile: v,
+            updatedAt: v.updatedAt,
+          });
+          created.push(key);
+        } else reused.push(key);
+      }
+      for (const suite of archive.suites) {
+        if (!isEvaluationSuite(suite)) continue;
+        if (isCreated("suites", suite.id)) {
+          await db.suites.put({
+            id: suite.id,
+            suite,
+            revision: 1,
+            version: suite.version,
+            updatedAt: suite.updatedAt,
+            archivedAt: suite.archivedAt,
+          });
+          created.push(suite.id);
+        } else reused.push(suite.id);
+      }
+      for (const experiment of archive.experiments) {
+        if (!isExperimentRecord(experiment)) continue;
+        if (isCreated("experiments", experiment.id)) {
+          await db.experiments.put({
+            id: experiment.id,
+            experiment,
+            revision: 1,
+            suiteId: experiment.suiteId,
+            suiteVersion: experiment.suiteVersion,
+            protocolFingerprint: experiment.protocolFingerprint,
+            createdAt: experiment.createdAt,
+            status: experiment.status,
+          });
+          created.push(experiment.id);
+        } else reused.push(experiment.id);
+      }
+      if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+      // --- fusion (seven stores) ---------------------------------------------
+      if (hasFusionStores) {
+        for (const r of archive.fusion.recipes) {
+          if (!isFusionRecipeVersion(r)) continue;
+          const key = versionKey(r.id, r.version);
+          if (isCreated("fusion.recipes", key)) {
+            await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").put({
               id: r.id,
-              record: r,
-              revision: 1,
-              latestVersion: r.latestVersion,
-              updatedAt: r.updatedAt,
-              archivedAt: r.archivedAt,
-            });
-            created.push(r.id);
-          } else reused.push(r.id);
-        }
-        for (const v of archive.rubrics.versions) {
-          if (!isEvaluationRubric(v)) continue;
-          const key = versionKey(v.id, v.version);
-          if (isCreated("rubrics.versions", key)) {
-            await db.profileVersions.put({
-              id: v.id,
-              version: v.version,
-              profile: v,
-              updatedAt: v.updatedAt,
+              version: r.version,
+              recipe: r,
+              createdAt: 1000,
             });
             created.push(key);
           } else reused.push(key);
         }
-        for (const suite of archive.suites) {
-          if (!isEvaluationSuite(suite)) continue;
-          if (isCreated("suites", suite.id)) {
-            await db.suites.put({
-              id: suite.id,
-              suite,
-              revision: 1,
-              version: suite.version,
-              updatedAt: suite.updatedAt,
-              archivedAt: suite.archivedAt,
+        for (const p of archive.fusion.poolManifests) {
+          if (!isPoolManifestVersion(p)) continue;
+          const key = versionKey(p.id, p.version);
+          if (isCreated("fusion.poolManifests", key)) {
+            await db.table<PoolManifestRow, [string, number]>("poolManifests").put({
+              id: p.id,
+              version: p.version,
+              manifest: p,
+              createdAt: p.createdAt,
             });
-            created.push(suite.id);
-          } else reused.push(suite.id);
+            created.push(key);
+          } else reused.push(key);
         }
-        for (const experiment of archive.experiments) {
-          if (!isExperimentRecord(experiment)) continue;
-          if (isCreated("experiments", experiment.id)) {
-            await db.experiments.put({
-              id: experiment.id,
-              experiment,
-              revision: 1,
-              suiteId: experiment.suiteId,
-              suiteVersion: experiment.suiteVersion,
-              protocolFingerprint: experiment.protocolFingerprint,
-              createdAt: experiment.createdAt,
-              status: experiment.status,
+        for (const s of archive.fusion.studies) {
+          if (!isFusionStudy(s)) continue;
+          if (isCreated("fusion.studies", s.id)) {
+            await db.table<FusionStudyRow, string>("fusionStudies").put({
+              id: s.id,
+              study: s,
+              revision: s.revision,
+              suiteId: s.suiteRef.suiteId,
+              suiteVersion: s.suiteRef.suiteVersion,
+              status: s.status,
+              updatedAt: s.updatedAt,
             });
-            created.push(experiment.id);
-          } else reused.push(experiment.id);
+            created.push(s.id);
+          } else reused.push(s.id);
         }
-        if (options.signal?.aborted) throw new ArchiveImportCancelledError();
-
-        // --- fusion (seven stores) ---------------------------------------------
-        if (hasFusionStores) {
-          for (const r of archive.fusion.recipes) {
-            if (!isFusionRecipeVersion(r)) continue;
-            const key = versionKey(r.id, r.version);
-            if (isCreated("fusion.recipes", key)) {
-              await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").put({
-                id: r.id,
-                version: r.version,
-                recipe: r,
-                createdAt: 1000,
-              });
-              created.push(key);
-            } else reused.push(key);
-          }
-          for (const p of archive.fusion.poolManifests) {
-            if (!isPoolManifestVersion(p)) continue;
-            const key = versionKey(p.id, p.version);
-            if (isCreated("fusion.poolManifests", key)) {
-              await db.table<PoolManifestRow, [string, number]>("poolManifests").put({
-                id: p.id,
-                version: p.version,
-                manifest: p,
-                createdAt: p.createdAt,
-              });
-              created.push(key);
-            } else reused.push(key);
-          }
-          for (const s of archive.fusion.studies) {
-            if (!isFusionStudy(s)) continue;
-            if (isCreated("fusion.studies", s.id)) {
-              await db.table<FusionStudyRow, string>("fusionStudies").put({
-                id: s.id,
-                study: s,
-                revision: s.revision,
-                suiteId: s.suiteRef.suiteId,
-                suiteVersion: s.suiteRef.suiteVersion,
-                status: s.status,
-                updatedAt: s.updatedAt,
-              });
-              created.push(s.id);
-            } else reused.push(s.id);
-          }
-          for (const t of archive.fusion.trials) {
-            if (!isFusionTrial(t)) continue;
-            if (isCreated("fusion.trials", t.id)) {
-              await db.table<FusionTrialRow, string>("fusionTrials").put({
-                id: t.id,
-                trial: t,
-                revision: t.revision,
-                studyId: t.studyId,
-                stage: t.stage,
-                status: t.status,
-                createdAt: t.createdAt,
-              });
-              created.push(t.id);
-            } else reused.push(t.id);
-          }
-          for (const a of archive.fusion.attempts) {
-            if (!isFusionAttempt(a)) continue;
-            if (isCreated("fusion.attempts", a.id)) {
-              await db.table<FusionAttemptRow, string>("fusionAttempts").put({
-                id: a.id,
-                attempt: a,
-                studyId: a.studyId,
-                createdAt: a.createdAt,
-              });
-              created.push(a.id);
-            } else reused.push(a.id);
-          }
-          for (const o of archive.fusion.observations) {
-            if (!isEvaluationObservation(o)) continue;
-            if (isCreated("fusion.observations", o.id)) {
-              await db.table<FusionObservationRow, string>("fusionObservations").put({
-                id: o.id,
-                observation: o,
-                trialId: o.trialId,
-                createdAt: o.finishedAt,
-              });
-              created.push(o.id);
-            } else reused.push(o.id);
-          }
-          for (const p of archive.fusion.playbooks) {
-            if (!isFusionPlaybook(p)) continue;
-            if (isCreated("fusion.playbooks", p.id)) {
-              await db.table<FusionPlaybookRow, string>("fusionPlaybooks").put({
-                id: p.id,
-                playbook: p,
-                studyId: p.studyId,
-                createdAt: p.createdAt,
-              });
-              created.push(p.id);
-            } else reused.push(p.id);
-          }
-        }
-        if (options.signal?.aborted) throw new ArchiveImportCancelledError();
-
-        // --- tasks -----------------------------------------------------------------
-        for (const t of archive.tasks.tasks) {
-          if (!isTaskRecord(t)) continue;
-          if (isCreated("tasks.tasks", t.id)) {
-            await db.tasks.put(taskRowFor(t));
+        for (const t of archive.fusion.trials) {
+          if (!isFusionTrial(t)) continue;
+          if (isCreated("fusion.trials", t.id)) {
+            await db.table<FusionTrialRow, string>("fusionTrials").put({
+              id: t.id,
+              trial: t,
+              revision: t.revision,
+              studyId: t.studyId,
+              stage: t.stage,
+              status: t.status,
+              createdAt: t.createdAt,
+            });
             created.push(t.id);
           } else reused.push(t.id);
         }
-        for (const v of archive.tasks.taskVersions) {
-          if (!isTaskVersion(v)) continue;
-          const key = versionKey(v.taskId, v.version);
-          if (isCreated("tasks.taskVersions", key)) {
-            await db.taskVersions.put(taskVersionRowFor(v));
-            created.push(key);
-          } else reused.push(key);
-        }
-        for (const artifact of archive.tasks.taskArtifacts) {
-          if (!isTaskArtifact(artifact)) continue;
-          if (isCreated("tasks.taskArtifacts", artifact.id)) {
-            const bytes = artifactBytesById.get(artifact.id);
-            if (bytes === undefined) {
-              throw new StorageError(
-                "validation",
-                `tasks.taskArtifacts[${artifact.id}] is missing bytes payload.`,
-              );
-            }
-            await db.taskArtifacts.put({
-              id: artifact.id,
-              contentDigest: artifact.contentDigest,
-              mediaType: artifact.mediaType,
-              byteCount: artifact.byteCount,
-              storageRef: artifact.storageRef,
-              createdAt: artifact.createdAt,
+        for (const a of archive.fusion.attempts) {
+          if (!isFusionAttempt(a)) continue;
+          if (isCreated("fusion.attempts", a.id)) {
+            await db.table<FusionAttemptRow, string>("fusionAttempts").put({
+              id: a.id,
+              attempt: a,
+              studyId: a.studyId,
+              createdAt: a.createdAt,
             });
-            await db.taskArtifactBytes.put({ id: artifact.id, bytes });
-            created.push(artifact.id);
-          } else reused.push(artifact.id);
-        }
-        for (const i of archive.tasks.taskInstances) {
-          if (!isTaskInstance(i)) continue;
-          if (isCreated("tasks.taskInstances", i.id)) {
-            await db.taskInstances.put(taskInstanceRowFor(i));
-            created.push(i.id);
-          } else reused.push(i.id);
-        }
-        for (const f of archive.tasks.taskFamilies) {
-          if (!isTaskFamily(f)) continue;
-          if (isCreated("tasks.taskFamilies", f.id)) {
-            await db.taskFamilies.put(familyRowFor(f));
-            created.push(f.id);
-          } else reused.push(f.id);
-        }
-        for (const a of archive.tasks.taskFamilyAssignments) {
-          if (!isTaskFamilyAssignment(a)) continue;
-          if (isCreated("tasks.taskFamilyAssignments", a.id)) {
-            await db.taskFamilyAssignments.put(assignmentRowFor(a));
             created.push(a.id);
           } else reused.push(a.id);
         }
-        for (const r of archive.tasks.taskFamilyRelations) {
-          if (!isExportableTaskFamilyRelation(r)) continue;
-          if (isCreated("tasks.taskFamilyRelations", r.id)) {
-            await db.taskFamilyRelations.put(relationRowFor(r));
+        for (const o of archive.fusion.observations) {
+          if (!isEvaluationObservation(o)) continue;
+          if (isCreated("fusion.observations", o.id)) {
+            await db.table<FusionObservationRow, string>("fusionObservations").put({
+              id: o.id,
+              observation: o,
+              trialId: o.trialId,
+              createdAt: o.finishedAt,
+            });
+            created.push(o.id);
+          } else reused.push(o.id);
+        }
+        for (const p of archive.fusion.playbooks) {
+          if (!isFusionPlaybook(p)) continue;
+          if (isCreated("fusion.playbooks", p.id)) {
+            await db.table<FusionPlaybookRow, string>("fusionPlaybooks").put({
+              id: p.id,
+              playbook: p,
+              studyId: p.studyId,
+              createdAt: p.createdAt,
+            });
+            created.push(p.id);
+          } else reused.push(p.id);
+        }
+      }
+      if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+      // --- tasks -----------------------------------------------------------------
+      for (const t of archive.tasks.tasks) {
+        if (!isTaskRecord(t)) continue;
+        if (isCreated("tasks.tasks", t.id)) {
+          await db.tasks.put(taskRowFor(t));
+          created.push(t.id);
+        } else reused.push(t.id);
+      }
+      for (const v of archive.tasks.taskVersions) {
+        if (!isTaskVersion(v)) continue;
+        const key = versionKey(v.taskId, v.version);
+        if (isCreated("tasks.taskVersions", key)) {
+          await db.taskVersions.put(taskVersionRowFor(v));
+          created.push(key);
+        } else reused.push(key);
+      }
+      for (const artifact of archive.tasks.taskArtifacts) {
+        if (!isTaskArtifact(artifact)) continue;
+        if (isCreated("tasks.taskArtifacts", artifact.id)) {
+          const bytes = artifactBytesById.get(artifact.id);
+          if (bytes === undefined) {
+            throw new StorageError(
+              "validation",
+              `tasks.taskArtifacts[${artifact.id}] is missing bytes payload.`,
+            );
+          }
+          await db.taskArtifacts.put({
+            id: artifact.id,
+            contentDigest: artifact.contentDigest,
+            mediaType: artifact.mediaType,
+            byteCount: artifact.byteCount,
+            storageRef: artifact.storageRef,
+            createdAt: artifact.createdAt,
+          });
+          await db.taskArtifactBytes.put({ id: artifact.id, bytes });
+          created.push(artifact.id);
+        } else reused.push(artifact.id);
+      }
+      for (const i of archive.tasks.taskInstances) {
+        if (!isTaskInstance(i)) continue;
+        if (isCreated("tasks.taskInstances", i.id)) {
+          await db.taskInstances.put(taskInstanceRowFor(i));
+          created.push(i.id);
+        } else reused.push(i.id);
+      }
+      for (const f of archive.tasks.taskFamilies) {
+        if (!isTaskFamily(f)) continue;
+        if (isCreated("tasks.taskFamilies", f.id)) {
+          await db.taskFamilies.put(familyRowFor(f));
+          created.push(f.id);
+        } else reused.push(f.id);
+      }
+      for (const a of archive.tasks.taskFamilyAssignments) {
+        if (!isTaskFamilyAssignment(a)) continue;
+        if (isCreated("tasks.taskFamilyAssignments", a.id)) {
+          await db.taskFamilyAssignments.put(assignmentRowFor(a));
+          created.push(a.id);
+        } else reused.push(a.id);
+      }
+      for (const r of archive.tasks.taskFamilyRelations) {
+        if (!isExportableTaskFamilyRelation(r)) continue;
+        if (isCreated("tasks.taskFamilyRelations", r.id)) {
+          await db.taskFamilyRelations.put(relationRowFor(r));
+          created.push(r.id);
+        } else reused.push(r.id);
+      }
+      for (const a of archive.tasks.taskFacetAnnotations) {
+        if (!isTaskFacetAnnotation(a)) continue;
+        if (isCreated("tasks.taskFacetAnnotations", a.id)) {
+          await db.taskFacetAnnotations.put(annotationRowFor(a));
+          created.push(a.id);
+        } else reused.push(a.id);
+      }
+      for (const cw of archive.tasks.taskMigrationCrosswalks) {
+        if (isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) {
+          await db.taskMigrationCrosswalk.put({
+            legacyScopeKey: cw.legacyScopeKey,
+            taskId: cw.taskId,
+            taskVersion: cw.taskVersion,
+          });
+          created.push(cw.legacyScopeKey);
+        } else reused.push(cw.legacyScopeKey);
+      }
+      // --- taskSets (optional envelope) -------------------------------------
+      if (archive.taskSets !== undefined) {
+        for (const r of archive.taskSets.records) {
+          if (!isTaskSetRecord(r)) continue;
+          if (isCreated("taskSets.records", r.id)) {
+            await db.taskSets.put(taskSetRecordRowFor(r));
             created.push(r.id);
           } else reused.push(r.id);
         }
-        for (const a of archive.tasks.taskFacetAnnotations) {
-          if (!isTaskFacetAnnotation(a)) continue;
-          if (isCreated("tasks.taskFacetAnnotations", a.id)) {
-            await db.taskFacetAnnotations.put(annotationRowFor(a));
-            created.push(a.id);
-          } else reused.push(a.id);
+        for (const v of archive.taskSets.versions) {
+          if (!isTaskSetVersion(v)) continue;
+          const key = versionKey(v.taskSetId, v.version);
+          if (isCreated("taskSets.versions", key)) {
+            await db.taskSetVersions.put(taskSetVersionRowFor(v));
+            created.push(key);
+          } else reused.push(key);
         }
-        for (const cw of archive.tasks.taskMigrationCrosswalks) {
-          if (isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) {
-            await db.taskMigrationCrosswalk.put({
-              legacyScopeKey: cw.legacyScopeKey,
-              taskId: cw.taskId,
-              taskVersion: cw.taskVersion,
-            });
-            created.push(cw.legacyScopeKey);
-          } else reused.push(cw.legacyScopeKey);
+        for (const m of archive.taskSets.materializations) {
+          if (!isTaskSetMaterializationRecord(m)) continue;
+          if (isCreated("taskSets.materializations", m.id)) {
+            await db.taskSetMaterializations.put(m);
+            created.push(m.id);
+          } else reused.push(m.id);
         }
-        // --- taskSets (optional envelope) -------------------------------------
-        if (archive.taskSets !== undefined) {
-          for (const r of archive.taskSets.records) {
-            if (!isTaskSetRecord(r)) continue;
-            if (isCreated("taskSets.records", r.id)) {
-              await db.taskSets.put(taskSetRecordRowFor(r));
-              created.push(r.id);
-            } else reused.push(r.id);
-          }
-          for (const v of archive.taskSets.versions) {
-            if (!isTaskSetVersion(v)) continue;
-            const key = versionKey(v.taskSetId, v.version);
-            if (isCreated("taskSets.versions", key)) {
-              await db.taskSetVersions.put(taskSetVersionRowFor(v));
-              created.push(key);
-            } else reused.push(key);
-          }
-          for (const m of archive.taskSets.materializations) {
-            if (!isTaskSetMaterializationRecord(m)) continue;
-            if (isCreated("taskSets.materializations", m.id)) {
-              await db.taskSetMaterializations.put(m);
-              created.push(m.id);
-            } else reused.push(m.id);
-          }
-          for (const cw of archive.taskSets.ownershipCrosswalks) {
-            if (!isTaskSetOwnershipCrosswalkRow(cw)) continue;
-            if (isCreated("taskSets.ownershipCrosswalks", cw.key)) {
-              await db.taskSetOwnershipCrosswalk.put(cw);
-              created.push(cw.key);
-            } else reused.push(cw.key);
-          }
+        for (const cw of archive.taskSets.ownershipCrosswalks) {
+          if (!isTaskSetOwnershipCrosswalkRow(cw)) continue;
+          if (isCreated("taskSets.ownershipCrosswalks", cw.key)) {
+            await db.taskSetOwnershipCrosswalk.put(cw);
+            created.push(cw.key);
+          } else reused.push(cw.key);
         }
-        // --- evidence (optional envelope) -------------------------------------
-        if (archive.evidence !== undefined) {
-          for (const mc of archive.evidence.modelConfigurations) {
-            if (!isModelConfigurationSnapshot(mc)) continue;
-            if (isCreated("evidence.modelConfigurations", mc.id)) {
-              await db.modelConfigurations.put(modelConfigurationRowFor(mc));
-              created.push(mc.id);
-            } else reused.push(mc.id);
-          }
-          for (const obs of archive.evidence.observations) {
-            if (!isObservation(obs)) continue;
-            if (isCreated("evidence.observations", obs.id)) {
-              await db.observations.put(evidenceObservationRowFor(obs));
-              created.push(obs.id);
-            } else reused.push(obs.id);
-          }
-          for (const dec of archive.evidence.evidenceDecisions) {
-            if (!isEligibilityDecision(dec)) continue;
-            const key = `${dec.observationId}#${dec.ruleVersion}`;
-            if (isCreated("evidence.evidenceDecisions", key)) {
-              await db.evidenceDecisions.put(evidenceDecisionRowFor(dec));
-              created.push(key);
-            } else reused.push(key);
-          }
-          for (const job of archive.evidence.evidenceIndexJobs) {
-            if (!isEvidenceIndexJob(job)) continue;
-            if (isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) {
-              await db.evidenceIndexJobs.put(toJobRow(job));
-              created.push(job.sourceResultId);
-            } else reused.push(job.sourceResultId);
-          }
-          for (const vo of archive.evidence.verifierOutcomes) {
-            if (!isExecutedVerifierOutcome(vo)) continue;
-            const key = verifierOutcomeKey(vo);
-            if (isCreated("evidence.verifierOutcomes", key)) {
-              await db.verifierOutcomes.put(toVerifierRow(vo));
-              created.push(key);
-            } else reused.push(key);
-          }
+      }
+      // --- evidence (optional envelope) -------------------------------------
+      if (archive.evidence !== undefined) {
+        for (const mc of archive.evidence.modelConfigurations) {
+          if (!isModelConfigurationSnapshot(mc)) continue;
+          if (isCreated("evidence.modelConfigurations", mc.id)) {
+            await db.modelConfigurations.put(modelConfigurationRowFor(mc));
+            created.push(mc.id);
+          } else reused.push(mc.id);
         }
-        // --- comparisons (optional envelope) -------------------------------------
-        if (archive.comparisons !== undefined) {
-          for (const index of archive.comparisons.indexes) {
-            if (!isComparisonResultIndex(index)) continue;
-            if (isCreated("comparisons.indexes", index.id)) {
-              await db.comparisonResults.put(index);
-              created.push(index.id);
-            } else reused.push(index.id);
-          }
+        for (const obs of archive.evidence.observations) {
+          if (!isObservation(obs)) continue;
+          if (isCreated("evidence.observations", obs.id)) {
+            await db.observations.put(evidenceObservationRowFor(obs));
+            created.push(obs.id);
+          } else reused.push(obs.id);
         }
-        // `skipped` is a commit-pass no-op channel — currently empty by design
-        // (preview classifies every persisted state; a racing same-value write
-        // is indistinguishable from reuse and stays `reused`).
-        void skipped;
-      },
-    );
+        for (const dec of archive.evidence.evidenceDecisions) {
+          if (!isEligibilityDecision(dec)) continue;
+          const key = `${dec.observationId}#${dec.ruleVersion}`;
+          if (isCreated("evidence.evidenceDecisions", key)) {
+            await db.evidenceDecisions.put(evidenceDecisionRowFor(dec));
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const job of archive.evidence.evidenceIndexJobs) {
+          if (!isEvidenceIndexJob(job)) continue;
+          if (isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) {
+            await db.evidenceIndexJobs.put(toJobRow(job));
+            created.push(job.sourceResultId);
+          } else reused.push(job.sourceResultId);
+        }
+        for (const vo of archive.evidence.verifierOutcomes) {
+          if (!isExecutedVerifierOutcome(vo)) continue;
+          const key = verifierOutcomeKey(vo);
+          if (isCreated("evidence.verifierOutcomes", key)) {
+            await db.verifierOutcomes.put(toVerifierRow(vo));
+            created.push(key);
+          } else reused.push(key);
+        }
+      }
+      // --- comparisons (optional envelope) -------------------------------------
+      if (archive.comparisons !== undefined) {
+        for (const index of archive.comparisons.indexes) {
+          if (!isComparisonResultIndex(index)) continue;
+          if (isCreated("comparisons.indexes", index.id)) {
+            await db.comparisonResults.put(index);
+            created.push(index.id);
+          } else reused.push(index.id);
+        }
+      }
+      // `skipped` is a commit-pass no-op channel — currently empty by design
+      // (preview classifies every persisted state; a racing same-value write
+      // is indistinguishable from reuse and stays `reused`).
+      void skipped;
+    });
   } catch (err) {
     if (err instanceof ArchiveImportCancelledError) throw err;
     if (err instanceof StorageError) throw err;

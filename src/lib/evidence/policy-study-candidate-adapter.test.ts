@@ -10,7 +10,7 @@
 //  - incomplete/ambiguous/unresolved/protocol-incomparable candidates are
 //    ineligible with explicit reasons;
 //  - StudyObservation, rank selection, Fusion Result, Refined Result, playbook
-//    row, policy score, and report never become Model Evidence Profile inputs;
+//    row, policy score, and report never become model evidence profile inputs;
 //  - no attempt/trial/study-weighted inflation;
 //  - source-to-Observation reindex wiring processes only eligible candidates.
 // =============================================================================
@@ -31,15 +31,8 @@ import type {
   EvaluationRubric,
   ExperimentRecord,
 } from "../evaluations/evaluation-types";
-import type {
-  RunRecordV2,
-  JudgeAttemptRecord,
-  PersistedCandidate,
-} from "../persistence/run-types";
-import type {
-  StudyTrial,
-  StudyObservation,
-} from "../studies/study-types";
+import type { RunRecordV2, JudgeAttemptRecord, PersistedCandidate } from "../persistence/run-types";
+import type { StudyTrial, StudyObservation } from "../studies/study-types";
 import type {
   PolicyStudyDefinition,
   PolicyStudyRecord,
@@ -124,7 +117,13 @@ function judgeAttempt(attemptId: string, candId: string): JudgeAttemptRecord {
           deductions: [],
           missedRequirements: [],
           criterionScores: [
-            { criterionId: "correctness", label: "correctness", kind: "graded", score: 4.5, rationale: "" },
+            {
+              criterionId: "correctness",
+              label: "correctness",
+              kind: "graded",
+              score: 4.5,
+              rationale: "",
+            },
           ],
         },
       },
@@ -280,7 +279,8 @@ function makeStudyRecord(overrides: Partial<PolicyStudyRecord> = {}): PolicyStud
     definitionFingerprint: fp,
     definition,
     reportRef: status === "completed" ? (overrides.reportRef ?? "report-1") : null,
-    confirmationOf: overrides.claimLevel === "confirmed" ? (overrides.confirmationOf ?? "study-parent") : null,
+    confirmationOf:
+      overrides.claimLevel === "confirmed" ? (overrides.confirmationOf ?? "study-parent") : null,
     createdAt: 1000,
     updatedAt: 2000,
     archivedAt: null,
@@ -301,7 +301,8 @@ function makeStudyTrial(
       members: [{ id: "mc:sha256:" + "e".repeat(64) }],
     },
     recipeRef: policy === "fuse" ? { recipeId: "recipe-1", version: 1, digest: DIGEST_64 } : null,
-    synthesizer: policy === "fuse" || policy === "refine" ? { id: "mc:sha256:" + "f".repeat(64) } : null,
+    synthesizer:
+      policy === "fuse" || policy === "refine" ? { id: "mc:sha256:" + "f".repeat(64) } : null,
   };
   const fp = fingerprintStudyValue(payload);
   return {
@@ -328,7 +329,10 @@ function makeStudyTrial(
   };
 }
 
-function makeStudyObservation(studyId: string, trialId: string): StudyObservation<PolicyMeasurementPayload> {
+function makeStudyObservation(
+  studyId: string,
+  trialId: string,
+): StudyObservation<PolicyMeasurementPayload> {
   return {
     id: `obs-${trialId}`,
     studyId,
@@ -467,8 +471,12 @@ describe("policy-study-candidate-adapter", () => {
       // Study 1 (Exploration) with 2 trials
       const study1 = makeStudyRecord({ id: "study-exploratory", status: "in_progress" });
       await studyRepo.createStudy(study1);
-      await studyRepo.createTrial(makeStudyTrial("study-exploratory", "trial-1-bf", "best_fixed", run.id));
-      await studyRepo.createTrial(makeStudyTrial("study-exploratory", "trial-1-fuse", "fuse", run.id));
+      await studyRepo.createTrial(
+        makeStudyTrial("study-exploratory", "trial-1-bf", "best_fixed", run.id),
+      );
+      await studyRepo.createTrial(
+        makeStudyTrial("study-exploratory", "trial-1-fuse", "fuse", run.id),
+      );
 
       // Study 2 (Confirmation) with 1 trial referencing the SAME candidate run
       const study2 = makeStudyRecord({
@@ -478,7 +486,9 @@ describe("policy-study-candidate-adapter", () => {
         confirmationOf: "study-exploratory",
       });
       await studyRepo.createStudy(study2);
-      await studyRepo.createTrial(makeStudyTrial("study-confirmed", "trial-2-bf", "best_fixed", run.id));
+      await studyRepo.createTrial(
+        makeStudyTrial("study-confirmed", "trial-2-bf", "best_fixed", run.id),
+      );
 
       // Adapt Study 1
       const adapt1 = await adaptPolicyStudy({
@@ -801,7 +811,12 @@ describe("policy-study-candidate-adapter", () => {
         studyId: "study-1",
         definitionFingerprint: DIGEST_64,
         rows: [playbookRow as never],
-        recommendation: { kind: "adopt", policy: "fuse", configuration: "recipe-1", rationale: "strong" },
+        recommendation: {
+          kind: "adopt",
+          policy: "fuse",
+          configuration: "recipe-1",
+          rationale: "strong",
+        },
         poolAdequacy: { probed: true, outcome: "confirmed", note: "adequate" },
         recipeSensitivity: { checked: true, note: "stable" },
         claimLevel: "exploratory",

@@ -72,7 +72,9 @@ afterEach(async () => {
 });
 
 async function makeDb(): Promise<RSembleEvaluationDB> {
-  const db = new Dexie(`task-set-migration-${crypto.randomUUID()}`) as unknown as RSembleEvaluationDB;
+  const db = new Dexie(
+    `task-set-migration-${crypto.randomUUID()}`,
+  ) as unknown as RSembleEvaluationDB;
   db.version(1).stores({
     runSummaries: "id",
     runDetails: "id",
@@ -477,8 +479,18 @@ async function seedFusionFull(
   suiteRef: SuiteSnapshotRef,
   claimLevel: "exploratory" | "confirmed" = "exploratory",
 ): Promise<void> {
-  await (db as any).fusionRecipes.put({ id: "recipe-1", version: 1, recipe: recipe(), createdAt: 1000 });
-  await (db as any).poolManifests.put({ id: "pool-1", version: 1, manifest: manifest(), createdAt: 1000 });
+  await (db as any).fusionRecipes.put({
+    id: "recipe-1",
+    version: 1,
+    recipe: recipe(),
+    createdAt: 1000,
+  });
+  await (db as any).poolManifests.put({
+    id: "pool-1",
+    version: 1,
+    manifest: manifest(),
+    createdAt: 1000,
+  });
   const s = study("study-1", suiteRef, claimLevel);
   await (db as any).fusionStudies.put({
     id: s.id,

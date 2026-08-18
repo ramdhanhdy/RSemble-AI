@@ -140,12 +140,21 @@ function makeV12ArchiveDb(dbName: string): RSembleEvaluationDB {
     policyPlaybooks: "id, studyId, definitionFingerprint, createdAt",
   });
   (db as any)._storageState = "ready";
-  (db as any).setState = function(s: string) { (this as any)._storageState = s; };
-  Object.defineProperty(db, "state", { get() { return (this as any)._storageState; } });
-  (db as any).assertWritable = function() {
-    if ((this as any)._storageState === "blocked") throw new StorageError("blocked", "Database upgrade is blocked.");
-    if ((this as any)._storageState === "versionchange") throw new StorageError("versionchange", "Database version change.");
-    if ((this as any)._storageState === "unavailable") throw new StorageError("unavailable", "Database unavailable.");
+  (db as any).setState = function (s: string) {
+    (this as any)._storageState = s;
+  };
+  Object.defineProperty(db, "state", {
+    get() {
+      return (this as any)._storageState;
+    },
+  });
+  (db as any).assertWritable = function () {
+    if ((this as any)._storageState === "blocked")
+      throw new StorageError("blocked", "Database upgrade is blocked.");
+    if ((this as any)._storageState === "versionchange")
+      throw new StorageError("versionchange", "Database version change.");
+    if ((this as any)._storageState === "unavailable")
+      throw new StorageError("unavailable", "Database unavailable.");
   };
   return db;
 }
@@ -187,8 +196,12 @@ async function seedCompleteCorpus(db: RSembleEvaluationDB): Promise<void> {
   await (db as any).fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
   await (db as any).fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
   await (db as any).fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
-  await (db as any).fusionObservations.put(fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")));
-  await (db as any).fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
+  await (db as any).fusionObservations.put(
+    fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
+  );
+  await (db as any).fusionPlaybooks.put(
+    fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")),
+  );
 
   await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
   await db.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));

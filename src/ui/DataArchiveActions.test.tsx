@@ -481,11 +481,15 @@ async function seedV2Corpus(target: RSembleEvaluationDB): Promise<void> {
     await (target as any).poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
     await (target as any).fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
     await (target as any).fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
-    await (target as any).fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
+    await (target as any).fusionAttempts.put(
+      fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")),
+    );
     await (target as any).fusionObservations.put(
       fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
     );
-    await (target as any).fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
+    await (target as any).fusionPlaybooks.put(
+      fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")),
+    );
   }
   await target.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
   await target.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));

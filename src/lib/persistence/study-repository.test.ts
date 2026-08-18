@@ -116,7 +116,6 @@ function makeMeasurementPayload(
   };
 }
 
-
 // --- Asset ref resolver fixture (F1) -----------------------------------------
 
 /** Map-backed resolver for tests: registers exactly the recipe/pool refs the
@@ -979,7 +978,6 @@ repositorySuite("Dexie study repository", () => {
   return createStudyRepository(db, fixtureResolver());
 });
 
-
 // --- F1: create/seal trial rejects missing recipe/pool refs -------------------
 
 describe("study repository F1 — trial seal rejects missing recipe/pool refs", () => {
@@ -1002,7 +1000,7 @@ describe("study repository F1 — trial seal rejects missing recipe/pool refs", 
     // Resolver that knows the refs at create time but "forgets" them by seal
     // time — simulates a deleted/archived-then-purged asset version.
     let knowRecipe = true;
-    let knowPool = true;
+    const knowPool = true;
     const flaky: StudyAssetRefResolver = {
       async recipeVersionExists(id, v) {
         return knowRecipe && id === "r1" && v === 1;

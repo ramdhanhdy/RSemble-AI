@@ -1172,24 +1172,60 @@ export async function performFusionToResearchLabCutoverUpgrade(
   options?: PreviewOptions,
 ): Promise<FusionToResearchLabReceipt> {
   // Read source tables (with fallback for databases lacking them)
-  const rawRecipes = await tx.table("fusionRecipes").toArray().catch(() => []);
-  const rawPools = await tx.table("poolManifests").toArray().catch(() => []);
-  const rawStudies = await tx.table("fusionStudies").toArray().catch(() => []);
-  const rawTrials = await tx.table("fusionTrials").toArray().catch(() => []);
-  const rawAttempts = await tx.table("fusionAttempts").toArray().catch(() => []);
-  const rawObservations = await tx.table("fusionObservations").toArray().catch(() => []);
-  const rawPlaybooks = await tx.table("fusionPlaybooks").toArray().catch(() => []);
+  const rawRecipes = await tx
+    .table("fusionRecipes")
+    .toArray()
+    .catch(() => []);
+  const rawPools = await tx
+    .table("poolManifests")
+    .toArray()
+    .catch(() => []);
+  const rawStudies = await tx
+    .table("fusionStudies")
+    .toArray()
+    .catch(() => []);
+  const rawTrials = await tx
+    .table("fusionTrials")
+    .toArray()
+    .catch(() => []);
+  const rawAttempts = await tx
+    .table("fusionAttempts")
+    .toArray()
+    .catch(() => []);
+  const rawObservations = await tx
+    .table("fusionObservations")
+    .toArray()
+    .catch(() => []);
+  const rawPlaybooks = await tx
+    .table("fusionPlaybooks")
+    .toArray()
+    .catch(() => []);
   const rawCrosswalk: TaskSetOwnershipCrosswalkRow[] = await tx
     .table("taskSetOwnershipCrosswalk")
     .toArray()
     .catch(() => []);
 
   // Read optional metadata from storageMeta if present
-  const recipeMetaRow = await tx.table("storageMeta").get("fusion-migration:recipe-metadata").catch(() => null);
-  const poolMetaRow = await tx.table("storageMeta").get("fusion-migration:pool-metadata").catch(() => null);
-  const exactModelConfigRow = await tx.table("storageMeta").get("fusion-migration:exact-models").catch(() => null);
-  const studyExtRow = await tx.table("storageMeta").get("fusion-migration:study-extensions").catch(() => null);
-  const playbookExtRow = await tx.table("storageMeta").get("fusion-migration:playbook-extensions").catch(() => null);
+  const recipeMetaRow = await tx
+    .table("storageMeta")
+    .get("fusion-migration:recipe-metadata")
+    .catch(() => null);
+  const poolMetaRow = await tx
+    .table("storageMeta")
+    .get("fusion-migration:pool-metadata")
+    .catch(() => null);
+  const exactModelConfigRow = await tx
+    .table("storageMeta")
+    .get("fusion-migration:exact-models")
+    .catch(() => null);
+  const studyExtRow = await tx
+    .table("storageMeta")
+    .get("fusion-migration:study-extensions")
+    .catch(() => null);
+  const playbookExtRow = await tx
+    .table("storageMeta")
+    .get("fusion-migration:playbook-extensions")
+    .catch(() => null);
 
   const effectiveOptions: PreviewOptions = {
     ...options,
@@ -1221,13 +1257,19 @@ export async function performFusionToResearchLabCutoverUpgrade(
   };
 
   const source: FusionCorpusSource = {
-    recipes: rawRecipes.map(extractRecipePayload).filter((r): r is FusionRecipeVersion => r !== null),
+    recipes: rawRecipes
+      .map(extractRecipePayload)
+      .filter((r): r is FusionRecipeVersion => r !== null),
     pools: rawPools.map(extractPoolPayload).filter((p): p is PoolManifestVersion => p !== null),
     studies: rawStudies.map(extractStudyPayload).filter((s): s is FusionStudy => s !== null),
     trials: rawTrials.map(extractTrialPayload).filter((t): t is FusionTrial => t !== null),
     attempts: rawAttempts.map(extractAttemptPayload).filter((a): a is FusionAttempt => a !== null),
-    observations: rawObservations.map(extractObservationPayload).filter((o): o is EvaluationObservation => o !== null),
-    playbooks: rawPlaybooks.map(extractPlaybookPayload).filter((pb): pb is FusionPlaybook => pb !== null),
+    observations: rawObservations
+      .map(extractObservationPayload)
+      .filter((o): o is EvaluationObservation => o !== null),
+    playbooks: rawPlaybooks
+      .map(extractPlaybookPayload)
+      .filter((pb): pb is FusionPlaybook => pb !== null),
     crosswalk: rawCrosswalk,
   };
 
@@ -1351,7 +1393,10 @@ export async function performFusionToResearchLabCutoverUpgrade(
   // In-transaction re-read verification (step 8 of spec §10.2)
   const savedReceiptRow = await tx.table("storageMeta").get(fusionToResearchLabReceiptKey);
   if (!savedReceiptRow || !isFusionToResearchLabReceipt(savedReceiptRow.value)) {
-    throw new StorageError("validation", "Failed to verify persisted migration receipt in storageMeta");
+    throw new StorageError(
+      "validation",
+      "Failed to verify persisted migration receipt in storageMeta",
+    );
   }
   if (savedReceiptRow.value.receiptDigest !== result.receipt.receiptDigest) {
     throw new StorageError("validation", "Persisted migration receipt digest mismatch");
@@ -1390,7 +1435,10 @@ export async function performFusionToResearchLabCutoverUpgrade(
     observationCount < result.receipt.convertedCounts.studyObservations ||
     playbookCount < result.receipt.convertedCounts.policyPlaybooks
   ) {
-    throw new StorageError("validation", "Destination store count verification failed after migration write");
+    throw new StorageError(
+      "validation",
+      "Destination store count verification failed after migration write",
+    );
   }
 
   return result.receipt;
@@ -1422,7 +1470,9 @@ export async function verifyFusionToResearchLabCutover(
     }
     const expectedDigest = computeReceiptDigest(receipt);
     if (receipt.receiptDigest !== expectedDigest) {
-      errors.push(`Receipt digest mismatch: expected ${expectedDigest}, found ${receipt.receiptDigest}`);
+      errors.push(
+        `Receipt digest mismatch: expected ${expectedDigest}, found ${receipt.receiptDigest}`,
+      );
     }
 
     const [

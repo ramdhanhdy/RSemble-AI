@@ -36,6 +36,7 @@ import type {
   FusionRecipeRef,
   FusionRecipeVersion,
   FusionStudy,
+  EvaluationObservation,
   FusionStudyKind,
   PoolAdequacyOutcome,
   PoolManifestRef,
@@ -43,9 +44,10 @@ import type {
   StageCResult,
   SuiteSnapshotRef,
 } from "../../evaluations/fusion-study-types";
-import type { EvaluationObservation } from "../../evaluations/fusion-study-types";
-import type { FusionPolicyExecutor } from "../../evaluations/fusion-study-controller";
-import { createFusionStudyController } from "../../evaluations/fusion-study-controller";
+import {
+  createFusionStudyController,
+  type FusionPolicyExecutor,
+} from "../../evaluations/fusion-study-controller";
 import { runFusionStudy } from "../../evaluations/fusion-study-orchestration";
 import { runConfirmationStudy as runMethodConfirmationStudy } from "../../evaluations/fusion-confirmation";
 import { InMemoryFusionStudyRepository } from "../../persistence/fusion-study-repository";
@@ -160,9 +162,7 @@ export async function loadPolicyStudyAssets(
   for (const ref of definition.fusionRecipes) {
     const labRecipe = await labAssetRepo.getRecipeVersion(ref.recipeId, ref.version);
     if (!labRecipe) {
-      throw new Error(
-        `Recipe ${ref.recipeId} v${ref.version} not found in Lab assets.`,
-      );
+      throw new Error(`Recipe ${ref.recipeId} v${ref.version} not found in Lab assets.`);
     }
     recipes.push(labRecipeToMethodRecipe(labRecipe));
   }
@@ -369,9 +369,7 @@ const nullModelConfigResolver: ModelConfigResolver = () => null;
  * pinned recipe refs. Used when mapping method-domain FusionRecipeRef (which
  * carries no digest) to the digest-bearing PolicyTrialPayload.recipeRef.
  */
-function recipeDigestLookup(
-  definition: PolicyStudyDefinition,
-): Map<string, string> {
+function recipeDigestLookup(definition: PolicyStudyDefinition): Map<string, string> {
   const map = new Map<string, string>();
   for (const r of definition.fusionRecipes) {
     map.set(`${r.recipeId}:${r.version}`, r.digest);
@@ -515,17 +513,10 @@ async function persistMethodLineage(
 ): Promise<void> {
   const methodTrials = await methodRepo.listTrials(studyId);
   const methodAttempts: FusionAttempt[] = await methodRepo.listTrialAttempts(studyId);
-  const successorAttemptByToId = new Map(
-    methodAttempts.map((a) => [a.toTrialId, a] as const),
-  );
+  const successorAttemptByToId = new Map(methodAttempts.map((a) => [a.toTrialId, a] as const));
 
   for (const mt of methodTrials) {
-    const genericTrial = fusionTrialToPolicyTrial(
-      mt,
-      studyId,
-      modelConfigResolver,
-      recipeDigests,
-    );
+    const genericTrial = fusionTrialToPolicyTrial(mt, studyId, modelConfigResolver, recipeDigests);
     // Always create in_progress; seal separately if the method sealed it.
     const inProgressTrial: PolicyStudyTrial = {
       ...genericTrial,
@@ -552,11 +543,7 @@ async function persistMethodLineage(
     }
     const methodObs = await methodRepo.listObservations(mt.id);
     for (const mo of methodObs) {
-      const genericObs = fusionObservationToPolicyObservation(
-        mo,
-        studyId,
-        modelConfigResolver,
-      );
+      const genericObs = fusionObservationToPolicyObservation(mo, studyId, modelConfigResolver);
       await studyRepo.appendObservation(genericObs);
     }
   }
@@ -745,8 +732,7 @@ export class PolicyStudyAdapter {
         tasksPerPairB: input.tasksPerPairB,
         tasksPerPairC: input.tasksPerPairC,
         shortlistRule: {
-          description:
-            "H_synth ≥ 0.15 or H_select ≥ 0.25; top 5 by max headroom.",
+          description: "H_synth ≥ 0.15 or H_select ≥ 0.25; top 5 by max headroom.",
           maxPairs: 5,
           minSynthesisHeadroom: 0.15,
           minSelectionHeadroom: 0.25,

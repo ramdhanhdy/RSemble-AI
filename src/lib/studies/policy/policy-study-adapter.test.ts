@@ -22,14 +22,21 @@ import type {
   ModelSlot,
 } from "../../../studio-data";
 import type { CriticRef, ChatMessage } from "../../providers/types";
-import type { EvaluationRubric, EvaluationSuite, EvaluationTask } from "../../evaluations/evaluation-types";
+import type {
+  EvaluationRubric,
+  EvaluationSuite,
+  EvaluationTask,
+} from "../../evaluations/evaluation-types";
 import {
   FUSION_RECIPE_ANALYSIS_FED_V1,
   FUSION_RECIPE_ANALYSIS_SCORES_V1,
   FUSION_RECIPE_BLIND_RAW_V1,
 } from "../../evaluations/fusion-recipes";
 import type { FusionRecipeVersion } from "../../evaluations/fusion-study-types";
-import type { FusionPolicyExecutor, PoolSweepOutput } from "../../evaluations/fusion-study-controller";
+import type {
+  FusionPolicyExecutor,
+  PoolSweepOutput,
+} from "../../evaluations/fusion-study-controller";
 import { candidateIdForSlot } from "../../pipeline";
 
 import {
@@ -136,8 +143,20 @@ const RUBRIC: EvaluationRubric = {
   description: "test",
   judgeInstruction: "judge fairly",
   criteria: [
-    { id: "acc", name: "Accuracy", description: "correct", weight: 1, anchors: { one: "bad", three: "ok", five: "great" } },
-    { id: "comp", name: "Completeness", description: "complete", weight: 1, anchors: { one: "bad", three: "ok", five: "great" } },
+    {
+      id: "acc",
+      name: "Accuracy",
+      description: "correct",
+      weight: 1,
+      anchors: { one: "bad", three: "ok", five: "great" },
+    },
+    {
+      id: "comp",
+      name: "Completeness",
+      description: "complete",
+      weight: 1,
+      anchors: { one: "bad", three: "ok", five: "great" },
+    },
   ],
   createdAt: 1000,
   updatedAt: 1000,
@@ -272,7 +291,11 @@ function makeDefinition(): PolicyStudyDefinition {
   return {
     workload: { taskSetId: "suite-1", version: 4, manifestDigest: "sha256:" + "0".repeat(64) },
     modelPool: { poolId: "pool-1", version: 1, digest: LAB_POOL.digest },
-    fusionRecipes: LAB_RECIPES.map((r) => ({ recipeId: r.recipeId, version: r.version, digest: r.digest })),
+    fusionRecipes: LAB_RECIPES.map((r) => ({
+      recipeId: r.recipeId,
+      version: r.version,
+      digest: r.digest,
+    })),
     judge1: JUDGE1_MC,
     judge2: JUDGE2_MC,
     rubric: { rubricId: "prof-1", version: 1 },
@@ -300,7 +323,11 @@ function makeConfirmationDefinition(): PolicyStudyDefinition {
 
 // --- Mock executor (mirrors fusion-study.integration.test.ts) -----------------
 
-function evaluationFor(candidateId: string, blindLabel: string, modelKey: string): CandidateEvaluation {
+function evaluationFor(
+  candidateId: string,
+  blindLabel: string,
+  modelKey: string,
+): CandidateEvaluation {
   const s = STRENGTHS[modelKey] ?? { acc: 4, comp: 4 };
   return {
     candidateId,
@@ -321,10 +348,17 @@ function evaluationFor(candidateId: string, blindLabel: string, modelKey: string
 function judgeReportFor(outputs: PoolSweepOutput[]): JudgeReport {
   const evaluationsById: Record<string, CandidateEvaluation> = {};
   outputs.forEach((o, i) => {
-    evaluationsById[o.candidateId] = evaluationFor(o.candidateId, String.fromCharCode(65 + i), o.modelKey);
+    evaluationsById[o.candidateId] = evaluationFor(
+      o.candidateId,
+      String.fromCharCode(65 + i),
+      o.modelKey,
+    );
   });
   return {
-    labelMap: outputs.map((o, i) => ({ label: String.fromCharCode(65 + i), candidateId: o.candidateId })),
+    labelMap: outputs.map((o, i) => ({
+      label: String.fromCharCode(65 + i),
+      candidateId: o.candidateId,
+    })),
     evaluationsById,
     comparisons: [],
   };
@@ -345,7 +379,11 @@ function makeMockExecutor(overrides: Partial<FusionPolicyExecutor> = {}): Fusion
       };
     },
     async judgePool(_task, _rubric, _judge, outputs) {
-      return { report: judgeReportFor(outputs), consensus: { consensus: [], contradictions: [], uniqueInsights: [] }, cost: { tokensIn: 200, tokensOut: 100 } };
+      return {
+        report: judgeReportFor(outputs),
+        consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
+        cost: { tokensIn: 200, tokensOut: 100 },
+      };
     },
     async runBlockedEvidence(task, _rubric, pair, _judge) {
       const outputs: PoolSweepOutput[] = pair.map((s) => ({
@@ -364,7 +402,9 @@ function makeMockExecutor(overrides: Partial<FusionPolicyExecutor> = {}): Fusion
         blindCandidates,
         report: judgeReportFor(outputs),
         consensus: { consensus: [], contradictions: [], uniqueInsights: [] },
-        candidateAttemptIdsByCandidateId: Object.fromEntries(outputs.map((o) => [o.candidateId, `catt-${task.id}-${o.slot.id}`])),
+        candidateAttemptIdsByCandidateId: Object.fromEntries(
+          outputs.map((o) => [o.candidateId, `catt-${task.id}-${o.slot.id}`]),
+        ),
         judgeAttemptId: `jatt-${task.id}`,
         candidateRunId: `run-cand-${task.id}`,
         devJudgeRunId: `run-judge-${task.id}`,
@@ -373,18 +413,25 @@ function makeMockExecutor(overrides: Partial<FusionPolicyExecutor> = {}): Fusion
       };
     },
     async runSynthesis(_synthesizer: CriticRef, messages: ChatMessage[]) {
-      return { text: `synth:${messages[1].content.length}`, cost: { tokensIn: 300, tokensOut: 150 } };
+      return {
+        text: `synth:${messages[1].content.length}`,
+        cost: { tokensIn: 300, tokensOut: 150 },
+      };
     },
     async runHoldout(_task, _rubric, _judge, artifacts) {
       const scoresByKey: Record<string, number> = {};
-      for (const artifact of artifacts) scoresByKey[artifact.key] = HOLDOUT_SCORES[artifact.key] ?? 3.0;
+      for (const artifact of artifacts)
+        scoresByKey[artifact.key] = HOLDOUT_SCORES[artifact.key] ?? 3.0;
       return { scoresByKey, cost: { tokensIn: 400, tokensOut: 200 } };
     },
   };
   return { ...base, ...overrides };
 }
 
-function makeAdapter(labAssets: InMemoryLabAssetRepository, executor: FusionPolicyExecutor = makeMockExecutor()) {
+function makeAdapter(
+  labAssets: InMemoryLabAssetRepository,
+  executor: FusionPolicyExecutor = makeMockExecutor(),
+) {
   const studyRepo = new InMemoryStudyRepository(null);
   let counter = 0;
   let clock = 1000;
@@ -443,7 +490,11 @@ describe("Policy Study adapter — asset projection (Lab ↔ method)", () => {
     const assets = await loadPolicyStudyAssets(labAssets, makeDefinition());
     expect(assets.recipes).toHaveLength(3);
     expect(assets.recipes.map((r) => r.id).sort()).toEqual(
-      [FUSION_RECIPE_ANALYSIS_FED_V1.id, FUSION_RECIPE_ANALYSIS_SCORES_V1.id, FUSION_RECIPE_BLIND_RAW_V1.id].sort(),
+      [
+        FUSION_RECIPE_ANALYSIS_FED_V1.id,
+        FUSION_RECIPE_ANALYSIS_SCORES_V1.id,
+        FUSION_RECIPE_BLIND_RAW_V1.id,
+      ].sort(),
     );
     expect(assets.pool.id).toBe("pool-1");
     expect(assets.pool.core).toEqual(POOL_SLOTS);
@@ -459,7 +510,9 @@ describe("Policy Study adapter — asset projection (Lab ↔ method)", () => {
   it("loadPolicyStudyAssets rejects a missing recipe version (F1 adapter-level)", async () => {
     const labAssets = await seedLabAssets();
     const def = makeDefinition();
-    def.fusionRecipes = [{ recipeId: "recipe-missing", version: 1, digest: "sha256:" + "1".repeat(64) }];
+    def.fusionRecipes = [
+      { recipeId: "recipe-missing", version: 1, digest: "sha256:" + "1".repeat(64) },
+    ];
     await expect(loadPolicyStudyAssets(labAssets, def)).rejects.toThrow(/recipe-missing/);
   });
 });
@@ -470,7 +523,9 @@ describe("Policy Study adapter — asset projection (Lab ↔ method)", () => {
 
 describe("Policy Study adapter — registered-payload boundary", () => {
   it("assertRegisteredPayloadKind accepts the registered policy kind + schema", () => {
-    expect(() => assertRegisteredPayloadKind(POLICY_STUDY_KIND, POLICY_DEFINITION_SCHEMA_VERSION)).not.toThrow();
+    expect(() =>
+      assertRegisteredPayloadKind(POLICY_STUDY_KIND, POLICY_DEFINITION_SCHEMA_VERSION),
+    ).not.toThrow();
   });
 
   it("assertRegisteredPayloadKind rejects an unknown kind before any provider call", () => {
@@ -479,7 +534,9 @@ describe("Policy Study adapter — registered-payload boundary", () => {
   });
 
   it("assertRegisteredPayloadKind rejects a wrong schema version before any provider call", () => {
-    expect(() => assertRegisteredPayloadKind(POLICY_STUDY_KIND, 999)).toThrow(/Unknown payload schema version/);
+    expect(() => assertRegisteredPayloadKind(POLICY_STUDY_KIND, 999)).toThrow(
+      /Unknown payload schema version/,
+    );
   });
 });
 
@@ -500,10 +557,29 @@ describe("Policy Study adapter — playbook mapping", () => {
       studyId: "study-1",
       suiteRef: { suiteId: "suite-1", suiteVersion: 4, protocolFingerprint: "sha256:abc" },
       rows: [
-        { policy: "fuse", configuration: "B + C → Synth X", score: 4.5, lift: 0.7, costMultiplier: 3.2, confidence: "high" as const },
-        { policy: "best_fixed", configuration: "A", score: 4.0, lift: 0, costMultiplier: 1, confidence: "high" as const },
+        {
+          policy: "fuse",
+          configuration: "B + C → Synth X",
+          score: 4.5,
+          lift: 0.7,
+          costMultiplier: 3.2,
+          confidence: "high" as const,
+        },
+        {
+          policy: "best_fixed",
+          configuration: "A",
+          score: 4.0,
+          lift: 0,
+          costMultiplier: 1,
+          confidence: "high" as const,
+        },
       ],
-      recommendation: { kind: "adopt" as const, policy: "fuse" as const, configuration: "B + C → Synth X", rationale: "beats MPID" },
+      recommendation: {
+        kind: "adopt" as const,
+        policy: "fuse" as const,
+        configuration: "B + C → Synth X",
+        rationale: "beats MPID",
+      },
       poolAdequacy: { probed: false, outcome: null, challengerKeys: [], note: "not probed" },
       claimLevel: "exploratory" as const,
       conclusion: "Status: exploratory",
@@ -530,14 +606,34 @@ describe("Policy Study adapter — playbook mapping", () => {
       id: "pb-2",
       studyId: "study-2",
       suiteRef: { suiteId: "s", suiteVersion: 1, protocolFingerprint: "sha256:x" },
-      rows: [{ policy: "best_fixed", configuration: "A", score: 4.0, lift: 0, costMultiplier: 1, confidence: "low" as const }],
+      rows: [
+        {
+          policy: "best_fixed",
+          configuration: "A",
+          score: 4.0,
+          lift: 0,
+          costMultiplier: 1,
+          confidence: "low" as const,
+        },
+      ],
       recommendation: { kind: "do_not_fuse" as const, rationale: "nothing clears MPID" },
-      poolAdequacy: { probed: true, outcome: "unconfirmed", challengerKeys: [], note: "probe failed" },
+      poolAdequacy: {
+        probed: true,
+        outcome: "unconfirmed",
+        challengerKeys: [],
+        note: "probe failed",
+      },
       claimLevel: "exploratory" as const,
       conclusion: "do not use fusion",
       createdAt: 3000,
     };
-    const report = fusionPlaybookToPolicyReport(methodPb as never, "sha256:" + "0".repeat(64), null, [], []);
+    const report = fusionPlaybookToPolicyReport(
+      methodPb as never,
+      "sha256:" + "0".repeat(64),
+      null,
+      [],
+      [],
+    );
     expect(report.recommendation.kind).toBe("do_not_fuse");
     expect(report.poolAdequacy.outcome).toBe("unconfirmed");
   });
@@ -562,7 +658,11 @@ describe("Policy Study adapter — method study handle", () => {
     });
     expect(handle.id).toBe(record.id);
     expect(handle.kind).toBe("exploration");
-    expect(handle.suiteRef).toEqual({ suiteId: "suite-1", suiteVersion: 4, protocolFingerprint: "sha256:" + "a".repeat(64) });
+    expect(handle.suiteRef).toEqual({
+      suiteId: "suite-1",
+      suiteVersion: 4,
+      protocolFingerprint: "sha256:" + "a".repeat(64),
+    });
     expect(handle.poolRef).toEqual({ id: "pool-1", version: 1 });
     expect(handle.recipeRefs).toHaveLength(3);
     expect(handle.judge1).toEqual(judge1);

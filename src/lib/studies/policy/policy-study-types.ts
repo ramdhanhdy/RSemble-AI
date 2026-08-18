@@ -293,7 +293,11 @@ export interface PolicyReportPayload {
   definitionFingerprint: string;
   rows: PolicyPlaybookRow[];
   recommendation: PolicyRecommendation;
-  poolAdequacy: { probed: boolean; outcome: "confirmed" | "unconfirmed" | "rejected"; note: string };
+  poolAdequacy: {
+    probed: boolean;
+    outcome: "confirmed" | "unconfirmed" | "rejected";
+    note: string;
+  };
   recipeSensitivity: { checked: boolean; note: string };
   claimLevel: StudyClaimLevel;
   conclusion: string;
@@ -313,7 +317,12 @@ export function isPolicyReportPayload(v: unknown): v is PolicyReportPayload {
   // poolAdequacy
   if (!isRecord(v.poolAdequacy)) return false;
   if (typeof v.poolAdequacy.probed !== "boolean") return false;
-  if (v.poolAdequacy.outcome !== "confirmed" && v.poolAdequacy.outcome !== "unconfirmed" && v.poolAdequacy.outcome !== "rejected") return false;
+  if (
+    v.poolAdequacy.outcome !== "confirmed" &&
+    v.poolAdequacy.outcome !== "unconfirmed" &&
+    v.poolAdequacy.outcome !== "rejected"
+  )
+    return false;
   if (!isNonBlankString(v.poolAdequacy.note)) return false;
   // recipeSensitivity
   if (!isRecord(v.recipeSensitivity)) return false;
