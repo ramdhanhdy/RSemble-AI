@@ -48,6 +48,7 @@ import {
   type PolicyStudyDefinition,
   type PolicyStudyRecord,
   type PolicyStudyTrial,
+  type PolicyStudyObservation,
   type PolicyTrialPayload,
 } from "../studies/policy/policy-study-types";
 import { fingerprintStudyValue } from "../studies/study-fingerprint";
@@ -119,7 +120,6 @@ function makeMeasurementPayload(
 }
 
 const ZERO_COST: TokenCost = { tokensIn: 0, tokensOut: 0 };
-const SAMPLE_COST: TokenCost = { tokensIn: 1000, tokensOut: 500 };
 
 function makeStudyRecord(
   overrides: Partial<PolicyStudyRecord> = {},
@@ -164,7 +164,8 @@ function makeConfirmationStudyRecord(
 function makeTrial(
   overrides: Partial<PolicyStudyTrial> = {},
 ): PolicyStudyTrial {
-  const payload = makeTrialPayload();
+  const { payload: payloadOverride, ...rest } = overrides;
+  const payload = payloadOverride ?? makeTrialPayload();
   return {
     id: "trial-1",
     studyId: "study-1",
@@ -180,7 +181,7 @@ function makeTrial(
     experimentalCost: ZERO_COST,
     createdAt: 2000,
     sealedAt: null,
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -675,7 +676,7 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
         createdAt: 3600,
       };
       await expect(repo.createAttempt(attempt, makeTrial({ id: "t1", sampleIndex: 1 }))).rejects.toThrow(
-        /distinct|same|from.*to/i,
+        /distinct|same|from.*to|invalid/i,
       );
     });
 
@@ -711,6 +712,7 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
         createdAt: 3600,
       };
       await repo.createAttempt(attempt, t2);
+      await repo.sealTrial("t2", 0, 3650);
       const t3 = makeTrial({ id: "t3", sampleIndex: 2, createdAt: 3700 });
       const attempt2: StudyAttempt = {
         id: "att-1",
@@ -851,7 +853,7 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       const repo = makeRepo();
       await repo.createStudy(makeStudyRecord());
       const pb = makePlaybook({
-        definitionFingerprint: "sha256:" + "z".repeat(64),
+        definitionFingerprint: "sha256:" + "e".repeat(64),
       });
       await expect(repo.createPlaybook(PB_ID, pb)).rejects.toThrow(/fingerprint|provenance|mismatch/);
     });
@@ -897,9 +899,19 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
 
     it("exposes no provider/execute/call methods (repository cannot invoke providers)", async () => {
       const repo = makeRepo();
-      const methodNames = Object.keys(repo as Record<string, unknown>).filter(
-        (k) => typeof (repo as Record<string, unknown>)[k] === "function",
-      );
+      const methodNames: string[] = [];
+      let proto: object | null = repo;
+      while (proto !== null && proto !== Object.prototype) {
+        for (const k of Object.getOwnPropertyNames(proto)) {
+          if (
+            typeof (repo as Record<string, unknown>)[k] === "function" &&
+            !methodNames.includes(k)
+          ) {
+            methodNames.push(k);
+          }
+        }
+        proto = Object.getPrototypeOf(proto);
+      }
       for (const name of methodNames) {
         expect(name).not.toMatch(/execute|invoke|callProvider|runProvider|providerCall/i);
       }

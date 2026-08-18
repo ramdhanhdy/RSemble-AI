@@ -471,6 +471,73 @@ export interface ModelPoolVersionRow {
   digest: string;
   createdAt: number;
 }
+
+// --- Study rows (schema v12, spec §4, §5) -------------------------------------
+//
+// Generic first-party study substrate: StudyRecord, StudyTrial, StudyAttempt,
+// StudyObservation, and the immutable Policy Playbook (PolicyReportPayload).
+// Each row stores the full validated record under a typed envelope field plus
+// the flat identity fields Dexie needs to filter without loading detail. Old
+// Fusion Study stores remain the live authority until the one-time migration;
+// these stores are additive and not yet read by old code paths.
+
+/** Generic Study record row (spec §4.2). Mutable metadata via CAS revision. */
+export interface StudyRecordRow {
+  id: string;
+  record: unknown;
+  kind: string;
+  status: string;
+  claimLevel: string;
+  confirmationOf: string | null;
+  revision: number;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt: number | null;
+}
+
+/** Generic Study trial row (spec §4.3). Sealed via internal row revision CAS. */
+export interface StudyTrialRow {
+  id: string;
+  trial: unknown;
+  studyId: string;
+  status: string;
+  sampleIndex: number;
+  revision: number;
+  createdAt: number;
+  sealedAt: number | null;
+}
+
+/** Treatment-changing attempt lineage row (spec §4.3). Immutable. */
+export interface StudyAttemptRow {
+  id: string;
+  attempt: unknown;
+  studyId: string;
+  fromTrialId: string;
+  toTrialId: string;
+  createdAt: number;
+}
+
+/** Terminal study observation row (spec §4.3). Immutable, append-only. */
+export interface StudyObservationRow {
+  id: string;
+  observation: unknown;
+  studyId: string;
+  trialId: string;
+  status: string;
+  createdAt: number;
+  finishedAt: number;
+}
+
+/** Immutable Policy Playbook row (spec §5). The payload is a PolicyReportPayload;
+ *  the row id is the playbook identity referenced by StudyRecord.reportRef. */
+export interface PolicyPlaybookRecordRow {
+  id: string;
+  playbook: unknown;
+  studyId: string;
+  definitionFingerprint: string;
+  digest: string;
+  createdAt: number;
+}
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -540,6 +607,12 @@ export class RSembleEvaluationDB extends Dexie {
   labRecipeVersions!: Table<LabRecipeVersionRow, [string, number]>;
   modelPoolRecords!: Table<ModelPoolRecordRow, string>;
   modelPoolVersions!: Table<ModelPoolVersionRow, [string, number]>;
+  // Study tables (schema v12, spec §4/§5)
+  studies!: Table<StudyRecordRow, string>;
+  studyTrials!: Table<StudyTrialRow, string>;
+  studyAttempts!: Table<StudyAttemptRow, string>;
+  studyObservations!: Table<StudyObservationRow, string>;
+  policyPlaybooks!: Table<PolicyPlaybookRecordRow, string>;
   // Fusion Study tables (schema v2)
   fusionRecipes!: Table<FusionRecipeRow, [string, number]>;
   poolManifests!: Table<PoolManifestRow, [string, number]>;
@@ -685,19 +758,28 @@ export class RSembleEvaluationDB extends Dexie {
     this.version(11).stores({
       comparisonResults: "id, runId, status, mode, createdAt, updatedAt, revision",
     });
-    // v12: additive Lab asset stores (child 06 Task 2, spec §6). No existing
-    // table is redefined — this block only adds the four new stores for
-    // reusable versioned Lab Recipes (kind: "fusion") and Model Pools. Old
-    // Fusion readers (fusionRecipes, poolManifests) remain the live authority
-    // until the one-time migration; these stores are not yet read by old code
-    // paths. Records are stable metadata keyed by id; versions are immutable
-    // compound-keyed rows carrying a content digest for byte-equivalent
-    // idempotency.
+    // v12: additive Lab asset + study stores (child 06 Tasks 2 & 3, spec §6,
+    // §4, §5). No existing v1–v11 table is redefined — this block only adds
+    // new stores. Reusable versioned Lab Recipes (kind: "fusion") and Model
+    // Pools, plus the generic first-party study substrate: StudyRecord,
+    // StudyTrial, StudyAttempt, StudyObservation, and the immutable Policy
+    // Playbook. Old Fusion readers (fusionRecipes, poolManifests,
+    // fusionStudies, …) remain the live authority until the one-time
+    // migration; these stores are additive and not yet read by old code paths.
+    // Asset records are stable metadata keyed by id; asset versions are
+    // immutable compound-keyed rows carrying a content digest. Study records
+    // use CAS revision; trials carry an internal row revision for seal CAS;
+    // observations and playbooks are immutable append-only rows.
     this.version(12).stores({
       labRecipeRecords: "id, kind, latestVersion, archivedAt, updatedAt",
       labRecipeVersions: "[recipeId+version], recipeId, digest, createdAt",
       modelPoolRecords: "id, latestVersion, archivedAt, updatedAt",
       modelPoolVersions: "[poolId+version], poolId, digest, createdAt",
+      studies: "id, kind, status, claimLevel, confirmationOf, updatedAt, archivedAt",
+      studyTrials: "id, studyId, status, sampleIndex, createdAt",
+      studyAttempts: "id, studyId, fromTrialId, toTrialId, createdAt",
+      studyObservations: "id, studyId, trialId, status, createdAt",
+      policyPlaybooks: "id, studyId, definitionFingerprint, createdAt",
     });
 
     this.on("blocked", () => {
