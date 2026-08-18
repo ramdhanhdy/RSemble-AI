@@ -33,12 +33,7 @@ export interface StudyTypeRegistration<
  * registrations (e.g. the policy registration) are structurally assignable
  * because interface methods are bivariant and type predicates are covariant.
  */
-export type AnyStudyTypeRegistration = StudyTypeRegistration<
-  unknown,
-  unknown,
-  unknown,
-  unknown
->;
+export type AnyStudyTypeRegistration = StudyTypeRegistration<unknown, unknown, unknown, unknown>;
 
 // --- Registry -----------------------------------------------------------------
 

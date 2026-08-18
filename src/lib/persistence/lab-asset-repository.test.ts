@@ -156,9 +156,9 @@ function repositorySuite(name: string, makeRepo: () => LabAssetRepository & obje
     it("rejects creating a duplicate recipe record", async () => {
       const repo = makeRepo();
       await repo.createRecipeRecord(makeRecipeRecord(), makeRecipeVersion());
-      await expect(repo.createRecipeRecord(makeRecipeRecord(), makeRecipeVersion())).rejects.toThrow(
-        /already exists/,
-      );
+      await expect(
+        repo.createRecipeRecord(makeRecipeRecord(), makeRecipeVersion()),
+      ).rejects.toThrow(/already exists/);
     });
 
     it("rejects createRecipeRecord with mismatched record/version ids", async () => {
@@ -301,7 +301,9 @@ function repositorySuite(name: string, makeRepo: () => LabAssetRepository & obje
     it("rejects archive with stale revision", async () => {
       const repo = makeRepo();
       await repo.createRecipeRecord(makeRecipeRecord(), makeRecipeVersion());
-      await expect(repo.archiveRecipeRecord("recipe-1", 99, 9000)).rejects.toThrow(/Stale|revision/);
+      await expect(repo.archiveRecipeRecord("recipe-1", 99, 9000)).rejects.toThrow(
+        /Stale|revision/,
+      );
     });
 
     it("rejects appending a version to an archived record", async () => {
@@ -371,10 +373,7 @@ function repositorySuite(name: string, makeRepo: () => LabAssetRepository & obje
     it("getLatestPoolVersion returns the highest version", async () => {
       const repo = makeRepo();
       await repo.createPoolRecord(makePoolRecord(), makePoolVersion());
-      await repo.appendPoolVersion(
-        makePoolVersion("pool-1", 2, { rationale: "v2" }),
-        0,
-      );
+      await repo.appendPoolVersion(makePoolVersion("pool-1", 2, { rationale: "v2" }), 0);
       const latest = await repo.getLatestPoolVersion("pool-1");
       expect(latest?.version).toBe(2);
     });
@@ -419,7 +418,10 @@ function repositorySuite(name: string, makeRepo: () => LabAssetRepository & obje
     it("rejects creating a pool version with aggregation semantics", async () => {
       const repo = makeRepo();
       await repo.createPoolRecord(makePoolRecord(), makePoolVersion());
-      const bad = { ...makePoolVersion("pool-1", 2, { rationale: "v2" }), aggregatedScore: 0.9 } as ModelPoolVersion;
+      const bad = {
+        ...makePoolVersion("pool-1", 2, { rationale: "v2" }),
+        aggregatedScore: 0.9,
+      } as ModelPoolVersion;
       await expect(repo.appendPoolVersion(bad, 0)).rejects.toThrow(/invalid/i);
     });
 

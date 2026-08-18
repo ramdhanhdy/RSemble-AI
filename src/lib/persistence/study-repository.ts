@@ -471,30 +471,37 @@ export function createStudyRepository(db: RSembleEvaluationDB): StudyRepository 
   async function deleteStudy(id: string, expectedRevision: number): Promise<void> {
     db.assertWritable();
     try {
-      await db.transaction("rw", db.studies, db.studyTrials, db.studyObservations, db.studyAttempts, async () => {
-        const row = await db.studies.get(id);
-        if (!row) throw new StorageError("conflict", `Study ${id} not found`);
-        const record = isPolicyStudyRecord(row.record) ? row.record : null;
-        if (!record) throw new StorageError("validation", `Study ${id} record corrupted`);
-        if (row.revision !== expectedRevision) {
-          throw new StorageError(
-            "conflict",
-            `Stale revision: expected ${expectedRevision}, got ${row.revision}`,
-          );
-        }
-        if (record.status !== "draft") {
-          throw new StorageError(
-            "conflict",
-            `Study ${id} is started evidence — archive-only, cannot delete`,
-          );
-        }
-        await db.studies.delete(id);
-        // Defensive: a draft cannot have children, but clear any strays so the
-        // delete is total and never leaves orphaned evidence.
-        await db.studyTrials.where("studyId").equals(id).delete();
-        await db.studyObservations.where("studyId").equals(id).delete();
-        await db.studyAttempts.where("studyId").equals(id).delete();
-      });
+      await db.transaction(
+        "rw",
+        db.studies,
+        db.studyTrials,
+        db.studyObservations,
+        db.studyAttempts,
+        async () => {
+          const row = await db.studies.get(id);
+          if (!row) throw new StorageError("conflict", `Study ${id} not found`);
+          const record = isPolicyStudyRecord(row.record) ? row.record : null;
+          if (!record) throw new StorageError("validation", `Study ${id} record corrupted`);
+          if (row.revision !== expectedRevision) {
+            throw new StorageError(
+              "conflict",
+              `Stale revision: expected ${expectedRevision}, got ${row.revision}`,
+            );
+          }
+          if (record.status !== "draft") {
+            throw new StorageError(
+              "conflict",
+              `Study ${id} is started evidence — archive-only, cannot delete`,
+            );
+          }
+          await db.studies.delete(id);
+          // Defensive: a draft cannot have children, but clear any strays so the
+          // delete is total and never leaves orphaned evidence.
+          await db.studyTrials.where("studyId").equals(id).delete();
+          await db.studyObservations.where("studyId").equals(id).delete();
+          await db.studyAttempts.where("studyId").equals(id).delete();
+        },
+      );
     } catch (err) {
       if (err instanceof StorageError) throw err;
       throw classifyStorageError(err);
@@ -773,9 +780,7 @@ export function createStudyRepository(db: RSembleEvaluationDB): StudyRepository 
     }
   }
 
-  async function listObservationsForTrial(
-    trialId: string,
-  ): Promise<PolicyStudyObservation[]> {
+  async function listObservationsForTrial(trialId: string): Promise<PolicyStudyObservation[]> {
     try {
       const rows = await db.studyObservations.where("trialId").equals(trialId).toArray();
       return rows
@@ -789,10 +794,7 @@ export function createStudyRepository(db: RSembleEvaluationDB): StudyRepository 
 
   // --- Policy Playbook (immutable) -----------------------------------------
 
-  async function createPlaybook(
-    id: string,
-    playbook: PolicyReportPayload,
-  ): Promise<void> {
+  async function createPlaybook(id: string, playbook: PolicyReportPayload): Promise<void> {
     if (typeof id !== "string" || id.trim().length === 0) {
       throw new StorageError("validation", "Playbook id must be a non-blank string");
     }
@@ -803,10 +805,7 @@ export function createStudyRepository(db: RSembleEvaluationDB): StudyRepository 
       await db.transaction("rw", db.studies, db.policyPlaybooks, async () => {
         const studyRow = await db.studies.get(playbook.studyId);
         if (!studyRow) {
-          throw new StorageError(
-            "conflict",
-            `Study ${playbook.studyId} not found for playbook`,
-          );
+          throw new StorageError("conflict", `Study ${playbook.studyId} not found for playbook`);
         }
         const study = isPolicyStudyRecord(studyRow.record) ? studyRow.record : null;
         if (!study) {
@@ -909,7 +908,10 @@ export class InMemoryStudyRepository implements StudyRepository {
   private trials = new Map<string, InMemoryTrialEntry>();
   private attempts = new Map<string, StudyAttempt>();
   private observations = new Map<string, PolicyStudyObservation>();
-  private playbooks = new Map<string, { id: string; playbook: PolicyReportPayload; digest: string }>();
+  private playbooks = new Map<
+    string,
+    { id: string; playbook: PolicyReportPayload; digest: string }
+  >();
 
   // --- Study lifecycle ------------------------------------------------------
 
@@ -1064,11 +1066,7 @@ export class InMemoryStudyRepository implements StudyRepository {
     return newRevision;
   }
 
-  async archiveStudy(
-    id: string,
-    expectedRevision: number,
-    archivedAt: number,
-  ): Promise<number> {
+  async archiveStudy(id: string, expectedRevision: number, archivedAt: number): Promise<number> {
     const record = this.studies.get(id);
     if (!record) throw new StorageError("conflict", `Study ${id} not found`);
     if (record.revision !== expectedRevision) {
@@ -1176,10 +1174,7 @@ export class InMemoryStudyRepository implements StudyRepository {
 
   // --- Attempts (treatment-changing retry) ----------------------------------
 
-  async createAttempt(
-    attempt: StudyAttempt,
-    successorTrial: PolicyStudyTrial,
-  ): Promise<void> {
+  async createAttempt(attempt: StudyAttempt, successorTrial: PolicyStudyTrial): Promise<void> {
     if (!isStudyAttempt(attempt)) {
       throw new StorageError("validation", "Invalid study attempt");
     }

@@ -144,12 +144,7 @@ describe("Fusion corpus fixture — live type guards", () => {
     expect([...families].sort()).toEqual([...FUSION_RECIPE_FAMILIES_IN_FIXTURE].sort());
 
     const policies = new Set(FUSION_CORPUS_FIXTURE.trials.map((t) => t.policy));
-    expect([...policies].sort()).toEqual([
-      "best_fixed",
-      "fuse",
-      "rank",
-      "refine",
-    ]);
+    expect([...policies].sort()).toEqual(["best_fixed", "fuse", "rank", "refine"]);
 
     const stages = new Set(FUSION_CORPUS_FIXTURE.trials.map((t) => t.stage));
     expect([...stages].sort()).toEqual([...FUSION_STAGES_IN_FIXTURE].sort());
@@ -200,9 +195,7 @@ describe("Fusion corpus fixture — live type guards", () => {
   });
 
   it("includes policy vs experimental cost, artifacts, pool adequacy, and recipe sensitivity", () => {
-    const sealedFuse = FUSION_CORPUS_FIXTURE.trials.find(
-      (t) => t.id === "trial-ec-fuse-B-0",
-    )!;
+    const sealedFuse = FUSION_CORPUS_FIXTURE.trials.find((t) => t.id === "trial-ec-fuse-B-0")!;
     expect(sealedFuse.cost.policy.tokensIn).toBeGreaterThan(0);
     expect(sealedFuse.cost.experimental.tokensIn).toBeGreaterThanOrEqual(
       sealedFuse.cost.policy.tokensIn,
@@ -296,7 +289,13 @@ describe("Fusion corpus fixture — live repository round-trip", () => {
     const inprogBase = FUSION_CORPUS_FIXTURE.trials.find(
       (t) => t.id === "trial-ec-fuse-B-inprogress",
     )!;
-    const b0 = { ...b0Base, revision: 0, status: "in_progress" as const, sealedAt: null, observationIds: [] };
+    const b0 = {
+      ...b0Base,
+      revision: 0,
+      status: "in_progress" as const,
+      sealedAt: null,
+      observationIds: [],
+    };
     const b1 = { ...b1Base, revision: 0, status: "in_progress" as const, sealedAt: null };
     const inprog = { ...inprogBase, revision: 0, observationIds: [] };
 
@@ -322,27 +321,23 @@ describe("Fusion corpus fixture — live repository round-trip", () => {
     expect(await repo.listTrialAttempts("study-exploration-completed")).toHaveLength(1);
 
     // A second observation attaches to the still-in_progress trial.
-    const obsInp = FUSION_CORPUS_FIXTURE.observations.find(
-      (o) => o.id === "obs-inprogress-1",
-    )!;
+    const obsInp = FUSION_CORPUS_FIXTURE.observations.find((o) => o.id === "obs-inprogress-1")!;
     await repo.addObservation({ ...obsInp, trialId: inprog.id }, 0);
     expect(await repo.listObservations(inprog.id)).toHaveLength(1);
   });
 
   it("enforces immutability conflicts matching the live repository", async () => {
     const repo = await loadFixture();
-    await expect(
-      repo.createRecipe(FUSION_CORPUS_FIXTURE.recipes[0]),
-    ).rejects.toThrow(/immutable/);
-    await expect(
-      repo.createPoolManifest(FUSION_CORPUS_FIXTURE.pools[0]),
-    ).rejects.toThrow(/immutable/);
-    await expect(
-      repo.createStudy(FUSION_CORPUS_FIXTURE.studies[0]),
-    ).rejects.toThrow(/already exists/);
-    await expect(
-      repo.createPlaybook(FUSION_CORPUS_FIXTURE.playbooks[0]),
-    ).rejects.toThrow(/immutable/);
+    await expect(repo.createRecipe(FUSION_CORPUS_FIXTURE.recipes[0])).rejects.toThrow(/immutable/);
+    await expect(repo.createPoolManifest(FUSION_CORPUS_FIXTURE.pools[0])).rejects.toThrow(
+      /immutable/,
+    );
+    await expect(repo.createStudy(FUSION_CORPUS_FIXTURE.studies[0])).rejects.toThrow(
+      /already exists/,
+    );
+    await expect(repo.createPlaybook(FUSION_CORPUS_FIXTURE.playbooks[0])).rejects.toThrow(
+      /immutable/,
+    );
   });
 
   it("guards study updates by revision", async () => {
@@ -403,9 +398,7 @@ describe("Fusion corpus STOP classification", () => {
     const recipeByKey = new Map(
       FUSION_CORPUS_FIXTURE.recipes.map((r) => [`${r.id}@${r.version}`, r]),
     );
-    const poolByKey = new Map(
-      FUSION_CORPUS_FIXTURE.pools.map((p) => [`${p.id}@${p.version}`, p]),
-    );
+    const poolByKey = new Map(FUSION_CORPUS_FIXTURE.pools.map((p) => [`${p.id}@${p.version}`, p]));
     const studyById = new Map(FUSION_CORPUS_FIXTURE.studies.map((s) => [s.id, s]));
     const trialById = new Map(FUSION_CORPUS_FIXTURE.trials.map((t) => [t.id, t]));
     const playbookById = new Map(FUSION_CORPUS_FIXTURE.playbooks.map((p) => [p.id, p]));
@@ -413,9 +406,15 @@ describe("Fusion corpus STOP classification", () => {
     // Study recipe refs resolve.
     for (const study of FUSION_CORPUS_FIXTURE.studies) {
       for (const ref of study.recipeRefs) {
-        expect(recipeByKey.get(`${ref.id}@${ref.version}`), `study ${study.id} recipe ref`).toBeDefined();
+        expect(
+          recipeByKey.get(`${ref.id}@${ref.version}`),
+          `study ${study.id} recipe ref`,
+        ).toBeDefined();
       }
-      expect(poolByKey.get(`${study.poolRef.id}@${study.poolRef.version}`), `study ${study.id} pool ref`).toBeDefined();
+      expect(
+        poolByKey.get(`${study.poolRef.id}@${study.poolRef.version}`),
+        `study ${study.id} pool ref`,
+      ).toBeDefined();
       if (study.playbookRef) {
         expect(playbookById.get(study.playbookRef), `study ${study.id} playbook ref`).toBeDefined();
       }
@@ -433,7 +432,10 @@ describe("Fusion corpus STOP classification", () => {
     for (const trial of FUSION_CORPUS_FIXTURE.trials) {
       expect(studyById.get(trial.studyId), `trial ${trial.id} study`).toBeDefined();
       if (trial.recipe) {
-        expect(recipeByKey.get(`${trial.recipe.id}@${trial.recipe.version}`), `trial ${trial.id} recipe`).toBeDefined();
+        expect(
+          recipeByKey.get(`${trial.recipe.id}@${trial.recipe.version}`),
+          `trial ${trial.id} recipe`,
+        ).toBeDefined();
       }
     }
 

@@ -24,11 +24,9 @@
 // =============================================================================
 
 import type { CriticRef } from "../providers/types";
-import type {
-  FusionRecipeFamily,
-  JudgeAnalysisMode,
-} from "../evaluations/fusion-study-types";
 import {
+  type FusionRecipeFamily,
+  type JudgeAnalysisMode,
   FUSION_RECIPE_FAMILIES,
   JUDGE_ANALYSIS_MODES,
 } from "../evaluations/fusion-study-types";
@@ -92,7 +90,6 @@ export function hasProhibitedRecipeKeys(v: unknown): boolean {
 function isString(v: unknown): v is string {
   return typeof v === "string";
 }
-
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
@@ -217,10 +214,16 @@ export function isLabRecipeVersion(v: unknown): v is LabRecipeVersion {
   if (!isPositiveInteger(v.version)) return false;
   if (!isLabRecipeKind(v.kind)) return false;
   if (v.kind !== "fusion") return false;
-  if (!isString(v.recipeFamily) || !(FUSION_RECIPE_FAMILIES as readonly string[]).includes(v.recipeFamily))
+  if (
+    !isString(v.recipeFamily) ||
+    !(FUSION_RECIPE_FAMILIES as readonly string[]).includes(v.recipeFamily)
+  )
     return false;
   if (!isNonEmptyString(v.promptVersion)) return false;
-  if (!isString(v.judgeAnalysisMode) || !(JUDGE_ANALYSIS_MODES as readonly string[]).includes(v.judgeAnalysisMode))
+  if (
+    !isString(v.judgeAnalysisMode) ||
+    !(JUDGE_ANALYSIS_MODES as readonly string[]).includes(v.judgeAnalysisMode)
+  )
     return false;
   if (!isBoolean(v.rubricAccess)) return false;
   if (!isBoolean(v.verification)) return false;

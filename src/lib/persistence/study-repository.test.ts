@@ -66,9 +66,7 @@ function mcRef(id: string = MC): ExactModelConfigurationRef {
   return { id };
 }
 
-function makeDefinition(
-  overrides: Partial<PolicyStudyDefinition> = {},
-): PolicyStudyDefinition {
+function makeDefinition(overrides: Partial<PolicyStudyDefinition> = {}): PolicyStudyDefinition {
   return {
     workload: { taskSetId: "ts1", version: 6, manifestDigest: DIGEST },
     modelPool: { poolId: "p1", version: 3, digest: DIGEST },
@@ -93,9 +91,7 @@ function makeConfirmationDefinition(
   });
 }
 
-function makeTrialPayload(
-  overrides: Partial<PolicyTrialPayload> = {},
-): PolicyTrialPayload {
+function makeTrialPayload(overrides: Partial<PolicyTrialPayload> = {}): PolicyTrialPayload {
   return {
     policy: "fuse",
     stage: "B",
@@ -121,9 +117,7 @@ function makeMeasurementPayload(
 
 const ZERO_COST: TokenCost = { tokensIn: 0, tokensOut: 0 };
 
-function makeStudyRecord(
-  overrides: Partial<PolicyStudyRecord> = {},
-): PolicyStudyRecord {
+function makeStudyRecord(overrides: Partial<PolicyStudyRecord> = {}): PolicyStudyRecord {
   const def = makeDefinition();
   return {
     id: "study-1",
@@ -161,9 +155,7 @@ function makeConfirmationStudyRecord(
   });
 }
 
-function makeTrial(
-  overrides: Partial<PolicyStudyTrial> = {},
-): PolicyStudyTrial {
+function makeTrial(overrides: Partial<PolicyStudyTrial> = {}): PolicyStudyTrial {
   const { payload: payloadOverride, ...rest } = overrides;
   const payload = payloadOverride ?? makeTrialPayload();
   return {
@@ -204,9 +196,7 @@ function makeStudyObservation(
   };
 }
 
-function makePlaybook(
-  overrides: Partial<PolicyReportPayload> = {},
-): PolicyReportPayload {
+function makePlaybook(overrides: Partial<PolicyReportPayload> = {}): PolicyReportPayload {
   return {
     studyId: "study-1",
     definitionFingerprint: fingerprintStudyValue(makeDefinition()),
@@ -259,7 +249,10 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
 
     it("rejects creating a study with an invalid record", async () => {
       const repo = makeRepo();
-      const bad = { ...makeStudyRecord(), definitionFingerprint: "not-a-fingerprint" } as PolicyStudyRecord;
+      const bad = {
+        ...makeStudyRecord(),
+        definitionFingerprint: "not-a-fingerprint",
+      } as PolicyStudyRecord;
       await expect(repo.createStudy(bad)).rejects.toThrow(/invalid/i);
     });
 
@@ -675,9 +668,9 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
         reason: "x",
         createdAt: 3600,
       };
-      await expect(repo.createAttempt(attempt, makeTrial({ id: "t1", sampleIndex: 1 }))).rejects.toThrow(
-        /distinct|same|from.*to|invalid/i,
-      );
+      await expect(
+        repo.createAttempt(attempt, makeTrial({ id: "t1", sampleIndex: 1 })),
+      ).rejects.toThrow(/distinct|same|from.*to|invalid/i);
     });
 
     it("createAttempt rejects an unknown fromTrial (missing ref)", async () => {
@@ -765,7 +758,9 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       await repo.startStudy("study-1", 0, 2000);
       await repo.createTrial(makeTrial({ id: "t1" }));
       await repo.sealTrial("t1", 0, 3500);
-      await repo.appendObservation(makeStudyObservation({ id: "o1", trialId: "t1", createdAt: 4000, finishedAt: 4100 }));
+      await repo.appendObservation(
+        makeStudyObservation({ id: "o1", trialId: "t1", createdAt: 4000, finishedAt: 4100 }),
+      );
       await repo.appendObservation(
         makeStudyObservation({ id: "o2", trialId: "t1", createdAt: 4200, finishedAt: 4300 }),
       );
@@ -794,7 +789,10 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       await repo.startStudy("study-1", 0, 2000);
       await repo.createTrial(makeTrial({ id: "t1" }));
       await repo.sealTrial("t1", 0, 3500);
-      const bad = { ...makeStudyObservation({ trialId: "t1" }), apiKey: "sk-xxx" } as unknown as PolicyStudyObservation;
+      const bad = {
+        ...makeStudyObservation({ trialId: "t1" }),
+        apiKey: "sk-xxx",
+      } as unknown as PolicyStudyObservation;
       await expect(repo.appendObservation(bad)).rejects.toThrow(/invalid/i);
     });
 
@@ -804,8 +802,12 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       await repo.startStudy("study-1", 0, 2000);
       await repo.createTrial(makeTrial({ id: "t1" }));
       await repo.sealTrial("t1", 0, 3500);
-      await repo.appendObservation(makeStudyObservation({ id: "o1", trialId: "t1", createdAt: 4000, finishedAt: 4100 }));
-      await repo.appendObservation(makeStudyObservation({ id: "o2", trialId: "t1", createdAt: 4200, finishedAt: 4300 }));
+      await repo.appendObservation(
+        makeStudyObservation({ id: "o1", trialId: "t1", createdAt: 4000, finishedAt: 4100 }),
+      );
+      await repo.appendObservation(
+        makeStudyObservation({ id: "o2", trialId: "t1", createdAt: 4200, finishedAt: 4300 }),
+      );
       const all = await repo.listObservations("study-1");
       expect(all.map((o) => o.id).sort()).toEqual(["o1", "o2"]);
     });
@@ -840,7 +842,9 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       const pb = makePlaybook();
       await repo.createPlaybook(PB_ID, pb);
       const different = makePlaybook({ conclusion: "Different conclusion." });
-      await expect(repo.createPlaybook(PB_ID, different)).rejects.toThrow(/collision|digest|immutable/);
+      await expect(repo.createPlaybook(PB_ID, different)).rejects.toThrow(
+        /collision|digest|immutable/,
+      );
     });
 
     it("createPlaybook rejects a playbook whose studyId does not reference an existing study (missing ref)", async () => {
@@ -855,7 +859,9 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       const pb = makePlaybook({
         definitionFingerprint: "sha256:" + "e".repeat(64),
       });
-      await expect(repo.createPlaybook(PB_ID, pb)).rejects.toThrow(/fingerprint|provenance|mismatch/);
+      await expect(repo.createPlaybook(PB_ID, pb)).rejects.toThrow(
+        /fingerprint|provenance|mismatch/,
+      );
     });
 
     it("createPlaybook rejects an invalid playbook (prohibited keys)", async () => {
@@ -949,9 +955,7 @@ repositorySuite("Dexie study repository", () => {
 describe("study repository uses registered payload validation", () => {
   it("the policy registration fingerprint matches the test fixture", () => {
     const def = makeDefinition();
-    expect(policyStudyRegistration.fingerprintDefinition(def)).toBe(
-      fingerprintStudyValue(def),
-    );
+    expect(policyStudyRegistration.fingerprintDefinition(def)).toBe(fingerprintStudyValue(def));
     expect(policyStudyRegistration.validateDefinition(def)).toBe(true);
   });
 });

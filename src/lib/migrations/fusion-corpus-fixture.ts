@@ -81,8 +81,7 @@ function recipe(
   family: FusionRecipeVersion["recipeFamily"],
   overrides: Partial<FusionRecipeVersion> = {},
 ): FusionRecipeVersion {
-  const mode =
-    family === "BlindRaw" ? "none" : family === "AnalysisFed" ? "qualitative" : "scores";
+  const mode = family === "BlindRaw" ? "none" : family === "AnalysisFed" ? "qualitative" : "scores";
   return {
     id,
     version,
@@ -113,7 +112,7 @@ function manifest(
       slot("s6", "e/m6"),
     ],
     challengers: [],
-    diversityChecklist: ["independent families", "mixed reasoning profiles"],
+    diversityChecklist: ["independent families", "mixed reasoning styles"],
     rationale: "fixture pool",
     supersedesVersion: null,
     createdAt: 1000,
@@ -121,10 +120,7 @@ function manifest(
   };
 }
 
-function trialCost(
-  policy: [number, number],
-  experimental: [number, number],
-): FusionTrialCost {
+function trialCost(policy: [number, number], experimental: [number, number]): FusionTrialCost {
   return {
     policy: { tokensIn: policy[0], tokensOut: policy[1] },
     experimental: { tokensIn: experimental[0], tokensOut: experimental[1] },
@@ -598,42 +594,193 @@ const STUDY_UNRESOLVED_OWNER: FusionStudy = {
 
 const TRIALS: FusionTrial[] = [
   // study-exploration-completed — full policy × stage matrix.
-  trial({ id: "trial-ec-bestfixed-A", studyId: "study-exploration-completed", policy: "best_fixed", stage: "A", status: "sealed", createdAt: 1100 }),
-  trial({ id: "trial-ec-rank-A", studyId: "study-exploration-completed", policy: "rank", stage: "A", status: "sealed", createdAt: 1150 }),
-  trial({ id: "trial-ec-fuse-A", studyId: "study-exploration-completed", policy: "fuse", stage: "A", status: "sealed", createdAt: 1200 }),
-  trial({ id: "trial-ec-refine-A", studyId: "study-exploration-completed", policy: "refine", stage: "A", status: "sealed", createdAt: 1250 }),
-  trial({ id: "trial-ec-bestfixed-B", studyId: "study-exploration-completed", policy: "best_fixed", stage: "B", status: "sealed", createdAt: 1300 }),
-  trial({ id: "trial-ec-rank-B", studyId: "study-exploration-completed", policy: "rank", stage: "B", status: "sealed", createdAt: 1350 }),
-  trial({ id: "trial-ec-fuse-B-0", studyId: "study-exploration-completed", policy: "fuse", stage: "B", sampleIndex: 0, status: "sealed", observationIds: ["obs-completed", "obs-failed", "obs-second-judge"], createdAt: 1400 }),
-  trial({ id: "trial-ec-fuse-B-1", studyId: "study-exploration-completed", policy: "fuse", stage: "B", sampleIndex: 1, status: "sealed", createdAt: 2400 }),
-  trial({ id: "trial-ec-refine-B", studyId: "study-exploration-completed", policy: "refine", stage: "B", status: "sealed", createdAt: 1450 }),
-  trial({ id: "trial-ec-fuse-C", studyId: "study-exploration-completed", policy: "fuse", stage: "C", status: "sealed", createdAt: 1500 }),
-  trial({ id: "trial-ec-refine-C", studyId: "study-exploration-completed", policy: "refine", stage: "C", status: "sealed", createdAt: 1550 }),
+  trial({
+    id: "trial-ec-bestfixed-A",
+    studyId: "study-exploration-completed",
+    policy: "best_fixed",
+    stage: "A",
+    status: "sealed",
+    createdAt: 1100,
+  }),
+  trial({
+    id: "trial-ec-rank-A",
+    studyId: "study-exploration-completed",
+    policy: "rank",
+    stage: "A",
+    status: "sealed",
+    createdAt: 1150,
+  }),
+  trial({
+    id: "trial-ec-fuse-A",
+    studyId: "study-exploration-completed",
+    policy: "fuse",
+    stage: "A",
+    status: "sealed",
+    createdAt: 1200,
+  }),
+  trial({
+    id: "trial-ec-refine-A",
+    studyId: "study-exploration-completed",
+    policy: "refine",
+    stage: "A",
+    status: "sealed",
+    createdAt: 1250,
+  }),
+  trial({
+    id: "trial-ec-bestfixed-B",
+    studyId: "study-exploration-completed",
+    policy: "best_fixed",
+    stage: "B",
+    status: "sealed",
+    createdAt: 1300,
+  }),
+  trial({
+    id: "trial-ec-rank-B",
+    studyId: "study-exploration-completed",
+    policy: "rank",
+    stage: "B",
+    status: "sealed",
+    createdAt: 1350,
+  }),
+  trial({
+    id: "trial-ec-fuse-B-0",
+    studyId: "study-exploration-completed",
+    policy: "fuse",
+    stage: "B",
+    sampleIndex: 0,
+    status: "sealed",
+    observationIds: ["obs-completed", "obs-failed", "obs-second-judge"],
+    createdAt: 1400,
+  }),
+  trial({
+    id: "trial-ec-fuse-B-1",
+    studyId: "study-exploration-completed",
+    policy: "fuse",
+    stage: "B",
+    sampleIndex: 1,
+    status: "sealed",
+    createdAt: 2400,
+  }),
+  trial({
+    id: "trial-ec-refine-B",
+    studyId: "study-exploration-completed",
+    policy: "refine",
+    stage: "B",
+    status: "sealed",
+    createdAt: 1450,
+  }),
+  trial({
+    id: "trial-ec-fuse-C",
+    studyId: "study-exploration-completed",
+    policy: "fuse",
+    stage: "C",
+    status: "sealed",
+    createdAt: 1500,
+  }),
+  trial({
+    id: "trial-ec-refine-C",
+    studyId: "study-exploration-completed",
+    policy: "refine",
+    stage: "C",
+    status: "sealed",
+    createdAt: 1550,
+  }),
   // Unsealed in-progress trial carrying observations (measurement-only retries).
-  trial({ id: "trial-ec-fuse-B-inprogress", studyId: "study-exploration-completed", policy: "fuse", stage: "B", status: "in_progress", observationIds: ["obs-inprogress-1"], createdAt: 1600 }),
+  trial({
+    id: "trial-ec-fuse-B-inprogress",
+    studyId: "study-exploration-completed",
+    policy: "fuse",
+    stage: "B",
+    status: "in_progress",
+    observationIds: ["obs-inprogress-1"],
+    createdAt: 1600,
+  }),
 
   // study-exploration-inprogress — single in-progress trial.
-  trial({ id: "trial-eip-fuse-A", studyId: "study-exploration-inprogress", policy: "fuse", stage: "A", status: "in_progress", createdAt: 1100 }),
+  trial({
+    id: "trial-eip-fuse-A",
+    studyId: "study-exploration-inprogress",
+    policy: "fuse",
+    stage: "A",
+    status: "in_progress",
+    createdAt: 1100,
+  }),
 
   // study-confirmation-completed — fresh pinned configuration, no reselection.
-  trial({ id: "trial-conf-fuse-B", studyId: "study-confirmation-completed", policy: "fuse", stage: "B", status: "sealed", suiteRef: SUITE_REF_CONFIRM, createdAt: 8200 }),
+  trial({
+    id: "trial-conf-fuse-B",
+    studyId: "study-confirmation-completed",
+    policy: "fuse",
+    stage: "B",
+    status: "sealed",
+    suiteRef: SUITE_REF_CONFIRM,
+    createdAt: 8200,
+  }),
 
   // study-do-not-fuse — fuse trial that did not clear the MPID.
-  trial({ id: "trial-dnf-fuse-B", studyId: "study-do-not-fuse", policy: "fuse", stage: "B", status: "sealed", suiteRef: SUITE_REF_DNF, createdAt: 6200 }),
+  trial({
+    id: "trial-dnf-fuse-B",
+    studyId: "study-do-not-fuse",
+    policy: "fuse",
+    stage: "B",
+    status: "sealed",
+    suiteRef: SUITE_REF_DNF,
+    createdAt: 6200,
+  }),
 
   // study-unresolved-owner — in-progress trial with no crosswalk mapping.
-  trial({ id: "trial-unres-fuse-A", studyId: "study-unresolved-owner", policy: "fuse", stage: "A", status: "in_progress", suiteRef: SUITE_REF_UNRESOLVED, createdAt: 9600 }),
+  trial({
+    id: "trial-unres-fuse-A",
+    studyId: "study-unresolved-owner",
+    policy: "fuse",
+    stage: "A",
+    status: "in_progress",
+    suiteRef: SUITE_REF_UNRESOLVED,
+    createdAt: 9600,
+  }),
 ];
 
 const ATTEMPTS: FusionAttempt[] = [
-  attempt("attempt-ec-fuse-B-synthesis-rerun", "study-exploration-completed", "trial-ec-fuse-B-0", "trial-ec-fuse-B-1", "synthesis_rerun", 2500),
+  attempt(
+    "attempt-ec-fuse-B-synthesis-rerun",
+    "study-exploration-completed",
+    "trial-ec-fuse-B-0",
+    "trial-ec-fuse-B-1",
+    "synthesis_rerun",
+    2500,
+  ),
 ];
 
 const OBSERVATIONS: EvaluationObservation[] = [
-  observation("obs-completed", "trial-ec-fuse-B-0", { status: "completed", overallScore: 0.83, tokensIn: 900, tokensOut: 220 }),
-  observation("obs-failed", "trial-ec-fuse-B-0", { status: "failed", overallScore: null, tokensIn: null, tokensOut: null, error: { message: "holdout timeout", category: "provider", stage: "judge", timeoutKind: "overall_timeout", elapsedMs: 30000, configuredDurationMs: 30000 } }),
-  observation("obs-second-judge", "trial-ec-fuse-B-0", { judge: { providerId: "deepseek", model: "acme/judge-third" }, status: "completed", overallScore: 0.81 }),
-  observation("obs-inprogress-1", "trial-ec-fuse-B-inprogress", { status: "completed", overallScore: 0.8 }),
+  observation("obs-completed", "trial-ec-fuse-B-0", {
+    status: "completed",
+    overallScore: 0.83,
+    tokensIn: 900,
+    tokensOut: 220,
+  }),
+  observation("obs-failed", "trial-ec-fuse-B-0", {
+    status: "failed",
+    overallScore: null,
+    tokensIn: null,
+    tokensOut: null,
+    error: {
+      message: "holdout timeout",
+      category: "provider",
+      stage: "judge",
+      timeoutKind: "overall_timeout",
+      elapsedMs: 30000,
+      configuredDurationMs: 30000,
+    },
+  }),
+  observation("obs-second-judge", "trial-ec-fuse-B-0", {
+    judge: { providerId: "deepseek", model: "acme/judge-third" },
+    status: "completed",
+    overallScore: 0.81,
+  }),
+  observation("obs-inprogress-1", "trial-ec-fuse-B-inprogress", {
+    status: "completed",
+    overallScore: 0.8,
+  }),
 ];
 
 const PLAYBOOKS: FusionPlaybook[] = [
@@ -662,7 +809,11 @@ function fusionCrosswalk(
     version: resolved.version,
     digest: null,
     status: "resolved",
-    suiteRef: { suiteId: suiteRef.suiteId, suiteVersion: suiteRef.suiteVersion, protocolFingerprint: suiteRef.protocolFingerprint },
+    suiteRef: {
+      suiteId: suiteRef.suiteId,
+      suiteVersion: suiteRef.suiteVersion,
+      protocolFingerprint: suiteRef.protocolFingerprint,
+    },
     updatedAt: 5200,
   };
 }
@@ -679,7 +830,11 @@ function unresolvedFusionCrosswalk(
     version: null,
     digest: null,
     status: "unresolved",
-    suiteRef: { suiteId: suiteRef.suiteId, suiteVersion: suiteRef.suiteVersion, protocolFingerprint: suiteRef.protocolFingerprint },
+    suiteRef: {
+      suiteId: suiteRef.suiteId,
+      suiteVersion: suiteRef.suiteVersion,
+      protocolFingerprint: suiteRef.protocolFingerprint,
+    },
     note,
     updatedAt: 9700,
   };
@@ -688,9 +843,16 @@ function unresolvedFusionCrosswalk(
 const CROSSWALK_ROWS: TaskSetOwnershipCrosswalkRow[] = [
   fusionCrosswalk("study-exploration-completed", SUITE_REF, { taskSetId: "ts-1", version: 4 }),
   fusionCrosswalk("study-exploration-inprogress", SUITE_REF, { taskSetId: "ts-1", version: 4 }),
-  fusionCrosswalk("study-confirmation-completed", SUITE_REF_CONFIRM, { taskSetId: "ts-1", version: 5 }),
+  fusionCrosswalk("study-confirmation-completed", SUITE_REF_CONFIRM, {
+    taskSetId: "ts-1",
+    version: 5,
+  }),
   fusionCrosswalk("study-do-not-fuse", SUITE_REF_DNF, { taskSetId: "ts-2", version: 3 }),
-  unresolvedFusionCrosswalk("study-unresolved-owner", SUITE_REF_UNRESOLVED, "suite-3 v2 has no exact reconstructed Task Set Version"),
+  unresolvedFusionCrosswalk(
+    "study-unresolved-owner",
+    SUITE_REF_UNRESOLVED,
+    "suite-3 v2 has no exact reconstructed Task Set Version",
+  ),
 ];
 
 // --- Recipes & pools ----------------------------------------------------------
@@ -708,8 +870,14 @@ const POOLS: PoolManifestVersion[] = [
   manifest("pool-core-6", 1),
   manifest("pool-core-8-chall-2", 1, {
     core: [
-      slot("s1", "a/m1"), slot("s2", "a/m2"), slot("s3", "b/m3"), slot("s4", "c/m4"),
-      slot("s5", "d/m5"), slot("s6", "e/m6"), slot("s7", "f/m7"), slot("s8", "g/m8"),
+      slot("s1", "a/m1"),
+      slot("s2", "a/m2"),
+      slot("s3", "b/m3"),
+      slot("s4", "c/m4"),
+      slot("s5", "d/m5"),
+      slot("s6", "e/m6"),
+      slot("s7", "f/m7"),
+      slot("s8", "g/m8"),
     ],
     challengers: [slot("sc1", "h/m9"), slot("sc2", "i/m10")],
   }),
@@ -783,11 +951,7 @@ export const FUSION_ROUTE_BRANCHES = [
   ":suiteId/fusion/:studyId",
 ] as const;
 
-export const FUSION_UI_ACTIONS = [
-  "createStudy",
-  "runStudy",
-  "confirmStudy",
-] as const;
+export const FUSION_UI_ACTIONS = ["createStudy", "runStudy", "confirmStudy"] as const;
 
 export const FUSION_RECIPE_FAMILIES_IN_FIXTURE = [
   "BlindRaw",
@@ -795,12 +959,7 @@ export const FUSION_RECIPE_FAMILIES_IN_FIXTURE = [
   "AnalysisScores",
 ] as const;
 
-export const FUSION_POLICIES_IN_FIXTURE = [
-  "best_fixed",
-  "rank",
-  "fuse",
-  "refine",
-] as const;
+export const FUSION_POLICIES_IN_FIXTURE = ["best_fixed", "rank", "fuse", "refine"] as const;
 
 export const FUSION_STAGES_IN_FIXTURE = ["A", "B", "C"] as const;
 

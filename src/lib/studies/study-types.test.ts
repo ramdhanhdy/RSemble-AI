@@ -109,9 +109,9 @@ describe("study envelope round trips", () => {
     expect(isStudyAttempt(makeAttempt())).toBe(true);
     expect(isStudyObservationEnvelope(makeObservation())).toBe(true);
     expect(isTokenCost({ tokensIn: 1, tokensOut: 2 })).toBe(true);
-    expect(
-      isStudyArtifactRef({ runId: "r1", attemptId: "a1", contentHash: FINGERPRINT }),
-    ).toBe(true);
+    expect(isStudyArtifactRef({ runId: "r1", attemptId: "a1", contentHash: FINGERPRINT })).toBe(
+      true,
+    );
   });
 
   it("round-trips through JSON serialization", () => {
@@ -136,15 +136,21 @@ describe("registered kind and discriminant", () => {
   it("accepts only payloadKind = policy on trials", () => {
     expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "policy" }))).toBe(true);
     expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "routing" as never }))).toBe(false);
-    expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "policy_measurement" as never }))).toBe(false);
+    expect(isStudyTrialEnvelope(makeTrial({ payloadKind: "policy_measurement" as never }))).toBe(
+      false,
+    );
   });
 
   it("accepts only payloadKind = policy_measurement on observations", () => {
     expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "policy_measurement" }))).toBe(
       true,
     );
-    expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "policy" as never }))).toBe(false);
-    expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "judge" as never }))).toBe(false);
+    expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "policy" as never }))).toBe(
+      false,
+    );
+    expect(isStudyObservationEnvelope(makeObservation({ payloadKind: "judge" as never }))).toBe(
+      false,
+    );
   });
 
   it("rejects unknown schema versions", () => {
@@ -186,14 +192,14 @@ describe("prohibited keys — recursive rejection", () => {
   it("rejects credential-shaped keys at any depth", () => {
     expect(isStudyRecordEnvelope(makeRecord({ apiKey: "sk-…" } as never))).toBe(false);
     expect(
-      isStudyRecordEnvelope(
-        makeRecord({ definition: { nested: { secret: "x" } } } as never),
-      ),
+      isStudyRecordEnvelope(makeRecord({ definition: { nested: { secret: "x" } } } as never)),
     ).toBe(false);
     expect(isStudyTrialEnvelope(makeTrial({ token: "t" } as never))).toBe(false);
     expect(
       isStudyTrialEnvelope(
-        makeTrial({ artifactRefs: [{ runId: "r", attemptId: "a", contentHash: "c", password: "p" }] as never }),
+        makeTrial({
+          artifactRefs: [{ runId: "r", attemptId: "a", contentHash: "c", password: "p" }] as never,
+        }),
       ),
     ).toBe(false);
     expect(isStudyAttempt(makeAttempt({ authorization: "Bearer …" } as never))).toBe(false);
@@ -232,31 +238,23 @@ describe("lifecycle immutability rules", () => {
   });
 
   it("start sealing: sealed trial carries sealedAt, in-progress does not", () => {
-    expect(
-      isStudyTrialEnvelope(makeTrial({ status: "sealed", sealedAt: 2000 })),
-    ).toBe(true);
+    expect(isStudyTrialEnvelope(makeTrial({ status: "sealed", sealedAt: 2000 }))).toBe(true);
     expect(isStudyTrialEnvelope(makeTrial({ status: "sealed", sealedAt: null }))).toBe(false);
     expect(isStudyTrialEnvelope(makeTrial({ status: "in_progress", sealedAt: 2000 }))).toBe(false);
     expect(isStudyTrialEnvelope(makeTrial({ status: "in_progress", sealedAt: null }))).toBe(true);
   });
 
   it("completed immutability: completed record carries a report ref", () => {
-    expect(
-      isStudyRecordEnvelope(
-        makeRecord({ status: "completed", reportRef: "report-1" }),
-      ),
-    ).toBe(true);
-    expect(isStudyRecordEnvelope(makeRecord({ status: "completed", reportRef: null }))).toBe(
-      false,
+    expect(isStudyRecordEnvelope(makeRecord({ status: "completed", reportRef: "report-1" }))).toBe(
+      true,
     );
+    expect(isStudyRecordEnvelope(makeRecord({ status: "completed", reportRef: null }))).toBe(false);
     // drafts never carry a report
     expect(isStudyRecordEnvelope(makeRecord({ status: "draft", reportRef: "r" }))).toBe(false);
   });
 
   it("archive rules: archived record carries archivedAt", () => {
-    expect(
-      isStudyRecordEnvelope(makeRecord({ status: "archived", archivedAt: 5000 })),
-    ).toBe(true);
+    expect(isStudyRecordEnvelope(makeRecord({ status: "archived", archivedAt: 5000 }))).toBe(true);
     expect(isStudyRecordEnvelope(makeRecord({ status: "archived", archivedAt: null }))).toBe(false);
     // non-archived records do not carry archivedAt
     expect(
@@ -280,9 +278,9 @@ describe("delete and archive eligibility", () => {
     expect(isDeletableStudyRecord(makeRecord({ status: "in_progress" }))).toBe(false);
     expect(isDeletableStudyRecord(makeRecord({ status: "completed", reportRef: "r" }))).toBe(false);
     expect(isDeletableStudyRecord(makeRecord({ status: "failed" }))).toBe(false);
-    expect(
-      isDeletableStudyRecord(makeRecord({ status: "archived", archivedAt: 5000 })),
-    ).toBe(false);
+    expect(isDeletableStudyRecord(makeRecord({ status: "archived", archivedAt: 5000 }))).toBe(
+      false,
+    );
   });
 
   it("started evidence is archive-only", () => {
@@ -292,9 +290,9 @@ describe("delete and archive eligibility", () => {
     );
     expect(isArchiveOnlyStudyRecord(makeRecord({ status: "failed" }))).toBe(true);
     expect(isArchiveOnlyStudyRecord(makeRecord({ status: "draft" }))).toBe(false);
-    expect(
-      isArchiveOnlyStudyRecord(makeRecord({ status: "archived", archivedAt: 5000 })),
-    ).toBe(false);
+    expect(isArchiveOnlyStudyRecord(makeRecord({ status: "archived", archivedAt: 5000 }))).toBe(
+      false,
+    );
   });
 });
 
@@ -328,14 +326,10 @@ describe("treatment-changing vs measurement-only", () => {
 describe("exploration / confirmation linkage", () => {
   it("exploratory records have no confirmationOf", () => {
     expect(
-      isStudyRecordEnvelope(
-        makeRecord({ claimLevel: "exploratory", confirmationOf: null }),
-      ),
+      isStudyRecordEnvelope(makeRecord({ claimLevel: "exploratory", confirmationOf: null })),
     ).toBe(true);
     expect(
-      isStudyRecordEnvelope(
-        makeRecord({ claimLevel: "exploratory", confirmationOf: "study-0" }),
-      ),
+      isStudyRecordEnvelope(makeRecord({ claimLevel: "exploratory", confirmationOf: "study-0" })),
     ).toBe(false);
   });
 
@@ -397,7 +391,9 @@ describe("TokenCost and StudyArtifactRef guards", () => {
   const validRef: StudyArtifactRef = { runId: "r1", attemptId: "a1", contentHash: FINGERPRINT };
   it("accepts well-formed artifact refs", () => {
     expect(isStudyArtifactRef(validRef)).toBe(true);
-    expect(isStudyArtifactRef({ runId: "", attemptId: "a1", contentHash: FINGERPRINT })).toBe(false);
+    expect(isStudyArtifactRef({ runId: "", attemptId: "a1", contentHash: FINGERPRINT })).toBe(
+      false,
+    );
     expect(isStudyArtifactRef({ runId: "r1", attemptId: "a1", contentHash: "bad" })).toBe(false);
   });
 });

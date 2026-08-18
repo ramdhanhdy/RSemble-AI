@@ -199,14 +199,12 @@ export function createLabAssetRepository(db: RSembleEvaluationDB): LabAssetRepos
     try {
       let resultRevision = expectedRevision;
       await db.transaction("rw", db.labRecipeRecords, db.labRecipeVersions, async () => {
-        const existingVersion = await db.labRecipeVersions.get([
-          version.recipeId,
-          version.version,
-        ]);
+        const existingVersion = await db.labRecipeVersions.get([version.recipeId, version.version]);
         if (existingVersion) {
           // Byte-equivalent idempotency: same key + same digest → no-op.
           if (existingVersion.digest === version.digest) {
-            resultRevision = (await db.labRecipeRecords.get(version.recipeId))?.revision ?? expectedRevision;
+            resultRevision =
+              (await db.labRecipeRecords.get(version.recipeId))?.revision ?? expectedRevision;
             return;
           }
           throw new StorageError(
@@ -217,9 +215,13 @@ export function createLabAssetRepository(db: RSembleEvaluationDB): LabAssetRepos
         const row = await db.labRecipeRecords.get(version.recipeId);
         if (!row) throw new StorageError("conflict", `Recipe ${version.recipeId} not found`);
         const record = isLabRecipeRecord(row.record) ? row.record : null;
-        if (!record) throw new StorageError("validation", `Recipe ${version.recipeId} record corrupted`);
+        if (!record)
+          throw new StorageError("validation", `Recipe ${version.recipeId} record corrupted`);
         if (record.archivedAt !== null) {
-          throw new StorageError("conflict", `Recipe ${version.recipeId} is archived — cannot append`);
+          throw new StorageError(
+            "conflict",
+            `Recipe ${version.recipeId} is archived — cannot append`,
+          );
         }
         if (row.revision !== expectedRevision) {
           throw new StorageError(
@@ -439,7 +441,8 @@ export function createLabAssetRepository(db: RSembleEvaluationDB): LabAssetRepos
         const existingVersion = await db.modelPoolVersions.get([version.poolId, version.version]);
         if (existingVersion) {
           if (existingVersion.digest === version.digest) {
-            resultRevision = (await db.modelPoolRecords.get(version.poolId))?.revision ?? expectedRevision;
+            resultRevision =
+              (await db.modelPoolRecords.get(version.poolId))?.revision ?? expectedRevision;
             return;
           }
           throw new StorageError(
@@ -450,7 +453,8 @@ export function createLabAssetRepository(db: RSembleEvaluationDB): LabAssetRepos
         const row = await db.modelPoolRecords.get(version.poolId);
         if (!row) throw new StorageError("conflict", `Pool ${version.poolId} not found`);
         const record = isModelPoolRecord(row.record) ? row.record : null;
-        if (!record) throw new StorageError("validation", `Pool ${version.poolId} record corrupted`);
+        if (!record)
+          throw new StorageError("validation", `Pool ${version.poolId} record corrupted`);
         if (record.archivedAt !== null) {
           throw new StorageError("conflict", `Pool ${version.poolId} is archived — cannot append`);
         }
@@ -498,10 +502,7 @@ export function createLabAssetRepository(db: RSembleEvaluationDB): LabAssetRepos
     }
   }
 
-  async function getPoolVersion(
-    poolId: string,
-    version: number,
-  ): Promise<ModelPoolVersion | null> {
+  async function getPoolVersion(poolId: string, version: number): Promise<ModelPoolVersion | null> {
     try {
       const row = await db.modelPoolVersions.get([poolId, version]);
       if (!row) return null;
@@ -575,10 +576,7 @@ export class InMemoryLabAssetRepository implements LabAssetRepository {
 
   // --- Lab Recipe records ---------------------------------------------------
 
-  async createRecipeRecord(
-    record: LabRecipeRecord,
-    firstVersion: LabRecipeVersion,
-  ): Promise<void> {
+  async createRecipeRecord(record: LabRecipeRecord, firstVersion: LabRecipeVersion): Promise<void> {
     if (!isLabRecipeRecord(record)) {
       throw new StorageError("validation", "Invalid lab recipe record");
     }
@@ -642,10 +640,7 @@ export class InMemoryLabAssetRepository implements LabAssetRepository {
 
   // --- Lab Recipe versions --------------------------------------------------
 
-  async appendRecipeVersion(
-    version: LabRecipeVersion,
-    expectedRevision: number,
-  ): Promise<number> {
+  async appendRecipeVersion(version: LabRecipeVersion, expectedRevision: number): Promise<number> {
     if (!isLabRecipeVersion(version)) {
       throw new StorageError("validation", "Invalid lab recipe version");
     }
@@ -689,9 +684,7 @@ export class InMemoryLabAssetRepository implements LabAssetRepository {
   }
 
   async getRecipeVersion(recipeId: string, version: number): Promise<LabRecipeVersion | null> {
-    return (
-      this.recipeVersions.get(InMemoryLabAssetRepository.key(recipeId, version)) ?? null
-    );
+    return this.recipeVersions.get(InMemoryLabAssetRepository.key(recipeId, version)) ?? null;
   }
 
   async getLatestRecipeVersion(recipeId: string): Promise<LabRecipeVersion | null> {
@@ -708,10 +701,7 @@ export class InMemoryLabAssetRepository implements LabAssetRepository {
 
   // --- Model Pool records ---------------------------------------------------
 
-  async createPoolRecord(
-    record: ModelPoolRecord,
-    firstVersion: ModelPoolVersion,
-  ): Promise<void> {
+  async createPoolRecord(record: ModelPoolRecord, firstVersion: ModelPoolVersion): Promise<void> {
     if (!isModelPoolRecord(record)) {
       throw new StorageError("validation", "Invalid model pool record");
     }
@@ -775,10 +765,7 @@ export class InMemoryLabAssetRepository implements LabAssetRepository {
 
   // --- Model Pool versions --------------------------------------------------
 
-  async appendPoolVersion(
-    version: ModelPoolVersion,
-    expectedRevision: number,
-  ): Promise<number> {
+  async appendPoolVersion(version: ModelPoolVersion, expectedRevision: number): Promise<number> {
     if (!isModelPoolVersion(version)) {
       throw new StorageError("validation", "Invalid model pool version");
     }

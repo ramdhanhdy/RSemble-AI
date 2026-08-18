@@ -44,9 +44,7 @@ function mcRef(id: string = MC): ExactModelConfigurationRef {
   return { id };
 }
 
-function makeDefinition(
-  overrides: Partial<PolicyStudyDefinition> = {},
-): PolicyStudyDefinition {
+function makeDefinition(overrides: Partial<PolicyStudyDefinition> = {}): PolicyStudyDefinition {
   return {
     workload: { taskSetId: "ts1", version: 6, manifestDigest: DIGEST },
     modelPool: { poolId: "p1", version: 3, digest: DIGEST },
@@ -62,9 +60,7 @@ function makeDefinition(
   };
 }
 
-function makeTrialPayload(
-  overrides: Partial<PolicyTrialPayload> = {},
-): PolicyTrialPayload {
+function makeTrialPayload(overrides: Partial<PolicyTrialPayload> = {}): PolicyTrialPayload {
   return {
     policy: "fuse",
     stage: "B",
@@ -88,9 +84,7 @@ function makeMeasurementPayload(
   };
 }
 
-function makePlaybookRow(
-  overrides: Partial<PolicyPlaybookRow> = {},
-): PolicyPlaybookRow {
+function makePlaybookRow(overrides: Partial<PolicyPlaybookRow> = {}): PolicyPlaybookRow {
   return {
     policy: "fuse",
     configuration: "B + C → Synth X",
@@ -102,9 +96,7 @@ function makePlaybookRow(
   };
 }
 
-function makeReport(
-  overrides: Partial<PolicyReportPayload> = {},
-): PolicyReportPayload {
+function makeReport(overrides: Partial<PolicyReportPayload> = {}): PolicyReportPayload {
   return {
     studyId: "study-1",
     definitionFingerprint: fingerprintStudyValue(makeDefinition()),
@@ -125,9 +117,7 @@ function makeReport(
   };
 }
 
-function makeStudyRecord(
-  overrides: Partial<PolicyStudyRecord> = {},
-): PolicyStudyRecord {
+function makeStudyRecord(overrides: Partial<PolicyStudyRecord> = {}): PolicyStudyRecord {
   const def = makeDefinition();
   return {
     id: "study-1",
@@ -184,7 +174,9 @@ describe("fixed four policies", () => {
   it("a definition must carry at least one policy from the fixed four", () => {
     expect(isPolicyStudyDefinition(makeDefinition({ policies: [] }))).toBe(false);
     expect(isPolicyStudyDefinition(makeDefinition({ policies: ["best_fixed"] }))).toBe(true);
-    expect(isPolicyStudyDefinition(makeDefinition({ policies: ["do_not_fuse" as never] }))).toBe(false);
+    expect(isPolicyStudyDefinition(makeDefinition({ policies: ["do_not_fuse" as never] }))).toBe(
+      false,
+    );
     expect(
       isPolicyStudyDefinition(
         makeDefinition({ policies: ["best_fixed", "rank", "fuse", "refine"] }),
@@ -225,7 +217,10 @@ describe("PolicyStudyDefinition", () => {
 
   it("rejects malformed model pool and recipe refs", () => {
     expect(
-      isPolicyStudyDefinition({ ...makeDefinition(), modelPool: { poolId: "p1", version: 0, digest: DIGEST } }),
+      isPolicyStudyDefinition({
+        ...makeDefinition(),
+        modelPool: { poolId: "p1", version: 0, digest: DIGEST },
+      }),
     ).toBe(false);
     expect(
       isPolicyStudyDefinition({
@@ -244,9 +239,9 @@ describe("PolicyStudyDefinition", () => {
     expect(
       isPolicyStudyDefinition({ ...makeDefinition(), rubric: { rubricId: "", version: 2 } }),
     ).toBe(false);
-    expect(
-      isPolicyStudyDefinition({ ...makeDefinition(), protocolFingerprint: "bad" }),
-    ).toBe(false);
+    expect(isPolicyStudyDefinition({ ...makeDefinition(), protocolFingerprint: "bad" })).toBe(
+      false,
+    );
   });
 
   it("rejects unknown claimPlan", () => {
@@ -279,21 +274,19 @@ describe("PolicyTrialPayload", () => {
 
   it("fuse requires recipe + synthesizer; refine requires synthesizer; rank/best_fixed carry neither", () => {
     // fuse: both required
-    expect(
-      isPolicyTrialPayload(makeTrialPayload({ policy: "fuse", recipeRef: null })),
-    ).toBe(false);
-    expect(
-      isPolicyTrialPayload(makeTrialPayload({ policy: "fuse", synthesizer: null })),
-    ).toBe(false);
+    expect(isPolicyTrialPayload(makeTrialPayload({ policy: "fuse", recipeRef: null }))).toBe(false);
+    expect(isPolicyTrialPayload(makeTrialPayload({ policy: "fuse", synthesizer: null }))).toBe(
+      false,
+    );
     // refine: synthesizer required, recipe optional
     expect(
       isPolicyTrialPayload(
         makeTrialPayload({ policy: "refine", recipeRef: null, synthesizer: mcRef() }),
       ),
     ).toBe(true);
-    expect(
-      isPolicyTrialPayload(makeTrialPayload({ policy: "refine", synthesizer: null })),
-    ).toBe(false);
+    expect(isPolicyTrialPayload(makeTrialPayload({ policy: "refine", synthesizer: null }))).toBe(
+      false,
+    );
     // rank: neither
     expect(
       isPolicyTrialPayload(
@@ -302,7 +295,11 @@ describe("PolicyTrialPayload", () => {
     ).toBe(true);
     expect(
       isPolicyTrialPayload(
-        makeTrialPayload({ policy: "rank", recipeRef: { recipeId: "r1", version: 1, digest: DIGEST }, synthesizer: null }),
+        makeTrialPayload({
+          policy: "rank",
+          recipeRef: { recipeId: "r1", version: 1, digest: DIGEST },
+          synthesizer: null,
+        }),
       ),
     ).toBe(false);
     // best_fixed: neither
@@ -312,9 +309,7 @@ describe("PolicyTrialPayload", () => {
       ),
     ).toBe(true);
     expect(
-      isPolicyTrialPayload(
-        makeTrialPayload({ policy: "best_fixed", synthesizer: mcRef() }),
-      ),
+      isPolicyTrialPayload(makeTrialPayload({ policy: "best_fixed", synthesizer: mcRef() })),
     ).toBe(false);
   });
 
@@ -331,19 +326,24 @@ describe("PolicyMeasurementPayload", () => {
     expect(isPolicyMeasurementPayload(makeMeasurementPayload())).toBe(true);
     expect(
       isPolicyMeasurementPayload(
-        makeMeasurementPayload({ overallScore: null, tokensIn: null, tokensOut: null, error: { message: "boom" } }),
+        makeMeasurementPayload({
+          overallScore: null,
+          tokensIn: null,
+          tokensOut: null,
+          error: { message: "boom" },
+        }),
       ),
     ).toBe(true);
   });
 
   it("rejects malformed judge ref", () => {
-    expect(isPolicyMeasurementPayload({ ...makeMeasurementPayload(), judge: { id: "bad" } })).toBe(false);
+    expect(isPolicyMeasurementPayload({ ...makeMeasurementPayload(), judge: { id: "bad" } })).toBe(
+      false,
+    );
   });
 
   it("rejects prohibited keys", () => {
-    expect(
-      isPolicyMeasurementPayload({ ...makeMeasurementPayload(), token: "t" }),
-    ).toBe(false);
+    expect(isPolicyMeasurementPayload({ ...makeMeasurementPayload(), token: "t" })).toBe(false);
   });
 });
 
@@ -356,11 +356,14 @@ describe("PolicyReportPayload", () => {
   });
 
   it("do_not_fuse is a valid recommendation, not a failure status", () => {
+    expect(isPolicyRecommendation({ kind: "do_not_fuse", rationale: "Not worth it." })).toBe(true);
     expect(
-      isPolicyRecommendation({ kind: "do_not_fuse", rationale: "Not worth it." }),
-    ).toBe(true);
-    expect(
-      isPolicyRecommendation({ kind: "adopt", policy: "rank", configuration: "A+C", rationale: "Cheaper." }),
+      isPolicyRecommendation({
+        kind: "adopt",
+        policy: "rank",
+        configuration: "A+C",
+        rationale: "Cheaper.",
+      }),
     ).toBe(true);
     expect(isPolicyRecommendation({ kind: "fail", rationale: "x" })).toBe(false);
     expect(isPolicyRecommendation({ kind: "do_not_fuse" })).toBe(false);
@@ -379,11 +382,7 @@ describe("PolicyReportPayload", () => {
   });
 
   it("rejects a report with unknown claim level", () => {
-    expect(
-      isPolicyReportPayload(
-        makeReport({ claimLevel: "exploration" as never }),
-      ),
-    ).toBe(false);
+    expect(isPolicyReportPayload(makeReport({ claimLevel: "exploration" as never }))).toBe(false);
   });
 });
 
@@ -523,8 +522,6 @@ describe("policy study registration", () => {
 
   it("fingerprintDefinition produces a stable sha256 fingerprint", () => {
     const def = makeDefinition();
-    expect(policyStudyRegistration.fingerprintDefinition(def)).toBe(
-      fingerprintStudyValue(def),
-    );
+    expect(policyStudyRegistration.fingerprintDefinition(def)).toBe(fingerprintStudyValue(def));
   });
 });

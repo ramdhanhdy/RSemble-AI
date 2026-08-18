@@ -6,11 +6,7 @@
 // =============================================================================
 
 import { describe, expect, it } from "vitest";
-import {
-  canonicalStudyJson,
-  fingerprintStudyValue,
-  isStudyFingerprint,
-} from "./study-fingerprint";
+import { canonicalStudyJson, fingerprintStudyValue, isStudyFingerprint } from "./study-fingerprint";
 
 describe("canonical study JSON", () => {
   it("sorts object keys recursively", () => {
@@ -60,12 +56,27 @@ describe("fingerprintStudyValue", () => {
     };
     const fp0 = fingerprintStudyValue(base);
     // every material field change alters the fingerprint
-    expect(fingerprintStudyValue({ ...base, workload: { ...base.workload, taskSetId: "ts2" } })).not.toBe(fp0);
-    expect(fingerprintStudyValue({ ...base, workload: { ...base.workload, version: 7 } })).not.toBe(fp0);
-    expect(fingerprintStudyValue({ ...base, workload: { ...base.workload, manifestDigest: "sha256:zz" } })).not.toBe(fp0);
-    expect(fingerprintStudyValue({ ...base, modelPool: { ...base.modelPool, poolId: "p2" } })).not.toBe(fp0);
-    expect(fingerprintStudyValue({ ...base, modelPool: { ...base.modelPool, version: 4 } })).not.toBe(fp0);
-    expect(fingerprintStudyValue({ ...base, modelPool: { ...base.modelPool, digest: "sha256:ww" } })).not.toBe(fp0);
+    expect(
+      fingerprintStudyValue({ ...base, workload: { ...base.workload, taskSetId: "ts2" } }),
+    ).not.toBe(fp0);
+    expect(fingerprintStudyValue({ ...base, workload: { ...base.workload, version: 7 } })).not.toBe(
+      fp0,
+    );
+    expect(
+      fingerprintStudyValue({
+        ...base,
+        workload: { ...base.workload, manifestDigest: "sha256:zz" },
+      }),
+    ).not.toBe(fp0);
+    expect(
+      fingerprintStudyValue({ ...base, modelPool: { ...base.modelPool, poolId: "p2" } }),
+    ).not.toBe(fp0);
+    expect(
+      fingerprintStudyValue({ ...base, modelPool: { ...base.modelPool, version: 4 } }),
+    ).not.toBe(fp0);
+    expect(
+      fingerprintStudyValue({ ...base, modelPool: { ...base.modelPool, digest: "sha256:ww" } }),
+    ).not.toBe(fp0);
     expect(fingerprintStudyValue({ ...base, judge1: { id: "mc:sha256:dd" } })).not.toBe(fp0);
     expect(fingerprintStudyValue({ ...base, policies: ["rank", "fuse"] })).not.toBe(fp0);
     expect(fingerprintStudyValue({ ...base, policies: ["fuse"] })).not.toBe(fp0);

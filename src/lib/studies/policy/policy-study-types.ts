@@ -23,8 +23,12 @@ import {
   type StudyTrial,
 } from "../study-types";
 
-import type { PersistedError } from "../../persistence/run-types";
-import { isNonBlankString, isPersistedError, isRecord } from "../../persistence/run-types";
+import {
+  type PersistedError,
+  isNonBlankString,
+  isPersistedError,
+  isRecord,
+} from "../../persistence/run-types";
 import { fingerprintStudyValue, isStudyFingerprint } from "../study-fingerprint";
 import type { StudyTypeRegistration } from "../study-registry";
 
@@ -88,10 +92,7 @@ export interface PolicyStudyDefinition {
   claimPlan: PolicyClaimPlan;
 }
 
-function isVersionedRef(
-  v: unknown,
-  idKey: string,
-): v is { [k: string]: unknown } {
+function isVersionedRef(v: unknown, idKey: string): v is { [k: string]: unknown } {
   return (
     isRecord(v) &&
     isNonBlankString(v[idKey]) &&
@@ -263,10 +264,7 @@ export function isPolicyPlaybookRow(v: unknown): v is PolicyPlaybookRow {
   if (typeof v.meanOutcome !== "number" || !Number.isFinite(v.meanOutcome)) return false;
   if (typeof v.lift !== "number" || !Number.isFinite(v.lift)) return false;
   if (typeof v.costMultiplier !== "number" || !Number.isFinite(v.costMultiplier)) return false;
-  if (
-    typeof v.confidence !== "string" ||
-    !POLICY_CONFIDENCES.includes(v.confidence as never)
-  )
+  if (typeof v.confidence !== "string" || !POLICY_CONFIDENCES.includes(v.confidence as never))
     return false;
   return true;
 }
@@ -315,8 +313,7 @@ export function isPolicyReportPayload(v: unknown): v is PolicyReportPayload {
   // poolAdequacy
   if (!isRecord(v.poolAdequacy)) return false;
   if (typeof v.poolAdequacy.probed !== "boolean") return false;
-  if (v.poolAdequacy.outcome !== "confirmed" && v.poolAdequacy.outcome !== "rejected")
-    return false;
+  if (v.poolAdequacy.outcome !== "confirmed" && v.poolAdequacy.outcome !== "rejected") return false;
   if (!isNonBlankString(v.poolAdequacy.note)) return false;
   // recipeSensitivity
   if (!isRecord(v.recipeSensitivity)) return false;
@@ -404,4 +401,3 @@ export const policyStudyRegistration: StudyTypeRegistration<
 function hasProhibitedKeysDeep(v: unknown): boolean {
   return hasProhibitedStudyKeys(v);
 }
-

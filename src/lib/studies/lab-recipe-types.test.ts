@@ -254,7 +254,11 @@ describe("isLabRecipeVersion", () => {
 
   it("rejects prohibited credential keys in synthesizer", () => {
     const v = makeVersion({
-      synthesizer: { providerId: "openrouter", model: "m1", apiKey: "x" } as unknown as typeof SYNTH,
+      synthesizer: {
+        providerId: "openrouter",
+        model: "m1",
+        apiKey: "x",
+      } as unknown as typeof SYNTH,
     });
     expect(isLabRecipeVersion(v)).toBe(false);
   });
