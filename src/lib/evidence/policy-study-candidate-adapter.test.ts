@@ -874,5 +874,65 @@ describe("policy-study-candidate-adapter", () => {
       expect(storedObs[0].id).toMatch(/^obs:sha256:/);
       expect(storedObs[0].sourceResultId).toBe(run.id);
     });
+
+    it("adaptPolicyStudy excludes synthesis/Fusion/Refine runIds from candidate adaptation (F2)", async () => {
+      const candidateRun = makeRun();
+      const synthesisRun = makeRun();
+      synthesisRun.id = "run-synthesis-1";
+      const experiment = makeExperiment();
+      const evidenceRepo = new InMemoryEvidenceRepository();
+      const studyRepo = new InMemoryStudyRepository();
+
+      const study = makeStudyRecord({ id: "study-f2", status: "in_progress" });
+      await studyRepo.createStudy(study);
+
+      const trial = makeStudyTrial("study-f2", "trial-f2", "fuse", candidateRun.id);
+      // Mirror the generic lineage shape the policy adapter persists: the
+      // candidate run resolves to a full StudyArtifactRef and the synthesis
+      // artifact is stored alongside it (runId + attemptId + contentHash).
+      trial.artifactRefs.push({
+        runId: synthesisRun.id,
+        // Method-stamped synthesis attempt id for this trial (artifactFor).
+        attemptId: "fa-trial-f2",
+        contentHash: DIGEST_64,
+      });
+      await studyRepo.createTrial(trial);
+
+      const getRunCalls: string[] = [];
+      const resolver: EvaluationSourceResolver = {
+        getRun: async (id) => {
+          getRunCalls.push(id);
+          if (id === candidateRun.id) return candidateRun;
+          if (id === synthesisRun.id) return synthesisRun;
+          return null;
+        },
+        getExperiment: async (id) => (id === experiment.id ? experiment : null),
+      };
+
+      const result = await adaptPolicyStudy({
+        studyId: "study-f2",
+        studyRepo,
+        evidenceRepo,
+        resolver,
+        resolveModelConfiguration: () => ({
+          resolvedModel: "model-a",
+          resolvedVersion: "2026-08-01",
+        }),
+      });
+
+      expect(result.status).toBe("complete");
+      // The synthesis run was skipped, not adapted as a candidate.
+      expect(result.candidateRunsProcessed).toBe(1);
+      expect(result.candidateRunsSkipped).toBe(1);
+      // The synthesis run was never looked up for derivation; only the
+      // candidate run is resolved (adapt + internal re-derivation may look it
+      // up more than once).
+      expect(getRunCalls.length).toBeGreaterThanOrEqual(1);
+      expect(new Set(getRunCalls)).toEqual(new Set([candidateRun.id]));
+      // Exactly one canonical Observation, sourced from the candidate run.
+      const storedObs = (await evidenceRepo.listObservations({})).items;
+      expect(storedObs).toHaveLength(1);
+      expect(storedObs[0].sourceResultId).toBe(candidateRun.id);
+    });
   });
 });

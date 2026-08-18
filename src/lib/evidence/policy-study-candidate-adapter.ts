@@ -554,6 +554,7 @@ export async function adaptPolicyStudy(
 
   const trials = await studyRepo.listTrials(studyId);
   let policyOutputsSkipped = 0;
+  let candidateRunsSkipped = 0;
   const candidateRunIds = new Set<string>();
 
   // Count and skip Lab-owned policy measurements for the entire study
@@ -565,16 +566,24 @@ export async function adaptPolicyStudy(
   }
 
   for (const trial of trials) {
-    // Extract underlying candidate run IDs from artifactRefs
+    // Extract only underlying single-model candidate run IDs from artifactRefs.
+    // Synthesis/Fusion/Refine artifact runs are Lab-authored policy evidence —
+    // they must never be adapted as single-model candidates (spec §9, F2).
+    // The method domain stamps every synthesis artifact with
+    // fusionAttemptId === `fa-${trialId}` (fusion-study-stages artifactFor);
+    // the policy adapter / migration map that attempt id into the ref, so a
+    // synthesis ref is identified exactly — never positionally.
     for (const ref of trial.artifactRefs) {
-      if (ref.runId) {
-        candidateRunIds.add(ref.runId);
+      if (!ref.runId) continue;
+      if (ref.attemptId === `fa-${trial.id}`) {
+        candidateRunsSkipped += 1;
+        continue;
       }
+      candidateRunIds.add(ref.runId);
     }
   }
 
   let candidateRunsProcessed = 0;
-  const candidateRunsSkipped = 0;
   let observationsCreated = 0;
   let observationsReused = 0;
   let limitations = 0;
