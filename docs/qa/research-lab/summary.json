@@ -1,0 +1,18 @@
+{
+  "generatedAt": "2026-08-18T23:43:19.807Z",
+  "baseUrl": "http://127.0.0.1:5199/",
+  "stages": {
+    "vitestProbes": {
+      "ok": true,
+      "exitCode": 0,
+      "outputTail": "\n RUN  v4.1.10 E:/2026/RSemble-AI\n\n\n Test Files  6 passed (6)\n      Tests  62 passed (62)\n   Start at  06:43:20\n   Duration  3.51s (transform 2.14s, setup 310ms, import 5.06s, tests 3.09s, environment 483ms)\n\n(node:29204) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:19164) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:20928) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:26504) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:26756) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:18096) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    "fusionAccounting": {
+      "ok": true,
+      "exitCode": 0,
+      "outputTail": "  lib/evaluations/experiment-controller.test.ts — 4 fusion hit(s)\n  lib/evaluations/experiment-repair.test.ts — 1 fusion hit(s)\n  lib/evaluations/experiment-roster-extension.test.ts — 1 fusion hit(s)\n  lib/evaluations/fusion-confirmation.test.ts — 6 fusion hit(s)\n  lib/evaluations/fusion-recipes.test.ts — 6 fusion hit(s)\n  lib/evaluations/fusion-study-controller.test.ts — 4 fusion hit(s)\n  lib/evaluations/fusion-study-types.test.ts — 5 fusion hit(s)\n  lib/evaluations/fusion-study-validation.test.ts — 3 fusion hit(s)\n  lib/evaluations/fusion-study.integration.test.ts — 11 fusion hit(s)\n  lib/evaluations/policy-runner.test.ts — 1 fusion hit(s)\n  lib/compare/playbook-execution.test.ts — 16 fusion hit(s)\n  lib/compare/pre-call-persistence.test.ts — 1 fusion hit(s)\n\n## UNEXPLAINED (must be empty) (0)\n  (none)\n\n## FORBIDDEN in product code (must be empty — REV-6 regression) (0)\n  (none)\n\nPASS: every remaining Fusion hit is classified; no forbidden phenotype present in product code."
+    },
+    "error": "empty /lab @768: targets < 44px: BUTTON Connection status: Live. Manage connections. <flex min-h-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright focus-visible:outline-none focus> h=44"
+  },
+  "matrix": null
+}

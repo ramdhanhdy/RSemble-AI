@@ -1,0 +1,21 @@
+
+ RUN  v4.1.10 E:/2026/RSemble-AI
+
+
+ Test Files  6 passed (6)
+      Tests  62 passed (62)
+   Start at  06:43:20
+   Duration  3.51s (transform 2.14s, setup 310ms, import 5.06s, tests 3.09s, environment 483ms)
+
+(node:29204) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19164) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20928) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26504) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26756) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18096) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)

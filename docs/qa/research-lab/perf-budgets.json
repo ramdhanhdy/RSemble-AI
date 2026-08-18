@@ -1,0 +1,29 @@
+{
+  "budgetsDeclaredBeforeMeasurement": true,
+  "measured": {
+    "migrationPreview": {
+      "budgetMs": 2000,
+      "actualMs": 13.615099999999984
+    },
+    "migrationCutover": {
+      "budgetMs": 20000,
+      "actualMs": 70.40809999999988
+    },
+    "labList": {
+      "budgetMs": 5000,
+      "actualMs": 5.541399999999612
+    },
+    "largeStudyDetail": {
+      "budgetMs": 5000,
+      "actualMs": 3.1791000000002896
+    },
+    "archiveV3Export": {
+      "budgetMs": 20000,
+      "actualMs": 52.388800000000174
+    },
+    "archiveV3Import": {
+      "budgetMs": 20000,
+      "actualMs": 245.26530000000002
+    }
+  }
+}

@@ -21,6 +21,7 @@
     "qa:suite-reliability": "node scripts/cdp-suite-reliability-qa.mjs",
     "qa:compare-results": "node scripts/cdp-compare-results-qa.mjs",
     "qa:evidence-matrix": "node scripts/cdp-evidence-matrix-qa.mjs",
+    "qa:research-lab": "node scripts/qa-research-lab.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
