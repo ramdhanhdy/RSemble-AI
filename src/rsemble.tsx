@@ -10,7 +10,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { FileText, RotateCcw } from "lucide-react";
+import { BookOpen, FileText, RotateCcw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
@@ -52,6 +52,9 @@ import {
   RepositoryContext,
   useRunRepository,
   useTaskRepository,
+  useStudyRepository,
+  useLabAssetRepository,
+  useTaskSetRepository,
 } from "./lib/persistence/repository-context";
 import { createComparisonRepository } from "./lib/persistence/comparison-repository";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
@@ -62,6 +65,7 @@ import {
 } from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 import { CloseIcon, SplitDivider, FocusStrip, PaneLabel, NoKeyBanner } from "./ui/CompareShell";
+import { RunWithPlaybookDialog } from "./workspaces/compare/RunWithPlaybookDialog";
 
 // Compare → View record gate (Slice 5). The link is shown only when a
 // recorder-backed persisted record exists for the last run (never for
@@ -121,6 +125,7 @@ export default function RSemble() {
   const connectionsDialogHandle = useMemo(() => Dialog.createHandle(), []);
   const cheatsheetDialogHandle = useMemo(() => Dialog.createHandle(), []);
 
+  const [playbookDialogOpen, setPlaybookDialogOpen] = useState(false);
   const {
     commandWidth,
     dragging,
@@ -178,6 +183,9 @@ export default function RSemble() {
   // ---------------------------------------------------------------------------
   const runRepo = useRunRepository();
   const taskRepo = useTaskRepository();
+  const studyRepo = useStudyRepository();
+  const labAssetRepo = useLabAssetRepository();
+  const taskSetRepo = useTaskSetRepository();
   const db = useContext(RepositoryContext).db;
   const comparisonRepo = useMemo(
     () => (db && runRepo ? createComparisonRepository(db, runRepo) : null),
@@ -211,7 +219,8 @@ export default function RSemble() {
       }),
     [dispatch, streamBuffer, recorder, comparisonRepo, taskRepo, crossTabLease],
   );
-  const { runFanout, abortRun, retryCandidate, retryJudge, triggerFusion } = runController;
+  const { runFanout, abortRun, retryCandidate, retryJudge, triggerFusion, runWithPlaybook } =
+    runController;
 
   // ---------------------------------------------------------------------------
   // Readiness + catalog probes — parallel, bounded, with diagnosable failures.
@@ -592,6 +601,20 @@ export default function RSemble() {
                               View record
                             </button>
                           )}
+                          {/* Compare → Run with Playbook (Task 10): opens the explicit
+                            preflight and compatibility dialog to run with a sealed playbook. */}
+                          {studyRepo && labAssetRepo && (
+                            <button
+                              type="button"
+                              data-action="open-run-with-playbook"
+                              onClick={() => setPlaybookDialogOpen(true)}
+                              disabled={state.running}
+                              className="pressable flex min-h-[32px] items-center gap-1.5 rounded-md border border-edge px-2.5 text-xs text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <BookOpen size={13} aria-hidden="true" />
+                              Run with playbook
+                            </button>
+                          )}
                           {preloadRunId !== null &&
                             isPreloadNoticeVisible(preloadRunId, state.runId) && (
                               <span
@@ -754,6 +777,33 @@ export default function RSemble() {
           onOpenChange={setCheatsheetOpen}
           handle={cheatsheetDialogHandle}
         />
+        {studyRepo && labAssetRepo && (
+          <RunWithPlaybookDialog
+            open={playbookDialogOpen}
+            onOpenChange={setPlaybookDialogOpen}
+            studyRepo={studyRepo}
+            labAssetRepo={labAssetRepo}
+            taskSetRepo={taskSetRepo ?? undefined}
+            slots={state.slots}
+            candidateModelSlots={state.slots}
+            critic={state.critic}
+            prompt={state.prompt}
+            taskBinding={state.taskBinding ?? null}
+            taskSetContext={
+              typeof (state as unknown as Record<string, unknown>).taskSetContext === "object" &&
+              (state as unknown as Record<string, unknown>).taskSetContext !== null
+                ? ((state as unknown as Record<string, unknown>).taskSetContext as {
+                    taskSetId: string;
+                    version: number;
+                  })
+                : null
+            }
+            running={state.running}
+            onConfirmed={(binding) => {
+              void runWithPlaybook(binding);
+            }}
+          />
+        )}
       </div>
     </ModelProbeProvider>
   );

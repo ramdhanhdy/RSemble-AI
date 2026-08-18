@@ -16,6 +16,7 @@ import { InMemoryStudyRepository } from "../../lib/persistence/study-repository"
 import { InMemoryLabAssetRepository } from "../../lib/persistence/lab-asset-repository";
 import { InMemoryTaskSetRepository } from "../../lib/persistence/in-memory-task-set-repository";
 import {
+  DIGEST,
   makeDefinition,
   makePlaybook,
   makePoolRecord,
@@ -399,6 +400,49 @@ describe("RunWithPlaybookDialog — explicit picker and preflight (spec §8)", (
     click(h.$("[data-testid='playbook-option-study-1']") as HTMLElement);
     await settle();
     expect(h.text()).toMatch(/never applies itself automatically/);
+    cleanup(h);
+  });
+  it("blocks confirmation when the study adopts fusion but the recipe is unresolved", async () => {
+    const repos = await seedWorld();
+    const definitionWithoutRecipe = makeDefinition({
+      modelPool: {
+        poolId: repos.pool.poolId,
+        version: repos.pool.version,
+        digest: repos.pool.digest,
+      },
+      fusionRecipes: [{ recipeId: "recipe-missing", version: 1, digest: DIGEST }],
+    });
+    const study = makeStudyRecord({
+      id: "study-no-recipe",
+      status: "completed",
+      reportRef: "pb-no-recipe",
+      definition: definitionWithoutRecipe,
+    });
+    const playbook = makePlaybook({
+      studyId: study.id,
+      definitionFingerprint: study.definitionFingerprint,
+      recommendation: {
+        kind: "adopt",
+        policy: "fuse",
+        configuration: "m-a × m-b",
+        rationale: "Fuse recommendation.",
+      },
+    });
+    await repos.studyRepo.createStudy(study);
+    await repos.studyRepo.createPlaybook("pb-no-recipe", playbook);
+
+    const confirmed: PlaybookRunBinding[] = [];
+    const h = renderDialog(repos, (b) => confirmed.push(b));
+    await settle();
+    click(h.$("[data-testid='playbook-option-study-no-recipe']") as HTMLElement);
+    await settle();
+
+    expect(h.text()).toMatch(/recipe unresolved/i);
+    const confirm = h.$("[data-action='confirm-playbook-run']") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    click(confirm);
+    await settle();
+    expect(confirmed).toHaveLength(0);
     cleanup(h);
   });
 });

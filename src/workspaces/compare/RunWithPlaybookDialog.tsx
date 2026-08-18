@@ -43,7 +43,8 @@ export interface RunWithPlaybookDialogProps {
   studyRepo: StudyRepository;
   labAssetRepo: LabAssetRepository;
   taskSetRepo?: TaskSetRepository;
-  slots: ModelSlot[];
+  slots?: ModelSlot[];
+  candidateModelSlots?: ModelSlot[];
   critic: CriticRef;
   prompt: string;
   taskBinding?:
@@ -70,7 +71,8 @@ export function RunWithPlaybookDialog({
   studyRepo,
   labAssetRepo,
   taskSetRepo,
-  slots,
+  slots: rawSlots,
+  candidateModelSlots,
   critic,
   prompt,
   taskBinding = null,
@@ -78,6 +80,7 @@ export function RunWithPlaybookDialog({
   running = false,
   onConfirmed,
 }: RunWithPlaybookDialogProps): React.ReactElement {
+  const slots = candidateModelSlots ?? rawSlots ?? [];
   const [items, setItems] = useState<LoadedPlaybookItem[]>([]);
   const [selectedStudyId, setSelectedStudyId] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -223,8 +226,22 @@ export function RunWithPlaybookDialog({
     });
   }, [selectedItem, prompt, slots, critic]);
 
+  const isSynthesis =
+    selectedItem?.playbook.recommendation.kind === "adopt" &&
+    (selectedItem.playbook.recommendation.policy === "fuse" ||
+      selectedItem.playbook.recommendation.policy === "refine");
+  const missingRequiredRecipe = Boolean(isSynthesis && !selectedItem?.recipe);
+
   const handleConfirm = () => {
-    if (!selectedItem || !compatibility || !compatibility.ok || !costPreflight) return;
+    if (
+      !selectedItem ||
+      !compatibility ||
+      !compatibility.ok ||
+      !costPreflight ||
+      missingRequiredRecipe ||
+      running
+    )
+      return;
     const binding: PlaybookRunBinding = {
       playbookId: selectedItem.playbookId,
       playbook: selectedItem.playbook,
@@ -415,6 +432,18 @@ export function RunWithPlaybookDialog({
                       </div>
                     </div>
                   )}
+                  {missingRequiredRecipe && (
+                    <div className="flex items-start gap-2 p-3 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-semibold">Fusion recipe unresolved</div>
+                        <div>
+                          The adopted policy requires a resolved fusion recipe version, but none was
+                          found for this study.
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -435,9 +464,19 @@ export function RunWithPlaybookDialog({
             type="button"
             data-action="confirm-playbook-run"
             onClick={handleConfirm}
-            disabled={!selectedItem || !compatibility || !compatibility.ok || running}
+            disabled={
+              !selectedItem ||
+              !compatibility ||
+              !compatibility.ok ||
+              missingRequiredRecipe ||
+              running
+            }
             className={`min-h-[44px] min-w-[44px] px-4 py-2 rounded-md text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-              !selectedItem || !compatibility || !compatibility.ok || running
+              !selectedItem ||
+              !compatibility ||
+              !compatibility.ok ||
+              missingRequiredRecipe ||
+              running
                 ? "bg-muted text-dim cursor-not-allowed border border-edge"
                 : "bg-accent text-white hover:bg-accent-hover shadow"
             }`}

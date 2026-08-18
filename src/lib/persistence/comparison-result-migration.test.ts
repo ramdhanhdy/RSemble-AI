@@ -232,6 +232,7 @@ describe("migrateComparisonResults", () => {
       activeObservationIds: [],
       evidenceReceiptRevision: 0,
       lineage: { repeatedFrom: null },
+      policyPlaybook: null,
       revision: 0,
     });
     // comparisonId == runId == the exact source record id (spec §3).

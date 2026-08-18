@@ -46,7 +46,7 @@ import type {
 import { renderRecipeMessages, renderRefineWinnerMessages } from "./evaluations/fusion-recipes";
 import type { FusionRecipeVersion } from "./evaluations/fusion-study-types";
 import { getProvider } from "./providers/registry";
-import type { CriticRef, ChatMessage } from "./providers/types";
+import type { ChatMessage } from "./providers/types";
 
 export interface RunControllerDeps {
   stateRef: React.MutableRefObject<StudioState>;
@@ -589,6 +589,7 @@ export function createRunController(deps: RunControllerDeps) {
           {
             recorder,
             comparisonRepo: deps.comparisonRepo,
+            taskRepo: deps.taskRepo,
             now,
             mintRunId: () => `run-${now()}-${++runCounter}-${random().toString(36).slice(2, 8)}`,
           },
@@ -1016,8 +1017,14 @@ export function createRunController(deps: RunControllerDeps) {
     const rec = binding.playbook.recommendation;
     const isAdoptSynthesis =
       rec.kind === "adopt" && (rec.policy === "fuse" || rec.policy === "refine");
+    if (isAdoptSynthesis && !binding.recipeVersion) {
+      dispatch({
+        type: "FANOUT_BLOCKED",
+        reason: `Playbook policy '${rec.policy}' requires a resolved fusion recipe version.`,
+      });
+      return;
+    }
     const runMode: ComparisonMode = isAdoptSynthesis ? "fuse" : "rank";
-
     const frozenContext = buildFrozenContext({
       mode: runMode,
       prompt: s.prompt,
@@ -1045,6 +1052,7 @@ export function createRunController(deps: RunControllerDeps) {
         {
           recorder,
           comparisonRepo: deps.comparisonRepo,
+          taskRepo: deps.taskRepo,
           now,
           mintRunId: () => `run-${now()}-${++runCounter}-${random().toString(36).slice(2, 8)}`,
         },
@@ -1157,18 +1165,16 @@ export function createRunController(deps: RunControllerDeps) {
         }
         blindCandidates.sort((a, b) => a.label.localeCompare(b.label));
 
+        const recipe = binding.recipeVersion!;
         const recipeVersion: FusionRecipeVersion = {
-          id: binding.recipeVersion?.recipeId ?? "recipe-1",
-          version: binding.recipeVersion?.version ?? 1,
-          recipeFamily: binding.recipeVersion?.recipeFamily ?? "BlindRaw",
-          promptVersion: binding.recipeVersion?.promptVersion ?? "blind-raw-v1",
-          judgeAnalysisMode: binding.recipeVersion?.judgeAnalysisMode ?? "none",
-          rubricAccess: binding.recipeVersion?.rubricAccess ?? false,
-          verification: binding.recipeVersion?.verification ?? false,
-          synthesizer: (binding.recipeVersion?.synthesizer ?? {
-            providerId: "openrouter",
-            model: "acme/synth-1",
-          }) as CriticRef,
+          id: recipe.recipeId,
+          version: recipe.version,
+          recipeFamily: recipe.recipeFamily,
+          promptVersion: recipe.promptVersion,
+          judgeAnalysisMode: recipe.judgeAnalysisMode,
+          rubricAccess: recipe.rubricAccess,
+          verification: recipe.verification,
+          synthesizer: recipe.synthesizer,
         };
 
         let messages: ChatMessage[];
@@ -1234,6 +1240,7 @@ export function createRunController(deps: RunControllerDeps) {
                 playbookId: binding.playbookId,
                 studyId: binding.study.id,
                 definitionFingerprint: binding.study.definitionFingerprint,
+                compatibility: compatibility.receipt,
               },
             },
             fenceFromLease(leaseToken),

@@ -45,6 +45,7 @@ import {
   type RubricSnapshot,
   type ExperimentTaskExecutionPlan,
 } from "../evaluations/evaluation-types";
+import type { PlaybookCompatibilityReceipt } from "../studies/policy/playbook-compatibility";
 
 // --- Status enums -------------------------------------------------------------
 
@@ -253,6 +254,7 @@ export interface FusionAttemptRecord {
     playbookId: string;
     studyId?: string;
     definitionFingerprint?: string;
+    compatibility?: PlaybookCompatibilityReceipt;
   } | null;
 }
 // --- Full run record ----------------------------------------------------------

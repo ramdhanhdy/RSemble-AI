@@ -6,6 +6,9 @@ import { MemoryRouter } from "react-router-dom";
 import RSemble, { canViewCompareRecord, isPreloadNoticeVisible } from "./rsemble";
 import { Header } from "./ui/Header";
 import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
+import { RepositoryContext } from "./lib/persistence/repository-context";
+import { InMemoryStudyRepository } from "./lib/persistence/study-repository";
+import { InMemoryLabAssetRepository } from "./lib/persistence/lab-asset-repository";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -323,5 +326,71 @@ describe("Compare → historical preload notice lifecycle (Slice 5)", () => {
     expect(isPreloadNoticeVisible(null, null)).toBe(false);
     expect(isPreloadNoticeVisible(null, "cmp-new")).toBe(false);
     expect(isPreloadNoticeVisible(null, "run-hist-123")).toBe(false);
+  });
+});
+
+describe("Compare → Run with Playbook integration", () => {
+  it("renders Run with playbook action when study and lab repositories are available and opens the dialog", async () => {
+    const studyRepo = new InMemoryStudyRepository();
+    const labAssetRepo = new InMemoryLabAssetRepository();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo: null,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo,
+            labAssetRepo,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+
+    const button = h.$("[data-action='open-run-with-playbook']");
+    expect(button).not.toBeNull();
+    expect(button!.textContent).toContain("Run with playbook");
+
+    // Clicking the button opens the dialog
+    act(() => {
+      button!.click();
+    });
+    await settleLazy();
+
+    expect(document.body.textContent).toContain("Run with Policy Playbook");
+    cleanup(h);
   });
 });

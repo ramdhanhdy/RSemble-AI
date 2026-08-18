@@ -41,6 +41,7 @@ import {
 } from "../evaluations/evaluation-rubric";
 import { candidateIdForSlot } from "../pipeline";
 import { resolveReasoningEffort } from "../providers/reasoning";
+import type { PlaybookCompatibilityReceipt } from "../studies/policy/playbook-compatibility";
 
 // --- Input shapes (mirror executor event payloads) ---------------------------
 
@@ -127,6 +128,7 @@ export interface FusionAttemptStartInput {
     playbookId: string;
     studyId?: string;
     definitionFingerprint?: string;
+    compatibility?: PlaybookCompatibilityReceipt;
   } | null;
 }
 export interface FusionTerminalInput {

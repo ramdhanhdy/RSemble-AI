@@ -23,6 +23,7 @@ import { InMemoryRunRepository } from "../persistence/run-repository";
 import { createRunRecorder } from "../persistence/run-recorder";
 import type { ComparisonResultIndex } from "./comparison-result-types";
 import { InMemoryComparisonRepository } from "../persistence/in-memory-comparison-repository";
+import { InMemoryTaskRepository } from "../persistence/in-memory-task-repository";
 import type { ModelSlot } from "../../studio-data";
 import { initialState, type StudioState, type Action } from "../../studio-engine";
 import type { StreamDeltaBuffer } from "../stream-buffer";
@@ -382,7 +383,8 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
       )
       .mockResolvedValueOnce("Policy-fused answer.");
 
-    await controller.runWithPlaybook(makeBinding());
+    const binding = makeBinding();
+    await controller.runWithPlaybook(binding);
 
     expect(stateRef.current.fusedText).toBe("Policy-fused answer.");
     // The synthesis call used the recipe's synthesizer with recipe messages.
@@ -398,7 +400,51 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
     expect(record!.fusion.attempts).toHaveLength(1);
     expect(record!.fusion.attempts[0].result).toBe("Policy-fused answer.");
     expect(record!.fusion.attempts[0].playbookRef?.playbookId).toBe("pb-1");
+    expect(record!.fusion.attempts[0].playbookRef?.studyId).toBe("study-1");
+    expect(record!.fusion.attempts[0].playbookRef?.definitionFingerprint).toBe(
+      binding.study.definitionFingerprint,
+    );
+    expect(record!.fusion.attempts[0].playbookRef?.compatibility?.workload).toEqual({
+      taskSetId: "ts1",
+      version: 6,
+    });
+    expect(record!.fusion.attempts[0].playbookRef?.compatibility?.matchedCandidateIds).toHaveLength(
+      2,
+    );
     expect(dispatched.map((a) => a.type)).toContain("FUSION_RESULT");
+  });
+  it("fuse recommendation fails closed when recipeVersion is missing without making provider calls", async () => {
+    const { deps, dispatched } = makeDeps(stateWithSlots());
+    const controller = createRunController(deps);
+
+    const binding = makeBinding({
+      recipeVersion: null,
+    });
+    await controller.runWithPlaybook(binding);
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(dispatched.map((a) => a.type)).toContain("FANOUT_BLOCKED");
+    const blocked = dispatched.find((a) => a.type === "FANOUT_BLOCKED") as { reason: string };
+    expect(blocked.reason).toMatch(/requires a resolved fusion recipe version/i);
+  });
+
+  it("runWithPlaybook forwards taskRepo to pre-call persistence and aborts on canonical task version failure with zero provider calls", async () => {
+    const { deps, dispatched } = makeDeps(stateWithSlots());
+    const taskRepo = new InMemoryTaskRepository(); // empty
+    deps.taskRepo = taskRepo;
+    const controller = createRunController(deps);
+
+    const binding = makeBinding({
+      taskBinding: { kind: "canonical", taskId: "unresolvable-task", taskVersion: 1 },
+    });
+    await controller.runWithPlaybook(binding);
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(dispatched.map((a) => a.type)).toContain("FANOUT_BLOCKED");
+    const blocked = dispatched.find((a) => a.type === "FANOUT_BLOCKED") as { reason: string };
+    expect(blocked.reason).toMatch(/Pre-call persistence failed/i);
   });
 
   it("refine recommendation revises the judged winner through the pinned recipe flags", async () => {
