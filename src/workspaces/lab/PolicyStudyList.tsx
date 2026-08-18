@@ -3,6 +3,8 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AlertCircle, FlaskConical, Loader2, Plus, RotateCcw } from "lucide-react";
 import type { StudyRepository } from "../../lib/persistence/study-repository";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
+import { computeProtocolFingerprint } from "../../lib/evaluations/protocol-fingerprint";
+import type { EvaluationRubric, RubricVersionRef } from "../../lib/evaluations/evaluation-types";
 import {
   useEvaluationRepository,
   useStudyRepository,
@@ -53,6 +55,41 @@ function metaLine(study: PolicyStudyRecord, playbook: PolicyReportPayload | null
     new Date(study.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
   );
   return parts.join(" · ");
+}
+
+/**
+ * Resolve the real manifest digest for a Task Set Version (F7). Mirrors the
+ * PolicyStudyEditor workload-change logic: prefer a persisted materialization's
+ * protocolFingerprint; fall back to computing it from the live suite + rubrics
+ * when the version is the suite's current version. Returns null when no honest
+ * digest can be resolved — the caller keeps the placeholder rather than pinning
+ * a fabricated value.
+ */
+async function resolveManifestDigest(
+  evalRepo: EvaluationRepository,
+  taskSetId: string,
+  version: number,
+): Promise<string | null> {
+  const suite = await evalRepo.getSuite(taskSetId);
+  if (!suite) return null;
+  const materializations = await evalRepo.listTaskSetMaterializations(suite.id);
+  const materialized = materializations.find((m) => m.taskSetVersion === version);
+  if (materialized) return materialized.protocolFingerprint;
+  if (version === suite.version) {
+    const refs: RubricVersionRef[] = [];
+    if (suite.defaultEvaluation.kind === "profile") refs.push(suite.defaultEvaluation.profile);
+    for (const task of suite.tasks) {
+      if (task.evaluation.kind === "profile") refs.push(task.evaluation.profile);
+    }
+    const unique = new Map(refs.map((r) => [`${r.id}@${r.version}`, r]));
+    const rubrics: EvaluationRubric[] = [];
+    for (const ref of unique.values()) {
+      const rubric = await evalRepo.getRubricVersion(ref.id, ref.version);
+      if (rubric) rubrics.push(rubric);
+    }
+    return computeProtocolFingerprint(suite, rubrics);
+  }
+  return null;
 }
 
 export function PolicyStudyList({
@@ -117,7 +154,24 @@ export function PolicyStudyList({
       setCreating(true);
       setError(null);
       try {
-        const definition = draftPolicyStudyDefinition(prefill);
+        // F7: when prefilling from a Task Set Version, resolve the real
+        // manifestDigest from the evaluation repository rather than pinning
+        // the placeholder. A draft with a placeholder digest can never seal
+        // truthfully — the workload it claims to study is unidentified.
+        let manifestDigest: string | undefined;
+        if (prefill && evalRepo) {
+          const resolved = await resolveManifestDigest(
+            evalRepo,
+            prefill.taskSetId,
+            prefill.version,
+          );
+          manifestDigest = resolved ?? undefined;
+        }
+        const definition = draftPolicyStudyDefinition(
+          prefill && manifestDigest
+            ? { taskSetId: prefill.taskSetId, version: prefill.version, manifestDigest }
+            : prefill,
+        );
         const title = prefill
           ? `Policy Study · ${prefill.taskSetId} v${prefill.version}`
           : "Untitled Policy Study";
@@ -129,7 +183,7 @@ export function PolicyStudyList({
         setCreating(false);
       }
     },
-    [creating, navigate, studyRepo],
+    [creating, evalRepo, navigate, studyRepo],
   );
 
   useEffect(() => {

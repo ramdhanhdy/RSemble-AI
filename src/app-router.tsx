@@ -275,7 +275,8 @@ function LegacyExperimentRedirect() {
     />
   );
 }
-// Replaces LegacyFusionRedirect and ts-xwalk:fusion: suite crosswalk redirect per Lab spec §11.1.
+// Retired Fusion Study route — Lab spec §11.1. Old /evaluations/:suiteId/fusion/:studyId
+// links no longer resolve or redirect; they land on this honest retirement notice.
 function RetiredFusionRoute() {
   return (
     <div data-retired-fusion-route="" className="mx-auto flex max-w-lg flex-col gap-3 p-6">
