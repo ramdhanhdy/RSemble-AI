@@ -602,7 +602,7 @@ const SEEDED_ROUTES = [
   { name: "lab-model-pools", route: "/lab/model-pools", expect: "Model Pools" },
   { name: "pool-version", route: "/lab/model-pools/pool-1/versions/2", expect: null },
   { name: "study-draft", route: "/lab/studies/study-draft", expect: "Draft" },
-  { name: "study-running", route: "/lab/studies/study-running", expect: "In progress" },
+  { name: "study-running", route: "/lab/studies/study-running", expect: "Study in progress" },
   { name: "study-interrupted", route: "/lab/studies/study-interrupted", expect: "Interrupted" },
   { name: "study-failed", route: "/lab/studies/study-failed", expect: "Failed" },
   { name: "study-exp", route: "/lab/studies/study-exp", expect: "Playbook" },
