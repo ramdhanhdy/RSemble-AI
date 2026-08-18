@@ -568,6 +568,42 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
     expect(dispatched.map((a) => a.type)).toContain("FANOUT_BLOCKED");
   });
 
+  it("revalidates the confirmed preflight at run start and blocks on a price change (F5)", async () => {
+    // Plan T10 RED price-change scenario: a confirmed binding carries a
+    // costPreflight that no longer matches the current pricing/session. At run
+    // start the preflight must be re-estimated; a mismatch blocks the run
+    // before any provider call. Tested with the static pricing table by
+    // crafting a stale preflight that differs from the live re-estimate.
+    for (const slug of ["model-a", "model-b", "judge-model", "acme/synth-1"]) {
+      setModelPricing(
+        parseOpenRouterPricing("openrouter", slug, { prompt: "1", completion: "2" }, 1)!,
+      );
+    }
+    setModelPricing(parseOpenRouterPricing("umans", "model-b", { prompt: "1", completion: "2" }, 1)!);
+
+    const { deps, dispatched } = makeDeps(stateWithSlots());
+    const controller = createRunController(deps);
+
+    // Stale preflight: a policyCostUsd that cannot match the live estimate.
+    const binding = makeBinding({
+      costPreflight: {
+        pricedAt: 1,
+        baselineCostUsd: 0.0001,
+        policyCostUsd: 999.0,
+        synthesisCostUsd: 998.9999,
+        multiplier: 9990,
+        partial: false,
+      },
+    });
+
+    await controller.runWithPlaybook(binding);
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    const blocked = dispatched.filter((a) => a.type === "FANOUT_BLOCKED");
+    expect(blocked.length).toBeGreaterThan(0);
+    expect(blocked[0]?.reason).toMatch(/preflight|price/i);
+  });
   it("ordinary Compare runs after a playbook run remain completely playbook-free", async () => {
     const { deps, dispatched, stateRef, comparisonRepo, runRepo } = makeDeps(stateWithSlots());
     const controller = createRunController(deps);

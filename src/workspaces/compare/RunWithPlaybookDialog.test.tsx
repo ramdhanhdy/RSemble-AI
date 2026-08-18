@@ -446,3 +446,48 @@ describe("RunWithPlaybookDialog — explicit picker and preflight (spec §8)", (
     cleanup(h);
   });
 });
+
+describe("RunWithPlaybookDialog — design-system tokens and ClaimBadge reuse (F6, Fable §4.1/§6.9)", () => {
+  const UNDEFINED_TOKENS = [
+    "text-dim",
+    "bg-surface",
+    "bg-surface-elevated",
+    "bg-muted",
+    "hover:bg-surface",
+    "hover:bg-surface-elevated",
+    "bg-accent-hover",
+  ];
+
+  it("reuses ClaimBadge for the claim level instead of inline colored badge spans", async () => {
+    const repos = await seedWorld();
+    const h = renderDialog(repos, () => {});
+    await settle();
+    click(h.$("[data-testid='playbook-option-study-1']") as HTMLElement);
+    await settle();
+
+    const badges = h.$$("[data-testid='claim-badge']");
+    expect(badges.length).toBeGreaterThan(0);
+    expect(badges[0]?.textContent).toMatch(/Exploratory|Confirmed/);
+    cleanup(h);
+  });
+
+  it("uses only real design-system tokens — no undefined Tailwind tokens", async () => {
+    const repos = await seedWorld();
+    const h = renderDialog(repos, () => {});
+    await settle();
+    click(h.$("[data-testid='playbook-option-study-1']") as HTMLElement);
+    await settle();
+
+    const offenders: string[] = [];
+    const all = document.body.querySelectorAll("*");
+    for (const el of all) {
+      const cls = el.getAttribute("class");
+      if (!cls) continue;
+      for (const tok of UNDEFINED_TOKENS) {
+        if (cls.includes(tok)) offenders.push(`${tok}: "${cls}"`);
+      }
+    }
+    expect(offenders).toEqual([]);
+    cleanup(h);
+  });
+});

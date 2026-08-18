@@ -45,6 +45,11 @@ export interface PlaybookCompatibilityInput {
     | { kind: "ad_hoc"; inputSnapshotRef: string }
     | null;
   taskSetContext?: { taskSetId: string; version: number } | null;
+  /** Session judge (F4): when provided, must match study.definition.judge1 or
+   *  judge2 by exact model configuration id. */
+  judge?: { providerId: string; model: string } | null;
+  /** Session rubric pin (F4): when provided, must match study.definition.rubric. */
+  rubric?: { rubricId: string; version: number } | null;
 }
 
 export type PlaybookCompatibilityFailureCode =
@@ -59,8 +64,9 @@ export type PlaybookCompatibilityFailureCode =
   | "workload_unresolved"
   | "candidates_required"
   | "candidate_not_in_pool"
-  | "pool_unresolved";
-
+  | "pool_unresolved"
+  | "judge_pin_mismatch"
+  | "rubric_pin_mismatch";
 export interface PlaybookCompatibilityReceipt {
   playbookId: string;
   studyId: string;

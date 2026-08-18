@@ -256,6 +256,80 @@ describe("model pool compatibility — candidates must be pool members", () => {
   });
 });
 
+describe("judge and rubric pin enforcement (F4)", () => {
+  function judgeWorld() {
+    const pool = poolVersion(POOL_CORE);
+    const definition = makeDefinition({
+      modelPool: { poolId: pool.poolId, version: pool.version, digest: pool.digest },
+      judge1: CAND_A,
+      judge2: CAND_B,
+      rubric: { rubricId: "rub1", version: 2 },
+    });
+    const study = makeStudyRecord({
+      id: "study-judge",
+      status: "completed",
+      reportRef: "pb-judge",
+      definition,
+    });
+    const playbook = makePlaybook({
+      studyId: study.id,
+      definitionFingerprint: study.definitionFingerprint,
+    });
+    return { pool, definition, study, playbook };
+  }
+
+  function judgeInput(
+    overrides: Partial<PlaybookCompatibilityInput> = {},
+  ): PlaybookCompatibilityInput {
+    const w = judgeWorld();
+    return {
+      playbookId: "pb-judge",
+      playbook: w.playbook,
+      study: w.study,
+      pinnedTaskSetVersion: WORKLOAD_VIEW,
+      poolVersion: w.pool,
+      candidateConfigurations: [CAND_A, CAND_B],
+      taskBinding: null,
+      taskSetContext: { taskSetId: "ts1", version: 6 },
+      judge: { providerId: "openrouter", model: "m-a" },
+      rubric: { rubricId: "rub1", version: 2 },
+      ...overrides,
+    };
+  }
+
+  it("accepts when the session judge matches judge1 and the rubric matches the pinned rubric", () => {
+    const decision = evaluatePlaybookCompatibility(judgeInput());
+    expect(decision.ok).toBe(true);
+  });
+
+  it("accepts when the session judge matches judge2", () => {
+    const decision = evaluatePlaybookCompatibility(
+      judgeInput({ judge: { providerId: "umans", model: "m-b" } }),
+    );
+    expect(decision.ok).toBe(true);
+  });
+
+  it("rejects when the session judge matches neither judge1 nor judge2 (judge_pin_mismatch)", () => {
+    const decision = evaluatePlaybookCompatibility(
+      judgeInput({ judge: { providerId: "gemini", model: "m-z" } }),
+    );
+    expect(decision).toMatchObject({ ok: false, code: "judge_pin_mismatch" });
+  });
+
+  it("rejects when the session rubric version differs from the pinned rubric (rubric_pin_mismatch)", () => {
+    const decision = evaluatePlaybookCompatibility(
+      judgeInput({ rubric: { rubricId: "rub1", version: 9 } }),
+    );
+    expect(decision).toMatchObject({ ok: false, code: "rubric_pin_mismatch" });
+  });
+
+  it("rejects when the session rubric id differs from the pinned rubric (rubric_pin_mismatch)", () => {
+    const decision = evaluatePlaybookCompatibility(
+      judgeInput({ rubric: { rubricId: "other", version: 2 } }),
+    );
+    expect(decision).toMatchObject({ ok: false, code: "rubric_pin_mismatch" });
+  });
+});
 describe("identity hashing parity", () => {
   it("modelConfigRefForIdentity matches the Lab draft's exact mc ref hashing", () => {
     expect(modelConfigRefForIdentity("openrouter", "m-a")).toEqual(
