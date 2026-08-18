@@ -7,7 +7,7 @@
 // definition is exposed as a title tooltip for first-contact learning.
 // =============================================================================
 
-import { ListChecks, Scale, type LucideIcon } from "lucide-react";
+import { Boxes, Combine, FlaskConical, ListChecks, Scale, type LucideIcon } from "lucide-react";
 
 const KINDS = {
   suite: {
@@ -19,6 +19,21 @@ const KINDS = {
     word: "Rubric",
     icon: Scale,
     def: "Scoring criteria with 1/3/5 anchors. It judges, it does not run.",
+  },
+  study: {
+    word: "Policy Study",
+    icon: FlaskConical,
+    def: "A pinned policy comparison that ends in a Policy Playbook.",
+  },
+  recipe: {
+    word: "Fusion Recipe",
+    icon: Combine,
+    def: "An immutable description of how synthesis is performed.",
+  },
+  pool: {
+    word: "Model Pool",
+    icon: Boxes,
+    def: "An experimental selection manifest of exact model configurations.",
   },
 } as const;
 

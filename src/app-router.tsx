@@ -20,7 +20,7 @@
 // surfaces are both canonical.
 // =============================================================================
 
-import { lazy, Suspense, useContext, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useContext, useMemo } from "react";
 import { Routes, Route, Navigate, Link, useParams, useLocation } from "react-router-dom";
 import {
   RepositoryContext,
@@ -31,7 +31,6 @@ import {
 import { createComparisonRepository } from "./lib/persistence/comparison-repository";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
-import type { TaskSetOwnershipCrosswalkRow } from "./lib/persistence/database";
 import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
 import { ModelProbeProvider } from "./ui/ModelProbeContext";
 
@@ -87,6 +86,9 @@ const ComparisonResultRoute = lazy(() =>
   import("./workspaces/compare/ComparisonResultRoute").then((m) => ({
     default: m.ComparisonResultRoute,
   })),
+);
+const LabWorkspace = lazy(() =>
+  import("./workspaces/lab/LabWorkspace").then((m) => ({ default: m.LabWorkspace })),
 );
 
 function RouteFallback() {
@@ -184,9 +186,8 @@ export function AppRoutes({
             />,
           )}
         />
-        {/* Real baseline legacy suite/fusion links. Fusion redirects only after
-            exact ownership crosswalk resolution (spec §4 / §8.2). */}
-        <Route path=":suiteId/fusion/:studyId" element={<LegacyFusionRedirect />} />
+        {/* Retired Fusion Study route (Lab spec §11.1): no redirect, no fetch. */}
+        <Route path=":suiteId/fusion/:studyId" element={<RetiredFusionRoute />} />
         <Route path=":suiteId" element={<LegacySuiteRedirect />} />
         <Route
           path=":suiteId/tasks/:taskId"
@@ -205,6 +206,7 @@ export function AppRoutes({
         path="/tasks/:taskId/versions/:version"
         element={withSuspense(<TaskVersionRouteWrapper />)}
       />
+      <Route path="/lab/*" element={withSuspense(<LabWorkspace />)} />
 
       {/* Legacy Experiment redirect — preserves query parameters and state (spec §5.1, plan Task 9). */}
       <Route path="/experiments/:experimentId" element={<LegacyExperimentRedirect />} />
@@ -277,62 +279,27 @@ function LegacyExperimentRedirect() {
     />
   );
 }
-function LegacyFusionRedirect() {
-  const { suiteId, studyId } = useParams<{ suiteId: string; studyId: string }>();
-  const location = useLocation();
-  const { db } = useContext(RepositoryContext);
-  const [resolution, setResolution] = useState<"pending" | "resolved" | "unresolved">("pending");
-  const [resolvedTaskSetId, setResolvedTaskSetId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!studyId || !db?.taskSetOwnershipCrosswalk) {
-      setResolution("unresolved");
-      return;
-    }
-    void db.taskSetOwnershipCrosswalk
-      .get(`ts-xwalk:fusion:${studyId}`)
-      .then((row) => {
-        if (cancelled) return;
-        if (isResolvedFusionOwner(row) && row.suiteRef.suiteId === suiteId) {
-          setResolvedTaskSetId(row.taskSetId);
-          setResolution("resolved");
-          return;
-        }
-        setResolution("unresolved");
-      })
-      .catch(() => {
-        if (!cancelled) setResolution("unresolved");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [db, studyId, suiteId]);
-
-  if (resolution === "resolved" && resolvedTaskSetId) {
-    return (
-      <Navigate
-        to={{
-          pathname: `/evaluations/sets/${resolvedTaskSetId}/fusion/${studyId ?? ""}`,
-          search: location.search,
-        }}
-        replace
-        state={location.state}
-      />
-    );
-  }
-
+function RetiredFusionRoute() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
-      {resolution === "unresolved" ? (
-        <p className="text-sm text-warning" data-unresolved-owner="">
-          Unresolved Fusion owner — this study stays on its legacy route because the Suite→Task Set
-          crosswalk did not resolve exactly.
-        </p>
-      ) : (
-        <p className="text-sm text-text-muted">Resolving Fusion owner…</p>
-      )}
-      <FusionStudyRouteWrapper />
+    <div data-retired-fusion-route="" className="mx-auto flex max-w-lg flex-col gap-3 p-6">
+      <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
+        Route retired
+      </p>
+      <h1 className="text-lg font-semibold text-text">Fusion Study pages no longer exist.</h1>
+      <p className="text-sm text-text-secondary">
+        Policy research moved to the Research Lab. Studies now live at their own addresses under
+        /lab/studies. Old links, including this one, were retired in the Lab migration and do not
+        forward.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to="/lab"
+          className="flex min-h-[44px] items-center rounded-md bg-accent px-3 text-sm font-semibold text-on-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          Open the Lab
+        </Link>
+      </div>
     </div>
   );
 }
@@ -342,28 +309,6 @@ function FusionStudyRouteWrapper() {
   const { db } = useContext(RepositoryContext);
   return (
     <FusionStudyRoute fusionRepo={fusionRepo} crosswalk={db?.taskSetOwnershipCrosswalk ?? null} />
-  );
-}
-
-function isResolvedFusionOwner(row: unknown): row is TaskSetOwnershipCrosswalkRow & {
-  kind: "fusion-owner";
-  status: "resolved";
-  version: number;
-  suiteRef: { suiteId: string; suiteVersion: number; protocolFingerprint: string };
-} {
-  if (!row || typeof row !== "object") return false;
-  const r = row as Record<string, unknown>;
-  if (r.kind !== "fusion-owner") return false;
-  if (r.status !== "resolved") return false;
-  if (typeof r.taskSetId !== "string") return false;
-  if (typeof r.version !== "number") return false;
-  const suiteRef = r.suiteRef;
-  if (!suiteRef || typeof suiteRef !== "object") return false;
-  const sr = suiteRef as Record<string, unknown>;
-  return (
-    typeof sr.suiteId === "string" &&
-    typeof sr.suiteVersion === "number" &&
-    typeof sr.protocolFingerprint === "string"
   );
 }
 

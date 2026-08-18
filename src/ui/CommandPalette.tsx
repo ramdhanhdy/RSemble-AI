@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Command } from "cmdk";
 import {
+  Beaker,
   ClipboardList,
   CornerDownLeft,
   FlaskConical,
@@ -110,6 +111,13 @@ export function CommandPalette({
         group: "Navigate",
         icon: ListChecks,
         run: () => onNavigate?.("/tasks"),
+      },
+      {
+        id: "nav-lab",
+        label: "Go to Lab",
+        group: "Navigate",
+        icon: Beaker,
+        run: () => onNavigate?.("/lab"),
       },
     ];
     const compareCommands: Command[] =

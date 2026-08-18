@@ -24,9 +24,7 @@ interface Harness {
 }
 
 function flush(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 async function settle(): Promise<void> {
   for (let i = 0; i < 4; i++) {

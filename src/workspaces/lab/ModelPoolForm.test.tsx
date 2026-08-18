@@ -11,9 +11,7 @@ import { makePoolRecord, makePoolVersion } from "./lab-test-fixtures";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 function flush(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 async function settle(): Promise<void> {

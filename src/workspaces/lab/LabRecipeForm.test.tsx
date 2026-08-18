@@ -10,16 +10,9 @@ import { makeRecipeRecord, makeRecipeVersion } from "./lab-test-fixtures";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
-interface Harness {
-  container: HTMLDivElement;
-  root: { render: (n: React.ReactNode) => void; unmount: () => void };
-  $: (s: string) => HTMLElement | null;
-}
 
 function flush(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 async function settle(): Promise<void> {
@@ -28,11 +21,6 @@ async function settle(): Promise<void> {
       await flush();
     });
   }
-}
-
-function cleanup(h: Harness) {
-  act(() => h.root.unmount());
-  h.container.remove();
 }
 
 afterEach(() => {
