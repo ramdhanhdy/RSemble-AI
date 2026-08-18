@@ -1479,9 +1479,9 @@ describe("Dexie task repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "taskFamilyAssignments")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskFacetAnnotations")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskFamilyRelations")).toBe(true);
-    // v1/v2 stores still present.
+    // v1 stores still present; fusion stores deleted in v13.
     expect(db.tables.some((t) => t.name === "runSummaries")).toBe(true);
-    expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(true);
+    expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(false);
   });
 
   it("upgrades a v1-seeded database to v3 additively without losing v1 rows", async () => {
@@ -1590,9 +1590,9 @@ describe("Dexie task repository schema upgrade", () => {
     expect(row?.id).toBe("fam-legacy");
     // v4 Task relation store is now present.
     expect(db.tables.some((t) => t.name === "taskFamilyRelations")).toBe(true);
-    // v1/v2/v3 stores still present.
+    // v1/v3/v4 stores still present; fusion stores deleted in v13.
     expect(db.tables.some((t) => t.name === "runSummaries")).toBe(true);
-    expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(true);
+    expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(false);
     expect(db.tables.some((t) => t.name === "taskFamilies")).toBe(true);
   });
 });

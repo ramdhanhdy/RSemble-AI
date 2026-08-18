@@ -35,7 +35,7 @@
 //    Task Set ownership crosswalks reference Fusion studies without altering
 //    their payloads.
 // =============================================================================
-
+import type { Table } from "dexie";
 import {
   RSembleEvaluationDB,
   StorageError,
@@ -48,6 +48,13 @@ import {
   type EvidenceDecisionRow,
   type EvidenceIndexJobRow,
   type VerifierOutcomeRow,
+  type FusionRecipeRow,
+  type PoolManifestRow,
+  type FusionStudyRow,
+  type FusionTrialRow,
+  type FusionAttemptRow,
+  type FusionObservationRow,
+  type FusionPlaybookRow,
 } from "./database";
 import {
   isFullRunSummaryV2,
@@ -1406,44 +1413,48 @@ export async function exportWorkbenchArchiveV2(
     });
     completeStage("experiments");
 
-    // --- fusion (seven stores) ---
+    // --- fusion (seven stores, legacy v2) ---
     emit("fusion");
     throwIfAborted();
     const recipes: FusionRecipeVersion[] = [];
-    await db.fusionRecipes.orderBy("id").each((row) => {
-      if (isFusionRecipeVersion(row.recipe)) recipes.push(row.recipe);
-      else recordGuardFailure("fusion.recipes", row.id, "fusionRecipes", guardViolations);
-    });
     const poolManifests: PoolManifestVersion[] = [];
-    await db.poolManifests.orderBy("id").each((row) => {
-      if (isPoolManifestVersion(row.manifest)) poolManifests.push(row.manifest);
-      else recordGuardFailure("fusion.poolManifests", row.id, "poolManifests", guardViolations);
-    });
     const studies: FusionStudy[] = [];
-    await db.fusionStudies.orderBy("id").each((row) => {
-      if (isFusionStudy(row.study)) studies.push(row.study);
-      else recordGuardFailure("fusion.studies", row.id, "fusionStudies", guardViolations);
-    });
     const trials: FusionTrial[] = [];
-    await db.fusionTrials.orderBy("id").each((row) => {
-      if (isFusionTrial(row.trial)) trials.push(row.trial);
-      else recordGuardFailure("fusion.trials", row.id, "fusionTrials", guardViolations);
-    });
     const attempts: FusionAttempt[] = [];
-    await db.fusionAttempts.orderBy("id").each((row) => {
-      if (isFusionAttempt(row.attempt)) attempts.push(row.attempt);
-      else recordGuardFailure("fusion.attempts", row.id, "fusionAttempts", guardViolations);
-    });
     const observations: EvaluationObservation[] = [];
-    await db.fusionObservations.orderBy("id").each((row) => {
-      if (isEvaluationObservation(row.observation)) observations.push(row.observation);
-      else recordGuardFailure("fusion.observations", row.id, "fusionObservations", guardViolations);
-    });
     const playbooks: FusionPlaybook[] = [];
-    await db.fusionPlaybooks.orderBy("id").each((row) => {
-      if (isFusionPlaybook(row.playbook)) playbooks.push(row.playbook);
-      else recordGuardFailure("fusion.playbooks", row.id, "fusionPlaybooks", guardViolations);
-    });
+
+    const hasFusionStores = db.tables.some((t) => t.name === "fusionRecipes");
+    if (hasFusionStores) {
+      await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").orderBy("id").each((row) => {
+        if (isFusionRecipeVersion(row.recipe)) recipes.push(row.recipe);
+        else recordGuardFailure("fusion.recipes", row.id, "fusionRecipes", guardViolations);
+      });
+      await db.table<PoolManifestRow, [string, number]>("poolManifests").orderBy("id").each((row) => {
+        if (isPoolManifestVersion(row.manifest)) poolManifests.push(row.manifest);
+        else recordGuardFailure("fusion.poolManifests", row.id, "poolManifests", guardViolations);
+      });
+      await db.table<FusionStudyRow, string>("fusionStudies").orderBy("id").each((row) => {
+        if (isFusionStudy(row.study)) studies.push(row.study);
+        else recordGuardFailure("fusion.studies", row.id, "fusionStudies", guardViolations);
+      });
+      await db.table<FusionTrialRow, string>("fusionTrials").orderBy("id").each((row) => {
+        if (isFusionTrial(row.trial)) trials.push(row.trial);
+        else recordGuardFailure("fusion.trials", row.id, "fusionTrials", guardViolations);
+      });
+      await db.table<FusionAttemptRow, string>("fusionAttempts").orderBy("id").each((row) => {
+        if (isFusionAttempt(row.attempt)) attempts.push(row.attempt);
+        else recordGuardFailure("fusion.attempts", row.id, "fusionAttempts", guardViolations);
+      });
+      await db.table<FusionObservationRow, string>("fusionObservations").orderBy("id").each((row) => {
+        if (isEvaluationObservation(row.observation)) observations.push(row.observation);
+        else recordGuardFailure("fusion.observations", row.id, "fusionObservations", guardViolations);
+      });
+      await db.table<FusionPlaybookRow, string>("fusionPlaybooks").orderBy("id").each((row) => {
+        if (isFusionPlaybook(row.playbook)) playbooks.push(row.playbook);
+        else recordGuardFailure("fusion.playbooks", row.id, "fusionPlaybooks", guardViolations);
+      });
+    }
     completeStage("fusion");
 
     // --- tasks (every canonical collection) ---
@@ -2410,8 +2421,9 @@ async function previewV2(
       isFusionRecipeVersion,
       (r: FusionRecipeVersion) => versionKey(r.id, r.version),
       async (k) => {
+        if (!db.tables.some((t) => t.name === "fusionRecipes")) return undefined;
         const [id, v] = splitVersionKey(k);
-        const row = await db.fusionRecipes.get([id, v]);
+        const row = await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").get([id, v]);
         return row === undefined ? undefined : row.recipe;
       },
     ],
@@ -2421,8 +2433,9 @@ async function previewV2(
       isPoolManifestVersion,
       (p: PoolManifestVersion) => versionKey(p.id, p.version),
       async (k) => {
+        if (!db.tables.some((t) => t.name === "poolManifests")) return undefined;
         const [id, v] = splitVersionKey(k);
-        const row = await db.poolManifests.get([id, v]);
+        const row = await db.table<PoolManifestRow, [string, number]>("poolManifests").get([id, v]);
         return row === undefined ? undefined : row.manifest;
       },
     ],
@@ -2432,7 +2445,8 @@ async function previewV2(
       isFusionStudy,
       (s: FusionStudy) => s.id,
       async (k) => {
-        const row = await db.fusionStudies.get(k);
+        if (!db.tables.some((t) => t.name === "fusionStudies")) return undefined;
+        const row = await db.table<FusionStudyRow, string>("fusionStudies").get(k);
         return row === undefined ? undefined : row.study;
       },
     ],
@@ -2442,7 +2456,8 @@ async function previewV2(
       isFusionTrial,
       (t: FusionTrial) => t.id,
       async (k) => {
-        const row = await db.fusionTrials.get(k);
+        if (!db.tables.some((t) => t.name === "fusionTrials")) return undefined;
+        const row = await db.table<FusionTrialRow, string>("fusionTrials").get(k);
         return row === undefined ? undefined : row.trial;
       },
     ],
@@ -2452,7 +2467,8 @@ async function previewV2(
       isFusionAttempt,
       (a: FusionAttempt) => a.id,
       async (k) => {
-        const row = await db.fusionAttempts.get(k);
+        if (!db.tables.some((t) => t.name === "fusionAttempts")) return undefined;
+        const row = await db.table<FusionAttemptRow, string>("fusionAttempts").get(k);
         return row === undefined ? undefined : row.attempt;
       },
     ],
@@ -2462,7 +2478,8 @@ async function previewV2(
       isEvaluationObservation,
       (o: EvaluationObservation) => o.id,
       async (k) => {
-        const row = await db.fusionObservations.get(k);
+        if (!db.tables.some((t) => t.name === "fusionObservations")) return undefined;
+        const row = await db.table<FusionObservationRow, string>("fusionObservations").get(k);
         return row === undefined ? undefined : row.observation;
       },
     ],
@@ -2472,7 +2489,8 @@ async function previewV2(
       isFusionPlaybook,
       (p: FusionPlaybook) => p.id,
       async (k) => {
-        const row = await db.fusionPlaybooks.get(k);
+        if (!db.tables.some((t) => t.name === "fusionPlaybooks")) return undefined;
+        const row = await db.table<FusionPlaybookRow, string>("fusionPlaybooks").get(k);
         return row === undefined ? undefined : row.playbook;
       },
     ],
@@ -3239,43 +3257,49 @@ export async function commitPreviewWorkbenchArchiveV2(
   for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById.set(s.id, s);
 
   try {
+    const hasFusionStores = db.tables.some((t) => t.name === "fusionRecipes");
+    const tablesToLock: Table[] = [
+      db.runSummaries,
+      db.runDetails,
+      db.profiles,
+      db.profileVersions,
+      db.suites,
+      db.experiments,
+      ...(hasFusionStores
+        ? [
+            db.table("fusionRecipes"),
+            db.table("poolManifests"),
+            db.table("fusionStudies"),
+            db.table("fusionTrials"),
+            db.table("fusionAttempts"),
+            db.table("fusionObservations"),
+            db.table("fusionPlaybooks"),
+          ]
+        : []),
+      db.tasks,
+      db.taskVersions,
+      db.taskArtifacts,
+      db.taskArtifactBytes,
+      db.taskInstances,
+      db.taskFamilies,
+      db.taskFamilyAssignments,
+      db.taskFamilyRelations,
+      db.taskFacetAnnotations,
+      db.taskMigrationCrosswalk,
+      db.taskSets,
+      db.taskSetVersions,
+      db.taskSetMaterializations,
+      db.taskSetOwnershipCrosswalk,
+      db.modelConfigurations,
+      db.observations,
+      db.evidenceDecisions,
+      db.evidenceIndexJobs,
+      db.verifierOutcomes,
+      db.comparisonResults,
+    ];
     await db.transaction(
       "rw",
-      [
-        db.runSummaries,
-        db.runDetails,
-        db.profiles,
-        db.profileVersions,
-        db.suites,
-        db.experiments,
-        db.fusionRecipes,
-        db.poolManifests,
-        db.fusionStudies,
-        db.fusionTrials,
-        db.fusionAttempts,
-        db.fusionObservations,
-        db.fusionPlaybooks,
-        db.tasks,
-        db.taskVersions,
-        db.taskArtifacts,
-        db.taskArtifactBytes,
-        db.taskInstances,
-        db.taskFamilies,
-        db.taskFamilyAssignments,
-        db.taskFamilyRelations,
-        db.taskFacetAnnotations,
-        db.taskMigrationCrosswalk,
-        db.taskSets,
-        db.taskSetVersions,
-        db.taskSetMaterializations,
-        db.taskSetOwnershipCrosswalk,
-        db.modelConfigurations,
-        db.observations,
-        db.evidenceDecisions,
-        db.evidenceIndexJobs,
-        db.verifierOutcomes,
-        db.comparisonResults,
-      ],
+      tablesToLock,
       async () => {
         if (options.signal?.aborted) throw new ArchiveImportCancelledError();
 
@@ -3376,55 +3400,57 @@ export async function commitPreviewWorkbenchArchiveV2(
           }
         }
         // fusion (seven stores).
-        for (const r of archive.fusion.recipes) {
-          const key = versionKey(r.id, r.version);
-          if (!isCreated("fusion.recipes", key)) continue;
-          const existing = await db.fusionRecipes.get([r.id, r.version]);
-          if (existing !== undefined && canonical(existing.recipe) !== canonical(r)) {
-            conflict("fusion.recipes", key);
+        if (hasFusionStores) {
+          for (const r of archive.fusion.recipes) {
+            const key = versionKey(r.id, r.version);
+            if (!isCreated("fusion.recipes", key)) continue;
+            const existing = await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").get([r.id, r.version]);
+            if (existing !== undefined && canonical(existing.recipe) !== canonical(r)) {
+              conflict("fusion.recipes", key);
+            }
           }
-        }
-        for (const p of archive.fusion.poolManifests) {
-          const key = versionKey(p.id, p.version);
-          if (!isCreated("fusion.poolManifests", key)) continue;
-          const existing = await db.poolManifests.get([p.id, p.version]);
-          if (existing !== undefined && canonical(existing.manifest) !== canonical(p)) {
-            conflict("fusion.poolManifests", key);
+          for (const p of archive.fusion.poolManifests) {
+            const key = versionKey(p.id, p.version);
+            if (!isCreated("fusion.poolManifests", key)) continue;
+            const existing = await db.table<PoolManifestRow, [string, number]>("poolManifests").get([p.id, p.version]);
+            if (existing !== undefined && canonical(existing.manifest) !== canonical(p)) {
+              conflict("fusion.poolManifests", key);
+            }
           }
-        }
-        for (const s of archive.fusion.studies) {
-          if (!isCreated("fusion.studies", s.id)) continue;
-          const existing = await db.fusionStudies.get(s.id);
-          if (existing !== undefined && canonical(existing.study) !== canonical(s)) {
-            conflict("fusion.studies", s.id);
+          for (const s of archive.fusion.studies) {
+            if (!isCreated("fusion.studies", s.id)) continue;
+            const existing = await db.table<FusionStudyRow, string>("fusionStudies").get(s.id);
+            if (existing !== undefined && canonical(existing.study) !== canonical(s)) {
+              conflict("fusion.studies", s.id);
+            }
           }
-        }
-        for (const t of archive.fusion.trials) {
-          if (!isCreated("fusion.trials", t.id)) continue;
-          const existing = await db.fusionTrials.get(t.id);
-          if (existing !== undefined && canonical(existing.trial) !== canonical(t)) {
-            conflict("fusion.trials", t.id);
+          for (const t of archive.fusion.trials) {
+            if (!isCreated("fusion.trials", t.id)) continue;
+            const existing = await db.table<FusionTrialRow, string>("fusionTrials").get(t.id);
+            if (existing !== undefined && canonical(existing.trial) !== canonical(t)) {
+              conflict("fusion.trials", t.id);
+            }
           }
-        }
-        for (const a of archive.fusion.attempts) {
-          if (!isCreated("fusion.attempts", a.id)) continue;
-          const existing = await db.fusionAttempts.get(a.id);
-          if (existing !== undefined && canonical(existing.attempt) !== canonical(a)) {
-            conflict("fusion.attempts", a.id);
+          for (const a of archive.fusion.attempts) {
+            if (!isCreated("fusion.attempts", a.id)) continue;
+            const existing = await db.table<FusionAttemptRow, string>("fusionAttempts").get(a.id);
+            if (existing !== undefined && canonical(existing.attempt) !== canonical(a)) {
+              conflict("fusion.attempts", a.id);
+            }
           }
-        }
-        for (const o of archive.fusion.observations) {
-          if (!isCreated("fusion.observations", o.id)) continue;
-          const existing = await db.fusionObservations.get(o.id);
-          if (existing !== undefined && canonical(existing.observation) !== canonical(o)) {
-            conflict("fusion.observations", o.id);
+          for (const o of archive.fusion.observations) {
+            if (!isCreated("fusion.observations", o.id)) continue;
+            const existing = await db.table<FusionObservationRow, string>("fusionObservations").get(o.id);
+            if (existing !== undefined && canonical(existing.observation) !== canonical(o)) {
+              conflict("fusion.observations", o.id);
+            }
           }
-        }
-        for (const p of archive.fusion.playbooks) {
-          if (!isCreated("fusion.playbooks", p.id)) continue;
-          const existing = await db.fusionPlaybooks.get(p.id);
-          if (existing !== undefined && canonical(existing.playbook) !== canonical(p)) {
-            conflict("fusion.playbooks", p.id);
+          for (const p of archive.fusion.playbooks) {
+            if (!isCreated("fusion.playbooks", p.id)) continue;
+            const existing = await db.table<FusionPlaybookRow, string>("fusionPlaybooks").get(p.id);
+            if (existing !== undefined && canonical(existing.playbook) !== canonical(p)) {
+              conflict("fusion.playbooks", p.id);
+            }
           }
         }
         // tasks.
@@ -3671,97 +3697,99 @@ export async function commitPreviewWorkbenchArchiveV2(
         if (options.signal?.aborted) throw new ArchiveImportCancelledError();
 
         // --- fusion (seven stores) ---------------------------------------------
-        for (const r of archive.fusion.recipes) {
-          if (!isFusionRecipeVersion(r)) continue;
-          const key = versionKey(r.id, r.version);
-          if (isCreated("fusion.recipes", key)) {
-            await db.fusionRecipes.put({
-              id: r.id,
-              version: r.version,
-              recipe: r,
-              createdAt: 0,
-            });
-            created.push(key);
-          } else reused.push(key);
-        }
-        for (const p of archive.fusion.poolManifests) {
-          if (!isPoolManifestVersion(p)) continue;
-          const key = versionKey(p.id, p.version);
-          if (isCreated("fusion.poolManifests", key)) {
-            await db.poolManifests.put({
-              id: p.id,
-              version: p.version,
-              manifest: p,
-              createdAt: p.createdAt,
-            });
-            created.push(key);
-          } else reused.push(key);
-        }
-        for (const s of archive.fusion.studies) {
-          if (!isFusionStudy(s)) continue;
-          if (isCreated("fusion.studies", s.id)) {
-            await db.fusionStudies.put({
-              id: s.id,
-              study: s,
-              revision: s.revision,
-              suiteId: s.suiteRef.suiteId,
-              suiteVersion: s.suiteRef.suiteVersion,
-              status: s.status,
-              updatedAt: s.updatedAt,
-            });
-            created.push(s.id);
-          } else reused.push(s.id);
-        }
-        for (const t of archive.fusion.trials) {
-          if (!isFusionTrial(t)) continue;
-          if (isCreated("fusion.trials", t.id)) {
-            await db.fusionTrials.put({
-              id: t.id,
-              trial: t,
-              revision: t.revision,
-              studyId: t.studyId,
-              stage: t.stage,
-              status: t.status,
-              createdAt: t.createdAt,
-            });
-            created.push(t.id);
-          } else reused.push(t.id);
-        }
-        for (const a of archive.fusion.attempts) {
-          if (!isFusionAttempt(a)) continue;
-          if (isCreated("fusion.attempts", a.id)) {
-            await db.fusionAttempts.put({
-              id: a.id,
-              attempt: a,
-              studyId: a.studyId,
-              createdAt: a.createdAt,
-            });
-            created.push(a.id);
-          } else reused.push(a.id);
-        }
-        for (const o of archive.fusion.observations) {
-          if (!isEvaluationObservation(o)) continue;
-          if (isCreated("fusion.observations", o.id)) {
-            await db.fusionObservations.put({
-              id: o.id,
-              observation: o,
-              trialId: o.trialId,
-              createdAt: o.finishedAt,
-            });
-            created.push(o.id);
-          } else reused.push(o.id);
-        }
-        for (const p of archive.fusion.playbooks) {
-          if (!isFusionPlaybook(p)) continue;
-          if (isCreated("fusion.playbooks", p.id)) {
-            await db.fusionPlaybooks.put({
-              id: p.id,
-              playbook: p,
-              studyId: p.studyId,
-              createdAt: p.createdAt,
-            });
-            created.push(p.id);
-          } else reused.push(p.id);
+        if (hasFusionStores) {
+          for (const r of archive.fusion.recipes) {
+            if (!isFusionRecipeVersion(r)) continue;
+            const key = versionKey(r.id, r.version);
+            if (isCreated("fusion.recipes", key)) {
+              await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").put({
+                id: r.id,
+                version: r.version,
+                recipe: r,
+                createdAt: 1000,
+              });
+              created.push(key);
+            } else reused.push(key);
+          }
+          for (const p of archive.fusion.poolManifests) {
+            if (!isPoolManifestVersion(p)) continue;
+            const key = versionKey(p.id, p.version);
+            if (isCreated("fusion.poolManifests", key)) {
+              await db.table<PoolManifestRow, [string, number]>("poolManifests").put({
+                id: p.id,
+                version: p.version,
+                manifest: p,
+                createdAt: p.createdAt,
+              });
+              created.push(key);
+            } else reused.push(key);
+          }
+          for (const s of archive.fusion.studies) {
+            if (!isFusionStudy(s)) continue;
+            if (isCreated("fusion.studies", s.id)) {
+              await db.table<FusionStudyRow, string>("fusionStudies").put({
+                id: s.id,
+                study: s,
+                revision: s.revision,
+                suiteId: s.suiteRef.suiteId,
+                suiteVersion: s.suiteRef.suiteVersion,
+                status: s.status,
+                updatedAt: s.updatedAt,
+              });
+              created.push(s.id);
+            } else reused.push(s.id);
+          }
+          for (const t of archive.fusion.trials) {
+            if (!isFusionTrial(t)) continue;
+            if (isCreated("fusion.trials", t.id)) {
+              await db.table<FusionTrialRow, string>("fusionTrials").put({
+                id: t.id,
+                trial: t,
+                revision: t.revision,
+                studyId: t.studyId,
+                stage: t.stage,
+                status: t.status,
+                createdAt: t.createdAt,
+              });
+              created.push(t.id);
+            } else reused.push(t.id);
+          }
+          for (const a of archive.fusion.attempts) {
+            if (!isFusionAttempt(a)) continue;
+            if (isCreated("fusion.attempts", a.id)) {
+              await db.table<FusionAttemptRow, string>("fusionAttempts").put({
+                id: a.id,
+                attempt: a,
+                studyId: a.studyId,
+                createdAt: a.createdAt,
+              });
+              created.push(a.id);
+            } else reused.push(a.id);
+          }
+          for (const o of archive.fusion.observations) {
+            if (!isEvaluationObservation(o)) continue;
+            if (isCreated("fusion.observations", o.id)) {
+              await db.table<FusionObservationRow, string>("fusionObservations").put({
+                id: o.id,
+                observation: o,
+                trialId: o.trialId,
+                createdAt: o.finishedAt,
+              });
+              created.push(o.id);
+            } else reused.push(o.id);
+          }
+          for (const p of archive.fusion.playbooks) {
+            if (!isFusionPlaybook(p)) continue;
+            if (isCreated("fusion.playbooks", p.id)) {
+              await db.table<FusionPlaybookRow, string>("fusionPlaybooks").put({
+                id: p.id,
+                playbook: p,
+                studyId: p.studyId,
+                createdAt: p.createdAt,
+              });
+              created.push(p.id);
+            } else reused.push(p.id);
+          }
         }
         if (options.signal?.aborted) throw new ArchiveImportCancelledError();
 

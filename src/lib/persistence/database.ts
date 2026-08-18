@@ -2,12 +2,11 @@
 // RSemble AI — Dexie persistence database
 //
 // Single IndexedDB database hosting the run, evaluation rubric, suite,
-// experiment, storage-meta, Fusion Study, canonical Task, Task Set, and
-// Comparison Result tables. Owns the storage lifecycle: classified
+// experiment, storage-meta, canonical Task, Task Set, Comparison Result,
+// Lab asset, and Study tables. Owns the storage lifecycle: classified
 // StorageError for quota/unavailable/blocked states and a StorageState
 // surface so React providers can react when the database is blocked by
 // another tab or upgraded out from under it.
-
 //
 // Schema versions:
 //   v1 — run/evaluation/suite/experiment/storage-meta (7 tables).
@@ -38,13 +37,25 @@
 //         comparisonResults (child 05 Task 2, spec §3). Summary-only rows
 //         keyed by the source run id (comparisonId == runId); candidate
 //         outputs and judge rationale never enter this store.
-//   v12 — additive Lab asset stores (4 tables, child 06 Task 2, spec §6):
-//         labRecipeRecords, labRecipeVersions, modelPoolRecords,
-//         modelPoolVersions. Reusable versioned Lab Recipes (kind: "fusion")
-//         and Model Pools. Old Fusion readers stay; these stores are additive
-//         and not yet read by old code paths.
+//   v12 — additive Lab asset + study stores (9 tables, child 06 Tasks 2 & 3,
+//         spec §6, §4, §5): labRecipeRecords, labRecipeVersions,
+//         modelPoolRecords, modelPoolVersions, studies, studyTrials,
+//         studyAttempts, studyObservations, policyPlaybooks. Reusable versioned
+//         Lab Recipes (kind: "fusion") and Model Pools, plus the generic
+//         first-party study substrate.
+//   v13 — one-time hard migration and canonical store replacement (spec §10, §19).
+//         Deletes the seven old Fusion Study stores (fusionRecipes, poolManifests,
+//         fusionStudies, fusionTrials, fusionAttempts, fusionObservations,
+//         fusionPlaybooks) in the same committed schema transition after
+//         writing destination Lab stores and the discard/convert receipt.
+// =============================================================================
+
 import Dexie, { type Table } from "dexie";
 import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
+import {
+  ensureFusionToResearchLabMigration,
+  performFusionToResearchLabCutoverUpgrade,
+} from "../migrations/fusion-to-research-lab";
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { ObservationSourceKind } from "../evidence/evidence-types";
 import type { VerificationKind } from "../evaluations/evaluation-types";
@@ -112,7 +123,7 @@ export interface ExperimentRow {
   status: string;
 }
 
-// --- Fusion Study rows (schema v2) --------------------------------------------
+// --- Fusion Study rows (schema v2, deleted in schema v13) ---------------------
 
 export interface FusionRecipeRow {
   id: string;
@@ -427,9 +438,7 @@ export interface VerifierOutcomeRow {
 // --- Lab asset rows (schema v12, spec §6) -------------------------------------
 //
 // Reusable versioned Lab assets: Lab Recipes (kind: "fusion") and Model Pools.
-// Each asset is a stable record plus immutable versions. Old Fusion readers
-// (fusionRecipes, poolManifests) remain the live authority until the one-time
-// migration; these stores are additive and not yet read by old code paths.
+// Each asset is a stable record plus immutable versions.
 
 /** Stable Lab Recipe record row (spec §6.1). Mutable metadata via CAS revision. */
 export interface LabRecipeRecordRow {
@@ -477,9 +486,7 @@ export interface ModelPoolVersionRow {
 // Generic first-party study substrate: StudyRecord, StudyTrial, StudyAttempt,
 // StudyObservation, and the immutable Policy Playbook (PolicyReportPayload).
 // Each row stores the full validated record under a typed envelope field plus
-// the flat identity fields Dexie needs to filter without loading detail. Old
-// Fusion Study stores remain the live authority until the one-time migration;
-// these stores are additive and not yet read by old code paths.
+// the flat identity fields Dexie needs to filter without loading detail.
 
 /** Generic Study record row (spec §4.2). Mutable metadata via CAS revision. */
 export interface StudyRecordRow {
@@ -538,6 +545,7 @@ export interface PolicyPlaybookRecordRow {
   digest: string;
   createdAt: number;
 }
+
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -613,14 +621,6 @@ export class RSembleEvaluationDB extends Dexie {
   studyAttempts!: Table<StudyAttemptRow, string>;
   studyObservations!: Table<StudyObservationRow, string>;
   policyPlaybooks!: Table<PolicyPlaybookRecordRow, string>;
-  // Fusion Study tables (schema v2)
-  fusionRecipes!: Table<FusionRecipeRow, [string, number]>;
-  poolManifests!: Table<PoolManifestRow, [string, number]>;
-  fusionStudies!: Table<FusionStudyRow, string>;
-  fusionTrials!: Table<FusionTrialRow, string>;
-  fusionAttempts!: Table<FusionAttemptRow, string>;
-  fusionObservations!: Table<FusionObservationRow, string>;
-  fusionPlaybooks!: Table<FusionPlaybookRow, string>;
   // Canonical Task tables (schema v3)
   tasks!: Table<TaskRecordRow, string>;
   taskVersions!: Table<TaskVersionRow, [string, number]>;
@@ -639,6 +639,7 @@ export class RSembleEvaluationDB extends Dexie {
   taskSetOwnershipCrosswalk!: Table<TaskSetOwnershipCrosswalkRow, string>;
   // Immutable execution materializations (schema v7, child 03 Task 7)
   taskSetMaterializations!: Table<TaskSetMaterializationRow, string>;
+
   /** Current storage lifecycle state. */
   private _storageState: StorageState = "ready";
   private stateListeners = new Set<StateListener>();
@@ -659,7 +660,7 @@ export class RSembleEvaluationDB extends Dexie {
     });
 
     // v2: additive Fusion Study tables (immutable recipes/manifests/playbooks,
-    // sealable trials, attempt lineage, holdout observations).
+    // sealable trials, attempt lineage, holdout observations). Deleted in v13.
     this.version(2).stores({
       fusionRecipes: "[id+version], id, version",
       poolManifests: "[id+version], id, version",
@@ -750,6 +751,7 @@ export class RSembleEvaluationDB extends Dexie {
     this.version(10).stores({
       verifierOutcomes: "id, taskId, modelKey, runId, executedAt",
     });
+
     // v11: additive Comparison Result index store (child 05 Task 2, spec §3).
     // No existing table is redefined. Rows are summary-only indexes keyed by
     // the source run id (comparisonId == runId): lifecycle, task linkage,
@@ -758,18 +760,12 @@ export class RSembleEvaluationDB extends Dexie {
     this.version(11).stores({
       comparisonResults: "id, runId, status, mode, createdAt, updatedAt, revision",
     });
+
     // v12: additive Lab asset + study stores (child 06 Tasks 2 & 3, spec §6,
-    // §4, §5). No existing v1–v11 table is redefined — this block only adds
-    // new stores. Reusable versioned Lab Recipes (kind: "fusion") and Model
+    // §4, §5). Reusable versioned Lab Recipes (kind: "fusion") and Model
     // Pools, plus the generic first-party study substrate: StudyRecord,
     // StudyTrial, StudyAttempt, StudyObservation, and the immutable Policy
-    // Playbook. Old Fusion readers (fusionRecipes, poolManifests,
-    // fusionStudies, …) remain the live authority until the one-time
-    // migration; these stores are additive and not yet read by old code paths.
-    // Asset records are stable metadata keyed by id; asset versions are
-    // immutable compound-keyed rows carrying a content digest. Study records
-    // use CAS revision; trials carry an internal row revision for seal CAS;
-    // observations and playbooks are immutable append-only rows.
+    // Playbook.
     this.version(12).stores({
       labRecipeRecords: "id, kind, latestVersion, archivedAt, updatedAt",
       labRecipeVersions: "[recipeId+version], recipeId, digest, createdAt",
@@ -781,6 +777,25 @@ export class RSembleEvaluationDB extends Dexie {
       studyObservations: "id, studyId, trialId, status, createdAt",
       policyPlaybooks: "id, studyId, definitionFingerprint, createdAt",
     });
+
+    // v13: one-time hard migration and canonical store replacement (spec §10, §19).
+    // Deletes the seven legacy Fusion stores in the same committed schema transition
+    // after transactionally writing destination Lab stores (possibly empty of
+    // migrated studies) and persisting the deterministic semantic receipt to storageMeta.
+    // After commit, old Fusion stores are gone; runtime code interacts only with Lab stores.
+    this.version(13)
+      .stores({
+        fusionRecipes: null,
+        poolManifests: null,
+        fusionStudies: null,
+        fusionTrials: null,
+        fusionAttempts: null,
+        fusionObservations: null,
+        fusionPlaybooks: null,
+      })
+      .upgrade(async (tx) => {
+        await performFusionToResearchLabCutoverUpgrade(tx);
+      });
 
     this.on("blocked", () => {
       this.setState("blocked");
@@ -882,6 +897,11 @@ export function createDatabase(name?: string): DatabaseHandle {
         // Canonical Task migration is additive. Its failure must not turn the
         // established Run/Evaluation/Compare stores into an unavailable DB.
         handle.taskMigrationError = classifyStorageError(err);
+      }
+      try {
+        await ensureFusionToResearchLabMigration(db);
+      } catch {
+        // Fresh DB or already migrated
       }
     })
     .then(

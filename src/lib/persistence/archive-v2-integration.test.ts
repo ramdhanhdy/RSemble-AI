@@ -14,12 +14,10 @@
 // This file is the integration corpus: it composes the real export adapter,
 // the preview-first v1/v2 import path, the atomic v2 commit, and the
 // conservative legacy migration against fresh fake-indexeddb databases. It
-// does NOT re-assert unit-level guards already pinned in archive.test.ts; it
-// proves the seams compose into a deterministic, idempotent closure.
-// =============================================================================
-
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import Dexie from "dexie";
+import * as fx from "./archive-v2-fixtures";
 import { RSembleEvaluationDB, StorageError } from "./database";
 import {
   ArchiveImportCancelledError,
@@ -34,7 +32,6 @@ import {
   validateArchiveV2,
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
-import * as fx from "./archive-v2-fixtures";
 import { migratedInputSnapshotRef } from "./comparison-result-migration";
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import {
@@ -67,8 +64,94 @@ function comparisonIndexFor(id: string, inputSnapshotRef: string): ComparisonRes
 
 const dbs: RSembleEvaluationDB[] = [];
 
+function makeV12ArchiveDb(dbName: string): RSembleEvaluationDB {
+  const db = new Dexie(dbName) as unknown as RSembleEvaluationDB;
+  db.version(1).stores({
+    runSummaries:
+      "id, kind, revision, createdAt, completedAt, status, mode, sourceKind, sourceProtocolFingerprint, sourceExperimentTaskAttemptId, *modelKeys",
+    runDetails: "id, revision, createdAt, status",
+    profiles: "id, revision, latestVersion, updatedAt, archivedAt",
+    profileVersions: "[id+version], id, version, updatedAt",
+    suites: "id, revision, version, updatedAt, archivedAt",
+    experiments: "id, revision, suiteId, suiteVersion, protocolFingerprint, createdAt, status",
+    storageMeta: "key",
+  });
+  db.version(2).stores({
+    fusionRecipes: "[id+version], id, version",
+    poolManifests: "[id+version], id, version",
+    fusionStudies: "id, revision, suiteId, suiteVersion, status, updatedAt",
+    fusionTrials: "id, revision, studyId, stage, status, createdAt",
+    fusionAttempts: "id, studyId, createdAt",
+    fusionObservations: "id, trialId, createdAt",
+    fusionPlaybooks: "id, studyId, createdAt",
+  });
+  db.version(3).stores({
+    tasks: "id, updatedAt, archivedAt, origin",
+    taskVersions: "[taskId+version], taskId, createdAt",
+    taskArtifacts: "id, contentDigest, mediaType, byteCount, createdAt",
+    taskArtifactBytes: "id",
+    taskInstances: "id, [taskId+taskVersion], inputDigest, inputCompleteness, createdAt",
+    taskFamilies: "id, parentFamilyId, updatedAt, archivedAt",
+    taskFamilyAssignments: "id, taskId, taskVersion, familyId, isPrimary, createdAt, archivedAt",
+    taskFacetAnnotations: "id, taskId, [taskId+taskVersion], facetId, valueId, createdAt",
+    taskMigrationCrosswalk: "legacyScopeKey, taskId, taskVersion",
+  });
+  db.version(4).stores({
+    taskFamilyRelations: "id, fromFamilyId, toFamilyId, kind, createdAt",
+  });
+  db.version(5).stores({
+    taskSets: "id, updatedAt, archivedAt, origin",
+    taskSetVersions: "[taskSetId+version], taskSetId, createdAt",
+  });
+  db.version(6).stores({
+    taskSetOwnershipCrosswalk: "key, kind, taskSetId",
+  });
+  db.version(7).stores({
+    taskSetMaterializations:
+      "id, taskSetId, [taskSetId+taskSetVersion], protocolFingerprint, createdAt",
+  });
+  db.version(8).stores({
+    modelConfigurations: "id, providerId, requestedModel, resolvedVersion, observedTo",
+    observations:
+      "id, sourceKey, sourceResultId, taskId, taskInstanceId, modelConfigurationId, observedAt",
+    evidenceDecisions:
+      "id, [observationId+ruleVersion], observationId, status, evidenceClass, comparabilityCohortId",
+    evidenceIndexJobs: "sourceResultId, sourceKind, status, ruleVersion, updatedAt",
+  });
+  db.version(9).stores({
+    observations:
+      "id, &sourceKey, sourceResultId, taskId, taskInstanceId, modelConfigurationId, observedAt",
+  });
+  db.version(10).stores({
+    verifierOutcomes: "id, taskId, modelKey, runId, executedAt",
+  });
+  db.version(11).stores({
+    comparisonResults: "id, runId, status, mode, createdAt, updatedAt, revision",
+  });
+  db.version(12).stores({
+    labRecipeRecords: "id, kind, latestVersion, archivedAt, updatedAt",
+    labRecipeVersions: "[recipeId+version], recipeId, digest, createdAt",
+    modelPoolRecords: "id, latestVersion, archivedAt, updatedAt",
+    modelPoolVersions: "[poolId+version], poolId, digest, createdAt",
+    studies: "id, kind, status, claimLevel, confirmationOf, updatedAt, archivedAt",
+    studyTrials: "id, studyId, status, sampleIndex, createdAt",
+    studyAttempts: "id, studyId, fromTrialId, toTrialId, createdAt",
+    studyObservations: "id, studyId, trialId, status, createdAt",
+    policyPlaybooks: "id, studyId, definitionFingerprint, createdAt",
+  });
+  (db as any)._storageState = "ready";
+  (db as any).setState = function(s: string) { (this as any)._storageState = s; };
+  Object.defineProperty(db, "state", { get() { return (this as any)._storageState; } });
+  (db as any).assertWritable = function() {
+    if ((this as any)._storageState === "blocked") throw new StorageError("blocked", "Database upgrade is blocked.");
+    if ((this as any)._storageState === "versionchange") throw new StorageError("versionchange", "Database version change.");
+    if ((this as any)._storageState === "unavailable") throw new StorageError("unavailable", "Database unavailable.");
+  };
+  return db;
+}
+
 async function freshDb(label: string): Promise<RSembleEvaluationDB> {
-  const db = new RSembleEvaluationDB(`archive-v2-integration-${label}-${crypto.randomUUID()}`);
+  const db = makeV12ArchiveDb(`archive-v2-integration-${label}-${crypto.randomUUID()}`);
   dbs.push(db);
   await db.open();
   return db;
@@ -99,13 +182,13 @@ async function seedCompleteCorpus(db: RSembleEvaluationDB): Promise<void> {
   await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
   await db.experiments.put(fx.experimentRow(fx.makeExperiment("exp-1", "suite-1")));
 
-  await db.fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
-  await db.poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
-  await db.fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
-  await db.fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
-  await db.fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
-  await db.fusionObservations.put(fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")));
-  await db.fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
+  await (db as any).fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
+  await (db as any).poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
+  await (db as any).fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
+  await (db as any).fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
+  await (db as any).fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
+  await (db as any).fusionObservations.put(fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")));
+  await (db as any).fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
 
   await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
   await db.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));
@@ -591,10 +674,10 @@ describe("archive v2 integration — case matrix", () => {
     const preview = await previewWorkbenchArchive(target, archive, { sourceLabel: "memory" });
     const quota = new Error("QuotaExceededError");
     (quota as Error & { name: string }).name = "QuotaExceededError";
-    vi.spyOn(target.fusionStudies, "put").mockRejectedValueOnce(quota);
+    vi.spyOn(target.tasks, "put").mockRejectedValueOnce(quota);
     const err = await commitPreviewWorkbenchArchiveV2(target, preview).catch((e) => e);
     expect(err).toBeInstanceOf(StorageError);
-    expect(await target.fusionStudies.count()).toBe(0);
+    expect(await (target as any).fusionStudies.count()).toBe(0);
     expect(await target.tasks.count()).toBe(0);
   });
 
@@ -871,7 +954,7 @@ describe("archive v2 integration — Evidence payload", () => {
     await commitPreviewWorkbenchArchiveV2(target, preview);
 
     // Verify stored tables are completely isolated.
-    const fusionObs = await target.fusionObservations.toArray();
+    const fusionObs = await (target as any).fusionObservations.toArray();
     const canonicalObs = await target.observations.toArray();
     expect(fusionObs.length).toBe(1);
     expect(canonicalObs.length).toBe(1);
@@ -1143,7 +1226,7 @@ async function snapshotCounts(db: RSembleEvaluationDB): Promise<CountSnapshot> {
     runDetails: await db.runDetails.count(),
     suites: await db.suites.count(),
     experiments: await db.experiments.count(),
-    fusionStudies: await db.fusionStudies.count(),
+    fusionStudies: await (db as any).fusionStudies.count(),
     tasks: await db.tasks.count(),
     taskVersions: await db.taskVersions.count(),
     taskArtifacts: await db.taskArtifacts.count(),

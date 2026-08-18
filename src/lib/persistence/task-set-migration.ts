@@ -520,13 +520,14 @@ async function buildPlan(
   taskVersionSet: Set<string>,
   rubricVersionMap: Map<string, EvaluationRubric>,
 ): Promise<MigrationPlan> {
+  const hasFusionStudies = db.tables.some((t) => t.name === "fusionStudies");
   const [suiteRows, experimentRows, fusionStudyRows, fusionTrialRows, fusionPlaybookRows] =
     await Promise.all([
       db.suites.toArray(),
       db.experiments.toArray(),
-      db.fusionStudies.toArray(),
-      db.fusionTrials.toArray(),
-      db.fusionPlaybooks.toArray(),
+      hasFusionStudies ? db.table("fusionStudies").toArray() : Promise.resolve([]),
+      hasFusionStudies ? db.table("fusionTrials").toArray() : Promise.resolve([]),
+      hasFusionStudies ? db.table("fusionPlaybooks").toArray() : Promise.resolve([]),
     ]);
 
   const suites = suiteRows.map((r) => r.suite).filter(isEvaluationSuite);
@@ -942,6 +943,7 @@ async function writeFusionOwners(
 // --- verification -----------------------------------------------------------
 
 async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
+  const hasFusion = db.tables.some((t) => t.name === "fusionRecipes");
   const [
     suites,
     experiments,
@@ -965,13 +967,13 @@ async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
     db.tasks.toArray(),
     db.taskVersions.toArray(),
     db.taskMigrationCrosswalk.toArray(),
-    db.fusionRecipes.toArray(),
-    db.poolManifests.toArray(),
-    db.fusionStudies.toArray(),
-    db.fusionTrials.toArray(),
-    db.fusionAttempts.toArray(),
-    db.fusionObservations.toArray(),
-    db.fusionPlaybooks.toArray(),
+    hasFusion ? db.table("fusionRecipes").toArray() : Promise.resolve([]),
+    hasFusion ? db.table("poolManifests").toArray() : Promise.resolve([]),
+    hasFusion ? db.table("fusionStudies").toArray() : Promise.resolve([]),
+    hasFusion ? db.table("fusionTrials").toArray() : Promise.resolve([]),
+    hasFusion ? db.table("fusionAttempts").toArray() : Promise.resolve([]),
+    hasFusion ? db.table("fusionObservations").toArray() : Promise.resolve([]),
+    hasFusion ? db.table("fusionPlaybooks").toArray() : Promise.resolve([]),
   ]);
   return canonicalJsonString({
     suites,

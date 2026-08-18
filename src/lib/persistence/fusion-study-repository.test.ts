@@ -10,6 +10,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "./database";
+import Dexie from "dexie";
 import {
   createFusionStudyRepository,
   InMemoryFusionStudyRepository,
@@ -306,7 +307,7 @@ function repositorySuite(name: string, makeRepo: () => FusionStudyRepository & o
 
 repositorySuite("InMemoryFusionStudyRepository", () => new InMemoryFusionStudyRepository());
 
-const dbs: RSembleEvaluationDB[] = [];
+const dbs: (RSembleEvaluationDB | Dexie)[] = [];
 afterEach(async () => {
   while (dbs.length > 0) {
     const db = dbs.pop()!;
@@ -315,8 +316,44 @@ afterEach(async () => {
   }
 });
 
-repositorySuite("Dexie fusion-study repository", () => {
-  const db = new RSembleEvaluationDB(`fusion-test-${crypto.randomUUID()}`);
+function makeV2FusionDb(dbName: string): RSembleEvaluationDB {
+  const db = new Dexie(dbName) as unknown as RSembleEvaluationDB;
+  db.version(1).stores({
+    runSummaries: "id",
+    runDetails: "id",
+    profiles: "id",
+    profileVersions: "[id+version]",
+    suites: "id",
+    experiments: "id",
+    storageMeta: "key",
+  });
+  db.version(2).stores({
+    fusionRecipes: "[id+version], id, version",
+    poolManifests: "[id+version], id, version",
+    fusionStudies: "id, revision, suiteId, suiteVersion, status, updatedAt",
+    fusionTrials: "id, revision, studyId, stage, status, createdAt",
+    fusionAttempts: "id, studyId, createdAt",
+    fusionObservations: "id, trialId, createdAt",
+    fusionPlaybooks: "id, studyId, createdAt",
+  });
+  (db as any).assertWritable = () => {};
+  return db;
+}
+
+repositorySuite("Dexie fusion-study repository (v2 schema)", () => {
+  const db = makeV2FusionDb(`fusion-test-${crypto.randomUUID()}`);
   dbs.push(db);
   return createFusionStudyRepository(db);
+});
+
+describe("Dexie fusion-study repository on schema v13", () => {
+  it("rejects access because legacy Fusion stores were deleted in v13", async () => {
+    const db = new RSembleEvaluationDB(`fusion-v13-${crypto.randomUUID()}`);
+    dbs.push(db);
+    await db.open();
+    const repo = createFusionStudyRepository(db);
+    await expect(repo.listRecipes()).rejects.toThrow(
+      "Legacy fusion store 'fusionRecipes' was deleted in schema v13",
+    );
+  });
 });

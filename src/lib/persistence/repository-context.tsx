@@ -30,10 +30,12 @@ import {
 } from "./database";
 import { createRunRepository, type RunRepository } from "./run-repository";
 import { createEvaluationRepository, type EvaluationRepository } from "./evaluation-repository";
-import { createFusionStudyRepository, type FusionStudyRepository } from "./fusion-study-repository";
+import type { FusionStudyRepository } from "./fusion-study-repository";
 import { createTaskRepository, type TaskRepository } from "./task-repository";
 import { createTaskSetRepository, type TaskSetRepository } from "./task-set-repository";
 import { createEvidenceRepository, type EvidenceRepository } from "./evidence-repository";
+import { createStudyRepository, type StudyRepository } from "./study-repository";
+import { createLabAssetRepository, type LabAssetRepository } from "./lab-asset-repository";
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
@@ -45,6 +47,10 @@ export interface RepositoryContextValue {
   /** Evidence derivation repository for Observations, Eligibility Decisions,
    *  Model Configuration snapshots, and index jobs (spec §10, §12.1). */
   evidenceRepo?: EvidenceRepository | null;
+  /** First-party Study repository (schema v12/v13, spec §4/§5). */
+  studyRepo?: StudyRepository | null;
+  /** Reusable Lab asset repository (schema v12/v13, spec §6). */
+  labAssetRepo?: LabAssetRepository | null;
   /** Raw Dexie handle for infrastructure that composes repositories (execution
    *  lease, experiment unit of work). Null while storage is unavailable. */
   db: RSembleEvaluationDB | null;
@@ -91,6 +97,14 @@ export function useTaskSetRepository(): TaskSetRepository | null {
 
 export function useEvidenceRepository(): EvidenceRepository | null {
   return useContext(RepositoryContext).evidenceRepo ?? null;
+}
+
+export function useStudyRepository(): StudyRepository | null {
+  return useContext(RepositoryContext).studyRepo ?? null;
+}
+
+export function useLabAssetRepository(): LabAssetRepository | null {
+  return useContext(RepositoryContext).labAssetRepo ?? null;
 }
 
 /** Read the bounded canonical Task migration failure, if Task catalog storage
@@ -165,8 +179,14 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
         : null,
     [repositoriesReady, handle, runRepo],
   );
-  const fusionRepo = useMemo(
-    () => (repositoriesReady && handle ? createFusionStudyRepository(handle.db) : null),
+  // Schema v13 cutover: legacy fusion stores are deleted; fusionRepo is null at runtime.
+  const fusionRepo = null;
+  const studyRepo = useMemo(
+    () => (repositoriesReady && handle ? createStudyRepository(handle.db) : null),
+    [repositoriesReady, handle],
+  );
+  const labAssetRepo = useMemo(
+    () => (repositoriesReady && handle ? createLabAssetRepository(handle.db) : null),
     [repositoriesReady, handle],
   );
   const taskRepo = useMemo(
@@ -193,6 +213,8 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       taskRepo,
       taskSetRepo,
       evidenceRepo,
+      studyRepo,
+      labAssetRepo,
       db: handle?.db ?? null,
       storageState,
       taskMigrationError,
@@ -201,10 +223,11 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     [
       runRepo,
       evalRepo,
-      fusionRepo,
       taskRepo,
       taskSetRepo,
       evidenceRepo,
+      studyRepo,
+      labAssetRepo,
       handle,
       storageState,
       taskMigrationError,

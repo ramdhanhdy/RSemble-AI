@@ -341,13 +341,13 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
       await settle();
 
       expect(await db.suites.count()).toBe(1);
-      expect(await db.fusionStudies.count()).toBe(1);
+      expect(await db.tasks.count()).toBe(1);
       expect(await db.taskArtifactBytes.count()).toBe(1);
       const result = h
         .$$('[role="status"]')
         .map((el) => el.textContent ?? "")
         .join("\n");
-      expect(result).toContain('Imported 32 records — 0 reused ("v2.json")');
+      expect(result).toContain('Imported 25 records — 0 reused ("v2.json")');
     } finally {
       console.error = originalError;
     }
@@ -476,15 +476,17 @@ async function seedV2Corpus(target: RSembleEvaluationDB): Promise<void> {
   await target.profileVersions.put(fx.profileVersionRow(fx.makeRubricVersion("rubric-1", 1)));
   await target.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
   await target.experiments.put(fx.experimentRow(fx.makeExperiment("exp-1", "suite-1")));
-  await target.fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
-  await target.poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
-  await target.fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
-  await target.fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
-  await target.fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
-  await target.fusionObservations.put(
-    fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
-  );
-  await target.fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
+  if (target.tables.some((t) => t.name === "fusionRecipes")) {
+    await (target as any).fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
+    await (target as any).poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
+    await (target as any).fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
+    await (target as any).fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
+    await (target as any).fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
+    await (target as any).fusionObservations.put(
+      fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
+    );
+    await (target as any).fusionPlaybooks.put(fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")));
+  }
   await target.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
   await target.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));
   await target.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-1", bytes)));

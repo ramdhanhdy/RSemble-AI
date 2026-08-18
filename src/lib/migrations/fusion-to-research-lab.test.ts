@@ -1457,7 +1457,7 @@ async function seedV12FusionCorpus(db: Dexie): Promise<void> {
       id: o.id,
       observation: o,
       trialId: o.trialId,
-      createdAt: o.createdAt,
+      createdAt: o.finishedAt,
     });
   }
   for (const pb of FUSION_CORPUS_FIXTURE.playbooks) {

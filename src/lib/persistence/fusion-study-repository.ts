@@ -13,7 +13,18 @@
 // §6.3). Seals are final: no mutation path touches a sealed trial.
 // =============================================================================
 
-import { type RSembleEvaluationDB, StorageError, classifyStorageError } from "./database";
+import {
+  type RSembleEvaluationDB,
+  type FusionRecipeRow,
+  type PoolManifestRow,
+  type FusionStudyRow,
+  type FusionTrialRow,
+  type FusionAttemptRow,
+  type FusionObservationRow,
+  type FusionPlaybookRow,
+  StorageError,
+  classifyStorageError,
+} from "./database";
 import {
   isEvaluationObservation,
   isFusionAttempt,
@@ -122,21 +133,32 @@ export function validateTrialAttemptLink(
 // --- Dexie implementation -------------------------------------------------------
 
 export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStudyRepository {
+  function getTable<T, Key>(tableName: string) {
+    if (!db.tables.some((t) => t.name === tableName)) {
+      throw new StorageError(
+        "unavailable",
+        `Legacy fusion store '${tableName}' was deleted in schema v13; use canonical study stores.`,
+      );
+    }
+    return db.table<T, Key>(tableName);
+  }
+
   async function createRecipe(recipe: FusionRecipeVersion): Promise<void> {
     if (!isFusionRecipeVersion(recipe)) {
       throw new StorageError("validation", "Invalid fusion recipe");
     }
     db.assertWritable();
+    const tbl = getTable<FusionRecipeRow, [string, number]>("fusionRecipes");
     try {
-      await db.transaction("rw", db.fusionRecipes, async () => {
-        const existing = await db.fusionRecipes.get([recipe.id, recipe.version]);
+      await db.transaction("rw", tbl, async () => {
+        const existing = await tbl.get([recipe.id, recipe.version]);
         if (existing) {
           throw new StorageError(
             "conflict",
             `Recipe ${recipe.id} v${recipe.version} already exists — recipes are immutable.`,
           );
         }
-        await db.fusionRecipes.put({
+        await tbl.put({
           id: recipe.id,
           version: recipe.version,
           recipe,
@@ -151,7 +173,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function getRecipe(id: string, version: number): Promise<FusionRecipeVersion | null> {
     try {
-      const row = await db.fusionRecipes.get([id, version]);
+      const tbl = getTable<FusionRecipeRow, [string, number]>("fusionRecipes");
+      const row = await tbl.get([id, version]);
       if (!row) return null;
       return isFusionRecipeVersion(row.recipe) ? row.recipe : null;
     } catch (err) {
@@ -161,7 +184,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function getLatestRecipe(id: string): Promise<FusionRecipeVersion | null> {
     try {
-      const rows = await db.fusionRecipes.where("id").equals(id).toArray();
+      const tbl = getTable<FusionRecipeRow, [string, number]>("fusionRecipes");
+      const rows = await tbl.where("id").equals(id).toArray();
       const recipes = rows
         .map((r) => r.recipe)
         .filter((r): r is FusionRecipeVersion => isFusionRecipeVersion(r));
@@ -174,7 +198,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function listRecipes(): Promise<FusionRecipeVersion[]> {
     try {
-      const rows = await db.fusionRecipes.toArray();
+      const tbl = getTable<FusionRecipeRow, [string, number]>("fusionRecipes");
+      const rows = await tbl.toArray();
       return rows
         .map((r) => r.recipe)
         .filter((r): r is FusionRecipeVersion => isFusionRecipeVersion(r))
@@ -189,16 +214,17 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
       throw new StorageError("validation", "Invalid pool manifest");
     }
     db.assertWritable();
+    const tbl = getTable<PoolManifestRow, [string, number]>("poolManifests");
     try {
-      await db.transaction("rw", db.poolManifests, async () => {
-        const existing = await db.poolManifests.get([manifest.id, manifest.version]);
+      await db.transaction("rw", tbl, async () => {
+        const existing = await tbl.get([manifest.id, manifest.version]);
         if (existing) {
           throw new StorageError(
             "conflict",
             `Pool manifest ${manifest.id} v${manifest.version} already exists — manifests are immutable.`,
           );
         }
-        await db.poolManifests.put({
+        await tbl.put({
           id: manifest.id,
           version: manifest.version,
           manifest,
@@ -213,7 +239,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function getPoolManifest(id: string, version: number): Promise<PoolManifestVersion | null> {
     try {
-      const row = await db.poolManifests.get([id, version]);
+      const tbl = getTable<PoolManifestRow, [string, number]>("poolManifests");
+      const row = await tbl.get([id, version]);
       if (!row) return null;
       return isPoolManifestVersion(row.manifest) ? row.manifest : null;
     } catch (err) {
@@ -223,7 +250,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function getLatestPoolManifest(id: string): Promise<PoolManifestVersion | null> {
     try {
-      const rows = await db.poolManifests.where("id").equals(id).toArray();
+      const tbl = getTable<PoolManifestRow, [string, number]>("poolManifests");
+      const rows = await tbl.where("id").equals(id).toArray();
       const manifests = rows
         .map((r) => r.manifest)
         .filter((m): m is PoolManifestVersion => isPoolManifestVersion(m));
@@ -236,7 +264,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function listPoolManifests(): Promise<PoolManifestVersion[]> {
     try {
-      const rows = await db.poolManifests.toArray();
+      const tbl = getTable<PoolManifestRow, [string, number]>("poolManifests");
+      const rows = await tbl.toArray();
       return rows
         .map((r) => r.manifest)
         .filter((m): m is PoolManifestVersion => isPoolManifestVersion(m))
@@ -249,11 +278,12 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
   async function createStudy(study: FusionStudy): Promise<void> {
     if (!isFusionStudy(study)) throw new StorageError("validation", "Invalid fusion study");
     db.assertWritable();
+    const tbl = getTable<FusionStudyRow, string>("fusionStudies");
     try {
-      await db.transaction("rw", db.fusionStudies, async () => {
-        const existing = await db.fusionStudies.get(study.id);
+      await db.transaction("rw", tbl, async () => {
+        const existing = await tbl.get(study.id);
         if (existing) throw new StorageError("conflict", `Fusion study ${study.id} already exists`);
-        await db.fusionStudies.put({
+        await tbl.put({
           id: study.id,
           study,
           revision: study.revision,
@@ -273,9 +303,10 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
     if (!isFusionStudy(study)) throw new StorageError("validation", "Invalid fusion study");
     db.assertWritable();
     const newRevision = expectedRevision + 1;
+    const tbl = getTable<FusionStudyRow, string>("fusionStudies");
     try {
-      await db.transaction("rw", db.fusionStudies, async () => {
-        const existing = await db.fusionStudies.get(study.id);
+      await db.transaction("rw", tbl, async () => {
+        const existing = await tbl.get(study.id);
         if (!existing) throw new StorageError("conflict", `Fusion study ${study.id} not found`);
         if (existing.revision !== expectedRevision) {
           throw new StorageError(
@@ -283,7 +314,7 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
             `Stale revision: expected ${expectedRevision}, got ${existing.revision}`,
           );
         }
-        await db.fusionStudies.put({
+        await tbl.put({
           id: study.id,
           study: { ...study, revision: newRevision },
           revision: newRevision,
@@ -302,7 +333,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function getStudy(id: string): Promise<FusionStudy | null> {
     try {
-      const row = await db.fusionStudies.get(id);
+      const tbl = getTable<FusionStudyRow, string>("fusionStudies");
+      const row = await tbl.get(id);
       if (!row) return null;
       return isFusionStudy(row.study) ? row.study : null;
     } catch (err) {
@@ -312,9 +344,10 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function listStudies(suiteId?: string): Promise<FusionStudy[]> {
     try {
+      const tbl = getTable<FusionStudyRow, string>("fusionStudies");
       const rows = suiteId
-        ? await db.fusionStudies.where("suiteId").equals(suiteId).toArray()
-        : await db.fusionStudies.toArray();
+        ? await tbl.where("suiteId").equals(suiteId).toArray()
+        : await tbl.toArray();
       return rows
         .map((r) => r.study)
         .filter((s): s is FusionStudy => isFusionStudy(s))
@@ -333,11 +366,12 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
       );
     }
     db.assertWritable();
+    const tbl = getTable<FusionTrialRow, string>("fusionTrials");
     try {
-      await db.transaction("rw", db.fusionTrials, async () => {
-        const existing = await db.fusionTrials.get(trial.id);
+      await db.transaction("rw", tbl, async () => {
+        const existing = await tbl.get(trial.id);
         if (existing) throw new StorageError("conflict", `Fusion trial ${trial.id} already exists`);
-        await db.fusionTrials.put({
+        await tbl.put({
           id: trial.id,
           trial,
           revision: trial.revision,
@@ -355,7 +389,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function getTrial(id: string): Promise<FusionTrial | null> {
     try {
-      const row = await db.fusionTrials.get(id);
+      const tbl = getTable<FusionTrialRow, string>("fusionTrials");
+      const row = await tbl.get(id);
       if (!row) return null;
       return isFusionTrial(row.trial) ? row.trial : null;
     } catch (err) {
@@ -365,7 +400,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function listTrials(studyId: string): Promise<FusionTrial[]> {
     try {
-      const rows = await db.fusionTrials.where("studyId").equals(studyId).toArray();
+      const tbl = getTable<FusionTrialRow, string>("fusionTrials");
+      const rows = await tbl.where("studyId").equals(studyId).toArray();
       return rows
         .map((r) => r.trial)
         .filter((t): t is FusionTrial => isFusionTrial(t))
@@ -379,9 +415,10 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
     if (!isFusionTrial(trial)) throw new StorageError("validation", "Invalid fusion trial");
     db.assertWritable();
     const newRevision = expectedRevision + 1;
+    const tbl = getTable<FusionTrialRow, string>("fusionTrials");
     try {
-      await db.transaction("rw", db.fusionTrials, async () => {
-        const existing = await db.fusionTrials.get(trial.id);
+      await db.transaction("rw", tbl, async () => {
+        const existing = await tbl.get(trial.id);
         if (!existing) throw new StorageError("conflict", `Fusion trial ${trial.id} not found`);
         if (existing.revision !== expectedRevision) {
           throw new StorageError(
@@ -403,7 +440,7 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
             "Trials seal via sealTrial only — the anti-circularity check cannot be bypassed.",
           );
         }
-        await db.fusionTrials.put({
+        await tbl.put({
           id: trial.id,
           trial: { ...trial, revision: newRevision },
           revision: newRevision,
@@ -427,9 +464,11 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
   ): Promise<number> {
     db.assertWritable();
     const newRevision = expectedRevision + 1;
+    const trialsTbl = getTable<FusionTrialRow, string>("fusionTrials");
+    const recipesTbl = getTable<FusionRecipeRow, [string, number]>("fusionRecipes");
     try {
-      await db.transaction("rw", db.fusionTrials, db.fusionRecipes, async () => {
-        const existing = await db.fusionTrials.get(trialId);
+      await db.transaction("rw", trialsTbl, recipesTbl, async () => {
+        const existing = await trialsTbl.get(trialId);
         if (!existing) throw new StorageError("conflict", `Fusion trial ${trialId} not found`);
         if (existing.revision !== expectedRevision) {
           throw new StorageError(
@@ -449,7 +488,7 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
         // the effective synthesizer is the trial's, else the recipe's.
         let recipeSynthesizer: CriticRef | null = null;
         if (trial.recipe !== null) {
-          const recipeRow = await db.fusionRecipes.get([trial.recipe.id, trial.recipe.version]);
+          const recipeRow = await recipesTbl.get([trial.recipe.id, trial.recipe.version]);
           const recipe =
             recipeRow && isFusionRecipeVersion(recipeRow.recipe) ? recipeRow.recipe : null;
           if (!recipe) {
@@ -472,7 +511,7 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
           sealedAt,
           updatedAt: sealedAt,
         };
-        await db.fusionTrials.put({
+        await trialsTbl.put({
           id: trial.id,
           trial: sealed,
           revision: newRevision,
@@ -492,9 +531,11 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
   async function recordTrialAttempt(attempt: FusionAttempt): Promise<void> {
     if (!isFusionAttempt(attempt)) throw new StorageError("validation", "Invalid fusion attempt");
     db.assertWritable();
+    const attemptsTbl = getTable<FusionAttemptRow, string>("fusionAttempts");
+    const trialsTbl = getTable<FusionTrialRow, string>("fusionTrials");
     try {
-      await db.transaction("rw", db.fusionAttempts, db.fusionTrials, async () => {
-        const existing = await db.fusionAttempts.get(attempt.id);
+      await db.transaction("rw", attemptsTbl, trialsTbl, async () => {
+        const existing = await attemptsTbl.get(attempt.id);
         if (existing) {
           throw new StorageError(
             "conflict",
@@ -502,14 +543,14 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
           );
         }
         const [fromRow, toRow] = await Promise.all([
-          db.fusionTrials.get(attempt.fromTrialId),
-          db.fusionTrials.get(attempt.toTrialId),
+          trialsTbl.get(attempt.fromTrialId),
+          trialsTbl.get(attempt.toTrialId),
         ]);
         const fromTrial = fromRow && isFusionTrial(fromRow.trial) ? fromRow.trial : null;
         const toTrial = toRow && isFusionTrial(toRow.trial) ? toRow.trial : null;
         const problem = validateTrialAttemptLink(attempt, fromTrial, toTrial);
         if (problem) throw new StorageError("validation", problem);
-        await db.fusionAttempts.put({
+        await attemptsTbl.put({
           id: attempt.id,
           attempt,
           studyId: attempt.studyId,
@@ -524,7 +565,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function listTrialAttempts(studyId: string): Promise<FusionAttempt[]> {
     try {
-      const rows = await db.fusionAttempts.where("studyId").equals(studyId).toArray();
+      const tbl = getTable<FusionAttemptRow, string>("fusionAttempts");
+      const rows = await tbl.where("studyId").equals(studyId).toArray();
       return rows
         .map((r) => r.attempt)
         .filter((a): a is FusionAttempt => isFusionAttempt(a))
@@ -544,15 +586,17 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
     db.assertWritable();
     try {
       let newRevision = expectedTrialRevision + 1;
-      await db.transaction("rw", db.fusionObservations, db.fusionTrials, async () => {
-        const existingObs = await db.fusionObservations.get(observation.id);
+      const obsTbl = getTable<FusionObservationRow, string>("fusionObservations");
+      const trialsTbl = getTable<FusionTrialRow, string>("fusionTrials");
+      await db.transaction("rw", obsTbl, trialsTbl, async () => {
+        const existingObs = await obsTbl.get(observation.id);
         if (existingObs) {
           throw new StorageError(
             "conflict",
             `Observation ${observation.id} already exists — observations are immutable.`,
           );
         }
-        const trialRow = await db.fusionTrials.get(observation.trialId);
+        const trialRow = await trialsTbl.get(observation.trialId);
         if (!trialRow) {
           throw new StorageError("conflict", `Fusion trial ${observation.trialId} not found`);
         }
@@ -577,13 +621,13 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
           observationIds: [...trial.observationIds, observation.id],
           updatedAt: Date.now(),
         };
-        await db.fusionObservations.put({
+        await obsTbl.put({
           id: observation.id,
           observation,
           trialId: observation.trialId,
           createdAt: observation.finishedAt,
         });
-        await db.fusionTrials.put({
+        await trialsTbl.put({
           ...trialRow,
           trial: updated,
           revision: newRevision,
@@ -598,7 +642,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function getObservation(id: string): Promise<EvaluationObservation | null> {
     try {
-      const row = await db.fusionObservations.get(id);
+      const tbl = getTable<FusionObservationRow, string>("fusionObservations");
+      const row = await tbl.get(id);
       if (!row) return null;
       return isEvaluationObservation(row.observation) ? row.observation : null;
     } catch (err) {
@@ -608,7 +653,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function listObservations(trialId: string): Promise<EvaluationObservation[]> {
     try {
-      const rows = await db.fusionObservations.where("trialId").equals(trialId).toArray();
+      const tbl = getTable<FusionObservationRow, string>("fusionObservations");
+      const rows = await tbl.where("trialId").equals(trialId).toArray();
       return rows
         .map((r) => r.observation)
         .filter((o): o is EvaluationObservation => isEvaluationObservation(o))
@@ -623,16 +669,17 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
       throw new StorageError("validation", "Invalid fusion playbook");
     }
     db.assertWritable();
+    const tbl = getTable<FusionPlaybookRow, string>("fusionPlaybooks");
     try {
-      await db.transaction("rw", db.fusionPlaybooks, async () => {
-        const existing = await db.fusionPlaybooks.get(playbook.id);
+      await db.transaction("rw", tbl, async () => {
+        const existing = await tbl.get(playbook.id);
         if (existing) {
           throw new StorageError(
             "conflict",
             `Playbook ${playbook.id} already exists — playbooks are immutable.`,
           );
         }
-        await db.fusionPlaybooks.put({
+        await tbl.put({
           id: playbook.id,
           playbook,
           studyId: playbook.studyId,
@@ -647,7 +694,8 @@ export function createFusionStudyRepository(db: RSembleEvaluationDB): FusionStud
 
   async function getPlaybook(id: string): Promise<FusionPlaybook | null> {
     try {
-      const row = await db.fusionPlaybooks.get(id);
+      const tbl = getTable<FusionPlaybookRow, string>("fusionPlaybooks");
+      const row = await tbl.get(id);
       if (!row) return null;
       return isFusionPlaybook(row.playbook) ? row.playbook : null;
     } catch (err) {

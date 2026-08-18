@@ -817,7 +817,7 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "taskSetMaterializations")).toBe(true);
     expect(db.tables.some((t) => t.name === "suites")).toBe(true);
     expect(db.tables.some((t) => t.name === "runSummaries")).toBe(true);
-    expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(true);
+    expect(db.tables.some((t) => t.name === "fusionRecipes")).toBe(false);
     expect(db.tables.some((t) => t.name === "tasks")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskFamilyRelations")).toBe(true);
     expect(db.tables.some((t) => t.name === "modelConfigurations")).toBe(true);
@@ -830,7 +830,8 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "labRecipeVersions")).toBe(true);
     expect(db.tables.some((t) => t.name === "modelPoolRecords")).toBe(true);
     expect(db.tables.some((t) => t.name === "modelPoolVersions")).toBe(true);
-    expect(db.verno).toBe(12);
+    expect(db.tables.some((t) => t.name === "studies")).toBe(true);
+    expect(db.verno).toBe(13);
   });
 
   it("upgrades a v4-seeded database through v9 additively without losing prior rows", async () => {
@@ -915,7 +916,6 @@ describe("Dexie task set repository schema upgrade", () => {
     await db.open();
     expect((await db.suites.get("suite-legacy"))?.id).toBe("suite-legacy");
     expect((await db.runSummaries.get("run-legacy"))?.id).toBe("run-legacy");
-    expect((await db.fusionStudies.get("study-legacy"))?.id).toBe("study-legacy");
     expect((await db.taskFamilies.get("fam-legacy"))?.id).toBe("fam-legacy");
     expect(db.tables.some((t) => t.name === "taskSets")).toBe(true);
     expect(db.tables.some((t) => t.name === "taskSetVersions")).toBe(true);
@@ -928,7 +928,8 @@ describe("Dexie task set repository schema upgrade", () => {
     expect(db.tables.some((t) => t.name === "suites")).toBe(true);
     expect(db.tables.some((t) => t.name === "labRecipeRecords")).toBe(true);
     expect(db.tables.some((t) => t.name === "modelPoolVersions")).toBe(true);
-    expect(db.verno).toBe(12);
+    expect(db.tables.some((t) => t.name === "studies")).toBe(true);
+    expect(db.verno).toBe(13);
   });
 
   it("does not write Task Set rows into the legacy Suite table", async () => {

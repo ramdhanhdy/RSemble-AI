@@ -16,7 +16,7 @@
 
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
-
+import Dexie from "dexie";
 import type { ModelSlot } from "../../studio-data";
 import type {
   EvaluationRubric,
@@ -72,7 +72,40 @@ afterEach(async () => {
 });
 
 async function makeDb(): Promise<RSembleEvaluationDB> {
-  const db = new RSembleEvaluationDB(`task-set-migration-${crypto.randomUUID()}`);
+  const db = new Dexie(`task-set-migration-${crypto.randomUUID()}`) as unknown as RSembleEvaluationDB;
+  db.version(1).stores({
+    runSummaries: "id",
+    runDetails: "id",
+    profiles: "id",
+    profileVersions: "[id+version]",
+    suites: "id",
+    experiments: "id",
+    storageMeta: "key",
+  });
+  db.version(2).stores({
+    fusionRecipes: "[id+version], id, version",
+    poolManifests: "[id+version], id, version",
+    fusionStudies: "id, revision, suiteId, suiteVersion, status, updatedAt",
+    fusionTrials: "id, revision, studyId, stage, status, createdAt",
+    fusionAttempts: "id, studyId, createdAt",
+    fusionObservations: "id, trialId, createdAt",
+    fusionPlaybooks: "id, studyId, createdAt",
+  });
+  db.version(3).stores({
+    tasks: "id",
+    taskVersions: "[taskId+version]",
+    taskArtifacts: "id",
+    taskArtifactBytes: "id",
+    taskInstances: "id",
+    taskFamilies: "id",
+    taskFamilyAssignments: "id",
+    taskFacetAnnotations: "id",
+    taskMigrationCrosswalk: "legacyScopeKey",
+  });
+  db.version(4).stores({ taskFamilyRelations: "id" });
+  db.version(5).stores({ taskSets: "id", taskSetVersions: "[taskSetId+version]" });
+  db.version(6).stores({ taskSetOwnershipCrosswalk: "key, kind, taskSetId" });
+  (db as any).assertWritable = () => {};
   dbs.push(db);
   await db.open();
   return db;
@@ -444,10 +477,10 @@ async function seedFusionFull(
   suiteRef: SuiteSnapshotRef,
   claimLevel: "exploratory" | "confirmed" = "exploratory",
 ): Promise<void> {
-  await db.fusionRecipes.put({ id: "recipe-1", version: 1, recipe: recipe(), createdAt: 1000 });
-  await db.poolManifests.put({ id: "pool-1", version: 1, manifest: manifest(), createdAt: 1000 });
+  await (db as any).fusionRecipes.put({ id: "recipe-1", version: 1, recipe: recipe(), createdAt: 1000 });
+  await (db as any).poolManifests.put({ id: "pool-1", version: 1, manifest: manifest(), createdAt: 1000 });
   const s = study("study-1", suiteRef, claimLevel);
-  await db.fusionStudies.put({
+  await (db as any).fusionStudies.put({
     id: s.id,
     study: s,
     revision: s.revision,
@@ -458,7 +491,7 @@ async function seedFusionFull(
   });
   const t1 = trial("trial-1", "study-1", suiteRef);
   const t2 = trial("trial-2", "study-1", suiteRef);
-  await db.fusionTrials.put({
+  await (db as any).fusionTrials.put({
     id: t1.id,
     trial: t1,
     revision: t1.revision,
@@ -467,7 +500,7 @@ async function seedFusionFull(
     status: t1.status,
     createdAt: t1.createdAt,
   });
-  await db.fusionTrials.put({
+  await (db as any).fusionTrials.put({
     id: t2.id,
     trial: t2,
     revision: t2.revision,
@@ -477,21 +510,21 @@ async function seedFusionFull(
     createdAt: t2.createdAt,
   });
   const att = attempt("attempt-1", "study-1");
-  await db.fusionAttempts.put({
+  await (db as any).fusionAttempts.put({
     id: att.id,
     attempt: att,
     studyId: att.studyId,
     createdAt: att.createdAt,
   });
   const obs = observation("obs-1", "trial-1");
-  await db.fusionObservations.put({
+  await (db as any).fusionObservations.put({
     id: obs.id,
     observation: obs,
     trialId: obs.trialId,
     createdAt: obs.startedAt,
   });
   const pb = playbook("playbook-1", "study-1", suiteRef, claimLevel);
-  await db.fusionPlaybooks.put({
+  await (db as any).fusionPlaybooks.put({
     id: pb.id,
     playbook: pb,
     studyId: pb.studyId,
@@ -525,13 +558,13 @@ async function snapshotAllSources(db: RSembleEvaluationDB): Promise<string> {
     db.tasks.toArray(),
     db.taskVersions.toArray(),
     db.taskMigrationCrosswalk.toArray(),
-    db.fusionRecipes.toArray(),
-    db.poolManifests.toArray(),
-    db.fusionStudies.toArray(),
-    db.fusionTrials.toArray(),
-    db.fusionAttempts.toArray(),
-    db.fusionObservations.toArray(),
-    db.fusionPlaybooks.toArray(),
+    (db as any).fusionRecipes ? (db as any).fusionRecipes.toArray() : Promise.resolve([]),
+    (db as any).poolManifests ? (db as any).poolManifests.toArray() : Promise.resolve([]),
+    (db as any).fusionStudies ? (db as any).fusionStudies.toArray() : Promise.resolve([]),
+    (db as any).fusionTrials ? (db as any).fusionTrials.toArray() : Promise.resolve([]),
+    (db as any).fusionAttempts ? (db as any).fusionAttempts.toArray() : Promise.resolve([]),
+    (db as any).fusionObservations ? (db as any).fusionObservations.toArray() : Promise.resolve([]),
+    (db as any).fusionPlaybooks ? (db as any).fusionPlaybooks.toArray() : Promise.resolve([]),
   ]);
   return canonicalJsonString({
     suites,
@@ -1369,7 +1402,7 @@ describe("migrateSuitesToTaskSets", () => {
       suiteVersion: 1,
       protocolFingerprint: "sha256:different",
     });
-    await db.fusionTrials.put({
+    await (db as any).fusionTrials.put({
       id: disagreeing.id,
       trial: disagreeing,
       revision: disagreeing.revision,
@@ -1476,7 +1509,7 @@ async function seedFusionConfirmed(
   suiteRef: SuiteSnapshotRef,
 ): Promise<void> {
   const s = study("study-2", suiteRef, "confirmed");
-  await db.fusionStudies.put({
+  await (db as any).fusionStudies.put({
     id: s.id,
     study: s,
     revision: s.revision,
@@ -1486,7 +1519,7 @@ async function seedFusionConfirmed(
     updatedAt: s.updatedAt,
   });
   const t = trial("trial-c", "study-2", suiteRef);
-  await db.fusionTrials.put({
+  await (db as any).fusionTrials.put({
     id: t.id,
     trial: t,
     revision: t.revision,
@@ -1496,7 +1529,7 @@ async function seedFusionConfirmed(
     createdAt: t.createdAt,
   });
   const pb = playbook("playbook-2", "study-2", suiteRef, "confirmed");
-  await db.fusionPlaybooks.put({
+  await (db as any).fusionPlaybooks.put({
     id: pb.id,
     playbook: pb,
     studyId: pb.studyId,

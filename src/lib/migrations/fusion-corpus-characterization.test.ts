@@ -53,20 +53,13 @@ import {
 
 // --- 1. Source inventory ------------------------------------------------------
 
-describe("Fusion source inventory (baseline 0bab030e)", () => {
-  it("exposes exactly the seven Fusion stores on the live Dexie schema", () => {
+describe("Fusion source inventory", () => {
+  it("characterizes that the seven legacy Fusion stores were deleted in schema v13", () => {
     const db = new RSembleEvaluationDB("fusion-corpus-inventory");
     for (const name of FUSION_STORE_NAMES) {
       const table = (db as unknown as Record<string, unknown>)[name];
-      expect(table, `store ${name} must be declared on RSembleEvaluationDB`).toBeDefined();
-      // Dexie Table instances expose a `.schema` property once stores() ran.
-      expect(typeof (table as { schema?: unknown }).schema, `${name} must be a Dexie Table`).toBe(
-        "object",
-      );
+      expect(table, `store ${name} must be deleted on RSembleEvaluationDB in v13`).toBeUndefined();
     }
-    // No eighth Fusion store exists on the live schema.
-    const fusionish = Object.keys(db).filter((k) => /fusion|poolManifest/i.test(k));
-    expect(fusionish.sort()).toEqual([...FUSION_STORE_NAMES].sort());
     db.close();
   });
 

@@ -14,16 +14,28 @@
 
 import type { ModelSlot } from "../../studio-data";
 import type { CriticRef } from "../providers/types";
-import type {
-  EvaluationObservation,
-  FusionAttempt,
-  FusionPlaybook,
-  FusionRecipeVersion,
-  FusionStudy,
-  FusionTrial,
-  PoolManifestVersion,
+import type { Transaction } from "dexie";
+import {
+  isEvaluationObservation,
+  isFusionAttempt,
+  isFusionPlaybook,
+  isFusionRecipeVersion,
+  isFusionStudy,
+  isFusionTrial,
+  isPoolManifestVersion,
+  type EvaluationObservation,
+  type FusionAttempt,
+  type FusionPlaybook,
+  type FusionRecipeVersion,
+  type FusionStudy,
+  type FusionTrial,
+  type PoolManifestVersion,
 } from "../evaluations/fusion-study-types";
-import type { TaskSetOwnershipCrosswalkRow } from "../persistence/database";
+import {
+  type RSembleEvaluationDB,
+  type TaskSetOwnershipCrosswalkRow,
+  StorageError,
+} from "../persistence/database";
 import { isNonBlankString, isRecord } from "../persistence/run-types";
 import {
   canonicalRecipePayload,
@@ -66,11 +78,16 @@ import {
   type StudyAttempt,
 } from "../studies/study-types";
 import {
+  computeReceiptDigest,
   createDeterministicReceipt,
+  isFusionToResearchLabReceipt,
   type FusionStoreName,
   type FusionToResearchLabReceipt,
   type RecordDecision,
 } from "./fusion-to-research-lab-receipt";
+
+export const fusionToResearchLabReceiptKey = "fusion-to-research-lab:v1";
+export const FUSION_TO_RESEARCH_LAB_RECEIPT_KEY = fusionToResearchLabReceiptKey;
 
 export interface FusionCorpusSource {
   recipes: FusionRecipeVersion[];
@@ -1091,4 +1108,471 @@ export function previewFusionToResearchLab(
     isAllDiscard: totalConverted === 0,
     isSideEffectFree: true,
   };
+}
+
+// --- Extraction helpers for raw Dexie rows -----------------------------------
+
+function extractRecipePayload(r: unknown): FusionRecipeVersion | null {
+  if (isFusionRecipeVersion(r)) return r;
+  if (isRecord(r) && isFusionRecipeVersion(r.recipe)) return r.recipe;
+  return null;
+}
+
+function extractPoolPayload(p: unknown): PoolManifestVersion | null {
+  if (isPoolManifestVersion(p)) return p;
+  if (isRecord(p) && isPoolManifestVersion(p.manifest)) return p.manifest;
+  return null;
+}
+
+function extractStudyPayload(s: unknown): FusionStudy | null {
+  if (isFusionStudy(s)) return s;
+  if (isRecord(s) && isFusionStudy(s.study)) return s.study;
+  return null;
+}
+
+function extractTrialPayload(t: unknown): FusionTrial | null {
+  if (isFusionTrial(t)) return t;
+  if (isRecord(t) && isFusionTrial(t.trial)) return t.trial;
+  return null;
+}
+
+function extractAttemptPayload(a: unknown): FusionAttempt | null {
+  if (isFusionAttempt(a)) return a;
+  if (isRecord(a) && isFusionAttempt(a.attempt)) return a.attempt;
+  return null;
+}
+
+function extractObservationPayload(o: unknown): EvaluationObservation | null {
+  if (isEvaluationObservation(o)) return o;
+  if (isRecord(o) && isEvaluationObservation(o.observation)) return o.observation;
+  return null;
+}
+
+function extractPlaybookPayload(pb: unknown): FusionPlaybook | null {
+  if (isFusionPlaybook(pb)) return pb;
+  if (isRecord(pb) && isFusionPlaybook(pb.playbook)) return pb.playbook;
+  return null;
+}
+
+// --- Upgrade & Cutover Execution ----------------------------------------------
+
+/**
+ * Executes the Fusion → Research Lab cutover inside a Dexie v13 upgrade transaction.
+ *
+ * Transaction protocol (spec §10.2):
+ * 1. Reads all seven old Fusion stores + taskSetOwnershipCrosswalk + metadata.
+ * 2. Previews the migration, classifying each entity into lossless-convert or discard.
+ * 3. Staged destination entities are written to the canonical Lab stores.
+ * 4. Persists the deterministic receipt into storageMeta.
+ * 5. Re-reads and verifies destination stores + receipt before returning.
+ * 6. Throws on any verification failure to trigger transaction rollback.
+ */
+export async function performFusionToResearchLabCutoverUpgrade(
+  tx: Transaction,
+  options?: PreviewOptions,
+): Promise<FusionToResearchLabReceipt> {
+  // Read source tables (with fallback for databases lacking them)
+  const rawRecipes = await tx.table("fusionRecipes").toArray().catch(() => []);
+  const rawPools = await tx.table("poolManifests").toArray().catch(() => []);
+  const rawStudies = await tx.table("fusionStudies").toArray().catch(() => []);
+  const rawTrials = await tx.table("fusionTrials").toArray().catch(() => []);
+  const rawAttempts = await tx.table("fusionAttempts").toArray().catch(() => []);
+  const rawObservations = await tx.table("fusionObservations").toArray().catch(() => []);
+  const rawPlaybooks = await tx.table("fusionPlaybooks").toArray().catch(() => []);
+  const rawCrosswalk: TaskSetOwnershipCrosswalkRow[] = await tx
+    .table("taskSetOwnershipCrosswalk")
+    .toArray()
+    .catch(() => []);
+
+  // Read optional metadata from storageMeta if present
+  const recipeMetaRow = await tx.table("storageMeta").get("fusion-migration:recipe-metadata").catch(() => null);
+  const poolMetaRow = await tx.table("storageMeta").get("fusion-migration:pool-metadata").catch(() => null);
+  const exactModelConfigRow = await tx.table("storageMeta").get("fusion-migration:exact-models").catch(() => null);
+  const studyExtRow = await tx.table("storageMeta").get("fusion-migration:study-extensions").catch(() => null);
+  const playbookExtRow = await tx.table("storageMeta").get("fusion-migration:playbook-extensions").catch(() => null);
+
+  const effectiveOptions: PreviewOptions = {
+    ...options,
+    recipeMetadata:
+      options?.recipeMetadata ??
+      (isRecord(recipeMetaRow?.value)
+        ? (recipeMetaRow?.value as PreviewOptions["recipeMetadata"])
+        : undefined),
+    poolMetadata:
+      options?.poolMetadata ??
+      (isRecord(poolMetaRow?.value)
+        ? (poolMetaRow?.value as PreviewOptions["poolMetadata"])
+        : undefined),
+    exactModelConfigurations:
+      options?.exactModelConfigurations ??
+      (isRecord(exactModelConfigRow?.value)
+        ? (exactModelConfigRow?.value as PreviewOptions["exactModelConfigurations"])
+        : undefined),
+    studyExtensions:
+      options?.studyExtensions ??
+      (isRecord(studyExtRow?.value)
+        ? (studyExtRow?.value as PreviewOptions["studyExtensions"])
+        : undefined),
+    playbookExtensions:
+      options?.playbookExtensions ??
+      (isRecord(playbookExtRow?.value)
+        ? (playbookExtRow?.value as PreviewOptions["playbookExtensions"])
+        : undefined),
+  };
+
+  const source: FusionCorpusSource = {
+    recipes: rawRecipes.map(extractRecipePayload).filter((r): r is FusionRecipeVersion => r !== null),
+    pools: rawPools.map(extractPoolPayload).filter((p): p is PoolManifestVersion => p !== null),
+    studies: rawStudies.map(extractStudyPayload).filter((s): s is FusionStudy => s !== null),
+    trials: rawTrials.map(extractTrialPayload).filter((t): t is FusionTrial => t !== null),
+    attempts: rawAttempts.map(extractAttemptPayload).filter((a): a is FusionAttempt => a !== null),
+    observations: rawObservations.map(extractObservationPayload).filter((o): o is EvaluationObservation => o !== null),
+    playbooks: rawPlaybooks.map(extractPlaybookPayload).filter((pb): pb is FusionPlaybook => pb !== null),
+    crosswalk: rawCrosswalk,
+  };
+
+  const result = previewFusionToResearchLab(source, effectiveOptions);
+
+  // Write staged entities to canonical destination stores
+  for (const r of result.staged.labRecipeRecords) {
+    await tx.table("labRecipeRecords").put({
+      id: r.id,
+      record: r,
+      kind: r.kind,
+      latestVersion: r.latestVersion,
+      archivedAt: r.archivedAt,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      revision: r.revision,
+    });
+  }
+
+  for (const v of result.staged.labRecipeVersions) {
+    await tx.table("labRecipeVersions").put({
+      recipeId: v.recipeId,
+      version: v.version,
+      version_: v,
+      digest: v.digest,
+      createdAt: v.createdAt,
+    });
+  }
+
+  for (const p of result.staged.modelPoolRecords) {
+    await tx.table("modelPoolRecords").put({
+      id: p.id,
+      record: p,
+      latestVersion: p.latestVersion,
+      archivedAt: p.archivedAt,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      revision: p.revision,
+    });
+  }
+
+  for (const v of result.staged.modelPoolVersions) {
+    await tx.table("modelPoolVersions").put({
+      poolId: v.poolId,
+      version: v.version,
+      version_: v,
+      digest: v.digest,
+      createdAt: v.createdAt,
+    });
+  }
+
+  for (const s of result.staged.studies) {
+    await tx.table("studies").put({
+      id: s.id,
+      record: s,
+      kind: s.kind,
+      status: s.status,
+      claimLevel: s.claimLevel,
+      confirmationOf: s.confirmationOf,
+      revision: s.revision,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      archivedAt: s.archivedAt,
+    });
+  }
+
+  for (const t of result.staged.studyTrials) {
+    await tx.table("studyTrials").put({
+      id: t.id,
+      trial: t,
+      studyId: t.studyId,
+      status: t.status,
+      sampleIndex: t.sampleIndex,
+      revision: 1,
+      createdAt: t.createdAt,
+      sealedAt: t.sealedAt,
+    });
+  }
+
+  for (const a of result.staged.studyAttempts) {
+    await tx.table("studyAttempts").put({
+      id: a.id,
+      attempt: a,
+      studyId: a.studyId,
+      fromTrialId: a.fromTrialId,
+      toTrialId: a.toTrialId,
+      createdAt: a.createdAt,
+    });
+  }
+
+  for (const o of result.staged.studyObservations) {
+    await tx.table("studyObservations").put({
+      id: o.id,
+      observation: o,
+      studyId: o.studyId,
+      trialId: o.trialId,
+      status: o.status,
+      createdAt: o.createdAt,
+      finishedAt: o.finishedAt,
+    });
+  }
+
+  for (const pb of result.staged.policyPlaybooks) {
+    const defFingerprint = fingerprintStudyValue(pb.playbook);
+    await tx.table("policyPlaybooks").put({
+      id: pb.id,
+      playbook: pb.playbook,
+      studyId: pb.id,
+      definitionFingerprint: defFingerprint,
+      digest: defFingerprint,
+      createdAt: pb.playbook.createdAt,
+    });
+  }
+
+  // Persist receipt into storageMeta
+  await tx.table("storageMeta").put({
+    key: fusionToResearchLabReceiptKey,
+    value: result.receipt,
+  });
+
+  // In-transaction re-read verification (step 8 of spec §10.2)
+  const savedReceiptRow = await tx.table("storageMeta").get(fusionToResearchLabReceiptKey);
+  if (!savedReceiptRow || !isFusionToResearchLabReceipt(savedReceiptRow.value)) {
+    throw new StorageError("validation", "Failed to verify persisted migration receipt in storageMeta");
+  }
+  if (savedReceiptRow.value.receiptDigest !== result.receipt.receiptDigest) {
+    throw new StorageError("validation", "Persisted migration receipt digest mismatch");
+  }
+
+  const [
+    recipeRecordCount,
+    recipeVersionCount,
+    poolRecordCount,
+    poolVersionCount,
+    studyCount,
+    trialCount,
+    attemptCount,
+    observationCount,
+    playbookCount,
+  ] = await Promise.all([
+    tx.table("labRecipeRecords").count(),
+    tx.table("labRecipeVersions").count(),
+    tx.table("modelPoolRecords").count(),
+    tx.table("modelPoolVersions").count(),
+    tx.table("studies").count(),
+    tx.table("studyTrials").count(),
+    tx.table("studyAttempts").count(),
+    tx.table("studyObservations").count(),
+    tx.table("policyPlaybooks").count(),
+  ]);
+
+  if (
+    recipeRecordCount < result.receipt.convertedCounts.labRecipeRecords ||
+    recipeVersionCount < result.receipt.convertedCounts.labRecipeVersions ||
+    poolRecordCount < result.receipt.convertedCounts.modelPoolRecords ||
+    poolVersionCount < result.receipt.convertedCounts.modelPoolVersions ||
+    studyCount < result.receipt.convertedCounts.studies ||
+    trialCount < result.receipt.convertedCounts.studyTrials ||
+    attemptCount < result.receipt.convertedCounts.studyAttempts ||
+    observationCount < result.receipt.convertedCounts.studyObservations ||
+    playbookCount < result.receipt.convertedCounts.policyPlaybooks
+  ) {
+    throw new StorageError("validation", "Destination store count verification failed after migration write");
+  }
+
+  return result.receipt;
+}
+
+export interface CutoverVerificationResult {
+  valid: boolean;
+  receipt: FusionToResearchLabReceipt | null;
+  errors: string[];
+}
+
+/**
+ * Verifies the completed Fusion → Research Lab cutover on an opened database.
+ */
+export async function verifyFusionToResearchLabCutover(
+  db: RSembleEvaluationDB,
+): Promise<CutoverVerificationResult> {
+  const errors: string[] = [];
+  try {
+    const metaRow = await db.storageMeta.get(fusionToResearchLabReceiptKey);
+    if (!metaRow) {
+      errors.push("Missing migration receipt in storageMeta");
+      return { valid: false, receipt: null, errors };
+    }
+    const receipt = metaRow.value;
+    if (!isFusionToResearchLabReceipt(receipt)) {
+      errors.push("Invalid receipt structure or schema version in storageMeta");
+      return { valid: false, receipt: null, errors };
+    }
+    const expectedDigest = computeReceiptDigest(receipt);
+    if (receipt.receiptDigest !== expectedDigest) {
+      errors.push(`Receipt digest mismatch: expected ${expectedDigest}, found ${receipt.receiptDigest}`);
+    }
+
+    const [
+      recipeRecordCount,
+      recipeVersionCount,
+      poolRecordCount,
+      poolVersionCount,
+      studyCount,
+      trialCount,
+      attemptCount,
+      observationCount,
+      playbookCount,
+    ] = await Promise.all([
+      db.labRecipeRecords.count(),
+      db.labRecipeVersions.count(),
+      db.modelPoolRecords.count(),
+      db.modelPoolVersions.count(),
+      db.studies.count(),
+      db.studyTrials.count(),
+      db.studyAttempts.count(),
+      db.studyObservations.count(),
+      db.policyPlaybooks.count(),
+    ]);
+
+    if (recipeRecordCount < receipt.convertedCounts.labRecipeRecords) {
+      errors.push(
+        `labRecipeRecords count mismatch: expected >= ${receipt.convertedCounts.labRecipeRecords}, got ${recipeRecordCount}`,
+      );
+    }
+    if (recipeVersionCount < receipt.convertedCounts.labRecipeVersions) {
+      errors.push(
+        `labRecipeVersions count mismatch: expected >= ${receipt.convertedCounts.labRecipeVersions}, got ${recipeVersionCount}`,
+      );
+    }
+    if (poolRecordCount < receipt.convertedCounts.modelPoolRecords) {
+      errors.push(
+        `modelPoolRecords count mismatch: expected >= ${receipt.convertedCounts.modelPoolRecords}, got ${poolRecordCount}`,
+      );
+    }
+    if (poolVersionCount < receipt.convertedCounts.modelPoolVersions) {
+      errors.push(
+        `modelPoolVersions count mismatch: expected >= ${receipt.convertedCounts.modelPoolVersions}, got ${poolVersionCount}`,
+      );
+    }
+    if (studyCount < receipt.convertedCounts.studies) {
+      errors.push(
+        `studies count mismatch: expected >= ${receipt.convertedCounts.studies}, got ${studyCount}`,
+      );
+    }
+    if (trialCount < receipt.convertedCounts.studyTrials) {
+      errors.push(
+        `studyTrials count mismatch: expected >= ${receipt.convertedCounts.studyTrials}, got ${trialCount}`,
+      );
+    }
+    if (attemptCount < receipt.convertedCounts.studyAttempts) {
+      errors.push(
+        `studyAttempts count mismatch: expected >= ${receipt.convertedCounts.studyAttempts}, got ${attemptCount}`,
+      );
+    }
+    if (observationCount < receipt.convertedCounts.studyObservations) {
+      errors.push(
+        `studyObservations count mismatch: expected >= ${receipt.convertedCounts.studyObservations}, got ${observationCount}`,
+      );
+    }
+    if (playbookCount < receipt.convertedCounts.policyPlaybooks) {
+      errors.push(
+        `policyPlaybooks count mismatch: expected >= ${receipt.convertedCounts.policyPlaybooks}, got ${playbookCount}`,
+      );
+    }
+
+    return {
+      valid: errors.length === 0,
+      receipt,
+      errors,
+    };
+  } catch (err) {
+    errors.push(`Verification exception: ${err instanceof Error ? err.message : String(err)}`);
+    return { valid: false, receipt: null, errors };
+  }
+}
+
+/**
+ * Reads the migration receipt from storageMeta if present.
+ */
+export async function getFusionToResearchLabReceipt(
+  db: RSembleEvaluationDB,
+): Promise<FusionToResearchLabReceipt | null> {
+  try {
+    const metaRow = await db.storageMeta.get(fusionToResearchLabReceiptKey);
+    if (!metaRow || !isFusionToResearchLabReceipt(metaRow.value)) {
+      return null;
+    }
+    return metaRow.value;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ensures migration receipt is present on startup. On a freshly initialized v13 database
+ * without legacy records, records a clean receipt.
+ */
+export async function ensureFusionToResearchLabMigration(
+  db: RSembleEvaluationDB,
+): Promise<FusionToResearchLabReceipt | null> {
+  db.assertWritable();
+  const existing = await getFusionToResearchLabReceipt(db);
+  if (existing) {
+    return existing;
+  }
+
+  // Fresh database opened directly at v13 (no legacy records existed to upgrade)
+  const cleanReceipt = createDeterministicReceipt({
+    generatedAt: Date.now(),
+    sourceCounts: {
+      fusionRecipes: 0,
+      poolManifests: 0,
+      fusionStudies: 0,
+      fusionTrials: 0,
+      fusionAttempts: 0,
+      fusionObservations: 0,
+      fusionPlaybooks: 0,
+    },
+    convertedCounts: {
+      labRecipeRecords: 0,
+      labRecipeVersions: 0,
+      modelPoolRecords: 0,
+      modelPoolVersions: 0,
+      studies: 0,
+      studyTrials: 0,
+      studyAttempts: 0,
+      studyObservations: 0,
+      policyPlaybooks: 0,
+    },
+    discardedCounts: {
+      fusionRecipes: 0,
+      poolManifests: 0,
+      fusionStudies: 0,
+      fusionTrials: 0,
+      fusionAttempts: 0,
+      fusionObservations: 0,
+      fusionPlaybooks: 0,
+    },
+    decisions: [],
+    status: "preview_completed",
+  });
+
+  await db.storageMeta.put({
+    key: fusionToResearchLabReceiptKey,
+    value: cleanReceipt,
+  });
+  return cleanReceipt;
 }
