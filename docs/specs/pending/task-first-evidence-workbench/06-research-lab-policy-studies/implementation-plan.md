@@ -120,14 +120,14 @@ Commit: `feat(lab): persist generic study lifecycle`.
 
 **RED:**
 
-- maps every old type/store to exact destination and keeps stable IDs where valid;
-- exact Task Set Version, recipes, pools, trials, attempts, observations, stages, playbook, claim level, costs, refs, and findings preserved semantically;
-- deterministic source/destination counts, ref graph, and semantic digests;
-- unresolved Task Set coordinate, missing child, unknown family/policy, invalid claim, collision, corrupt digest, prohibited field, quota, cancellation, and injected crash;
-- no destination write or source deletion on any preview/validation failure;
-- repeated preview deterministic and side-effect free.
+- classifies every Fusion record as lossless-convert or discard with a stable reason code;
+- an all-discard preview is valid: converted destination graph may be empty;
+- receipt is deterministic: source counts, converted counts (may be 0), discarded counts, per-id reason codes; never invents Lab fields;
+- no destination write or source deletion on preview;
+- repeated preview identical and side-effect free;
+- crash/cancel during preview leaves Fusion stores untouched.
 
-**GREEN:** Construct all destination entities in memory/staging, validate the complete graph, and emit a migration preview/receipt. Do not yet delete source stores.
+**GREEN:** Emit the preview/receipt in memory. Do not delete source stores yet. Do not loosen Lab validators to make Fusion fit.
 
 Commit: `feat(lab): preview fusion hard migration`.
 
@@ -148,7 +148,7 @@ Commit: `feat(lab): preview fusion hard migration`.
 - failed transaction leaves source schema/content usable;
 - marker without full destination graph rejected and repaired by deterministic retry/diagnostic.
 
-**GREEN:** Transactionally write/re-read/verify canonical Lab stores, delete old source stores in the committed schema transition, and persist the semantic receipt. Runtime startup uses only canonical stores after commit.
+**GREEN:** Transactionally persist the receipt (including all-discard), keep Lab v12 stores as the only live study/asset authority, delete the seven Fusion stores in the same Dexie v13 commit. Runtime startup uses only Lab stores. An empty migrated study graph is success.
 
 **STOP:** If Dexie cannot prove the required atomic transition across upgrade boundaries, amend the specification before using a destructive multi-step fallback.
 
@@ -343,7 +343,7 @@ Commit: `test(lab): verify research lab end to end`.
 - Generic internal study substrate and complete Policy Study are functional; no future study shells are visible.
 - Lab owns studies/assets/playbooks; Task Sets are pinned workloads and backlinks only.
 - Compare preserves judged parent results and derived Fusion/Refined children; playbook use is explicit and cost-preflighted.
-- Existing local Fusion content is semantically converted into canonical generic stores; old active stores/routes/archive shapes are removed with no dual authority.
+- Old Fusion stores are removed with no dual authority. Unconvertible development Fusion content is discarded with a receipt; Lab types stay strict.
 - Archive v3 is canonical and complete; unsupported old Fusion archives fail atomically and clearly.
 - Eligible underlying single-model candidate responses can qualify exactly once; policy outputs never inflate Model Evidence Profiles.
 - Current staged research rigor, retries, recovery, provenance, costs, claim levels, responsive/accessibility, security, and full repository gates pass.

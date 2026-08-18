@@ -302,7 +302,7 @@ Current active stores are replaced, not wrapped or retained as writable authorit
 | `fusionObservations` / `EvaluationObservation` | `studyObservations` / `StudyObservation(payloadKind: "policy_measurement")` |
 | `fusionPlaybooks` / `FusionPlaybook` | `policyPlaybooks` / `PolicyPlaybook` |
 
-Existing IDs, lineage, Task Set-version meaning, recipe/pool membership, stage results, claim levels, costs, artifacts, and report conclusions are semantically converted. The old payload shape is not retained as a canonical entity.
+**Amended 2026-08-18 (user-authorized discard):** this installation’s Fusion corpus is development-only and is **not** required to convert. Lab destination types stay strict. Records that cannot be rebuilt without guessing are discarded, not loosened, wrapped, or dual-stored. The old payload shape is not retained as a canonical entity.
 
 ### 10.2 Transaction protocol
 
@@ -310,13 +310,12 @@ Migration is one-way after commit:
 
 1. detect the exact source schema and acquire exclusive migration ownership;
 2. read and validate all seven current stores plus Suite→Task Set crosswalks;
-3. construct every destination entity in memory/staging and compute source/destination semantic receipts;
-4. verify counts, IDs, refs, digests, treatment lineage, claim levels, costs, stage results, and Task Set Version mapping;
-5. abort without writes if any record is unmappable, ambiguous, prohibited, or corrupt;
-6. transactionally write all canonical Lab stores and migration receipt;
-7. re-read and verify destination records;
-8. delete old active stores in the same committed schema transition;
-9. mark migration complete only after full verification.
+3. classify every source record as lossless-convert or discard (`development_corpus_discarded` or a more specific reason code);
+4. construct only lossless destination entities in memory/staging (this set may be empty);
+5. emit a deterministic receipt: source counts, converted counts, discarded counts, per-id reason codes — never guessed field values;
+6. abort without writes only on crash, ownership conflict, or receipt/verification failure — not because the convertible set is empty;
+7. transactionally write destination Lab stores (possibly empty of migrated studies), the discard/convert receipt, then delete old Fusion stores in the same committed schema transition;
+8. re-read destination + receipt; mark complete only after verification.
 
 There is no partial “read-only legacy” state, guessed owner, dual write, or latest-version substitution. Until the transaction commits, the source database remains usable. After commit, runtime code cannot read or write old stores.
 
@@ -490,7 +489,7 @@ git diff --check
 - Policy Studies pin exact workload/assets/protocol and preserve staged experimental rigor.
 - Compare owns the base judged result; Fusion/Refine are derived and playbooks are explicit/cost-preflighted.
 - Generic study substrate is first-party, validated, and exposes only Policy Studies.
-- Existing local study content is semantically converted into one canonical authority; old stores/routes/import shapes are removed.
+- Old Fusion stores/routes/import shapes are removed. Unconvertible development Fusion content is discarded with a receipt; Lab types are not loosened to fit it.
 - Archive v3 round-trips all canonical Lab and referenced exact evidence.
 - Eligible single-model candidates may qualify without duplicate counting; policy outputs never inflate Models.
 - Recovery, provenance, costs, responsive/accessibility, security, and full repository gates pass.
@@ -498,8 +497,8 @@ git diff --check
 
 ## 19. Assumptions and unresolved implementation discoveries
 
-**Locked:** Study identity—not Task Set identity—owns the route and experiment. Policy Study is the only registered type. Fusion remains a method term. Migration is a one-time semantic conversion with no runtime legacy route/store/archive support after commit. Archive v3 marks the intentional break.
+**Locked:** Study identity—not Task Set identity—owns the route and experiment. Policy Study is the only registered type. Fusion remains a method term. After commit there is no runtime Fusion route/store/archive support. Archive v3 marks the intentional break. Lab validators stay strict (`mc:sha256:…` judges, full stage/report payloads). Unconvertible Fusion rows are discarded with a receipt — they are not guessed into Lab types.
 
-**Must verify during implementation:** whether every existing `FusionStudy` has sufficient Suite→Task Set crosswalk data; whether current Run artifacts provide complete candidate provenance for child-04 eligibility; exact Dexie version/transaction mechanics for deleting source stores after destination verification; current route-link prevalence in persisted/user-authored content; and measured large-corpus migration/main-thread budgets.
+**User-authorized 2026-08-18:** this device’s Fusion corpus may be fully discarded. An empty converted graph plus a complete discard receipt is a valid T4/T5 outcome.
 
-If any existing record cannot be semantically converted without guessing or loss of paid study meaning, stop before writes and amend this specification. Do not fall back to deletion, a wrapper, or dual authority.
+**Must verify during implementation:** Dexie can delete the seven Fusion stores in one committed upgrade after writing the receipt; leftover Fusion reads are gone; T6 execution talks only to Lab stores.

@@ -73,7 +73,7 @@ The program is complete only when:
 - no primary navigation or meaningful result surface uses **Runs** as the normal organizing concept;
 - exact records, recovery, retries, roster extension, protocol identity, costs, failures, and `/runs/:runId` links remain intact;
 - Research Lab owns Policy Studies, reusable Fusion Recipes/Model Pools, and Policy Playbooks while Task Sets remain pinned workloads;
-- old local Fusion content is semantically converted once, but old Fusion routes/stores/archive shapes are absent after child 06;
+- old Fusion routes/stores/archive shapes are absent after child 06; this device’s development Fusion corpus may be discarded with a receipt instead of guessed into Lab types;
 - model evidence claims disclose model configuration, Task coverage, sample structure, protocol/Rubric/evaluator provenance, uncertainty, recency, and exact support.
 
 No calendar-duration estimate is part of this program. Progress is measured by dependency and evidence gates.
