@@ -1326,6 +1326,175 @@ describe("Fusion → Research Lab migration preview (specific discard reasons)",
     expect(trialDecision?.reasonCode).toBe("invalid_artifact_hash");
     expect(resultInvalid.staged.studyTrials).toHaveLength(0);
   });
+
+  it("normalizes synthesis artifact attemptId to fa-${trialId} so reindex never treats it as a single-model candidate (F3)", () => {
+    // The candidate adapter (policy-study-candidate-adapter) identifies
+    // synthesis/Fusion/Refine refs by attemptId === `fa-${trial.id}` and skips
+    // them. The migration must produce refs in that same canonical shape —
+    // never the legacy fusionAttemptId verbatim — or the reindex would adapt
+    // a synthesis run as a single-model candidate (spec §9, F3).
+    const crosswalkRow: TaskSetOwnershipCrosswalkRow = {
+      key: "ts-xwalk:fusion:study-fa-norm",
+      kind: "fusion-owner",
+      taskSetId: "task-set-1",
+      version: 1,
+      digest: VALID_SHA256,
+      status: "resolved",
+      suiteRef: {
+        suiteId: "suite-1",
+        suiteVersion: 1,
+        protocolFingerprint: VALID_SHA256,
+      },
+      note: "Resolved crosswalk",
+      updatedAt: 1000,
+    };
+    const source: FusionCorpusSource = {
+      recipes: [
+        {
+          id: "recipe-1",
+          version: 1,
+          recipeFamily: "AnalysisFed",
+          promptVersion: "v1",
+          judgeAnalysisMode: "qualitative",
+          rubricAccess: false,
+          verification: false,
+          synthesizer: { providerId: "openrouter", model: "openai/gpt-4o" },
+        },
+      ],
+      pools: [
+        {
+          id: "pool-1",
+          version: 1,
+          core: [
+            {
+              id: "slot-1",
+              providerId: "openrouter",
+              provider: "OpenRouter",
+              model: "model-1",
+              slug: "slug-1",
+              enabled: true,
+            },
+          ],
+          challengers: [],
+          diversityChecklist: ["diversity"],
+          rationale: "Core pool",
+          supersedesVersion: null,
+          createdAt: 1000,
+        },
+      ],
+      studies: [
+        {
+          id: "study-fa-norm",
+          revision: 1,
+          kind: "exploration",
+          suiteRef: {
+            suiteId: "suite-1",
+            suiteVersion: 1,
+            protocolFingerprint: VALID_SHA256,
+          },
+          poolRef: { id: "pool-1", version: 1 },
+          judge1: { providerId: "openrouter", model: "judge-1" },
+          judge2: { providerId: "openrouter", model: "judge-2" },
+          recipeRefs: [{ id: "recipe-1", version: 1 }],
+          status: "in_progress",
+          claimLevel: "exploratory",
+          confirmationOf: null,
+          playbookRef: null,
+          createdAt: 1000,
+          updatedAt: 2000,
+          stageResults: { stageA: null, stageB: null, stageC: null },
+        },
+      ],
+      trials: [
+        {
+          id: "trial-fa-norm",
+          studyId: "study-fa-norm",
+          suiteRef: {
+            suiteId: "suite-1",
+            suiteVersion: 1,
+            protocolFingerprint: VALID_SHA256,
+          },
+          poolRef: { id: "pool-1", version: 1 },
+          policy: "fuse",
+          stage: "A",
+          candidateConfig: {
+            slots: [
+              {
+                id: "slot-1",
+                providerId: "openrouter",
+                provider: "OpenRouter",
+                model: "model-1",
+                slug: "slug-1",
+                enabled: true,
+              },
+            ],
+          },
+          recipe: { id: "recipe-1", version: 1 },
+          synthesizer: { providerId: "openrouter", model: "synth-1" },
+          judge1: { providerId: "openrouter", model: "judge-1" },
+          judge2: { providerId: "openrouter", model: "judge-2" },
+          sampleIndex: 0,
+          status: "sealed",
+          revision: 1,
+          observationIds: [],
+          children: {
+            candidateRunId: "run-cand-fa",
+            devJudgeRunId: "run-judge-fa",
+            synthesisArtifact: {
+              runId: "run-synth-fa",
+              // Legacy opaque fusionAttemptId — NOT the canonical fa-${trialId}.
+              fusionAttemptId: "legacy-opaque-synth-id",
+              contentHash: VALID_SHA256,
+            },
+          },
+          cost: {
+            policy: { tokensIn: 100, tokensOut: 50 },
+            experimental: { tokensIn: 200, tokensOut: 100 },
+          },
+          createdAt: 1100,
+          updatedAt: 1200,
+          sealedAt: 1200,
+        },
+      ],
+      attempts: [],
+      observations: [],
+      playbooks: [],
+      crosswalk: [crosswalkRow],
+    };
+
+    const result = previewFusionToResearchLab(source, {
+      now: 2000,
+      recipeMetadata: {
+        "recipe-1": { name: "Recipe 1", description: "Recipe desc", createdAt: 1000 },
+      },
+      poolMetadata: {
+        "pool-1": { name: "Pool 1", purpose: "Pool purpose", createdAt: 1000 },
+      },
+      exactModelConfigurations: {
+        "judge-1": VALID_MC_ID_1,
+        "judge-2": VALID_MC_ID_2,
+        "synth-1": VALID_MC_SYNTH,
+        "model-1": VALID_MC_ID_1,
+      },
+      studyExtensions: {
+        "study-fa-norm": {
+          title: "FA Norm Study",
+          rubric: { rubricId: "rubric-1", version: 1 },
+          policies: ["fuse"],
+          stageProtocolVersion: 1,
+        },
+      },
+    });
+
+    expect(result.staged.studyTrials).toHaveLength(1);
+    const trial = result.staged.studyTrials[0];
+    const synthRef = trial.artifactRefs.find((r) => r.runId === "run-synth-fa");
+    expect(synthRef).toBeDefined();
+    // Canonical synthesis-ref shape: attemptId === `fa-${trialId}` so the
+    // candidate adapter's filter (attemptId === `fa-${trial.id}`) skips it.
+    expect(synthRef?.attemptId).toBe(`fa-${trial.id}`);
+    expect(synthRef?.contentHash).toBe(VALID_SHA256);
+  });
 });
 
 // --- Helpers for v12 and v13 Cutover Tests -----------------------------------

@@ -643,25 +643,105 @@ describe("PolicyStudyView — playbook, boundary, records", () => {
     cleanup(h);
   });
 
-  it("renders the evidence boundary ledger with an honest qualified count", async () => {
+  it("renders the two-sided evidence-boundary ledger per Fable §6.10 (F1)", async () => {
     const seeded = await seedCompleted();
     const h = renderView(seeded);
     await settle();
 
     const boundary = h.$("#boundary");
     expect(boundary).toBeTruthy();
+    // The labeled dashed line IS the boundary — .boundary-rule on the top border.
+    expect(boundary?.className).toMatch(/boundary-rule/);
+    // Two-sided ledger (grid-cols-2), not a three-column panel.
+    const ledger = boundary?.querySelector(".grid");
+    expect(ledger?.className).toMatch(/grid-cols-1/);
+    expect(ledger?.className).toMatch(/sm:grid-cols-2/);
+    // Left side — policy evidence stays in the Lab.
     expect(boundary?.textContent).toMatch(/Stays in the Lab — policy evidence/);
+    expect(boundary?.textContent).toMatch(/Study observations, policy rows, playbook scores/);
+    expect(boundary?.textContent).toMatch(/Rank selections, Fusion Results, Refined Results/);
+    // Right side — single-model candidates may leave via ordinary eligibility.
     expect(boundary?.textContent).toMatch(/May leave the Lab — via ordinary eligibility/);
-    expect(boundary?.textContent).toMatch(/Never attributed/);
-    // One artifact run referenced; evidence store holds no canonical
-    // observations for it — the count is honestly zero.
-    expect(boundary?.textContent).toMatch(/0 qualified/);
+    expect(boundary?.textContent).toMatch(
+      /only through child-04 canonical Observation eligibility/,
+    );
+    expect(boundary?.textContent).toMatch(/reuse, never duplicate/);
+    // The exact Fable §6.10 attribution-guard copy.
+    expect(boundary?.textContent).toMatch(
+      /Never attributed — wholly, fractionally, or collectively — to any participating model\./,
+    );
+    // The "N qualified" count is rendered as the specified link, honestly zero here.
+    const qualifiedLink = boundary?.querySelector("a[data-testid='qualified-link']");
+    expect(qualifiedLink).toBeTruthy();
+    expect(qualifiedLink?.textContent).toMatch(
+      /0 candidate responses from this study qualified as canonical Observations/,
+    );
     // Every model label inside policy-evidence tables carries the chip.
     const chips = h.$$("[data-testid='policy-evidence-chip']");
     expect(chips.length).toBeGreaterThan(0);
     expect(chips[0]?.getAttribute("aria-label")).toBe(
       "This result is policy evidence about the configuration, not evidence about this model.",
     );
+    cleanup(h);
+  });
+
+  it("dedups qualified counts by runId and excludes synthesis/Fusion/Refine refs (F2)", async () => {
+    // Build a study whose trials carry duplicate candidate runIds and a
+    // synthesis (fa-) ref. The header count must be the honest unique count:
+    // one Observation per unique candidate runId, synthesis refs excluded,
+    // duplicate runIds counted once.
+    const repo = new InMemoryStudyRepository();
+    await repo.createStudy(makeStudyRecord());
+    await repo.startStudy("study-1", 0, 1_500);
+    // trial-1: two candidate refs to the SAME run (dedup) + one synthesis ref.
+    const t1 = makeTrial("trial-d1", {
+      stage: "A",
+      policy: "fuse",
+      recipeId: "recipe-1",
+    });
+    t1.artifactRefs = [
+      { runId: "run-cand-1", attemptId: "att-d1a", contentHash: DIGEST },
+      { runId: "run-cand-1", attemptId: "att-d1b", contentHash: DIGEST },
+      { runId: "run-synth-1", attemptId: "fa-trial-d1", contentHash: DIGEST },
+    ];
+    await repo.createTrial(t1);
+    // trial-2: a distinct candidate run.
+    const t2 = makeTrial("trial-d2", {
+      stage: "B",
+      policy: "refine",
+      recipeId: "recipe-1",
+      artifactRunId: "run-cand-2",
+    });
+    await repo.createTrial(t2);
+
+    const evalRepo = new InMemoryEvaluationRepository();
+    const labAssetRepo = new InMemoryLabAssetRepository();
+    await labAssetRepo.createRecipeRecord(
+      makeRecipeRecord("recipe-1"),
+      makeRecipeVersion("recipe-1", 1),
+    );
+    await labAssetRepo.createPoolRecord(makePoolRecord("pool-1"), makePoolVersion("pool-1", 1));
+
+    // Mock evidence store: 2 obs for run-cand-1, 1 for run-cand-2, 5 for the
+    // synthesis run (must be excluded). Honest unique count = 2 + 1 = 3.
+    const obsByRun = new Map<string, number>([
+      ["run-cand-1", 2],
+      ["run-cand-2", 1],
+      ["run-synth-1", 5],
+    ]);
+    const mockEvidence = {
+      listObservationsBySource: async (_kind: string, runId: string) =>
+        new Array(obsByRun.get(runId) ?? 0).fill(null),
+    } as unknown as import("../../lib/persistence/evidence-repository").EvidenceRepository;
+
+    const seeded: Seeded = { repo, evalRepo, labAssetRepo, evidenceRepo: mockEvidence };
+    const h = renderView(seeded);
+    await settle();
+
+    const qualifiedLink = h.$("a[data-testid='qualified-link']");
+    expect(qualifiedLink).toBeTruthy();
+    // 3 — not 10 (2+2+5+1) and not 8 (2+5+1); synthesis excluded, duplicates deduped.
+    expect(qualifiedLink?.textContent).toMatch(/^3 candidate responses/);
     cleanup(h);
   });
 
@@ -842,7 +922,7 @@ describe("PolicyStudyView — responsive viewport and mobile policy cards (Fable
     const boundary = h.$("#boundary");
     const boundaryGrid = boundary?.querySelector(".grid");
     expect(boundaryGrid?.className).toMatch(/grid-cols-1/);
-    expect(boundaryGrid?.className).toMatch(/sm:grid-cols-3/);
+    expect(boundaryGrid?.className).toMatch(/sm:grid-cols-2/);
 
     cleanup(h);
   });
