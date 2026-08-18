@@ -11,6 +11,18 @@
 // =============================================================================
 
 import type { RunStatus } from "../persistence/run-types";
+import type { PlaybookCompatibilityReceipt } from "../studies/policy/playbook-compatibility";
+
+/**
+ * Attached Policy Playbook receipt when a comparison is executed under an
+ * explicit playbook binding (spec §8). Null for ordinary compare runs.
+ */
+export interface PolicyPlaybookAttachment {
+  playbookId: string;
+  studyId: string;
+  definitionFingerprint: string;
+  compatibility: PlaybookCompatibilityReceipt;
+}
 
 /** Execution mode of the source comparison run (spec §3). */
 export type ComparisonMode = "rank" | "fuse";
@@ -56,6 +68,7 @@ export interface ComparisonResultIndex {
   activeObservationIds: string[];
   evidenceReceiptRevision: number;
   lineage: ComparisonLineage;
+  policyPlaybook?: PolicyPlaybookAttachment | null;
   /** CAS revision for binding/lineage updates (compare-and-swap). */
   revision: number;
 }

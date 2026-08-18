@@ -249,8 +249,12 @@ export interface FusionAttemptRecord {
   usage?: UsageBreakdown;
   inputEstimate?: InputUsageEstimate;
   cost?: CostRecord;
+  playbookRef?: {
+    playbookId: string;
+    studyId?: string;
+    definitionFingerprint?: string;
+  } | null;
 }
-
 // --- Full run record ----------------------------------------------------------
 
 export interface RunRecordV2 {
@@ -659,7 +663,10 @@ function isFusionAttemptRecord(v: unknown): v is FusionAttemptRecord {
     (v.result === null || isString(v.result)) &&
     (v.usage === undefined || isUsageBreakdown(v.usage)) &&
     (v.inputEstimate === undefined || isInputUsageEstimate(v.inputEstimate)) &&
-    (v.cost === undefined || isCostRecord(v.cost))
+    (v.cost === undefined || isCostRecord(v.cost)) &&
+    (v.playbookRef === undefined ||
+      v.playbookRef === null ||
+      (isRecord(v.playbookRef) && isString(v.playbookRef.playbookId)))
   );
 }
 

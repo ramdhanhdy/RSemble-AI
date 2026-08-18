@@ -34,7 +34,11 @@ import {
   resolveEvaluationRubric,
 } from "../evaluations/evaluation-rubric-adhoc";
 import type { Attachment } from "../attachments/types";
-import type { ComparisonMode, ComparisonTaskBinding } from "./comparison-result-types";
+import type {
+  ComparisonMode,
+  ComparisonTaskBinding,
+  PolicyPlaybookAttachment,
+} from "./comparison-result-types";
 import {
   validateComparisonTaskBinding,
   COMPARISON_PROHIBITED_KEYS,
@@ -69,6 +73,7 @@ export interface PreCallPersistenceInput {
   taskBinding?: ComparisonTaskBinding | null;
   repeatedFrom?: string | null;
   taskInstanceId?: string | null;
+  policyPlaybook?: PolicyPlaybookAttachment | null;
 }
 
 export interface ComparisonInputSnapshotAttachment {
@@ -404,8 +409,8 @@ export function buildPreCallPersistencePlan(
     repeatedFrom: input.repeatedFrom ?? null,
     activeObservationIds: [],
     evidenceReceiptRevision: 0,
+    policyPlaybook: input.policyPlaybook ?? null,
   };
-
   return {
     snapshot,
     resolvedBinding,

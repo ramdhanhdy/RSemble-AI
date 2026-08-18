@@ -23,7 +23,6 @@
 //  - rebuildComparisonIndex is idempotent: it refreshes derived summary
 //    fields from the source record and never creates duplicate indexes.
 // =============================================================================
-
 import { type RSembleEvaluationDB, StorageError, classifyStorageError } from "./database";
 import type { RunRepository } from "./run-repository";
 import { isRunRecordV2, type RunRecordV2, type RunStatus } from "./run-types";
@@ -39,6 +38,7 @@ import type {
   ComparisonMode,
   ComparisonResultIndex,
   ComparisonTaskBinding,
+  PolicyPlaybookAttachment,
 } from "../compare/comparison-result-types";
 
 // --- query and result types --------------------------------------------------
@@ -110,8 +110,8 @@ export interface CreateComparisonEnvelopeOptions {
   repeatedFrom?: string | null;
   activeObservationIds?: string[];
   evidenceReceiptRevision?: number;
+  policyPlaybook?: PolicyPlaybookAttachment | null;
 }
-
 export interface ComparisonRepositoryOptions {
   /** Injected clock for deterministic CAS-update tests. */
   now?: () => number;
@@ -186,6 +186,7 @@ export function buildComparisonIndex(
     activeObservationIds: options.activeObservationIds ?? [],
     evidenceReceiptRevision: options.evidenceReceiptRevision ?? 0,
     lineage: { repeatedFrom: options.repeatedFrom ?? null },
+    policyPlaybook: options.policyPlaybook ?? null,
     revision: 0,
   };
 }

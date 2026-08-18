@@ -33,8 +33,8 @@ import type {
   ComparisonMode,
   ComparisonResultIndex,
   ComparisonTaskBinding,
+  PolicyPlaybookAttachment,
 } from "./comparison-result-types";
-
 /** Exact ComparisonResultIndex field set (spec §3) — no free-form fields. */
 const COMPARISON_INDEX_FIELDS: ReadonlySet<string> = new Set([
   "id",
@@ -49,6 +49,7 @@ const COMPARISON_INDEX_FIELDS: ReadonlySet<string> = new Set([
   "activeObservationIds",
   "evidenceReceiptRevision",
   "lineage",
+  "policyPlaybook",
   "revision",
 ]);
 
@@ -301,6 +302,39 @@ export function validateComparisonResultIndex(
       message: "a comparison cannot repeat from itself.",
     });
   }
+  if ("policyPlaybook" in v && v.policyPlaybook !== null && v.policyPlaybook !== undefined) {
+    if (!isRecord(v.policyPlaybook)) {
+      errors.push({
+        field: "policyPlaybook",
+        message: "policyPlaybook must be an object or null.",
+      });
+    } else {
+      if (!isSafeIdentifier(v.policyPlaybook.playbookId)) {
+        errors.push({
+          field: "policyPlaybook.playbookId",
+          message: "playbookId must be a safe identifier.",
+        });
+      }
+      if (!isSafeIdentifier(v.policyPlaybook.studyId)) {
+        errors.push({
+          field: "policyPlaybook.studyId",
+          message: "studyId must be a safe identifier.",
+        });
+      }
+      if (typeof v.policyPlaybook.definitionFingerprint !== "string") {
+        errors.push({
+          field: "policyPlaybook.definitionFingerprint",
+          message: "definitionFingerprint must be a string.",
+        });
+      }
+      if (!isRecord(v.policyPlaybook.compatibility)) {
+        errors.push({
+          field: "policyPlaybook.compatibility",
+          message: "compatibility must be an object.",
+        });
+      }
+    }
+  }
 
   if (!isNonNegativeInteger(v.revision)) {
     errors.push({ field: "revision", message: "revision must be a non-negative integer." });
@@ -332,6 +366,7 @@ export function validateComparisonResultIndex(
       activeObservationIds: [...(v.activeObservationIds as string[])],
       evidenceReceiptRevision: v.evidenceReceiptRevision as number,
       lineage: lineage.value,
+      policyPlaybook: (v.policyPlaybook as PolicyPlaybookAttachment | null) ?? null,
       revision: v.revision as number,
     },
   };

@@ -32,12 +32,13 @@ import type {
   PolicyStudyRecord,
 } from "../../lib/studies/policy/policy-study-types";
 import type { TaskSetRecord, TaskSetVersion } from "../../lib/evaluations/task-set-types";
-import { clearModelPricing, parseOpenRouterPricing, setModelPricing } from "../../lib/providers/pricing";
-import type { PlaybookRunBinding } from "../../lib/compare/playbook-execution";
 import {
-  RunWithPlaybookDialog,
-  type RunWithPlaybookDialogProps,
-} from "./RunWithPlaybookDialog";
+  clearModelPricing,
+  parseOpenRouterPricing,
+  setModelPricing,
+} from "../../lib/providers/pricing";
+import type { PlaybookRunBinding } from "../../lib/compare/playbook-execution";
+import { RunWithPlaybookDialog, type RunWithPlaybookDialogProps } from "./RunWithPlaybookDialog";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -142,8 +143,22 @@ async function seedWorld(): Promise<SeededWorld> {
 
   const pool = makePoolVersion("pool-1", 4, {
     core: [
-      { id: "ca", providerId: "openrouter", provider: "OpenRouter", model: "m-a", slug: "m-a", enabled: true },
-      { id: "cb", providerId: "umans", provider: "Umans", model: "m-b", slug: "m-b", enabled: true },
+      {
+        id: "ca",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m-a",
+        slug: "m-a",
+        enabled: true,
+      },
+      {
+        id: "cb",
+        providerId: "umans",
+        provider: "Umans",
+        model: "m-b",
+        slug: "m-b",
+        enabled: true,
+      },
     ],
     challengers: [],
   });
@@ -167,14 +182,47 @@ async function seedWorld(): Promise<SeededWorld> {
       configuration: "m-a × m-b · BlindRaw v3",
       rationale: "Fuse clears the predeclared MPID over best-fixed.",
     },
-    poolAdequacy: { probed: true, outcome: "confirmed", note: "Challenger failed to beat the pool." },
+    poolAdequacy: {
+      probed: true,
+      outcome: "confirmed",
+      note: "Challenger failed to beat the pool.",
+    },
   });
 
-  await labAssetRepo.createPoolRecord(makePoolRecord("pool-1"), pool);
-  await labAssetRepo.createRecipeRecord(makeRecipeRecord("recipe-1", { latestVersion: 3 }), recipe);
+  await labAssetRepo.createPoolRecord(makePoolRecord("pool-1"), makePoolVersion("pool-1", 1));
+  let poolRev = 0;
+  for (let v = 2; v <= 4; v++) {
+    poolRev = await labAssetRepo.appendPoolVersion(
+      makePoolVersion(
+        "pool-1",
+        v,
+        v === 4 ? { core: pool.core, challengers: pool.challengers } : {},
+      ),
+      poolRev,
+    );
+  }
+  await labAssetRepo.createRecipeRecord(
+    makeRecipeRecord("recipe-1"),
+    makeRecipeVersion("recipe-1", 1),
+  );
+  let recipeRev = 0;
+  for (let v = 2; v <= 3; v++) {
+    recipeRev = await labAssetRepo.appendRecipeVersion(makeRecipeVersion("recipe-1", v), recipeRev);
+  }
   await studyRepo.createStudy(study);
   await studyRepo.createPlaybook("pb-1", playbook);
-  await taskSetRepo.createTaskSet(makeTaskSetRecord(), makeTaskSetVersion());
+  await taskSetRepo.createTaskSet(
+    { ...makeTaskSetRecord("ts1"), latestVersion: 1 },
+    makeTaskSetVersion("ts1", 1),
+  );
+  let tsRev = 0;
+  for (let v = 2; v <= 6; v++) {
+    tsRev = await taskSetRepo.appendTaskSetVersion(
+      { ...makeTaskSetRecord("ts1"), latestVersion: v, revision: tsRev },
+      makeTaskSetVersion("ts1", v),
+      tsRev,
+    );
+  }
 
   return { studyRepo, labAssetRepo, taskSetRepo, study, playbook, pool, recipe };
 }

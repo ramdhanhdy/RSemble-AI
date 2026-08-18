@@ -32,7 +32,11 @@ const CAND_A = modelConfigRefForIdentity("openrouter", "m-a");
 const CAND_B = modelConfigRefForIdentity("umans", "m-b");
 const CAND_OUTSIDE = modelConfigRefForIdentity("gemini", "m-z");
 
-function slotFor(providerId: "openrouter" | "umans" | "gemini", model: string, id: string): ModelSlot {
+function slotFor(
+  providerId: "openrouter" | "umans" | "gemini",
+  model: string,
+  id: string,
+): ModelSlot {
   return { id, providerId, provider: "Test", model, slug: model, enabled: true };
 }
 
@@ -72,7 +76,9 @@ function world(overrides: WorldOverrides = {}) {
   return { pool, definition, study, playbook };
 }
 
-function baseInput(overrides: Partial<PlaybookCompatibilityInput> = {}): PlaybookCompatibilityInput {
+function baseInput(
+  overrides: Partial<PlaybookCompatibilityInput> = {},
+): PlaybookCompatibilityInput {
   const w = world();
   return {
     playbookId: "pb-1",

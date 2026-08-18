@@ -123,8 +123,12 @@ export interface FusionAttemptStartInput {
   sourceJudgeAttemptId: string;
   candidateAttemptIdsByCandidateId: Record<string, string>;
   startedAt: number;
+  playbookRef?: {
+    playbookId: string;
+    studyId?: string;
+    definitionFingerprint?: string;
+  } | null;
 }
-
 export interface FusionTerminalInput {
   status: AttemptStatus;
   result: string | null;
@@ -361,7 +365,11 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       updatedAt: ts,
       completedAt: null,
       status: "running",
-      mode: "rank",
+      mode: ("mode" in input && input.mode
+        ? input.mode
+        : "baseRun" in input && input.baseRun
+          ? input.baseRun.mode
+          : "rank") as "rank" | "fuse",
       source: input.source,
       task: { ...input.task },
       evaluation: {
@@ -561,6 +569,7 @@ export function createRunRecordBuilder(deps: BuilderDeps) {
       status: "running",
       error: null,
       result: null,
+      playbookRef: input.playbookRef ?? null,
     };
     record.fusion.attempts.push(attempt);
     record.fusion.status = "running";

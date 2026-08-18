@@ -13,10 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type React from "react";
 import { createRunController, type RunControllerDeps } from "../run-controller";
-import {
-  estimatePlaybookCostPreflight,
-  type PlaybookRunBinding,
-} from "./playbook-execution";
+import { estimatePlaybookCostPreflight, type PlaybookRunBinding } from "./playbook-execution";
 import {
   modelConfigRefForIdentity,
   type PinnedTaskSetVersionView,
@@ -25,6 +22,10 @@ import {
 import { InMemoryRunRepository } from "../persistence/run-repository";
 import { createRunRecorder } from "../persistence/run-recorder";
 import type { ComparisonResultIndex } from "./comparison-result-types";
+import { InMemoryComparisonRepository } from "../persistence/in-memory-comparison-repository";
+import type { ModelSlot } from "../../studio-data";
+import { initialState, type StudioState, type Action } from "../../studio-engine";
+import type { StreamDeltaBuffer } from "../stream-buffer";
 import {
   makeDefinition,
   makePlaybook,
@@ -33,11 +34,7 @@ import {
   makeStudyRecord,
 } from "../../workspaces/lab/lab-test-fixtures";
 import type { PolicyRecommendation } from "../studies/policy/policy-study-types";
-import {
-  clearModelPricing,
-  parseOpenRouterPricing,
-  setModelPricing,
-} from "../providers/pricing";
+import { clearModelPricing, parseOpenRouterPricing, setModelPricing } from "../providers/pricing";
 
 // ---------------------------------------------------------------------------
 // Mocks (same idiom as run-controller.test.ts)
@@ -77,7 +74,14 @@ const POOL_SLOTS: ModelSlot[] = [
     slug: "model-a",
     enabled: true,
   },
-  { id: "s2", providerId: "umans", provider: "Umans", model: "m-b", slug: "model-b", enabled: true },
+  {
+    id: "s2",
+    providerId: "umans",
+    provider: "Umans",
+    model: "m-b",
+    slug: "model-b",
+    enabled: true,
+  },
 ];
 
 const WORKLOAD_VIEW: PinnedTaskSetVersionView = {
@@ -151,9 +155,16 @@ function makeBinding(overrides: Partial<PlaybookRunBinding> = {}): PlaybookRunBi
     matchedCandidateIds,
     evaluatedAt: 1,
   };
+  const playbook = overrides.playbook
+    ? {
+        ...overrides.playbook,
+        studyId: overrides.study?.id ?? world.study.id,
+        definitionFingerprint:
+          overrides.study?.definitionFingerprint ?? world.study.definitionFingerprint,
+      }
+    : world.playbook;
   return {
     playbookId: "pb-1",
-    playbook: world.playbook,
     study: world.study,
     poolVersion: world.pool,
     pinnedTaskSetVersion: WORKLOAD_VIEW,
@@ -170,6 +181,7 @@ function makeBinding(overrides: Partial<PlaybookRunBinding> = {}): PlaybookRunBi
     },
     preflightConfirmedAt: 100,
     ...overrides,
+    playbook,
   };
 }
 
@@ -203,7 +215,7 @@ function makeDeps(state: StudioState) {
         running: true,
         candidates: a.candidates,
         runContext: a.context,
-        runId: a.runId,
+        runId: a.runId ?? null,
       };
     if (a.type === "CANDIDATE_RESULT") {
       stateRef.current = {
@@ -331,11 +343,17 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
       }
       yield "Answer text";
     });
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4.5], ["B", 4.0]]));
-
-    await controller.runWithPlaybook(
-      makeBinding({ playbook: makePlaybook({ recommendation: ADOPT_BEST_FIXED }) }),
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4.5],
+        ["B", 4.0],
+      ]),
     );
+
+    const binding = makeBinding({
+      playbook: makePlaybook({ recommendation: ADOPT_BEST_FIXED }),
+    });
+    await controller.runWithPlaybook(binding);
 
     // The index existed before the first candidate stream call.
     expect(indexAtFirstProviderCall).not.toBeNull();
@@ -347,7 +365,7 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
     expect(attachment).not.toBeNull();
     expect(attachment!.playbookId).toBe("pb-1");
     expect(attachment!.studyId).toBe("study-1");
-    expect(attachment!.definitionFingerprint).toBe(world.study.definitionFingerprint);
+    expect(attachment!.definitionFingerprint).toBe(binding.study.definitionFingerprint);
     expect(attachment!.compatibility.workload).toEqual({ taskSetId: "ts1", version: 6 });
     expect(attachment!.compatibility.matchedCandidateIds).toHaveLength(2);
   });
@@ -356,7 +374,12 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
     const { deps, dispatched, stateRef, runRepo } = makeDeps(stateWithSlots());
     const controller = createRunController(deps);
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4.5], ["B", 4.0]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4.5],
+          ["B", 4.0],
+        ]),
+      )
       .mockResolvedValueOnce("Policy-fused answer.");
 
     await controller.runWithPlaybook(makeBinding());
@@ -382,7 +405,12 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
     const { deps, stateRef } = makeDeps(stateWithSlots());
     const controller = createRunController(deps);
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4.5], ["B", 4.0]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4.5],
+          ["B", 4.0],
+        ]),
+      )
       .mockResolvedValueOnce("Refined winner answer.");
 
     await controller.runWithPlaybook(
@@ -400,7 +428,12 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
   it("best_fixed recommendation creates NO Fusion Result — the judged parent is the outcome", async () => {
     const { deps, dispatched, stateRef, runRepo } = makeDeps(stateWithSlots());
     const controller = createRunController(deps);
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4.5], ["B", 4.0]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4.5],
+        ["B", 4.0],
+      ]),
+    );
 
     await controller.runWithPlaybook(
       makeBinding({ playbook: makePlaybook({ recommendation: ADOPT_BEST_FIXED }) }),
@@ -417,7 +450,12 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
   it("do_not_fuse recommendation creates NO Fusion Result", async () => {
     const { deps, dispatched, stateRef, runRepo } = makeDeps(stateWithSlots());
     const controller = createRunController(deps);
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4.5], ["B", 4.0]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4.5],
+        ["B", 4.0],
+      ]),
+    );
 
     const doNotFuse = makePlaybook({
       recommendation: {
@@ -488,7 +526,12 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
     const { deps, dispatched, stateRef, comparisonRepo, runRepo } = makeDeps(stateWithSlots());
     const controller = createRunController(deps);
     chatCompletionMock
-      .mockResolvedValueOnce(judgeResponse([["A", 4.5], ["B", 4.0]]))
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4.5],
+          ["B", 4.0],
+        ]),
+      )
       .mockResolvedValueOnce("Policy-fused answer.");
     await controller.runWithPlaybook(makeBinding());
     const playbookRunId = stateRef.current.runId!;
@@ -497,7 +540,12 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
     dispatched.length = 0;
     chatStreamMock.mockClear();
     chatCompletionMock.mockClear();
-    chatCompletionMock.mockResolvedValueOnce(judgeResponse([["A", 4.2], ["B", 3.9]]));
+    chatCompletionMock.mockResolvedValueOnce(
+      judgeResponse([
+        ["A", 4.2],
+        ["B", 3.9],
+      ]),
+    );
     deps.dispatch({ type: "SET_MODE", mode: "rank" });
 
     await controller.runFanout();
@@ -525,10 +573,15 @@ describe("playbook cost preflight", () => {
         parseOpenRouterPricing("openrouter", slug, { prompt: "1", completion: "2" }, 1)!,
       );
     }
-    setModelPricing(parseOpenRouterPricing("umans", "model-b", { prompt: "1", completion: "2" }, 1)!);
+    setModelPricing(
+      parseOpenRouterPricing("umans", "model-b", { prompt: "1", completion: "2" }, 1)!,
+    );
   }
 
-  const preflightInput = (recommendation: PolicyRecommendation, synthesizer?: { providerId: "openrouter" | "umans"; model: string } | null) => ({
+  const preflightInput = (
+    recommendation: PolicyRecommendation,
+    synthesizer?: { providerId: "openrouter" | "umans"; model: string } | null,
+  ) => ({
     prompt: "Which algorithm finds the shortest path?",
     slots: POOL_SLOTS,
     critic: { providerId: "openrouter", model: "judge-model" },
