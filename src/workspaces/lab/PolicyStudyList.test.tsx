@@ -305,3 +305,59 @@ describe("PolicyStudyList — create and Task Set prefill", () => {
     cleanup(h);
   });
 });
+
+describe("PolicyStudyList — workload digest resolution at draft creation (F7)", () => {
+  it("resolves the real manifestDigest when prefilling from a materialized Task Set Version", async () => {
+    const studyRepo = new InMemoryStudyRepository();
+    const evalRepo = new InMemoryEvaluationRepository();
+    await evalRepo.saveSuite(makeSuite("battery-alpha", 6), 0);
+    // Persist a materialization so the digest is resolvable from the snapshot.
+    await evalRepo.persistTaskSetMaterialization({
+      id: "mat-1",
+      taskSetId: "battery-alpha",
+      taskSetVersion: 6,
+      protocolFingerprint: "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      snapshot: {
+        taskSetId: "battery-alpha",
+        taskSetVersion: 6,
+        tasks: [],
+        modelSlots: [],
+        defaultJudge: { providerId: "openrouter", model: "" },
+        defaultEvaluation: { kind: "holistic" },
+      } as never,
+      createdAt: Date.now(),
+    });
+    const h = renderList(
+      studyRepo,
+      evalRepo,
+      "/lab?startPolicyStudy=1&taskSetId=battery-alpha&version=6",
+    );
+    await settle();
+    const created = await studyRepo.listStudies(true);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.definition.workload.manifestDigest).toBe(
+      "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    );
+    // Must NOT be the placeholder digest.
+    expect(created[0]?.definition.workload.manifestDigest).not.toMatch(/^sha256:c{64}$/);
+    cleanup(h);
+  });
+
+  it("computes the protocol fingerprint when the version is the live suite version (no materialization)", async () => {
+    const studyRepo = new InMemoryStudyRepository();
+    const evalRepo = new InMemoryEvaluationRepository();
+    await evalRepo.saveSuite(makeSuite("battery-alpha", 6), 0);
+    const h = renderList(
+      studyRepo,
+      evalRepo,
+      "/lab?startPolicyStudy=1&taskSetId=battery-alpha&version=6",
+    );
+    await settle();
+    const created = await studyRepo.listStudies(true);
+    expect(created).toHaveLength(1);
+    // The digest must be a real sha256 fingerprint, not the placeholder.
+    expect(created[0]?.definition.workload.manifestDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(created[0]?.definition.workload.manifestDigest).not.toMatch(/^sha256:c{64}$/);
+    cleanup(h);
+  });
+});

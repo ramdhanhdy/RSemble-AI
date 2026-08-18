@@ -1002,6 +1002,30 @@ describe("AppRouter — retired Fusion Study route (Lab spec §11.1)", () => {
     cleanup(h);
   });
 });
+describe("AppRouter — retired Fusion route source hygiene (F8)", () => {
+  it("app-router.tsx source does not reference LegacyFusionRedirect or ts-xwalk:fusion:", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "app-router.tsx"),
+      "utf-8",
+    );
+    expect(source).not.toContain("LegacyFusionRedirect");
+    expect(source).not.toContain("ts-xwalk:fusion:");
+  });
+
+  it("renders the retired fusion route with the data-retired-fusion-route semantic marker", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
+    const h = await renderRouterAsync({
+      initialEntries: ["/evaluations/s1/fusion/study-1"],
+      repo,
+    });
+    expect(h.$("[data-retired-fusion-route]")).toBeTruthy();
+    expect(h.container.textContent).toMatch(/Fusion Study pages no longer exist/);
+    cleanup(h);
+  });
+});
 
 describe("AppRouter — Evaluation execution results routes (spec §5.1, §4)", () => {
   it("direct-loads canonical /evaluations/results/:evaluationExecutionId for completed execution", async () => {
