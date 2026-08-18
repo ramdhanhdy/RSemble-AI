@@ -10,7 +10,6 @@ import { makeRecipeRecord, makeRecipeVersion } from "./lab-test-fixtures";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
-
 function flush(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }

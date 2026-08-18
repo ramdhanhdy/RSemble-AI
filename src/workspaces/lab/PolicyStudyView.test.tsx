@@ -972,8 +972,22 @@ describe("PolicyStudyView — stage progression and partial stages state (Fable 
       makePoolRecord("pool-1"),
       makePoolVersion("pool-1", 1, {
         core: [
-          { id: MC_A, providerId: "openrouter", provider: "OpenRouter", model: "gpt-4o", slug: "gpt-4o", enabled: true },
-          { id: MC_B, providerId: "openrouter", provider: "OpenRouter", model: "claude-3-5-sonnet", slug: "claude-3-5-sonnet", enabled: true },
+          {
+            id: MC_A,
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "gpt-4o",
+            slug: "gpt-4o",
+            enabled: true,
+          },
+          {
+            id: MC_B,
+            providerId: "openrouter",
+            provider: "OpenRouter",
+            model: "claude-3-5-sonnet",
+            slug: "claude-3-5-sonnet",
+            enabled: true,
+          },
         ],
       }),
     );

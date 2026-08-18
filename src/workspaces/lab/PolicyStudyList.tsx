@@ -7,7 +7,10 @@ import {
   useEvaluationRepository,
   useStudyRepository,
 } from "../../lib/persistence/repository-context";
-import type { PolicyReportPayload, PolicyStudyRecord } from "../../lib/studies/policy/policy-study-types";
+import type {
+  PolicyReportPayload,
+  PolicyStudyRecord,
+} from "../../lib/studies/policy/policy-study-types";
 import { RecordRow } from "../../ui/RecordRow";
 import { KindEyebrow } from "../../ui/KindEyebrow";
 import type { StatusMarkStatus } from "../../ui/StatusMark";
@@ -120,7 +123,7 @@ export function PolicyStudyList({
           : "Untitled Policy Study";
         const record = draftPolicyStudyRecord(title, definition, Date.now());
         await studyRepo.createStudy(record);
-        navigate(`/lab/studies/${record.id}`);
+        void navigate(`/lab/studies/${record.id}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to create the study.");
         setCreating(false);

@@ -127,7 +127,9 @@ describe("ModelPoolList", () => {
 
   it("renders load failure with Retry", async () => {
     const repo = new InMemoryLabAssetRepository();
-    vi.spyOn(repo, "listPoolRecords").mockRejectedValue(new StorageError("unavailable", "pools down"));
+    vi.spyOn(repo, "listPoolRecords").mockRejectedValue(
+      new StorageError("unavailable", "pools down"),
+    );
     const h = renderList(repo);
     await settle();
     expect(h.container.textContent).toMatch(/Failed to load pools|Failed to load model pools/i);

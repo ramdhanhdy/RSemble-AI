@@ -11,7 +11,9 @@ interface LabRecipeVersionPageProps {
   labAssetRepo?: LabAssetRepository | null;
 }
 
-export function LabRecipeVersionPage({ labAssetRepo: labAssetRepoProp }: LabRecipeVersionPageProps) {
+export function LabRecipeVersionPage({
+  labAssetRepo: labAssetRepoProp,
+}: LabRecipeVersionPageProps) {
   const ctx = useLabAssetRepository();
   const labAssetRepo = labAssetRepoProp !== undefined ? labAssetRepoProp : ctx;
   const { recipeId = "", version: versionRaw = "" } = useParams<{
@@ -110,7 +112,10 @@ export function LabRecipeVersionPage({ labAssetRepo: labAssetRepoProp }: LabReci
   return (
     <div className="flex flex-col gap-4">
       <nav className="text-xs text-text-secondary">
-        <Link to="/lab" className="text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+        <Link
+          to="/lab"
+          className="text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
           Lab
         </Link>
         {" / "}

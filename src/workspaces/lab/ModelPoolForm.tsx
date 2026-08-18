@@ -38,7 +38,9 @@ export function ModelPoolForm({
 }: ModelPoolFormProps) {
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
-  const [rationale, setRationale] = useState(fromVersion?.rationale ?? "Initial experimental selection.");
+  const [rationale, setRationale] = useState(
+    fromVersion?.rationale ?? "Initial experimental selection.",
+  );
   const [checklist, setChecklist] = useState(
     (fromVersion?.diversityChecklist ?? ["independent families"]).join(", "),
   );

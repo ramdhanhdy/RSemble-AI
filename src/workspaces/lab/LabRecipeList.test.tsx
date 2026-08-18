@@ -7,12 +7,7 @@ import { InMemoryLabAssetRepository } from "../../lib/persistence/lab-asset-repo
 import { InMemoryStudyRepository } from "../../lib/persistence/study-repository";
 import { StorageError } from "../../lib/persistence/database";
 import { LabRecipeList } from "./LabRecipeList";
-import {
-  DIGEST,
-  makeRecipeRecord,
-  makeRecipeVersion,
-  makeStudyRecord,
-} from "./lab-test-fixtures";
+import { DIGEST, makeRecipeRecord, makeRecipeVersion, makeStudyRecord } from "./lab-test-fixtures";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 

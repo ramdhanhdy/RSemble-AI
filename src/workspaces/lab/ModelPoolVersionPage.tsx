@@ -11,7 +11,9 @@ interface ModelPoolVersionPageProps {
   labAssetRepo?: LabAssetRepository | null;
 }
 
-export function ModelPoolVersionPage({ labAssetRepo: labAssetRepoProp }: ModelPoolVersionPageProps) {
+export function ModelPoolVersionPage({
+  labAssetRepo: labAssetRepoProp,
+}: ModelPoolVersionPageProps) {
   const ctx = useLabAssetRepository();
   const labAssetRepo = labAssetRepoProp !== undefined ? labAssetRepoProp : ctx;
   const { poolId = "", version: versionRaw = "" } = useParams<{
@@ -102,7 +104,10 @@ export function ModelPoolVersionPage({ labAssetRepo: labAssetRepoProp }: ModelPo
   return (
     <div className="flex flex-col gap-4">
       <nav className="text-xs text-text-secondary">
-        <Link to="/lab" className="text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+        <Link
+          to="/lab"
+          className="text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
           Lab
         </Link>
         {" / "}

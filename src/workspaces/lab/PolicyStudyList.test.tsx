@@ -138,10 +138,7 @@ describe("PolicyStudyList — empty, error, summary", () => {
         updatedAt: 3_000,
       }),
     );
-    await repo.createPlaybook(
-      "pb:c1",
-      makePlaybook({ studyId: "c1", claimLevel: "confirmed" }),
-    );
+    await repo.createPlaybook("pb:c1", makePlaybook({ studyId: "c1", claimLevel: "confirmed" }));
     const h = renderList(repo);
     await settle();
     expect(h.$("[data-summary='active']")?.textContent).toMatch(/2/);

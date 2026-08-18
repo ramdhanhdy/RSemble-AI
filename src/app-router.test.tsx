@@ -53,10 +53,7 @@ import {
   type FusionStudyRepository,
 } from "./lib/persistence/fusion-study-repository";
 import type { TaskRepository } from "./lib/persistence/task-repository";
-import {
-  InMemoryStudyRepository,
-  type StudyRepository,
-} from "./lib/persistence/study-repository";
+import { InMemoryStudyRepository, type StudyRepository } from "./lib/persistence/study-repository";
 import {
   InMemoryLabAssetRepository,
   type LabAssetRepository,
@@ -1011,7 +1008,6 @@ describe("AppRouter — retired Fusion Study route (Lab spec §11.1)", () => {
 });
 
 describe("AppRouter — Fusion owner redirects (spec §4, §8.2)", () => {
-
   it("canonical Fusion route stays put and renders the study under its exact owner", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));

@@ -113,9 +113,7 @@ function makeTrial(
     stage: overrides.stage ?? "A",
     candidateConfig: { members: [{ id: MC_A }, { id: MC_B }] },
     recipeRef:
-      policy === "fuse"
-        ? { recipeId: "recipe-1", version: 1, digest: RECIPE_DIGEST }
-        : null,
+      policy === "fuse" ? { recipeId: "recipe-1", version: 1, digest: RECIPE_DIGEST } : null,
     synthesizer: policy === "fuse" || policy === "refine" ? { id: MC_B } : null,
   };
   const status = overrides.status ?? "sealed";
@@ -236,9 +234,9 @@ describe("PolicyStudy execution — running", () => {
     expect(progress?.textContent).toMatch(/Stage B/);
     expect(progress?.textContent).toMatch(/2 of 3/);
     // Exactly one polite live region for the whole study detail.
-    const liveRegions = h.$$("[role='status']").filter(
-      (el) => el.getAttribute("aria-live") !== "assertive",
-    );
+    const liveRegions = h
+      .$$("[role='status']")
+      .filter((el) => el.getAttribute("aria-live") !== "assertive");
     expect(liveRegions).toHaveLength(1);
     expect(h.$("[data-action='interrupt-study']")).toBeTruthy();
     expect(h.$("[data-testid='verdict-banner']")).toBeNull();
@@ -325,9 +323,7 @@ describe("PolicyStudy recovery — failed", () => {
     const saved = await repo.getStudy("study-1");
     expect(saved?.status).toBe("archived");
     expect(saved?.archivedAt).not.toBeNull();
-    expect(h.$("[data-testid='lifecycle-archived']")?.textContent).toMatch(
-      /Archived — read-only/,
-    );
+    expect(h.$("[data-testid='lifecycle-archived']")?.textContent).toMatch(/Archived — read-only/);
     cleanup(h);
   });
 });

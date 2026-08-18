@@ -37,6 +37,8 @@ import {
   type PlaybookRunBinding,
 } from "../../lib/compare/playbook-execution";
 
+const EMPTY_SLOTS: ModelSlot[] = [];
+
 export interface RunWithPlaybookDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -80,7 +82,10 @@ export function RunWithPlaybookDialog({
   running = false,
   onConfirmed,
 }: RunWithPlaybookDialogProps): React.ReactElement {
-  const slots = candidateModelSlots ?? rawSlots ?? [];
+  const slots = useMemo(
+    () => candidateModelSlots ?? rawSlots ?? EMPTY_SLOTS,
+    [candidateModelSlots, rawSlots],
+  );
   const [items, setItems] = useState<LoadedPlaybookItem[]>([]);
   const [selectedStudyId, setSelectedStudyId] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);

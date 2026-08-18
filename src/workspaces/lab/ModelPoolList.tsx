@@ -57,8 +57,9 @@ export function ModelPoolList({
       const next: PoolRow[] = [];
       for (const record of records) {
         const version = await labAssetRepo.getLatestPoolVersion(record.id);
-        const referencedBy = studies.filter((s) => s.definition.modelPool.poolId === record.id)
-          .length;
+        const referencedBy = studies.filter(
+          (s) => s.definition.modelPool.poolId === record.id,
+        ).length;
         next.push({ record, version, referencedBy });
       }
       next.sort((a, b) => b.record.updatedAt - a.record.updatedAt);

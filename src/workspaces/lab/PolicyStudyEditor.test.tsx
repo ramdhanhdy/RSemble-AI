@@ -167,7 +167,10 @@ async function seedAssets() {
   await evalRepo.saveSuite(makeEditorSuite("ts1", 6), 0);
   await evalRepo.createRubric(rubricRecord("rub1", 1), makeRubric("rub1", 1, "Reliability"));
   const labAssetRepo = new InMemoryLabAssetRepository();
-  await labAssetRepo.createRecipeRecord(makeRecipeRecord("recipe-1"), makeRecipeVersion("recipe-1", 1));
+  await labAssetRepo.createRecipeRecord(
+    makeRecipeRecord("recipe-1"),
+    makeRecipeVersion("recipe-1", 1),
+  );
   await labAssetRepo.createPoolRecord(makePoolRecord("pool-1"), makePoolVersion("pool-1", 1));
   return { evalRepo, labAssetRepo };
 }
@@ -182,7 +185,8 @@ function typeInto(input: HTMLInputElement, value: string) {
 
 function selectOption(select: HTMLSelectElement, label: string) {
   const option = [...select.options].find((o) => o.textContent?.includes(label));
-  if (!option) throw new Error(`No option containing ${label} in ${select.getAttribute("aria-label")}`);
+  if (!option)
+    throw new Error(`No option containing ${label} in ${select.getAttribute("aria-label")}`);
   const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
   proto?.set?.call(select, option.value);
   act(() => {
@@ -272,7 +276,10 @@ describe("PolicyStudyEditor — CAS draft persistence", () => {
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
     await settle();
 
-    typeInto(h.$("input[aria-label='Title & research question']") as HTMLInputElement, "Pair screening Q");
+    typeInto(
+      h.$("input[aria-label='Title & research question']") as HTMLInputElement,
+      "Pair screening Q",
+    );
     await settle();
 
     const saved = await studyRepo.getStudy(study.id);
@@ -317,7 +324,10 @@ describe("PolicyStudyEditor — CAS draft persistence", () => {
     suite.modelSlots.push(slot("s4", "acme/synth-1"));
     await evalRepo.saveSuite(suite, 0);
     const labAssetRepo = new InMemoryLabAssetRepository();
-    await labAssetRepo.createRecipeRecord(makeRecipeRecord("recipe-1"), makeRecipeVersion("recipe-1", 1));
+    await labAssetRepo.createRecipeRecord(
+      makeRecipeRecord("recipe-1"),
+      makeRecipeVersion("recipe-1", 1),
+    );
     const h = renderEditor(studyRepo, study, { evalRepo, labAssetRepo });
     await settle();
 

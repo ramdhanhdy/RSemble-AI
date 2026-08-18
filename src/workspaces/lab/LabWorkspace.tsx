@@ -83,10 +83,7 @@ export function LabWorkspace({
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto scroll-thin px-3 py-4 lg:px-6">
         <div className="max-w-[960px]">
           <Routes>
-            <Route
-              index
-              element={<PolicyStudyList studyRepo={studyRepo} />}
-            />
+            <Route index element={<PolicyStudyList studyRepo={studyRepo} />} />
             <Route
               path="recipes"
               element={<LabRecipeList labAssetRepo={labAssetRepo} studyRepo={studyRepo} />}

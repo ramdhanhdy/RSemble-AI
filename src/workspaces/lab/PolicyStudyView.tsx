@@ -16,15 +16,15 @@ import type { EvaluationRepository } from "../../lib/persistence/evaluation-repo
 import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 import type { LabAssetRepository } from "../../lib/persistence/lab-asset-repository";
 import type { StudyRepository } from "../../lib/persistence/study-repository";
-import type {
-  PolicyKind,
-  PolicyRecommendation,
-  PolicyReportPayload,
-  PolicyStudyObservation,
-  PolicyStudyRecord,
-  PolicyStudyTrial,
+import {
+  isPolicyStudyTrial,
+  type PolicyKind,
+  type PolicyRecommendation,
+  type PolicyReportPayload,
+  type PolicyStudyObservation,
+  type PolicyStudyRecord,
+  type PolicyStudyTrial,
 } from "../../lib/studies/policy/policy-study-types";
-import { isPolicyStudyTrial } from "../../lib/studies/policy/policy-study-types";
 import type { StudyAttempt } from "../../lib/studies/study-types";
 import { ClaimBadge } from "../../ui/ClaimBadge";
 import { KindEyebrow } from "../../ui/KindEyebrow";
@@ -1410,7 +1410,7 @@ function BoundarySection({ qualifiedCount }: { qualifiedCount: number | null }) 
           </span>
           <p className="text-xs text-text-secondary">
             StudyObservation, rank winners, FusionResult, RefinedResult, playbook rows, policy
-            scores, and reports never enter model evidence profiles.
+            scores, and reports never enter model evidence records.
           </p>
         </div>
 
