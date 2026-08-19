@@ -509,9 +509,9 @@ describe("bootstrapTaskClusters", () => {
     expect(result.assignmentDigest).toBe(ASSIGNMENT_DIGEST);
   });
 
-  // -- Missing unit values --------------------------------------------------
+  // -- Missing unit values (R1: never impute 0) ----------------------------
 
-  it("treats missing unit values as 0", () => {
+  it("never imputes 0 for missing unit metrics: missing units are omitted, not zero-filled", () => {
     const units = [
       makeUnit("unit:1", ["t1"], ["o1"]),
       makeUnit("unit:2", ["t2"], ["o2"]),
@@ -520,7 +520,7 @@ describe("bootstrapTaskClusters", () => {
       makeUnit("unit:5", ["t5"], ["o5"]),
     ];
     const resolution = makeResolution(units);
-    // Only provide values for some units
+    // Only 2 of 5 units have a usable metric value. The other 3 are missing.
     const unitValues = new Map<string, number>();
     unitValues.set("unit:1", 0.8);
     unitValues.set("unit:2", 0.6);
@@ -531,8 +531,63 @@ describe("bootstrapTaskClusters", () => {
       unitValues,
     });
 
+    // Sufficiency is based on USABLE units (2), not the assignment-unit
+    // count (5). Fewer than five usable units => no interval.
+    expect(result.coverageState.state).toBe("insufficient");
+    expect(result.interval).toBeNull();
+    if (result.coverageState.state === "insufficient") {
+      expect(result.coverageState.unitCount).toBe(2);
+      expect(result.coverageState.reason).toMatch(/usable|omitted|missing/i);
+    }
+    // The three missing units are disclosed, never silently treated as 0.
+    expect(result.omittedUnitIds).toEqual(
+      expect.arrayContaining(["unit:3", "unit:4", "unit:5"]),
+    );
+    expect(result.omittedUnitIds).toHaveLength(3);
+  });
+
+  it("omits missing units but keeps usable ones when usable count >= 5", () => {
+    const units = Array.from({ length: 7 }, (_, i) =>
+      makeUnit(`unit:${i + 1}`, [`t${i + 1}`], [`o${i + 1}`]),
+    );
+    const resolution = makeResolution(units);
+    // 5 usable, 2 missing -> usable count 5 -> interval computed from the 5.
+    const unitValues = new Map<string, number>();
+    for (let i = 0; i < 5; i++) unitValues.set(`unit:${i + 1}`, 0.5 + i * 0.1);
+
+    const result = bootstrapTaskClusters({
+      resolution,
+      config: makeConfig({ resamples: 500 }),
+      unitValues,
+    });
+
     expect(result.coverageState.state).toBe("sufficient");
     expect(result.interval).not.toBeNull();
+    expect(result.unitCount).toBe(5);
+    expect(result.omittedUnitIds).toEqual(["unit:6", "unit:7"]);
+  });
+
+  it("does not impute 0 even when every unit is missing", () => {
+    const units = [
+      makeUnit("unit:1", ["t1"], ["o1"]),
+      makeUnit("unit:2", ["t2"], ["o2"]),
+      makeUnit("unit:3", ["t3"], ["o3"]),
+      makeUnit("unit:4", ["t4"], ["o4"]),
+      makeUnit("unit:5", ["t5"], ["o5"]),
+    ];
+    const resolution = makeResolution(units);
+    const unitValues = new Map<string, number>();
+
+    const result = bootstrapTaskClusters({
+      resolution,
+      config: makeConfig(),
+      unitValues,
+    });
+
+    expect(result.coverageState.state).toBe("insufficient");
+    expect(result.interval).toBeNull();
+    expect(result.coverageState.unitCount).toBe(0);
+    expect(result.omittedUnitIds).toHaveLength(5);
   });
 
   // -- Large number of units ------------------------------------------------

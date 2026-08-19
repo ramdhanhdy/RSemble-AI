@@ -54,7 +54,11 @@ export interface BootstrapResult {
   readonly interval: BootstrapInterval | null;
   readonly coverageState: BootstrapCoverageState;
   readonly seed: string;
+  /** Number of USABLE units that entered the bootstrap (units with a metric value). */
   readonly unitCount: number;
+  /** Resolved units omitted because no metric value was supplied, disclosed
+   *  and never imputed as 0. Sorted by unitId. */
+  readonly omittedUnitIds: readonly string[];
   readonly resamples: number;
   readonly uncertaintyRuleVersion: number;
   readonly aggregationRuleVersion: number;
@@ -119,7 +123,6 @@ const DEFAULT_RESAMPLES = 2000;
  */
 export function bootstrapTaskClusters(input: BootstrapInput): BootstrapResult {
   const { resolution, config, unitValues } = input;
-  const unitCount = resolution.unitCount;
   const resamples = config.resamples ?? DEFAULT_RESAMPLES;
   const intervalLevel = config.intervalLevel ?? DEFAULT_INTERVAL_LEVEL;
 
@@ -132,32 +135,45 @@ export function bootstrapTaskClusters(input: BootstrapInput): BootstrapResult {
   ].join(":");
   const seed = hashArtifactContent(seedMaterial);
 
+  // --- Prepare unit entries (deterministic order) ---------------------------
+  // Sort by unitId for permutation invariance. Missing unit metrics are
+  // NEVER imputed as 0: a unit without a supplied value is omitted from the
+  // resampling pool and disclosed. Sufficiency is based on USABLE units.
+  const sortedUnits = [...resolution.units].sort((a, b) => a.unitId.localeCompare(b.unitId));
+
+  const entries: { id: string; value: number }[] = [];
+  const omittedUnitIds: string[] = [];
+  for (const u of sortedUnits) {
+    const value = unitValues.get(u.unitId);
+    if (value === undefined) {
+      omittedUnitIds.push(u.unitId);
+    } else {
+      entries.push({ id: u.unitId, value });
+    }
+  }
+  const usableCount = entries.length;
+
   // --- Insufficient coverage ------------------------------------------------
-  if (unitCount < MIN_UNITS_FOR_INTERVAL) {
+  if (usableCount < MIN_UNITS_FOR_INTERVAL) {
     return {
       interval: null,
       coverageState: {
         state: "insufficient",
-        unitCount,
-        reason: `Fewer than ${MIN_UNITS_FOR_INTERVAL} resolved independent uncertainty units (${unitCount} available). Cannot compute a stable bootstrap interval.`,
+        unitCount: usableCount,
+        reason:
+          omittedUnitIds.length > 0
+            ? `Fewer than ${MIN_UNITS_FOR_INTERVAL} usable uncertainty units (${usableCount} usable, ${omittedUnitIds.length} omitted with missing metric values). Missing units are omitted, not imputed as 0.`
+            : `Fewer than ${MIN_UNITS_FOR_INTERVAL} resolved independent uncertainty units (${usableCount} available). Cannot compute a stable bootstrap interval.`,
       },
       seed,
-      unitCount,
+      unitCount: usableCount,
+      omittedUnitIds,
       resamples,
       uncertaintyRuleVersion: resolution.uncertaintyRuleVersion,
       aggregationRuleVersion: config.aggregationRuleVersion,
       assignmentDigest: config.assignmentDigest,
     };
   }
-
-  // --- Prepare unit entries (deterministic order) ---------------------------
-  // Sort by unitId for permutation invariance
-  const sortedUnits = [...resolution.units].sort((a, b) => a.unitId.localeCompare(b.unitId));
-
-  const entries = sortedUnits.map((u) => ({
-    id: u.unitId,
-    value: unitValues.get(u.unitId) ?? 0,
-  }));
 
   // --- Initialize PRNG ------------------------------------------------------
   const prngSeed = seedFromFingerprint(seed);
@@ -191,10 +207,11 @@ export function bootstrapTaskClusters(input: BootstrapInput): BootstrapResult {
     },
     coverageState: {
       state: "sufficient",
-      unitCount,
+      unitCount: usableCount,
     },
     seed,
-    unitCount,
+    unitCount: usableCount,
+    omittedUnitIds,
     resamples,
     uncertaintyRuleVersion: resolution.uncertaintyRuleVersion,
     aggregationRuleVersion: config.aggregationRuleVersion,
