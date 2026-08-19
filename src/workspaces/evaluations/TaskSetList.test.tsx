@@ -517,4 +517,16 @@ describe("TaskSetList — accessibility and responsive identity", () => {
     expect(slot?.className).toMatch(/sm:min-w-\[136px\]/);
     cleanup(h);
   });
+
+  it("populated list renders a page heading (h1) so the surface passes heading checks", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    await seedRepo(repo, [makeSuite("s1"), makeSuite("s2")]);
+    const h = renderWithRouter(<TaskSetList repo={repo} />);
+    await settle();
+    const heading = h.$("h1");
+    expect(heading).toBeTruthy();
+    expect(heading?.textContent).toContain("Task sets");
+    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    cleanup(h);
+  });
 });
