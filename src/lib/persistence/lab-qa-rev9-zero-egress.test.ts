@@ -114,17 +114,15 @@ describe("REV-9 — migration operations cause zero provider egress", () => {
   it("the v12 → v13 cutover upgrade makes zero provider/fetch/XHR calls", async () => {
     const dbName = `rev9-upgrade-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const v12 = new Dexie(dbName);
-    v12
-      .version(1)
-      .stores({
-        storageMeta: "key",
-        runSummaries: "id",
-        runDetails: "id",
-        profiles: "id",
-        profileVersions: "[id+version]",
-        suites: "id",
-        experiments: "id",
-      });
+    v12.version(1).stores({
+      storageMeta: "key",
+      runSummaries: "id",
+      runDetails: "id",
+      profiles: "id",
+      profileVersions: "[id+version]",
+      suites: "id",
+      experiments: "id",
+    });
     v12.version(2).stores({
       fusionRecipes: "[id+version], id, version",
       poolManifests: "[id+version], id, version",
@@ -134,31 +132,27 @@ describe("REV-9 — migration operations cause zero provider egress", () => {
       fusionObservations: "id, trialId, createdAt",
       fusionPlaybooks: "id, studyId, createdAt",
     });
-    v12
-      .version(3)
-      .stores({
-        tasks: "id",
-        taskVersions: "[taskId+version]",
-        taskArtifacts: "id",
-        taskArtifactBytes: "id",
-        taskInstances: "id",
-        taskFamilies: "id",
-        taskFamilyAssignments: "id",
-        taskFacetAnnotations: "id",
-        taskMigrationCrosswalk: "legacyScopeKey",
-      });
+    v12.version(3).stores({
+      tasks: "id",
+      taskVersions: "[taskId+version]",
+      taskArtifacts: "id",
+      taskArtifactBytes: "id",
+      taskInstances: "id",
+      taskFamilies: "id",
+      taskFamilyAssignments: "id",
+      taskFacetAnnotations: "id",
+      taskMigrationCrosswalk: "legacyScopeKey",
+    });
     v12.version(4).stores({ taskFamilyRelations: "id" });
     v12.version(5).stores({ taskSets: "id", taskSetVersions: "[taskSetId+version]" });
     v12.version(6).stores({ taskSetOwnershipCrosswalk: "key, kind, taskSetId" });
     v12.version(7).stores({ taskSetMaterializations: "id" });
-    v12
-      .version(8)
-      .stores({
-        modelConfigurations: "id",
-        observations: "id",
-        evidenceDecisions: "id",
-        evidenceIndexJobs: "sourceResultId",
-      });
+    v12.version(8).stores({
+      modelConfigurations: "id",
+      observations: "id",
+      evidenceDecisions: "id",
+      evidenceIndexJobs: "sourceResultId",
+    });
     v12.version(9).stores({ observations: "id, &sourceKey" });
     v12.version(10).stores({ verifierOutcomes: "id" });
     v12.version(11).stores({ comparisonResults: "id" });
@@ -175,17 +169,15 @@ describe("REV-9 — migration operations cause zero provider egress", () => {
     });
     await v12.open();
     for (const s of FUSION_CORPUS_FIXTURE.studies) {
-      await v12
-        .table("fusionStudies")
-        .put({
-          id: s.id,
-          study: s,
-          revision: s.revision,
-          suiteId: "suite-default",
-          suiteVersion: 1,
-          status: s.status,
-          updatedAt: s.updatedAt,
-        });
+      await v12.table("fusionStudies").put({
+        id: s.id,
+        study: s,
+        revision: s.revision,
+        suiteId: "suite-default",
+        suiteVersion: 1,
+        status: s.status,
+        updatedAt: s.updatedAt,
+      });
     }
     v12.close();
 
