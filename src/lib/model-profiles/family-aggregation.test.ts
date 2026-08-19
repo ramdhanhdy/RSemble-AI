@@ -83,7 +83,6 @@ const T0 = 1_704_067_200_000;
 
 const RUBRIC_QUALITY: VersionRef = { id: "rub-quality", version: 3 };
 const RUBRIC_QUALITY_V4: VersionRef = { id: "rub-quality", version: 4 };
-const RUBRIC_STYLE: VersionRef = { id: "rub-style", version: 1 };
 
 const PROTOCOL_A = `sha256:${"a".repeat(64)}`;
 const PROTOCOL_B = `sha256:${"b".repeat(64)}`;
