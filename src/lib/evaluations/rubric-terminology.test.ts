@@ -38,6 +38,10 @@
 //       configuration behavioral-profile vocabulary (Child 04), path- and
 //       token-scoped. Capital or compound Profile tokens inside evidence
 //       files, and every profile token outside lib/evidence, stay flagged.
+//     • all Profile-bearing tokens inside lib/model-profiles/** — Child 07
+//       model-evidence-profiles domain vocabulary (ProfileRespondent,
+//       ProfileCoverageSummary, ProfileExactSelection, etc.), path-scoped.
+//       These are model-evidence terms, not scoring-Rubric terms.
 //   Anything else carrying the Profile word — type names, repository methods,
 //   component names, route segments, user-facing strings, comments, test
 //   helpers — is a scoring-Profile term and must become Rubric.
@@ -227,6 +231,14 @@ function isAllowed(token: string, relFile: string, line: string, idx: number): b
   if ((token === "profile" || token === "profiles") && relFile.startsWith("lib/evidence/")) {
     return true;
   }
+
+  // Child 07 model-evidence-profiles domain vocabulary (spec §§1–6.1):
+  // the entire lib/model-profiles/** directory is spec-defined model-profile
+  // domain code — ProfileRespondent, ProfileCoverageSummary, ProfileExactSelection,
+  // selectProfileObservations, eligibleProfileEvidenceCount, etc. These are
+  // model-evidence terms, not scoring-Rubric terms, so all Profile-bearing
+  // tokens under that path are allowed.
+  if (relFile.startsWith("lib/model-profiles/")) return true;
 
   if (token === "profiles") {
     // `db.profiles` — physical Dexie store access (frozen, any file).
@@ -443,6 +455,52 @@ describe("rubric terminology boundary (Child 01, Task 1)", () => {
         "lib/evidence/evidence-types.test.ts",
         "lib/evidence/evidence-types.ts",
         "lib/evidence/evidence-validation.test.ts",
+      ];
+      for (const relFile of relFiles) {
+        expect(scanFile(join(SRC_ROOT, relFile), SRC_ROOT), relFile).toEqual([]);
+      }
+    });
+  });
+
+  describe("model-evidence-profiles domain exemption (Child 07)", () => {
+    it("allows all Profile-bearing tokens under lib/model-profiles/", () => {
+      const relFile = "lib/model-profiles/model-evidence-query.ts";
+      for (const token of [
+        "ProfileRespondent",
+        "isProfileRespondent",
+        "profile",
+        "profiles",
+        "ProfileCoverageSummary",
+        "ProfileEvidenceCorpus",
+        "ProfileExactSelection",
+        "selectProfileObservations",
+        "eligibleProfileEvidenceCount",
+      ]) {
+        const line = `  const ${token} = value;`;
+        expect(isAllowed(token, relFile, line, line.indexOf(token)), token).toBe(true);
+      }
+    });
+
+    it("keeps flagging scoring-Profile tokens outside lib/model-profiles", () => {
+      const relFile = "lib/evaluations/suite-validation.ts";
+      const line = "  const ProfileRespondent = value;";
+      expect(isAllowed("ProfileRespondent", relFile, line, line.indexOf("ProfileRespondent"))).toBe(
+        false,
+      );
+    });
+
+    it("scans every Child 07 model-profiles file clean", () => {
+      const relFiles = [
+        "lib/model-profiles/__fixtures__/milestone-a-golden.ts",
+        "lib/model-profiles/__fixtures__/milestone-a-golden.test.ts",
+        "lib/model-profiles/model-evidence-query.ts",
+        "lib/model-profiles/model-evidence-query.test.ts",
+        "lib/model-profiles/model-configuration-query.ts",
+        "lib/model-profiles/model-configuration-query.test.ts",
+        "lib/model-profiles/profile-observation-selection.ts",
+        "lib/model-profiles/profile-observation-selection.test.ts",
+        "lib/model-profiles/coverage-summary.ts",
+        "lib/model-profiles/coverage-summary.test.ts",
       ];
       for (const relFile of relFiles) {
         expect(scanFile(join(SRC_ROOT, relFile), SRC_ROOT), relFile).toEqual([]);
