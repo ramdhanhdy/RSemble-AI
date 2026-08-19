@@ -1399,4 +1399,86 @@ describe("ComparisonResultRoute — 44x44 target rule (Plan Task 13)", () => {
 
     cleanup(h);
   });
+
+  it("keeps both Back to Compare links at the 44px minimum height", async () => {
+    // Toolbar link on the completed result page
+    const runsRepo = new InMemoryRunRepository();
+    const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+
+    const record = makeRankRecord("cmp-back-to-compare-toolbar");
+    await seedTestRecord(runsRepo, comparisonRepo, record);
+
+    const h = renderRouted(
+      <ComparisonResultRoute
+        comparisonId="cmp-back-to-compare-toolbar"
+        comparisonRepo={comparisonRepo}
+        runRepo={runsRepo}
+        onOpenInCompare={() => undefined}
+      />,
+      ["/compare/results/cmp-back-to-compare-toolbar"],
+    );
+    await settle();
+
+    const toolbarBack = h.$("a[href='/compare']");
+    expect(
+      toolbarBack,
+      "toolbar Back to Compare link should render on the result page",
+    ).not.toBeNull();
+    expect(
+      toolbarBack?.className.includes("min-h-[44px]"),
+      "toolbar Back to Compare link must carry the project 44px min-height target class",
+    ).toBe(true);
+
+    cleanup(h);
+
+    // Header link on the missing-source state
+    const missingRepo = new InMemoryRunRepository();
+    const missingComparisonRepo = new InMemoryComparisonRepository(missingRepo);
+    vi.spyOn(missingComparisonRepo, "getComparisonResult").mockResolvedValue({
+      index: {
+        id: "cmp-back-to-compare-missing",
+        runId: "cmp-back-to-compare-missing",
+        createdAt: 1716048000000,
+        updatedAt: 1716048025000,
+        status: "completed",
+        mode: "rank",
+        title: "Lost comparison",
+        taskBinding: { kind: "ad_hoc", inputSnapshotRef: "snap:1" },
+        taskInstanceId: null,
+        activeObservationIds: [],
+        evidenceReceiptRevision: 0,
+        lineage: { repeatedFrom: null },
+        revision: 1,
+      },
+      record: null,
+      warning: {
+        kind: "missing_source_record",
+        message: "Exact source run record cmp-back-to-compare-missing is missing from storage.",
+      },
+    });
+
+    const h2 = renderRouted(
+      <ComparisonResultRoute
+        comparisonId="cmp-back-to-compare-missing"
+        comparisonRepo={missingComparisonRepo}
+        runRepo={missingRepo}
+      />,
+      ["/compare/results/cmp-back-to-compare-missing"],
+    );
+    await settle();
+
+    const missingSourceBacks = h2.$$("a[href='/compare']");
+    expect(
+      missingSourceBacks.length,
+      "missing-source state should render its Back to Compare links",
+    ).toBeGreaterThanOrEqual(1);
+    for (const el of missingSourceBacks) {
+      expect(
+        el.className.includes("min-h-[44px]"),
+        "every Back to Compare link must carry the project 44px min-height target class",
+      ).toBe(true);
+    }
+
+    cleanup(h2);
+  });
 });
