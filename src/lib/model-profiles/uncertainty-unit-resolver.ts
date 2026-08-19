@@ -7,6 +7,13 @@
 // UI says so (disclosed). Conflicting/missing metadata handled. Assignment
 // digest + rule version pinned in the result receipt.
 //
+// The dependency-partitioning policy is exposed as a pure core
+// (`partitionUncertaintyUnits`) operating on `PartitionInput` rows, so the
+// paired comparison (T6) reuses the SAME core instead of a reduced
+// T6-specific resolver (R5). Policy order:
+//   protocol cluster -> source/repository group -> typed Task relation ->
+//   disclosed Task identity fallback.
+//
 // Contract (Child 07 spec §6.4, plan Task 5):
 //  - protocol clusters when multiple protocol fingerprints exist
 //  - repository/source groups when single protocol but multiple sources
@@ -58,7 +65,23 @@ export interface UncertaintyUnitResolution {
   readonly disclosures: readonly string[];
 }
 
-// --- Input ----------------------------------------------------------------------
+// --- Partition input (common core) ---------------------------------------------
+
+/**
+ * A single observation row reduced to the fields the dependency-partitioning
+ * core needs. Both the T5 resolver and the T6 paired comparison feed rows of
+ * this shape into `partitionUncertaintyUnits` so they share one policy
+ * implementation (R5).
+ */
+export interface PartitionInput {
+  readonly protocolFingerprint: string;
+  readonly sourceResultId: string;
+  readonly taskId: string;
+  readonly observationId: string;
+  readonly cellKey: string;
+}
+
+// --- Resolver input (T5 wrapper) ------------------------------------------------
 
 export interface UncertaintyResolverInput {
   readonly selection: ProfileExactSelection;
@@ -68,22 +91,6 @@ export interface UncertaintyResolverInput {
 }
 
 // --- Internal helpers -----------------------------------------------------------
-
-interface CellInfo {
-  cell: ProfileSelectedCell;
-  protocolFingerprint: string;
-  sourceResultId: string;
-  taskId: string;
-}
-
-function extractCellInfo(cell: ProfileSelectedCell): CellInfo {
-  return {
-    cell,
-    protocolFingerprint: cell.active.observation.protocolFingerprint,
-    sourceResultId: cell.active.observation.sourceResultId,
-    taskId: cell.taskId,
-  };
-}
 
 function groupBy<K, T>(items: readonly T[], keyOf: (item: T) => K): Map<K, T[]> {
   const map = new Map<K, T[]>();
@@ -189,10 +196,10 @@ function buildFamilyIndex(assignments: readonly TaskFamilyAssignment[]): Map<str
 }
 
 function buildFamilyRelationGroups(
-  cells: readonly CellInfo[],
+  rows: readonly PartitionInput[],
   assignments: readonly TaskFamilyAssignment[],
   relations: readonly TaskFamilyRelation[],
-): Map<string, CellInfo[]> {
+): Map<string, PartitionInput[]> {
   const familyIndex = buildFamilyIndex(assignments);
 
   const taskToRoot = new Map<string, string>();
@@ -249,18 +256,18 @@ function buildFamilyRelationGroups(
     }
   }
 
-  // Build groups: assign cells to their task's root group
-  const groups = new Map<string, CellInfo[]>();
+  // Build groups: assign rows to their task's root group
+  const groups = new Map<string, PartitionInput[]>();
 
-  for (const info of cells) {
-    const root = findRoot(info.taskId);
+  for (const row of rows) {
+    const root = findRoot(row.taskId);
     const siblings = rootToTasks.get(root) ?? [];
     if (siblings.length > 1) {
       const group = groups.get(root);
       if (group) {
-        group.push(info);
+        group.push(row);
       } else {
-        groups.set(root, [info]);
+        groups.set(root, [row]);
       }
     }
   }
@@ -278,15 +285,28 @@ function computeAssignmentDigest(units: readonly UncertaintyUnit[]): string {
   return hashArtifactContent(canonicalJsonString(payload));
 }
 
-// --- Resolver -------------------------------------------------------------------
+// --- Common partitioning core (R5) ---------------------------------------------
 
-export function resolveUncertaintyUnits(
-  input: UncertaintyResolverInput,
+/**
+ * Pure dependency-partitioning core shared by the T5 uncertainty resolver
+ * and the T6 paired comparison. Partitions observation rows into resampling
+ * units following the policy:
+ *   1. protocol clusters   (multiple protocol fingerprints)
+ *   2. repository groups   (single protocol, multiple source repositories)
+ *   3. task family relation (family membership + declared relations)
+ *   4. task identity fallback (no higher-order metadata, disclosed)
+ *
+ * Conflicting primary family assignments are disclosed and resolved
+ * conservatively (the conflicted task is not grouped into any family). The
+ * result is deterministic and permutation-invariant over rows, assignments,
+ * and relations.
+ */
+export function partitionUncertaintyUnits(
+  rows: readonly PartitionInput[],
+  relations: readonly TaskFamilyRelation[],
+  assignments: readonly TaskFamilyAssignment[],
 ): UncertaintyUnitResolution {
-  const { selection, taskFamilyRelations, taskFamilyAssignments } = input;
-  const cells = selection.cells;
-
-  if (cells.length === 0) {
+  if (rows.length === 0) {
     return {
       uncertaintyRuleVersion: UNCERTAINTY_RULE_VERSION,
       assignmentDigest: computeAssignmentDigest([]),
@@ -297,27 +317,21 @@ export function resolveUncertaintyUnits(
     };
   }
 
-  const infos = cells.map(extractCellInfo);
-  const disclosures: string[] = [];
-
-  // Always check for family assignment conflicts (conservative, disclosed,
-  // deterministic, permutation-invariant — R3).
-  const familyConflicts = detectFamilyConflicts(taskFamilyAssignments);
-  disclosures.push(...familyConflicts);
+  const disclosures: string[] = [...detectFamilyConflicts(assignments)];
 
   // --- Step 1: Protocol clusters ---
-  const protocolGroups = groupBy(infos, (c) => c.protocolFingerprint);
+  const protocolGroups = groupBy(rows, (r) => r.protocolFingerprint);
 
   if (protocolGroups.size > 1) {
     const units: UncertaintyUnit[] = [];
-    for (const [protocol, groupInfos] of protocolGroups) {
-      const taskIds = [...new Set(groupInfos.map((c) => c.taskId))].sort();
+    for (const [protocol, groupRows] of protocolGroups) {
+      const taskIds = [...new Set(groupRows.map((r) => r.taskId))].sort();
       units.push({
         unitId: buildUnitId("protocol_cluster", taskIds, protocol),
         kind: "protocol_cluster",
         taskIds,
-        observationIds: groupInfos.map((c) => c.cell.active.observation.id),
-        cellKeys: groupInfos.map((c) => c.cell.cellKey),
+        observationIds: groupRows.map((r) => r.observationId),
+        cellKeys: groupRows.map((r) => r.cellKey),
         splitReason: `Protocol fingerprint "${protocol.slice(0, 16)}..." differs from other protocols`,
       });
     }
@@ -338,18 +352,18 @@ export function resolveUncertaintyUnits(
   }
 
   // --- Step 2: Repository groups ---
-  const repositoryGroups = groupBy(infos, (c) => c.sourceResultId);
+  const repositoryGroups = groupBy(rows, (r) => r.sourceResultId);
 
   if (repositoryGroups.size > 1) {
     const units: UncertaintyUnit[] = [];
-    for (const [source, groupInfos] of repositoryGroups) {
-      const taskIds = [...new Set(groupInfos.map((c) => c.taskId))].sort();
+    for (const [source, groupRows] of repositoryGroups) {
+      const taskIds = [...new Set(groupRows.map((r) => r.taskId))].sort();
       units.push({
         unitId: buildUnitId("repository_group", taskIds, source),
         kind: "repository_group",
         taskIds,
-        observationIds: groupInfos.map((c) => c.cell.active.observation.id),
-        cellKeys: groupInfos.map((c) => c.cell.cellKey),
+        observationIds: groupRows.map((r) => r.observationId),
+        cellKeys: groupRows.map((r) => r.cellKey),
         splitReason: `Source repository "${source}" is distinct from other repositories`,
       });
     }
@@ -370,36 +384,36 @@ export function resolveUncertaintyUnits(
   }
 
   // --- Step 3: Task family relations ---
-  const familyGroups = buildFamilyRelationGroups(infos, taskFamilyAssignments, taskFamilyRelations);
+  const familyGroups = buildFamilyRelationGroups(rows, assignments, relations);
 
   if (familyGroups.size > 0) {
     const units: UncertaintyUnit[] = [];
 
-    for (const [, groupInfos] of familyGroups) {
-      const taskIds = [...new Set(groupInfos.map((c) => c.taskId))].sort();
+    for (const [, groupRows] of familyGroups) {
+      const taskIds = [...new Set(groupRows.map((r) => r.taskId))].sort();
       units.push({
         unitId: buildUnitId("task_family_relation", taskIds),
         kind: "task_family_relation",
         taskIds,
-        observationIds: groupInfos.map((c) => c.cell.active.observation.id),
-        cellKeys: groupInfos.map((c) => c.cell.cellKey),
+        observationIds: groupRows.map((r) => r.observationId),
+        cellKeys: groupRows.map((r) => r.cellKey),
         splitReason: "Tasks are linked by family membership or declared relation",
       });
     }
 
-    // Remaining ungrouped cells become task_identity units
+    // Remaining ungrouped rows become task_identity units
     const groupedCellKeys = new Set(units.flatMap((u) => u.cellKeys));
-    const ungrouped = infos.filter((c) => !groupedCellKeys.has(c.cell.cellKey));
+    const ungrouped = rows.filter((r) => !groupedCellKeys.has(r.cellKey));
 
     if (ungrouped.length > 0) {
-      const taskGroups = groupBy(ungrouped, (c) => c.taskId);
-      for (const [taskId, groupInfos] of taskGroups) {
+      const taskGroups = groupBy(ungrouped, (r) => r.taskId);
+      for (const [taskId, groupRows] of taskGroups) {
         units.push({
           unitId: buildUnitId("task_identity", [taskId]),
           kind: "task_identity",
           taskIds: [taskId],
-          observationIds: groupInfos.map((c) => c.cell.active.observation.id),
-          cellKeys: groupInfos.map((c) => c.cell.cellKey),
+          observationIds: groupRows.map((r) => r.observationId),
+          cellKeys: groupRows.map((r) => r.cellKey),
           splitReason: "No higher-order dependency metadata — task identity fallback",
         });
       }
@@ -426,16 +440,16 @@ export function resolveUncertaintyUnits(
   }
 
   // --- Step 4: Task identity fallback ---
-  const taskGroups = groupBy(infos, (c) => c.taskId);
+  const taskGroups = groupBy(rows, (r) => r.taskId);
   const units: UncertaintyUnit[] = [];
 
-  for (const [taskId, groupInfos] of taskGroups) {
+  for (const [taskId, groupRows] of taskGroups) {
     units.push({
       unitId: buildUnitId("task_identity", [taskId]),
       kind: "task_identity",
       taskIds: [taskId],
-      observationIds: groupInfos.map((c) => c.cell.active.observation.id),
-      cellKeys: groupInfos.map((c) => c.cell.cellKey),
+      observationIds: groupRows.map((r) => r.observationId),
+      cellKeys: groupRows.map((r) => r.cellKey),
       splitReason: "No higher-order dependency metadata — task identity fallback",
     });
   }
@@ -454,4 +468,26 @@ export function resolveUncertaintyUnits(
       "No higher-order dependency metadata found — each Task is treated as an independent resampling unit.",
     ],
   };
+}
+
+// --- T5 resolver (thin wrapper over the common core) ---------------------------
+
+function rowFromCell(cell: ProfileSelectedCell): PartitionInput {
+  return {
+    protocolFingerprint: cell.active.observation.protocolFingerprint,
+    sourceResultId: cell.active.observation.sourceResultId,
+    taskId: cell.taskId,
+    observationId: cell.active.observation.id,
+    cellKey: cell.cellKey,
+  };
+}
+
+export function resolveUncertaintyUnits(
+  input: UncertaintyResolverInput,
+): UncertaintyUnitResolution {
+  return partitionUncertaintyUnits(
+    input.selection.cells.map(rowFromCell),
+    input.taskFamilyRelations,
+    input.taskFamilyAssignments,
+  );
 }

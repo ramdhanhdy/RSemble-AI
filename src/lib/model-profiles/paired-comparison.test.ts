@@ -1103,7 +1103,9 @@ describe("computePairedEvidence — changed task versions", () => {
 
 describe("computePairedEvidence — dependency-aware bootstrap assignment", () => {
   it("groups known-related tasks (same family) into one resampling unit, not independent", () => {
-    // Two shared tasks in the same family -> one task_family_relation unit.
+    // Two shared tasks in the same family, observed under ONE shared source
+    // repository, so the common T5 core skips protocol/source grouping and
+    // groups them by family membership into one task_family_relation unit.
     const assignments = [
       {
         id: "asg-1",
@@ -1132,12 +1134,14 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
           taskId: "t-rel-a",
           taskInstanceId: "i-a",
           score: 5,
+          sourceResultId: "src-shared",
           configuration: EXACT_ALPHA,
         }),
         makeCell({
           taskId: "t-rel-b",
           taskInstanceId: "i-b",
           score: 5,
+          sourceResultId: "src-shared",
           configuration: EXACT_ALPHA,
         }),
       ],
@@ -1145,8 +1149,8 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
     );
     const b = makeSelection(
       [
-        makeCell({ taskId: "t-rel-a", taskInstanceId: "i-a", score: 1, configuration: EXACT_BETA }),
-        makeCell({ taskId: "t-rel-b", taskInstanceId: "i-b", score: 1, configuration: EXACT_BETA }),
+        makeCell({ taskId: "t-rel-a", taskInstanceId: "i-a", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
+        makeCell({ taskId: "t-rel-b", taskInstanceId: "i-b", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
       ],
       EXACT_BETA,
     );
@@ -1205,15 +1209,15 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
     ];
     const a = makeSelection(
       [
-        makeCell({ taskId: "t-fam1", taskInstanceId: "i-a", score: 5, configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "t-fam2", taskInstanceId: "i-b", score: 5, configuration: EXACT_ALPHA }),
+        makeCell({ taskId: "t-fam1", taskInstanceId: "i-a", score: 5, sourceResultId: "src-shared", configuration: EXACT_ALPHA }),
+        makeCell({ taskId: "t-fam2", taskInstanceId: "i-b", score: 5, sourceResultId: "src-shared", configuration: EXACT_ALPHA }),
       ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
       [
-        makeCell({ taskId: "t-fam1", taskInstanceId: "i-a", score: 1, configuration: EXACT_BETA }),
-        makeCell({ taskId: "t-fam2", taskInstanceId: "i-b", score: 1, configuration: EXACT_BETA }),
+        makeCell({ taskId: "t-fam1", taskInstanceId: "i-a", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
+        makeCell({ taskId: "t-fam2", taskInstanceId: "i-b", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
       ],
       EXACT_BETA,
     );
@@ -1234,15 +1238,15 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
   it("uses task_identity fallback when no higher-order dependency metadata exists", () => {
     const a = makeSelection(
       [
-        makeCell({ taskId: "t1", taskInstanceId: "i1", score: 5, configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "t2", taskInstanceId: "i2", score: 5, configuration: EXACT_ALPHA }),
+        makeCell({ taskId: "t1", taskInstanceId: "i1", score: 5, sourceResultId: "src-shared", configuration: EXACT_ALPHA }),
+        makeCell({ taskId: "t2", taskInstanceId: "i2", score: 5, sourceResultId: "src-shared", configuration: EXACT_ALPHA }),
       ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
       [
-        makeCell({ taskId: "t1", taskInstanceId: "i1", score: 1, configuration: EXACT_BETA }),
-        makeCell({ taskId: "t2", taskInstanceId: "i2", score: 1, configuration: EXACT_BETA }),
+        makeCell({ taskId: "t1", taskInstanceId: "i1", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
+        makeCell({ taskId: "t2", taskInstanceId: "i2", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
       ],
       EXACT_BETA,
     );
@@ -1574,9 +1578,12 @@ describe("computePairedEvidence — milestone A golden selection", () => {
     expect(transform.missingInstancesB.length).toBeGreaterThan(0);
     const verify = findDelta(result, "task-verify");
     expect(verify.state).toBe("comparable");
-    // Both shared tasks are in family-transform -> one dependency-aware unit
-    // -> insufficient bootstrap coverage (known-related, not independent).
-    expect(result.uncertaintyResolution!.unitCount).toBe(1);
+    // Both shared tasks are in family-transform but observed under DIFFERENT
+    // source repositories (task-transform is multi-source; task-verify is
+    // exp-verify). The common T5 core groups by source/repository before
+    // family relations -> two repository_group units -> insufficient coverage.
+    expect(result.uncertaintyResolution!.unitCount).toBe(2);
+    expect(result.uncertaintyResolution!.units.every((u) => u.kind === "repository_group")).toBe(true);
     expect(result.bootstrap!.coverageState.state).toBe("insufficient");
   });
 
@@ -1829,5 +1836,156 @@ describe("computePairedEvidence — cohort isolation (R4)", () => {
     expect(result.bootstrap).not.toBeNull();
     expect(result.coverage.wins).toBe(1);
     expect(result.coverage.ties).toBe(1);
+  });
+});
+// ---------------------------------------------------------------------------
+// R5: paired uncertainty reuses the common T5 partitioning core
+// (protocol -> source/repository -> typed relation -> disclosed Task fallback)
+// ---------------------------------------------------------------------------
+
+describe("computePairedEvidence — common T5 partitioning core (R5)", () => {
+  it("honors source/repository grouping before family relations for paired units", () => {
+    // Two tasks in the SAME family, single compatible cohort, but observed
+    // under DIFFERENT source repositories. The common T5 policy groups by
+    // source/repository before family relations, so the paired resampling
+    // units must be repository_group units (one per source), NOT a single
+    // task_family_relation unit that ignores the source boundary.
+    const assignments = [
+      {
+        id: "asg-t1",
+        taskId: "t-src-1",
+        taskVersion: 1,
+        familyId: "fam-shared",
+        isPrimary: true,
+        createdAt: T0,
+        revision: 1,
+        archivedAt: null,
+      },
+      {
+        id: "asg-t2",
+        taskId: "t-src-2",
+        taskVersion: 1,
+        familyId: "fam-shared",
+        isPrimary: true,
+        createdAt: T0,
+        revision: 1,
+        archivedAt: null,
+      },
+    ];
+    const a = makeSelection(
+      [
+        makeCell({
+          taskId: "t-src-1",
+          taskInstanceId: "i-1",
+          score: 5,
+          sourceResultId: "src-batch-1",
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "t-src-2",
+          taskInstanceId: "i-2",
+          score: 5,
+          sourceResultId: "src-batch-2",
+          configuration: EXACT_ALPHA,
+        }),
+      ],
+      EXACT_ALPHA,
+    );
+    const b = makeSelection(
+      [
+        makeCell({
+          taskId: "t-src-1",
+          taskInstanceId: "i-1",
+          score: 1,
+          sourceResultId: "src-batch-1",
+          configuration: EXACT_BETA,
+        }),
+        makeCell({
+          taskId: "t-src-2",
+          taskInstanceId: "i-2",
+          score: 1,
+          sourceResultId: "src-batch-2",
+          configuration: EXACT_BETA,
+        }),
+      ],
+      EXACT_BETA,
+    );
+    const result = computePairedEvidence(
+      pairedInput(a, b, { metric: "judged_score" }, { taskFamilyAssignments: assignments }),
+    );
+    const res = result.uncertaintyResolution!;
+    expect(res.unitCount).toBe(2);
+    expect(res.units.every((u) => u.kind === "repository_group")).toBe(true);
+  });
+
+  it("still groups same-family tasks into one unit when they share a single source", () => {
+    // Same family AND same single source -> step 2 (repository) is a no-op ->
+    // step 3 (family relation) groups them into one task_family_relation unit.
+    const assignments = [
+      {
+        id: "asg-t1",
+        taskId: "t-fam-1",
+        taskVersion: 1,
+        familyId: "fam-one",
+        isPrimary: true,
+        createdAt: T0,
+        revision: 1,
+        archivedAt: null,
+      },
+      {
+        id: "asg-t2",
+        taskId: "t-fam-2",
+        taskVersion: 1,
+        familyId: "fam-one",
+        isPrimary: true,
+        createdAt: T0,
+        revision: 1,
+        archivedAt: null,
+      },
+    ];
+    const a = makeSelection(
+      [
+        makeCell({
+          taskId: "t-fam-1",
+          taskInstanceId: "i-1",
+          score: 5,
+          sourceResultId: "src-shared",
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "t-fam-2",
+          taskInstanceId: "i-2",
+          score: 5,
+          sourceResultId: "src-shared",
+          configuration: EXACT_ALPHA,
+        }),
+      ],
+      EXACT_ALPHA,
+    );
+    const b = makeSelection(
+      [
+        makeCell({
+          taskId: "t-fam-1",
+          taskInstanceId: "i-1",
+          score: 1,
+          sourceResultId: "src-shared",
+          configuration: EXACT_BETA,
+        }),
+        makeCell({
+          taskId: "t-fam-2",
+          taskInstanceId: "i-2",
+          score: 1,
+          sourceResultId: "src-shared",
+          configuration: EXACT_BETA,
+        }),
+      ],
+      EXACT_BETA,
+    );
+    const result = computePairedEvidence(
+      pairedInput(a, b, { metric: "judged_score" }, { taskFamilyAssignments: assignments }),
+    );
+    const res = result.uncertaintyResolution!;
+    expect(res.unitCount).toBe(1);
+    expect(res.units[0]!.kind).toBe("task_family_relation");
   });
 });

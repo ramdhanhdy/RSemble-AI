@@ -20,6 +20,12 @@
 // the top-level scalar fields stay null / zero so no cross-cohort synthetic
 // scalar is ever produced.
 //
+// Shared dependency resolution (R5): paired uncertainty reuses the common
+// pure T5 partitioning core (`partitionUncertaintyUnits`) — there is no
+// reduced T6-specific resolver. Per cohort, the comparable tasks are fed to
+// the same protocol -> source/repository -> typed Task relation -> disclosed
+// Task fallback policy as the uncertainty resolver.
+//
 // Contract (Child 07 spec §6.5, plan Task 6):
 //  - intersection only: a task participates only when both selections have
 //    at least one active observation eligible for paired_model_comparison.
@@ -44,8 +50,8 @@
 //  - deterministic, permutation-invariant; never mutates inputs.
 //
 // This module does not implement aggregation, claims, cache, UI, or a rollup
-// store. It composes the existing uncertainty resolver unit shape and the
-// cluster bootstrap; it does not re-pool observations across configurations.
+// store. It composes the common T5 partitioning core and the cluster
+// bootstrap; it does not re-pool observations across configurations.
 // =============================================================================
 
 import { canonicalJsonString, hashArtifactContent } from "../evaluations/protocol-fingerprint";
@@ -58,8 +64,8 @@ import {
 import type { ProfileExactSelection, ProfileSelectedCell } from "./profile-observation-selection";
 import type { CommensurateRubricMapping, CompatibleVerifierDefinition } from "./family-aggregation";
 import {
-  UNCERTAINTY_RULE_VERSION,
-  type UncertaintyUnit,
+  partitionUncertaintyUnits,
+  type PartitionInput,
   type UncertaintyUnitResolution,
 } from "./uncertainty-unit-resolver";
 import { bootstrapTaskClusters, type BootstrapResult } from "./cluster-bootstrap";
@@ -345,189 +351,45 @@ function classifyOutcome(delta: number, epsilon: number): PairedOutcome {
   return "tie";
 }
 
-// --- Dependency-aware paired unit assignment -----------------------------------
-
-function buildFamilyIndex(assignments: readonly TaskFamilyAssignment[]): Map<string, string[]> {
-  const taskFamily = new Map<string, string>();
-  for (const assign of assignments) {
-    if (!assign.isPrimary) continue;
-    taskFamily.set(assign.taskId, assign.familyId);
-  }
-  const index = new Map<string, string[]>();
-  for (const [taskId, familyId] of taskFamily) {
-    const tasks = index.get(familyId);
-    if (tasks) tasks.push(taskId);
-    else index.set(familyId, [taskId]);
-  }
-  return index;
-}
-
-/**
- * Group comparable shared tasks into dependency-aware resampling units using
- * the same family-membership + declared-relation union-find as the uncertainty
- * resolver (T5). Tasks linked by family membership or a declared relation form
- * one task_family_relation unit; unlinked tasks become task_identity units.
- * Known-related Tasks are therefore never treated as independent.
- */
-function resolvePairedUnits(
-  comparableTaskIds: readonly string[],
-  taskFamilyAssignments: readonly TaskFamilyAssignment[],
-  taskFamilyRelations: readonly TaskFamilyRelation[],
-  taskToObservationIds: ReadonlyMap<string, string[]>,
-): UncertaintyUnitResolution {
-  const disclosures: string[] = [];
-
-  if (comparableTaskIds.length === 0) {
-    return {
-      uncertaintyRuleVersion: UNCERTAINTY_RULE_VERSION,
-      assignmentDigest: computeAssignmentDigest([]),
-      units: [],
-      unitCount: 0,
-      fallbackAssumption: null,
-      disclosures: ["No comparable shared tasks — no paired resampling units."],
-    };
-  }
-
-  const familyIndex = buildFamilyIndex(taskFamilyAssignments);
-
-  const taskToRoot = new Map<string, string>();
-  const rootToTasks = new Map<string, string[]>();
-
-  function findRoot(taskId: string): string {
-    const existing = taskToRoot.get(taskId);
-    if (!existing) {
-      taskToRoot.set(taskId, taskId);
-      rootToTasks.set(taskId, [taskId]);
-      return taskId;
-    }
-    if (existing !== taskId) {
-      const root = findRoot(existing);
-      taskToRoot.set(taskId, root);
-      return root;
-    }
-    return taskId;
-  }
-
-  function union(a: string, b: string): void {
-    const rootA = findRoot(a);
-    const rootB = findRoot(b);
-    if (rootA === rootB) return;
-    const tasksA = rootToTasks.get(rootA) ?? [];
-    const tasksB = rootToTasks.get(rootB) ?? [];
-    if (tasksA.length >= tasksB.length) {
-      for (const t of tasksB) taskToRoot.set(t, rootA);
-      rootToTasks.set(rootA, [...tasksA, ...tasksB]);
-      rootToTasks.delete(rootB);
-    } else {
-      for (const t of tasksA) taskToRoot.set(t, rootB);
-      rootToTasks.set(rootB, [...tasksB, ...tasksA]);
-      rootToTasks.delete(rootA);
-    }
-  }
-
-  // Union tasks in the same family (only over comparable tasks present).
-  const present = new Set(comparableTaskIds);
-  for (const [, taskIds] of familyIndex) {
-    const presentInFamily = taskIds.filter((t) => present.has(t));
-    if (presentInFamily.length > 1) {
-      const first = presentInFamily[0]!;
-      for (let i = 1; i < presentInFamily.length; i++) {
-        union(first, presentInFamily[i]!);
-      }
-    }
-  }
-
-  // Union tasks linked by declared family relations.
-  for (const rel of taskFamilyRelations) {
-    const familyATasks = (familyIndex.get(rel.fromFamilyId) ?? []).filter((t) => present.has(t));
-    const familyBTasks = (familyIndex.get(rel.toFamilyId) ?? []).filter((t) => present.has(t));
-    if (familyATasks.length > 0 && familyBTasks.length > 0) {
-      union(familyATasks[0]!, familyBTasks[0]!);
-    }
-  }
-
-  const units: UncertaintyUnit[] = [];
-  const grouped = new Set<string>();
-
-  // Units with >1 task -> task_family_relation.
-  for (const [, tasks] of rootToTasks) {
-    if (tasks.length > 1) {
-      const sorted = [...tasks].sort();
-      const observationIds = sorted.flatMap((t) => taskToObservationIds.get(t) ?? []).sort();
-      units.push({
-        unitId: `unit:task_family_relation:${sorted.join(",")}`,
-        kind: "task_family_relation",
-        taskIds: sorted,
-        observationIds,
-        cellKeys: [],
-        splitReason: "Tasks are linked by family membership or declared relation",
-      });
-      for (const t of sorted) grouped.add(t);
-    }
-  }
-
-  // Remaining ungrouped tasks -> task_identity units.
-  let hasFallback = false;
-  for (const taskId of comparableTaskIds) {
-    if (grouped.has(taskId)) continue;
-    hasFallback = true;
-    const observationIds = (taskToObservationIds.get(taskId) ?? []).slice().sort();
-    units.push({
-      unitId: `unit:task_identity:${taskId}`,
-      kind: "task_identity",
-      taskIds: [taskId],
-      observationIds,
-      cellKeys: [],
-      splitReason: "No higher-order dependency metadata — task identity fallback",
-    });
-  }
-
-  units.sort((a, b) => a.unitId.localeCompare(b.unitId));
-
-  const fallbackAssumption = hasFallback
-    ? "Task identity is the explicit fallback assumption for ungrouped shared tasks"
-    : null;
-  if (hasFallback) {
-    disclosures.push(
-      "Some shared tasks have no higher-order dependency metadata — using task identity fallback for paired resampling units.",
-    );
-  }
-  if (units.some((u) => u.kind === "task_family_relation")) {
-    disclosures.push(
-      "Known-related shared tasks grouped into one dependency-aware resampling unit — never treated as independent.",
-    );
-  }
-
-  return {
-    uncertaintyRuleVersion: UNCERTAINTY_RULE_VERSION,
-    assignmentDigest: computeAssignmentDigest(units),
-    units,
-    unitCount: units.length,
-    fallbackAssumption,
-    disclosures,
-  };
-}
-
-function computeAssignmentDigest(units: readonly UncertaintyUnit[]): string {
-  const payload = units.map((u) => ({
-    unitId: u.unitId,
-    kind: u.kind,
-    taskIds: [...u.taskIds].sort(),
-    observationIds: [...u.observationIds].sort(),
-  }));
-  return hashArtifactContent(canonicalJsonString(payload));
-}
-
-// --- Cohort aggregation (R4) ---------------------------------------------------
+// --- Cohort aggregation (R4) + shared dependency core (R5) ---------------------
 
 interface CohortAggregation {
   readonly cohortId: string;
+  /** Cohort protocol fingerprint (constant for every cell in the cohort). */
+  readonly protocolFingerprint: string;
   readonly taskDeltas: { taskId: string; delta: number }[];
   readonly taskIds: string[];
-  readonly taskToObservationIds: Map<string, string[]>;
+  /** Distinct source repositories observed for each task within this cohort. */
+  readonly taskSources: Map<string, Set<string>>;
   wins: number;
   ties: number;
   losses: number;
+}
+
+/**
+ * Build dependency-aware resampling units for one cohort by feeding the
+ * comparable tasks to the COMMON T5 partitioning core (R5). Each task
+ * contributes one partition row whose source key is the sorted set of source
+ * repositories it was observed under in this cohort, so a task always lands in
+ * exactly one unit while the core still honors protocol -> source/repository
+ * -> typed relation -> disclosed Task fallback.
+ */
+function resolveCohortUnits(
+  agg: CohortAggregation,
+  taskFamilyAssignments: readonly TaskFamilyAssignment[],
+  taskFamilyRelations: readonly TaskFamilyRelation[],
+): UncertaintyUnitResolution {
+  const rows: PartitionInput[] = agg.taskIds.map((taskId) => {
+    const sources = [...(agg.taskSources.get(taskId) ?? new Set<string>())].sort();
+    return {
+      protocolFingerprint: agg.protocolFingerprint,
+      sourceResultId: sources.join("|") || "source:none",
+      taskId,
+      observationId: taskId,
+      cellKey: `paired:${taskId}`,
+    };
+  });
+  return partitionUncertaintyUnits(rows, taskFamilyRelations, taskFamilyAssignments);
 }
 
 function bootstrapCohort(
@@ -537,11 +399,10 @@ function bootstrapCohort(
   if (agg.taskIds.length === 0) {
     return { bootstrap: null, resolution: null };
   }
-  const resolution = resolvePairedUnits(
-    agg.taskIds,
+  const resolution = resolveCohortUnits(
+    agg,
     input.uncertainty.taskFamilyAssignments,
     input.uncertainty.taskFamilyRelations,
-    agg.taskToObservationIds,
   );
   const taskDeltaMap = new Map<string, number>(agg.taskDeltas.map((d) => [d.taskId, d.delta]));
   const unitValues = new Map<string, number>();
@@ -573,10 +434,11 @@ function bootstrapCohort(
 /**
  * Compute a paired shared-task comparison between two exact-configuration
  * selections. Pure: never mutates the inputs. Deterministic and
- * permutation-invariant. Comparable deltas are cohort-stratified (R4).
+ * permutation-invariant. Comparable deltas are cohort-stratified (R4) and
+ * dependency units come from the common T5 partitioning core (R5).
  */
 export function computePairedEvidence(input: PairedComparisonInput): PairedComparisonResult {
-  const { selectionA, selectionB, options, uncertainty } = input;
+  const { selectionA, selectionB, options } = input;
   const metric = options.metric;
   const epsilon = options.epsilon ?? DEFAULT_EPSILON;
   const rubricMappings = options.commensurateRubricMappings ?? [];
@@ -830,14 +692,15 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
         disclosure: parts.length > 0 ? parts.join(" ") : null,
       });
 
-      // Accumulate per-cohort aggregation.
+      // Accumulate per-cohort aggregation for dependency-aware bootstrap.
       let agg = cohortAggs.get(cohortId);
       if (!agg) {
         agg = {
           cohortId,
+          protocolFingerprint: compatibleA[0]!.active.observation.protocolFingerprint,
           taskDeltas: [],
           taskIds: [],
-          taskToObservationIds: new Map<string, string[]>(),
+          taskSources: new Map<string, Set<string>>(),
           wins: 0,
           ties: 0,
           losses: 0,
@@ -846,7 +709,10 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
       }
       agg.taskDeltas.push({ taskId, delta });
       agg.taskIds.push(taskId);
-      agg.taskToObservationIds.set(taskId, [...obsIdsA, ...obsIdsB]);
+      const sources = agg.taskSources.get(taskId) ?? new Set<string>();
+      for (const c of compatibleA) sources.add(c.active.observation.sourceResultId);
+      for (const c of compatibleB) sources.add(c.active.observation.sourceResultId);
+      agg.taskSources.set(taskId, sources);
       if (outcome === "win") agg.wins += 1;
       else if (outcome === "tie") agg.ties += 1;
       else agg.losses += 1;
@@ -865,7 +731,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
     return ca.localeCompare(cb);
   });
 
-  // 4. Cohort-stratified results (R4).
+  // 4. Cohort-stratified results (R4) using the common dependency core (R5).
   const sortedCohortIds = [...cohortAggs.keys()].sort();
   const cohortResults: PairedCohortResult[] = [];
   for (const cohortId of sortedCohortIds) {
@@ -896,8 +762,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
   // 5. Top-level scalars: only when a single cohort is involved. With
   //    multiple cohorts the top-level mean / bootstrap / W-T-L stay null / 0
   //    so no cross-cohort synthetic scalar is ever produced (R4).
-  const singleCohort =
-    cohortResults.length === 1 ? cohortResults[0]! : null;
+  const singleCohort = cohortResults.length === 1 ? cohortResults[0]! : null;
 
   const meanDelta = singleCohort ? singleCohort.meanDelta : null;
   const bootstrap = singleCohort ? singleCohort.bootstrap : null;
