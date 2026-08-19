@@ -1078,13 +1078,17 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
         });
       }
     }
-    if (s.status === "completed") {
-      const playbook = s.reportRef === null ? undefined : playbooksById.get(s.reportRef);
+    if (s.status === "completed" && s.reportRef === null) {
+      errors.push({
+        field: `lab.studies[${i}].reportRef`,
+        message: "completed study reportRef must identify a persisted same-study policy playbook.",
+      });
+    } else if (s.reportRef !== null) {
+      const playbook = playbooksById.get(s.reportRef);
       if (!playbook || playbook.playbook.studyId !== s.id) {
         errors.push({
           field: `lab.studies[${i}].reportRef`,
-          message:
-            "completed study reportRef must identify a persisted same-study policy playbook.",
+          message: "non-null reportRef must identify a persisted same-study policy playbook.",
         });
       }
     }

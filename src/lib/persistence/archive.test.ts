@@ -50,7 +50,10 @@ import {
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
 import * as fx from "./archive-v2-fixtures";
-import { ensureFusionToResearchLabMigration } from "../migrations/fusion-to-research-lab";
+import {
+  ensureFusionToResearchLabMigration,
+  getFusionToResearchLabReceipt,
+} from "../migrations/fusion-to-research-lab";
 import { migratedInputSnapshotRef } from "./comparison-result-migration";
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "./run-types";
@@ -2038,6 +2041,34 @@ function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
 }
 
 describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
+  it("restores a v1 archive into a bootstrap-receipt database, then reuses identical rows and still rejects collisions", async () => {
+    await ensureFusionToResearchLabMigration(db);
+    const archive = populatedArchive();
+    const preview = await previewWorkbenchArchive(db, archive, {
+      sourceLabel: "legacy-v1.json",
+    });
+    expect(preview.format).toBe("v1");
+    expect(preview.collisions).toEqual([]);
+    expect(preview.create.length).toBeGreaterThan(0);
+    expect(await getFusionToResearchLabReceipt(db)).not.toBeNull();
+    expect(await db.runDetails.count()).toBe(0);
+
+    await importWorkbenchArchive(db, archive);
+    expect(await db.runDetails.count()).toBe(1);
+    expect(await db.suites.count()).toBe(1);
+
+    const reuse = await previewWorkbenchArchive(db, archive, { sourceLabel: "legacy-v1.json" });
+    expect(reuse.collisions).toEqual([]);
+    expect(reuse.reuse.length).toBeGreaterThan(0);
+
+    const mutated = populatedArchive();
+    mutated.suites[0] = makeSuite("suite-1", "Renamed after restore");
+    const collide = await previewWorkbenchArchive(db, mutated, { sourceLabel: "legacy-v1.json" });
+    expect(collide.collisions.some((c) => c.collection === "suites" && c.key === "suite-1")).toBe(
+      true,
+    );
+  });
+
   it("classifies every v2 entity as create/reuse/collision/invalid with deterministic counts and no writes", async () => {
     const artifactBytes = new TextEncoder().encode("reuse-me");
     // Pre-seed ONE canonically identical suite so the preview exercises reuse.

@@ -37,7 +37,7 @@ import {
   validateArchiveV3,
   type WorkbenchArchiveV3,
 } from "./archive-v3-types";
-import { seedCompleteV3Corpus } from "./archive-v3-fixtures";
+import { seedCompleteV3Corpus, makePolicyStudyRecord } from "./archive-v3-fixtures";
 import * as fx from "./archive-v2-fixtures";
 import {
   commitPreviewWorkbenchArchiveV3,
@@ -45,7 +45,7 @@ import {
   importWorkbenchArchiveAuto,
   previewWorkbenchArchive,
 } from "./archive";
-import { RSembleEvaluationDB } from "./database";
+import { RSembleEvaluationDB, createDatabase } from "./database";
 import {
   getFusionToResearchLabReceipt,
   fusionToResearchLabReceiptKey,
@@ -58,6 +58,34 @@ async function freshDb(name: string): Promise<RSembleEvaluationDB> {
   const db = new RSembleEvaluationDB(`v3-test-${name}-${Math.random().toString(36).slice(2)}`);
   await db.open();
   return db;
+}
+
+const EMPTY_FUSION_COUNTS = {
+  fusionRecipes: 0,
+  poolManifests: 0,
+  fusionStudies: 0,
+  fusionTrials: 0,
+  fusionAttempts: 0,
+  fusionObservations: 0,
+  fusionPlaybooks: 0,
+} as const;
+
+const EMPTY_CONVERTED_COUNTS = {
+  labRecipeRecords: 0,
+  labRecipeVersions: 0,
+  modelPoolRecords: 0,
+  modelPoolVersions: 0,
+  studies: 0,
+  studyTrials: 0,
+  studyAttempts: 0,
+  studyObservations: 0,
+  policyPlaybooks: 0,
+} as const;
+
+async function productionFreshInstall(tag: string) {
+  const handle = createDatabase(`v3-prod-${tag}-${Math.random().toString(36).slice(2)}`);
+  await handle.ready;
+  return handle;
 }
 
 describe("archive v3 integration — complete canonical corpus round trip (REV-1)", () => {
@@ -178,7 +206,63 @@ describe("archive v3 integration — persisted playbook identity and cutover rec
     db.close();
   });
 
-  it("classifies a byte-different cutover receipt as a collision and leaves the stored receipt unchanged", async () => {
+  it("replaces a production fresh-install bootstrap receipt when the target is otherwise pristine", async () => {
+    const source = await freshDb("bootstrap-replace-source");
+    const seeded = await seedCompleteV3Corpus(source);
+    const live = await source.studies.get("study-1");
+    if (!live) throw new Error("seeded study-1 missing");
+    const archivedRecord = {
+      ...(live.record as Record<string, unknown>),
+      status: "archived",
+      archivedAt: 2_000,
+    };
+    await source.studies.put({
+      ...live,
+      record: archivedRecord,
+      status: "archived",
+      archivedAt: 2_000,
+    });
+    const exported = await exportWorkbenchArchiveV3(source, { now: DETERMINISTIC_NOW });
+    expect(exported.lab.studies[0]?.status).toBe("archived");
+    expect(exported.lab.studies[0]?.reportRef).toBe("pb:sha256:" + "f".repeat(64));
+
+    const handle = await productionFreshInstall("bootstrap-replace-target");
+    const target = handle.db;
+    const bootstrap = await getFusionToResearchLabReceipt(target);
+    expect(bootstrap).not.toBeNull();
+    expect(bootstrap).not.toEqual(exported.lab.cutoverReceipt);
+    expect(await target.studies.count()).toBe(0);
+
+    const preview = await previewWorkbenchArchive(target, exported);
+    expect(preview.collisions).toEqual([]);
+    expect(
+      preview.create.some(
+        (c) => c.collection === "lab.cutoverReceipt" && c.key === fusionToResearchLabReceiptKey,
+      ),
+    ).toBe(true);
+
+    const commit = await commitPreviewWorkbenchArchiveV3(target, preview);
+    expect(commit.created).toContain(fusionToResearchLabReceiptKey);
+    expect(await getFusionToResearchLabReceipt(target)).toEqual(seeded.lab.cutoverReceipt);
+    expect((await target.studies.get("study-1"))?.record).toMatchObject({
+      status: "archived",
+      archivedAt: 2_000,
+      reportRef: "pb:sha256:" + "f".repeat(64),
+    });
+
+    const reuse = await previewWorkbenchArchive(target, exported);
+    expect(reuse.collisions).toEqual([]);
+    expect(
+      reuse.reuse.some(
+        (c) => c.collection === "lab.cutoverReceipt" && c.key === fusionToResearchLabReceiptKey,
+      ),
+    ).toBe(true);
+
+    source.close();
+    target.close();
+  });
+
+  it("rejects a byte-different meaningful cutover receipt even on an empty target", async () => {
     const source = await freshDb("receipt-collision-source");
     await seedCompleteV3Corpus(source);
     const exported = await exportWorkbenchArchiveV3(source, { now: DETERMINISTIC_NOW });
@@ -186,36 +270,10 @@ describe("archive v3 integration — persisted playbook identity and cutover rec
     const target = await freshDb("receipt-collision-target");
     const storedReceipt = createDeterministicReceipt({
       generatedAt: 2000,
-      sourceCounts: {
-        fusionRecipes: 0,
-        poolManifests: 0,
-        fusionStudies: 0,
-        fusionTrials: 0,
-        fusionAttempts: 0,
-        fusionObservations: 0,
-        fusionPlaybooks: 0,
-      },
-      convertedCounts: {
-        labRecipeRecords: 0,
-        labRecipeVersions: 0,
-        modelPoolRecords: 0,
-        modelPoolVersions: 0,
-        studies: 0,
-        studyTrials: 0,
-        studyAttempts: 0,
-        studyObservations: 0,
-        policyPlaybooks: 0,
-      },
-      discardedCounts: {
-        fusionRecipes: 0,
-        poolManifests: 0,
-        fusionStudies: 0,
-        fusionTrials: 0,
-        fusionAttempts: 0,
-        fusionObservations: 0,
-        fusionPlaybooks: 0,
-      },
-      decisions: [],
+      sourceCounts: { ...EMPTY_FUSION_COUNTS, fusionStudies: 1 },
+      convertedCounts: { ...EMPTY_CONVERTED_COUNTS, studies: 1 },
+      discardedCounts: EMPTY_FUSION_COUNTS,
+      decisions: [{ store: "fusionStudies", id: "legacy-study-1", status: "lossless_convert" }],
     });
     await target.storageMeta.put({
       key: fusionToResearchLabReceiptKey,
@@ -226,6 +284,40 @@ describe("archive v3 integration — persisted playbook identity and cutover rec
     expect(preview.collisions.some((c) => c.collection === "lab.cutoverReceipt")).toBe(true);
     await expect(commitPreviewWorkbenchArchiveV3(target, preview)).rejects.toThrow(/collision/i);
     expect(await getFusionToResearchLabReceipt(target)).toEqual(storedReceipt);
+
+    source.close();
+    target.close();
+  });
+
+  it("rejects replacing a bootstrap receipt when the production target already has workbench rows", async () => {
+    const source = await freshDb("bootstrap-dirty-source");
+    await seedCompleteV3Corpus(source);
+    const exported = await exportWorkbenchArchiveV3(source, { now: DETERMINISTIC_NOW });
+
+    const handle = await productionFreshInstall("bootstrap-dirty-target");
+    const target = handle.db;
+    const bootstrap = await getFusionToResearchLabReceipt(target);
+    expect(bootstrap).not.toBeNull();
+    const local = makePolicyStudyRecord("local-study");
+    local.status = "draft";
+    local.reportRef = null;
+    await target.studies.put({
+      id: local.id,
+      record: local,
+      kind: local.kind,
+      status: local.status,
+      claimLevel: local.claimLevel,
+      confirmationOf: local.confirmationOf,
+      revision: local.revision,
+      createdAt: local.createdAt,
+      updatedAt: local.updatedAt,
+      archivedAt: local.archivedAt,
+    });
+
+    const preview = await previewWorkbenchArchive(target, exported);
+    expect(preview.collisions.some((c) => c.collection === "lab.cutoverReceipt")).toBe(true);
+    await expect(commitPreviewWorkbenchArchiveV3(target, preview)).rejects.toThrow(/collision/i);
+    expect(await getFusionToResearchLabReceipt(target)).toEqual(bootstrap);
 
     source.close();
     target.close();

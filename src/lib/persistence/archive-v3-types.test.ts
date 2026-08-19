@@ -307,6 +307,40 @@ describe("validateArchiveV3 — reference graph validation", () => {
     expect(result.errors.some((e) => /reportRef|playbook/i.test(e.message))).toBe(true);
   });
 
+  it("rejects a completed study whose reportRef is null", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].status = "completed";
+    fixture.lab.studies[0].reportRef = null;
+    fixture.lab.studies[0].archivedAt = null;
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => /reportRef|lab\.studies/i.test(`${e.field} ${e.message}`)),
+    ).toBe(true);
+  });
+
+  it("accepts an archived study whose retained reportRef still names a same-study playbook", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].status = "archived";
+    fixture.lab.studies[0].archivedAt = 2_000;
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("rejects an archived study whose retained reportRef does not name a same-study playbook", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].status = "archived";
+    fixture.lab.studies[0].archivedAt = 2_000;
+    fixture.lab.studies[0].reportRef = "pb:sha256:" + "a".repeat(64);
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /reportRef|playbook/i.test(e.message))).toBe(true);
+  });
+
   it("rejects when recipe version digest does not match recomputed digest", () => {
     const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
     fixture.lab.recipeVersions[0].digest =

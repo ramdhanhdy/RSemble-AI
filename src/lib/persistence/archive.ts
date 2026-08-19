@@ -202,6 +202,7 @@ import {
   fusionToResearchLabReceiptKey,
   getFusionToResearchLabReceipt,
 } from "../migrations/fusion-to-research-lab";
+import { isZeroCorpusBootstrapReceipt } from "../migrations/fusion-to-research-lab-receipt";
 // --- Archive shape -------------------------------------------------------------
 
 export interface WorkbenchArchiveV1 {
@@ -3514,6 +3515,50 @@ async function previewV2(
   throwIfAborted();
   return finalizePreview("v2", options.sourceLabel ?? "archive", archive, buckets);
 }
+
+/** True when the canonical workbench tables are empty aside from storageMeta
+ *  (which holds the fresh-install bootstrap receipt). */
+async function isPristineCanonicalWorkbench(db: RSembleEvaluationDB): Promise<boolean> {
+  const counts = await Promise.all([
+    db.runSummaries.count(),
+    db.runDetails.count(),
+    db.profiles.count(),
+    db.profileVersions.count(),
+    db.suites.count(),
+    db.experiments.count(),
+    db.tasks.count(),
+    db.taskVersions.count(),
+    db.taskArtifacts.count(),
+    db.taskArtifactBytes.count(),
+    db.taskInstances.count(),
+    db.taskFamilies.count(),
+    db.taskFamilyAssignments.count(),
+    db.taskFamilyRelations.count(),
+    db.taskFacetAnnotations.count(),
+    db.taskMigrationCrosswalk.count(),
+    db.taskSets.count(),
+    db.taskSetVersions.count(),
+    db.taskSetMaterializations.count(),
+    db.taskSetOwnershipCrosswalk.count(),
+    db.modelConfigurations.count(),
+    db.observations.count(),
+    db.evidenceDecisions.count(),
+    db.evidenceIndexJobs.count(),
+    db.verifierOutcomes.count(),
+    db.comparisonResults.count(),
+    db.labRecipeRecords.count(),
+    db.labRecipeVersions.count(),
+    db.modelPoolRecords.count(),
+    db.modelPoolVersions.count(),
+    db.studies.count(),
+    db.studyTrials.count(),
+    db.studyAttempts.count(),
+    db.studyObservations.count(),
+    db.policyPlaybooks.count(),
+  ]);
+  return counts.every((count) => count === 0);
+}
+
 async function previewV3(
   db: RSembleEvaluationDB,
   archive: WorkbenchArchiveV3,
@@ -4267,6 +4312,13 @@ async function previewV3(
       buckets.create.push(previewKey("lab.cutoverReceipt", fusionToResearchLabReceiptKey));
     } else if (canon(existing.value) === canon(incomingReceipt)) {
       buckets.reuse.push(previewKey("lab.cutoverReceipt", fusionToResearchLabReceiptKey));
+    } else if (
+      isZeroCorpusBootstrapReceipt(existing.value) &&
+      (await isPristineCanonicalWorkbench(db))
+    ) {
+      // Fresh production install: replace the auto-generated zero-corpus
+      // bootstrap receipt inside the later atomic commit.
+      buckets.create.push(previewKey("lab.cutoverReceipt", fusionToResearchLabReceiptKey));
     } else {
       buckets.collisions.push({
         collection: "lab.cutoverReceipt",
@@ -5662,10 +5714,16 @@ export async function commitPreviewWorkbenchArchiveV3(
             );
         }
         if (existing !== undefined) {
-          throw new StorageError(
-            "conflict",
-            `Import collision detected during write transaction on ${entity.collection}[${entity.key}] — import aborted before write.`,
-          );
+          const bootstrapReplace =
+            entity.collection === "lab.cutoverReceipt" &&
+            isZeroCorpusBootstrapReceipt((existing as { value?: unknown }).value) &&
+            (await isPristineCanonicalWorkbench(db));
+          if (!bootstrapReplace) {
+            throw new StorageError(
+              "conflict",
+              `Import collision detected during write transaction on ${entity.collection}[${entity.key}] — import aborted before write.`,
+            );
+          }
         }
       }
 

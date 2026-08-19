@@ -16,6 +16,7 @@ import {
   createDeterministicReceipt,
   isFusionToResearchLabReceipt,
   isRecordDecision,
+  isZeroCorpusBootstrapReceipt,
   type DiscardReasonCode,
   type FusionToResearchLabReceipt,
   type RecordDecision,
@@ -339,5 +340,72 @@ describe("Fusion → Research Lab migration receipt", () => {
       ],
     };
     expect(isFusionToResearchLabReceipt(tampered2)).toBe(false);
+  });
+});
+
+describe("isZeroCorpusBootstrapReceipt", () => {
+  const emptyFusion = {
+    fusionRecipes: 0,
+    poolManifests: 0,
+    fusionStudies: 0,
+    fusionTrials: 0,
+    fusionAttempts: 0,
+    fusionObservations: 0,
+    fusionPlaybooks: 0,
+  };
+  const emptyConverted = {
+    labRecipeRecords: 0,
+    labRecipeVersions: 0,
+    modelPoolRecords: 0,
+    modelPoolVersions: 0,
+    studies: 0,
+    studyTrials: 0,
+    studyAttempts: 0,
+    studyObservations: 0,
+    policyPlaybooks: 0,
+  };
+
+  it("accepts the auto-generated zero-corpus fresh-install receipt", () => {
+    const receipt = createDeterministicReceipt({
+      generatedAt: 1,
+      sourceCounts: emptyFusion,
+      convertedCounts: emptyConverted,
+      discardedCounts: emptyFusion,
+      decisions: [],
+    });
+    expect(isZeroCorpusBootstrapReceipt(receipt)).toBe(true);
+  });
+
+  it("rejects a receipt that converted or discarded any Fusion row", () => {
+    const converted = createDeterministicReceipt({
+      generatedAt: 1,
+      sourceCounts: { ...emptyFusion, fusionStudies: 1 },
+      convertedCounts: { ...emptyConverted, studies: 1 },
+      discardedCounts: emptyFusion,
+      decisions: [{ store: "fusionStudies", id: "legacy-study-1", status: "lossless_convert" }],
+    });
+    expect(isZeroCorpusBootstrapReceipt(converted)).toBe(false);
+  });
+
+  it("rejects a zero-count receipt that still carries a note or aborted status", () => {
+    const noted = createDeterministicReceipt({
+      generatedAt: 1,
+      sourceCounts: emptyFusion,
+      convertedCounts: emptyConverted,
+      discardedCounts: emptyFusion,
+      decisions: [],
+      note: "manual preview",
+    });
+    expect(isZeroCorpusBootstrapReceipt(noted)).toBe(false);
+
+    const aborted = createDeterministicReceipt({
+      generatedAt: 1,
+      sourceCounts: emptyFusion,
+      convertedCounts: emptyConverted,
+      discardedCounts: emptyFusion,
+      decisions: [],
+      status: "preview_aborted",
+    });
+    expect(isZeroCorpusBootstrapReceipt(aborted)).toBe(false);
   });
 });

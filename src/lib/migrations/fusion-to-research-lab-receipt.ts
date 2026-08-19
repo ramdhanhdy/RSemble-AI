@@ -209,6 +209,39 @@ export function isFusionToResearchLabReceipt(v: unknown): v is FusionToResearchL
   return true;
 }
 
+/** True when the receipt is the zero-corpus bootstrap written by
+ *  `ensureFusionToResearchLabMigration` on a fresh v13 install. */
+export function isZeroCorpusBootstrapReceipt(v: unknown): v is FusionToResearchLabReceipt {
+  if (!isFusionToResearchLabReceipt(v)) return false;
+  if (v.status !== "preview_completed") return false;
+  if (v.note !== undefined) return false;
+  if (v.decisions.length !== 0) return false;
+  if (
+    v.totalSourceRecords !== 0 ||
+    v.totalConvertedRecords !== 0 ||
+    v.totalDiscardedRecords !== 0
+  ) {
+    return false;
+  }
+  for (const store of FUSION_STORE_NAMES) {
+    if (v.sourceCounts[store] !== 0 || v.discardedCounts[store] !== 0) return false;
+  }
+  if (
+    v.convertedCounts.labRecipeRecords !== 0 ||
+    v.convertedCounts.labRecipeVersions !== 0 ||
+    v.convertedCounts.modelPoolRecords !== 0 ||
+    v.convertedCounts.modelPoolVersions !== 0 ||
+    v.convertedCounts.studies !== 0 ||
+    v.convertedCounts.studyTrials !== 0 ||
+    v.convertedCounts.studyAttempts !== 0 ||
+    v.convertedCounts.studyObservations !== 0 ||
+    v.convertedCounts.policyPlaybooks !== 0
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export interface CreateReceiptParams {
   generatedAt: number;
   sourceCounts: Record<FusionStoreName, number>;
