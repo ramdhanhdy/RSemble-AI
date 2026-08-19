@@ -1349,3 +1349,54 @@ describe("ComparisonResultRoute", () => {
     });
   });
 });
+
+describe("ComparisonResultRoute — 44x44 target rule (Plan Task 13)", () => {
+  it("keeps header, banner, and answer-copy actions at the 44px minimum height", async () => {
+    const runsRepo = new InMemoryRunRepository();
+    const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+
+    // Seed the index from a running record, then complete the source record so
+    // the revision-mismatch banner (repair action) renders alongside the
+    // completed result page (candidate answer rows).
+    const record = makeRankRecord("cmp-targets-44", {
+      status: "running",
+      completedAt: null,
+      revision: 0,
+    });
+    await seedTestRecord(runsRepo, comparisonRepo, record);
+
+    const completedRecord = makeRankRecord("cmp-targets-44", {
+      status: "completed",
+      revision: 0,
+      updatedAt: 200,
+    });
+    await runsRepo.update(completedRecord, makeSummaryFromRecord(completedRecord), 0);
+
+    const h = renderRouted(
+      <ComparisonResultRoute
+        comparisonId="cmp-targets-44"
+        comparisonRepo={comparisonRepo}
+        runRepo={runsRepo}
+        onOpenInCompare={() => undefined}
+      />,
+      ["/compare/results/cmp-targets-44"],
+    );
+    await settle();
+
+    const targets: Array<{ name: string; el: HTMLElement | null }> = [
+      { name: "Open in Compare", el: h.$("button[data-action='open-in-compare']") },
+      { name: "View exact Record", el: h.$("a[data-action='view-record']") },
+      { name: "Repair index", el: h.$("button[data-action='repair-index']") },
+      { name: "Candidate copy", el: h.$("button[aria-label^='Copy ']") },
+    ];
+    for (const { name, el } of targets) {
+      expect(el, `${name} action should render on the result page`).not.toBeNull();
+      expect(
+        el?.className.includes("min-h-[44px]"),
+        `${name} must carry the project 44px min-height target class`,
+      ).toBe(true);
+    }
+
+    cleanup(h);
+  });
+});

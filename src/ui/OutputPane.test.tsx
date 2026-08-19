@@ -652,3 +652,27 @@ describe("OutputPane recent runs", () => {
     container.remove();
   });
 });
+
+// ---------------------------------------------------------------------------
+// OutputPane — done-footer copy button 44px target (Plan Task 13)
+// ---------------------------------------------------------------------------
+
+describe("OutputPane — done-footer copy button 44px target", () => {
+  it("meets the 44px minimum height while a finished candidate streams live", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane
+        state={makeOutputPaneState({
+          running: true,
+          judgeStatus: "done",
+          judgeError: null,
+        })}
+        onRetryJudge={() => {}}
+      />,
+    );
+    // The done footer copy affordance shows during the run, before the
+    // RankResult/FuseResult summary replaces the live cards.
+    expect(html).toContain('aria-label="Copy Model A answer"');
+    const copyButton = html.match(/<button[^>]*aria-label="Copy Model A answer"[^>]*>/);
+    expect(copyButton?.[0] ?? "").toContain("min-h-[44px]");
+  });
+});
