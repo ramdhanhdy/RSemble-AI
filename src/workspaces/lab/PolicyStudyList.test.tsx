@@ -316,7 +316,8 @@ describe("PolicyStudyList — workload digest resolution at draft creation (F7)"
       id: "mat-1",
       taskSetId: "battery-alpha",
       taskSetVersion: 6,
-      protocolFingerprint: "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      protocolFingerprint:
+        "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
       snapshot: {
         taskSetId: "battery-alpha",
         taskSetVersion: 6,
@@ -329,7 +330,8 @@ describe("PolicyStudyList — workload digest resolution at draft creation (F7)"
         repeatPolicy: { kind: "none" },
         missingnessPolicy: { kind: "strict" },
         protocolDefaults: {},
-        protocolFingerprint: "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        protocolFingerprint:
+          "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
         createdAt: Date.now(),
       },
       createdAt: Date.now(),

@@ -77,7 +77,10 @@ function freshDb(tag: string): RSembleEvaluationDB {
   return db;
 }
 
-async function seedLabCorpus(db: RSembleEvaluationDB, opts: { studies: number; trials: number; observationsPerTrial: number }) {
+async function seedLabCorpus(
+  db: RSembleEvaluationDB,
+  opts: { studies: number; trials: number; observationsPerTrial: number },
+) {
   const assets = createLabAssetRepository(db);
   const studies = createStudyRepository(db);
   const T = FIXED_NOW - 10_000;
@@ -145,7 +148,17 @@ describe("performance — migration ops within declared budgets", () => {
   it(`v12 → v13 cutover upgrade of a seeded database completes under ${BUDGET_MIGRATION_CUTOVER_MS} ms`, async () => {
     const dbName = `revperf-upgrade-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const v12 = new Dexie(dbName);
-    v12.version(1).stores({ storageMeta: "key", runSummaries: "id", runDetails: "id", profiles: "id", profileVersions: "[id+version]", suites: "id", experiments: "id" });
+    v12
+      .version(1)
+      .stores({
+        storageMeta: "key",
+        runSummaries: "id",
+        runDetails: "id",
+        profiles: "id",
+        profileVersions: "[id+version]",
+        suites: "id",
+        experiments: "id",
+      });
     v12.version(2).stores({
       fusionRecipes: "[id+version], id, version",
       poolManifests: "[id+version], id, version",
@@ -170,7 +183,15 @@ describe("performance — migration ops within declared budgets", () => {
     for (const s of FUSION_CORPUS_FIXTURE.studies) {
       await v12
         .table("fusionStudies")
-        .put({ id: s.id, study: s, revision: s.revision, suiteId: "suite-default", suiteVersion: 1, status: s.status, updatedAt: s.updatedAt });
+        .put({
+          id: s.id,
+          study: s,
+          revision: s.revision,
+          suiteId: "suite-default",
+          suiteVersion: 1,
+          status: s.status,
+          updatedAt: s.updatedAt,
+        });
     }
     v12.close();
 

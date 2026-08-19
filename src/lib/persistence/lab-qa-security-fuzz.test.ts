@@ -83,7 +83,10 @@ describe("security — recursive prohibited-secret scan", () => {
   it("study validators reject prohibited credential keys at any depth", () => {
     const record = makePolicyStudyRecord("study-secret");
     // Deeply nested prohibited key (3+ levels below the definition).
-    record.definition = { ...record.definition, nested: { config: { transport: { apiKey: "sk-proj-SUPERSECRET" } } } } as never;
+    record.definition = {
+      ...record.definition,
+      nested: { config: { transport: { apiKey: "sk-proj-SUPERSECRET" } } },
+    } as never;
     expect(hasProhibitedStudyKeys(record)).toBe(true);
     expect(isPolicyStudyRecord(record)).toBe(false);
     expect(isStudyRecordEnvelope(record)).toBe(false);
@@ -96,7 +99,10 @@ describe("security — recursive prohibited-secret scan", () => {
     const assets = createLabAssetRepository(db);
 
     const badStudy = makePolicyStudyRecord("study-secret-2");
-    badStudy.definition = { ...badStudy.definition, judge1: { id: "x", password: "hunter2" } } as never;
+    badStudy.definition = {
+      ...badStudy.definition,
+      judge1: { id: "x", password: "hunter2" },
+    } as never;
     await expect(studies.createStudy(badStudy)).rejects.toThrow(StorageError);
 
     const goodStudy = makePolicyStudyRecord("study-ok");
@@ -104,7 +110,9 @@ describe("security — recursive prohibited-secret scan", () => {
     goodStudy.reportRef = null;
     await studies.createStudy(goodStudy);
     const badReport = makePolicyReportPayload("study-ok");
-    const rowWithSecret = { ...badReport.rows[0] } as unknown as Record<string, unknown>; rowWithSecret.config = { apiKey: "sk-proj-X" }; badReport.rows = [rowWithSecret] as never[];
+    const rowWithSecret = { ...badReport.rows[0] } as unknown as Record<string, unknown>;
+    rowWithSecret.config = { apiKey: "sk-proj-X" };
+    badReport.rows = [rowWithSecret] as never[];
     await expect(studies.createPlaybook("pb-bad", badReport)).rejects.toThrow(StorageError);
 
     const badRecipe = makeLabRecipeRecord("recipe-secret");
@@ -127,12 +135,16 @@ describe("security — recursive prohibited-secret scan", () => {
     await studies.createStudy(record);
     const recipeRecord = makeLabRecipeRecord("recipe-clean");
     const recipeVersion = makeLabRecipeVersion("recipe-clean", 1);
-    (recipeVersion as unknown as Record<string, unknown>).description = "A recipe whose configuration is entirely benign";
+    (recipeVersion as unknown as Record<string, unknown>).description =
+      "A recipe whose configuration is entirely benign";
     await assets.createRecipeRecord(recipeRecord, recipeVersion);
     // The study definition pins pool-1@1 and recipe-1@1; the export's
     // reference-graph validation requires them to exist.
     await assets.createPoolRecord(makeModelPoolRecord("pool-1"), makeModelPoolVersion("pool-1", 1));
-    await assets.createRecipeRecord(makeLabRecipeRecord("recipe-1"), makeLabRecipeVersion("recipe-1", 1));
+    await assets.createRecipeRecord(
+      makeLabRecipeRecord("recipe-1"),
+      makeLabRecipeVersion("recipe-1", 1),
+    );
 
     const exported = await exportWorkbenchArchiveV3(db, { now: 1_700_000_000_000 });
     const keys = collectKeys(exported);
@@ -221,7 +233,9 @@ describe("fuzz — unknown kind/schema discriminants", () => {
       },
     };
 
-    expect(validateArchiveV3({ ...base, manifest: { ...base.manifest, formatVersion: 4 } }).valid).toBe(false);
+    expect(
+      validateArchiveV3({ ...base, manifest: { ...base.manifest, formatVersion: 4 } }).valid,
+    ).toBe(false);
     expect(
       validateArchiveV3({ ...base, manifest: { ...base.manifest, storageVersion: 2 } }).valid,
     ).toBe(false);
@@ -307,7 +321,13 @@ describe("fuzz — broken references", () => {
         storageVersion: 1,
         exportedAt: 1000,
         producer: "rsemble-ai",
-        counts: { studies: 1, studyTrials: 1, studyAttempts: 1, studyObservations: 1, policyPlaybooks: 1 },
+        counts: {
+          studies: 1,
+          studyTrials: 1,
+          studyAttempts: 1,
+          studyObservations: 1,
+          policyPlaybooks: 1,
+        },
         payloadDigest: "x",
         disclosure: { scope: "local", notes: "" },
       },
@@ -394,7 +414,11 @@ describe("fuzz — broken references", () => {
     await expect(studies.createTrial(orphanTrial)).rejects.toThrow(StorageError);
 
     // Observations require an existing sealed trial.
-    const orphanObs = makePolicyStudyObservation("obs-orphan-2", "study-never-created", "trial-never");
+    const orphanObs = makePolicyStudyObservation(
+      "obs-orphan-2",
+      "study-never-created",
+      "trial-never",
+    );
     await expect(studies.appendObservation(orphanObs)).rejects.toThrow(StorageError);
   });
 });
@@ -406,9 +430,7 @@ describe("fuzz — oversized arrays and counts in v3", () => {
     archive.manifest.counts.labRecipeRecords += 1;
     const result = validateArchiveV3(archive);
     expect(result.valid).toBe(false);
-    expect(
-      result.errors.some((e) => e.field === "manifest.counts.labRecipeRecords"),
-    ).toBe(true);
+    expect(result.errors.some((e) => e.field === "manifest.counts.labRecipeRecords")).toBe(true);
   });
 });
 

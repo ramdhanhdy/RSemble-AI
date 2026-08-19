@@ -1046,12 +1046,13 @@ export function createRunController(deps: RunControllerDeps) {
       slots,
       critic: { providerId: s.critic.providerId, model: s.critic.model },
       recommendation: rec,
-      synthesizer: isAdoptSynthesis && binding.recipeVersion
-        ? {
-            providerId: binding.recipeVersion.synthesizer.providerId,
-            model: binding.recipeVersion.synthesizer.model,
-          }
-        : null,
+      synthesizer:
+        isAdoptSynthesis && binding.recipeVersion
+          ? {
+              providerId: binding.recipeVersion.synthesizer.providerId,
+              model: binding.recipeVersion.synthesizer.model,
+            }
+          : null,
     };
     const preflightCheck = revalidatePlaybookCostPreflight(binding, preflightInput);
     if (!preflightCheck.ok) {

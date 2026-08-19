@@ -296,7 +296,9 @@ export function RunWithPlaybookDialog({
         {/* Dialog Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {loading ? (
-            <div className="py-12 text-center text-sm text-text-muted">Loading available playbooks...</div>
+            <div className="py-12 text-center text-sm text-text-muted">
+              Loading available playbooks...
+            </div>
           ) : items.length === 0 ? (
             <div className="py-12 text-center text-sm text-text-muted">
               No sealed policy playbooks found. Create and complete a Policy Study in Research Lab
@@ -349,8 +351,8 @@ export function RunWithPlaybookDialog({
               {selectedItem && (
                 <div
                   data-testid="playbook-preflight"
-                   className="rounded-lg border border-edge bg-panel p-4 space-y-4"
-                 >
+                  className="rounded-lg border border-edge bg-panel p-4 space-y-4"
+                >
                   <div className="flex items-center justify-between pb-2 border-b border-edge">
                     <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
                       Preflight Analysis

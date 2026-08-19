@@ -277,7 +277,11 @@ export function evaluatePlaybookCompatibility(
 
   if (input.rubric) {
     const pinned = input.study.definition.rubric;
-    if (!pinned || pinned.rubricId !== input.rubric.rubricId || pinned.version !== input.rubric.version) {
+    if (
+      !pinned ||
+      pinned.rubricId !== input.rubric.rubricId ||
+      pinned.version !== input.rubric.version
+    ) {
       return {
         ok: false,
         code: "rubric_pin_mismatch",

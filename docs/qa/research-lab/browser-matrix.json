@@ -1654,8 +1654,8 @@
   },
   "longTasks": {
     "budgetMs": 1000,
-    "count": 0,
-    "maxDurationMs": 0
+    "count": 1,
+    "maxDurationMs": 66
   },
   "consoleErrors": []
 }

@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-08-19T00:57:51.757Z",
+  "generatedAt": "2026-08-19T01:00:09.383Z",
   "baseUrl": "http://127.0.0.1:5199/",
   "stages": {
     "vitestProbes": {
       "ok": true,
       "exitCode": 0,
-      "outputTail": "\n RUN  v4.1.10 E:/2026/RSemble-AI\n\n\n Test Files  6 passed (6)\n      Tests  62 passed (62)\n   Start at  07:57:52\n   Duration  3.72s (transform 2.36s, setup 374ms, import 5.55s, tests 3.20s, environment 541ms)\n\n(node:37540) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:21656) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:38592) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:32320) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:33396) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:36052) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+      "outputTail": "\n RUN  v4.1.10 E:/2026/RSemble-AI\n\n\n Test Files  6 passed (6)\n      Tests  62 passed (62)\n   Start at  08:00:09\n   Duration  3.96s (transform 2.27s, setup 380ms, import 5.51s, tests 3.48s, environment 558ms)\n\n(node:32436) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:30924) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:32824) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:26520) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:40576) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:20672) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
     },
     "fusionAccounting": {
       "ok": true,
@@ -18,8 +18,8 @@
       "probes": 97,
       "longTasks": {
         "budgetMs": 1000,
-        "count": 0,
-        "maxDurationMs": 0
+        "count": 1,
+        "maxDurationMs": 66
       },
       "consoleErrorCount": 0,
       "migrationBlocked": {

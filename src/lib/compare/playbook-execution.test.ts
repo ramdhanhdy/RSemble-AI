@@ -581,7 +581,9 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
         parseOpenRouterPricing("openrouter", slug, { prompt: "1", completion: "2" }, 1)!,
       );
     }
-    setModelPricing(parseOpenRouterPricing("umans", "model-b", { prompt: "1", completion: "2" }, 1)!);
+    setModelPricing(
+      parseOpenRouterPricing("umans", "model-b", { prompt: "1", completion: "2" }, 1)!,
+    );
 
     const { deps, dispatched } = makeDeps(stateWithSlots());
     const controller = createRunController(deps);

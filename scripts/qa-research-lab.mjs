@@ -134,11 +134,9 @@ async function runProbeSuites() {
 // --- Stage 2: fusion accounting ----------------------------------------------
 
 async function runFusionAccounting() {
-  const run = await runNodeScript(
-    path.join(ROOT, "scripts", "fusion-accounting.mjs"),
-    [],
-    { timeoutMs: 120_000 },
-  );
+  const run = await runNodeScript(path.join(ROOT, "scripts", "fusion-accounting.mjs"), [], {
+    timeoutMs: 120_000,
+  });
   const output = (run.stdout + run.stderr).trim();
   evidence.stages.fusionAccounting = {
     ok: run.code === 0,
@@ -429,9 +427,7 @@ async function probeSurface(session, matrix, name, route, expectText) {
   const checks = await session.evaluate(SURFACE_CHECKS);
   let text = "";
   try {
-    text = await session.evaluate(
-      `(document.body?.innerText ?? "").slice(0, 4000)`,
-    );
+    text = await session.evaluate(`(document.body?.innerText ?? "").slice(0, 4000)`);
   } catch {}
   const newErrors = session.consoleErrors.slice(beforeErrors).map((e) => e.text);
   const externalFetches = await session.externalFetchCount();
@@ -474,7 +470,13 @@ async function runEmptyStateMatrix(session, matrix) {
     session.currentHeight = vp.height;
     session.currentScale = vp.scale;
     await session.setViewport(vp);
-    const violations = await probeSurface(session, matrix, `empty-lab@${vp.width}`, "/lab", "Policy Studies");
+    const violations = await probeSurface(
+      session,
+      matrix,
+      `empty-lab@${vp.width}`,
+      "/lab",
+      "Policy Studies",
+    );
     if (violations.length > 0) {
       throw new Error(`empty /lab @${vp.width}: ${violations.join("; ")}`);
     }
@@ -484,7 +486,13 @@ async function runEmptyStateMatrix(session, matrix) {
   session.currentHeight = 900;
   session.currentScale = 2;
   await session.setViewport({ width: 1440, height: 900, scale: 2 });
-  const zoomViolations = await probeSurface(session, matrix, "empty-lab-zoom200", "/lab", "Policy Studies");
+  const zoomViolations = await probeSurface(
+    session,
+    matrix,
+    "empty-lab-zoom200",
+    "/lab",
+    "Policy Studies",
+  );
   if (zoomViolations.length > 0) throw new Error(`empty /lab @200%: ${zoomViolations.join("; ")}`);
 
   // Reduced motion.
@@ -496,7 +504,13 @@ async function runEmptyStateMatrix(session, matrix) {
     `window.matchMedia("(prefers-reduced-motion: reduce)").matches`,
   );
   if (reduced !== true) throw new Error("reduced-motion emulation did not apply");
-  const reducedViolations = await probeSurface(session, matrix, "empty-lab-reduced-motion", "/lab", "Policy Studies");
+  const reducedViolations = await probeSurface(
+    session,
+    matrix,
+    "empty-lab-reduced-motion",
+    "/lab",
+    "Policy Studies",
+  );
   if (reducedViolations.length > 0) {
     throw new Error(`empty /lab reduced motion: ${reducedViolations.join("; ")}`);
   }
@@ -537,11 +551,11 @@ async function runRetiredAndUnknownRoutes(session, matrix) {
   // The old live-route family under /evaluations/sets must be NotFound.
   session.currentProbe = "old-live-fusion-route-gone";
   await session.navigateTo("/evaluations/sets/taskset-1/fusion/study-1");
-  const notFound = await session.evaluate(
-    `(document.body?.innerText ?? "").slice(0, 200)`,
-  );
+  const notFound = await session.evaluate(`(document.body?.innerText ?? "").slice(0, 200)`);
   if (!/Not found/i.test(notFound)) {
-    throw new Error(`/evaluations/sets/:id/fusion/:studyId resolved instead of NotFound: ${notFound}`);
+    throw new Error(
+      `/evaluations/sets/:id/fusion/:studyId resolved instead of NotFound: ${notFound}`,
+    );
   }
 
   // Unknown route renders NotFound with a Return to Compare link.
@@ -752,7 +766,9 @@ async function runSeededMatrix(session, matrix) {
     preflight: (document.body?.innerText ?? "").slice(0, 1200),
   })`);
   if (!/Recommended policy/i.test(dialog.preflight) && !/cost/i.test(dialog.preflight)) {
-    matrix.playbookPreflight = { note: "preflight dialog open; text: " + dialog.preflight.slice(0, 300) };
+    matrix.playbookPreflight = {
+      note: "preflight dialog open; text: " + dialog.preflight.slice(0, 300),
+    };
   } else {
     matrix.playbookPreflight = { open: true, snippet: dialog.preflight.slice(0, 300) };
   }
@@ -782,7 +798,9 @@ async function runSeededMatrix(session, matrix) {
   // Escape closes and restores focus to the trigger.
   await session.pressKey("Escape", "Escape", 27);
   await wait(300);
-  const closed = await session.evaluate(`Boolean(document.querySelector('[data-action="cancel-playbook-run"]'))`);
+  const closed = await session.evaluate(
+    `Boolean(document.querySelector('[data-action="cancel-playbook-run"]'))`,
+  );
   if (closed) throw new Error("Escape did not close the playbook dialog");
   const focusRestored = await session.evaluate(`(() => {
     const el = document.activeElement;
@@ -794,9 +812,7 @@ async function runSeededMatrix(session, matrix) {
   // Compare result page: direct load + exact Record round trip via refresh.
   session.currentProbe = "compare-result-roundtrip";
   await session.navigateTo("/compare/results/run-1");
-  const before = await session.evaluate(
-    `(document.body?.innerText ?? "").slice(0, 600)`,
-  );
+  const before = await session.evaluate(`(document.body?.innerText ?? "").slice(0, 600)`);
   await session.reload();
   const after = await session.evaluate(`(document.body?.innerText ?? "").slice(0, 600)`);
   if (!before || before !== after) {
@@ -834,7 +850,10 @@ async function runSeededMatrix(session, matrix) {
   // Direct load of a deep record without prior navigation.
   session.currentProbe = "direct-load";
   await session.send("Page.navigate", { url: `${baseUrl}#/lab/studies/study-conf` });
-  await session.waitFor("Boolean(document.querySelector('main, [role=main], #root > *'))", "direct load");
+  await session.waitFor(
+    "Boolean(document.querySelector('main, [role=main], #root > *'))",
+    "direct load",
+  );
   await wait(600);
   const directText = await session.evaluate(`(document.body?.innerText ?? "").slice(0, 400)`);
   if (!/Confirmed/i.test(directText)) throw new Error("direct load of study-conf failed");
@@ -862,7 +881,9 @@ async function runSeededMatrix(session, matrix) {
     maxDurationMs: Math.round(maxLongTask),
   };
   if (maxLongTask > BUDGET_LONG_TASK_MS) {
-    throw new Error(`long task ${Math.round(maxLongTask)}ms exceeds budget ${BUDGET_LONG_TASK_MS}ms`);
+    throw new Error(
+      `long task ${Math.round(maxLongTask)}ms exceeds budget ${BUDGET_LONG_TASK_MS}ms`,
+    );
   }
 }
 
@@ -915,9 +936,13 @@ async function runBrowserMatrix() {
     }
 
     // Generate the seed payload once.
-    const seedRun = await runNodeScript(tsxBin, [path.join(ROOT, "scripts", "qa-research-lab-seed.mts")], {
-      timeoutMs: 120_000,
-    });
+    const seedRun = await runNodeScript(
+      tsxBin,
+      [path.join(ROOT, "scripts", "qa-research-lab-seed.mts")],
+      {
+        timeoutMs: 120_000,
+      },
+    );
     if (seedRun.code !== 0) {
       throw new Error(`seed generator failed: ${seedRun.stderr.slice(-500)}`);
     }
@@ -964,10 +989,7 @@ async function runBrowserMatrix() {
       playbookPreflight: matrix.playbookPreflight,
     };
 
-    writeFileSync(
-      path.join(outDir, "browser-matrix.json"),
-      `${JSON.stringify(matrix, null, 2)}\n`,
-    );
+    writeFileSync(path.join(outDir, "browser-matrix.json"), `${JSON.stringify(matrix, null, 2)}\n`);
 
     if (matrix.consoleErrors.length > 0) {
       writeFileSync(
@@ -999,19 +1021,13 @@ async function main() {
     const matrix = await runBrowserMatrix();
     steps.push("browser matrix");
 
-    writeFileSync(
-      path.join(outDir, "summary.json"),
-      `${JSON.stringify(evidence, null, 2)}\n`,
-    );
+    writeFileSync(path.join(outDir, "summary.json"), `${JSON.stringify(evidence, null, 2)}\n`);
     console.log(`qa:research-lab PASS — ${steps.join(", ")}`);
     process.exit(0);
   } catch (err) {
     evidence.stages.error = err instanceof Error ? err.message : String(err);
     try {
-      writeFileSync(
-        path.join(outDir, "summary.json"),
-        `${JSON.stringify(evidence, null, 2)}\n`,
-      );
+      writeFileSync(path.join(outDir, "summary.json"), `${JSON.stringify(evidence, null, 2)}\n`);
     } catch {}
     console.error(`qa:research-lab FAIL — ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);

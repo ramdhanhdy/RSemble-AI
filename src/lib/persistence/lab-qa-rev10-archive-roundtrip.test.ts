@@ -161,7 +161,12 @@ async function seedRealisticLabCorpus(db: RSembleEvaluationDB): Promise<void> {
     t1.sealedAt = base;
     await studies.createTrial(t1);
 
-    const attempt = makeStudyAttempt(`${studyId}-attempt-1`, studyId, `${studyId}-trial-1`, `${studyId}-trial-2`);
+    const attempt = makeStudyAttempt(
+      `${studyId}-attempt-1`,
+      studyId,
+      `${studyId}-trial-1`,
+      `${studyId}-trial-2`,
+    );
     const t2 = makePolicyStudyTrial(`${studyId}-trial-2`, studyId);
     t2.sampleIndex = 1;
     t2.observationIds = [];
@@ -259,7 +264,12 @@ async function seedRealisticLabCorpus(db: RSembleEvaluationDB): Promise<void> {
   const evidenceObs = v2fx.makeEvidenceObservation(mc.id);
   const decision = v2fx.makeEligibilityDecision(evidenceObs.id, 1);
   const indexJob = v2fx.makeEvidenceIndexJob("run-1");
-  const verifierOutcome = v2fx.makeExecutedVerifierOutcome("run-1", "task-1", "openrouter:m1", T + 200);
+  const verifierOutcome = v2fx.makeExecutedVerifierOutcome(
+    "run-1",
+    "task-1",
+    "openrouter:m1",
+    T + 200,
+  );
   await db.modelConfigurations.put(v2fx.modelConfigurationRow(mc));
   await db.observations.put(v2fx.evidenceObservationRow(evidenceObs));
   await db.evidenceDecisions.put(v2fx.evidenceDecisionRow(decision));

@@ -129,39 +129,41 @@ function createV12Dexie(dbName: string): Dexie {
 async function seedV12FusionCorpus(db: Dexie): Promise<void> {
   const fx = FUSION_CORPUS_FIXTURE;
   for (const r of fx.recipes) {
-    await db.table("fusionRecipes").put({ id: r.id, version: r.version, recipe: r, createdAt: 1000 });
+    await db
+      .table("fusionRecipes")
+      .put({ id: r.id, version: r.version, recipe: r, createdAt: 1000 });
   }
   for (const p of fx.pools) {
-    await db.table("poolManifests").put({ id: p.id, version: p.version, manifest: p, createdAt: 1000 });
+    await db
+      .table("poolManifests")
+      .put({ id: p.id, version: p.version, manifest: p, createdAt: 1000 });
   }
   for (const s of fx.studies) {
-    await db
-      .table("fusionStudies")
-      .put({
-        id: s.id,
-        study: s,
-        revision: s.revision,
-        suiteId: s.suiteRef?.suiteId ?? "suite-default",
-        suiteVersion: s.suiteRef?.suiteVersion ?? 1,
-        status: s.status,
-        updatedAt: s.updatedAt,
-      });
+    await db.table("fusionStudies").put({
+      id: s.id,
+      study: s,
+      revision: s.revision,
+      suiteId: s.suiteRef?.suiteId ?? "suite-default",
+      suiteVersion: s.suiteRef?.suiteVersion ?? 1,
+      status: s.status,
+      updatedAt: s.updatedAt,
+    });
   }
   for (const t of fx.trials) {
-    await db
-      .table("fusionTrials")
-      .put({
-        id: t.id,
-        trial: t,
-        revision: t.revision,
-        studyId: t.studyId,
-        stage: t.stage,
-        status: t.status,
-        createdAt: t.createdAt,
-      });
+    await db.table("fusionTrials").put({
+      id: t.id,
+      trial: t,
+      revision: t.revision,
+      studyId: t.studyId,
+      stage: t.stage,
+      status: t.status,
+      createdAt: t.createdAt,
+    });
   }
   for (const a of fx.attempts) {
-    await db.table("fusionAttempts").put({ id: a.id, attempt: a, studyId: a.studyId, createdAt: a.createdAt });
+    await db
+      .table("fusionAttempts")
+      .put({ id: a.id, attempt: a, studyId: a.studyId, createdAt: a.createdAt });
   }
   for (const o of fx.observations) {
     await db
@@ -169,7 +171,9 @@ async function seedV12FusionCorpus(db: Dexie): Promise<void> {
       .put({ id: o.id, observation: o, trialId: o.trialId, createdAt: o.finishedAt });
   }
   for (const pb of fx.playbooks) {
-    await db.table("fusionPlaybooks").put({ id: pb.id, playbook: pb, studyId: pb.studyId, createdAt: pb.createdAt });
+    await db
+      .table("fusionPlaybooks")
+      .put({ id: pb.id, playbook: pb, studyId: pb.studyId, createdAt: pb.createdAt });
   }
 }
 
@@ -247,7 +251,9 @@ describe("REV-8 probe 1 — v13 cutover leaves intended receipt/state", () => {
     await reopened.open();
     expect(reopened.verno).toBe(13);
     const receiptAgain = await reopened.storageMeta.get(fusionToResearchLabReceiptKey);
-    expect(isFusionToResearchLabReceipt(receiptAgain?.value) ? receiptAgain.value.receiptDigest : null).toBe(receipt.receiptDigest);
+    expect(
+      isFusionToResearchLabReceipt(receiptAgain?.value) ? receiptAgain.value.receiptDigest : null,
+    ).toBe(receipt.receiptDigest);
     const reopenedTables = new Set(reopened.tables.map((t) => t.name));
     for (const store of FUSION_STORE_NAMES) {
       expect(reopenedTables.has(store)).toBe(false);
@@ -374,9 +380,7 @@ describe("REV-8 probe 3 — no code path can re-open the deleted Fusion stores",
   });
 
   it("deleted stores are never re-registered in a .stores() schema outside database.ts", () => {
-    const registerRe = new RegExp(
-      `\\.stores\\(\\s*\\{[^}]*(${DELETED_STORES.join("|")})\\s*:`,
-    );
+    const registerRe = new RegExp(`\\.stores\\(\\s*\\{[^}]*(${DELETED_STORES.join("|")})\\s*:`);
     const violations: string[] = [];
     for (const file of productFiles) {
       const base = file.split(sep).pop();

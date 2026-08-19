@@ -124,7 +124,10 @@ async function buildSeed(): Promise<SeedDocument> {
   const recipe1V1 = makeLabRecipeVersion("recipe-1", 1);
   const recipe1V2 = makeLabRecipeVersion("recipe-1", 2);
   recipe1V2.promptVersion = "prompt-v2";
-  recipe1V2.description = "Long recipe description: this recipe governs synthesis across a very long pipeline configuration with many settings and a verbose explanation of every knob. ".repeat(6).trim();
+  recipe1V2.description =
+    "Long recipe description: this recipe governs synthesis across a very long pipeline configuration with many settings and a verbose explanation of every knob. "
+      .repeat(6)
+      .trim();
   seed.labRecipeRecords.push({
     id: recipe1Record.id,
     record: recipe1Record,
@@ -243,13 +246,19 @@ async function buildSeed(): Promise<SeedDocument> {
   failedTrial.observationIds = ["obs-failed-1"];
   failedTrial.sealedAt = T - 5000;
   seed.studyTrials.push(trialRow(failedTrial));
-  const failedObs = makePolicyStudyObservation("obs-failed-1", "study-failed", "study-failed-trial-1");
+  const failedObs = makePolicyStudyObservation(
+    "obs-failed-1",
+    "study-failed",
+    "study-failed-trial-1",
+  );
   failedObs.status = "failed";
   failedObs.finishedAt = T - 4000;
   failedObs.payload = {
     ...failedObs.payload,
     error:
-      "Execution failed after 3 retries: provider stream terminated with an unrecoverable transport error (HTTP 503, upstream timeout). ".repeat(4).trim(),
+      "Execution failed after 3 retries: provider stream terminated with an unrecoverable transport error (HTTP 503, upstream timeout). "
+        .repeat(4)
+        .trim(),
   };
   seed.studyObservations.push(observationRow(failedObs));
 
@@ -272,14 +281,23 @@ async function buildSeed(): Promise<SeedDocument> {
   seed.studyTrials.push(trialRow(expT2));
   seed.studyAttempts.push({
     id: "study-exp-attempt-1",
-    attempt: makeStudyAttempt("study-exp-attempt-1", "study-exp", "study-exp-trial-1", "study-exp-trial-2"),
+    attempt: makeStudyAttempt(
+      "study-exp-attempt-1",
+      "study-exp",
+      "study-exp-trial-1",
+      "study-exp-trial-2",
+    ),
     studyId: "study-exp",
     fromTrialId: "study-exp-trial-1",
     toTrialId: "study-exp-trial-2",
     createdAt: T - 2500,
   });
   for (const [i, obsId] of ["obs-exp-1", "obs-exp-2"].entries()) {
-    const obs = makePolicyStudyObservation(obsId, "study-exp", i === 0 ? "study-exp-trial-1" : "study-exp-trial-2");
+    const obs = makePolicyStudyObservation(
+      obsId,
+      "study-exp",
+      i === 0 ? "study-exp-trial-1" : "study-exp-trial-2",
+    );
     obs.createdAt = T - 2800 + i * 100;
     obs.finishedAt = T - 2700 + i * 100;
     seed.studyObservations.push(observationRow(obs));
@@ -339,7 +357,9 @@ async function buildSeed(): Promise<SeedDocument> {
   large.status = "completed";
   large.reportRef = "pb-large";
   large.title =
-    "Very large study with an extremely long descriptive title that keeps going and going to exercise truncation, wrapping, and horizontal overflow behavior across every viewport size including narrow mobile widths. ".repeat(3).trim();
+    "Very large study with an extremely long descriptive title that keeps going and going to exercise truncation, wrapping, and horizontal overflow behavior across every viewport size including narrow mobile widths. "
+      .repeat(3)
+      .trim();
   seed.studies.push(studyRow(large));
   for (let t = 0; t < 40; t++) {
     const trial = makePolicyStudyTrial(`study-large-trial-${t}`, "study-large");
@@ -348,14 +368,21 @@ async function buildSeed(): Promise<SeedDocument> {
     trial.sealedAt = T - 9000 + t * 10;
     seed.studyTrials.push(trialRow(trial));
     for (let o = 0; o < 3; o++) {
-      const obs = makePolicyStudyObservation(`obs-large-${t}-${o}`, "study-large", `study-large-trial-${t}`);
+      const obs = makePolicyStudyObservation(
+        `obs-large-${t}-${o}`,
+        "study-large",
+        `study-large-trial-${t}`,
+      );
       obs.createdAt = T - 8900 + t * 10 + o;
       obs.finishedAt = T - 8800 + t * 10 + o;
       if (o === 2 && t === 0) {
         obs.status = "failed";
         obs.payload = {
           ...obs.payload,
-          error: "A very long diagnostic error message describing exactly what failed in the measurement pipeline and what the operator should do about it, repeated for length. ".repeat(8).trim(),
+          error:
+            "A very long diagnostic error message describing exactly what failed in the measurement pipeline and what the operator should do about it, repeated for length. "
+              .repeat(8)
+              .trim(),
         };
       }
       seed.studyObservations.push(observationRow(obs));
@@ -367,11 +394,26 @@ async function buildSeed(): Promise<SeedDocument> {
   const taskSetRec = v2fx.makeTaskSetRecord("taskset-1");
   const taskSetVer = v2fx.makeTaskSetVersion("taskset-1", 1);
   seed.taskSets.push(v2fx.taskSetRecordRow(taskSetRec));
-  seed.taskSets.push({ id: "taskset-2", record: v2fx.makeTaskSetRecord("taskset-2"), latestVersion: 1, updatedAt: T - 100, archivedAt: null, origin: "authored", revision: 0 });
+  seed.taskSets.push({
+    id: "taskset-2",
+    record: v2fx.makeTaskSetRecord("taskset-2"),
+    latestVersion: 1,
+    updatedAt: T - 100,
+    archivedAt: null,
+    origin: "authored",
+    revision: 0,
+  });
   seed.taskSetVersions.push(v2fx.taskSetVersionRow(taskSetVer));
   // Suite row: TaskSetEditor loads via repo.getSuite(id), not taskSets directly.
   const suite = v2fx.makeSuite("taskset-1");
-  seed.suites.push({ id: suite.id, suite, revision: suite.revision, version: suite.version, updatedAt: T, archivedAt: null });
+  seed.suites.push({
+    id: suite.id,
+    suite,
+    revision: suite.revision,
+    version: suite.version,
+    updatedAt: T,
+    archivedAt: null,
+  });
 
   // --- Comparison result route (/compare/results/run-1) -----------------------
   const runSummary = v2fx.makeRunSummary("run-1");

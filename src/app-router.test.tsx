@@ -1006,10 +1006,7 @@ describe("AppRouter — retired Fusion route source hygiene (F8)", () => {
   it("app-router.tsx source does not reference LegacyFusionRedirect or ts-xwalk:fusion:", () => {
     const fs = require("fs");
     const path = require("path");
-    const source = fs.readFileSync(
-      path.resolve(__dirname, "app-router.tsx"),
-      "utf-8",
-    );
+    const source = fs.readFileSync(path.resolve(__dirname, "app-router.tsx"), "utf-8");
     expect(source).not.toContain("LegacyFusionRedirect");
     expect(source).not.toContain("ts-xwalk:fusion:");
   });
