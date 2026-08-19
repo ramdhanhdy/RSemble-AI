@@ -395,10 +395,16 @@ describe("canonical serialization & fingerprint", () => {
     const q6 = baseQuery({ includeUnknownVersion: true });
     expect(fingerprintModelEvidenceQuery(q5)).not.toBe(fingerprintModelEvidenceQuery(q6));
 
-    const q7 = baseQuery({ eligibilityRuleVersion: QUERY_ELIGIBILITY_RULE_VERSION });
-    const q8 = baseQuery({ eligibilityRuleVersion: QUERY_AGGREGATION_RULE_VERSION });
-    expect(q7.eligibilityRuleVersion).not.toBe(q8.eligibilityRuleVersion);
-    expect(fingerprintModelEvidenceQuery(q7)).not.toBe(fingerprintModelEvidenceQuery(q8));
+    // Rule-version pins are part of the canonical fingerprint input. Only
+ // version 1 of each rule is supported today, so two valid queries cannot
+ // differ on a rule version alone (an unsupported version is rejected —
+ // covered below). Assert the pins are encoded in the canonical JSON so a
+ // future supported bump is guaranteed to change the fingerprint.
+ const q7 = baseQuery();
+ const json = canonicalModelEvidenceQueryJson(q7);
+ expect(json).toContain('"aggregationRuleVersion":1');
+ expect(json).toContain('"eligibilityRuleVersion":1');
+ expect(json).toContain('"uncertaintyRuleVersion":1');
   });
 
   it("fingerprints an exact-configuration and a rollup respondent differently", () => {
