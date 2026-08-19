@@ -698,7 +698,7 @@ export function ComparisonResultRoute({
               data-action="open-in-compare"
               onClick={handleOpenCompare}
               title="Preload this configuration into Compare command pane"
-              className="pressable flex min-h-[36px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.08] px-3 font-mono text-xs font-semibold text-accent transition-colors hover:bg-accent/[0.14]"
+              className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.08] px-3 font-mono text-xs font-semibold text-accent transition-colors hover:bg-accent/[0.14]"
             >
               <Play size={12} /> Open in Compare
             </button>
@@ -708,7 +708,7 @@ export function ComparisonResultRoute({
             to={`/runs/${record.id}`}
             data-action="view-record"
             title="Inspect full immutable run audit record"
-            className="pressable flex min-h-[36px] items-center gap-1.5 rounded-md border border-edge px-3 font-mono text-xs text-text-secondary transition-colors hover:border-edge-bright hover:text-text"
+            className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-3 font-mono text-xs text-text-secondary transition-colors hover:border-edge-bright hover:text-text"
           >
             <FileText size={13} /> View exact Record
           </Link>
@@ -732,7 +732,7 @@ export function ComparisonResultRoute({
             data-action="repair-index"
             onClick={() => void handleRepair()}
             disabled={repairing}
-            className="flex min-h-[32px] items-center gap-1 rounded-sm border border-warning/50 bg-warning/10 px-2.5 font-mono text-xs font-medium text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
+            className="flex min-h-[44px] items-center gap-1 rounded-sm border border-warning/50 bg-warning/10 px-2.5 font-mono text-xs font-medium text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
           >
             {repairing ? (
               <Loader2 size={12} className="animate-spin-ease" />

@@ -97,7 +97,7 @@ export function CandidateAnswer({
             type="button"
             onClick={copy}
             aria-label={copied ? "Copied" : `Copy ${candidate.model} answer`}
-            className="flex shrink-0 items-center gap-1 rounded-sm px-3 py-2 font-mono text-sm text-text-secondary hover:text-text"
+            className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-sm px-3 py-2 font-mono text-sm text-text-secondary hover:text-text"
           >
             {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
             {copied ? "copied" : "copy"}
