@@ -37,8 +37,10 @@ import {
   type ModelConfigurationCatalogEntry,
   type ModelConfigurationCatalogQuery,
 } from "./model-configuration-query";
-import { InMemoryEvidenceRepository } from "../persistence/evidence-repository";
-import type { EvidenceRepository } from "../persistence/evidence-repository";
+import {
+  InMemoryEvidenceRepository,
+  type EvidenceRepository,
+} from "../persistence/evidence-repository";
 import type {
   EligibilityDecision,
   ModelConfigurationSnapshot,

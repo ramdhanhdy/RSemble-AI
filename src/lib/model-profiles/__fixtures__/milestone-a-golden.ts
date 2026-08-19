@@ -41,16 +41,16 @@ import {
 import { canonicalizeModelConfiguration } from "../../evidence/model-configuration";
 import type { EvidenceLedgerRow } from "../../evidence/evidence-counting";
 import type { ObservationSourceGap } from "../../evidence/observation-source";
-import type {
-  AssessmentRef,
-  EligibilityDecision,
-  EvaluatorSnapshot,
-  ModelConfigurationSnapshot,
-  Observation,
-  ObservationOutcome,
-  VerifierSnapshot,
+import {
+  OBSERVATION_SCHEMA_VERSION,
+  type AssessmentRef,
+  type EligibilityDecision,
+  type EvaluatorSnapshot,
+  type ModelConfigurationSnapshot,
+  type Observation,
+  type ObservationOutcome,
+  type VerifierSnapshot,
 } from "../../evidence/evidence-types";
-import { OBSERVATION_SCHEMA_VERSION } from "../../evidence/evidence-types";
 import { observationIdFor } from "../../evidence/evidence-validation";
 import type {
   TaskFacetAnnotation,
