@@ -616,7 +616,7 @@ export function ComparisonResultRoute({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-edge pb-4">
           <Link
             to="/compare"
-            className="flex min-h-[36px] items-center gap-1.5 font-mono text-xs text-text-secondary hover:text-text"
+            className="flex min-h-[44px] items-center gap-1.5 font-mono text-xs text-text-secondary hover:text-text"
           >
             <ArrowLeft size={13} /> Back to Compare
           </Link>
@@ -672,7 +672,7 @@ export function ComparisonResultRoute({
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <Link
             to="/compare"
-            className="pressable flex min-h-[36px] items-center gap-1.5 rounded-md border border-edge px-2.5 font-mono text-xs text-text-secondary transition-colors hover:border-edge-bright hover:text-text"
+            className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-2.5 font-mono text-xs text-text-secondary transition-colors hover:border-edge-bright hover:text-text"
           >
             <ArrowLeft size={13} /> Back to Compare
           </Link>
