@@ -369,9 +369,16 @@ function combineValues(values: readonly AggregatedValue[]): AggregatedValue {
   }
   const usable: Array<{ value: number }> = [];
   let omitted = 0;
+  let limitedChildCount = 0;
   for (const value of values) {
-    if (value.state === "available" || value.state === "limited") {
+    if (value.state === "available") {
       usable.push({ value: value.value });
+    } else if (value.state === "limited") {
+      // A limited child carries a usable value but is itself incomplete. Its
+      // limitation MUST propagate upward (R6): a limited child never lets a
+      // parent silently become fully available.
+      usable.push({ value: value.value });
+      limitedChildCount += 1;
     } else {
       omitted += 1;
     }
@@ -380,13 +387,16 @@ function combineValues(values: readonly AggregatedValue[]): AggregatedValue {
     return { state: "non_aggregatable", reason: "missing_score" };
   }
   const mean = arithmeticMean(usable.map((row) => row.value));
-  if (omitted > 0) {
+  if (omitted > 0 || limitedChildCount > 0) {
     return {
       state: "limited",
       value: mean,
       unitCount: usable.length,
       omittedCount: omitted,
-      reason: "some child units have no aggregatable value",
+      reason:
+        limitedChildCount > 0
+          ? "one or more child units are limited"
+          : "some child units have no aggregatable value",
     };
   }
   return { state: "available", value: mean, unitCount: usable.length };

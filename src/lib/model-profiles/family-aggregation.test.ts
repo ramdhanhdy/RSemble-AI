@@ -1347,3 +1347,90 @@ describe("aggregateFamilyEvidence — milestone A golden selection", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// R6: limitation / omission evidence propagates instance -> version -> Task
+// -> family. A limited child never lets a parent silently become fully
+// available.
+// ---------------------------------------------------------------------------
+
+describe("aggregateFamilyEvidence — limitation propagation (R6)", () => {
+  it("propagates a limited instance up through version, Task, and family", () => {
+    // One instance with two declared replicates: one scored, one missing a
+    // judged score. The instance is `limited` (some observations have no
+    // judged score). That limitation MUST propagate: the version, the Task,
+    // and the family are all `limited` — none silently become `available`.
+    const selection = makeSelection([
+      makeCell({
+        familyId: "family-x",
+        taskId: "task-a",
+        taskVersion: 1,
+        taskInstanceId: "inst-a",
+        score: 5,
+        declaredReplicate: true,
+      }),
+      makeCell({
+        familyId: "family-x",
+        taskId: "task-a",
+        taskVersion: 1,
+        taskInstanceId: "inst-a",
+        score: null,
+        declaredReplicate: true,
+      }),
+    ]);
+    const result = aggregateFamilyEvidence(selection);
+
+    const instance = findInstance(
+      findVersion(findTask(findFamily(result, "family-x"), "task-a"), 1),
+      "inst-a",
+    );
+    expect(onlyMetric(instance.judgedScores).value.state).toBe("limited");
+
+    const version = findVersion(findTask(findFamily(result, "family-x"), "task-a"), 1);
+    expect(onlyMetric(version.judgedScores).value.state).toBe("limited");
+
+    const task = findTask(findFamily(result, "family-x"), "task-a");
+    expect(onlyMetric(task.judgedScores).value.state).toBe("limited");
+
+    const family = findFamily(result, "family-x");
+    expect(onlyMetric(family.judgedScores).value.state).toBe("limited");
+  });
+
+  it("never lets a fully-limited family become available", () => {
+    // Two tasks, each with a limited instance (a missing scored replicate).
+    // Every leaf is limited, so the family MUST be limited — never available.
+    const selection = makeSelection([
+      makeCell({
+        familyId: "family-y",
+        taskId: "task-1",
+        taskInstanceId: "i-1",
+        score: 5,
+        declaredReplicate: true,
+      }),
+      makeCell({
+        familyId: "family-y",
+        taskId: "task-1",
+        taskInstanceId: "i-1",
+        score: null,
+        declaredReplicate: true,
+      }),
+      makeCell({
+        familyId: "family-y",
+        taskId: "task-2",
+        taskInstanceId: "i-2",
+        score: 3,
+        declaredReplicate: true,
+      }),
+      makeCell({
+        familyId: "family-y",
+        taskId: "task-2",
+        taskInstanceId: "i-2",
+        score: null,
+        declaredReplicate: true,
+      }),
+    ]);
+    const result = aggregateFamilyEvidence(selection);
+    const family = findFamily(result, "family-y");
+    expect(onlyMetric(family.judgedScores).value.state).toBe("limited");
+  });
+});
