@@ -1665,3 +1665,169 @@ describe("computePairedEvidence — rule version and shape", () => {
     expect(metric).toBe("judged_score");
   });
 });
+// ---------------------------------------------------------------------------
+// R4: paired cohort isolation — never combine >1 compatible cohort in a Task
+// ---------------------------------------------------------------------------
+
+describe("computePairedEvidence — cohort isolation (R4)", () => {
+  function findDeltasByTask(result: PairedComparisonResult, taskId: string): PairedTaskDelta[] {
+    return result.taskDeltas.filter((d) => d.taskId === taskId);
+  }
+
+  it("(a) never combines multiple compatible cohorts on the same Task into one scalar", () => {
+    // task-x is observed under TWO compatible cohorts (distinct rubrics, same
+    // protocol + evaluator) on BOTH configurations. Each cohort is individually
+    // compatible, but they must NOT be pooled into one paired delta / mean.
+    const a = makeSelection(
+      [
+        makeCell({
+          taskId: "task-x",
+          taskInstanceId: "i-a-q",
+          score: 5,
+          rubric: RUBRIC_QUALITY,
+          protocol: PROTOCOL_A,
+          evaluator: JUDGE_A,
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "task-x",
+          taskInstanceId: "i-a-s",
+          score: 1,
+          rubric: RUBRIC_STYLE,
+          protocol: PROTOCOL_A,
+          evaluator: JUDGE_A,
+          configuration: EXACT_ALPHA,
+        }),
+      ],
+      EXACT_ALPHA,
+    );
+    const b = makeSelection(
+      [
+        makeCell({
+          taskId: "task-x",
+          taskInstanceId: "i-b-q",
+          score: 2,
+          rubric: RUBRIC_QUALITY,
+          protocol: PROTOCOL_A,
+          evaluator: JUDGE_A,
+          configuration: EXACT_BETA,
+        }),
+        makeCell({
+          taskId: "task-x",
+          taskInstanceId: "i-b-s",
+          score: 0,
+          rubric: RUBRIC_STYLE,
+          protocol: PROTOCOL_A,
+          evaluator: JUDGE_A,
+          configuration: EXACT_BETA,
+        }),
+      ],
+      EXACT_BETA,
+    );
+
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
+
+    const comparable = findDeltasByTask(result, "task-x").filter((d) => d.state === "comparable");
+    // Two cohorts => two stratified comparable deltas, NOT one pooled scalar.
+    expect(comparable.length).toBe(2);
+    expect(new Set(comparable.map((d) => d.cohortId)).size).toBe(2);
+    // No delta mixes the two cohorts (pooled mean would be (3 - 1) = 2).
+    for (const d of comparable) {
+      expect(d.delta).not.toBe(2);
+    }
+    // The two cohort-stratified results are reported separately.
+    expect(result.cohortResults.length).toBe(2);
+    expect(new Set(result.cohortResults.map((c) => c.cohortId)).size).toBe(2);
+    // No cross-cohort synthetic scalar at the top level.
+    expect(result.meanDelta).toBeNull();
+    expect(result.bootstrap).toBeNull();
+  });
+
+  it("(b) never combines Task deltas from different compatible cohorts into one mean/W-T-L", () => {
+    // task-1 is assessed under rubric QUALITY on both sides; task-2 under
+    // rubric STYLE on both sides. Each task is individually compatible, but
+    // the two tasks belong to DIFFERENT cohorts. Their deltas must not be
+    // combined into one top-level mean / bootstrap / W-T-L.
+    const a = makeSelection(
+      [
+        makeCell({
+          taskId: "task-1",
+          taskInstanceId: "i-1",
+          score: 5,
+          rubric: RUBRIC_QUALITY,
+          protocol: PROTOCOL_A,
+          evaluator: JUDGE_A,
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "task-2",
+          taskInstanceId: "i-2",
+          score: 1,
+          rubric: RUBRIC_STYLE,
+          protocol: PROTOCOL_A,
+          evaluator: JUDGE_A,
+          configuration: EXACT_ALPHA,
+        }),
+      ],
+      EXACT_ALPHA,
+    );
+    const b = makeSelection(
+      [
+        makeCell({
+          taskId: "task-1",
+          taskInstanceId: "i-1",
+          score: 2,
+          rubric: RUBRIC_QUALITY,
+          protocol: PROTOCOL_A,
+          evaluator: JUDGE_A,
+          configuration: EXACT_BETA,
+        }),
+        makeCell({
+          taskId: "task-2",
+          taskInstanceId: "i-2",
+          score: 0,
+          rubric: RUBRIC_STYLE,
+          protocol: PROTOCOL_A,
+          evaluator: JUDGE_A,
+          configuration: EXACT_BETA,
+        }),
+      ],
+      EXACT_BETA,
+    );
+
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
+
+    // Two distinct cohort-stratified results (one per cohort).
+    expect(result.cohortResults.length).toBe(2);
+    // No cross-cohort top-level mean / bootstrap.
+    expect(result.meanDelta).toBeNull();
+    expect(result.bootstrap).toBeNull();
+    // Each cohort result carries its own mean delta (3 and 1), not a pooled 2.
+    const means = result.cohortResults.map((c) => c.meanDelta).sort();
+    expect(means).toEqual([1, 3]);
+  });
+
+  it("still reports a single top-level scalar when only one cohort is involved", () => {
+    // Single cohort: existing behavior preserved — top-level mean/bootstrap/W-T-L.
+    const a = makeSelection(
+      [
+        makeCell({ taskId: "t1", taskInstanceId: "i1", score: 5, configuration: EXACT_ALPHA }),
+        makeCell({ taskId: "t2", taskInstanceId: "i2", score: 3, configuration: EXACT_ALPHA }),
+      ],
+      EXACT_ALPHA,
+    );
+    const b = makeSelection(
+      [
+        makeCell({ taskId: "t1", taskInstanceId: "i1", score: 1, configuration: EXACT_BETA }),
+        makeCell({ taskId: "t2", taskInstanceId: "i2", score: 3, configuration: EXACT_BETA }),
+      ],
+      EXACT_BETA,
+    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
+    expect(result.cohortResults.length).toBe(1);
+    expect(result.meanDelta).toBeCloseTo(2, 10);
+    expect(result.bootstrap).not.toBeNull();
+    expect(result.coverage.wins).toBe(1);
+    expect(result.coverage.ties).toBe(1);
+  });
+});

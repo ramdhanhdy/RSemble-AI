@@ -12,20 +12,30 @@
 // deltas with the same disclosed dependency-aware resampling units as the
 // uncertainty resolver (T5). Never compares unrelated task mixes.
 //
+// Cohort isolation (R4): more than one compatible assessment cohort inside a
+// Task is never combined into one scalar. Comparable paired deltas are
+// cohort-stratified: one PairedTaskDelta per (Task, shared cohort). The
+// top-level mean / bootstrap / W-T-L are reported only when a single cohort
+// is involved; otherwise they are reported per cohort in `cohortResults` and
+// the top-level scalar fields stay null / zero so no cross-cohort synthetic
+// scalar is ever produced.
+//
 // Contract (Child 07 spec §6.5, plan Task 6):
 //  - intersection only: a task participates only when both selections have
 //    at least one active observation eligible for paired_model_comparison.
 //  - compatible assessment cohorts only: same rubric group (judged_score) or
 //    verifier group (pass_rate) + same protocol + same evaluator. Incompatible
 //    cohorts are disclosed and never pooled.
-//  - wins/ties/losses per shared task against an epsilon/tie rule.
+//  - wins/ties/losses per shared (Task, cohort) against an epsilon/tie rule.
 //  - paired Task-level deltas: A metric - B metric, with hierarchical equal
-//    weighting (instance -> version -> task) within each configuration.
+//    weighting (instance -> version -> task) within each configuration, per
+//    cohort.
 //  - missing cells handled and disclosed: instance asymmetry within a shared
 //    task, tasks present only in A (missing_in_b), only in B (missing_in_a).
 //  - no shared Tasks -> explicit empty state with a reason.
 //  - changed task versions: same task identity is shared; the version mismatch
-//    is disclosed; the task contributes one delta and one resampling unit.
+//    is disclosed; the task contributes one delta per cohort and one
+//    resampling unit per cohort.
 //  - known-related Tasks grouped into one dependency-aware resampling unit
 //    (family membership + declared relations); task_identity fallback when no
 //    higher-order metadata exists, disclosed.
@@ -75,9 +85,9 @@ export interface PairedTaskDelta {
   readonly metric: PairedMetricKind;
   /** Shared compatible assessment cohort id, or null when incompatible/missing. */
   readonly cohortId: string | null;
-  /** Per-task metric for A (hierarchical mean), or null when missing. */
+  /** Per-task metric for A (hierarchical mean within the cohort), or null when missing. */
   readonly valueA: number | null;
-  /** Per-task metric for B (hierarchical mean), or null when missing. */
+  /** Per-task metric for B (hierarchical mean within the cohort), or null when missing. */
   readonly valueB: number | null;
   /** valueA - valueB, or null when not comparable. */
   readonly delta: number | null;
@@ -85,17 +95,31 @@ export interface PairedTaskDelta {
   readonly outcome: PairedOutcome | null;
   readonly versionsA: readonly number[];
   readonly versionsB: readonly number[];
-  /** True when A and B observed different sets of task versions. */
+  /** True when A and B observed different sets of task versions within this cohort. */
   readonly changedTaskVersion: boolean;
   readonly observationIdsA: readonly string[];
   readonly observationIdsB: readonly string[];
   readonly instancesA: readonly string[];
   readonly instancesB: readonly string[];
-  /** Instances A has but B does not (within this shared task). */
+  /** Instances A has but B does not (within this shared task / cohort). */
   readonly missingInstancesA: readonly string[];
-  /** Instances B has but A does not (within this shared task). */
+  /** Instances B has but A does not (within this shared task / cohort). */
   readonly missingInstancesB: readonly string[];
   readonly disclosure: string | null;
+}
+
+// --- Cohort-stratified result (R4) ---------------------------------------------
+
+export interface PairedCohortResult {
+  readonly cohortId: string;
+  readonly comparableTaskCount: number;
+  readonly wins: number;
+  readonly ties: number;
+  readonly losses: number;
+  /** Mean of comparable deltas within this cohort, or null when there are none. */
+  readonly meanDelta: number | null;
+  readonly bootstrap: BootstrapResult | null;
+  readonly uncertaintyResolution: UncertaintyUnitResolution | null;
 }
 
 // --- Coverage / result ---------------------------------------------------------
@@ -121,10 +145,20 @@ export interface PairedComparisonResult {
   readonly emptyReason: string | null;
   readonly coverage: PairedComparisonCoverage;
   readonly taskDeltas: readonly PairedTaskDelta[];
-  /** Mean of comparable deltas, or null when there are none. */
+  /**
+   * Mean of comparable deltas. Populated only when exactly one compatible
+   * cohort is involved; otherwise null (see cohortResults) so no cross-cohort
+   * synthetic scalar is ever produced (R4).
+   */
   readonly meanDelta: number | null;
+  /**
+   * Bootstrap of comparable deltas. Populated only when exactly one compatible
+   * cohort is involved; otherwise null (see cohortResults).
+   */
   readonly bootstrap: BootstrapResult | null;
   readonly uncertaintyResolution: UncertaintyUnitResolution | null;
+  /** Per-cohort stratified results (R4). One entry per compatible cohort. */
+  readonly cohortResults: readonly PairedCohortResult[];
   readonly disclosures: readonly string[];
 }
 
@@ -484,12 +518,62 @@ function computeAssignmentDigest(units: readonly UncertaintyUnit[]): string {
   return hashArtifactContent(canonicalJsonString(payload));
 }
 
+// --- Cohort aggregation (R4) ---------------------------------------------------
+
+interface CohortAggregation {
+  readonly cohortId: string;
+  readonly taskDeltas: { taskId: string; delta: number }[];
+  readonly taskIds: string[];
+  readonly taskToObservationIds: Map<string, string[]>;
+  wins: number;
+  ties: number;
+  losses: number;
+}
+
+function bootstrapCohort(
+  agg: CohortAggregation,
+  input: PairedComparisonInput,
+): { bootstrap: BootstrapResult | null; resolution: UncertaintyUnitResolution | null } {
+  if (agg.taskIds.length === 0) {
+    return { bootstrap: null, resolution: null };
+  }
+  const resolution = resolvePairedUnits(
+    agg.taskIds,
+    input.uncertainty.taskFamilyAssignments,
+    input.uncertainty.taskFamilyRelations,
+    agg.taskToObservationIds,
+  );
+  const taskDeltaMap = new Map<string, number>(agg.taskDeltas.map((d) => [d.taskId, d.delta]));
+  const unitValues = new Map<string, number>();
+  for (const unit of resolution.units) {
+    const unitDeltas = unit.taskIds
+      .map((t) => taskDeltaMap.get(t))
+      .filter((v): v is number => v !== undefined);
+    if (unitDeltas.length > 0) {
+      unitValues.set(unit.unitId, arithmeticMean(unitDeltas));
+    }
+  }
+  const bootstrap = bootstrapTaskClusters({
+    resolution,
+    config: {
+      queryFingerprint: input.uncertainty.queryFingerprint,
+      aggregationRuleVersion: QUERY_AGGREGATION_RULE_VERSION,
+      uncertaintyRuleVersion: QUERY_UNCERTAINTY_RULE_VERSION,
+      assignmentDigest: resolution.assignmentDigest,
+      intervalLevel: input.uncertainty.intervalLevel,
+      resamples: input.uncertainty.resamples,
+    },
+    unitValues,
+  });
+  return { bootstrap, resolution };
+}
+
 // --- Main entry point ----------------------------------------------------------
 
 /**
  * Compute a paired shared-task comparison between two exact-configuration
  * selections. Pure: never mutates the inputs. Deterministic and
- * permutation-invariant.
+ * permutation-invariant. Comparable deltas are cohort-stratified (R4).
  */
 export function computePairedEvidence(input: PairedComparisonInput): PairedComparisonResult {
   const { selectionA, selectionB, options, uncertainty } = input;
@@ -570,21 +654,16 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
       meanDelta: null,
       bootstrap: null,
       uncertaintyResolution: null,
+      cohortResults: [],
       disclosures: [
         "No shared Tasks eligible for paired_model_comparison — paired comparison is empty.",
       ],
     };
   }
 
-  // 3. Per-task deltas.
-  let wins = 0;
-  let ties = 0;
-  let losses = 0;
-  let comparableCount = 0;
+  // 3. Per-task deltas (cohort-stratified for comparable tasks).
   let incompatibleCount = 0;
-  const comparableDeltas: { taskId: string; delta: number }[] = [];
-  const comparableTaskIds: string[] = [];
-  const taskToObservationIds = new Map<string, string[]>();
+  const cohortAggs = new Map<string, CohortAggregation>();
 
   for (const taskId of allTasks) {
     const inA = tasksA.has(taskId);
@@ -632,21 +711,12 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
         pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
       ),
     );
-    const sharedCohorts = [...cohortIdsA].filter((id) => cohortIdsB.has(id));
-
-    const versionsA = uniqueSortedNumbers(cellsA.map((c) => c.taskVersion));
-    const versionsB = uniqueSortedNumbers(cellsB.map((c) => c.taskVersion));
-    const changedTaskVersion =
-      versionsA.length !== versionsB.length || versionsA.some((v, i) => v !== versionsB[i]);
-    const instancesA = uniqueSortedStrings(cellsA.map((c) => c.taskInstanceId));
-    const instancesB = uniqueSortedStrings(cellsB.map((c) => c.taskInstanceId));
-    const missingInstancesA = instancesB.filter((i) => !instancesA.includes(i));
-    const missingInstancesB = instancesA.filter((i) => !instancesB.includes(i));
-    const obsIdsA = cellsA.map((c) => c.active.observation.id).sort();
-    const obsIdsB = cellsB.map((c) => c.active.observation.id).sort();
+    const sharedCohorts = [...cohortIdsA].filter((id) => cohortIdsB.has(id)).sort();
 
     if (sharedCohorts.length === 0) {
       incompatibleCount += 1;
+      const versionsA = uniqueSortedNumbers(cellsA.map((c) => c.taskVersion));
+      const versionsB = uniqueSortedNumbers(cellsB.map((c) => c.taskVersion));
       taskDeltas.push({
         taskId,
         state: "incompatible_cohort",
@@ -658,47 +728,96 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
         outcome: null,
         versionsA,
         versionsB,
-        changedTaskVersion,
-        observationIdsA: obsIdsA,
-        observationIdsB: obsIdsB,
-        instancesA,
-        instancesB,
-        missingInstancesA,
-        missingInstancesB,
+        changedTaskVersion:
+          versionsA.length !== versionsB.length || versionsA.some((v, i) => v !== versionsB[i]),
+        observationIdsA: cellsA.map((c) => c.active.observation.id).sort(),
+        observationIdsB: cellsB.map((c) => c.active.observation.id).sort(),
+        instancesA: uniqueSortedStrings(cellsA.map((c) => c.taskInstanceId)),
+        instancesB: uniqueSortedStrings(cellsB.map((c) => c.taskInstanceId)),
+        missingInstancesA: [],
+        missingInstancesB: [],
         disclosure: `Task "${taskId}" is shared but the two configurations were assessed under incompatible ${metric === "judged_score" ? "rubric" : "verifier"} cohorts — not pooled.`,
       });
       continue;
     }
 
-    // Comparable. Restrict metric computation to observations in a shared
-    // cohort so unrelated cohorts never enter the paired delta.
-    const sharedCohortSet = new Set(sharedCohorts);
-    const compatibleA = cellsA.filter((c) =>
-      sharedCohortSet.has(
+    // Cohort-stratified comparable deltas: one per shared cohort. NEVER combine
+    // multiple compatible cohorts inside a Task into one scalar (R4).
+    let comparableForTask = 0;
+    for (const cohortId of sharedCohorts) {
+      const compatibleA = cellsA.filter((c) =>
+        cohortId ===
         pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
-      ),
-    );
-    const compatibleB = cellsB.filter((c) =>
-      sharedCohortSet.has(
+      );
+      const compatibleB = cellsB.filter((c) =>
+        cohortId ===
         pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
-      ),
-    );
+      );
 
-    const valueA = taskMetric(compatibleA, metric);
-    const valueB = taskMetric(compatibleB, metric);
+      const versionsA = uniqueSortedNumbers(compatibleA.map((c) => c.taskVersion));
+      const versionsB = uniqueSortedNumbers(compatibleB.map((c) => c.taskVersion));
+      const changedTaskVersion =
+        versionsA.length !== versionsB.length || versionsA.some((v, i) => v !== versionsB[i]);
+      const instancesA = uniqueSortedStrings(compatibleA.map((c) => c.taskInstanceId));
+      const instancesB = uniqueSortedStrings(compatibleB.map((c) => c.taskInstanceId));
+      const missingInstancesA = instancesB.filter((i) => !instancesA.includes(i));
+      const missingInstancesB = instancesA.filter((i) => !instancesB.includes(i));
+      const obsIdsA = compatibleA.map((c) => c.active.observation.id).sort();
+      const obsIdsB = compatibleB.map((c) => c.active.observation.id).sort();
 
-    if (valueA === null || valueB === null) {
-      // Shared cohort but no usable metric values on one side.
-      incompatibleCount += 1;
+      const valueA = taskMetric(compatibleA, metric);
+      const valueB = taskMetric(compatibleB, metric);
+
+      if (valueA === null || valueB === null) {
+        // Shared cohort but no usable metric values on one side within it.
+        taskDeltas.push({
+          taskId,
+          state: "incompatible_cohort",
+          metric,
+          cohortId,
+          valueA,
+          valueB,
+          delta: null,
+          outcome: null,
+          versionsA,
+          versionsB,
+          changedTaskVersion,
+          observationIdsA: obsIdsA,
+          observationIdsB: obsIdsB,
+          instancesA,
+          instancesB,
+          missingInstancesA,
+          missingInstancesB,
+          disclosure: `Task "${taskId}" has no usable ${metric} values on one configuration within the shared cohort — not compared.`,
+        });
+        continue;
+      }
+
+      const delta = valueA - valueB;
+      const outcome = classifyOutcome(delta, epsilon);
+      comparableForTask += 1;
+
+      const parts: string[] = [];
+      if (changedTaskVersion) {
+        parts.push(
+          `Task "${taskId}" was observed under different task versions (A: ${versionsA.join(",")}; B: ${versionsB.join(",")}) within the shared cohort — same task identity, disclosed.`,
+        );
+      }
+      if (missingInstancesA.length > 0 || missingInstancesB.length > 0) {
+        parts.push(
+          `Instance coverage differs (missing in A: ${missingInstancesA.join(",") || "none"}; missing in B: ${missingInstancesB.join(",") || "none"}).`,
+        );
+      }
+
       taskDeltas.push({
         taskId,
-        state: "incompatible_cohort",
+        state: "comparable",
         metric,
-        cohortId: sharedCohorts[0]!,
+        cohortId,
         valueA,
         valueB,
-        delta: null,
-        outcome: null,
+        delta,
+        outcome,
         versionsA,
         versionsB,
         changedTaskVersion,
@@ -708,59 +827,87 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
         instancesB,
         missingInstancesA,
         missingInstancesB,
-        disclosure: `Task "${taskId}" has no usable ${metric} values on one configuration within the shared cohort — not compared.`,
+        disclosure: parts.length > 0 ? parts.join(" ") : null,
       });
-      continue;
+
+      // Accumulate per-cohort aggregation.
+      let agg = cohortAggs.get(cohortId);
+      if (!agg) {
+        agg = {
+          cohortId,
+          taskDeltas: [],
+          taskIds: [],
+          taskToObservationIds: new Map<string, string[]>(),
+          wins: 0,
+          ties: 0,
+          losses: 0,
+        };
+        cohortAggs.set(cohortId, agg);
+      }
+      agg.taskDeltas.push({ taskId, delta });
+      agg.taskIds.push(taskId);
+      agg.taskToObservationIds.set(taskId, [...obsIdsA, ...obsIdsB]);
+      if (outcome === "win") agg.wins += 1;
+      else if (outcome === "tie") agg.ties += 1;
+      else agg.losses += 1;
     }
 
-    const delta = valueA - valueB;
-    const outcome = classifyOutcome(delta, epsilon);
-    comparableCount += 1;
-    if (outcome === "win") wins += 1;
-    else if (outcome === "tie") ties += 1;
-    else losses += 1;
+    if (comparableForTask === 0) {
+      incompatibleCount += 1;
+    }
+  }
 
-    comparableDeltas.push({ taskId, delta });
-    comparableTaskIds.push(taskId);
-    taskToObservationIds.set(taskId, [...obsIdsA, ...obsIdsB]);
+  taskDeltas.sort((a, b) => {
+    if (a.taskId !== b.taskId) return a.taskId.localeCompare(b.taskId);
+    // Stable, deterministic ordering of cohort-stratified deltas for one task.
+    const ca = a.cohortId ?? "";
+    const cb = b.cohortId ?? "";
+    return ca.localeCompare(cb);
+  });
 
-    const parts: string[] = [];
-    if (changedTaskVersion) {
-      parts.push(
-        `Task "${taskId}" was observed under different task versions (A: ${versionsA.join(",")}; B: ${versionsB.join(",")}) — same task identity, disclosed.`,
+  // 4. Cohort-stratified results (R4).
+  const sortedCohortIds = [...cohortAggs.keys()].sort();
+  const cohortResults: PairedCohortResult[] = [];
+  for (const cohortId of sortedCohortIds) {
+    const agg = cohortAggs.get(cohortId)!;
+    const meanDelta =
+      agg.taskDeltas.length > 0 ? arithmeticMean(agg.taskDeltas.map((d) => d.delta)) : null;
+    const { bootstrap, resolution } = bootstrapCohort(agg, input);
+    if (resolution) {
+      disclosures.push(...resolution.disclosures);
+    }
+    if (bootstrap && bootstrap.coverageState.state === "insufficient") {
+      disclosures.push(
+        `Insufficient independent coverage for a paired-delta interval in cohort ${cohortId.slice(0, 12)}… (${bootstrap.unitCount} resolved unit(s)).`,
       );
     }
-    if (missingInstancesA.length > 0 || missingInstancesB.length > 0) {
-      parts.push(
-        `Instance coverage differs (missing in A: ${missingInstancesA.join(",") || "none"}; missing in B: ${missingInstancesB.join(",") || "none"}).`,
-      );
-    }
-
-    taskDeltas.push({
-      taskId,
-      state: "comparable",
-      metric,
-      cohortId: sharedCohorts[0]!,
-      valueA,
-      valueB,
-      delta,
-      outcome,
-      versionsA,
-      versionsB,
-      changedTaskVersion,
-      observationIdsA: obsIdsA,
-      observationIdsB: obsIdsB,
-      instancesA,
-      instancesB,
-      missingInstancesA,
-      missingInstancesB,
-      disclosure: parts.length > 0 ? parts.join(" ") : null,
+    cohortResults.push({
+      cohortId,
+      comparableTaskCount: agg.taskIds.length,
+      wins: agg.wins,
+      ties: agg.ties,
+      losses: agg.losses,
+      meanDelta,
+      bootstrap,
+      uncertaintyResolution: resolution,
     });
   }
 
-  taskDeltas.sort((a, b) => a.taskId.localeCompare(b.taskId));
+  // 5. Top-level scalars: only when a single cohort is involved. With
+  //    multiple cohorts the top-level mean / bootstrap / W-T-L stay null / 0
+  //    so no cross-cohort synthetic scalar is ever produced (R4).
+  const singleCohort =
+    cohortResults.length === 1 ? cohortResults[0]! : null;
 
-  // 4. Disclosures.
+  const meanDelta = singleCohort ? singleCohort.meanDelta : null;
+  const bootstrap = singleCohort ? singleCohort.bootstrap : null;
+  const uncertaintyResolution = singleCohort ? singleCohort.uncertaintyResolution : null;
+  const wins = singleCohort ? singleCohort.wins : 0;
+  const ties = singleCohort ? singleCohort.ties : 0;
+  const losses = singleCohort ? singleCohort.losses : 0;
+  const comparableTaskCount = cohortResults.reduce((sum, c) => sum + c.comparableTaskCount, 0);
+
+  // 6. Disclosures.
   if (incompatibleCount > 0) {
     disclosures.push(
       `${incompatibleCount} shared task(s) had incompatible assessment cohorts and were not pooled into paired deltas.`,
@@ -774,71 +921,32 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
   if (missingB > 0) {
     disclosures.push(`${missingB} task(s) have paired evidence for A only (missing in B).`);
   }
-  const changedVersions = taskDeltas.filter((d) => d.changedTaskVersion);
-  if (changedVersions.length > 0) {
-    disclosures.push(
-      `${changedVersions.length} shared task(s) were observed under different task versions — same task identity, disclosed, never treated as independent.`,
-    );
-  }
-  const instanceGaps = taskDeltas.filter(
-    (d) =>
-      d.state === "comparable" &&
-      (d.missingInstancesA.length > 0 || d.missingInstancesB.length > 0),
+  const changedVersionsTasks = new Set(
+    taskDeltas.filter((d) => d.changedTaskVersion).map((d) => d.taskId),
   );
-  if (instanceGaps.length > 0) {
+  if (changedVersionsTasks.size > 0) {
     disclosures.push(
-      `${instanceGaps.length} comparable shared task(s) have missing instances on one configuration — disclosed.`,
+      `${changedVersionsTasks.size} shared task(s) were observed under different task versions — same task identity, disclosed, never treated as independent.`,
     );
   }
-
-  // 5. Mean delta.
-  const meanDelta =
-    comparableDeltas.length > 0 ? arithmeticMean(comparableDeltas.map((d) => d.delta)) : null;
-
-  // 6. Dependency-aware bootstrap of paired deltas.
-  let bootstrap: BootstrapResult | null = null;
-  let uncertaintyResolution: UncertaintyUnitResolution | null = null;
-
-  if (comparableTaskIds.length > 0) {
-    const resolution = resolvePairedUnits(
-      comparableTaskIds,
-      uncertainty.taskFamilyAssignments,
-      uncertainty.taskFamilyRelations,
-      taskToObservationIds,
+  const instanceGapTasks = new Set(
+    taskDeltas
+      .filter(
+        (d) =>
+          d.state === "comparable" &&
+          (d.missingInstancesA.length > 0 || d.missingInstancesB.length > 0),
+      )
+      .map((d) => d.taskId),
+  );
+  if (instanceGapTasks.size > 0) {
+    disclosures.push(
+      `${instanceGapTasks.size} comparable shared task(s) have missing instances on one configuration — disclosed.`,
     );
-    uncertaintyResolution = resolution;
-    disclosures.push(...resolution.disclosures);
-
-    // Unit paired delta = mean of comparable task deltas within the unit.
-    const taskDeltaMap = new Map<string, number>(comparableDeltas.map((d) => [d.taskId, d.delta]));
-    const unitValues = new Map<string, number>();
-    for (const unit of resolution.units) {
-      const unitDeltas = unit.taskIds
-        .map((t) => taskDeltaMap.get(t))
-        .filter((v): v is number => v !== undefined);
-      if (unitDeltas.length > 0) {
-        unitValues.set(unit.unitId, arithmeticMean(unitDeltas));
-      }
-    }
-
-    bootstrap = bootstrapTaskClusters({
-      resolution,
-      config: {
-        queryFingerprint: uncertainty.queryFingerprint,
-        aggregationRuleVersion: QUERY_AGGREGATION_RULE_VERSION,
-        uncertaintyRuleVersion: QUERY_UNCERTAINTY_RULE_VERSION,
-        assignmentDigest: resolution.assignmentDigest,
-        intervalLevel: uncertainty.intervalLevel,
-        resamples: uncertainty.resamples,
-      },
-      unitValues,
-    });
-
-    if (bootstrap.coverageState.state === "insufficient") {
-      disclosures.push(
-        `Insufficient independent coverage for a paired-delta interval (${bootstrap.unitCount} resolved unit(s)).`,
-      );
-    }
+  }
+  if (cohortResults.length > 1) {
+    disclosures.push(
+      `${cohortResults.length} compatible assessment cohorts are involved; wins/ties/losses, mean delta, and the bootstrap interval are reported per cohort in cohortResults and are not combined across cohorts.`,
+    );
   }
 
   return {
@@ -851,7 +959,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
     emptyReason: null,
     coverage: {
       sharedTaskCount: sharedTasks.length,
-      comparableTaskCount: comparableCount,
+      comparableTaskCount,
       incompatibleTaskCount: incompatibleCount,
       wins,
       ties,
@@ -863,6 +971,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
     meanDelta,
     bootstrap,
     uncertaintyResolution,
+    cohortResults,
     disclosures,
   };
 }
