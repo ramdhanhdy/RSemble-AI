@@ -30,7 +30,7 @@
 // =============================================================================
 
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -1018,7 +1018,7 @@ async function main() {
     steps.push("fusion accounting");
     writeFileSync(path.join(outDir, "fusion-accounting.txt"), accounting);
 
-    const matrix = await runBrowserMatrix();
+    await runBrowserMatrix();
     steps.push("browser matrix");
 
     writeFileSync(path.join(outDir, "summary.json"), `${JSON.stringify(evidence, null, 2)}\n`);
