@@ -21,17 +21,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { hashArtifactContent } from "../evaluations/protocol-fingerprint";
-import {
-  UNCERTAINTY_RULE_VERSION,
-  type UncertaintyUnit,
-  type UncertaintyUnitResolution,
+import type {
+  UncertaintyUnit,
+  UncertaintyUnitResolution,
 } from "./uncertainty-unit-resolver";
 import {
   bootstrapTaskClusters,
   type BootstrapConfig,
-  type BootstrapInput,
-  type BootstrapResult,
 } from "./cluster-bootstrap";
 
 // ---------------------------------------------------------------------------
@@ -159,14 +155,14 @@ describe("bootstrapTaskClusters", () => {
     const unitValues = makeUnitValues(units, [0.8, 0.6, 0.9, 0.7, 0.85]);
 
     const r1 = bootstrapTaskClusters({
-      resolution: makeResolution(units, { assignmentDigest: `sha256:${"x".repeat(64)}` }),
-      config: makeConfig(),
+      resolution: makeResolution(units),
+      config: makeConfig({ assignmentDigest: `sha256:${"x".repeat(64)}` }),
       unitValues,
     });
 
     const r2 = bootstrapTaskClusters({
-      resolution: makeResolution(units, { assignmentDigest: `sha256:${"y".repeat(64)}` }),
-      config: makeConfig(),
+      resolution: makeResolution(units),
+      config: makeConfig({ assignmentDigest: `sha256:${"y".repeat(64)}` }),
       unitValues,
     });
 
@@ -247,7 +243,9 @@ describe("bootstrapTaskClusters", () => {
     expect(result.interval).toBeNull();
     expect(result.coverageState.state).toBe("insufficient");
     expect(result.coverageState.unitCount).toBe(2);
-    expect(result.coverageState.reason).toContain("5");
+    if (result.coverageState.state === "insufficient") {
+      expect(result.coverageState.reason).toContain("5");
+    }
   });
 
   it("returns insufficient-coverage for 4 units", () => {
