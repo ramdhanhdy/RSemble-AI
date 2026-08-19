@@ -633,3 +633,133 @@ describe("SUPPORTED_QUERY_RULE_VERSIONS", () => {
     expect(SUPPORTED_QUERY_RULE_VERSIONS.uncertainty).toContain(QUERY_UNCERTAINTY_RULE_VERSION);
   });
 });
+
+// --- Query-identity hardening (external Milestone A review) --------------------
+
+describe("query-identity hardening — canonical dedup of equivalent set entries", () => {
+  it("deduplicates equivalent facetFilters without changing canonical serialization or fingerprint", () => {
+    const single = baseQuery({
+      facetFilters: [FACET_LANG, FACET_DOMAIN],
+    });
+    const duplicated = baseQuery({
+      facetFilters: [
+        FACET_LANG,
+        FACET_DOMAIN,
+        { facetId: FACET_LANG.facetId, valueIds: [...FACET_LANG.valueIds].reverse() },
+        { facetId: FACET_DOMAIN.facetId, valueIds: [...FACET_DOMAIN.valueIds] },
+      ],
+    });
+    expect(canonicalModelEvidenceQueryJson(duplicated)).toBe(
+      canonicalModelEvidenceQueryJson(single),
+    );
+    expect(fingerprintModelEvidenceQuery(duplicated)).toBe(fingerprintModelEvidenceQuery(single));
+  });
+
+  it("deduplicates equivalent rubricRefs without changing canonical serialization or fingerprint", () => {
+    const single = baseQuery({ rubricRefs: [RUBRIC_QUALITY, RUBRIC_STYLE] });
+    const duplicated = baseQuery({
+      rubricRefs: [RUBRIC_QUALITY, RUBRIC_STYLE, RUBRIC_QUALITY, { ...RUBRIC_STYLE }],
+    });
+    expect(canonicalModelEvidenceQueryJson(duplicated)).toBe(
+      canonicalModelEvidenceQueryJson(single),
+    );
+    expect(fingerprintModelEvidenceQuery(duplicated)).toBe(fingerprintModelEvidenceQuery(single));
+  });
+
+  it("deduplicates equivalent evaluatorFilters without changing canonical serialization or fingerprint", () => {
+    const single = baseQuery({ evaluatorFilters: [EVAL_JUDGE, EVAL_HUMAN] });
+    const duplicated = baseQuery({
+      evaluatorFilters: [EVAL_JUDGE, EVAL_HUMAN, { ...EVAL_JUDGE }, { ...EVAL_HUMAN }],
+    });
+    expect(canonicalModelEvidenceQueryJson(duplicated)).toBe(
+      canonicalModelEvidenceQueryJson(single),
+    );
+    expect(fingerprintModelEvidenceQuery(duplicated)).toBe(fingerprintModelEvidenceQuery(single));
+  });
+
+  it("still fingerprints materially different filters differently (dedup never merges semantics)", () => {
+    const a = baseQuery({ facetFilters: [FACET_LANG] });
+    const b = baseQuery({ facetFilters: [FACET_DOMAIN] });
+    expect(fingerprintModelEvidenceQuery(a)).not.toBe(fingerprintModelEvidenceQuery(b));
+  });
+});
+
+describe("query-identity hardening — unknown fields are rejected", () => {
+  it("rejects an unknown top-level query field", () => {
+    const bad = { ...baseQuery(), surpriseField: "x" } as unknown;
+    expect(isModelEvidenceQuery(bad)).toBe(false);
+    const result = validateModelEvidenceQuery(bad);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.join(" ")).toMatch(/unknown/i);
+  });
+
+  it("rejects unknown fields inside a facet filter", () => {
+    const bad = {
+      ...baseQuery(),
+      facetFilters: [
+        { facetId: "facet-lang", valueIds: ["lang-py"], extra: 1 } as unknown as FacetFilter,
+      ],
+    } as unknown;
+    expect(isModelEvidenceQuery(bad)).toBe(false);
+    const result = validateModelEvidenceQuery(bad);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.join(" ")).toMatch(/unknown/i);
+  });
+
+  it("rejects unknown fields inside an evaluator filter", () => {
+    const bad = {
+      ...baseQuery(),
+      evaluatorFilters: [{ ...EVAL_JUDGE, extra: "x" } as unknown as EvaluatorFilter],
+    } as unknown;
+    expect(isModelEvidenceQuery(bad)).toBe(false);
+    const result = validateModelEvidenceQuery(bad);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.join(" ")).toMatch(/unknown/i);
+  });
+
+  it("rejects unknown fields inside a rubric ref", () => {
+    const bad = {
+      ...baseQuery(),
+      rubricRefs: [
+        { id: "rub-quality", version: 3, extra: "x" } as unknown as {
+          id: string;
+          version: number;
+        },
+      ],
+    } as unknown;
+    expect(isModelEvidenceQuery(bad)).toBe(false);
+    const result = validateModelEvidenceQuery(bad);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.join(" ")).toMatch(/unknown/i);
+  });
+});
+
+describe("query-identity hardening — rollup manifest resolution", () => {
+  it("rejects duplicate member ids as invalid immutable rollup data", () => {
+    const dupResolver: RollupVersionResolver = (rollupId, version) => {
+      if (rollupId === ROLLUP_MANIFEST_A.rollupId && version === ROLLUP_MANIFEST_A.version) {
+        return {
+          ...ROLLUP_MANIFEST_A,
+          memberConfigurationIds: [EXACT_ALPHA_ID, EXACT_ALPHA_ID, EXACT_BETA_ID],
+        };
+      }
+      return null;
+    };
+    const q = baseQuery({
+      respondent: {
+        kind: "model_rollup",
+        rollupId: ROLLUP_MANIFEST_A.rollupId,
+        version: ROLLUP_MANIFEST_A.version,
+        aggregationPolicy: "stratified_only",
+      },
+    });
+    const result = validateModelEvidenceQuery(q, dupResolver);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.join(" ")).toMatch(/duplicate/i);
+  });
+});

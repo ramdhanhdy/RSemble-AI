@@ -46,6 +46,7 @@ import {
   QUERY_AGGREGATION_RULE_VERSION,
   QUERY_ELIGIBILITY_RULE_VERSION,
   QUERY_UNCERTAINTY_RULE_VERSION,
+  serializeModelEvidenceQuery,
   type ModelEvidenceQuery,
   type ResolvedRollupManifest,
   type RollupVersionResolver,
@@ -629,6 +630,47 @@ describe("selectProfileObservations — stratified rollup is not pooled", () => 
     expect(result.kind).toBe("unresolved");
     if (result.kind !== "unresolved") return;
     expect(result.reason).toBe("rollup_unresolved");
+  });
+
+  it("consumes the validated manifest exactly once — receipt and executed member set cannot diverge", () => {
+    let calls = 0;
+    const onceResolver: RollupVersionResolver = (rollupId, version) => {
+      calls += 1;
+      if (rollupId === ROLLUP_MANIFEST.rollupId && version === ROLLUP_MANIFEST.version) {
+        // First resolution: alpha + beta. Any second call would return a
+        // different member set — a divergence a stale re-resolve would ingest.
+        return calls === 1
+          ? { ...ROLLUP_MANIFEST, memberConfigurationIds: [EXACT_ALPHA.id, EXACT_BETA.id] }
+          : { ...ROLLUP_MANIFEST, memberConfigurationIds: [EXACT_ALPHA.id] };
+      }
+      return null;
+    };
+    const q = baseQuery({
+      respondent: {
+        kind: "model_rollup",
+        rollupId: ROLLUP_MANIFEST.rollupId,
+        version: ROLLUP_MANIFEST.version,
+        aggregationPolicy: "stratified_only",
+      },
+      includeUnknownVersion: true,
+    });
+
+    const receipt = serializeModelEvidenceQuery(q, onceResolver);
+    const receiptMembers =
+      receipt.resolvedRespondent.kind === "model_rollup"
+        ? receipt.resolvedRespondent.manifest.memberConfigurationIds
+        : [];
+
+    calls = 0;
+    const result = selectProfileObservations(q, goldenCorpus(), onceResolver);
+    expect(calls).toBe(1);
+    expect(result.kind).toBe("stratified_only");
+    if (result.kind !== "stratified_only") return;
+    expect(result.memberConfigurationIds).toEqual(receiptMembers);
+    expect(result.memberConfigurationIds).toEqual([EXACT_ALPHA.id, EXACT_BETA.id]);
+    expect(result.members.map((m) => m.modelConfiguration.id).sort()).toEqual(
+      receiptMembers.slice().sort(),
+    );
   });
 });
 

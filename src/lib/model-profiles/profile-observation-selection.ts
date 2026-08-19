@@ -489,14 +489,17 @@ export function selectProfileObservations(
         detail: validated.errors.join(" "),
       };
     }
-    const manifest = resolver?.(query.respondent.rollupId, query.respondent.version) ?? null;
-    if (manifest === null || manifest.aggregationPolicy !== "stratified_only") {
+    if (validated.resolvedRespondent.kind !== "model_rollup") {
       return {
         kind: "unresolved",
-        reason: "rollup_unresolved",
-        detail: `Rollup ${query.respondent.rollupId}@${query.respondent.version} did not resolve to a stratified_only manifest.`,
+        reason: "invalid_query",
+        detail: "Rollup query did not resolve to a rollup manifest.",
       };
     }
+    // Consume the manifest resolved by validation exactly once. The receipt
+    // manifest and the executed member set cannot diverge because selection
+    // never re-resolves the rollup.
+    const manifest = validated.resolvedRespondent.manifest;
     const members: ProfileExactSelection[] = [];
     for (const memberId of manifest.memberConfigurationIds) {
       const memberQuery: ModelEvidenceQuery = {

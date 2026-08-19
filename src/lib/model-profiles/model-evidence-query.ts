@@ -285,9 +285,39 @@ export function isProfileRespondent(v: unknown): v is ProfileRespondent {
 
 // --- Structural query validation (no rollup resolution) -----------------------
 
+const FACET_FILTER_KEYS = ["facetId", "valueIds"] as const;
+const EVALUATOR_FILTER_KEYS = [
+  "evaluatorKind",
+  "providerId",
+  "model",
+  "instructionDigest",
+] as const;
+const VERSION_REF_KEYS = ["id", "version"] as const;
+const QUERY_KEYS = [
+  "respondent",
+  "observedFrom",
+  "observedTo",
+  "taskFamilyIds",
+  "facetFilters",
+  "evidenceClasses",
+  "allowedUses",
+  "comparabilityCohortIds",
+  "sourceKinds",
+  "rubricRefs",
+  "evaluatorFilters",
+  "includeUnknownVersion",
+  "eligibilityRuleVersion",
+  "aggregationRuleVersion",
+  "uncertaintyRuleVersion",
+] as const;
+
 function validateFacetFilter(v: unknown, errors: string[], path: string): v is FacetFilter {
   if (!isRecord(v)) {
     errors.push(`${path} must be an object.`);
+    return false;
+  }
+  if (!hasOnlyKeys(v, FACET_FILTER_KEYS)) {
+    errors.push(`${path} contains unknown fields.`);
     return false;
   }
   if (!isNonBlankString(v.facetId)) {
@@ -304,6 +334,10 @@ function validateFacetFilter(v: unknown, errors: string[], path: string): v is F
 function validateEvaluatorFilter(v: unknown, errors: string[], path: string): v is EvaluatorFilter {
   if (!isRecord(v)) {
     errors.push(`${path} must be an object.`);
+    return false;
+  }
+  if (!hasOnlyKeys(v, EVALUATOR_FILTER_KEYS)) {
+    errors.push(`${path} contains unknown fields.`);
     return false;
   }
   if (
@@ -323,6 +357,23 @@ function validateEvaluatorFilter(v: unknown, errors: string[], path: string): v 
   }
   if (!isNullishString(v.instructionDigest)) {
     errors.push(`${path}.instructionDigest must be a string or null.`);
+    return false;
+  }
+  return true;
+}
+
+/** Strict VersionRef for the query boundary: exactly `{id, version}`. */
+function isStrictVersionRef(v: unknown, errors: string[], path: string): v is VersionRef {
+  if (!isRecord(v)) {
+    errors.push(`${path} must be an object.`);
+    return false;
+  }
+  if (!hasOnlyKeys(v, VERSION_REF_KEYS)) {
+    errors.push(`${path} contains unknown fields.`);
+    return false;
+  }
+  if (!isVersionRef(v)) {
+    errors.push(`${path} must be a valid VersionRef (non-blank id, positive integer version).`);
     return false;
   }
   return true;
@@ -361,6 +412,9 @@ function structuralErrors(query: unknown): string[] {
   if (!isRecord(query)) {
     errors.push("query must be an object.");
     return errors;
+  }
+  if (!hasOnlyKeys(query, QUERY_KEYS)) {
+    errors.push("query contains unknown fields.");
   }
 
   // Prohibited credential/auth/environment material anywhere in the payload.
@@ -428,10 +482,8 @@ function structuralErrors(query: unknown): string[] {
 
   if (!Array.isArray(query.rubricRefs)) {
     errors.push("rubricRefs must be an array.");
-  } else if (!query.rubricRefs.every((r) => isVersionRef(r))) {
-    errors.push(
-      "rubricRefs must be valid VersionRef entries (non-blank id, positive integer version).",
-    );
+  } else {
+    query.rubricRefs.forEach((r, i) => isStrictVersionRef(r, errors, `rubricRefs[${i}]`));
   }
 
   if (!Array.isArray(query.evaluatorFilters)) {
@@ -478,19 +530,6 @@ function dedupSorted(arr: string[]): string[] {
   return Array.from(new Set(arr)).sort((a, b) => a.localeCompare(b));
 }
 
-/** Deduplicate preserving first-occurrence order (for authored member lists). */
-function dedupPreserveOrder(arr: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const id of arr) {
-    if (!seen.has(id)) {
-      seen.add(id);
-      out.push(id);
-    }
-  }
-  return out;
-}
-
 function canonicalFacetFilters(arr: FacetFilter[]): FacetFilter[] {
   const normalized = arr.map((f) => ({
     facetId: f.facetId,
@@ -500,7 +539,17 @@ function canonicalFacetFilters(arr: FacetFilter[]): FacetFilter[] {
     if (a.facetId !== b.facetId) return a.facetId.localeCompare(b.facetId);
     return a.valueIds.join(",").localeCompare(b.valueIds.join(","));
   });
-  return normalized;
+  // Equivalent entries (same facetId + same value set) appear exactly once.
+  const seen = new Set<string>();
+  const out: FacetFilter[] = [];
+  for (const f of normalized) {
+    const key = `${f.facetId}\u0000${f.valueIds.join("\u0000")}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(f);
+    }
+  }
+  return out;
 }
 
 function canonicalEvaluatorFilters(arr: EvaluatorFilter[]): EvaluatorFilter[] {
@@ -522,16 +571,42 @@ function canonicalEvaluatorFilters(arr: EvaluatorFilter[]): EvaluatorFilter[] {
     if (ma !== mb) return ma.localeCompare(mb);
     return (a.instructionDigest ?? "").localeCompare(b.instructionDigest ?? "");
   });
-  return normalized;
+  // Equivalent entries (same four dimensions) appear exactly once.
+  const seen = new Set<string>();
+  const out: EvaluatorFilter[] = [];
+  for (const f of normalized) {
+    const key = [
+      f.evaluatorKind ?? "\u0000",
+      f.providerId ?? "\u0000",
+      f.model ?? "\u0000",
+      f.instructionDigest ?? "\u0000",
+    ].join("\u0001");
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(f);
+    }
+  }
+  return out;
 }
 
 function canonicalRubricRefs(arr: VersionRef[]): VersionRef[] {
-  return arr
+  const normalized = arr
     .map((r) => ({ id: r.id, version: r.version }))
     .sort((a, b) => {
       if (a.id !== b.id) return a.id.localeCompare(b.id);
       return a.version - b.version;
     });
+  // Equivalent refs (same id + version) appear exactly once.
+  const seen = new Set<string>();
+  const out: VersionRef[] = [];
+  for (const r of normalized) {
+    const key = `${r.id}\u0000${r.version}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(r);
+    }
+  }
+  return out;
 }
 
 function canonicalVocabArray<T extends string>(arr: T[]): T[] {
@@ -682,6 +757,12 @@ export function validateModelEvidenceQuery(
       manifestErrors.push(
         "manifest.memberConfigurationIds must be canonical model-configuration ids.",
       );
+    } else if (
+      new Set(manifest.memberConfigurationIds).size !== manifest.memberConfigurationIds.length
+    ) {
+      manifestErrors.push(
+        "manifest.memberConfigurationIds must not contain duplicate member ids (immutable rollup data).",
+      );
     }
     if (manifestErrors.length > 0) {
       return { ok: false, errors: manifestErrors };
@@ -699,7 +780,7 @@ export function validateModelEvidenceQuery(
         version: manifest.version,
         aggregationPolicy: manifest.aggregationPolicy,
         name: manifest.name,
-        memberConfigurationIds: dedupPreserveOrder(manifest.memberConfigurationIds),
+        memberConfigurationIds: [...manifest.memberConfigurationIds],
         createdAt: manifest.createdAt,
       },
     };
