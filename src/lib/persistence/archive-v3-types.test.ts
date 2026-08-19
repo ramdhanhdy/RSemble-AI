@@ -262,6 +262,51 @@ describe("validateArchiveV3 — reference graph validation", () => {
     }
   });
 
+  it("rejects an attempt whose source or successor trial belongs to another study", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    const otherStudy = { ...fixture.lab.studies[0], id: "study-2", reportRef: null };
+    const otherTrial = {
+      ...fixture.lab.trials[0],
+      id: "trial-2",
+      studyId: "study-2",
+      observationIds: [],
+    };
+    fixture.lab.studies.push(otherStudy);
+    fixture.lab.trials.push(otherTrial);
+    fixture.lab.attempts[0].toTrialId = "trial-2";
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /same study|studyId.*trial/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an observation whose referenced trial belongs to another study", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    const otherStudy = { ...fixture.lab.studies[0], id: "study-2", reportRef: null };
+    const otherTrial = {
+      ...fixture.lab.trials[0],
+      id: "trial-2",
+      studyId: "study-2",
+      observationIds: [],
+    };
+    fixture.lab.studies.push(otherStudy);
+    fixture.lab.trials.push(otherTrial);
+    fixture.lab.observations[0].trialId = "trial-2";
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /same study|studyId.*trial/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a completed study whose reportRef is not a same-study persisted playbook id", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].reportRef = "pb:sha256:" + "a".repeat(64);
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /reportRef|playbook/i.test(e.message))).toBe(true);
+  });
+
   it("rejects when recipe version digest does not match recomputed digest", () => {
     const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
     fixture.lab.recipeVersions[0].digest =

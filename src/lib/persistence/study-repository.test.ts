@@ -715,6 +715,47 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       await expect(repo.createAttempt(attempt, t2)).rejects.toThrow(/not found|missing/);
     });
 
+    it("createAttempt rejects a sealed source trial from another study", async () => {
+      const repo = makeRepo();
+      await repo.createStudy(makeStudyRecord());
+      await repo.createStudy(makeStudyRecord({ id: "study-2" }));
+      await repo.startStudy("study-1", 0, 2000);
+      await repo.startStudy("study-2", 0, 2000);
+      await repo.createTrial(makeTrial({ id: "other-source", studyId: "study-2" }));
+      await repo.sealTrial("other-source", 0, 3500);
+      const successor = makeTrial({ id: "t2", studyId: "study-1", sampleIndex: 1, createdAt: 3600 });
+      const attempt: StudyAttempt = {
+        id: "att-cross-study",
+        studyId: "study-1",
+        fromTrialId: "other-source",
+        toTrialId: successor.id,
+        reason: "x",
+        createdAt: 3600,
+      };
+      await expect(repo.createAttempt(attempt, successor)).rejects.toThrow(/same study|studyId/i);
+      expect(await repo.getTrial(successor.id)).toBeNull();
+    });
+
+    it("createAttempt validates successor asset references before insertion", async () => {
+      const repo = new InMemoryStudyRepository(new MapRefResolver([], [["p1", 3]]));
+      await repo.createStudy(makeStudyRecord());
+      await repo.startStudy("study-1", 0, 2000);
+      const source = makeTrial({ id: "source", payload: makeTrialPayload({ policy: "rank", recipeRef: null, synthesizer: null }) });
+      await repo.createTrial(source);
+      await repo.sealTrial(source.id, 0, 3500);
+      const successor = makeTrial({ id: "successor", sampleIndex: 1, createdAt: 3600 });
+      const attempt: StudyAttempt = {
+        id: "att-successor-assets",
+        studyId: "study-1",
+        fromTrialId: source.id,
+        toTrialId: successor.id,
+        reason: "x",
+        createdAt: 3600,
+      };
+      await expect(repo.createAttempt(attempt, successor)).rejects.toThrow(/recipe.*not found|not found/i);
+      expect(await repo.getTrial(successor.id)).toBeNull();
+    });
+
     it("createAttempt rejects a duplicate attempt id (duplicate event)", async () => {
       const repo = makeRepo();
       await repo.createStudy(makeStudyRecord());
@@ -776,6 +817,20 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       const repo = makeRepo();
       const obs = makeStudyObservation({ id: "o1", trialId: "ghost" });
       await expect(repo.appendObservation(obs)).rejects.toThrow(/not found|missing/);
+    });
+
+    it("appendObservation rejects a sealed trial from another study", async () => {
+      const repo = makeRepo();
+      await repo.createStudy(makeStudyRecord());
+      await repo.createStudy(makeStudyRecord({ id: "study-2" }));
+      await repo.startStudy("study-2", 0, 2000);
+      await repo.createTrial(makeTrial({ id: "other-trial", studyId: "study-2" }));
+      await repo.sealTrial("other-trial", 0, 3500);
+      await expect(
+        repo.appendObservation(
+          makeStudyObservation({ id: "obs-cross-study", studyId: "study-1", trialId: "other-trial" }),
+        ),
+      ).rejects.toThrow(/same study|studyId/i);
     });
 
     it("a measurement-only retry appends a new observation on the same sealed trial (no new trial)", async () => {

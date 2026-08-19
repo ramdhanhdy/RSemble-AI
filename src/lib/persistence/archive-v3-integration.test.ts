@@ -46,6 +46,10 @@ import {
   previewWorkbenchArchive,
 } from "./archive";
 import { RSembleEvaluationDB } from "./database";
+import {
+  ensureFusionToResearchLabMigration,
+  getFusionToResearchLabReceipt,
+} from "../migrations/fusion-to-research-lab";
 const DETERMINISTIC_NOW = 1_700_000_000_000;
 
 async function freshDb(name: string): Promise<RSembleEvaluationDB> {
@@ -132,6 +136,53 @@ describe("archive v3 integration — complete canonical corpus round trip (REV-1
     target.close();
   });
 });
+
+describe("archive v3 integration — persisted playbook identity and cutover receipt", () => {
+  it("round-trips a content-addressed playbook row id, a completed reportRef, and the v13 cutover receipt", async () => {
+    const source = await freshDb("playbook-identity-and-receipt-source");
+    await seedCompleteV3Corpus(source);
+    const receipt = await ensureFusionToResearchLabMigration(source);
+    expect(receipt).not.toBeNull();
+
+    const playbookRow = await source.policyPlaybooks.get("study-1");
+    expect(playbookRow).toBeDefined();
+    const playbookId = "pb:sha256:" + "c".repeat(64);
+    await source.policyPlaybooks.delete("study-1");
+    await source.policyPlaybooks.put({ ...playbookRow!, id: playbookId });
+    const studyRow = await source.studies.get("study-1");
+    expect(studyRow).toBeDefined();
+    await source.studies.put({
+      ...studyRow!,
+      record: { ...(studyRow!.record as { reportRef: string | null }), reportRef: playbookId },
+    });
+
+    const exported = await exportWorkbenchArchiveV3(source, { now: DETERMINISTIC_NOW });
+    const lab = exported.lab as unknown as {
+      playbooks: Array<{ id: string; playbook: { studyId: string } }>;
+      cutoverReceipt: unknown;
+    };
+    expect(lab.playbooks).toContainEqual(
+      expect.objectContaining({ id: playbookId, playbook: expect.objectContaining({ studyId: "study-1" }) }),
+    );
+    expect(lab.cutoverReceipt).toEqual(receipt);
+    expect(
+      (exported.manifest.counts as unknown as { fusionToResearchLabReceipts?: number })
+        .fusionToResearchLabReceipts,
+    ).toBe(1);
+
+    const target = await freshDb("playbook-identity-and-receipt-target");
+    const preview = await previewWorkbenchArchive(target, exported);
+    expect(preview.invalid).toEqual([]);
+    await commitPreviewWorkbenchArchiveV3(target, preview);
+    expect((await target.studies.get("study-1"))?.record).toMatchObject({ reportRef: playbookId });
+    expect((await target.policyPlaybooks.get(playbookId))?.studyId).toBe("study-1");
+    expect(await getFusionToResearchLabReceipt(target)).toEqual(receipt);
+
+    source.close();
+    target.close();
+  });
+});
+
 
 describe("archive v3 integration — REV-2 deleted stores stay deleted", () => {
   it("v3 export contains no fusion keys and touches only surviving tables", async () => {
