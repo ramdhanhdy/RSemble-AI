@@ -607,13 +607,15 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
     // multiple compatible cohorts inside a Task into one scalar (R4).
     let comparableForTask = 0;
     for (const cohortId of sharedCohorts) {
-      const compatibleA = cellsA.filter((c) =>
-        cohortId ===
-        pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
+      const compatibleA = cellsA.filter(
+        (c) =>
+          cohortId ===
+          pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
       );
-      const compatibleB = cellsB.filter((c) =>
-        cohortId ===
-        pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
+      const compatibleB = cellsB.filter(
+        (c) =>
+          cohortId ===
+          pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
       );
 
       const versionsA = uniqueSortedNumbers(compatibleA.map((c) => c.taskVersion));

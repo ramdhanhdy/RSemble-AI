@@ -1149,8 +1149,20 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
     );
     const b = makeSelection(
       [
-        makeCell({ taskId: "t-rel-a", taskInstanceId: "i-a", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
-        makeCell({ taskId: "t-rel-b", taskInstanceId: "i-b", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
+        makeCell({
+          taskId: "t-rel-a",
+          taskInstanceId: "i-a",
+          score: 1,
+          sourceResultId: "src-shared",
+          configuration: EXACT_BETA,
+        }),
+        makeCell({
+          taskId: "t-rel-b",
+          taskInstanceId: "i-b",
+          score: 1,
+          sourceResultId: "src-shared",
+          configuration: EXACT_BETA,
+        }),
       ],
       EXACT_BETA,
     );
@@ -1209,15 +1221,39 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
     ];
     const a = makeSelection(
       [
-        makeCell({ taskId: "t-fam1", taskInstanceId: "i-a", score: 5, sourceResultId: "src-shared", configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "t-fam2", taskInstanceId: "i-b", score: 5, sourceResultId: "src-shared", configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: "t-fam1",
+          taskInstanceId: "i-a",
+          score: 5,
+          sourceResultId: "src-shared",
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "t-fam2",
+          taskInstanceId: "i-b",
+          score: 5,
+          sourceResultId: "src-shared",
+          configuration: EXACT_ALPHA,
+        }),
       ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
       [
-        makeCell({ taskId: "t-fam1", taskInstanceId: "i-a", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
-        makeCell({ taskId: "t-fam2", taskInstanceId: "i-b", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
+        makeCell({
+          taskId: "t-fam1",
+          taskInstanceId: "i-a",
+          score: 1,
+          sourceResultId: "src-shared",
+          configuration: EXACT_BETA,
+        }),
+        makeCell({
+          taskId: "t-fam2",
+          taskInstanceId: "i-b",
+          score: 1,
+          sourceResultId: "src-shared",
+          configuration: EXACT_BETA,
+        }),
       ],
       EXACT_BETA,
     );
@@ -1238,15 +1274,39 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
   it("uses task_identity fallback when no higher-order dependency metadata exists", () => {
     const a = makeSelection(
       [
-        makeCell({ taskId: "t1", taskInstanceId: "i1", score: 5, sourceResultId: "src-shared", configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "t2", taskInstanceId: "i2", score: 5, sourceResultId: "src-shared", configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: "t1",
+          taskInstanceId: "i1",
+          score: 5,
+          sourceResultId: "src-shared",
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "t2",
+          taskInstanceId: "i2",
+          score: 5,
+          sourceResultId: "src-shared",
+          configuration: EXACT_ALPHA,
+        }),
       ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
       [
-        makeCell({ taskId: "t1", taskInstanceId: "i1", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
-        makeCell({ taskId: "t2", taskInstanceId: "i2", score: 1, sourceResultId: "src-shared", configuration: EXACT_BETA }),
+        makeCell({
+          taskId: "t1",
+          taskInstanceId: "i1",
+          score: 1,
+          sourceResultId: "src-shared",
+          configuration: EXACT_BETA,
+        }),
+        makeCell({
+          taskId: "t2",
+          taskInstanceId: "i2",
+          score: 1,
+          sourceResultId: "src-shared",
+          configuration: EXACT_BETA,
+        }),
       ],
       EXACT_BETA,
     );
@@ -1583,7 +1643,9 @@ describe("computePairedEvidence — milestone A golden selection", () => {
     // exp-verify). The common T5 core groups by source/repository before
     // family relations -> two repository_group units -> insufficient coverage.
     expect(result.uncertaintyResolution!.unitCount).toBe(2);
-    expect(result.uncertaintyResolution!.units.every((u) => u.kind === "repository_group")).toBe(true);
+    expect(result.uncertaintyResolution!.units.every((u) => u.kind === "repository_group")).toBe(
+      true,
+    );
     expect(result.bootstrap!.coverageState.state).toBe("insufficient");
   });
 

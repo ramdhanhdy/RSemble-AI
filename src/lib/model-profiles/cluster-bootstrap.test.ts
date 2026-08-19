@@ -540,9 +540,7 @@ describe("bootstrapTaskClusters", () => {
       expect(result.coverageState.reason).toMatch(/usable|omitted|missing/i);
     }
     // The three missing units are disclosed, never silently treated as 0.
-    expect(result.omittedUnitIds).toEqual(
-      expect.arrayContaining(["unit:3", "unit:4", "unit:5"]),
-    );
+    expect(result.omittedUnitIds).toEqual(expect.arrayContaining(["unit:3", "unit:4", "unit:5"]));
     expect(result.omittedUnitIds).toHaveLength(3);
   });
 

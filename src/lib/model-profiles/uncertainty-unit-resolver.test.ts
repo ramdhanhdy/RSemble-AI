@@ -563,7 +563,11 @@ describe("resolveUncertaintyUnits — partition identity (R2)", () => {
     // Each unit carries exactly one protocol's cells.
     for (const unit of resolution.units) {
       const protos = new Set(
-        unit.observationIds.map((oid) => cells.find((c) => c.active.observation.id === oid)?.active.observation.protocolFingerprint),
+        unit.observationIds.map(
+          (oid) =>
+            cells.find((c) => c.active.observation.id === oid)?.active.observation
+              .protocolFingerprint,
+        ),
       );
       expect(protos.size).toBe(1);
     }
@@ -596,12 +600,13 @@ describe("resolveUncertaintyUnits — partition identity (R2)", () => {
       syntheticCell({ taskId: "task-shared", protocolFingerprint: PROTO_X, sourceResultId: SRC_P }),
       syntheticCell({ taskId: "task-shared", protocolFingerprint: PROTO_Y, sourceResultId: SRC_P }),
     ];
-    const makeInput = (order: ProfileSelectedCell[]) => ({
-      selection: syntheticSelection(order),
-      query: baseQuery(),
-      taskFamilyRelations: [],
-      taskFamilyAssignments: [],
-    } satisfies UncertaintyResolverInput);
+    const makeInput = (order: ProfileSelectedCell[]) =>
+      ({
+        selection: syntheticSelection(order),
+        query: baseQuery(),
+        taskFamilyRelations: [],
+        taskFamilyAssignments: [],
+      }) satisfies UncertaintyResolverInput;
     const r1 = resolveUncertaintyUnits(makeInput(cells));
     const r2 = resolveUncertaintyUnits(makeInput([...cells].reverse()));
     expect(r1.assignmentDigest).toBe(r2.assignmentDigest);
@@ -655,8 +660,8 @@ describe("resolveUncertaintyUnits — conflicting family assignments (R3)", () =
       taskFamilyAssignments: conflictAssignments("ab"),
     };
     const resolution = resolveUncertaintyUnits(input);
-    const conflictDisclosure = resolution.disclosures.find((d) =>
-      d.includes("task-conflict") && d.toLowerCase().includes("conflict"),
+    const conflictDisclosure = resolution.disclosures.find(
+      (d) => d.includes("task-conflict") && d.toLowerCase().includes("conflict"),
     );
     expect(conflictDisclosure).toBeTruthy();
     // Both conflicting families are named, deterministically (sorted).
