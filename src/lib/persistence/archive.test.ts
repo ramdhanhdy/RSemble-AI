@@ -50,6 +50,7 @@ import {
   type WorkbenchArchiveV2,
 } from "./archive-v2-types";
 import * as fx from "./archive-v2-fixtures";
+import { ensureFusionToResearchLabMigration } from "../migrations/fusion-to-research-lab";
 import { migratedInputSnapshotRef } from "./comparison-result-migration";
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "./run-types";
@@ -2301,6 +2302,7 @@ describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, c
       "sha256:abc",
     );
     // Round-trip: re-export the imported database as v3 (the canonical format).
+    await ensureFusionToResearchLabMigration(db);
     const reexported = await exportWorkbenchArchiveV3(db);
     expect(reexported.manifest.counts.runSummaries).toBe(1);
     expect(reexported.manifest.counts.suites).toBe(1);

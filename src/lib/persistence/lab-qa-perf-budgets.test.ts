@@ -29,7 +29,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "./database";
 import { createStudyRepository } from "./study-repository";
 import { createLabAssetRepository } from "./lab-asset-repository";
-import { previewFusionToResearchLab } from "../migrations/fusion-to-research-lab";
+import {
+  previewFusionToResearchLab,
+  ensureFusionToResearchLabMigration,
+} from "../migrations/fusion-to-research-lab";
 import { FUSION_CORPUS_FIXTURE } from "../migrations/fusion-corpus-fixture";
 import {
   commitPreviewWorkbenchArchiveV3,
@@ -81,6 +84,7 @@ async function seedLabCorpus(
   db: RSembleEvaluationDB,
   opts: { studies: number; trials: number; observationsPerTrial: number },
 ) {
+  await ensureFusionToResearchLabMigration(db);
   const assets = createLabAssetRepository(db);
   const studies = createStudyRepository(db);
   const T = FIXED_NOW - 10_000;

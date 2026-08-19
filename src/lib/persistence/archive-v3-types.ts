@@ -76,6 +76,10 @@ import {
   isPolicyStudyTrial,
 } from "../studies/policy/policy-study-types";
 import { type StudyAttempt, isStudyAttempt } from "../studies/study-types";
+import {
+  isFusionToResearchLabReceipt,
+  type FusionToResearchLabReceipt,
+} from "../migrations/fusion-to-research-lab-receipt";
 
 // --- Versions ----------------------------------------------------------------
 
@@ -142,6 +146,8 @@ export interface ArchiveV3EntityCounts {
   studyAttempts: number;
   studyObservations: number;
   policyPlaybooks: number;
+  /** Canonical v13 Fusion→Research Lab cutover/discard receipt (exactly one). */
+  fusionToResearchLabReceipts: number;
 }
 
 export interface ArchiveV3Manifest {
@@ -210,6 +216,12 @@ export interface ArchiveV3ComparisonPayload {
   limitations: ComparisonMigrationLimitation[];
 }
 
+export interface ArchiveV3PolicyPlaybook {
+  /** Persisted immutable policyPlaybooks primary-key identity. */
+  id: string;
+  playbook: PolicyReportPayload;
+}
+
 export interface ArchiveV3LabPayload {
   recipeRecords: LabRecipeRecord[];
   recipeVersions: LabRecipeVersion[];
@@ -219,7 +231,10 @@ export interface ArchiveV3LabPayload {
   trials: PolicyStudyTrial[];
   attempts: StudyAttempt[];
   observations: PolicyStudyObservation[];
-  playbooks: PolicyReportPayload[];
+  /** Row identities stay distinct from the playbook's owner study ID. */
+  playbooks: ArchiveV3PolicyPlaybook[];
+  /** The one canonical v13 cutover/discard receipt from storageMeta. */
+  cutoverReceipt: FusionToResearchLabReceipt;
 }
 
 /** The complete, task-first archive v3 envelope. Survives all Child 01–06
@@ -484,7 +499,8 @@ function scanProhibitedContent(archive: WorkbenchArchiveV3): string | null {
   for (const ob of archive.lab.observations)
     if (hasProhibitedContent(ob)) return `lab.observations[${ob.id}]`;
   for (const pb of archive.lab.playbooks)
-    if (hasProhibitedContent(pb)) return `lab.playbooks[${pb.studyId}]`;
+    if (hasProhibitedContent(pb)) return `lab.playbooks[${pb.id}]`;
+  if (hasProhibitedContent(archive.lab.cutoverReceipt)) return "lab.cutoverReceipt";
 
   return null;
 }
@@ -542,10 +558,6 @@ function byVerifierOutcomeKey(item: {
 
 function byRunId(item: { runId: string }): string {
   return item.runId;
-}
-
-function byStudyId(item: { studyId: string }): string {
-  return item.studyId;
 }
 
 // --- Ordering & Duplicate helpers --------------------------------------------
@@ -723,9 +735,13 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
     !Array.isArray(lab.trials) ||
     !Array.isArray(lab.attempts) ||
     !Array.isArray(lab.observations) ||
-    !Array.isArray(lab.playbooks)
+    !Array.isArray(lab.playbooks) ||
+    !isFusionToResearchLabReceipt(lab.cutoverReceipt)
   ) {
-    errors.push({ field: "lab", message: "lab collection arrays must be present." });
+    errors.push({
+      field: "lab",
+      message: "lab collection arrays and canonical cutover receipt must be present.",
+    });
   }
 
   if (errors.length > 0) return fail(errors);
@@ -785,6 +801,7 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
   checkCount("studyAttempts", archive.lab.attempts.length);
   checkCount("studyObservations", archive.lab.observations.length);
   checkCount("policyPlaybooks", archive.lab.playbooks.length);
+  checkCount("fusionToResearchLabReceipts", 1);
 
   // Payload digest integrity check
   const recomputedDigest = computeArchiveV3PayloadDigest(archive);
@@ -974,8 +991,8 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
   checkOrdering("lab.observations", archive.lab.observations, byId, errors);
   checkDuplicates("lab.observations", archive.lab.observations, byId, errors);
 
-  checkOrdering("lab.playbooks", archive.lab.playbooks, byStudyId, errors);
-  checkDuplicates("lab.playbooks", archive.lab.playbooks, byStudyId, errors);
+  checkOrdering("lab.playbooks", archive.lab.playbooks, byId, errors);
+  checkDuplicates("lab.playbooks", archive.lab.playbooks, byId, errors);
 
   // Reference graph validation
   const recipeRecordsById = new Set(archive.lab.recipeRecords.map((r) => r.id));
@@ -986,8 +1003,9 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
   const poolVersionsByKey = new Set(
     archive.lab.poolVersions.map((v) => `${v.poolId}@${v.version}`),
   );
-  const studiesById = new Set(archive.lab.studies.map((s) => s.id));
-  const trialsById = new Set(archive.lab.trials.map((t) => t.id));
+  const studiesById = new Map(archive.lab.studies.map((s) => [s.id, s]));
+  const trialsById = new Map(archive.lab.trials.map((t) => [t.id, t]));
+  const playbooksById = new Map(archive.lab.playbooks.map((p) => [p.id, p]));
 
   // Lab recipe validation
   for (let i = 0; i < archive.lab.recipeRecords.length; i++) {
@@ -1060,6 +1078,16 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
         });
       }
     }
+    if (s.status === "completed") {
+      const playbook = s.reportRef === null ? undefined : playbooksById.get(s.reportRef);
+      if (!playbook || playbook.playbook.studyId !== s.id) {
+        errors.push({
+          field: `lab.studies[${i}].reportRef`,
+          message:
+            "completed study reportRef must identify a persisted same-study policy playbook.",
+        });
+      }
+    }
   }
 
   // Trial validation
@@ -1096,10 +1124,17 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
         message: "fromTrialId and toTrialId must not be identical.",
       });
     }
-    if (!trialsById.has(a.fromTrialId) || !trialsById.has(a.toTrialId)) {
+    const fromTrial = trialsById.get(a.fromTrialId);
+    const toTrial = trialsById.get(a.toTrialId);
+    if (!fromTrial || !toTrial) {
       errors.push({
         field: `lab.attempts[${i}]`,
         message: "fromTrialId or toTrialId not found in lab.trials",
+      });
+    } else if (fromTrial.studyId !== a.studyId || toTrial.studyId !== a.studyId) {
+      errors.push({
+        field: `lab.attempts[${i}]`,
+        message: "attempt studyId must match both source and successor trial studyId.",
       });
     }
   }
@@ -1117,25 +1152,34 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
         message: `studyId ${o.studyId} not found in lab.studies`,
       });
     }
-    if (!trialsById.has(o.trialId)) {
+    const trial = trialsById.get(o.trialId);
+    if (!trial) {
       errors.push({
         field: `lab.observations[${i}].trialId`,
         message: `trialId ${o.trialId} not found in lab.trials`,
+      });
+    } else if (trial.studyId !== o.studyId) {
+      errors.push({
+        field: `lab.observations[${i}]`,
+        message: "observation studyId must match its referenced trial studyId.",
       });
     }
   }
 
   // Playbook validation
   for (let i = 0; i < archive.lab.playbooks.length; i++) {
-    const p = archive.lab.playbooks[i];
-    if (!isPolicyReportPayload(p)) {
-      errors.push({ field: `lab.playbooks[${i}]`, message: "invalid PolicyReportPayload" });
+    const row = archive.lab.playbooks[i];
+    if (!isNonEmptyString(row.id) || !isPolicyReportPayload(row.playbook)) {
+      errors.push({
+        field: `lab.playbooks[${i}]`,
+        message: "invalid persisted policy playbook row",
+      });
       continue;
     }
-    if (!studiesById.has(p.studyId)) {
+    if (!studiesById.has(row.playbook.studyId)) {
       errors.push({
-        field: `lab.playbooks[${i}].studyId`,
-        message: `studyId ${p.studyId} not found in lab.studies`,
+        field: `lab.playbooks[${i}].playbook.studyId`,
+        message: `studyId ${row.playbook.studyId} not found in lab.studies`,
       });
     }
   }

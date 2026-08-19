@@ -110,6 +110,7 @@ import {
   type ArchiveUnsupportedFusionReceipt,
   type ArchiveV3ComparisonInputSnapshot,
   type ArchiveV3EntityCounts,
+  type ArchiveV3PolicyPlaybook,
   type ArchiveV3TaskArtifactBytes,
   type WorkbenchArchiveV3,
 } from "./archive-v3-types";
@@ -130,12 +131,12 @@ import {
   isPolicyStudyObservation,
   isPolicyStudyRecord,
   isPolicyStudyTrial,
-  type PolicyReportPayload,
   type PolicyStudyObservation,
   type PolicyStudyRecord,
   type PolicyStudyTrial,
 } from "../studies/policy/policy-study-types";
 import { isStudyAttempt, type StudyAttempt } from "../studies/study-types";
+import { fingerprintStudyValue } from "../studies/study-fingerprint";
 import {
   isEvaluationObservation,
   isFusionAttempt,
@@ -197,6 +198,10 @@ import type { EvidenceIndexJob, EvidenceIndexJobSummary } from "./evidence-repos
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import { isComparisonResultIndex } from "../compare/comparison-result-validation";
 import type { ComparisonMigrationLimitation } from "./comparison-result-migration";
+import {
+  fusionToResearchLabReceiptKey,
+  getFusionToResearchLabReceipt,
+} from "../migrations/fusion-to-research-lab";
 // --- Archive shape -------------------------------------------------------------
 
 export interface WorkbenchArchiveV1 {
@@ -1127,10 +1132,6 @@ function v3SortByRecipeIdVersion<T extends { recipeId: string; version: number }
 function v3SortByPoolIdVersion<T extends { poolId: string; version: number }>(items: T[]): T[] {
   const key = (t: T) => `${t.poolId}\u0000${t.version.toString().padStart(10, "0")}`;
   return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
-}
-
-function v3SortByStudyId<T extends { studyId: string }>(items: T[]): T[] {
-  return [...items].sort((a, b) => v2OrderingKeyString(a.studyId, b.studyId));
 }
 
 const JOB_STATUSES: ReadonlySet<string> = new Set(["queued", "running", "complete", "error"]);
@@ -2380,6 +2381,13 @@ export async function exportWorkbenchArchiveV3(
     // --- lab (Child 06 canonical collections) ---
     emit("lab");
     throwIfAborted();
+    const cutoverReceipt = await getFusionToResearchLabReceipt(db);
+    if (cutoverReceipt === null) {
+      throw new StorageError(
+        "validation",
+        "Archive v3 export requires the canonical Fusion-to-Research-Lab cutover receipt.",
+      );
+    }
     const recipeRecords: LabRecipeRecord[] = [];
     await db.labRecipeRecords.orderBy("id").each((row) => {
       if (isLabRecipeRecord(row.record)) recipeRecords.push(row.record);
@@ -2432,10 +2440,11 @@ export async function exportWorkbenchArchiveV3(
       if (isPolicyStudyObservation(row.observation)) observations.push(row.observation);
       else recordGuardFailure("lab.observations", row.id, "studyObservations", guardViolations);
     });
-    const playbooks: PolicyReportPayload[] = [];
-    await db.policyPlaybooks.orderBy("studyId").each((row) => {
-      if (isPolicyReportPayload(row.playbook)) playbooks.push(row.playbook);
-      else recordGuardFailure("lab.playbooks", row.studyId, "policyPlaybooks", guardViolations);
+    const playbooks: ArchiveV3PolicyPlaybook[] = [];
+    await db.policyPlaybooks.orderBy("id").each((row) => {
+      if (isPolicyReportPayload(row.playbook))
+        playbooks.push({ id: row.id, playbook: row.playbook });
+      else recordGuardFailure("lab.playbooks", row.id, "policyPlaybooks", guardViolations);
     });
     completeStage("lab");
 
@@ -2488,6 +2497,7 @@ export async function exportWorkbenchArchiveV3(
       studyAttempts: attempts.length,
       studyObservations: observations.length,
       policyPlaybooks: playbooks.length,
+      fusionToResearchLabReceipts: 1,
     };
 
     const archive: WorkbenchArchiveV3 = {
@@ -2549,7 +2559,8 @@ export async function exportWorkbenchArchiveV3(
         trials: v2SortById(trials),
         attempts: v2SortById(attempts),
         observations: v2SortById(observations),
-        playbooks: v3SortByStudyId(playbooks),
+        playbooks: v2SortById(playbooks),
+        cutoverReceipt,
       },
     };
 
@@ -4229,19 +4240,40 @@ async function previewV3(
     const part = partitionGuarded(
       "lab.playbooks",
       archive.lab.playbooks,
-      (p) => p.studyId,
-      (v) => isPolicyReportPayload(v),
+      (p) => p.id,
+      (v) => isRecord(v) && typeof v.id === "string" && isPolicyReportPayload(v.playbook),
     );
     buckets.invalid.push(...part.invalid);
     throwIfAborted();
     await previewSameKeyCollection(
       "lab.playbooks",
       part.guarded,
-      (p) => p.studyId,
-      (k) => db.policyPlaybooks.get(k).then((r) => (r === undefined ? undefined : r.playbook)),
+      (p) => p.id,
+      (k) =>
+        db.policyPlaybooks
+          .get(k)
+          .then((r) => (r === undefined ? undefined : { id: r.id, playbook: r.playbook })),
       (v) => v,
       buckets,
     );
+  }
+  {
+    // The canonical cutover receipt is stored metadata: classify it by byte
+    // equality against storageMeta so a re-import never rewrites it.
+    throwIfAborted();
+    const existing = await db.storageMeta.get(fusionToResearchLabReceiptKey);
+    const incomingReceipt = archive.lab.cutoverReceipt;
+    if (existing === undefined) {
+      buckets.create.push(previewKey("lab.cutoverReceipt", fusionToResearchLabReceiptKey));
+    } else if (canon(existing.value) === canon(incomingReceipt)) {
+      buckets.reuse.push(previewKey("lab.cutoverReceipt", fusionToResearchLabReceiptKey));
+    } else {
+      buckets.collisions.push({
+        collection: "lab.cutoverReceipt",
+        key: fusionToResearchLabReceiptKey,
+        reason: "content-differs",
+      });
+    }
   }
 
   throwIfAborted();
@@ -5502,6 +5534,7 @@ export async function commitPreviewWorkbenchArchiveV3(
     db.studyAttempts,
     db.studyObservations,
     db.policyPlaybooks,
+    db.storageMeta,
   ];
 
   try {
@@ -5618,6 +5651,9 @@ export async function commitPreviewWorkbenchArchiveV3(
             break;
           case "lab.playbooks":
             existing = await db.policyPlaybooks.get(entity.key);
+            break;
+          case "lab.cutoverReceipt":
+            existing = await db.storageMeta.get(entity.key);
             break;
           default:
             throw new StorageError(
@@ -6008,19 +6044,27 @@ export async function commitPreviewWorkbenchArchiveV3(
         } else reused.push(o.id);
       }
       for (const p of archive.lab.playbooks) {
-        if (!isPolicyReportPayload(p)) continue;
-        if (isCreated("lab.playbooks", p.studyId)) {
+        if (!isRecord(p) || typeof p.id !== "string" || !isPolicyReportPayload(p.playbook))
+          continue;
+        if (isCreated("lab.playbooks", p.id)) {
           await db.policyPlaybooks.put({
-            id: p.studyId,
-            playbook: p,
-            studyId: p.studyId,
-            definitionFingerprint: p.definitionFingerprint,
-            digest: `sha256:${p.studyId}`,
-            createdAt: p.createdAt,
+            id: p.id,
+            playbook: p.playbook,
+            studyId: p.playbook.studyId,
+            definitionFingerprint: p.playbook.definitionFingerprint,
+            digest: fingerprintStudyValue(p.playbook),
+            createdAt: p.playbook.createdAt,
           });
-          created.push(p.studyId);
-        } else reused.push(p.studyId);
+          created.push(p.id);
+        } else reused.push(p.id);
       }
+      if (isCreated("lab.cutoverReceipt", fusionToResearchLabReceiptKey)) {
+        await db.storageMeta.put({
+          key: fusionToResearchLabReceiptKey,
+          value: archive.lab.cutoverReceipt,
+        });
+        created.push(fusionToResearchLabReceiptKey);
+      } else reused.push(fusionToResearchLabReceiptKey);
 
       void skipped;
     });

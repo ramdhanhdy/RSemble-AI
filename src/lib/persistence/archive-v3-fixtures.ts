@@ -49,6 +49,8 @@ import type { RSembleEvaluationDB } from "./database";
 import type { ProviderId } from "../providers/types";
 import { isFullRunSummaryV2 } from "./run-types";
 import { fingerprintStudyValue } from "../studies/study-fingerprint";
+import { createDeterministicReceipt } from "../migrations/fusion-to-research-lab-receipt";
+import { fusionToResearchLabReceiptKey } from "../migrations/fusion-to-research-lab";
 import * as v2fx from "./archive-v2-fixtures";
 
 // --- Deterministic builders for Lab entities ---------------------------------
@@ -329,12 +331,47 @@ export function makeValidLabPayload(): ArchiveV3LabPayload {
   const poolRec = makeModelPoolRecord("pool-1");
   const poolVer = makeModelPoolVersion("pool-1", 1);
   const study = makePolicyStudyRecord("study-1");
+  const playbookId = "pb:sha256:" + "f".repeat(64);
+  study.reportRef = playbookId;
   const trial1 = makePolicyStudyTrial("trial-1", "study-1");
   const trial2 = makeStudyTrialSuccessor("trial-2", "study-1");
   const attempt = makeStudyAttempt("attempt-1", "study-1", "trial-1", "trial-2");
   const obs1 = makePolicyStudyObservation("obs-1", "study-1", "trial-1");
   const obs2 = makePolicyStudyObservation("obs-2", "study-1", "trial-2");
   const playbook = makePolicyReportPayload("study-1");
+  const cutoverReceipt = createDeterministicReceipt({
+    generatedAt: 1000,
+    sourceCounts: {
+      fusionRecipes: 0,
+      poolManifests: 0,
+      fusionStudies: 0,
+      fusionTrials: 0,
+      fusionAttempts: 0,
+      fusionObservations: 0,
+      fusionPlaybooks: 0,
+    },
+    convertedCounts: {
+      labRecipeRecords: 0,
+      labRecipeVersions: 0,
+      modelPoolRecords: 0,
+      modelPoolVersions: 0,
+      studies: 0,
+      studyTrials: 0,
+      studyAttempts: 0,
+      studyObservations: 0,
+      policyPlaybooks: 0,
+    },
+    discardedCounts: {
+      fusionRecipes: 0,
+      poolManifests: 0,
+      fusionStudies: 0,
+      fusionTrials: 0,
+      fusionAttempts: 0,
+      fusionObservations: 0,
+      fusionPlaybooks: 0,
+    },
+    decisions: [],
+  });
 
   return {
     recipeRecords: [recipeRec],
@@ -345,7 +382,8 @@ export function makeValidLabPayload(): ArchiveV3LabPayload {
     trials: [trial1, trial2],
     attempts: [attempt],
     observations: [obs1, obs2],
-    playbooks: [playbook],
+    playbooks: [{ id: playbookId, playbook }],
+    cutoverReceipt,
   };
 }
 
@@ -437,6 +475,7 @@ export function buildValidArchiveV3Fixture(): WorkbenchArchiveV3 {
     studyAttempts: lab.attempts.length,
     studyObservations: lab.observations.length,
     policyPlaybooks: lab.playbooks.length,
+    fusionToResearchLabReceipts: 1,
   };
 
   const archive: WorkbenchArchiveV3 = {
@@ -692,14 +731,18 @@ export async function seedCompleteV3Corpus(db: RSembleEvaluationDB): Promise<Wor
   }
   for (const pb of archive.lab.playbooks) {
     await db.policyPlaybooks.put({
-      id: pb.studyId,
-      playbook: pb,
-      studyId: pb.studyId,
-      definitionFingerprint: pb.definitionFingerprint,
-      digest: `sha256:${pb.studyId}`,
-      createdAt: pb.createdAt,
+      id: pb.id,
+      playbook: pb.playbook,
+      studyId: pb.playbook.studyId,
+      definitionFingerprint: pb.playbook.definitionFingerprint,
+      digest: `sha256:${pb.id}`,
+      createdAt: pb.playbook.createdAt,
     });
   }
+  await db.storageMeta.put({
+    key: fusionToResearchLabReceiptKey,
+    value: archive.lab.cutoverReceipt,
+  });
 
   return archive;
 }

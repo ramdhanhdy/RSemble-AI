@@ -31,6 +31,8 @@ import {
 import { validateArchiveV3, type WorkbenchArchiveV3 } from "./archive-v3-types";
 import { hasProhibitedStudyKeys, isStudyRecordEnvelope } from "../studies/study-types";
 import { isPolicyStudyRecord } from "../studies/policy/policy-study-types";
+import { createDeterministicReceipt } from "../migrations/fusion-to-research-lab-receipt";
+import { ensureFusionToResearchLabMigration } from "../migrations/fusion-to-research-lab";
 import {
   buildValidArchiveV3Fixture,
   makeLabRecipeRecord,
@@ -145,6 +147,7 @@ describe("security — recursive prohibited-secret scan", () => {
       makeLabRecipeRecord("recipe-1"),
       makeLabRecipeVersion("recipe-1", 1),
     );
+    await ensureFusionToResearchLabMigration(db);
 
     const exported = await exportWorkbenchArchiveV3(db, { now: 1_700_000_000_000 });
     const keys = collectKeys(exported);
@@ -230,6 +233,39 @@ describe("fuzz — unknown kind/schema discriminants", () => {
         attempts: [],
         observations: [],
         playbooks: [],
+        cutoverReceipt: createDeterministicReceipt({
+          generatedAt: 1000,
+          sourceCounts: {
+            fusionRecipes: 0,
+            poolManifests: 0,
+            fusionStudies: 0,
+            fusionTrials: 0,
+            fusionAttempts: 0,
+            fusionObservations: 0,
+            fusionPlaybooks: 0,
+          },
+          convertedCounts: {
+            labRecipeRecords: 0,
+            labRecipeVersions: 0,
+            modelPoolRecords: 0,
+            modelPoolVersions: 0,
+            studies: 0,
+            studyTrials: 0,
+            studyAttempts: 0,
+            studyObservations: 0,
+            policyPlaybooks: 0,
+          },
+          discardedCounts: {
+            fusionRecipes: 0,
+            poolManifests: 0,
+            fusionStudies: 0,
+            fusionTrials: 0,
+            fusionAttempts: 0,
+            fusionObservations: 0,
+            fusionPlaybooks: 0,
+          },
+          decisions: [],
+        }),
       },
     };
 
@@ -327,6 +363,7 @@ describe("fuzz — broken references", () => {
           studyAttempts: 1,
           studyObservations: 1,
           policyPlaybooks: 1,
+          fusionToResearchLabReceipts: 1,
         },
         payloadDigest: "x",
         disclosure: { scope: "local", notes: "" },
@@ -366,6 +403,39 @@ describe("fuzz — broken references", () => {
         attempts: [],
         observations: [],
         playbooks: [],
+        cutoverReceipt: createDeterministicReceipt({
+          generatedAt: 1000,
+          sourceCounts: {
+            fusionRecipes: 0,
+            poolManifests: 0,
+            fusionStudies: 0,
+            fusionTrials: 0,
+            fusionAttempts: 0,
+            fusionObservations: 0,
+            fusionPlaybooks: 0,
+          },
+          convertedCounts: {
+            labRecipeRecords: 0,
+            labRecipeVersions: 0,
+            modelPoolRecords: 0,
+            modelPoolVersions: 0,
+            studies: 0,
+            studyTrials: 0,
+            studyAttempts: 0,
+            studyObservations: 0,
+            policyPlaybooks: 0,
+          },
+          discardedCounts: {
+            fusionRecipes: 0,
+            poolManifests: 0,
+            fusionStudies: 0,
+            fusionTrials: 0,
+            fusionAttempts: 0,
+            fusionObservations: 0,
+            fusionPlaybooks: 0,
+          },
+          decisions: [],
+        }),
       },
     };
 
@@ -391,7 +461,7 @@ describe("fuzz — broken references", () => {
     const report = makePolicyReportPayload("study-missing");
     const withOrphanPlaybook = structuredClone(base) as unknown as WorkbenchArchiveV3;
     withOrphanPlaybook.manifest.counts.policyPlaybooks = 1;
-    withOrphanPlaybook.lab.playbooks = [report as never];
+    withOrphanPlaybook.lab.playbooks = [{ id: "pb-orphan", playbook: report }];
     const r3 = validateArchiveV3(withOrphanPlaybook);
     expect(r3.valid).toBe(false);
     expect(r3.errors.some((e) => /studyId study-missing not found/.test(e.message))).toBe(true);
@@ -438,6 +508,7 @@ describe("fuzz — cancellation boundaries", () => {
   it("archive v3 export with an already-aborted signal throws ArchiveExportCancelledError and delivers nothing", async () => {
     const db = freshDb("cancel-export");
     await db.open();
+    await ensureFusionToResearchLabMigration(db);
     const aborted = new AbortController();
     aborted.abort();
     await expect(
@@ -448,6 +519,7 @@ describe("fuzz — cancellation boundaries", () => {
   it("archive v3 export aborted mid-run throws ArchiveExportCancelledError (no partial archive)", async () => {
     const db = freshDb("cancel-export-mid");
     await db.open();
+    await ensureFusionToResearchLabMigration(db);
     const controller = new AbortController();
     const pending = exportWorkbenchArchiveV3(db, {
       now: 1_700_000_000_000,

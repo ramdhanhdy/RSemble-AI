@@ -723,7 +723,12 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       await repo.startStudy("study-2", 0, 2000);
       await repo.createTrial(makeTrial({ id: "other-source", studyId: "study-2" }));
       await repo.sealTrial("other-source", 0, 3500);
-      const successor = makeTrial({ id: "t2", studyId: "study-1", sampleIndex: 1, createdAt: 3600 });
+      const successor = makeTrial({
+        id: "t2",
+        studyId: "study-1",
+        sampleIndex: 1,
+        createdAt: 3600,
+      });
       const attempt: StudyAttempt = {
         id: "att-cross-study",
         studyId: "study-1",
@@ -740,7 +745,10 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       const repo = new InMemoryStudyRepository(new MapRefResolver([], [["p1", 3]]));
       await repo.createStudy(makeStudyRecord());
       await repo.startStudy("study-1", 0, 2000);
-      const source = makeTrial({ id: "source", payload: makeTrialPayload({ policy: "rank", recipeRef: null, synthesizer: null }) });
+      const source = makeTrial({
+        id: "source",
+        payload: makeTrialPayload({ policy: "rank", recipeRef: null, synthesizer: null }),
+      });
       await repo.createTrial(source);
       await repo.sealTrial(source.id, 0, 3500);
       const successor = makeTrial({ id: "successor", sampleIndex: 1, createdAt: 3600 });
@@ -752,7 +760,9 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
         reason: "x",
         createdAt: 3600,
       };
-      await expect(repo.createAttempt(attempt, successor)).rejects.toThrow(/recipe.*not found|not found/i);
+      await expect(repo.createAttempt(attempt, successor)).rejects.toThrow(
+        /recipe.*not found|not found/i,
+      );
       expect(await repo.getTrial(successor.id)).toBeNull();
     });
 
@@ -828,7 +838,11 @@ function repositorySuite(name: string, makeRepo: () => StudyRepository & object)
       await repo.sealTrial("other-trial", 0, 3500);
       await expect(
         repo.appendObservation(
-          makeStudyObservation({ id: "obs-cross-study", studyId: "study-1", trialId: "other-trial" }),
+          makeStudyObservation({
+            id: "obs-cross-study",
+            studyId: "study-1",
+            trialId: "other-trial",
+          }),
         ),
       ).rejects.toThrow(/same study|studyId/i);
     });

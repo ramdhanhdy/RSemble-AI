@@ -74,11 +74,94 @@ function isTestOrFixture(posix) {
   );
 }
 
-/** Classify a non-test product file by its relative path. Returns a bucket
- *  name or null if no Fusion hits. Post-T12 every remaining "fusion" hit in
- *  product code is either method-term machinery (Compare Fuse mode, Lab
- *  recipe kind, run-record fusion attempts, evidence exclusions), migration
- *  machinery, or a semantic receipt — never the old Fusion Study authority. */
+/**
+ * Explicit allowlist of the 69 product files whose Fusion hits were reviewed
+ * and classified during the T12 sweep (method term: Compare Fuse mode, Lab
+ * recipe kind, fusion attempt records, Fusion Result rendering, evidence
+ * exclusions, staged methodology modules, migration/adapter machinery).
+ *
+ * DENY BY DEFAULT: any product file with a Fusion hit that is not on this
+ * list is UNEXPLAINED and fails the script. A newly introduced Fusion
+ * reference must be classified by a reviewer before it can ship — the old
+ * broad fallback that bucketed every unknown path as "allowlisted internal
+ * implementation machinery" is gone.
+ */
+const ALLOWLISTED_MACHINERY = new Set([
+  "rsemble.tsx",
+  "studio-data.ts",
+  "studio-engine.ts",
+  "workspaces/runs/run-view-model.ts",
+  "workspaces/runs/RunDetail.tsx",
+  "workspaces/lab/lab-test-fixtures.ts",
+  "workspaces/lab/LabRecipeForm.tsx",
+  "workspaces/lab/LabRecipeList.tsx",
+  "workspaces/lab/LabRecipeVersionPage.tsx",
+  "workspaces/lab/LabWorkspace.tsx",
+  "workspaces/lab/PolicyStudyEditor.tsx",
+  "workspaces/lab/PolicyStudyList.tsx",
+  "workspaces/lab/PolicyStudyPage.tsx",
+  "workspaces/lab/PolicyStudyView.tsx",
+  "workspaces/compare/ComparisonResultRoute.tsx",
+  "workspaces/compare/RunWithPlaybookDialog.tsx",
+  "ui/DataArchiveActions.tsx",
+  "ui/FuseResult.tsx",
+  "ui/JudgeConfig.tsx",
+  "ui/KindEyebrow.tsx",
+  "ui/OutputPane.tsx",
+  "ui/RankResult.tsx",
+  "ui/RouteErrorBoundary.tsx",
+  "ui/RunButton.tsx",
+  "lib/cost.ts",
+  "lib/execution-cost.ts",
+  "lib/execution-deadline.ts",
+  "lib/execution-lease.ts",
+  "lib/execution-stages.ts",
+  "lib/export-markdown.ts",
+  "lib/pipeline.ts",
+  "lib/run-controller.ts",
+  "lib/run-executor.ts",
+  "lib/studies/lab-recipe-types.ts",
+  "lib/studies/study-types.ts",
+  "lib/studies/policy/policy-study-adapter.ts",
+  "lib/studies/policy/policy-study-types.ts",
+  "lib/providers/model-probe.ts",
+  "lib/persistence/evidence-reindex.ts",
+  "lib/persistence/fusion-study-repository.ts",
+  "lib/persistence/lab-asset-repository.ts",
+  "lib/persistence/repository-context.tsx",
+  "lib/persistence/run-record-builder.ts",
+  "lib/persistence/run-recorder.ts",
+  "lib/persistence/run-types.ts",
+  "lib/persistence/study-repository.ts",
+  "lib/persistence/task-set-migration.ts",
+  "lib/evidence/derive-observations.ts",
+  "lib/evidence/evidence-types.ts",
+  "lib/evidence/evidence-validation.ts",
+  "lib/evidence/policy-study-candidate-adapter.ts",
+  "lib/evaluations/complementarity.ts",
+  "lib/evaluations/evaluation-rubric-adhoc.ts",
+  "lib/evaluations/evaluation-types.ts",
+  "lib/evaluations/experiment-controller.ts",
+  "lib/evaluations/fusion-confirmation.ts",
+  "lib/evaluations/fusion-live-executor.ts",
+  "lib/evaluations/fusion-playbook.ts",
+  "lib/evaluations/fusion-recipes.ts",
+  "lib/evaluations/fusion-study-controller.ts",
+  "lib/evaluations/fusion-study-orchestration.ts",
+  "lib/evaluations/fusion-study-stages.ts",
+  "lib/evaluations/fusion-study-types.ts",
+  "lib/evaluations/fusion-study-validation.ts",
+  "lib/evaluations/policy-runner.ts",
+  "lib/evaluations/protocol-fingerprint.ts",
+  "lib/evaluations/study-stats.ts",
+  "lib/compare/pre-call-persistence.ts",
+  "lib/attachments/render.ts",
+]);
+
+/** Classify a non-test product file by its exact relative path. Returns a
+ *  bucket name, or null for a product path that is not explicitly classified
+ *  (fail-closed: a new Fusion reference is UNEXPLAINED until a reviewer adds
+ *  the path to a bucket). */
 function classifyProductFile(posix) {
   // 2. migration-history compatibility material — archive v2 must remain
   //    importable but reject Fusion shapes; the corpus fixture pins the T0
@@ -103,12 +186,12 @@ function classifyProductFile(posix) {
     return "semantic receipts";
   }
 
-  // 1. allowlisted internal implementation machinery — every other product
-  //    file that mentions "fusion" does so as the method term (Fuse mode,
-  //    Fusion Recipe kind, fusion attempt records, Fusion Result rendering,
-  //    evidence exclusions) or as the migration/adapter machinery behind
-  //    canonical Lab / Compare authority.
-  return "allowlisted internal implementation machinery";
+  // 1. allowlisted internal implementation machinery — exact-path allowlist
+  //    only; every other product path with a Fusion hit is unexplained.
+  if (ALLOWLISTED_MACHINERY.has(posix)) {
+    return "allowlisted internal implementation machinery";
+  }
+  return null;
 }
 
 // --- Walk src/ and collect Fusion hits ----------------------------------------

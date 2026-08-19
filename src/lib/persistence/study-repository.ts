@@ -740,68 +740,85 @@ export function createStudyRepository(
     }
     db.assertWritable();
     try {
-      await db.transaction("rw", db.studies, db.studyTrials, db.studyAttempts, async () => {
-        const studyRow = await db.studies.get(attempt.studyId);
-        if (!studyRow) {
-          throw new StorageError("conflict", `Study ${attempt.studyId} not found`);
-        }
-        const study = isPolicyStudyRecord(studyRow.record) ? studyRow.record : null;
-        if (!study) {
-          throw new StorageError("validation", `Study ${attempt.studyId} record corrupted`);
-        }
-        if (study.status !== "in_progress") {
-          throw new StorageError(
-            "conflict",
-            `Study ${attempt.studyId} is not in_progress (status=${study.status})`,
-          );
-        }
-        const fromRow = await db.studyTrials.get(attempt.fromTrialId);
-        if (!fromRow) {
-          throw new StorageError("conflict", `Trial ${attempt.fromTrialId} not found`);
-        }
-        const fromTrial = isPolicyStudyTrial(fromRow.trial) ? fromRow.trial : null;
-        if (!fromTrial) {
-          throw new StorageError("validation", `Trial ${attempt.fromTrialId} record corrupted`);
-        }
-        if (fromTrial.status !== "sealed") {
-          throw new StorageError(
-            "conflict",
-            `Trial ${attempt.fromTrialId} is not sealed — cannot replace an in-progress treatment`,
-          );
-        }
-        if (successorTrial.sampleIndex !== fromTrial.sampleIndex + 1) {
-          throw new StorageError(
-            "conflict",
-            `Successor sampleIndex must be ${fromTrial.sampleIndex + 1}, got ${successorTrial.sampleIndex}`,
-          );
-        }
-        const existingAttempt = await db.studyAttempts.get(attempt.id);
-        if (existingAttempt) {
-          throw new StorageError("conflict", `Attempt ${attempt.id} already exists`);
-        }
-        const existingSuccessor = await db.studyTrials.get(successorTrial.id);
-        if (existingSuccessor) {
-          throw new StorageError("conflict", `Trial ${successorTrial.id} already exists`);
-        }
-        await db.studyAttempts.put({
-          id: attempt.id,
-          attempt,
-          studyId: attempt.studyId,
-          fromTrialId: attempt.fromTrialId,
-          toTrialId: attempt.toTrialId,
-          createdAt: attempt.createdAt,
-        });
-        await db.studyTrials.put({
-          id: successorTrial.id,
-          trial: successorTrial,
-          studyId: successorTrial.studyId,
-          status: successorTrial.status,
-          sampleIndex: successorTrial.sampleIndex,
-          revision: 0,
-          createdAt: successorTrial.createdAt,
-          sealedAt: successorTrial.sealedAt,
-        });
-      });
+      await db.transaction(
+        "rw",
+        db.studies,
+        db.studyTrials,
+        db.studyAttempts,
+        db.labRecipeVersions,
+        db.modelPoolVersions,
+        async () => {
+          const studyRow = await db.studies.get(attempt.studyId);
+          if (!studyRow) {
+            throw new StorageError("conflict", `Study ${attempt.studyId} not found`);
+          }
+          const study = isPolicyStudyRecord(studyRow.record) ? studyRow.record : null;
+          if (!study) {
+            throw new StorageError("validation", `Study ${attempt.studyId} record corrupted`);
+          }
+          if (study.status !== "in_progress") {
+            throw new StorageError(
+              "conflict",
+              `Study ${attempt.studyId} is not in_progress (status=${study.status})`,
+            );
+          }
+          const fromRow = await db.studyTrials.get(attempt.fromTrialId);
+          if (!fromRow) {
+            throw new StorageError("conflict", `Trial ${attempt.fromTrialId} not found`);
+          }
+          const fromTrial = isPolicyStudyTrial(fromRow.trial) ? fromRow.trial : null;
+          if (!fromTrial) {
+            throw new StorageError("validation", `Trial ${attempt.fromTrialId} record corrupted`);
+          }
+          if (fromTrial.studyId !== attempt.studyId) {
+            throw new StorageError(
+              "conflict",
+              `Attempt studyId ${attempt.studyId} does not match source trial studyId ${fromTrial.studyId} — cross-study lineage is not allowed.`,
+            );
+          }
+          if (fromTrial.status !== "sealed") {
+            throw new StorageError(
+              "conflict",
+              `Trial ${attempt.fromTrialId} is not sealed — cannot replace an in-progress treatment`,
+            );
+          }
+          if (successorTrial.sampleIndex !== fromTrial.sampleIndex + 1) {
+            throw new StorageError(
+              "conflict",
+              `Successor sampleIndex must be ${fromTrial.sampleIndex + 1}, got ${successorTrial.sampleIndex}`,
+            );
+          }
+          // The successor trial must pass the same asset-reference gate the
+          // ordinary createTrial path applies (F1 parity for attempts).
+          await assertTrialAssetRefsResolve(study, successorTrial.payload, resolver);
+          const existingAttempt = await db.studyAttempts.get(attempt.id);
+          if (existingAttempt) {
+            throw new StorageError("conflict", `Attempt ${attempt.id} already exists`);
+          }
+          const existingSuccessor = await db.studyTrials.get(successorTrial.id);
+          if (existingSuccessor) {
+            throw new StorageError("conflict", `Trial ${successorTrial.id} already exists`);
+          }
+          await db.studyAttempts.put({
+            id: attempt.id,
+            attempt,
+            studyId: attempt.studyId,
+            fromTrialId: attempt.fromTrialId,
+            toTrialId: attempt.toTrialId,
+            createdAt: attempt.createdAt,
+          });
+          await db.studyTrials.put({
+            id: successorTrial.id,
+            trial: successorTrial,
+            studyId: successorTrial.studyId,
+            status: successorTrial.status,
+            sampleIndex: successorTrial.sampleIndex,
+            revision: 0,
+            createdAt: successorTrial.createdAt,
+            sealedAt: successorTrial.sealedAt,
+          });
+        },
+      );
     } catch (err) {
       if (err instanceof StorageError) throw err;
       throw classifyStorageError(err);
@@ -834,6 +851,12 @@ export function createStudyRepository(
         const trial = isPolicyStudyTrial(trialRow.trial) ? trialRow.trial : null;
         if (!trial) {
           throw new StorageError("validation", `Trial ${observation.trialId} record corrupted`);
+        }
+        if (trial.studyId !== observation.studyId) {
+          throw new StorageError(
+            "conflict",
+            `Observation studyId ${observation.studyId} does not match trial studyId ${trial.studyId} — cross-study lineage is not allowed.`,
+          );
         }
         if (trial.status !== "sealed") {
           throw new StorageError(
@@ -1327,6 +1350,12 @@ export class InMemoryStudyRepository implements StudyRepository {
     if (!fromEntry) {
       throw new StorageError("conflict", `Trial ${attempt.fromTrialId} not found`);
     }
+    if (fromEntry.trial.studyId !== attempt.studyId) {
+      throw new StorageError(
+        "conflict",
+        `Attempt studyId ${attempt.studyId} does not match source trial studyId ${fromEntry.trial.studyId} — cross-study lineage is not allowed.`,
+      );
+    }
     if (fromEntry.trial.status !== "sealed") {
       throw new StorageError(
         "conflict",
@@ -1338,6 +1367,11 @@ export class InMemoryStudyRepository implements StudyRepository {
         "conflict",
         `Successor sampleIndex must be ${fromEntry.trial.sampleIndex + 1}, got ${successorTrial.sampleIndex}`,
       );
+    }
+    // The successor trial must pass the same asset-reference gate the ordinary
+    // createTrial path applies (F1 parity for attempts).
+    if (this.assetResolver) {
+      await assertTrialAssetRefsResolve(study, successorTrial.payload, this.assetResolver);
     }
     if (this.attempts.has(attempt.id)) {
       throw new StorageError("conflict", `Attempt ${attempt.id} already exists`);
@@ -1362,6 +1396,12 @@ export class InMemoryStudyRepository implements StudyRepository {
     const entry = this.trials.get(observation.trialId);
     if (!entry) {
       throw new StorageError("conflict", `Trial ${observation.trialId} not found`);
+    }
+    if (entry.trial.studyId !== observation.studyId) {
+      throw new StorageError(
+        "conflict",
+        `Observation studyId ${observation.studyId} does not match trial studyId ${entry.trial.studyId} — cross-study lineage is not allowed.`,
+      );
     }
     if (entry.trial.status !== "sealed") {
       throw new StorageError(

@@ -48,6 +48,7 @@ import {
 } from "./archive-v3-fixtures";
 import * as v2fx from "./archive-v2-fixtures";
 import { fingerprintStudyValue } from "../studies/study-fingerprint";
+import { ensureFusionToResearchLabMigration } from "../migrations/fusion-to-research-lab";
 
 const FIXED_NOW = 1_700_000_000_000;
 
@@ -74,6 +75,7 @@ function freshDb(tag: string): RSembleEvaluationDB {
 // --- Realistic corpus builder (repository APIs only for Lab entities) --------
 
 async function seedRealisticLabCorpus(db: RSembleEvaluationDB): Promise<void> {
+  await ensureFusionToResearchLabMigration(db);
   const assets = createLabAssetRepository(db);
   const studies = createStudyRepository(db);
   const T = FIXED_NOW - 10_000;
@@ -310,7 +312,7 @@ describe("REV-10 — archive v3 round-trips a realistically populated Lab corpus
     expect(counts.comparisonIndexes).toBe(1);
 
     // The playbooks reference exact evidence through the study graph.
-    const playbookIds = exported.lab.playbooks.map((p) => p.studyId).sort();
+    const playbookIds = exported.lab.playbooks.map((p) => p.playbook.studyId).sort();
     expect(playbookIds).toEqual(["study-arch", "study-conf", "study-exp"]);
 
     // 2. Import into a fresh database: preview must classify every Lab entity

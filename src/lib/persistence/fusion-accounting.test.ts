@@ -7,7 +7,7 @@ import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
-const ROOT = resolve(import.meta.dirname, "..");
+const ROOT = resolve(import.meta.dirname, "../../..");
 const probe = resolve(ROOT, "src", "fusion-accounting-unclassified-probe.ts");
 
 function runAccounting(): { status: number; output: string } {
@@ -30,7 +30,7 @@ afterEach(() => {
 
 describe("fusion accounting", () => {
   it("fails closed for an unclassified product Fusion hit", () => {
-    writeFileSync(probe, "export const fusionProbe = true;\n", "utf8");
+    writeFileSync(probe, 'export const probe = "fusion";\n', "utf8");
     const result = runAccounting();
     expect(result.status).toBe(1);
     expect(result.output).toContain("fusion-accounting-unclassified-probe.ts");
