@@ -450,9 +450,14 @@ export function TaskSetList({ repo }: TaskSetListProps) {
         }}
       />
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-muted">
-          {visible.length} task set{visible.length === 1 ? "" : "s"}
-        </span>
+        <div className="flex items-baseline gap-2">
+          <h1 tabIndex={-1} className="text-lg font-semibold text-text">
+            Task sets
+          </h1>
+          <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-muted">
+            {visible.length} task set{visible.length === 1 ? "" : "s"}
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           {archivedCount > 0 && (
             <label className="flex min-h-[44px] cursor-pointer items-center gap-1.5 text-xs text-text-secondary">
