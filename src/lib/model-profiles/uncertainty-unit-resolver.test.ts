@@ -38,6 +38,7 @@ import {
   selectProfileObservations,
   type ProfileEvidenceCorpus,
   type ProfileExactSelection,
+  type ProfileSelectedCell,
 } from "./profile-observation-selection";
 import {
   resolveUncertaintyUnits,
@@ -114,6 +115,58 @@ function defaultResolverInput(
 /** Collect all unit kinds from a resolution. */
 function unitKinds(units: readonly UncertaintyUnit[]): UncertaintyUnitKind[] {
   return units.map((u) => u.kind);
+}
+// --- Synthetic cell builder (for partition-identity / conflict tests) --------
+
+interface SyntheticCellSpec {
+  taskId: string;
+  protocolFingerprint: string;
+  sourceResultId: string;
+  observationId?: string;
+  cellKey?: string;
+}
+
+function syntheticCell(spec: SyntheticCellSpec): ProfileSelectedCell {
+  const observationId =
+    spec.observationId ??
+    `syn-obs-${spec.taskId}-${spec.protocolFingerprint.slice(7, 11)}-${spec.sourceResultId}`;
+  const cellKey = spec.cellKey ?? `syn-cell:${observationId}`;
+  // The resolver reads only protocolFingerprint, sourceResultId, observation.id,
+  // taskId and cellKey from a cell; the remaining Observation fields are not
+  // consulted by partitioning, so a minimal cast is sufficient for these tests.
+  const observation = {
+    id: observationId,
+    protocolFingerprint: spec.protocolFingerprint,
+    sourceResultId: spec.sourceResultId,
+  } as unknown as import("../evidence/evidence-types").Observation;
+  return {
+    cellKey,
+    executionLineageId: `syn-lineage:${observationId}`,
+    taskId: spec.taskId,
+    taskVersion: 1,
+    taskInstanceId: `syn-inst:${observationId}`,
+    modelConfigurationId: EXACT_ALPHA.id,
+    active: {
+      observation,
+      decision: {
+        allowedUses: ["within_model_profile"],
+      } as unknown as import("../evidence/evidence-types").EligibilityDecision,
+      ledger: null,
+    },
+    supersededAssessments: [],
+  };
+}
+
+function syntheticSelection(cells: ProfileSelectedCell[]): ProfileExactSelection {
+  return {
+    kind: "exact",
+    modelConfiguration: EXACT_ALPHA,
+    eligibilityRuleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+    cells,
+    unauthorized: [],
+    declaredReplicateGroups: [],
+    undeclaredRepeats: [],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -473,5 +526,85 @@ describe("resolveUncertaintyUnits", () => {
         resolution.units.some((u) => u.splitReason) || resolution.disclosures.length > 0;
       expect(hasSplitInfo).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2: unit identity uniquely and deterministically identifies its partition
+// ---------------------------------------------------------------------------
+
+describe("resolveUncertaintyUnits — partition identity (R2)", () => {
+  const PROTO_X = `sha256:${"x".repeat(64)}`;
+  const PROTO_Y = `sha256:${"y".repeat(64)}`;
+  const SRC_P = "src-p";
+  const SRC_Q = "src-q";
+
+  it("gives two protocol clusters with identical Task IDs distinct, deterministic unit ids", () => {
+    // Two protocols, each containing the SAME task ids -> two distinct
+    // protocol_cluster partitions. Their unit ids MUST differ (and be stable).
+    const cells = [
+      syntheticCell({ taskId: "task-shared", protocolFingerprint: PROTO_X, sourceResultId: SRC_P }),
+      syntheticCell({ taskId: "task-other", protocolFingerprint: PROTO_X, sourceResultId: SRC_P }),
+      syntheticCell({ taskId: "task-shared", protocolFingerprint: PROTO_Y, sourceResultId: SRC_P }),
+      syntheticCell({ taskId: "task-other", protocolFingerprint: PROTO_Y, sourceResultId: SRC_P }),
+    ];
+    const input: UncertaintyResolverInput = {
+      selection: syntheticSelection(cells),
+      query: baseQuery(),
+      taskFamilyRelations: [],
+      taskFamilyAssignments: [],
+    };
+    const resolution = resolveUncertaintyUnits(input);
+
+    expect(resolution.units.every((u) => u.kind === "protocol_cluster")).toBe(true);
+    expect(resolution.unitCount).toBe(2);
+    const ids = resolution.units.map((u) => u.unitId);
+    expect(new Set(ids).size).toBe(2);
+    // Each unit carries exactly one protocol's cells.
+    for (const unit of resolution.units) {
+      const protos = new Set(
+        unit.observationIds.map((oid) => cells.find((c) => c.active.observation.id === oid)?.active.observation.protocolFingerprint),
+      );
+      expect(protos.size).toBe(1);
+    }
+  });
+
+  it("gives two repository groups with identical Task IDs distinct, deterministic unit ids", () => {
+    // Single protocol, two source repositories, each with the SAME task ids.
+    const cells = [
+      syntheticCell({ taskId: "task-shared", protocolFingerprint: PROTO_X, sourceResultId: SRC_P }),
+      syntheticCell({ taskId: "task-other", protocolFingerprint: PROTO_X, sourceResultId: SRC_P }),
+      syntheticCell({ taskId: "task-shared", protocolFingerprint: PROTO_X, sourceResultId: SRC_Q }),
+      syntheticCell({ taskId: "task-other", protocolFingerprint: PROTO_X, sourceResultId: SRC_Q }),
+    ];
+    const input: UncertaintyResolverInput = {
+      selection: syntheticSelection(cells),
+      query: baseQuery(),
+      taskFamilyRelations: [],
+      taskFamilyAssignments: [],
+    };
+    const resolution = resolveUncertaintyUnits(input);
+
+    expect(resolution.units.every((u) => u.kind === "repository_group")).toBe(true);
+    expect(resolution.unitCount).toBe(2);
+    const ids = resolution.units.map((u) => u.unitId);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it("is stable under permutation of cells with identical Task IDs across protocols", () => {
+    const cells = [
+      syntheticCell({ taskId: "task-shared", protocolFingerprint: PROTO_X, sourceResultId: SRC_P }),
+      syntheticCell({ taskId: "task-shared", protocolFingerprint: PROTO_Y, sourceResultId: SRC_P }),
+    ];
+    const makeInput = (order: ProfileSelectedCell[]) => ({
+      selection: syntheticSelection(order),
+      query: baseQuery(),
+      taskFamilyRelations: [],
+      taskFamilyAssignments: [],
+    } satisfies UncertaintyResolverInput);
+    const r1 = resolveUncertaintyUnits(makeInput(cells));
+    const r2 = resolveUncertaintyUnits(makeInput([...cells].reverse()));
+    expect(r1.assignmentDigest).toBe(r2.assignmentDigest);
+    expect(r1.units.map((u) => u.unitId).sort()).toEqual(r2.units.map((u) => u.unitId).sort());
   });
 });

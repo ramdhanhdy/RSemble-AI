@@ -99,8 +99,19 @@ function groupBy<K, T>(items: readonly T[], keyOf: (item: T) => K): Map<K, T[]> 
   return map;
 }
 
-function buildUnitId(kind: UncertaintyUnitKind, taskIds: readonly string[]): string {
+function buildUnitId(
+  kind: UncertaintyUnitKind,
+  taskIds: readonly string[],
+  partitionKey?: string,
+): string {
   const sorted = [...taskIds].sort();
+  // The partition key (protocol fingerprint / source repository id) MUST be
+  // part of the unit id: two clusters that happen to share Task IDs but live
+  // in different protocols/sources are distinct resampling partitions and
+  // must never collapse to the same id (R2).
+  if (partitionKey !== undefined) {
+    return `unit:${kind}:${partitionKey}:${sorted.join(",")}`;
+  }
   return `unit:${kind}:${sorted.join(",")}`;
 }
 
@@ -267,7 +278,7 @@ export function resolveUncertaintyUnits(
     for (const [protocol, groupInfos] of protocolGroups) {
       const taskIds = [...new Set(groupInfos.map((c) => c.taskId))].sort();
       units.push({
-        unitId: buildUnitId("protocol_cluster", taskIds),
+        unitId: buildUnitId("protocol_cluster", taskIds, protocol),
         kind: "protocol_cluster",
         taskIds,
         observationIds: groupInfos.map((c) => c.cell.active.observation.id),
@@ -299,7 +310,7 @@ export function resolveUncertaintyUnits(
     for (const [source, groupInfos] of repositoryGroups) {
       const taskIds = [...new Set(groupInfos.map((c) => c.taskId))].sort();
       units.push({
-        unitId: buildUnitId("repository_group", taskIds),
+        unitId: buildUnitId("repository_group", taskIds, source),
         kind: "repository_group",
         taskIds,
         observationIds: groupInfos.map((c) => c.cell.active.observation.id),
