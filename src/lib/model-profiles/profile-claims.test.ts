@@ -169,7 +169,9 @@ describe("buildProfileClaim — label thresholds by resolved independent units",
 
   it("treats five units as the cutoff (4 -> missing, 5 -> eligible)", () => {
     expect(buildProfileClaim(baseInput({ resolvedUnitCount: 4 })).label).toBe("missing");
-    expect(buildProfileClaim(baseInput({ resolvedUnitCount: 5 })).label).toBe("strongest_supported");
+    expect(buildProfileClaim(baseInput({ resolvedUnitCount: 5 })).label).toBe(
+      "strongest_supported",
+    );
   });
 });
 
@@ -353,9 +355,7 @@ describe("buildProfileClaim — small-n, disagreement, failures, support/limitat
   });
 
   it("includes a verified-pass support ref for strongest_supported pass_rate", () => {
-    const result = buildProfileClaim(
-      baseInput({ verifiedFailures: 2, verifiedTotal: 10 }),
-    );
+    const result = buildProfileClaim(baseInput({ verifiedFailures: 2, verifiedTotal: 10 }));
     expect(result.label).toBe("strongest_supported");
     const pass = result.sentences.find((s) => s.text.includes("Verified on 8 of 10"));
     expect(pass).toBeDefined();
@@ -364,9 +364,7 @@ describe("buildProfileClaim — small-n, disagreement, failures, support/limitat
 
   it("support ref names the pre-existing boundary authority", () => {
     const result = buildProfileClaim(baseInput());
-    const support = result.sentences.find((s) =>
-      s.text.includes("declared by ver-exact-match@2"),
-    );
+    const support = result.sentences.find((s) => s.text.includes("declared by ver-exact-match@2"));
     expect(support).toBeDefined();
     expect(support!.sourceMetricKey).toBe("boundary:ver-exact-match@2");
   });
@@ -502,9 +500,7 @@ describe("buildProfileClaim — fixed-template narrative snapshot", () => {
   }
 
   it("strongest_supported snapshot is stable", () => {
-    const result = buildProfileClaim(
-      baseInput({ verifiedFailures: 2, verifiedTotal: 10 }),
-    );
+    const result = buildProfileClaim(baseInput({ verifiedFailures: 2, verifiedTotal: 10 }));
     expect(snapshot(result)).toMatchInlineSnapshot(`
       {
         "disclosures": [
@@ -653,7 +649,9 @@ describe("buildProfileClaim — fixed-template narrative snapshot", () => {
     const result = buildProfileClaim(baseInput({ resolvedUnitCount: 3 }));
     expect(result.label).toBe("missing");
     expect(result.disclosures).toContain("small_n:3");
-    const small = result.sentences.find((s) => s.text.includes("Insufficient independent coverage"));
+    const small = result.sentences.find((s) =>
+      s.text.includes("Insufficient independent coverage"),
+    );
     expect(small).toBeDefined();
   });
 

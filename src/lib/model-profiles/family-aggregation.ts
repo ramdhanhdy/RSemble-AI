@@ -434,16 +434,20 @@ function buildInstance(
   if (!first) {
     throw new Error("instance aggregate requires at least one observation");
   }
-  const observationIds = [...new Set(leaves.map((leaf) => leaf.observation.id))].sort(compareStrings);
+  const observationIds = [...new Set(leaves.map((leaf) => leaf.observation.id))].sort(
+    compareStrings,
+  );
 
   const scoreGroups = groupBy(leaves, (leaf) => leaf.scoreCohortId);
-  const judgedScores: CohortMetric[] = [...scoreGroups.keys()].sort(compareStrings).map((cohortId) => {
-    const group = scoreGroups.get(cohortId) ?? [];
-    return {
-      cohortId,
-      value: aggregateScores(group.map((leaf) => leaf.observation.outcome.overallScore)),
-    };
-  });
+  const judgedScores: CohortMetric[] = [...scoreGroups.keys()]
+    .sort(compareStrings)
+    .map((cohortId) => {
+      const group = scoreGroups.get(cohortId) ?? [];
+      return {
+        cohortId,
+        value: aggregateScores(group.map((leaf) => leaf.observation.outcome.overallScore)),
+      };
+    });
 
   const passGroups = groupBy(leaves, (leaf) => leaf.passCohortId);
   const passRates: CohortMetric[] = [];

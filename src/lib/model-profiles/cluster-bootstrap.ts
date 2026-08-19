@@ -117,9 +117,7 @@ const DEFAULT_RESAMPLES = 2000;
  * Permutation invariance: units are sorted by unitId before resampling,
  * ensuring that reordering the input units does not change the result.
  */
-export function bootstrapTaskClusters(
-  input: BootstrapInput,
-): BootstrapResult {
+export function bootstrapTaskClusters(input: BootstrapInput): BootstrapResult {
   const { resolution, config, unitValues } = input;
   const unitCount = resolution.unitCount;
   const resamples = config.resamples ?? DEFAULT_RESAMPLES;
@@ -154,9 +152,7 @@ export function bootstrapTaskClusters(
 
   // --- Prepare unit entries (deterministic order) ---------------------------
   // Sort by unitId for permutation invariance
-  const sortedUnits = [...resolution.units].sort((a, b) =>
-    a.unitId.localeCompare(b.unitId),
-  );
+  const sortedUnits = [...resolution.units].sort((a, b) => a.unitId.localeCompare(b.unitId));
 
   const entries = sortedUnits.map((u) => ({
     id: u.unitId,

@@ -39,22 +39,20 @@
 // =============================================================================
 
 import { canonicalJsonString, hashArtifactContent } from "../evaluations/protocol-fingerprint";
-import type {
-  EvaluatorSnapshot,
-  Observation,
-  VerifierSnapshot,
-} from "../evidence/evidence-types";
+import type { EvaluatorSnapshot, Observation, VerifierSnapshot } from "../evidence/evidence-types";
 import type { TaskFamilyAssignment, TaskFamilyRelation, VersionRef } from "../tasks/task-types";
-import { QUERY_AGGREGATION_RULE_VERSION, QUERY_UNCERTAINTY_RULE_VERSION } from "./model-evidence-query";
+import {
+  QUERY_AGGREGATION_RULE_VERSION,
+  QUERY_UNCERTAINTY_RULE_VERSION,
+} from "./model-evidence-query";
 import type { ProfileExactSelection, ProfileSelectedCell } from "./profile-observation-selection";
-import type {
-  CommensurateRubricMapping,
-  CompatibleVerifierDefinition,
-} from "./family-aggregation";
-import { UNCERTAINTY_RULE_VERSION } from "./uncertainty-unit-resolver";
-import type { UncertaintyUnit, UncertaintyUnitResolution } from "./uncertainty-unit-resolver";
-import { bootstrapTaskClusters } from "./cluster-bootstrap";
-import type { BootstrapResult } from "./cluster-bootstrap";
+import type { CommensurateRubricMapping, CompatibleVerifierDefinition } from "./family-aggregation";
+import {
+  UNCERTAINTY_RULE_VERSION,
+  type UncertaintyUnit,
+  type UncertaintyUnitResolution,
+} from "./uncertainty-unit-resolver";
+import { bootstrapTaskClusters, type BootstrapResult } from "./cluster-bootstrap";
 
 // --- Rule version --------------------------------------------------------------
 
@@ -67,10 +65,7 @@ export type PairedMetricKind = "judged_score" | "pass_rate";
 export type PairedOutcome = "win" | "tie" | "loss";
 
 export type PairedTaskState =
-  | "comparable"
-  | "incompatible_cohort"
-  | "missing_in_a"
-  | "missing_in_b";
+  "comparable" | "incompatible_cohort" | "missing_in_a" | "missing_in_b";
 
 // --- Task delta ----------------------------------------------------------------
 
@@ -318,9 +313,7 @@ function classifyOutcome(delta: number, epsilon: number): PairedOutcome {
 
 // --- Dependency-aware paired unit assignment -----------------------------------
 
-function buildFamilyIndex(
-  assignments: readonly TaskFamilyAssignment[],
-): Map<string, string[]> {
+function buildFamilyIndex(assignments: readonly TaskFamilyAssignment[]): Map<string, string[]> {
   const taskFamily = new Map<string, string>();
   for (const assign of assignments) {
     if (!assign.isPrimary) continue;
@@ -529,7 +522,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
     for (const taskId of allTasks) {
       const inA = tasksA.has(taskId);
       const inB = tasksB.has(taskId);
-      const cells = (inA ? byTaskA.get(taskId)! : byTaskB.get(taskId)!);
+      const cells = inA ? byTaskA.get(taskId)! : byTaskB.get(taskId)!;
       taskDeltas.push({
         taskId,
         state: inA ? "missing_in_b" : "missing_in_a",
@@ -630,18 +623,21 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
 
     // Shared task. Check cohort compatibility across all A and B observations.
     const cohortIdsA = new Set(
-      cellsA.map((c) => pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings)),
+      cellsA.map((c) =>
+        pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
+      ),
     );
     const cohortIdsB = new Set(
-      cellsB.map((c) => pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings)),
+      cellsB.map((c) =>
+        pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
+      ),
     );
     const sharedCohorts = [...cohortIdsA].filter((id) => cohortIdsB.has(id));
 
     const versionsA = uniqueSortedNumbers(cellsA.map((c) => c.taskVersion));
     const versionsB = uniqueSortedNumbers(cellsB.map((c) => c.taskVersion));
     const changedTaskVersion =
-      versionsA.length !== versionsB.length ||
-      versionsA.some((v, i) => v !== versionsB[i]);
+      versionsA.length !== versionsB.length || versionsA.some((v, i) => v !== versionsB[i]);
     const instancesA = uniqueSortedStrings(cellsA.map((c) => c.taskInstanceId));
     const instancesB = uniqueSortedStrings(cellsB.map((c) => c.taskInstanceId));
     const missingInstancesA = instancesB.filter((i) => !instancesA.includes(i));
@@ -669,8 +665,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
         instancesB,
         missingInstancesA,
         missingInstancesB,
-        disclosure:
-          `Task "${taskId}" is shared but the two configurations were assessed under incompatible ${metric === "judged_score" ? "rubric" : "verifier"} cohorts — not pooled.`,
+        disclosure: `Task "${taskId}" is shared but the two configurations were assessed under incompatible ${metric === "judged_score" ? "rubric" : "verifier"} cohorts — not pooled.`,
       });
       continue;
     }
@@ -679,10 +674,14 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
     // cohort so unrelated cohorts never enter the paired delta.
     const sharedCohortSet = new Set(sharedCohorts);
     const compatibleA = cellsA.filter((c) =>
-      sharedCohortSet.has(pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings)),
+      sharedCohortSet.has(
+        pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
+      ),
     );
     const compatibleB = cellsB.filter((c) =>
-      sharedCohortSet.has(pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings)),
+      sharedCohortSet.has(
+        pairedCohortId(c.active.observation, metric, rubricMappings, verifierMappings),
+      ),
     );
 
     const valueA = taskMetric(compatibleA, metric);
@@ -709,8 +708,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
         instancesB,
         missingInstancesA,
         missingInstancesB,
-        disclosure:
-          `Task "${taskId}" has no usable ${metric} values on one configuration within the shared cohort — not compared.`,
+        disclosure: `Task "${taskId}" has no usable ${metric} values on one configuration within the shared cohort — not compared.`,
       });
       continue;
     }
@@ -783,7 +781,9 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
     );
   }
   const instanceGaps = taskDeltas.filter(
-    (d) => d.state === "comparable" && (d.missingInstancesA.length > 0 || d.missingInstancesB.length > 0),
+    (d) =>
+      d.state === "comparable" &&
+      (d.missingInstancesA.length > 0 || d.missingInstancesB.length > 0),
   );
   if (instanceGaps.length > 0) {
     disclosures.push(
@@ -793,9 +793,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
 
   // 5. Mean delta.
   const meanDelta =
-    comparableDeltas.length > 0
-      ? arithmeticMean(comparableDeltas.map((d) => d.delta))
-      : null;
+    comparableDeltas.length > 0 ? arithmeticMean(comparableDeltas.map((d) => d.delta)) : null;
 
   // 6. Dependency-aware bootstrap of paired deltas.
   let bootstrap: BootstrapResult | null = null;
@@ -812,9 +810,7 @@ export function computePairedEvidence(input: PairedComparisonInput): PairedCompa
     disclosures.push(...resolution.disclosures);
 
     // Unit paired delta = mean of comparable task deltas within the unit.
-    const taskDeltaMap = new Map<string, number>(
-      comparableDeltas.map((d) => [d.taskId, d.delta]),
-    );
+    const taskDeltaMap = new Map<string, number>(comparableDeltas.map((d) => [d.taskId, d.delta]));
     const unitValues = new Map<string, number>();
     for (const unit of resolution.units) {
       const unitDeltas = unit.taskIds

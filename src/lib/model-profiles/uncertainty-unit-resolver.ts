@@ -24,8 +24,7 @@
 
 import { canonicalJsonString, hashArtifactContent } from "../evaluations/protocol-fingerprint";
 import type { TaskFamilyAssignment, TaskFamilyRelation } from "../tasks/task-types";
-import { QUERY_UNCERTAINTY_RULE_VERSION } from "./model-evidence-query";
-import type { ModelEvidenceQuery } from "./model-evidence-query";
+import { QUERY_UNCERTAINTY_RULE_VERSION, type ModelEvidenceQuery } from "./model-evidence-query";
 import type { ProfileExactSelection, ProfileSelectedCell } from "./profile-observation-selection";
 
 // --- Rule version ---------------------------------------------------------------
@@ -35,10 +34,7 @@ export const UNCERTAINTY_RULE_VERSION = QUERY_UNCERTAINTY_RULE_VERSION;
 // --- Unit kinds -----------------------------------------------------------------
 
 export type UncertaintyUnitKind =
-  | "protocol_cluster"
-  | "repository_group"
-  | "task_family_relation"
-  | "task_identity";
+  "protocol_cluster" | "repository_group" | "task_family_relation" | "task_identity";
 
 // --- Unit -----------------------------------------------------------------------
 
@@ -108,9 +104,7 @@ function buildUnitId(kind: UncertaintyUnitKind, taskIds: readonly string[]): str
   return `unit:${kind}:${sorted.join(",")}`;
 }
 
-function detectFamilyConflicts(
-  assignments: readonly TaskFamilyAssignment[],
-): string[] {
+function detectFamilyConflicts(assignments: readonly TaskFamilyAssignment[]): string[] {
   const conflicts: string[] = [];
   const taskFamily = new Map<string, string>();
 
@@ -128,9 +122,7 @@ function detectFamilyConflicts(
   return conflicts;
 }
 
-function buildFamilyIndex(
-  assignments: readonly TaskFamilyAssignment[],
-): Map<string, string[]> {
+function buildFamilyIndex(assignments: readonly TaskFamilyAssignment[]): Map<string, string[]> {
   const index = new Map<string, string[]>();
   const taskFamily = new Map<string, string>();
 
@@ -350,9 +342,7 @@ export function resolveUncertaintyUnits(
     }
 
     // Remaining ungrouped cells become task_identity units
-    const groupedCellKeys = new Set(
-      units.flatMap((u) => u.cellKeys),
-    );
+    const groupedCellKeys = new Set(units.flatMap((u) => u.cellKeys));
     const ungrouped = infos.filter((c) => !groupedCellKeys.has(c.cell.cellKey));
 
     if (ungrouped.length > 0) {

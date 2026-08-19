@@ -21,10 +21,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type {
-  TaskFamilyAssignment,
-  TaskFamilyRelation,
-} from "../tasks/task-types";
+import type { TaskFamilyAssignment, TaskFamilyRelation } from "../tasks/task-types";
 import {
   MILESTONE_A_GOLDEN,
   milestoneADecisions,
@@ -148,9 +145,7 @@ describe("resolveUncertaintyUnits", () => {
     for (const unit of resolution.units) {
       const protocols = new Set(
         unit.observationIds.map((oid) => {
-          const cell = input.selection.cells.find(
-            (c) => c.active.observation.id === oid,
-          );
+          const cell = input.selection.cells.find((c) => c.active.observation.id === oid);
           return cell?.active.observation.protocolFingerprint;
         }),
       );
@@ -324,9 +319,7 @@ describe("resolveUncertaintyUnits", () => {
     const resolution = resolveUncertaintyUnits(input);
 
     expect(resolution.units.length).toBeGreaterThanOrEqual(1);
-    const hasConflictDisclosure = resolution.disclosures.some(
-      (d) => d.includes("multiple"),
-    );
+    const hasConflictDisclosure = resolution.disclosures.some((d) => d.includes("multiple"));
     expect(hasConflictDisclosure).toBe(true);
   });
 
@@ -477,8 +470,7 @@ describe("resolveUncertaintyUnits", () => {
     const resolution = resolveUncertaintyUnits(defaultResolverInput());
     if (resolution.unitCount > 1) {
       const hasSplitInfo =
-        resolution.units.some((u) => u.splitReason) ||
-        resolution.disclosures.length > 0;
+        resolution.units.some((u) => u.splitReason) || resolution.disclosures.length > 0;
       expect(hasSplitInfo).toBe(true);
     }
   });

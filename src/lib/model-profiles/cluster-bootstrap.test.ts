@@ -21,14 +21,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import type {
-  UncertaintyUnit,
-  UncertaintyUnitResolution,
-} from "./uncertainty-unit-resolver";
-import {
-  bootstrapTaskClusters,
-  type BootstrapConfig,
-} from "./cluster-bootstrap";
+import type { UncertaintyUnit, UncertaintyUnitResolution } from "./uncertainty-unit-resolver";
+import { bootstrapTaskClusters, type BootstrapConfig } from "./cluster-bootstrap";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -59,9 +53,10 @@ function makeResolution(
     assignmentDigest: ASSIGNMENT_DIGEST,
     units,
     unitCount: units.length,
-    fallbackAssumption: units.length > 0 && units[0]!.kind === "task_identity"
-      ? "Task identity is the explicit fallback assumption"
-      : null,
+    fallbackAssumption:
+      units.length > 0 && units[0]!.kind === "task_identity"
+        ? "Task identity is the explicit fallback assumption"
+        : null,
     disclosures: [],
     ...overrides,
   };
@@ -79,10 +74,7 @@ function makeConfig(overrides: Partial<BootstrapConfig> = {}): BootstrapConfig {
   };
 }
 
-function makeUnitValues(
-  units: UncertaintyUnit[],
-  values: number[],
-): Map<string, number> {
+function makeUnitValues(units: UncertaintyUnit[], values: number[]): Map<string, number> {
   const map = new Map<string, number>();
   for (let i = 0; i < units.length; i++) {
     map.set(units[i]!.unitId, values[i] ?? 0);
@@ -227,10 +219,7 @@ describe("bootstrapTaskClusters", () => {
   // -- Below five units -----------------------------------------------------
 
   it("returns insufficient-coverage state when below 5 units", () => {
-    const units = [
-      makeUnit("unit:1", ["t1"], ["o1"]),
-      makeUnit("unit:2", ["t2"], ["o2"]),
-    ];
+    const units = [makeUnit("unit:1", ["t1"], ["o1"]), makeUnit("unit:2", ["t2"], ["o2"])];
     const resolution = makeResolution(units);
     const unitValues = makeUnitValues(units, [0.8, 0.6]);
 
@@ -445,10 +434,10 @@ describe("bootstrapTaskClusters", () => {
 
     const r90 = bootstrapTaskClusters({
       resolution,
-      config: makeConfig({ intervalLevel: 0.90 }),
+      config: makeConfig({ intervalLevel: 0.9 }),
       unitValues,
     });
-    expect(r90.interval!.level).toBe(0.90);
+    expect(r90.interval!.level).toBe(0.9);
   });
 
   // -- Resample count -------------------------------------------------------

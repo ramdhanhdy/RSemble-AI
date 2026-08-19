@@ -50,11 +50,7 @@ export const MIN_CLAIM_RESOLVED_UNITS = 5;
 // --- Labels ---------------------------------------------------------------------
 
 export type ClaimLabel =
-  | "strongest_supported"
-  | "weakest_supported"
-  | "mixed"
-  | "descriptive_only"
-  | "missing";
+  "strongest_supported" | "weakest_supported" | "mixed" | "descriptive_only" | "missing";
 
 export type ClaimMetricKind = "judged_score" | "pass_rate";
 
@@ -207,7 +203,9 @@ function isFiniteNumber(v: unknown): v is number {
 }
 
 function validRegion(region: { readonly lower: number; readonly upper: number }): boolean {
-  return isFiniteNumber(region.lower) && isFiniteNumber(region.upper) && region.lower <= region.upper;
+  return (
+    isFiniteNumber(region.lower) && isFiniteNumber(region.upper) && region.lower <= region.upper
+  );
 }
 
 /**
@@ -480,10 +478,7 @@ function missingSentences(input: ClaimCohortInput, reason: ClaimReason): ClaimSe
   return sentences;
 }
 
-function disclosuresFor(
-  input: ClaimCohortInput,
-  decision: ClaimDecision,
-): string[] {
+function disclosuresFor(input: ClaimCohortInput, decision: ClaimDecision): string[] {
   const out: string[] = [];
   switch (decision.label) {
     case "strongest_supported":

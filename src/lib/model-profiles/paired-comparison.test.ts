@@ -33,16 +33,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { EvidenceLedgerRow } from "../evidence/evidence-counting";
-import type {
-  EligibilityDecision,
-  EvaluatorSnapshot,
-  EvidenceUse,
-  ModelConfigurationSnapshot,
-  Observation,
-  ObservationOutcome,
-  VerifierSnapshot,
+import {
+  OBSERVATION_SCHEMA_VERSION,
+  type EligibilityDecision,
+  type EvaluatorSnapshot,
+  type EvidenceUse,
+  type ModelConfigurationSnapshot,
+  type Observation,
+  type ObservationOutcome,
+  type VerifierSnapshot,
 } from "../evidence/evidence-types";
-import { OBSERVATION_SCHEMA_VERSION } from "../evidence/evidence-types";
 import type { TaskFamilyRelation, VersionRef } from "../tasks/task-types";
 import {
   MILESTONE_A_GOLDEN,
@@ -208,8 +208,11 @@ function makeRecord(spec: CellSpec): ProfileSelectedRecord {
     observedAt: T0 + n,
     observationSchemaVersion: OBSERVATION_SCHEMA_VERSION,
   };
-  const allowedUses: readonly EvidenceUse[] =
-    spec.allowedUses ?? ["task_descriptive", "within_model_profile", "paired_model_comparison"];
+  const allowedUses: readonly EvidenceUse[] = spec.allowedUses ?? [
+    "task_descriptive",
+    "within_model_profile",
+    "paired_model_comparison",
+  ];
   const decision: EligibilityDecision = {
     observationId,
     ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
@@ -327,9 +330,7 @@ describe("computePairedEvidence — intersection only", () => {
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
 
     expect(result.empty).toBe(true);
     expect(result.emptyReason).toBeTruthy();
@@ -352,22 +353,40 @@ describe("computePairedEvidence — intersection only", () => {
   it("never compares unrelated task mixes: tasks only in one side are missing, not compared", () => {
     const a = makeSelection(
       [
-        makeCell({ taskId: "task-shared", taskInstanceId: "inst-s", score: 5, configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "task-only-a", taskInstanceId: "inst-a", score: 3, configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: "task-shared",
+          taskInstanceId: "inst-s",
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "task-only-a",
+          taskInstanceId: "inst-a",
+          score: 3,
+          configuration: EXACT_ALPHA,
+        }),
       ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
       [
-        makeCell({ taskId: "task-shared", taskInstanceId: "inst-s", score: 2, configuration: EXACT_BETA }),
-        makeCell({ taskId: "task-only-b", taskInstanceId: "inst-b", score: 1, configuration: EXACT_BETA }),
+        makeCell({
+          taskId: "task-shared",
+          taskInstanceId: "inst-s",
+          score: 2,
+          configuration: EXACT_BETA,
+        }),
+        makeCell({
+          taskId: "task-only-b",
+          taskInstanceId: "inst-b",
+          score: 1,
+          configuration: EXACT_BETA,
+        }),
       ],
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
 
     expect(result.empty).toBe(false);
     expect(result.coverage.sharedTaskCount).toBe(1);
@@ -421,9 +440,7 @@ describe("computePairedEvidence — intersection only", () => {
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
 
     // task-skipped is not paired-eligible on either side, so it is NOT shared.
     expect(result.coverage.sharedTaskCount).toBe(1);
@@ -465,9 +482,7 @@ describe("computePairedEvidence — compatible cohorts only", () => {
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
 
     expect(findDelta(result, "task-x").state).toBe("comparable");
     expect(findDelta(result, "task-x").delta).toBe(3);
@@ -504,9 +519,7 @@ describe("computePairedEvidence — compatible cohorts only", () => {
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
 
     const delta = findDelta(result, "task-x");
     expect(delta.state).toBe("incompatible_cohort");
@@ -583,9 +596,7 @@ describe("computePairedEvidence — compatible cohorts only", () => {
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
 
     expect(findDelta(result, "task-x").state).toBe("incompatible_cohort");
     expect(result.coverage.incompatibleTaskCount).toBe(1);
@@ -617,9 +628,7 @@ describe("computePairedEvidence — compatible cohorts only", () => {
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
 
     expect(findDelta(result, "task-x").state).toBe("incompatible_cohort");
   });
@@ -652,9 +661,7 @@ describe("computePairedEvidence — compatible cohorts only", () => {
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "pass_rate" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "pass_rate" }));
 
     const delta = findDelta(result, "task-v");
     expect(delta.state).toBe("comparable");
@@ -690,9 +697,7 @@ describe("computePairedEvidence — compatible cohorts only", () => {
       EXACT_BETA,
     );
 
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "pass_rate" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "pass_rate" }));
 
     expect(findDelta(result, "task-v").state).toBe("incompatible_cohort");
   });
@@ -778,32 +783,56 @@ describe("computePairedEvidence — wins / ties / losses and epsilon", () => {
 
   it("honors a custom epsilon: |delta| == epsilon is a tie", () => {
     const a = makeSelection(
-      [makeCell({ taskId: "task-x", taskInstanceId: "inst-x", score: 5, configuration: EXACT_ALPHA })],
+      [
+        makeCell({
+          taskId: "task-x",
+          taskInstanceId: "inst-x",
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
+      ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
-      [makeCell({ taskId: "task-x", taskInstanceId: "inst-x", score: 4, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "task-x",
+          taskInstanceId: "inst-x",
+          score: 4,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score", epsilon: 1 }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score", epsilon: 1 }));
     expect(findDelta(result, "task-x").outcome).toBe("tie");
     expect(result.epsilon).toBe(1);
   });
 
   it("honors a custom epsilon: delta just above epsilon is a win", () => {
     const a = makeSelection(
-      [makeCell({ taskId: "task-x", taskInstanceId: "inst-x", score: 5.5, configuration: EXACT_ALPHA })],
+      [
+        makeCell({
+          taskId: "task-x",
+          taskInstanceId: "inst-x",
+          score: 5.5,
+          configuration: EXACT_ALPHA,
+        }),
+      ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
-      [makeCell({ taskId: "task-x", taskInstanceId: "inst-x", score: 4, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "task-x",
+          taskInstanceId: "inst-x",
+          score: 4,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score", epsilon: 1 }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score", epsilon: 1 }));
     expect(findDelta(result, "task-x").outcome).toBe("win");
   });
 
@@ -826,9 +855,7 @@ describe("computePairedEvidence — wins / ties / losses and epsilon", () => {
       ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     expect(result.coverage.wins).toBe(1); // t1: +3
     expect(result.coverage.ties).toBe(2); // t2, t4
     expect(result.coverage.losses).toBe(1); // t3: -3
@@ -842,18 +869,36 @@ describe("computePairedEvidence — paired Task-level deltas", () => {
     // B: one instance -> 2.
     const a = makeSelection(
       [
-        makeCell({ taskId: "task-h", taskVersion: 1, taskInstanceId: "i-a", score: 5, configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "task-h", taskVersion: 1, taskInstanceId: "i-b", score: 3, configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: "task-h",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "task-h",
+          taskVersion: 1,
+          taskInstanceId: "i-b",
+          score: 3,
+          configuration: EXACT_ALPHA,
+        }),
       ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
-      [makeCell({ taskId: "task-h", taskVersion: 1, taskInstanceId: "i-a", score: 2, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "task-h",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 2,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     const delta = findDelta(result, "task-h");
     expect(delta.valueA).toBeCloseTo(4, 10);
     expect(delta.valueB).toBeCloseTo(2, 10);
@@ -865,18 +910,36 @@ describe("computePairedEvidence — paired Task-level deltas", () => {
     // A: v1 score 2, v2 score 6 -> version means 2 and 6 -> task mean 4.
     const a = makeSelection(
       [
-        makeCell({ taskId: "task-h", taskVersion: 1, taskInstanceId: "i-a", score: 2, configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "task-h", taskVersion: 2, taskInstanceId: "i-b", score: 6, configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: "task-h",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 2,
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "task-h",
+          taskVersion: 2,
+          taskInstanceId: "i-b",
+          score: 6,
+          configuration: EXACT_ALPHA,
+        }),
       ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
-      [makeCell({ taskId: "task-h", taskVersion: 1, taskInstanceId: "i-a", score: 4, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "task-h",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 4,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     const delta = findDelta(result, "task-h");
     expect(delta.valueA).toBeCloseTo(4, 10);
     expect(delta.valueB).toBeCloseTo(4, 10);
@@ -900,9 +963,7 @@ describe("computePairedEvidence — paired Task-level deltas", () => {
       ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     // deltas: +4, 0 -> mean 2
     expect(result.meanDelta).toBeCloseTo(2, 10);
   });
@@ -913,18 +974,36 @@ describe("computePairedEvidence — missing cells handled and disclosed", () => 
     // A has instances {a, b}; B has only {a}. b is missing in B.
     const a = makeSelection(
       [
-        makeCell({ taskId: "task-m", taskVersion: 1, taskInstanceId: "i-a", score: 5, configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "task-m", taskVersion: 1, taskInstanceId: "i-b", score: 3, configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: "task-m",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "task-m",
+          taskVersion: 1,
+          taskInstanceId: "i-b",
+          score: 3,
+          configuration: EXACT_ALPHA,
+        }),
       ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
-      [makeCell({ taskId: "task-m", taskVersion: 1, taskInstanceId: "i-a", score: 2, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "task-m",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 2,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     const delta = findDelta(result, "task-m");
     expect(delta.state).toBe("comparable");
     expect(delta.missingInstancesB).toContain("i-b");
@@ -948,9 +1027,7 @@ describe("computePairedEvidence — missing cells handled and disclosed", () => 
       ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     expect(result.coverage.missingInB).toBe(1);
     expect(result.coverage.missingInA).toBe(1);
     expect(result.coverage.sharedTaskCount).toBe(1);
@@ -961,16 +1038,30 @@ describe("computePairedEvidence — changed task versions", () => {
   it("treats same task identity across versions as shared and discloses the version mismatch", () => {
     // A has task-transform v1, B has task-transform v2. Same task identity.
     const a = makeSelection(
-      [makeCell({ taskId: "task-c", taskVersion: 1, taskInstanceId: "i-a", score: 5, configuration: EXACT_ALPHA })],
+      [
+        makeCell({
+          taskId: "task-c",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
+      ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
-      [makeCell({ taskId: "task-c", taskVersion: 2, taskInstanceId: "i-b", score: 2, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "task-c",
+          taskVersion: 2,
+          taskInstanceId: "i-b",
+          score: 2,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     const delta = findDelta(result, "task-c");
     expect(delta.state).toBe("comparable");
     expect(delta.changedTaskVersion).toBe(true);
@@ -982,16 +1073,30 @@ describe("computePairedEvidence — changed task versions", () => {
 
   it("does not flag changedTaskVersion when version sets match", () => {
     const a = makeSelection(
-      [makeCell({ taskId: "task-c", taskVersion: 1, taskInstanceId: "i-a", score: 5, configuration: EXACT_ALPHA })],
+      [
+        makeCell({
+          taskId: "task-c",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
+      ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
-      [makeCell({ taskId: "task-c", taskVersion: 1, taskInstanceId: "i-a", score: 2, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "task-c",
+          taskVersion: 1,
+          taskInstanceId: "i-a",
+          score: 2,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     expect(findDelta(result, "task-c").changedTaskVersion).toBe(false);
   });
 });
@@ -1023,8 +1128,18 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
     ];
     const a = makeSelection(
       [
-        makeCell({ taskId: "t-rel-a", taskInstanceId: "i-a", score: 5, configuration: EXACT_ALPHA }),
-        makeCell({ taskId: "t-rel-b", taskInstanceId: "i-b", score: 5, configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: "t-rel-a",
+          taskInstanceId: "i-a",
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
+        makeCell({
+          taskId: "t-rel-b",
+          taskInstanceId: "i-b",
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
       ],
       EXACT_ALPHA,
     );
@@ -1036,9 +1151,14 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
       EXACT_BETA,
     );
     const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }, {
-        taskFamilyAssignments: assignments,
-      }),
+      pairedInput(
+        a,
+        b,
+        { metric: "judged_score" },
+        {
+          taskFamilyAssignments: assignments,
+        },
+      ),
     );
     expect(result.uncertaintyResolution).not.toBeNull();
     const res = result.uncertaintyResolution!;
@@ -1098,10 +1218,15 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
       EXACT_BETA,
     );
     const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }, {
-        taskFamilyAssignments: assignments,
-        taskFamilyRelations: relations,
-      }),
+      pairedInput(
+        a,
+        b,
+        { metric: "judged_score" },
+        {
+          taskFamilyAssignments: assignments,
+          taskFamilyRelations: relations,
+        },
+      ),
     );
     expect(result.uncertaintyResolution!.unitCount).toBe(1);
   });
@@ -1121,9 +1246,7 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
       ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     const res = result.uncertaintyResolution!;
     expect(res.units.every((u) => u.kind === "task_identity")).toBe(true);
     expect(res.unitCount).toBe(2);
@@ -1144,21 +1267,36 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
     }));
     const a = makeSelection(
       [1, 2, 3, 4, 5].map((n) =>
-        makeCell({ taskId: `t-${n}`, taskInstanceId: `i-${n}`, score: 5, configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: `t-${n}`,
+          taskInstanceId: `i-${n}`,
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
       ),
       EXACT_ALPHA,
     );
     const b = makeSelection(
       [1, 2, 3, 4, 5].map((n) =>
-        makeCell({ taskId: `t-${n}`, taskInstanceId: `i-${n}`, score: 1, configuration: EXACT_BETA }),
+        makeCell({
+          taskId: `t-${n}`,
+          taskInstanceId: `i-${n}`,
+          score: 1,
+          configuration: EXACT_BETA,
+        }),
       ),
       EXACT_BETA,
     );
     const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }, {
-        taskFamilyAssignments: assignments,
-        resamples: 500,
-      }),
+      pairedInput(
+        a,
+        b,
+        { metric: "judged_score" },
+        {
+          taskFamilyAssignments: assignments,
+          resamples: 500,
+        },
+      ),
     );
     expect(result.uncertaintyResolution!.unitCount).toBe(5);
     expect(result.bootstrap).not.toBeNull();
@@ -1172,19 +1310,27 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
   it("reports insufficient coverage and no interval below five units", () => {
     const a = makeSelection(
       [1, 2].map((n) =>
-        makeCell({ taskId: `t-${n}`, taskInstanceId: `i-${n}`, score: 5, configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: `t-${n}`,
+          taskInstanceId: `i-${n}`,
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
       ),
       EXACT_ALPHA,
     );
     const b = makeSelection(
       [1, 2].map((n) =>
-        makeCell({ taskId: `t-${n}`, taskInstanceId: `i-${n}`, score: 1, configuration: EXACT_BETA }),
+        makeCell({
+          taskId: `t-${n}`,
+          taskInstanceId: `i-${n}`,
+          score: 1,
+          configuration: EXACT_BETA,
+        }),
       ),
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     expect(result.bootstrap).not.toBeNull();
     expect(result.bootstrap!.coverageState.state).toBe("insufficient");
     expect(result.bootstrap!.interval).toBeNull();
@@ -1194,16 +1340,30 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
   it("skips bootstrap entirely when there are no comparable tasks", () => {
     // Shared task but incompatible cohort -> no comparable delta -> no bootstrap.
     const a = makeSelection(
-      [makeCell({ taskId: "t-x", taskInstanceId: "i-x", score: 5, rubric: RUBRIC_QUALITY, configuration: EXACT_ALPHA })],
+      [
+        makeCell({
+          taskId: "t-x",
+          taskInstanceId: "i-x",
+          score: 5,
+          rubric: RUBRIC_QUALITY,
+          configuration: EXACT_ALPHA,
+        }),
+      ],
       EXACT_ALPHA,
     );
     const b = makeSelection(
-      [makeCell({ taskId: "t-x", taskInstanceId: "i-x", score: 2, rubric: RUBRIC_STYLE, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "t-x",
+          taskInstanceId: "i-x",
+          score: 2,
+          rubric: RUBRIC_STYLE,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     expect(result.bootstrap).toBeNull();
     expect(result.uncertaintyResolution).toBeNull();
     expect(result.meanDelta).toBeNull();
@@ -1222,21 +1382,36 @@ describe("computePairedEvidence — dependency-aware bootstrap assignment", () =
     }));
     const a = makeSelection(
       [1, 2, 3, 4, 5].map((n) =>
-        makeCell({ taskId: `t-${n}`, taskInstanceId: `i-${n}`, score: 5, configuration: EXACT_ALPHA }),
+        makeCell({
+          taskId: `t-${n}`,
+          taskInstanceId: `i-${n}`,
+          score: 5,
+          configuration: EXACT_ALPHA,
+        }),
       ),
       EXACT_ALPHA,
     );
     const b = makeSelection(
       [1, 2, 3, 4, 5].map((n) =>
-        makeCell({ taskId: `t-${n}`, taskInstanceId: `i-${n}`, score: 1, configuration: EXACT_BETA }),
+        makeCell({
+          taskId: `t-${n}`,
+          taskInstanceId: `i-${n}`,
+          score: 1,
+          configuration: EXACT_BETA,
+        }),
       ),
       EXACT_BETA,
     );
     const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }, {
-        taskFamilyAssignments: assignments,
-        resamples: 500,
-      }),
+      pairedInput(
+        a,
+        b,
+        { metric: "judged_score" },
+        {
+          taskFamilyAssignments: assignments,
+          resamples: 500,
+        },
+      ),
     );
     expect(result.bootstrap!.aggregationRuleVersion).toBe(QUERY_AGGREGATION_RULE_VERSION);
     expect(result.bootstrap!.uncertaintyRuleVersion).toBe(QUERY_UNCERTAINTY_RULE_VERSION);
@@ -1278,7 +1453,9 @@ describe("computePairedEvidence — determinism, purity, permutations", () => {
       makeCell({ taskId: "t3", taskInstanceId: "i3", score: 4, configuration: EXACT_BETA }),
     ];
     const base = computePairedEvidence(
-      pairedInput(makeSelection(aCells, EXACT_ALPHA), makeSelection(bCells, EXACT_BETA), { metric: "judged_score" }),
+      pairedInput(makeSelection(aCells, EXACT_ALPHA), makeSelection(bCells, EXACT_BETA), {
+        metric: "judged_score",
+      }),
     );
     const shuffled = computePairedEvidence(
       pairedInput(
@@ -1323,9 +1500,7 @@ describe("computePairedEvidence — determinism, purity, permutations", () => {
       ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     const ids = result.taskDeltas.map((d) => d.taskId);
     expect(ids).toEqual([...ids].sort());
   });
@@ -1371,14 +1546,17 @@ describe("computePairedEvidence — milestone A golden selection", () => {
     const a = goldenSelection(EXACT_ALPHA.id);
     const b = goldenSelection(EXACT_BETA.id);
     const result = computePairedEvidence(
-      pairedInput(a, b, {
-        metric: "judged_score",
-        commensurateRubricMappings: MILESTONE_A_GOLDEN.familyAssignments
-          ? []
-          : [],
-      }, {
-        taskFamilyAssignments: MILESTONE_A_GOLDEN.familyAssignments,
-      }),
+      pairedInput(
+        a,
+        b,
+        {
+          metric: "judged_score",
+          commensurateRubricMappings: MILESTONE_A_GOLDEN.familyAssignments ? [] : [],
+        },
+        {
+          taskFamilyAssignments: MILESTONE_A_GOLDEN.familyAssignments,
+        },
+      ),
     );
 
     expect(result.empty).toBe(false);
@@ -1406,9 +1584,14 @@ describe("computePairedEvidence — milestone A golden selection", () => {
     const a = goldenSelection(EXACT_ALPHA.id);
     const b = goldenSelection(EXACT_BETA.id);
     const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }, {
-        taskFamilyAssignments: MILESTONE_A_GOLDEN.familyAssignments,
-      }),
+      pairedInput(
+        a,
+        b,
+        { metric: "judged_score" },
+        {
+          taskFamilyAssignments: MILESTONE_A_GOLDEN.familyAssignments,
+        },
+      ),
     );
     expect(result.uncertaintyResolution!.disclosures.length).toBeGreaterThan(0);
   });
@@ -1423,17 +1606,20 @@ describe("computePairedEvidence — milestone A golden selection", () => {
     // Shared = task-transform. Confirm it is NOT empty (sanity), then build a
     // truly disjoint pair to assert the empty path.
     const disjointB = makeSelection(
-      [makeCell({ taskId: "task-z", taskInstanceId: "inst-z", score: 1, configuration: EXACT_BETA })],
+      [
+        makeCell({
+          taskId: "task-z",
+          taskInstanceId: "inst-z",
+          score: 1,
+          configuration: EXACT_BETA,
+        }),
+      ],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(tools, disjointB, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(tools, disjointB, { metric: "judged_score" }));
     expect(result.empty).toBe(true);
     // Sanity: tools vs beta is not empty (task-transform shared).
-    const nonEmpty = computePairedEvidence(
-      pairedInput(tools, beta, { metric: "judged_score" }),
-    );
+    const nonEmpty = computePairedEvidence(pairedInput(tools, beta, { metric: "judged_score" }));
     expect(nonEmpty.empty).toBe(false);
   });
 });
@@ -1469,9 +1655,7 @@ describe("computePairedEvidence — rule version and shape", () => {
       [makeCell({ taskId: "t1", taskInstanceId: "i1", score: 2, configuration: EXACT_BETA })],
       EXACT_BETA,
     );
-    const result = computePairedEvidence(
-      pairedInput(a, b, { metric: "judged_score" }),
-    );
+    const result = computePairedEvidence(pairedInput(a, b, { metric: "judged_score" }));
     const delta = findDelta(result, "t1");
     const state: PairedTaskState = delta.state;
     const outcome: PairedOutcome = delta.outcome!;

@@ -26,16 +26,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { EvidenceLedgerRow } from "../evidence/evidence-counting";
-import type {
-  EligibilityDecision,
-  EvaluatorSnapshot,
-  ModelConfigurationSnapshot,
-  Observation,
-  ObservationCriterionValue,
-  ObservationOutcome,
-  VerifierSnapshot,
+import {
+  OBSERVATION_SCHEMA_VERSION,
+  type EligibilityDecision,
+  type EvaluatorSnapshot,
+  type ModelConfigurationSnapshot,
+  type Observation,
+  type ObservationCriterionValue,
+  type ObservationOutcome,
+  type VerifierSnapshot,
 } from "../evidence/evidence-types";
-import { OBSERVATION_SCHEMA_VERSION } from "../evidence/evidence-types";
 import type { VersionRef } from "../tasks/task-types";
 import {
   MILESTONE_A_GOLDEN,
@@ -637,7 +637,9 @@ describe("aggregateFamilyEvidence — hierarchical equal weighting", () => {
     expect(availableValue(onlyMetric(findFamily(unweighted, "family-x").judgedScores).value)).toBe(
       5,
     );
-    expect(snapshotAggregation(weighted).families).toEqual(snapshotAggregation(unweighted).families);
+    expect(snapshotAggregation(weighted).families).toEqual(
+      snapshotAggregation(unweighted).families,
+    );
   });
 
   it("stamps the pinned aggregation rule version", () => {
@@ -720,9 +722,9 @@ describe("aggregateFamilyEvidence — metric compatibility", () => {
     const first = selection.cells[0];
     const second = selection.cells[1];
     if (!first || !second) throw new Error("expected two cells");
-    expect(
-      buildJudgedScoreCohortId(first.active.observation, EXACT_ALPHA, mappings),
-    ).toBe(buildJudgedScoreCohortId(second.active.observation, EXACT_ALPHA, mappings));
+    expect(buildJudgedScoreCohortId(first.active.observation, EXACT_ALPHA, mappings)).toBe(
+      buildJudgedScoreCohortId(second.active.observation, EXACT_ALPHA, mappings),
+    );
   });
 
   it("keeps incompatible verifier outcome definitions as adjacent pass views", () => {
@@ -853,9 +855,9 @@ describe("aggregateFamilyEvidence — metric compatibility", () => {
     expect(first.active.decision.comparabilityCohortId).not.toBe(
       second.active.decision.comparabilityCohortId,
     );
-    expect(
-      buildJudgedScoreCohortId(first.active.observation, EXACT_ALPHA),
-    ).toBe(buildJudgedScoreCohortId(second.active.observation, EXACT_ALPHA));
+    expect(buildJudgedScoreCohortId(first.active.observation, EXACT_ALPHA)).toBe(
+      buildJudgedScoreCohortId(second.active.observation, EXACT_ALPHA),
+    );
     const result = aggregateFamilyEvidence(selection);
     expect(result.scoreViews).toHaveLength(1);
     expect(
@@ -1015,10 +1017,8 @@ describe("aggregateFamilyEvidence — explicit non-aggregatable states", () => {
     expect(
       availableValue(
         onlyMetric(
-          findInstance(
-            findVersion(findTask(findFamily(result, "family-x"), "task-a"), 1),
-            "inst-a",
-          ).judgedScores,
+          findInstance(findVersion(findTask(findFamily(result, "family-x"), "task-a"), 1), "inst-a")
+            .judgedScores,
         ).value,
       ),
     ).toBe(0);
@@ -1124,9 +1124,9 @@ describe("aggregateFamilyEvidence — deterministic ordering and ties", () => {
     const familyA = findFamily(result, "family-a");
     expect(familyA.tasks.map((task) => task.taskId)).toEqual(["task-a"]);
     expect(familyA.tasks[0]?.versions.map((version) => version.taskVersion)).toEqual([1]);
-    expect(familyA.tasks[0]?.versions[0]?.instances.map((instance) => instance.taskInstanceId)).toEqual(
-      ["inst-a", "inst-b"],
-    );
+    expect(
+      familyA.tasks[0]?.versions[0]?.instances.map((instance) => instance.taskInstanceId),
+    ).toEqual(["inst-a", "inst-b"]);
   });
 
   it("records explicit ties when sibling available scores are equal", () => {
@@ -1243,7 +1243,8 @@ describe("aggregateFamilyEvidence — purity and permutation invariance", () => 
       const permuted = aggregateFamilyEvidence(makeSelection(permute(cells, seed)), {
         rollupTaskVersions: true,
         commensurateRubricMappings: permute(mappings, seed + 7),
-        taskSetWeights: seed % 2 === 0 ? { "task-b": 1, "task-a": 9 } : { "task-a": 9, "task-b": 1 },
+        taskSetWeights:
+          seed % 2 === 0 ? { "task-b": 1, "task-a": 9 } : { "task-a": 9, "task-b": 1 },
       });
       expect(snapshotAggregation(permuted), `seed ${seed}`).toEqual(expected);
     }
