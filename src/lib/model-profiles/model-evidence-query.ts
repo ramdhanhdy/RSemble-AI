@@ -227,8 +227,7 @@ export interface ModelEvidenceQueryValidationOk {
   resolvedRespondent: ResolvedRespondentManifest;
 }
 export type ModelEvidenceQueryValidationResult =
-  | ModelEvidenceQueryValidationError
-  | ModelEvidenceQueryValidationOk;
+  ModelEvidenceQueryValidationError | ModelEvidenceQueryValidationOk;
 
 // --- Small guards --------------------------------------------------------------
 
@@ -329,10 +328,7 @@ function validateEvaluatorFilter(v: unknown, errors: string[], path: string): v 
   return true;
 }
 
-function isOfVocabulary<T extends string>(
-  v: unknown,
-  vocab: readonly T[],
-): v is T {
+function isOfVocabulary<T extends string>(v: unknown, vocab: readonly T[]): v is T {
   return isString(v) && (vocab as readonly string[]).includes(v);
 }
 
@@ -347,7 +343,9 @@ function validateRuleVersion(
     return false;
   }
   if (!supported.includes(v)) {
-    errors.push(`${field} ${v} is not a supported rule version (supported: ${supported.join(", ")}).`);
+    errors.push(
+      `${field} ${v} is not a supported rule version (supported: ${supported.join(", ")}).`,
+    );
     return false;
   }
   return true;
@@ -371,7 +369,9 @@ function structuralErrors(query: unknown): string[] {
   for (const p of prohibited) errors.push(p);
 
   if (!isProfileRespondent(query.respondent)) {
-    errors.push("respondent must be a discriminated ProfileRespondent (exact configuration or pinned stratified_only rollup).");
+    errors.push(
+      "respondent must be a discriminated ProfileRespondent (exact configuration or pinned stratified_only rollup).",
+    );
   }
 
   if (query.observedFrom !== null && !isNonNegativeFinite(query.observedFrom)) {
@@ -429,22 +429,41 @@ function structuralErrors(query: unknown): string[] {
   if (!Array.isArray(query.rubricRefs)) {
     errors.push("rubricRefs must be an array.");
   } else if (!query.rubricRefs.every((r) => isVersionRef(r))) {
-    errors.push("rubricRefs must be valid VersionRef entries (non-blank id, positive integer version).");
+    errors.push(
+      "rubricRefs must be valid VersionRef entries (non-blank id, positive integer version).",
+    );
   }
 
   if (!Array.isArray(query.evaluatorFilters)) {
     errors.push("evaluatorFilters must be an array.");
   } else {
-    query.evaluatorFilters.forEach((f, i) => validateEvaluatorFilter(f, errors, `evaluatorFilters[${i}]`));
+    query.evaluatorFilters.forEach((f, i) =>
+      validateEvaluatorFilter(f, errors, `evaluatorFilters[${i}]`),
+    );
   }
 
   if (!isBoolean(query.includeUnknownVersion)) {
     errors.push("includeUnknownVersion must be a boolean.");
   }
 
-  validateRuleVersion(query.eligibilityRuleVersion, SUPPORTED_QUERY_RULE_VERSIONS.eligibility, errors, "eligibilityRuleVersion");
-  validateRuleVersion(query.aggregationRuleVersion, SUPPORTED_QUERY_RULE_VERSIONS.aggregation, errors, "aggregationRuleVersion");
-  validateRuleVersion(query.uncertaintyRuleVersion, SUPPORTED_QUERY_RULE_VERSIONS.uncertainty, errors, "uncertaintyRuleVersion");
+  validateRuleVersion(
+    query.eligibilityRuleVersion,
+    SUPPORTED_QUERY_RULE_VERSIONS.eligibility,
+    errors,
+    "eligibilityRuleVersion",
+  );
+  validateRuleVersion(
+    query.aggregationRuleVersion,
+    SUPPORTED_QUERY_RULE_VERSIONS.aggregation,
+    errors,
+    "aggregationRuleVersion",
+  );
+  validateRuleVersion(
+    query.uncertaintyRuleVersion,
+    SUPPORTED_QUERY_RULE_VERSIONS.uncertainty,
+    errors,
+    "uncertaintyRuleVersion",
+  );
 
   return errors;
 }
@@ -646,13 +665,23 @@ export function validateModelEvidenceQuery(
       };
     }
     const manifestErrors: string[] = [];
-    if (!isNonBlankString(manifest.rollupId)) manifestErrors.push("manifest.rollupId must be a non-blank string.");
-    if (!isPositiveInteger(manifest.version)) manifestErrors.push("manifest.version must be a positive integer.");
-    if (manifest.aggregationPolicy !== "stratified_only") manifestErrors.push("manifest.aggregationPolicy must be stratified_only.");
-    if (!isNonBlankString(manifest.name)) manifestErrors.push("manifest.name must be a non-blank string.");
-    if (!isNonNegativeFinite(manifest.createdAt)) manifestErrors.push("manifest.createdAt must be a non-negative finite number.");
-    if (!isStringArray(manifest.memberConfigurationIds) || !manifest.memberConfigurationIds.every((id) => MC_ID_RE.test(id))) {
-      manifestErrors.push("manifest.memberConfigurationIds must be canonical model-configuration ids.");
+    if (!isNonBlankString(manifest.rollupId))
+      manifestErrors.push("manifest.rollupId must be a non-blank string.");
+    if (!isPositiveInteger(manifest.version))
+      manifestErrors.push("manifest.version must be a positive integer.");
+    if (manifest.aggregationPolicy !== "stratified_only")
+      manifestErrors.push("manifest.aggregationPolicy must be stratified_only.");
+    if (!isNonBlankString(manifest.name))
+      manifestErrors.push("manifest.name must be a non-blank string.");
+    if (!isNonNegativeFinite(manifest.createdAt))
+      manifestErrors.push("manifest.createdAt must be a non-negative finite number.");
+    if (
+      !isStringArray(manifest.memberConfigurationIds) ||
+      !manifest.memberConfigurationIds.every((id) => MC_ID_RE.test(id))
+    ) {
+      manifestErrors.push(
+        "manifest.memberConfigurationIds must be canonical model-configuration ids.",
+      );
     }
     if (manifestErrors.length > 0) {
       return { ok: false, errors: manifestErrors };
@@ -797,9 +826,12 @@ export function encodeModelEvidenceQueryToUrl(query: ModelEvidenceQuery): URLSea
   }
   if (canon.observedFrom !== null) params.set("q.observedFrom", String(canon.observedFrom));
   if (canon.observedTo !== null) params.set("q.observedTo", String(canon.observedTo));
-  if (canon.taskFamilyIds.length > 0) params.set("q.taskFamilyIds", joinStrings(canon.taskFamilyIds));
-  if (canon.facetFilters.length > 0) params.set("q.facetFilters", JSON.stringify(canon.facetFilters));
-  if (canon.evidenceClasses.length > 0) params.set("q.evidenceClasses", joinStrings(canon.evidenceClasses));
+  if (canon.taskFamilyIds.length > 0)
+    params.set("q.taskFamilyIds", joinStrings(canon.taskFamilyIds));
+  if (canon.facetFilters.length > 0)
+    params.set("q.facetFilters", JSON.stringify(canon.facetFilters));
+  if (canon.evidenceClasses.length > 0)
+    params.set("q.evidenceClasses", joinStrings(canon.evidenceClasses));
   if (canon.allowedUses.length > 0) params.set("q.allowedUses", joinStrings(canon.allowedUses));
   if (canon.comparabilityCohortIds.length > 0) {
     params.set("q.comparabilityCohortIds", joinStrings(canon.comparabilityCohortIds));
@@ -851,20 +883,27 @@ export function decodeModelEvidenceQueryFromUrl(
   let respondent: ProfileRespondent;
   if (kind === "model_configuration") {
     if (hasRollupId || hasRollupVersion || hasRollupPolicy) {
-      throw new Error("Ambiguous respondent: model_configuration kind must not carry rollup fields.");
+      throw new Error(
+        "Ambiguous respondent: model_configuration kind must not carry rollup fields.",
+      );
     }
     const id = get("q.respondent.modelConfigurationId");
-    if (id === null) throw new Error("q.respondent.modelConfigurationId is required for model_configuration.");
+    if (id === null)
+      throw new Error("q.respondent.modelConfigurationId is required for model_configuration.");
     respondent = { kind: "model_configuration", modelConfigurationId: id };
   } else {
     if (hasModelConfigId) {
-      throw new Error("Ambiguous respondent: model_rollup kind must not carry modelConfigurationId.");
+      throw new Error(
+        "Ambiguous respondent: model_rollup kind must not carry modelConfigurationId.",
+      );
     }
     const rollupId = get("q.respondent.rollupId");
     const versionRaw = get("q.respondent.version");
     const policy = get("q.respondent.aggregationPolicy");
     if (rollupId === null || versionRaw === null || policy === null) {
-      throw new Error("q.respondent.rollupId, version, and aggregationPolicy are required for model_rollup.");
+      throw new Error(
+        "q.respondent.rollupId, version, and aggregationPolicy are required for model_rollup.",
+      );
     }
     const version = Number(versionRaw);
     respondent = {
@@ -886,8 +925,10 @@ export function decodeModelEvidenceQueryFromUrl(
   const observedFrom = parseNumOrNull("q.observedFrom");
   const observedTo = parseNumOrNull("q.observedTo");
 
-  const taskFamilyIds = get("q.taskFamilyIds") !== null ? splitStrings(get("q.taskFamilyIds")!) : [];
-  const evidenceClasses = get("q.evidenceClasses") !== null ? splitStrings(get("q.evidenceClasses")!) : [];
+  const taskFamilyIds =
+    get("q.taskFamilyIds") !== null ? splitStrings(get("q.taskFamilyIds")!) : [];
+  const evidenceClasses =
+    get("q.evidenceClasses") !== null ? splitStrings(get("q.evidenceClasses")!) : [];
   const allowedUses = get("q.allowedUses") !== null ? splitStrings(get("q.allowedUses")!) : [];
   const comparabilityCohortIds =
     get("q.comparabilityCohortIds") !== null ? splitStrings(get("q.comparabilityCohortIds")!) : [];
@@ -921,7 +962,11 @@ export function decodeModelEvidenceQueryFromUrl(
   const eligibilityRuleVersionRaw = get("q.eligibilityRuleVersion");
   const aggregationRuleVersionRaw = get("q.aggregationRuleVersion");
   const uncertaintyRuleVersionRaw = get("q.uncertaintyRuleVersion");
-  if (eligibilityRuleVersionRaw === null || aggregationRuleVersionRaw === null || uncertaintyRuleVersionRaw === null) {
+  if (
+    eligibilityRuleVersionRaw === null ||
+    aggregationRuleVersionRaw === null ||
+    uncertaintyRuleVersionRaw === null
+  ) {
     throw new Error("Rule version params are required.");
   }
 

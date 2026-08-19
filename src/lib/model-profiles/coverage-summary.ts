@@ -138,8 +138,7 @@ function countAttempts(
   if (unresolved === records.length) {
     return {
       state: "unavailable",
-      reason:
-        "attempt ids live on EvidenceLedgerRow and no in-scope observation has a ledger row",
+      reason: "attempt ids live on EvidenceLedgerRow and no in-scope observation has a ledger row",
     };
   }
   if (unresolved > 0) {

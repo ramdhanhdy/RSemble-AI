@@ -264,9 +264,9 @@ describe("buildCoverageSummary — unavailable and limited quantities", () => {
   });
 
   it("counts supplied missing cells for the exact configuration and does not invent Observations", () => {
-    const { selection, corpus } = exactAlphaSelection(
-      { respondent: { kind: "model_configuration", modelConfigurationId: EXACT_BETA.id } },
-    );
+    const { selection, corpus } = exactAlphaSelection({
+      respondent: { kind: "model_configuration", modelConfigurationId: EXACT_BETA.id },
+    });
     const summary = buildCoverageSummary(selection, corpus);
     expect(available(summary.missingCells)).toBe(1);
     expect(available(summary.activeObservations)).toBe(2);
@@ -385,8 +385,8 @@ describe("buildCoverageSummary — no cross-configuration pooling", () => {
       rollupResolver,
     );
     expect(result.kind).toBe("stratified_only");
-    expect(() =>
-      buildCoverageSummary(result as unknown as ProfileExactSelection),
-    ).toThrow(/exact|stratified|pool/i);
+    expect(() => buildCoverageSummary(result as unknown as ProfileExactSelection)).toThrow(
+      /exact|stratified|pool/i,
+    );
   });
 });

@@ -26,7 +26,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { MILESTONE_A_GOLDEN, milestoneAObservations, milestoneADecisions } from "./__fixtures__/milestone-a-golden";
+import {
+  MILESTONE_A_GOLDEN,
+  milestoneAObservations,
+  milestoneADecisions,
+} from "./__fixtures__/milestone-a-golden";
 
 import {
   queryModelConfigurationCatalog,
@@ -313,9 +317,7 @@ describe("model-configuration catalog — deterministic ordering", () => {
         e.modelConfigurationId,
       ].join("\u0000");
 
-    const expected = [...entries].sort((x, y) =>
-      sortKey(x).localeCompare(sortKey(y)),
-    );
+    const expected = [...entries].sort((x, y) => sortKey(x).localeCompare(sortKey(y)));
     expect(entries.map((e) => e.modelConfigurationId)).toEqual(
       expected.map((e) => e.modelConfigurationId),
     );

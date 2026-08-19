@@ -116,7 +116,10 @@ const rollupResolver: RollupVersionResolver = (rollupId, version) => {
 
 describe("ProfileRespondent — discriminated respondent", () => {
   it("accepts an exact model-configuration respondent", () => {
-    const r: ProfileRespondent = { kind: "model_configuration", modelConfigurationId: EXACT_ALPHA_ID };
+    const r: ProfileRespondent = {
+      kind: "model_configuration",
+      modelConfigurationId: EXACT_ALPHA_ID,
+    };
     expect(isProfileRespondent(r)).toBe(true);
   });
 
@@ -147,7 +150,13 @@ describe("ProfileRespondent — discriminated respondent", () => {
   });
 
   it("rejects a rollup respondent missing the version pin (unversioned)", () => {
-    expect(isProfileRespondent({ kind: "model_rollup", rollupId: "r", aggregationPolicy: "stratified_only" })).toBe(false);
+    expect(
+      isProfileRespondent({
+        kind: "model_rollup",
+        rollupId: "r",
+        aggregationPolicy: "stratified_only",
+      }),
+    ).toBe(false);
   });
 
   it("rejects a rollup respondent with a non-stratified_only policy", () => {
@@ -163,7 +172,12 @@ describe("ProfileRespondent — discriminated respondent", () => {
 
   it("rejects a rollup respondent with a zero or non-integer version", () => {
     expect(
-      isProfileRespondent({ kind: "model_rollup", rollupId: "r", version: 0, aggregationPolicy: "stratified_only" }),
+      isProfileRespondent({
+        kind: "model_rollup",
+        rollupId: "r",
+        version: 0,
+        aggregationPolicy: "stratified_only",
+      }),
     ).toBe(false);
     expect(
       isProfileRespondent({
@@ -237,9 +251,7 @@ describe("validateModelEvidenceQuery — runtime validation", () => {
   });
 
   it("rejects an inverted observation window (from > to)", () => {
-    const result = validateModelEvidenceQuery(
-      baseQuery({ observedFrom: 200, observedTo: 100 }),
-    );
+    const result = validateModelEvidenceQuery(baseQuery({ observedFrom: 200, observedTo: 100 }));
     expect(result.ok).toBe(false);
   });
 
@@ -250,19 +262,18 @@ describe("validateModelEvidenceQuery — runtime validation", () => {
 
   it("rejects unknown evidence classes and uses", () => {
     expect(
-      validateModelEvidenceQuery(
-        baseQuery({ evidenceClasses: ["comparable", "bogus" as never] }),
-      ).ok,
+      validateModelEvidenceQuery(baseQuery({ evidenceClasses: ["comparable", "bogus" as never] }))
+        .ok,
     ).toBe(false);
-    expect(
-      validateModelEvidenceQuery(baseQuery({ allowedUses: ["bogus" as never] })).ok,
-    ).toBe(false);
+    expect(validateModelEvidenceQuery(baseQuery({ allowedUses: ["bogus" as never] })).ok).toBe(
+      false,
+    );
   });
 
   it("rejects unknown source kinds", () => {
-    expect(
-      validateModelEvidenceQuery(baseQuery({ sourceKinds: ["bogus" as never] })).ok,
-    ).toBe(false);
+    expect(validateModelEvidenceQuery(baseQuery({ sourceKinds: ["bogus" as never] })).ok).toBe(
+      false,
+    );
   });
 
   it("rejects malformed comparability cohort ids", () => {
@@ -273,25 +284,21 @@ describe("validateModelEvidenceQuery — runtime validation", () => {
 
   it("rejects malformed rubric refs", () => {
     expect(
-      validateModelEvidenceQuery(
-        baseQuery({ rubricRefs: [{ id: "rub-1", version: 0 }] }),
-      ).ok,
+      validateModelEvidenceQuery(baseQuery({ rubricRefs: [{ id: "rub-1", version: 0 }] })).ok,
     ).toBe(false);
-    expect(
-      validateModelEvidenceQuery(baseQuery({ rubricRefs: [{ id: "", version: 1 }] })).ok,
-    ).toBe(false);
+    expect(validateModelEvidenceQuery(baseQuery({ rubricRefs: [{ id: "", version: 1 }] })).ok).toBe(
+      false,
+    );
   });
 
   it("rejects malformed facet filters", () => {
     expect(
-      validateModelEvidenceQuery(
-        baseQuery({ facetFilters: [{ facetId: "", valueIds: ["v1"] }] }),
-      ).ok,
+      validateModelEvidenceQuery(baseQuery({ facetFilters: [{ facetId: "", valueIds: ["v1"] }] }))
+        .ok,
     ).toBe(false);
     expect(
-      validateModelEvidenceQuery(
-        baseQuery({ facetFilters: [{ facetId: "f1", valueIds: [""] }] }),
-      ).ok,
+      validateModelEvidenceQuery(baseQuery({ facetFilters: [{ facetId: "f1", valueIds: [""] }] }))
+        .ok,
     ).toBe(false);
   });
 
@@ -300,7 +307,12 @@ describe("validateModelEvidenceQuery — runtime validation", () => {
       validateModelEvidenceQuery(
         baseQuery({
           evaluatorFilters: [
-            { evaluatorKind: "bogus" as never, providerId: null, model: null, instructionDigest: null },
+            {
+              evaluatorKind: "bogus" as never,
+              providerId: null,
+              model: null,
+              instructionDigest: null,
+            },
           ],
         }),
       ).ok,
@@ -309,7 +321,8 @@ describe("validateModelEvidenceQuery — runtime validation", () => {
 
   it("rejects a non-boolean includeUnknownVersion", () => {
     expect(
-      validateModelEvidenceQuery(baseQuery({ includeUnknownVersion: "yes" as unknown as boolean })).ok,
+      validateModelEvidenceQuery(baseQuery({ includeUnknownVersion: "yes" as unknown as boolean }))
+        .ok,
     ).toBe(false);
   });
 
@@ -319,12 +332,8 @@ describe("validateModelEvidenceQuery — runtime validation", () => {
   });
 
   it("rejects zero / non-integer rule versions", () => {
-    expect(
-      validateModelEvidenceQuery(baseQuery({ eligibilityRuleVersion: 0 })).ok,
-    ).toBe(false);
-    expect(
-      validateModelEvidenceQuery(baseQuery({ aggregationRuleVersion: 1.5 })).ok,
-    ).toBe(false);
+    expect(validateModelEvidenceQuery(baseQuery({ eligibilityRuleVersion: 0 })).ok).toBe(false);
+    expect(validateModelEvidenceQuery(baseQuery({ aggregationRuleVersion: 1.5 })).ok).toBe(false);
   });
 
   it("rejects unsupported (unknown) rule versions safely", () => {
@@ -343,9 +352,7 @@ describe("validateModelEvidenceQuery — runtime validation", () => {
 
   it("isModelEvidenceQuery agrees with validateModelEvidenceQuery for a valid query", () => {
     expect(isModelEvidenceQuery(baseQuery())).toBe(true);
-    expect(
-      isModelEvidenceQuery({ ...baseQuery(), eligibilityRuleVersion: 0 }),
-    ).toBe(false);
+    expect(isModelEvidenceQuery({ ...baseQuery(), eligibilityRuleVersion: 0 })).toBe(false);
   });
 });
 
@@ -383,8 +390,12 @@ describe("canonical serialization & fingerprint", () => {
   });
 
   it("fingerprints materially different semantic queries differently", () => {
-    const q1 = baseQuery({ respondent: { kind: "model_configuration", modelConfigurationId: EXACT_ALPHA_ID } });
-    const q2 = baseQuery({ respondent: { kind: "model_configuration", modelConfigurationId: EXACT_BETA_ID } });
+    const q1 = baseQuery({
+      respondent: { kind: "model_configuration", modelConfigurationId: EXACT_ALPHA_ID },
+    });
+    const q2 = baseQuery({
+      respondent: { kind: "model_configuration", modelConfigurationId: EXACT_BETA_ID },
+    });
     expect(fingerprintModelEvidenceQuery(q1)).not.toBe(fingerprintModelEvidenceQuery(q2));
 
     const q3 = baseQuery({ observedFrom: 100, observedTo: 200 });
@@ -396,15 +407,15 @@ describe("canonical serialization & fingerprint", () => {
     expect(fingerprintModelEvidenceQuery(q5)).not.toBe(fingerprintModelEvidenceQuery(q6));
 
     // Rule-version pins are part of the canonical fingerprint input. Only
- // version 1 of each rule is supported today, so two valid queries cannot
- // differ on a rule version alone (an unsupported version is rejected —
- // covered below). Assert the pins are encoded in the canonical JSON so a
- // future supported bump is guaranteed to change the fingerprint.
- const q7 = baseQuery();
- const json = canonicalModelEvidenceQueryJson(q7);
- expect(json).toContain('"aggregationRuleVersion":1');
- expect(json).toContain('"eligibilityRuleVersion":1');
- expect(json).toContain('"uncertaintyRuleVersion":1');
+    // version 1 of each rule is supported today, so two valid queries cannot
+    // differ on a rule version alone (an unsupported version is rejected —
+    // covered below). Assert the pins are encoded in the canonical JSON so a
+    // future supported bump is guaranteed to change the fingerprint.
+    const q7 = baseQuery();
+    const json = canonicalModelEvidenceQueryJson(q7);
+    expect(json).toContain('"aggregationRuleVersion":1');
+    expect(json).toContain('"eligibilityRuleVersion":1');
+    expect(json).toContain('"uncertaintyRuleVersion":1');
   });
 
   it("fingerprints an exact-configuration and a rollup respondent differently", () => {
@@ -436,8 +447,12 @@ describe("canonical serialization & fingerprint", () => {
   });
 
   it("throws on invalid input when serializing/fingerprinting", () => {
-    expect(() => canonicalModelEvidenceQueryJson({ ...baseQuery(), eligibilityRuleVersion: 0 })).toThrow();
-    expect(() => fingerprintModelEvidenceQuery({ ...baseQuery(), eligibilityRuleVersion: 0 })).toThrow();
+    expect(() =>
+      canonicalModelEvidenceQueryJson({ ...baseQuery(), eligibilityRuleVersion: 0 }),
+    ).toThrow();
+    expect(() =>
+      fingerprintModelEvidenceQuery({ ...baseQuery(), eligibilityRuleVersion: 0 }),
+    ).toThrow();
   });
 });
 
@@ -471,9 +486,10 @@ describe("serializeModelEvidenceQuery — receipt & resolved manifest", () => {
     const receipt = serializeModelEvidenceQuery(query, rollupResolver, 123);
     expect(receipt.resolvedRespondent.kind).toBe("model_rollup");
     if (receipt.resolvedRespondent.kind !== "model_rollup") throw new Error("unreachable");
-    expect(receipt.resolvedRespondent.manifest.memberConfigurationIds).toEqual(
-      [EXACT_ALPHA_ID, EXACT_BETA_ID],
-    );
+    expect(receipt.resolvedRespondent.manifest.memberConfigurationIds).toEqual([
+      EXACT_ALPHA_ID,
+      EXACT_BETA_ID,
+    ]);
     expect(receipt.resolvedRespondent.manifest.aggregationPolicy).toBe("stratified_only");
     expect(receipt.resolvedRespondent.manifest.version).toBe(ROLLUP_MANIFEST_A.version);
   });
@@ -560,9 +576,17 @@ describe("URL-state codec", () => {
   });
 
   it("produces a deterministic param string (sorted keys) for equivalent permutations", () => {
-    const a = baseQuery({ taskFamilyIds: ["fam-b", "fam-a"], comparabilityCohortIds: [COHORT_B, COHORT_A] });
-    const b = baseQuery({ taskFamilyIds: ["fam-a", "fam-b"], comparabilityCohortIds: [COHORT_A, COHORT_B] });
-    expect(encodeModelEvidenceQueryToUrl(a).toString()).toBe(encodeModelEvidenceQueryToUrl(b).toString());
+    const a = baseQuery({
+      taskFamilyIds: ["fam-b", "fam-a"],
+      comparabilityCohortIds: [COHORT_B, COHORT_A],
+    });
+    const b = baseQuery({
+      taskFamilyIds: ["fam-a", "fam-b"],
+      comparabilityCohortIds: [COHORT_A, COHORT_B],
+    });
+    expect(encodeModelEvidenceQueryToUrl(a).toString()).toBe(
+      encodeModelEvidenceQueryToUrl(b).toString(),
+    );
   });
 
   it("rejects an unsupported rule version on decode", () => {
@@ -590,8 +614,12 @@ describe("single-respondent invariant", () => {
   });
 
   it("two distinct exact configurations produce distinct fingerprints (no silent merge)", () => {
-    const a = baseQuery({ respondent: { kind: "model_configuration", modelConfigurationId: EXACT_ALPHA_ID } });
-    const b = baseQuery({ respondent: { kind: "model_configuration", modelConfigurationId: EXACT_BETA_ID } });
+    const a = baseQuery({
+      respondent: { kind: "model_configuration", modelConfigurationId: EXACT_ALPHA_ID },
+    });
+    const b = baseQuery({
+      respondent: { kind: "model_configuration", modelConfigurationId: EXACT_BETA_ID },
+    });
     expect(fingerprintModelEvidenceQuery(a)).not.toBe(fingerprintModelEvidenceQuery(b));
   });
 });

@@ -92,9 +92,7 @@ export interface DeclaredReplicateGroup {
 }
 
 export type ProfileUnauthorizedReason =
-  | "use_not_authorized"
-  | "no_decision_for_rule_version"
-  | "unknown_version_excluded";
+  "use_not_authorized" | "no_decision_for_rule_version" | "unknown_version_excluded";
 
 export interface ProfileUnauthorizedRecord {
   readonly observation: Observation;
@@ -126,9 +124,7 @@ export interface ProfileUnresolvedSelection {
 }
 
 export type ProfileObservationSelection =
-  | ProfileExactSelection
-  | ProfileStratifiedSelection
-  | ProfileUnresolvedSelection;
+  ProfileExactSelection | ProfileStratifiedSelection | ProfileUnresolvedSelection;
 
 // --- Cell identity (Child 07 §6.1, not Child 04 lineageCellKey) ---------------
 
@@ -241,10 +237,7 @@ function decisionMatchesQueryFilters(
   decision: EligibilityDecision,
   query: ModelEvidenceQuery,
 ): boolean {
-  if (
-    query.evidenceClasses.length > 0 &&
-    !query.evidenceClasses.includes(decision.evidenceClass)
-  ) {
+  if (query.evidenceClasses.length > 0 && !query.evidenceClasses.includes(decision.evidenceClass)) {
     return false;
   }
   if (
@@ -349,10 +342,7 @@ function selectExactConfiguration(
   const facets = corpus.facets ?? [];
   const authorized: ProfileSelectedRecord[] = [];
   const unauthorized: ProfileUnauthorizedRecord[] = [];
-  const excludeUnknown = unknownVersionExcluded(
-    modelConfiguration,
-    query.includeUnknownVersion,
-  );
+  const excludeUnknown = unknownVersionExcluded(modelConfiguration, query.includeUnknownVersion);
   const useRequested = profileUseRequested(query);
 
   for (const observation of corpus.observations) {

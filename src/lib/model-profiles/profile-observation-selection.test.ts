@@ -139,7 +139,9 @@ function activeKeys(selection: ProfileExactSelection): string[] {
 }
 
 function activeObservationIds(selection: ProfileExactSelection): string[] {
-  return selection.cells.map((cell) => cell.active.observation.id).sort((a, b) => a.localeCompare(b));
+  return selection.cells
+    .map((cell) => cell.active.observation.id)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 function permute<T>(items: readonly T[], seed: number): T[] {
@@ -396,7 +398,9 @@ describe("selectProfileObservations — declared replicates and undeclared repea
     expect(undeclaredIds).toContain(row("exact-alpha-orphan-undeclared").observation.id);
     expect(undeclaredIds).not.toContain(row("exact-alpha-orphan-first").observation.id);
     expect(
-      selection.undeclaredRepeats.every((r) => r.decision.reasonCodes.includes("undeclared_repeat")),
+      selection.undeclaredRepeats.every((r) =>
+        r.decision.reasonCodes.includes("undeclared_repeat"),
+      ),
     ).toBe(true);
     expect(selection.undeclaredRepeats.every((r) => r.ledger?.declaredReplicate !== true)).toBe(
       true,
@@ -429,9 +433,9 @@ describe("selectProfileObservations — filters preserve boundaries", () => {
       selectProfileObservations(baseQuery({ taskFamilyIds: ["family-write"] }), goldenCorpus()),
     );
     expect(activeKeys(selection)).toEqual(["exact-alpha-write-rep-1", "exact-alpha-write-rep-2"]);
-    expect(selection.cells.every((cell) => cell.active.observation.taskFamilyId === "family-write")).toBe(
-      true,
-    );
+    expect(
+      selection.cells.every((cell) => cell.active.observation.taskFamilyId === "family-write"),
+    ).toBe(true);
   });
 
   it("joins facet filters by taskId (and optional taskVersion)", () => {
@@ -495,9 +499,9 @@ describe("selectProfileObservations — filters preserve boundaries", () => {
         goldenCorpus(),
       ),
     );
-    expect(cohort.cells.every((cell) => cell.active.decision.comparabilityCohortId === transformCohort)).toBe(
-      true,
-    );
+    expect(
+      cohort.cells.every((cell) => cell.active.decision.comparabilityCohortId === transformCohort),
+    ).toBe(true);
     expect(activeKeys(cohort)).toContain("exact-alpha-transform-v1-a");
     expect(activeKeys(cohort)).not.toContain("exact-alpha-math-rejudge");
   });
