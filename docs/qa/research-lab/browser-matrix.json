@@ -1,0 +1,1661 @@
+{
+  "surfaces": [
+    "lab",
+    "lab-recipes",
+    "recipe-version",
+    "lab-model-pools",
+    "pool-version",
+    "study-draft",
+    "study-running",
+    "study-interrupted",
+    "study-failed",
+    "study-exp",
+    "study-conf",
+    "study-arch",
+    "study-large",
+    "task-set-list",
+    "task-set-detail",
+    "task-catalog",
+    "task-detail",
+    "compare-result"
+  ],
+  "results": [
+    {
+      "name": "empty-lab@1440",
+      "route": "/lab",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "empty-lab@1024",
+      "route": "/lab",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "empty-lab@768",
+      "route": "/lab",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "empty-lab@390",
+      "route": "/lab",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "empty-lab-zoom200",
+      "route": "/lab",
+      "viewport": "1440x900@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "empty-lab-reduced-motion",
+      "route": "/lab",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab@1440",
+      "route": "/lab",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-recipes@1440",
+      "route": "/lab/recipes",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "recipe-version@1440",
+      "route": "/lab/recipes/recipe-1/versions/2",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-model-pools@1440",
+      "route": "/lab/model-pools",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "pool-version@1440",
+      "route": "/lab/model-pools/pool-1/versions/2",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-draft@1440",
+      "route": "/lab/studies/study-draft",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-running@1440",
+      "route": "/lab/studies/study-running",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-interrupted@1440",
+      "route": "/lab/studies/study-interrupted",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-failed@1440",
+      "route": "/lab/studies/study-failed",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-exp@1440",
+      "route": "/lab/studies/study-exp",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-conf@1440",
+      "route": "/lab/studies/study-conf",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-arch@1440",
+      "route": "/lab/studies/study-arch",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-large@1440",
+      "route": "/lab/studies/study-large",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-list@1440",
+      "route": "/evaluations/sets",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-detail@1440",
+      "route": "/evaluations/sets/taskset-1",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-catalog@1440",
+      "route": "/tasks",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-detail@1440",
+      "route": "/tasks/task-1",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "compare-result@1440",
+      "route": "/compare/results/run-1",
+      "viewport": "1440x900@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab@1024",
+      "route": "/lab",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-recipes@1024",
+      "route": "/lab/recipes",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "recipe-version@1024",
+      "route": "/lab/recipes/recipe-1/versions/2",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-model-pools@1024",
+      "route": "/lab/model-pools",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "pool-version@1024",
+      "route": "/lab/model-pools/pool-1/versions/2",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-draft@1024",
+      "route": "/lab/studies/study-draft",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-running@1024",
+      "route": "/lab/studies/study-running",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-interrupted@1024",
+      "route": "/lab/studies/study-interrupted",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-failed@1024",
+      "route": "/lab/studies/study-failed",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-exp@1024",
+      "route": "/lab/studies/study-exp",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-conf@1024",
+      "route": "/lab/studies/study-conf",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-arch@1024",
+      "route": "/lab/studies/study-arch",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-large@1024",
+      "route": "/lab/studies/study-large",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-list@1024",
+      "route": "/evaluations/sets",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-detail@1024",
+      "route": "/evaluations/sets/taskset-1",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-catalog@1024",
+      "route": "/tasks",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-detail@1024",
+      "route": "/tasks/task-1",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "compare-result@1024",
+      "route": "/compare/results/run-1",
+      "viewport": "1024x768@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab@768",
+      "route": "/lab",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-recipes@768",
+      "route": "/lab/recipes",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "recipe-version@768",
+      "route": "/lab/recipes/recipe-1/versions/2",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-model-pools@768",
+      "route": "/lab/model-pools",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "pool-version@768",
+      "route": "/lab/model-pools/pool-1/versions/2",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-draft@768",
+      "route": "/lab/studies/study-draft",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-running@768",
+      "route": "/lab/studies/study-running",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-interrupted@768",
+      "route": "/lab/studies/study-interrupted",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-failed@768",
+      "route": "/lab/studies/study-failed",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-exp@768",
+      "route": "/lab/studies/study-exp",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-conf@768",
+      "route": "/lab/studies/study-conf",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-arch@768",
+      "route": "/lab/studies/study-arch",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-large@768",
+      "route": "/lab/studies/study-large",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-list@768",
+      "route": "/evaluations/sets",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-detail@768",
+      "route": "/evaluations/sets/taskset-1",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-catalog@768",
+      "route": "/tasks",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-detail@768",
+      "route": "/tasks/task-1",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "compare-result@768",
+      "route": "/compare/results/run-1",
+      "viewport": "768x1024@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab@390",
+      "route": "/lab",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-recipes@390",
+      "route": "/lab/recipes",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "recipe-version@390",
+      "route": "/lab/recipes/recipe-1/versions/2",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-model-pools@390",
+      "route": "/lab/model-pools",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "pool-version@390",
+      "route": "/lab/model-pools/pool-1/versions/2",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-draft@390",
+      "route": "/lab/studies/study-draft",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-running@390",
+      "route": "/lab/studies/study-running",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-interrupted@390",
+      "route": "/lab/studies/study-interrupted",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-failed@390",
+      "route": "/lab/studies/study-failed",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-exp@390",
+      "route": "/lab/studies/study-exp",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-conf@390",
+      "route": "/lab/studies/study-conf",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-arch@390",
+      "route": "/lab/studies/study-arch",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-large@390",
+      "route": "/lab/studies/study-large",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-list@390",
+      "route": "/evaluations/sets",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-detail@390",
+      "route": "/evaluations/sets/taskset-1",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-catalog@390",
+      "route": "/tasks",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-detail@390",
+      "route": "/tasks/task-1",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "compare-result@390",
+      "route": "/compare/results/run-1",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab@zoom200",
+      "route": "/lab",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-recipes@zoom200",
+      "route": "/lab/recipes",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "recipe-version@zoom200",
+      "route": "/lab/recipes/recipe-1/versions/2",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "lab-model-pools@zoom200",
+      "route": "/lab/model-pools",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "pool-version@zoom200",
+      "route": "/lab/model-pools/pool-1/versions/2",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-draft@zoom200",
+      "route": "/lab/studies/study-draft",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-running@zoom200",
+      "route": "/lab/studies/study-running",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-interrupted@zoom200",
+      "route": "/lab/studies/study-interrupted",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-failed@zoom200",
+      "route": "/lab/studies/study-failed",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-exp@zoom200",
+      "route": "/lab/studies/study-exp",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-conf@zoom200",
+      "route": "/lab/studies/study-conf",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-arch@zoom200",
+      "route": "/lab/studies/study-arch",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "study-large@zoom200",
+      "route": "/lab/studies/study-large",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-list@zoom200",
+      "route": "/evaluations/sets",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-set-detail@zoom200",
+      "route": "/evaluations/sets/taskset-1",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-catalog@zoom200",
+      "route": "/tasks",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "task-detail@zoom200",
+      "route": "/tasks/task-1",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "compare-result@zoom200",
+      "route": "/compare/results/run-1",
+      "viewport": "390x844@2",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    },
+    {
+      "name": "seeded-lab-reduced-motion",
+      "route": "/lab/studies/study-exp",
+      "viewport": "390x844@1",
+      "newConsoleErrors": [],
+      "checks": {
+        "shell": true,
+        "heading": true,
+        "landmark": true,
+        "docOverflow": false,
+        "bodyOverflow": false,
+        "smallTargets": [],
+        "secretPatterns": []
+      },
+      "violations": []
+    }
+  ],
+  "keyboard": {
+    "focusSequence": [
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "BUTTON.flex.min-h-[44px]",
+      "BUTTON.hidden.min-h-[44px]",
+      "BUTTON.hidden.h-11",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "BUTTON[data-action=new-policy-study].flex.min-h-[44px]",
+      "BUTTON[data-action=new-policy-study].flex.min-h-[44px]",
+      "A.flex.min-h-[44px]"
+    ],
+    "probe": "empty-lab-keyboard",
+    "seededLab": [
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "BUTTON.flex.min-h-[44px]",
+      "BUTTON.hidden.min-h-[44px]",
+      "BUTTON.hidden.h-11",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "BUTTON[data-action=new-policy-study].flex.min-h-[44px]",
+      "INPUT[data-action=show-archived].h-4.w-4",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]",
+      "A.flex.min-h-[44px]"
+    ],
+    "seededStudy": [
+      "A.inline-flex.min-h-[44px]",
+      "A.inline-flex.min-h-[32px]",
+      "A.inline-flex.min-h-[32px]",
+      "A.inline-flex.min-h-[32px]",
+      "A.inline-flex.min-h-[32px]",
+      "A.inline-flex.min-h-[32px]",
+      "A.inline-flex.min-h-[32px]",
+      "A.text-accent.hover:underline",
+      "A.text-xs.font-medium",
+      "A.text-xs.font-medium",
+      "A.text-xs.font-medium",
+      "DIV.scroll-thin.max-w-full"
+    ]
+  },
+  "oldRoutes": {
+    "retiredFusion": "rendered static notice without redirect",
+    "oldLiveFusionFamily": "NotFound",
+    "unknownRoute": "NotFound with return link"
+  },
+  "migrationBlocked": {
+    "shellRendered": true,
+    "bodySnippet": "RSemble AI\nCompare\nRuns\nEvaluations\nLive\n⌘\nK\nPolicy Studies\n0\nFusion Recipes\n0\nModel Pools\n0\n\nRESEARCH LAB\n\nPolicy Studies\n0 studies\nNew Policy Study\nNo policy studies yet\n\nA Policy Study pins an exac",
+    "newConsoleErrors": 0
+  },
+  "playbookPreflight": {
+    "open": true,
+    "snippet": "RSemble AI\nCompare\nRuns\nEvaluations\nLive\n⌘\nK\nFINISH\nRun with playbook\nRank\nFuse\n01\nCOMMAND\n\nDefine your task, select models, choose a judge, and set evaluation criteria.\n\nTASK\nATTACH\nTRY AN EXAMPLE\n~0 tokens\nMODELS · 2 selected\nAdd model\nGLM 5.2\nOPENROUTER\n‎z-ai/glm-5.2\n$0.49/M\n·\n— no history yet\nTe",
+    "focusTrapHeld": true,
+    "escapeClosed": true,
+    "focusAfterEscape": "BODY"
+  },
+  "exactRecord": {
+    "route": "/compare/results/run-1",
+    "roundTripStable": true,
+    "studyRoundTripStable": true
+  },
+  "backForward": {
+    "backOk": true,
+    "forwardOk": true
+  },
+  "directLoad": {
+    "route": "/lab/studies/study-conf",
+    "ok": true
+  },
+  "longTasks": {
+    "budgetMs": 1000,
+    "count": 0,
+    "maxDurationMs": 0
+  },
+  "consoleErrors": []
+}

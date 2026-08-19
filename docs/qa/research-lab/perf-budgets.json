@@ -3,27 +3,27 @@
   "measured": {
     "migrationPreview": {
       "budgetMs": 2000,
-      "actualMs": 13.615099999999984
+      "actualMs": 17.531200000000126
     },
     "migrationCutover": {
       "budgetMs": 20000,
-      "actualMs": 70.40809999999988
+      "actualMs": 39.47779999999989
     },
     "labList": {
       "budgetMs": 5000,
-      "actualMs": 5.541399999999612
+      "actualMs": 5.762199999999666
     },
     "largeStudyDetail": {
       "budgetMs": 5000,
-      "actualMs": 3.1791000000002896
+      "actualMs": 4.570800000000418
     },
     "archiveV3Export": {
       "budgetMs": 20000,
-      "actualMs": 52.388800000000174
+      "actualMs": 49.654599999999846
     },
     "archiveV3Import": {
       "budgetMs": 20000,
-      "actualMs": 245.26530000000002
+      "actualMs": 207.1314000000002
     }
   }
 }

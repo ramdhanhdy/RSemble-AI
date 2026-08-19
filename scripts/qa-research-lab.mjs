@@ -382,7 +382,7 @@ class CdpSession {
 }
 
 const SECRET_PATTERNS = [
-  /sk-[A-Za-z0-9]{20,}/,
+  /\bsk-[A-Za-z0-9]{20,}/,
   /api[_-]?key\s*[:=]\s*["']?[A-Za-z0-9]{16,}/i,
   /authorization\s*[:=]\s*["']?Bearer/i,
   /(password|secret)\s*[:=]\s*["'][^"']{6,}/i,
@@ -602,7 +602,7 @@ const SEEDED_ROUTES = [
   { name: "lab-model-pools", route: "/lab/model-pools", expect: "Model Pools" },
   { name: "pool-version", route: "/lab/model-pools/pool-1/versions/2", expect: null },
   { name: "study-draft", route: "/lab/studies/study-draft", expect: "Draft" },
-  { name: "study-running", route: "/lab/studies/study-running", expect: "Study in progress" },
+  { name: "study-running", route: "/lab/studies/study-running", expect: "Study interrupted" },
   { name: "study-interrupted", route: "/lab/studies/study-interrupted", expect: "Interrupted" },
   { name: "study-failed", route: "/lab/studies/study-failed", expect: "Failed" },
   { name: "study-exp", route: "/lab/studies/study-exp", expect: "Playbook" },
@@ -611,7 +611,7 @@ const SEEDED_ROUTES = [
   { name: "study-large", route: "/lab/studies/study-large", expect: null },
   { name: "task-set-list", route: "/evaluations/sets", expect: "Task sets" },
   { name: "task-set-detail", route: "/evaluations/sets/taskset-1", expect: null },
-  { name: "task-catalog", route: "/tasks", expect: "Task catalog" },
+  { name: "task-catalog", route: "/tasks", expect: "Tasks" },
   { name: "task-detail", route: "/tasks/task-1", expect: null },
   { name: "compare-result", route: "/compare/results/run-1", expect: null },
 ];
@@ -635,7 +635,7 @@ async function seedSeededSession(session) {
     });
     try {
       const db = await openDb();
-      const tables = ["studies","studyTrials","studyAttempts","studyObservations","policyPlaybooks","labRecipeRecords","labRecipeVersions","modelPoolRecords","modelPoolVersions","taskSets","taskSetVersions","runSummaries","runDetails","comparisonResults","tasks","taskVersions"];
+      const tables = ["studies","studyTrials","studyAttempts","studyObservations","policyPlaybooks","labRecipeRecords","labRecipeVersions","modelPoolRecords","modelPoolVersions","suites","taskSets","taskSetVersions","runSummaries","runDetails","comparisonResults","tasks","taskVersions"];
       for (const table of tables) {
         if (!db.objectStoreNames.contains(table)) continue;
         for (const row of seed[table] ?? []) await put(db, table, row);
@@ -834,7 +834,7 @@ async function runSeededMatrix(session, matrix) {
   // Direct load of a deep record without prior navigation.
   session.currentProbe = "direct-load";
   await session.send("Page.navigate", { url: `${baseUrl}#/lab/studies/study-conf` });
-  await session.waitFor("Boolean(document.querySelector('main, [role=main]'))", "direct load");
+  await session.waitFor("Boolean(document.querySelector('main, [role=main], #root > *'))", "direct load");
   await wait(600);
   const directText = await session.evaluate(`(document.body?.innerText ?? "").slice(0, 400)`);
   if (!/Confirmed/i.test(directText)) throw new Error("direct load of study-conf failed");

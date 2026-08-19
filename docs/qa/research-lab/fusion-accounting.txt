@@ -1,5 +1,5 @@
 === Fusion accounting (REV-6) ===
-Scanned 491 source files under src/.
+Scanned 492 source files under src/.
 
 ## allowlisted internal implementation machinery (69)
   rsemble.tsx — 2 fusion hit(s)

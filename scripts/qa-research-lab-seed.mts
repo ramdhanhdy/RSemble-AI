@@ -36,6 +36,7 @@ interface SeedDocument {
   labRecipeVersions: unknown[];
   modelPoolRecords: unknown[];
   modelPoolVersions: unknown[];
+  suites: unknown[];
   taskSets: unknown[];
   taskSetVersions: unknown[];
   runSummaries: unknown[];
@@ -108,6 +109,7 @@ async function buildSeed(): Promise<SeedDocument> {
     labRecipeVersions: [],
     modelPoolRecords: [],
     modelPoolVersions: [],
+    suites: [],
     taskSets: [],
     taskSetVersions: [],
     runSummaries: [],
@@ -316,7 +318,7 @@ async function buildSeed(): Promise<SeedDocument> {
 
   // Archived study.
   const arch = makePolicyStudyRecord("study-arch");
-  arch.status = "completed";
+  arch.status = "archived";
   arch.reportRef = "pb-arch";
   arch.title = "Archived — read-only";
   arch.archivedAt = T - 500;
@@ -367,6 +369,9 @@ async function buildSeed(): Promise<SeedDocument> {
   seed.taskSets.push(v2fx.taskSetRecordRow(taskSetRec));
   seed.taskSets.push({ id: "taskset-2", record: v2fx.makeTaskSetRecord("taskset-2"), latestVersion: 1, updatedAt: T - 100, archivedAt: null, origin: "authored", revision: 0 });
   seed.taskSetVersions.push(v2fx.taskSetVersionRow(taskSetVer));
+  // Suite row: TaskSetEditor loads via repo.getSuite(id), not taskSets directly.
+  const suite = v2fx.makeSuite("taskset-1");
+  seed.suites.push({ id: suite.id, suite, revision: suite.revision, version: suite.version, updatedAt: T, archivedAt: null });
 
   // --- Comparison result route (/compare/results/run-1) -----------------------
   const runSummary = v2fx.makeRunSummary("run-1");
