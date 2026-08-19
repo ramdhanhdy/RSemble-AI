@@ -115,30 +115,64 @@ function buildUnitId(
   return `unit:${kind}:${sorted.join(",")}`;
 }
 
-function detectFamilyConflicts(assignments: readonly TaskFamilyAssignment[]): string[] {
-  const conflicts: string[] = [];
-  const taskFamily = new Map<string, string>();
-
+/**
+ * Collect the set of primary family ids declared for each task. A task with
+ * more than one distinct primary family is conflicted. Computation is
+ * order-independent (uses sets), so the conflicted set is permutation-invariant
+ * over the assignments array (R3).
+ */
+function primaryFamiliesByTask(
+  assignments: readonly TaskFamilyAssignment[],
+): Map<string, Set<string>> {
+  const familiesByTask = new Map<string, Set<string>>();
   for (const assign of assignments) {
     if (!assign.isPrimary) continue;
-    const existing = taskFamily.get(assign.taskId);
-    if (existing && existing !== assign.familyId) {
+    const set = familiesByTask.get(assign.taskId);
+    if (set) {
+      set.add(assign.familyId);
+    } else {
+      familiesByTask.set(assign.taskId, new Set<string>([assign.familyId]));
+    }
+  }
+  return familiesByTask;
+}
+
+function conflictedTaskIds(assignments: readonly TaskFamilyAssignment[]): Set<string> {
+  const familiesByTask = primaryFamiliesByTask(assignments);
+  const conflicted = new Set<string>();
+  for (const [taskId, families] of familiesByTask) {
+    if (families.size > 1) conflicted.add(taskId);
+  }
+  return conflicted;
+}
+
+function detectFamilyConflicts(assignments: readonly TaskFamilyAssignment[]): string[] {
+  const familiesByTask = primaryFamiliesByTask(assignments);
+  const conflicts: string[] = [];
+  for (const [taskId, families] of familiesByTask) {
+    if (families.size > 1) {
+      const sorted = [...families].sort();
       conflicts.push(
-        `Task "${assign.taskId}" has multiple primary family assignments: "${existing}" and "${assign.familyId}"`,
+        `Task "${taskId}" has multiple conflicting primary family assignments: ${sorted.map((f) => `"${f}"`).join(", ")} — resolved conservatively (not grouped into any family).`,
       );
     }
-    taskFamily.set(assign.taskId, assign.familyId);
   }
-
+  // Deterministic disclosure order, independent of assignment input order.
+  conflicts.sort((a, b) => a.localeCompare(b));
   return conflicts;
 }
 
 function buildFamilyIndex(assignments: readonly TaskFamilyAssignment[]): Map<string, string[]> {
+  // Conflicted tasks are excluded conservatively: a task with contradictory
+  // primary family metadata is never silently assigned to one of the
+  // conflicting families (R3). It falls through to task_identity fallback.
+  const conflicted = conflictedTaskIds(assignments);
   const index = new Map<string, string[]>();
   const taskFamily = new Map<string, string>();
 
   for (const assign of assignments) {
     if (!assign.isPrimary) continue;
+    if (conflicted.has(assign.taskId)) continue;
     taskFamily.set(assign.taskId, assign.familyId);
   }
 
@@ -266,7 +300,8 @@ export function resolveUncertaintyUnits(
   const infos = cells.map(extractCellInfo);
   const disclosures: string[] = [];
 
-  // Always check for family assignment conflicts
+  // Always check for family assignment conflicts (conservative, disclosed,
+  // deterministic, permutation-invariant — R3).
   const familyConflicts = detectFamilyConflicts(taskFamilyAssignments);
   disclosures.push(...familyConflicts);
 

@@ -608,3 +608,169 @@ describe("resolveUncertaintyUnits — partition identity (R2)", () => {
     expect(r1.units.map((u) => u.unitId).sort()).toEqual(r2.units.map((u) => u.unitId).sort());
   });
 });
+// ---------------------------------------------------------------------------
+// R3: conflicting family assignments resolve conservatively + permutation-invariant
+// ---------------------------------------------------------------------------
+
+describe("resolveUncertaintyUnits — conflicting family assignments (R3)", () => {
+  const PROTO = `sha256:${"p".repeat(64)}`;
+  const SRC = "src-single";
+
+  function conflictAssignments(order: "ab" | "ba"): TaskFamilyAssignment[] {
+    const a: TaskFamilyAssignment = {
+      id: "asg-conf-a",
+      taskId: "task-conflict",
+      taskVersion: 1,
+      familyId: "family-a",
+      isPrimary: true,
+      createdAt: T0,
+      revision: 1,
+      archivedAt: null,
+    };
+    const b: TaskFamilyAssignment = {
+      id: "asg-conf-b",
+      taskId: "task-conflict",
+      taskVersion: 1,
+      familyId: "family-b",
+      isPrimary: true,
+      createdAt: T0,
+      revision: 1,
+      archivedAt: null,
+    };
+    return order === "ab" ? [a, b] : [b, a];
+  }
+
+  function singleCohortCells(): ProfileSelectedCell[] {
+    return [
+      syntheticCell({ taskId: "task-conflict", protocolFingerprint: PROTO, sourceResultId: SRC }),
+      syntheticCell({ taskId: "task-solo", protocolFingerprint: PROTO, sourceResultId: SRC }),
+    ];
+  }
+
+  it("discloses a conflicting primary family assignment without last-write-wins text", () => {
+    const input: UncertaintyResolverInput = {
+      selection: syntheticSelection(singleCohortCells()),
+      query: baseQuery(),
+      taskFamilyRelations: [],
+      taskFamilyAssignments: conflictAssignments("ab"),
+    };
+    const resolution = resolveUncertaintyUnits(input);
+    const conflictDisclosure = resolution.disclosures.find((d) =>
+      d.includes("task-conflict") && d.toLowerCase().includes("conflict"),
+    );
+    expect(conflictDisclosure).toBeTruthy();
+    // Both conflicting families are named, deterministically (sorted).
+    expect(conflictDisclosure!).toContain("family-a");
+    expect(conflictDisclosure!).toContain("family-b");
+  });
+
+  it("is permutation-invariant over assignment order (disclosures + grouping)", () => {
+    const makeInput = (order: "ab" | "ba"): UncertaintyResolverInput => ({
+      selection: syntheticSelection(singleCohortCells()),
+      query: baseQuery(),
+      taskFamilyRelations: [],
+      taskFamilyAssignments: conflictAssignments(order),
+    });
+    const r1 = resolveUncertaintyUnits(makeInput("ab"));
+    const r2 = resolveUncertaintyUnits(makeInput("ba"));
+    expect(r1.disclosures).toEqual(r2.disclosures);
+    expect(r1.assignmentDigest).toBe(r2.assignmentDigest);
+    expect(r1.units.map((u) => u.unitId).sort()).toEqual(r2.units.map((u) => u.unitId).sort());
+  });
+
+  it("resolves a conflicted task conservatively: not grouped into any family (task_identity fallback)", () => {
+    // task-conflict has two primary families -> it must NOT be silently
+    // assigned to either family. It falls through to a task_identity unit.
+    const assignments: TaskFamilyAssignment[] = [
+      ...conflictAssignments("ab"),
+      {
+        id: "asg-solo",
+        taskId: "task-solo",
+        taskVersion: 1,
+        familyId: "family-solo",
+        isPrimary: true,
+        createdAt: T0,
+        revision: 1,
+        archivedAt: null,
+      },
+    ];
+    const input: UncertaintyResolverInput = {
+      selection: syntheticSelection(singleCohortCells()),
+      query: baseQuery(),
+      taskFamilyRelations: [],
+      taskFamilyAssignments: assignments,
+    };
+    const resolution = resolveUncertaintyUnits(input);
+    const conflictUnit = resolution.units.find((u) => u.taskIds.includes("task-conflict"));
+    expect(conflictUnit).toBeDefined();
+    // Conservatively not grouped with another task via a family relation.
+    expect(conflictUnit!.taskIds).toEqual(["task-conflict"]);
+    expect(conflictUnit!.kind).toBe("task_identity");
+  });
+
+  it("is permutation-invariant over relation order", () => {
+    // Two relations linking family-a<->family-b and family-b<->family-c.
+    // Reordering the relations array must yield identical resolutions.
+    const assignments: TaskFamilyAssignment[] = [
+      {
+        id: "asg-t1",
+        taskId: "task-1",
+        taskVersion: 1,
+        familyId: "family-a",
+        isPrimary: true,
+        createdAt: T0,
+        revision: 1,
+        archivedAt: null,
+      },
+      {
+        id: "asg-t2",
+        taskId: "task-2",
+        taskVersion: 1,
+        familyId: "family-b",
+        isPrimary: true,
+        createdAt: T0,
+        revision: 1,
+        archivedAt: null,
+      },
+      {
+        id: "asg-t3",
+        taskId: "task-3",
+        taskVersion: 1,
+        familyId: "family-c",
+        isPrimary: true,
+        createdAt: T0,
+        revision: 1,
+        archivedAt: null,
+      },
+    ];
+    const cells = assignments.map((a) =>
+      syntheticCell({ taskId: a.taskId, protocolFingerprint: PROTO, sourceResultId: SRC }),
+    );
+    const relAB: TaskFamilyRelation = {
+      id: "rel-ab",
+      fromFamilyId: "family-a",
+      toFamilyId: "family-b",
+      kind: "overlap",
+      createdAt: T0,
+    };
+    const relBC: TaskFamilyRelation = {
+      id: "rel-bc",
+      fromFamilyId: "family-b",
+      toFamilyId: "family-c",
+      kind: "overlap",
+      createdAt: T0,
+    };
+    const makeInput = (relations: TaskFamilyRelation[]): UncertaintyResolverInput => ({
+      selection: syntheticSelection(cells),
+      query: baseQuery(),
+      taskFamilyRelations: relations,
+      taskFamilyAssignments: assignments,
+    });
+    const r1 = resolveUncertaintyUnits(makeInput([relAB, relBC]));
+    const r2 = resolveUncertaintyUnits(makeInput([relBC, relAB]));
+    expect(r1.assignmentDigest).toBe(r2.assignmentDigest);
+    expect(r1.units.map((u) => u.unitId).sort()).toEqual(r2.units.map((u) => u.unitId).sort());
+    // All three tasks linked transitively -> one task_family_relation unit.
+    expect(r1.unitCount).toBe(1);
+  });
+});
