@@ -20,7 +20,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Cpu, Loader } from "lucide-react";
 import type { ProfileCoverageSummary } from "../../lib/model-profiles/coverage-summary";
 import type { FamilyAggregate } from "../../lib/model-profiles/family-aggregation";
@@ -36,6 +36,11 @@ import { EvidenceTable, type EvidenceTableRow } from "./EvidenceTable";
 import { useNarrowing } from "./useNarrowing";
 import { PairedComparisonSection, type PairedComparatorIdentity } from "./PairedComparisonSection";
 import type { ComparatorCandidate } from "./ComparatorPicker";
+import type { CohortInterval } from "./CohortBlock";
+import { useEvidenceRepository, useTaskRepository } from "../../lib/persistence/repository-context";
+import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
+import type { TaskRepository } from "../../lib/persistence/task-repository";
+import { loadProfileData, loadPairedComparison } from "./model-profile-loader";
 
 // =============================================================================
 // Test seams — injected data shapes
@@ -73,6 +78,8 @@ export interface ProfileData {
   families: readonly FamilyAggregate[];
   /** Resolved family names (familyId → display name). */
   familyNames?: Readonly<Record<string, string>>;
+  /** Per-cohort uncertainty intervals. */
+  cohortIntervals?: Readonly<Record<string, CohortInterval>>;
   verifiedOutcomes: readonly VerifiedOutcome[];
   evidenceRows: readonly EvidenceTableRow[];
   /** Section 7 data */
@@ -116,6 +123,10 @@ export interface ModelEvidenceProfileProps {
   computing?: boolean;
   /** Test seam: simulate not-found state. */
   notFound?: boolean;
+  /** Test seam: inject evidence repo. */
+  evidenceRepo?: EvidenceRepository | null;
+  /** Test seam: inject task repo. */
+  taskRepo?: TaskRepository | null;
 }
 
 // =============================================================================
@@ -273,10 +284,17 @@ export function ModelEvidenceProfile({
   data: dataProp,
   computing: computingProp,
   notFound: notFoundProp,
+  evidenceRepo: evidenceRepoProp,
+  taskRepo: taskRepoProp,
 }: ModelEvidenceProfileProps = {}): ReactNode {
   const { modelConfigurationId } = useParams<{ modelConfigurationId: string }>();
   const navigate = useNavigate();
   const headingRef = useRef<HTMLHeadingElement>(null);
+
+  const ctxEvidenceRepo = useEvidenceRepository();
+  const ctxTaskRepo = useTaskRepository();
+  const evidenceRepo = evidenceRepoProp !== undefined ? evidenceRepoProp : ctxEvidenceRepo;
+  const taskRepo = taskRepoProp !== undefined ? taskRepoProp : ctxTaskRepo;
 
   const narrowing = useNarrowing();
   const [comparator, setComparator] = useState<PairedComparatorIdentity | null>(
@@ -290,7 +308,11 @@ export function ModelEvidenceProfile({
   }, [modelConfigurationId]);
 
   // --- State machine ---
-  const [computing, setComputing] = useState(computingProp ?? true);
+  const [loadedData, setLoadedData] = useState<ProfileData | null>(null);
+  const [notFound, setNotFound] = useState(notFoundProp ?? false);
+  const [computing, setComputing] = useState(
+    computingProp ?? (dataProp === undefined && notFoundProp === undefined),
+  );
   const [cancelled, setCancelled] = useState(false);
 
   // When test seam provides data, exit computing.
@@ -300,16 +322,117 @@ export function ModelEvidenceProfile({
     }
   }, [dataProp]);
   useEffect(() => {
-    setComparator(dataProp?.paired?.comparator ?? null);
-  }, [dataProp?.paired?.comparator]);
+    setComparator(dataProp?.paired?.comparator ?? loadedData?.paired?.comparator ?? null);
+  }, [dataProp?.paired?.comparator, loadedData?.paired?.comparator]);
+
+  // Route load effect
+  useEffect(() => {
+    if (dataProp !== undefined || notFoundProp !== undefined || computingProp !== undefined) {
+      return;
+    }
+    if (!evidenceRepo || !modelConfigurationId) {
+      setNotFound(true);
+      setComputing(false);
+      return;
+    }
+    let isCancelled = false;
+    setComputing(true);
+    setNotFound(false);
+
+    loadProfileData({
+      modelConfigurationId,
+      evidenceRepo,
+      taskRepo,
+    })
+      .then((result) => {
+        if (!isCancelled) {
+          if (!result) {
+            setNotFound(true);
+          } else {
+            setLoadedData(result);
+            setComparator(result.paired?.comparator ?? null);
+          }
+          setComputing(false);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setNotFound(true);
+          setComputing(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [evidenceRepo, taskRepo, modelConfigurationId, dataProp, notFoundProp, computingProp]);
 
   const handleCancel = () => {
     setCancelled(true);
     void navigate("/models");
   };
 
+  const handleSelectComparator = async (cid: string) => {
+    const activeData = dataProp ?? loadedData;
+    const known = activeData?.paired?.comparator;
+    if (known && known.id === cid) {
+      setComparator(known);
+      return;
+    }
+    const cand = (activeData?.paired?.candidates ?? []).find((c) => c.id === cid);
+    if (!cand) return;
+
+    if (!evidenceRepo || !modelConfigurationId) {
+      setComparator({
+        id: cand.id,
+        providerId: cand.label,
+        requestedModel: cand.label,
+      });
+      return;
+    }
+
+    const pair = await loadPairedComparison({
+      subjectConfigurationId: modelConfigurationId,
+      comparatorId: cid,
+      evidenceRepo,
+      taskRepo,
+    });
+
+    if (pair) {
+      setComparator(pair.comparator);
+      if (loadedData) {
+        setLoadedData({
+          ...loadedData,
+          paired: {
+            candidates: loadedData.paired?.candidates ?? [],
+            comparator: pair.comparator,
+            result: pair.result,
+          },
+        });
+      }
+    } else {
+      setComparator({
+        id: cand.id,
+        providerId: cand.label,
+        requestedModel: cand.label,
+      });
+    }
+  };
+
+  const handleRemoveComparator = () => {
+    setComparator(null);
+    if (loadedData) {
+      setLoadedData({
+        ...loadedData,
+        paired: loadedData.paired
+          ? { ...loadedData.paired, comparator: null, result: null }
+          : undefined,
+      });
+    }
+  };
+
   // --- Not-found state ---
-  if (notFoundProp) {
+  if (notFoundProp || notFound) {
     return (
       <div data-profile-state="not-found" className="flex flex-col gap-4 py-8">
         <div className="text-text">
@@ -319,20 +442,20 @@ export function ModelEvidenceProfile({
           </p>
         </div>
         <div className="flex gap-2">
-          <a
-            href="#/models"
+          <Link
+            to="/models"
             data-action="open-models"
             className="pressable inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-4 text-sm text-text hover:border-edge-bright focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           >
             Open Models
-          </a>
-          <a
-            href="#/records"
+          </Link>
+          <Link
+            to="/runs"
             data-action="open-records"
             className="pressable inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-4 text-sm text-text hover:border-edge-bright focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           >
             Open Records
-          </a>
+          </Link>
         </div>
         <p className="honesty-note text-xs text-text-muted">
           This lookup is device-local. The configuration may exist in another database or under a
@@ -366,8 +489,10 @@ export function ModelEvidenceProfile({
     );
   }
 
+  const data = dataProp ?? loadedData;
+
   // --- No data ---
-  if (!dataProp) {
+  if (!data) {
     return (
       <div data-profile-state="no-data" className="py-8 text-sm text-text-muted">
         No profile data available.
@@ -375,7 +500,6 @@ export function ModelEvidenceProfile({
     );
   }
 
-  const data = dataProp;
   const id = data.identity;
 
   // --- Build section nav ---
@@ -396,12 +520,12 @@ export function ModelEvidenceProfile({
              ================================================================ */}
         <section data-section="identity" aria-labelledby="profile-heading">
           {/* Breadcrumb */}
-          <a
-            href="#/models"
+          <Link
+            to="/models"
             className="text-xs text-text-muted hover:text-text transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           >
             Models
-          </a>
+          </Link>
 
           {/* KindEyebrow + VersionStatusChip */}
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -578,6 +702,7 @@ export function ModelEvidenceProfile({
                         ? data.familyNames[family.familyId]
                         : undefined
                     }
+                    cohortIntervals={data.cohortIntervals}
                     onApplyNarrowing={(n) => {
                       narrowing.apply(n);
                       narrowing.focusTableHeading();
@@ -619,22 +744,8 @@ export function ModelEvidenceProfile({
                 ? data.paired.result
                 : null
             }
-            onSelectComparator={(cid) => {
-              const known = data.paired?.comparator;
-              if (known && known.id === cid) {
-                setComparator(known);
-                return;
-              }
-              const cand = (data.paired?.candidates ?? []).find((c) => c.id === cid);
-              if (cand) {
-                setComparator({
-                  id: cand.id,
-                  providerId: cand.label,
-                  requestedModel: cand.label,
-                });
-              }
-            }}
-            onRemoveComparator={() => setComparator(null)}
+            onSelectComparator={handleSelectComparator}
+            onRemoveComparator={handleRemoveComparator}
             onTaskNarrowing={(taskId) => {
               narrowing.apply({ key: `task:${taskId}`, label: `Task: ${taskId}` });
               narrowing.focusTableHeading();
@@ -648,6 +759,7 @@ export function ModelEvidenceProfile({
         <div className="mt-6" id="evidence">
           <EvidenceTable
             rows={data.evidenceRows}
+            headingRef={narrowing.tableHeadingRef}
             narrowings={narrowing.narrowings}
             onRemoveNarrowing={narrowing.remove}
             onClearAllNarrowings={() => {

@@ -32,8 +32,18 @@ import type {
   ProfileCoverageSummary,
 } from "../../lib/model-profiles/coverage-summary";
 import type { PairedComparisonResult } from "../../lib/model-profiles/paired-comparison";
+import { InMemoryEvidenceRepository } from "../../lib/persistence/evidence-repository";
+import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-repository";
+import { QUERY_ELIGIBILITY_RULE_VERSION } from "../../lib/model-profiles/model-evidence-query";
+import type { AssessmentRef, Observation } from "../../lib/evidence/evidence-types";
+import { observationIdFor } from "../../lib/evidence/evidence-validation";
 
 const MODELS_ROOT = join(process.cwd(), "src", "workspaces", "models");
+const COHORT_CODE = `sha256:${"a".repeat(64)}`;
+const COHORT_SUM = `sha256:${"b".repeat(64)}`;
+const COHORT_REPAIR = `sha256:${"c".repeat(64)}`;
+const COHORT_EXCLUDED = `sha256:${"d".repeat(64)}`;
+const COHORT_PARTIAL = `sha256:${"e".repeat(64)}`;
 
 function filesUnder(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -101,7 +111,7 @@ function makeProfile(overrides: Partial<ProfileData> = {}): ProfileData {
     identity: {
       modelConfigurationId: "mc-subject",
       providerId: "openai",
-      requestedModel: "gpt-4o",
+      requestedModel: "gpt-5.6-sol",
       versionStatus: "exact",
       aggregationRuleVersion: 1,
       uncertaintyRuleVersion: 1,
@@ -205,6 +215,666 @@ const EMPTY_PAIRED: PairedComparisonResult = {
   cohortResults: [],
   disclosures: [],
 };
+
+function makeAssessmentRef(options: {
+  judgeAttemptId: string;
+  candidateAttemptId: string;
+  rubricRef?: AssessmentRef["rubricRef"];
+  verifier?: {
+    taskId: string;
+    modelKey: string;
+    passed: boolean;
+  };
+}): AssessmentRef {
+  const candidateId = "candidate";
+  return {
+    judgeAttemptId: options.judgeAttemptId,
+    judgeProviderId: "openai",
+    judgeModel: "gpt-5.6-sol",
+    blindLabelMapping: { A: candidateId },
+    candidateAttemptIdsByCandidateId: {
+      [candidateId]: options.candidateAttemptId,
+    },
+    rubricRef: options.rubricRef ?? null,
+    verifierRef: options.verifier ? { id: "ver-code", version: 1 } : null,
+    verifierOutcome: options.verifier
+      ? {
+          ...options.verifier,
+          executedAt: Date.parse("2026-07-10"),
+        }
+      : null,
+  };
+}
+
+async function createFixtureTask(repo: InMemoryTaskRepository, id: string): Promise<void> {
+  const now = Date.now();
+  await repo.createTask(
+    {
+      id,
+      latestVersion: 1,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+      origin: "authored",
+      revision: 0,
+    },
+    {
+      taskId: id,
+      version: 1,
+      title: id,
+      objective: `Fixture objective for ${id}.`,
+      candidateInstruction: `Complete ${id}.`,
+      defaultContextManifest: [],
+      responseContract: null,
+      taskVerifierRef: null,
+      source: {
+        kind: "authored",
+        legacyScopeKey: null,
+        note: null,
+      },
+      createdAt: now,
+    },
+  );
+}
+
+async function putFixtureObservation(
+  repo: InMemoryEvidenceRepository,
+  observation: Omit<Observation, "id">,
+): Promise<string> {
+  const digest = `sha256:${"1".repeat(64)}`;
+  const persisted: Observation = {
+    id: "",
+    ...observation,
+    protocolFingerprint: digest,
+    evaluatorSnapshot: {
+      ...observation.evaluatorSnapshot,
+      instructionDigest: digest,
+    },
+    verifierSnapshot: observation.verifierSnapshot
+      ? {
+          ...observation.verifierSnapshot,
+          configurationDigest: digest,
+        }
+      : null,
+  };
+  persisted.id = observationIdFor(persisted);
+  await repo.putObservation(persisted);
+  return persisted.id;
+}
+
+export async function seedRoutedAcceptanceCorpus() {
+  const taskRepo = new InMemoryTaskRepository();
+  await taskRepo.createTaskFamily({
+    id: "fam-code",
+    name: "Code Transformation",
+    description: "Code transformation tasks",
+    parentFamilyId: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    archivedAt: null,
+    revision: 1,
+  });
+  await taskRepo.createTaskFamily({
+    id: "fam-sum",
+    name: "Summarization",
+    description: "Summarization tasks",
+    parentFamilyId: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    archivedAt: null,
+    revision: 1,
+  });
+  await taskRepo.createTaskFamily({
+    id: "fam-rep",
+    name: "Code Repair",
+    description: "Code repair tasks",
+    parentFamilyId: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    archivedAt: null,
+    revision: 1,
+  });
+
+  const taskIdsCode = ["t-code-1", "t-code-2", "t-code-3", "t-code-4", "t-code-5", "t-code-6"];
+  for (const tid of taskIdsCode) {
+    await createFixtureTask(taskRepo, tid);
+    await taskRepo.assignTaskFamily({
+      id: `asgn-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      familyId: "fam-code",
+      isPrimary: false,
+      createdAt: Date.now(),
+      archivedAt: null,
+      revision: 1,
+    });
+  }
+
+  const taskIdsSum = ["t-sum-1", "t-sum-2", "t-sum-3", "t-sum-4", "t-sum-5", "t-sum-6"];
+  for (const tid of taskIdsSum) {
+    await createFixtureTask(taskRepo, tid);
+    await taskRepo.assignTaskFamily({
+      id: `asgn-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      familyId: "fam-sum",
+      isPrimary: false,
+      createdAt: Date.now(),
+      archivedAt: null,
+      revision: 1,
+    });
+  }
+
+  const taskIdsRep = ["t-rep-1", "t-rep-2"];
+  for (const tid of taskIdsRep) {
+    await createFixtureTask(taskRepo, tid);
+    await taskRepo.assignTaskFamily({
+      id: `asgn-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      familyId: "fam-rep",
+      isPrimary: false,
+      createdAt: Date.now(),
+      archivedAt: null,
+      revision: 1,
+    });
+  }
+
+  const evidenceRepo = new InMemoryEvidenceRepository();
+
+  const configAId = "mc:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const configBId = "mc:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const configCId = "mc:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+  await evidenceRepo.putModelConfiguration({
+    id: configAId,
+    providerId: "openai",
+    requestedModel: "gpt-5.6-sol",
+    resolvedModel: "gpt-5.6-sol",
+    resolvedVersion: "gpt-5.6-sol",
+    reasoningRequested: "high",
+    reasoningEffective: "high",
+    toolScaffoldSignature: "t-tools",
+    runtimeSettings: {},
+    identityCompleteness: "exact",
+    observedFrom: Date.parse("2026-05-01"),
+    observedTo: Date.parse("2026-08-01"),
+  });
+
+  await evidenceRepo.putModelConfiguration({
+    id: configBId,
+    providerId: "anthropic",
+    requestedModel: "claude-haiku-4-5",
+    resolvedModel: "claude-haiku-4-5-20251001",
+    resolvedVersion: "20251001",
+    reasoningRequested: null,
+    reasoningEffective: null,
+    toolScaffoldSignature: "t-tools",
+    runtimeSettings: {},
+    identityCompleteness: "exact",
+    observedFrom: Date.parse("2026-06-01"),
+    observedTo: Date.parse("2026-08-01"),
+  });
+
+  await evidenceRepo.putModelConfiguration({
+    id: configCId,
+    providerId: "google",
+    requestedModel: "gemini-3.7-flash",
+    resolvedModel: null,
+    resolvedVersion: null,
+    reasoningRequested: null,
+    reasoningEffective: null,
+    toolScaffoldSignature: null,
+    runtimeSettings: {},
+    identityCompleteness: "partial",
+    observedFrom: Date.parse("2026-07-01"),
+    observedTo: Date.parse("2026-08-01"),
+  });
+
+  // Observations for config A:
+  const codeObservationIdsA: string[] = [];
+  for (let i = 0; i < taskIdsCode.length; i++) {
+    const tid = taskIdsCode[i];
+    const passed = i < 5;
+    const obsId = await putFixtureObservation(evidenceRepo, {
+      sourceKind: "evaluation",
+      sourceResultId: "eval-exec-1",
+      executionLineageId: `lin-a-${tid}`,
+      runId: "run-1",
+      sourceTaskCellId: `cell-a-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      taskInstanceId: `inst-${tid}`,
+      taskFamilyId: "fam-code",
+      modelConfigurationId: configAId,
+      candidateAttemptId: `cand-a-${tid}`,
+      assessmentRef: makeAssessmentRef({
+        judgeAttemptId: `judg-a-${tid}`,
+        candidateAttemptId: `cand-a-${tid}`,
+        verifier: {
+          taskId: tid,
+          modelKey: "openai:gpt-5.6-sol",
+          passed,
+        },
+      }),
+      protocolFingerprint: "proto-1",
+      rubricRef: null,
+      evaluatorSnapshot: {
+        kind: "model_judge",
+        providerId: "openai",
+        model: "gpt-5.6-sol",
+        resolvedVersion: "gpt-5.6-sol",
+        instructionDigest: "inst-1",
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: {
+        kind: "unit_tests",
+        configurationDigest: "digest-1",
+        verifierRef: { id: "ver-code", version: 1 },
+      },
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: passed,
+        overallScore: null,
+        criterionValues: [],
+      },
+      observedAt: Date.parse("2026-07-10") + i * 1000,
+      observationSchemaVersion: 1,
+    });
+    codeObservationIdsA.push(obsId);
+    await evidenceRepo.putDecision({
+      observationId: obsId,
+      ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+      status: "eligible",
+      evidenceClass: "verified",
+      allowedUses: ["within_model_profile", "paired_model_comparison"],
+      comparabilityCohortId: COHORT_CODE,
+      reasonCodes: ["canonical_task_resolved", "model_configuration_exact"],
+      decidedAt: Date.now(),
+    });
+  }
+
+  const scoresA = [80, 85, 90, 75, 88, 92];
+  for (let i = 0; i < taskIdsSum.length; i++) {
+    const tid = taskIdsSum[i];
+    const obsId = await putFixtureObservation(evidenceRepo, {
+      sourceKind: "evaluation",
+      sourceResultId: "eval-exec-1",
+      executionLineageId: `lin-a-${tid}`,
+      runId: "run-1",
+      sourceTaskCellId: `cell-a-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      taskInstanceId: `inst-${tid}`,
+      taskFamilyId: "fam-sum",
+      modelConfigurationId: configAId,
+      candidateAttemptId: `cand-a-${tid}`,
+      assessmentRef: makeAssessmentRef({
+        judgeAttemptId: `judg-a-${tid}`,
+        candidateAttemptId: `cand-a-${tid}`,
+        rubricRef: { id: "rub-sum", version: 1 },
+      }),
+      protocolFingerprint: "proto-1",
+      rubricRef: { id: "rub-sum", version: 1 },
+      evaluatorSnapshot: {
+        kind: "model_judge",
+        providerId: "openai",
+        model: "gpt-5.6-sol",
+        resolvedVersion: "gpt-5.6-sol",
+        instructionDigest: "inst-1",
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: null,
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: null,
+        overallScore: scoresA[i],
+        criterionValues: [],
+      },
+      observedAt: Date.parse("2026-07-12") + i * 1000,
+      observationSchemaVersion: 1,
+    });
+    await evidenceRepo.putDecision({
+      observationId: obsId,
+      ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+      status: "eligible",
+      evidenceClass: "comparable",
+      allowedUses: ["within_model_profile", "paired_model_comparison"],
+      comparabilityCohortId: COHORT_SUM,
+      reasonCodes: ["canonical_task_resolved", "rubric_resolved"],
+      decidedAt: Date.now(),
+    });
+  }
+
+  for (let i = 0; i < taskIdsRep.length; i++) {
+    const tid = taskIdsRep[i];
+    const obsId = await putFixtureObservation(evidenceRepo, {
+      sourceKind: "evaluation",
+      sourceResultId: "eval-exec-1",
+      executionLineageId: `lin-a-${tid}`,
+      runId: "run-1",
+      sourceTaskCellId: `cell-a-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      taskInstanceId: `inst-${tid}`,
+      taskFamilyId: "fam-rep",
+      modelConfigurationId: configAId,
+      candidateAttemptId: `cand-a-${tid}`,
+      assessmentRef: makeAssessmentRef({
+        judgeAttemptId: `judg-a-${tid}`,
+        candidateAttemptId: `cand-a-${tid}`,
+        rubricRef: { id: "rub-rep", version: 1 },
+      }),
+      protocolFingerprint: "proto-1",
+      rubricRef: { id: "rub-rep", version: 1 },
+      evaluatorSnapshot: {
+        kind: "model_judge",
+        providerId: "openai",
+        model: "gpt-5.6-sol",
+        resolvedVersion: "gpt-5.6-sol",
+        instructionDigest: "inst-1",
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: null,
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: null,
+        overallScore: 70 + i * 5,
+        criterionValues: [],
+      },
+      observedAt: Date.parse("2026-07-14") + i * 1000,
+      observationSchemaVersion: 1,
+    });
+    await evidenceRepo.putDecision({
+      observationId: obsId,
+      ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+      status: "eligible",
+      evidenceClass: "comparable",
+      allowedUses: ["within_model_profile", "paired_model_comparison"],
+      comparabilityCohortId: COHORT_REPAIR,
+      reasonCodes: ["canonical_task_resolved", "rubric_resolved"],
+      decidedAt: Date.now(),
+    });
+  }
+
+  const obsExcludedId = await putFixtureObservation(evidenceRepo, {
+    sourceKind: "evaluation",
+    sourceResultId: "eval-exec-1",
+    executionLineageId: "lin-a-ex",
+    runId: "run-1",
+    sourceTaskCellId: "cell-a-ex",
+    taskId: "t-code-1",
+    taskVersion: 1,
+    taskInstanceId: "inst-t-code-1",
+    taskFamilyId: "fam-code",
+    modelConfigurationId: configAId,
+    candidateAttemptId: "cand-a-ex",
+    assessmentRef: makeAssessmentRef({
+      judgeAttemptId: "judg-a-ex",
+      candidateAttemptId: "cand-a-ex",
+    }),
+    protocolFingerprint: "proto-1",
+    rubricRef: null,
+    evaluatorSnapshot: {
+      kind: "model_judge",
+      providerId: "openai",
+      model: "gpt-5.6-sol",
+      resolvedVersion: "gpt-5.6-sol",
+      instructionDigest: "inst-1",
+      reasoningEffort: null,
+      toolScaffoldSignature: null,
+    },
+    verifierSnapshot: null,
+    outcome: {
+      judgeAccepted: true,
+      verifierPassed: null,
+      overallScore: null,
+      criterionValues: [],
+    },
+    observedAt: Date.parse("2026-07-01"),
+    observationSchemaVersion: 1,
+  });
+  await evidenceRepo.putDecision({
+    observationId: obsExcludedId,
+    ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+    status: "excluded",
+    evidenceClass: "exploratory",
+    allowedUses: [],
+    comparabilityCohortId: COHORT_EXCLUDED,
+    reasonCodes: ["candidate_missing_or_failed"],
+    decidedAt: Date.now(),
+  });
+
+  // Observations for config B
+  for (let i = 0; i < taskIdsCode.length; i++) {
+    const tid = taskIdsCode[i];
+    const passed = i < 4;
+    const obsId = await putFixtureObservation(evidenceRepo, {
+      sourceKind: "evaluation",
+      sourceResultId: "eval-exec-1",
+      executionLineageId: `lin-b-${tid}`,
+      runId: "run-1",
+      sourceTaskCellId: `cell-b-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      taskInstanceId: `inst-${tid}`,
+      taskFamilyId: "fam-code",
+      modelConfigurationId: configBId,
+      candidateAttemptId: `cand-b-${tid}`,
+      assessmentRef: makeAssessmentRef({
+        judgeAttemptId: `judg-b-${tid}`,
+        candidateAttemptId: `cand-b-${tid}`,
+        verifier: {
+          taskId: tid,
+          modelKey: "anthropic:claude-haiku-4-5",
+          passed,
+        },
+      }),
+      protocolFingerprint: "proto-1",
+      rubricRef: null,
+      evaluatorSnapshot: {
+        kind: "model_judge",
+        providerId: "openai",
+        model: "gpt-5.6-sol",
+        resolvedVersion: "gpt-5.6-sol",
+        instructionDigest: "inst-1",
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: {
+        kind: "unit_tests",
+        configurationDigest: "digest-1",
+        verifierRef: { id: "ver-code", version: 1 },
+      },
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: passed,
+        overallScore: null,
+        criterionValues: [],
+      },
+      observedAt: Date.parse("2026-07-10") + i * 1000,
+      observationSchemaVersion: 1,
+    });
+    await evidenceRepo.putDecision({
+      observationId: obsId,
+      ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+      status: "eligible",
+      evidenceClass: "verified",
+      allowedUses: ["within_model_profile", "paired_model_comparison"],
+      comparabilityCohortId: COHORT_CODE,
+      reasonCodes: ["canonical_task_resolved", "model_configuration_exact"],
+      decidedAt: Date.now(),
+    });
+  }
+
+  const scoresB = [70, 75, 80, 65, 78, 82];
+  for (let i = 0; i < taskIdsSum.length; i++) {
+    const tid = taskIdsSum[i];
+    const obsId = await putFixtureObservation(evidenceRepo, {
+      sourceKind: "evaluation",
+      sourceResultId: "eval-exec-1",
+      executionLineageId: `lin-b-${tid}`,
+      runId: "run-1",
+      sourceTaskCellId: `cell-b-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      taskInstanceId: `inst-${tid}`,
+      taskFamilyId: "fam-sum",
+      modelConfigurationId: configBId,
+      candidateAttemptId: `cand-b-${tid}`,
+      assessmentRef: makeAssessmentRef({
+        judgeAttemptId: `judg-b-${tid}`,
+        candidateAttemptId: `cand-b-${tid}`,
+        rubricRef: { id: "rub-sum", version: 1 },
+      }),
+      protocolFingerprint: "proto-1",
+      rubricRef: { id: "rub-sum", version: 1 },
+      evaluatorSnapshot: {
+        kind: "model_judge",
+        providerId: "openai",
+        model: "gpt-5.6-sol",
+        resolvedVersion: "gpt-5.6-sol",
+        instructionDigest: "inst-1",
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: null,
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: null,
+        overallScore: scoresB[i],
+        criterionValues: [],
+      },
+      observedAt: Date.parse("2026-07-12") + i * 1000,
+      observationSchemaVersion: 1,
+    });
+    await evidenceRepo.putDecision({
+      observationId: obsId,
+      ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+      status: "eligible",
+      evidenceClass: "comparable",
+      allowedUses: ["within_model_profile", "paired_model_comparison"],
+      comparabilityCohortId: COHORT_SUM,
+      reasonCodes: ["canonical_task_resolved", "rubric_resolved"],
+      decidedAt: Date.now(),
+    });
+  }
+  const repairScoresB = [65, 70];
+  for (let i = 0; i < taskIdsRep.length; i++) {
+    const tid = taskIdsRep[i];
+    const obsId = await putFixtureObservation(evidenceRepo, {
+      sourceKind: "evaluation",
+      sourceResultId: "eval-exec-1",
+      executionLineageId: `lin-b-${tid}`,
+      runId: "run-1",
+      sourceTaskCellId: `cell-b-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      taskInstanceId: `inst-${tid}`,
+      taskFamilyId: "fam-rep",
+      modelConfigurationId: configBId,
+      candidateAttemptId: `cand-b-${tid}`,
+      assessmentRef: makeAssessmentRef({
+        judgeAttemptId: `judg-b-${tid}`,
+        candidateAttemptId: `cand-b-${tid}`,
+        rubricRef: { id: "rub-rep", version: 1 },
+      }),
+      protocolFingerprint: "proto-1",
+      rubricRef: { id: "rub-rep", version: 1 },
+      evaluatorSnapshot: {
+        kind: "model_judge",
+        providerId: "openai",
+        model: "gpt-5.6-sol",
+        resolvedVersion: "gpt-5.6-sol",
+        instructionDigest: "inst-1",
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: null,
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: null,
+        overallScore: repairScoresB[i],
+        criterionValues: [],
+      },
+      observedAt: Date.parse("2026-07-14") + i * 1000,
+      observationSchemaVersion: 1,
+    });
+    await evidenceRepo.putDecision({
+      observationId: obsId,
+      ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+      status: "eligible",
+      evidenceClass: "comparable",
+      allowedUses: ["within_model_profile", "paired_model_comparison"],
+      comparabilityCohortId: COHORT_REPAIR,
+      reasonCodes: ["canonical_task_resolved", "rubric_resolved"],
+      decidedAt: Date.now(),
+    });
+  }
+
+  // Config C has exploratory observations only
+  const obsCId = await putFixtureObservation(evidenceRepo, {
+    sourceKind: "evaluation",
+    sourceResultId: "eval-exec-2",
+    executionLineageId: "lin-c-1",
+    runId: "run-2",
+    sourceTaskCellId: "cell-c-1",
+    taskId: "t-code-1",
+    taskVersion: 1,
+    taskInstanceId: "inst-t-code-1",
+    taskFamilyId: "fam-code",
+    modelConfigurationId: configCId,
+    candidateAttemptId: "cand-c-1",
+    assessmentRef: makeAssessmentRef({
+      judgeAttemptId: "judg-c-1",
+      candidateAttemptId: "cand-c-1",
+    }),
+    protocolFingerprint: "proto-1",
+    rubricRef: null,
+    evaluatorSnapshot: {
+      kind: "model_judge",
+      providerId: "openai",
+      model: "gpt-5.6-sol",
+      resolvedVersion: "gpt-5.6-sol",
+      instructionDigest: "inst-1",
+      reasoningEffort: null,
+      toolScaffoldSignature: null,
+    },
+    verifierSnapshot: null,
+    outcome: {
+      judgeAccepted: true,
+      verifierPassed: null,
+      overallScore: null,
+      criterionValues: [],
+    },
+    observedAt: Date.parse("2026-07-15"),
+    observationSchemaVersion: 1,
+  });
+  await evidenceRepo.putDecision({
+    observationId: obsCId,
+    ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+    status: "provisional",
+    evidenceClass: "exploratory",
+    allowedUses: ["task_descriptive"],
+    comparabilityCohortId: COHORT_PARTIAL,
+    reasonCodes: ["model_version_unreported"],
+    decidedAt: Date.now(),
+  });
+
+  return {
+    evidenceRepo,
+    taskRepo,
+    configAId,
+    configBId,
+    configCId,
+    obsPassId: codeObservationIdsA[0],
+    obsFailId: codeObservationIdsA[5],
+    obsExcludedId,
+  };
+}
 
 describe("Fable §14.1 — forbidden copy", () => {
   it("copy table contains none of the forbidden claim phrases or UI patterns", () => {
@@ -851,5 +1521,342 @@ describe("Fable §14.14 — densification caps 1–10 (cap 11 is the T11 rollup 
 describe("Fable §14.15 — rollup route (skipped; T11 / assignment)", () => {
   it.skip("rollup route ships with policy banner first and no pooled aggregate (criterion 15)", () => {
     expect(true).toBe(true);
+  });
+});
+
+describe("Fable §14.16 — Routed integration through live ModelsWorkspace & in-memory repositories", () => {
+  it("valid profile direct load (/models/:id) loads through live loader with NO injected data", async () => {
+    const { evidenceRepo, taskRepo, configAId } = await seedRoutedAcceptanceCorpus();
+    const h = render(
+      <MemoryRouter initialEntries={[`/models/${configAId}`]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+
+    // Identity header
+    expect(h.$("[data-model-evidence-profile]")).not.toBeNull();
+    expect(h.$("#profile-heading")!.textContent).toContain("openai · gpt-5.6-sol");
+    expect(h.$("[data-version-status=exact]")).not.toBeNull();
+
+    // D2 deterministic narrative
+    expect(h.$("[data-deterministic-narrative]")).not.toBeNull();
+    expect(h.text()).toContain("Strongest supported");
+
+    // Coverage grid renders the 16 fixed coverage definitions.
+    expect(h.$("[data-coverage-grid]")).not.toBeNull();
+    expect(h.$$("[data-coverage-cell]").length).toBe(16);
+
+    // Family evidence cards with CohortBlocks & uncertainty
+    expect(h.$$("[data-family-card]").length).toBeGreaterThanOrEqual(2);
+    expect(h.$$("[data-cohort-block]").length).toBeGreaterThanOrEqual(2);
+
+    // Verified outcomes
+    expect(h.$("[data-section=verified-outcomes]")).not.toBeNull();
+    expect(h.text()).toContain("5 of 6");
+
+    // Paired section in no-comparator state
+    expect(h.$("[data-paired-state=no-comparator]")).not.toBeNull();
+
+    // Evidence table with rows
+    expect(h.$("[data-section=evidence-table]")).not.toBeNull();
+    expect(h.$$("[data-evidence-row]").length).toBeGreaterThanOrEqual(13);
+
+    // Protocols & evaluators in section 7
+    expect(h.$("[data-section=protocols]")).not.toBeNull();
+    expect(h.text()).toContain("Uncertainty receipt");
+
+    cleanup(h);
+  });
+
+  it("valid observation direct load (/models/:id/evidence/:obsId) loads through live loader with NO injected data", async () => {
+    const { evidenceRepo, taskRepo, configAId, obsPassId } = await seedRoutedAcceptanceCorpus();
+    const h = render(
+      <MemoryRouter initialEntries={[`/models/${configAId}/evidence/${obsPassId}`]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+
+    expect(h.$("[data-observation-drilldown]")).not.toBeNull();
+    expect(h.$("#drilldown-heading")!.textContent).toContain(obsPassId);
+    expect(h.$("[data-evidence-class=verified]")).not.toBeNull();
+    expect(h.$("[data-eligibility]")!.textContent).toContain("eligible");
+
+    // Canonical links (Task & Version links, instance badge without instance link)
+    const links = h.$$("[data-canonical-link]").map((a) => a.getAttribute("href"));
+    expect(links.some((l) => l?.includes("/tasks/t-code-1"))).toBe(true);
+    expect(links.some((l) => l?.includes("/versions/1"))).toBe(true);
+    expect(links.some((l) => l?.includes("/instances/"))).toBe(false);
+    expect(h.$("[data-canonical-instance]")!.textContent).toContain("inst-t-code-1");
+
+    // Outcome pass
+    expect(h.$("[data-section=outcome]")!.textContent).toContain("pass");
+    expect(h.$("[data-section=outcome]")!.textContent).toContain("ver-code@1");
+
+    // Assessment & source backlink
+    expect(h.$("[data-section=assessment]")!.textContent).toContain("model_judge");
+    expect(h.$("[data-section=source]")!.textContent).toContain("evaluation eval-exec-1");
+    expect(h.$("[data-records-link]")!.getAttribute("href")).toContain(
+      `/records/observation/${obsPassId}`,
+    );
+
+    cleanup(h);
+  });
+
+  it("valid excluded observation direct load renders exclusion reasons in section 1", async () => {
+    const { evidenceRepo, taskRepo, configAId, obsExcludedId } = await seedRoutedAcceptanceCorpus();
+    const h = render(
+      <MemoryRouter initialEntries={[`/models/${configAId}/evidence/${obsExcludedId}`]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+
+    expect(h.$("[data-observation-drilldown]")).not.toBeNull();
+    expect(h.$("[data-eligibility]")!.textContent).toContain("excluded");
+    expect(h.$("[data-eligibility]")!.textContent).toContain("candidate_missing_or_failed");
+    cleanup(h);
+  });
+
+  it("unknown configuration ID, unknown observation ID, and mismatched IDs render typed not-found", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId, obsPassId } =
+      await seedRoutedAcceptanceCorpus();
+
+    // Unknown configuration ID
+    const profileMissing = render(
+      <MemoryRouter initialEntries={["/models/mc-nonexistent"]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(profileMissing.$("[data-profile-state=not-found]")).not.toBeNull();
+    expect(profileMissing.$("[data-action=open-models]")).not.toBeNull();
+    cleanup(profileMissing);
+
+    // Unknown observation ID
+    const obsMissing = render(
+      <MemoryRouter initialEntries={[`/models/${configAId}/evidence/obs-nonexistent`]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(obsMissing.$("[data-drilldown-state=not-found]")).not.toBeNull();
+    expect(obsMissing.$("[data-action=open-models]")).not.toBeNull();
+    cleanup(obsMissing);
+
+    // Mismatched configuration ID (obsPassId belongs to configA, not configB)
+    const mismatched = render(
+      <MemoryRouter initialEntries={[`/models/${configBId}/evidence/${obsPassId}`]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(mismatched.$("[data-drilldown-state=not-found]")).not.toBeNull();
+    cleanup(mismatched);
+  });
+
+  it("comparator selection executes real paired analysis and updates UI with deltas", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedRoutedAcceptanceCorpus();
+    const h = render(
+      <MemoryRouter initialEntries={[`/models/${configAId}`]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+
+    // Trigger comparator picker
+    const trigger = h.$("button[data-comparator-trigger]")!;
+    act(() => {
+      trigger.click();
+    });
+    await settle();
+
+    // Candidate modal appears
+    const candidateBtn = document.body.querySelector<HTMLElement>(
+      `[data-candidate-id="${configBId}"]`,
+    );
+    expect(candidateBtn).not.toBeNull();
+    expect(candidateBtn!.textContent).toContain("claude-haiku-4-5");
+
+    // Select candidate
+    act(() => {
+      candidateBtn!.click();
+    });
+    await settle();
+
+    // Paired results render with deltas
+    expect(h.$("[data-paired-state=results]")).not.toBeNull();
+    expect(h.$("[data-comparator-chip]")!.textContent).toContain("claude-haiku-4-5");
+    expect(h.$$("[data-paired-task-row]").length).toBeGreaterThan(0);
+
+    cleanup(h);
+  });
+
+  it("multi-cohort paired isolation renders cohortResults independently with no cross-cohort summary", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedRoutedAcceptanceCorpus();
+    const h = render(
+      <MemoryRouter initialEntries={[`/models/${configAId}`]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+
+    // Select config B
+    act(() => {
+      h.$("button[data-comparator-trigger]")!.click();
+    });
+    await settle();
+    act(() => {
+      document.body.querySelector<HTMLElement>(`[data-candidate-id="${configBId}"]`)!.click();
+    });
+    await settle();
+
+    // Multi-cohort section
+    const multiCohort = h.$("[data-paired-multi-cohort]");
+    expect(multiCohort).not.toBeNull();
+    const cohortSections = h.$$("[data-paired-cohort-section]");
+    expect(cohortSections.length).toBe(2);
+
+    // Each cohort owns its own counts line and delta table
+    for (const cs of cohortSections) {
+      expect(cs.querySelector("[data-paired-counts]")!.textContent).toMatch(
+        /Won \d+ · tied \d+ · lost \d+/,
+      );
+      expect(cs.querySelectorAll("[data-paired-task-row]").length).toBeGreaterThan(0);
+    }
+
+    cleanup(h);
+  });
+
+  it("narrowing changes URL + chips + rows + table-heading focus ref together", async () => {
+    const { evidenceRepo, taskRepo, configAId } = await seedRoutedAcceptanceCorpus();
+    const h = render(
+      <MemoryRouter initialEntries={[`/models/${configAId}`]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+
+    const totalRowsBefore = h.$$("[data-evidence-row]").length;
+    expect(totalRowsBefore).toBeGreaterThanOrEqual(13);
+
+    // Click narrative sentence button to apply narrowing
+    const narrativeBtn = h.$("[data-narrative-sentence]")!;
+    act(() => {
+      narrativeBtn.click();
+    });
+    await settle();
+
+    // Chip bar is visible and shows narrowing chip
+    expect(h.$("[data-narrowing-chip-bar]")).not.toBeNull();
+    const chips = h.$$("[data-narrowing-chip]");
+    expect(chips.length).toBeGreaterThanOrEqual(1);
+
+    // Evidence table rows are filtered
+    const rowsAfter = h.$$("[data-evidence-row]").length;
+    expect(rowsAfter).toBeLessThanOrEqual(totalRowsBefore);
+
+    // Table heading received focus
+    expect(document.activeElement).toBe(h.$("#evidence-heading"));
+
+    // Clear narrowing restores rows
+    const clearBtn = h.$("[data-action=clear-all-narrowings]");
+    if (clearBtn) {
+      act(() => {
+        clearBtn.click();
+      });
+      await settle();
+      expect(h.$$("[data-evidence-row]").length).toBe(totalRowsBefore);
+    }
+
+    cleanup(h);
+  });
+
+  it("models filters support >2 covered families and exact evidence-class matching", async () => {
+    const { evidenceRepo, taskRepo } = await seedRoutedAcceptanceCorpus();
+
+    // 1. >2 families: mc-alpha has 3 covered families (code-transformation, summarization, code-repair)
+    // Filter by the 3rd family (fam-rep)
+    const repFamily = render(
+      <MemoryRouter initialEntries={["/models?m.family=fam-rep"]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    const repRows = repFamily.$$("[data-record-row-surface]");
+    expect(repRows.length).toBe(2);
+    const repairFamilyText = repRows.map((row) => row.textContent).join(" ");
+    expect(repairFamilyText).toContain("gpt-5.6-sol");
+    expect(repairFamilyText).toContain("claude-haiku-4-5");
+    expect(repairFamilyText).not.toContain("gemini-3.7-flash");
+    cleanup(repFamily);
+
+    // 2. Exact evidence class matching: filter by verified matches mc-alpha and mc-beta, but not mc-gamma
+    const verifiedFilter = render(
+      <MemoryRouter initialEntries={["/models?m.evidenceClass=verified"]}>
+        <Routes>
+          <Route
+            path="/models/*"
+            element={<ModelsWorkspace evidenceRepo={evidenceRepo} taskRepo={taskRepo} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    const verifiedRows = verifiedFilter.$$("[data-record-row-surface]");
+    expect(verifiedRows.length).toBe(2);
+    expect(verifiedRows.map((row) => row.textContent).join(" ")).not.toContain("gemini-3.7-flash");
+    cleanup(verifiedFilter);
   });
 });

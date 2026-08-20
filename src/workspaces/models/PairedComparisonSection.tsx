@@ -12,6 +12,7 @@ import { useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import type {
+  PairedCohortResult,
   PairedComparisonResult,
   PairedOutcome,
   PairedTaskDelta,
@@ -159,14 +160,15 @@ function OutcomeCell({ row }: { row: PairedTaskDelta }): ReactNode {
 }
 
 function DeltaTable({
-  result,
+  deltas,
   subjectConfigurationId,
   onTaskNarrowing,
 }: {
-  result: PairedComparisonResult;
+  deltas: readonly PairedTaskDelta[];
   subjectConfigurationId: string;
   onTaskNarrowing?: (taskId: string) => void;
 }): ReactNode {
+  if (deltas.length === 0) return null;
   return (
     <div
       className="scroll-thin mt-3 max-w-full overflow-x-auto rounded-md border border-edge"
@@ -225,7 +227,7 @@ function DeltaTable({
           </tr>
         </thead>
         <tbody>
-          {result.taskDeltas.map((row) => {
+          {deltas.map((row) => {
             const obsIds = [...row.observationIdsA, ...row.observationIdsB];
             return (
               <tr
@@ -285,6 +287,74 @@ function DeltaTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function CohortSection({
+  cohort,
+  deltas,
+  subjectConfigurationId,
+  onTaskNarrowing,
+}: {
+  cohort: PairedCohortResult;
+  deltas: readonly PairedTaskDelta[];
+  subjectConfigurationId: string;
+  onTaskNarrowing?: (taskId: string) => void;
+}): ReactNode {
+  const glyphs: PairedGlyph[] = deltas
+    .filter((r) => r.state === "comparable" && r.outcome)
+    .map((r) => ({ taskId: r.taskId, outcome: r.outcome! }));
+
+  const bootstrap = cohort.bootstrap;
+  const insufficient = bootstrap?.coverageState.state === "insufficient";
+  const interval = bootstrap?.interval ?? null;
+  const unitCount = bootstrap?.unitCount ?? cohort.uncertaintyResolution?.unitCount ?? 0;
+  const digest =
+    bootstrap?.assignmentDigest ?? cohort.uncertaintyResolution?.assignmentDigest ?? "";
+
+  return (
+    <div
+      data-paired-cohort-section
+      data-cohort-id={cohort.cohortId}
+      className="space-y-2 rounded-md border border-edge bg-panel p-3"
+    >
+      <div className="font-mono text-xs font-semibold text-text-secondary">{cohort.cohortId}</div>
+      <p data-paired-counts className="text-sm text-text">
+        Won {cohort.wins} · tied {cohort.ties} · lost {cohort.losses}
+      </p>
+      {glyphs.length > 0 && (
+        <div className="scroll-thin max-w-full overflow-x-auto">
+          <PairedGlyphStrip outcomes={glyphs} />
+        </div>
+      )}
+      <div data-mean-delta className="space-y-1">
+        {cohort.meanDelta !== null && (
+          <HonestValue
+            quantity={{ state: "available", value: cohort.meanDelta }}
+            label="Mean delta"
+          />
+        )}
+        {insufficient ? (
+          <InsufficientState
+            kind="insufficient"
+            unitCount={bootstrap?.coverageState.unitCount ?? unitCount}
+            required={5}
+            resolverVersion={`v${bootstrap?.uncertaintyRuleVersion ?? 1}`}
+            digest={digest.slice(0, 8)}
+          />
+        ) : interval ? (
+          <div className="font-mono text-xs text-text-secondary">
+            {interval.level * 100}% · {interval.lower}–{interval.upper} · {unitCount} units
+            {digest ? ` · digest ${digest.slice(0, 8)}` : ""}
+          </div>
+        ) : null}
+      </div>
+      <DeltaTable
+        deltas={deltas}
+        subjectConfigurationId={subjectConfigurationId}
+        onTaskNarrowing={onTaskNarrowing}
+      />
     </div>
   );
 }
@@ -359,27 +429,56 @@ export function PairedComparisonSection({
           <p data-paired-coverage className="text-xs text-text-secondary">
             {coverageLine(result)}
           </p>
-          <div className="scroll-thin max-w-full overflow-x-auto">
-            <PairedGlyphStrip outcomes={glyphsFrom(result)} />
-          </div>
-          <p data-paired-counts className="text-sm text-text">
-            {countLine(result)}
-          </p>
-          <MeanDelta result={result} />
-          {result.disclosures.length > 0 && (
-            <ul data-paired-disclosures className="space-y-1">
-              {result.disclosures.map((line) => (
-                <li key={line} className="honesty-note text-xs text-text-muted">
-                  {line}
-                </li>
+
+          {result.cohortResults.length > 1 ? (
+            <div data-paired-multi-cohort className="space-y-4">
+              {result.cohortResults.map((cohort) => (
+                <CohortSection
+                  key={cohort.cohortId}
+                  cohort={cohort}
+                  deltas={result.taskDeltas.filter((r) => r.cohortId === cohort.cohortId)}
+                  subjectConfigurationId={subjectConfigurationId}
+                  onTaskNarrowing={onTaskNarrowing}
+                />
               ))}
-            </ul>
+              {result.taskDeltas.some((r) => r.cohortId === null) && (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-text-secondary">
+                    Incompatible or unshared tasks
+                  </div>
+                  <DeltaTable
+                    deltas={result.taskDeltas.filter((r) => r.cohortId === null)}
+                    subjectConfigurationId={subjectConfigurationId}
+                    onTaskNarrowing={onTaskNarrowing}
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="scroll-thin max-w-full overflow-x-auto">
+                <PairedGlyphStrip outcomes={glyphsFrom(result)} />
+              </div>
+              <p data-paired-counts className="text-sm text-text">
+                {countLine(result)}
+              </p>
+              <MeanDelta result={result} />
+              {result.disclosures.length > 0 && (
+                <ul data-paired-disclosures className="space-y-1">
+                  {result.disclosures.map((line) => (
+                    <li key={line} className="honesty-note text-xs text-text-muted">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <DeltaTable
+                deltas={result.taskDeltas}
+                subjectConfigurationId={subjectConfigurationId}
+                onTaskNarrowing={onTaskNarrowing}
+              />
+            </>
           )}
-          <DeltaTable
-            result={result}
-            subjectConfigurationId={subjectConfigurationId}
-            onTaskNarrowing={onTaskNarrowing}
-          />
         </div>
       )}
     </section>

@@ -10,9 +10,9 @@ function makeProfileData(): ProfileData {
       modelConfigurationId:
         "mc:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       providerId: "openai",
-      requestedModel: "gpt-4o",
-      resolvedModel: "gpt-4o-2024-05-13",
-      resolvedVersion: "2024-05-13",
+      requestedModel: "gpt-5.6-sol",
+      resolvedModel: "gpt-5.6-sol",
+      resolvedVersion: "gpt-5.6-sol",
       versionStatus: "exact",
       reasoningEffective: "high",
       toolScaffoldSignature: "t-7f2c",
@@ -103,7 +103,7 @@ function makeProfileData(): ProfileData {
     evaluatorConfigs: [
       {
         kind: "model_judge",
-        modelRef: "gpt-4o",
+        modelRef: "gpt-5.6-sol",
         instructionDigest: "abc123",
         observationCount: 48,
       },
@@ -142,7 +142,7 @@ describe("ModelEvidenceProfile — Fable §7", () => {
   it("renders the identity header with provider and requested model", () => {
     const h = renderProfile(makeProfileData());
     expect(h.text()).toContain("openai");
-    expect(h.text()).toContain("gpt-4o");
+    expect(h.text()).toContain("gpt-5.6-sol");
     expect(h.text()).toContain("MODEL CONFIGURATION");
     cleanup(h);
   });

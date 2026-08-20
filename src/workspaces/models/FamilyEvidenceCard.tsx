@@ -14,14 +14,16 @@
 
 import type { ReactNode } from "react";
 import type { FamilyAggregate, CohortMetric } from "../../lib/model-profiles/family-aggregation";
-import { CohortBlock } from "./CohortBlock";
+import { CohortBlock, type CohortInterval } from "./CohortBlock";
 import { COPY } from "./copy";
 import type { Narrowing } from "./useNarrowing";
 
-interface FamilyEvidenceCardProps {
+export interface FamilyEvidenceCardProps {
   family: FamilyAggregate;
   /** Optional family display name (resolved by the parent). */
   familyName?: string;
+  /** Per-cohort uncertainty intervals (cohortId or familyId:cohortId -> CohortInterval). */
+  cohortIntervals?: Readonly<Record<string, CohortInterval>>;
   /** Called when a narrowing button is clicked. */
   onApplyNarrowing?: (narrowing: Narrowing) => void;
 }
@@ -40,6 +42,7 @@ function coverageLine(metric: CohortMetric): string {
 export function FamilyEvidenceCard({
   family,
   familyName,
+  cohortIntervals,
   onApplyNarrowing,
 }: FamilyEvidenceCardProps): ReactNode {
   const name = familyName ?? family.familyId ?? "Unknown family";
@@ -84,14 +87,20 @@ export function FamilyEvidenceCard({
               </div>
             )}
             <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-              {judgedScores.map((metric, i) => (
-                <CohortBlock
-                  key={`judged-${metric.cohortId}-${i}`}
-                  cohortRef={cohortRef(metric)}
-                  value={metric.value}
-                  coverageLine={coverageLine(metric)}
-                />
-              ))}
+              {judgedScores.map((metric, i) => {
+                const intervalKey = `${family.familyId ?? ""}:${metric.cohortId}`;
+                const interval =
+                  cohortIntervals?.[intervalKey] ?? cohortIntervals?.[metric.cohortId] ?? null;
+                return (
+                  <CohortBlock
+                    key={`judged-${metric.cohortId}-${i}`}
+                    cohortRef={cohortRef(metric)}
+                    value={metric.value}
+                    interval={interval}
+                    coverageLine={coverageLine(metric)}
+                  />
+                );
+              })}
             </div>
           </div>
         )}
@@ -101,14 +110,20 @@ export function FamilyEvidenceCard({
           <div className="mt-3">
             <div className="text-xs font-semibold text-text-secondary">Pass rates</div>
             <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-              {passRates.map((metric, i) => (
-                <CohortBlock
-                  key={`passrate-${metric.cohortId}-${i}`}
-                  cohortRef={cohortRef(metric)}
-                  value={metric.value}
-                  coverageLine={coverageLine(metric)}
-                />
-              ))}
+              {passRates.map((metric, i) => {
+                const intervalKey = `${family.familyId ?? ""}:${metric.cohortId}`;
+                const interval =
+                  cohortIntervals?.[intervalKey] ?? cohortIntervals?.[metric.cohortId] ?? null;
+                return (
+                  <CohortBlock
+                    key={`passrate-${metric.cohortId}-${i}`}
+                    cohortRef={cohortRef(metric)}
+                    value={metric.value}
+                    interval={interval}
+                    coverageLine={coverageLine(metric)}
+                  />
+                );
+              })}
             </div>
           </div>
         )}

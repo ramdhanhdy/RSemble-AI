@@ -34,7 +34,7 @@ export interface UseNarrowingResult {
   /** Remove all narrowings. */
   clearAll: () => void;
   /** Ref to set on the element that should receive focus after apply. */
-  tableHeadingRef: React.RefObject<HTMLElement | null>;
+  tableHeadingRef: React.RefObject<HTMLHeadingElement>;
   /** Ref to set on the last originating control (for clear focus return). */
   originRef: React.RefObject<HTMLElement | null>;
   /** Call after applying a narrowing to move focus to the table heading. */
@@ -77,7 +77,7 @@ export function useNarrowing(options: UseNarrowingOptions = {}): UseNarrowingRes
     setHydrated(true);
   }
 
-  const tableHeadingRef = useRef<HTMLElement | null>(null);
+  const tableHeadingRef = useRef<HTMLHeadingElement>(null);
   const originRef = useRef<HTMLElement | null>(null);
 
   const syncUrl = useCallback(

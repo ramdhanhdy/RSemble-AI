@@ -28,7 +28,7 @@ export function makeDrilldownData(
     replicateLabel: "replicate 2 of 3 within instance i-3",
     evaluator: {
       kind: "model_judge",
-      model: "gpt-4o",
+      model: "gpt-5.6-sol",
       instructionDigest: "inst-aa11",
     },
     assessmentLineage: "active",
@@ -38,7 +38,7 @@ export function makeDrilldownData(
     confidenceLabel: "high",
     recordHref: "/records/observation/obs-9f3a",
     configurationId: "mc-subject",
-    configurationLabel: "openai · gpt-4o",
+    configurationLabel: "openai · gpt-5.6-sol",
     ...overrides,
   };
 }
@@ -73,7 +73,7 @@ describe("ObservationDrilldown — Fable §8 focused page", () => {
     const h = renderDrilldown(makeDrilldownData());
     const crumb = h.$("[data-breadcrumb]")!;
     expect(crumb.textContent).toMatch(/Models/);
-    expect(crumb.textContent).toMatch(/openai · gpt-4o/);
+    expect(crumb.textContent).toMatch(/openai · gpt-5\.6-sol/);
     expect(crumb.textContent).toMatch(/Observation/);
     const modelsLink = crumb.querySelector("a[href]") as HTMLAnchorElement;
     expect(modelsLink.getAttribute("href")).toContain("/models");
@@ -93,13 +93,14 @@ describe("ObservationDrilldown — Fable §8 focused page", () => {
     cleanup(h);
   });
 
-  it("renders canonical Task / Version / Instance links plus family", () => {
+  it("renders canonical Task / Version links plus family, and instance badge without instance link", () => {
     const h = renderDrilldown(makeDrilldownData());
     const links = h.$$("[data-canonical-link]");
     const hrefs = links.map((a) => a.getAttribute("href") ?? "");
     expect(hrefs.some((href) => href.includes("/tasks/code-transform-03"))).toBe(true);
     expect(hrefs.some((href) => href.includes("/versions/2"))).toBe(true);
-    expect(h.text()).toContain("i-3");
+    expect(hrefs.some((href) => href.includes("/instances/"))).toBe(false);
+    expect(h.$("[data-canonical-instance]")!.textContent).toContain("i-3");
     expect(h.text()).toContain("Code transformation");
     cleanup(h);
   });
@@ -110,6 +111,21 @@ describe("ObservationDrilldown — Fable §8 focused page", () => {
     expect(h.text()).toContain("ver-code@4");
     expect(h.text()).toContain("d1g3st");
     expect(h.text()).toContain("replicate 2 of 3 within instance i-3");
+    cleanup(h);
+  });
+
+  it("renders missing verifier outcome as unavailable, never fail", () => {
+    const h = renderDrilldown(
+      makeDrilldownData({
+        outcome: {
+          kind: "verifier",
+          passed: null,
+          verifierRef: "ver-code@4",
+        },
+      }),
+    );
+    expect(h.$("[data-section=outcome]")!.textContent).toContain("unavailable");
+    expect(h.$("[data-section=outcome]")!.textContent).not.toMatch(/\bfail\b/);
     cleanup(h);
   });
 
@@ -129,6 +145,21 @@ describe("ObservationDrilldown — Fable §8 focused page", () => {
     expect(h.text()).toContain("rub-eval@2");
     expect(h.text()).toContain("undeclared repeat — not a replicate");
     expect(h.text()).not.toMatch(/replicate \d of \d/);
+    cleanup(h);
+  });
+
+  it("renders missing judged score as unavailable, never null", () => {
+    const h = renderDrilldown(
+      makeDrilldownData({
+        outcome: {
+          kind: "judged",
+          score: null,
+          rubricRef: "rub-eval@2",
+        },
+      }),
+    );
+    expect(h.$("[data-section=outcome]")!.textContent).toContain("unavailable");
+    expect(h.$("[data-section=outcome]")!.textContent).not.toContain("null");
     cleanup(h);
   });
 

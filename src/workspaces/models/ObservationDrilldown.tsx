@@ -8,11 +8,15 @@
 // output is never duplicated here.
 // =============================================================================
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Check, CircleDashed, FileSearch, XCircle } from "lucide-react";
 import { CopyLinkButton } from "../runs/CopyLinkButton";
 import type { EligibilityStatus, EvidenceClass } from "../../lib/evidence/evidence-types";
+import { useEvidenceRepository, useTaskRepository } from "../../lib/persistence/repository-context";
+import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
+import type { TaskRepository } from "../../lib/persistence/task-repository";
+import { loadObservationDrilldown } from "./model-profile-loader";
 
 export interface ObservationOutcomeView {
   kind: "verifier" | "judged";
@@ -55,6 +59,8 @@ export interface ObservationDrilldownData {
 export interface ObservationDrilldownProps {
   data?: ObservationDrilldownData | null;
   notFound?: boolean;
+  evidenceRepo?: EvidenceRepository | null;
+  taskRepo?: TaskRepository | null;
 }
 
 const LINK_CLASS =
@@ -102,20 +108,20 @@ function NotFoundPanel({ observationId }: { observationId: string }): ReactNode 
         </p>
       </div>
       <div className="flex gap-2">
-        <a
-          href="#/models"
+        <Link
+          to="/models"
           data-action="open-models"
           className="pressable inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-4 text-sm text-text hover:border-edge-bright focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
         >
           Open Models
-        </a>
-        <a
-          href="#/records"
+        </Link>
+        <Link
+          to="/runs"
           data-action="open-records"
           className="pressable inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-4 text-sm text-text hover:border-edge-bright focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
         >
           Open Records
-        </a>
+        </Link>
       </div>
       <p className="honesty-note text-xs text-text-muted">
         This lookup is device-local. The observation may exist in another database or under a
@@ -126,12 +132,23 @@ function NotFoundPanel({ observationId }: { observationId: string }): ReactNode 
 }
 
 export function ObservationDrilldown({
-  data,
-  notFound,
+  data: dataProp,
+  notFound: notFoundProp,
+  evidenceRepo: evidenceRepoProp,
+  taskRepo: taskRepoProp,
 }: ObservationDrilldownProps = {}): ReactNode {
   const params = useParams<{ modelConfigurationId: string; observationId: string }>();
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const observationId = data?.observationId ?? params.observationId ?? "";
+  const observationId = dataProp?.observationId ?? params.observationId ?? "";
+
+  const ctxEvidenceRepo = useEvidenceRepository();
+  const ctxTaskRepo = useTaskRepository();
+  const evidenceRepo = evidenceRepoProp !== undefined ? evidenceRepoProp : ctxEvidenceRepo;
+  const taskRepo = taskRepoProp !== undefined ? taskRepoProp : ctxTaskRepo;
+
+  const [loadedData, setLoadedData] = useState<ObservationDrilldownData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(notFoundProp ?? false);
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -139,13 +156,64 @@ export function ObservationDrilldown({
     });
   }, [observationId]);
 
-  if (notFound || !data) {
+  useEffect(() => {
+    if (dataProp !== undefined || notFoundProp !== undefined) return;
+    if (!evidenceRepo || !observationId) {
+      setNotFound(true);
+      setLoading(false);
+      return;
+    }
+    let isCancelled = false;
+    setLoading(true);
+    setNotFound(false);
+
+    loadObservationDrilldown({
+      observationId,
+      modelConfigurationId: params.modelConfigurationId,
+      evidenceRepo,
+      taskRepo,
+    })
+      .then((result) => {
+        if (!isCancelled) {
+          if (!result) {
+            setNotFound(true);
+          } else {
+            setLoadedData(result);
+          }
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setNotFound(true);
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [evidenceRepo, taskRepo, observationId, params.modelConfigurationId, dataProp, notFoundProp]);
+
+  if (notFoundProp || notFound) {
+    return <NotFoundPanel observationId={observationId || params.observationId || "unknown"} />;
+  }
+
+  const data = dataProp ?? loadedData;
+
+  if (loading || !data) {
+    if (loading) {
+      return (
+        <div data-drilldown-state="loading" className="py-8 text-sm text-text-muted">
+          Loading observation…
+        </div>
+      );
+    }
     return <NotFoundPanel observationId={observationId || params.observationId || "unknown"} />;
   }
 
   const taskHref = `/tasks/${data.taskId}`;
   const versionHref = `/tasks/${data.taskId}/versions/${data.taskVersion}`;
-  const instanceHref = `/tasks/${data.taskId}/versions/${data.taskVersion}/instances/${data.taskInstanceId}`;
   const observed = new Date(data.observedAt).toISOString();
 
   return (
@@ -202,15 +270,18 @@ export function ObservationDrilldown({
           Canonical target
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <a data-canonical-link href={taskHref} className={LINK_CLASS}>
+          <Link data-canonical-link to={taskHref} className={LINK_CLASS}>
             Task {data.taskId}
-          </a>
-          <a data-canonical-link href={versionHref} className={LINK_CLASS}>
+          </Link>
+          <Link data-canonical-link to={versionHref} className={LINK_CLASS}>
             Version {data.taskVersion}
-          </a>
-          <a data-canonical-link href={instanceHref} className={LINK_CLASS}>
+          </Link>
+          <span
+            data-canonical-instance
+            className="rounded-sm border border-edge px-2 py-0.5 text-xs text-text-secondary"
+          >
             Instance {data.taskInstanceId}
-          </a>
+          </span>
           {data.familyName && (
             <span className="rounded-sm border border-edge px-2 py-0.5 text-xs text-text-secondary">
               {data.familyName}
@@ -225,25 +296,42 @@ export function ObservationDrilldown({
         </h2>
         <div className="mt-2 text-sm text-text">
           {data.outcome.kind === "verifier" ? (
-            <span className="inline-flex items-center gap-1">
-              {data.outcome.passed ? (
+            data.outcome.passed === true ? (
+              <span className="inline-flex items-center gap-1">
                 <Check size={14} aria-hidden="true" />
-              ) : (
+                <span>pass</span>
+                {data.outcome.verifierRef && (
+                  <span className="font-mono text-xs text-text-secondary">
+                    {data.outcome.verifierRef}
+                  </span>
+                )}
+                {data.outcome.verifierDigest && (
+                  <span className="font-mono text-xs text-text-muted">
+                    {data.outcome.verifierDigest}
+                  </span>
+                )}
+              </span>
+            ) : data.outcome.passed === false ? (
+              <span className="inline-flex items-center gap-1">
                 <XCircle size={14} aria-hidden="true" />
-              )}
-              <span>{data.outcome.passed ? "pass" : "fail"}</span>
-              {data.outcome.verifierRef && (
-                <span className="font-mono text-xs text-text-secondary">
-                  {data.outcome.verifierRef}
-                </span>
-              )}
-              {data.outcome.verifierDigest && (
-                <span className="font-mono text-xs text-text-muted">
-                  {data.outcome.verifierDigest}
-                </span>
-              )}
-            </span>
-          ) : (
+                <span>fail</span>
+                {data.outcome.verifierRef && (
+                  <span className="font-mono text-xs text-text-secondary">
+                    {data.outcome.verifierRef}
+                  </span>
+                )}
+                {data.outcome.verifierDigest && (
+                  <span className="font-mono text-xs text-text-muted">
+                    {data.outcome.verifierDigest}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-text-muted">
+                <span>unavailable</span>
+              </span>
+            )
+          ) : data.outcome.score !== null && data.outcome.score !== undefined ? (
             <span>
               <span className="font-mono text-lg tabular-nums">{String(data.outcome.score)}</span>
               {data.outcome.rubricRef && (
@@ -257,6 +345,8 @@ export function ObservationDrilldown({
                 </span>
               )}
             </span>
+          ) : (
+            <span className="font-mono text-xs text-text-muted">unavailable</span>
           )}
         </div>
         {data.replicateLabel && (
@@ -287,9 +377,9 @@ export function ObservationDrilldown({
           Source result
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <a data-source-backlink href={data.sourceHref} className={LINK_CLASS}>
+          <Link data-source-backlink to={data.sourceHref} className={LINK_CLASS}>
             {data.sourceKind} {data.sourceResultId}
-          </a>
+          </Link>
           {data.confidenceLabel && (
             <span
               data-confidence-chip

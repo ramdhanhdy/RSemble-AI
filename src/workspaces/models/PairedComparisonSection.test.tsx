@@ -207,7 +207,7 @@ function makeProfileData(): ProfileData {
     identity: {
       modelConfigurationId: "mc-subject",
       providerId: "openai",
-      requestedModel: "gpt-4o",
+      requestedModel: "gpt-5.6-sol",
       versionStatus: "exact",
       aggregationRuleVersion: 1,
       uncertaintyRuleVersion: 1,

@@ -104,30 +104,49 @@ async function enrichEntry(
   familyUniverse: Set<string>,
 ): Promise<ModelListRowData> {
   const observations = await repo.listObservationsByModelConfiguration(entry.modelConfigurationId);
+  const decisions = await Promise.all(observations.map((obs) => repo.getActiveDecision(obs.id)));
   const taskIds = new Set<string>();
   const familyCounts = new Map<string, number>();
-  for (const obs of observations) {
+  const evidenceClasses = new Set<EvidenceClass>();
+
+  for (let i = 0; i < observations.length; i++) {
+    const obs = observations[i]!;
+    const dec = decisions[i];
     if (obs.taskId) taskIds.add(obs.taskId);
     if (obs.taskFamilyId) {
       familyCounts.set(obs.taskFamilyId, (familyCounts.get(obs.taskFamilyId) ?? 0) + 1);
     }
+    if (dec && dec.evidenceClass) {
+      evidenceClasses.add(dec.evidenceClass);
+    }
   }
+  const allFamilyIds = [...familyCounts.keys()];
   const topFamilyIds = [...familyCounts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 2)
     .map(([id]) => id);
   const topFamilyNames = topFamilyIds.map((id) => familyNames.get(id) ?? id).slice(0, 2);
+  const coveredFamilyNames = allFamilyIds.map((id) => familyNames.get(id) ?? id);
   const observedFamilies = new Set(familyCounts.keys());
   let gapCount = 0;
   for (const famId of familyUniverse) {
     if (!observedFamilies.has(famId)) gapCount += 1;
   }
-  return { entry, taskCount: taskIds.size, topFamilyNames, gapCount };
+  return {
+    entry,
+    taskCount: taskIds.size,
+    topFamilyNames,
+    coveredFamilyIds: allFamilyIds,
+    coveredFamilyNames,
+    evidenceClasses: [...evidenceClasses],
+    gapCount,
+  };
 }
 
 /** Build the data-driven filter option lists from the loaded set. */
 function buildOptions(
   entries: ModelConfigurationCatalogEntry[],
+  rows: ModelListRowData[],
   familyNames: Map<string, string>,
 ): ModelFiltersOptions {
   const providerIds = [...new Set(entries.map((e) => e.providerId))].sort((a, b) =>
@@ -143,13 +162,21 @@ function buildOptions(
   const signatures = [...new Set(entries.map(effectiveSignature))].sort((a, b) =>
     a.localeCompare(b),
   );
-  const classVocab: { id: EvidenceClass; label: string }[] = [
-    { id: "exploratory", label: "Exploratory" },
-    { id: "comparable", label: "Comparable" },
-    { id: "verified", label: "Verified" },
-    { id: "benchmark_anchor", label: "Benchmark anchor" },
-  ];
-  const evidenceClasses = entries.some((e) => e.eligibleProfileEvidenceCount > 0) ? classVocab : [];
+  const presentClasses = new Set<EvidenceClass>();
+  for (const r of rows) {
+    if (r.evidenceClasses) {
+      for (const c of r.evidenceClasses) presentClasses.add(c);
+    }
+  }
+  const classVocab: { id: EvidenceClass; label: string }[] = (
+    [
+      { id: "exploratory", label: "Exploratory" },
+      { id: "comparable", label: "Comparable" },
+      { id: "verified", label: "Verified" },
+      { id: "benchmark_anchor", label: "Benchmark anchor" },
+    ] satisfies { id: EvidenceClass; label: string }[]
+  ).filter((c) => presentClasses.has(c.id));
+  const evidenceClasses = classVocab.length > 0 ? classVocab : [];
   const families = [...familyNames.entries()]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -176,7 +203,7 @@ async function loadModels(
   const rows = await Promise.all(
     entries.map((entry) => enrichEntry(entry, repo, familyNames, familyUniverse)),
   );
-  const options = buildOptions(entries, familyNames);
+  const options = buildOptions(entries, rows, familyNames);
   return { rows, options, totalEligible: receipt.totalEligibleProfileEvidence };
 }
 
@@ -213,8 +240,15 @@ function applyPostFilters(
       if (!haystack.includes(search)) return false;
     }
     if (sig && effectiveSignature(entry) !== sig) return false;
-    if (cls && entry.eligibleProfileEvidenceCount === 0) return false;
-    if (fam && !row.topFamilyNames.includes(fam)) return false;
+    if (cls && !row.evidenceClasses?.includes(cls as EvidenceClass)) return false;
+    if (
+      fam &&
+      !row.coveredFamilyIds?.includes(fam) &&
+      !row.coveredFamilyNames?.includes(fam) &&
+      !row.topFamilyNames.includes(fam)
+    ) {
+      return false;
+    }
     if (recencyCutoff !== -Infinity && entry.latestActivity < recencyCutoff) {
       return false;
     }
@@ -349,37 +383,50 @@ export function ModelsWorkspace({
     onRetry: handleRetry,
   });
 
+  const listElement = (
+    <div className="max-w-[960px]">
+      <ModelsHeader count={load.data?.rows.length ?? 0} />
+      <div className="mt-4">
+        <ModelFilters
+          value={state}
+          onChange={handleFiltersChange}
+          options={
+            load.data?.options ?? {
+              providers: [],
+              models: [],
+              signatures: [],
+              evidenceClasses: [],
+              families: [],
+            }
+          }
+        />
+      </div>
+      <div className="mt-4">{listContent}</div>
+    </div>
+  );
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto scroll-thin px-3 py-4 lg:px-6">
-        <div className="max-w-[960px]">
-          <ModelsHeader count={load.data?.rows.length ?? 0} />
-          <div className="mt-4">
-            <ModelFilters
-              value={state}
-              onChange={handleFiltersChange}
-              options={
-                load.data?.options ?? {
-                  providers: [],
-                  models: [],
-                  signatures: [],
-                  evidenceClasses: [],
-                  families: [],
-                }
-              }
-            />
-          </div>
-          <div className="mt-4">
-            <Routes>
-              <Route index element={listContent} />
-              <Route
-                path=":modelConfigurationId/evidence/:observationId"
-                element={<ObservationDrilldown />}
-              />
-              <Route path=":modelConfigurationId" element={<ModelEvidenceProfile />} />
-            </Routes>
-          </div>
-        </div>
+        <Routes>
+          <Route index element={listElement} />
+          <Route
+            path=":modelConfigurationId/evidence/:observationId"
+            element={
+              <div className="max-w-[960px]">
+                <ObservationDrilldown evidenceRepo={evidenceRepo} taskRepo={taskRepo} />
+              </div>
+            }
+          />
+          <Route
+            path=":modelConfigurationId"
+            element={
+              <div className="max-w-[960px]">
+                <ModelEvidenceProfile evidenceRepo={evidenceRepo} taskRepo={taskRepo} />
+              </div>
+            }
+          />
+        </Routes>
       </div>
     </div>
   );

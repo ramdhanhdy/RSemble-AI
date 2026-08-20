@@ -28,7 +28,7 @@ import { formatRelativeTime } from "../../ui/RecordRow";
 import { VersionStatusChip, type VersionStatus } from "./VersionStatusChip";
 import type { HonestQuantity } from "../../lib/model-profiles/coverage-summary";
 import type { ModelConfigurationCatalogEntry } from "../../lib/model-profiles/model-configuration-query";
-import type { IdentityCompleteness } from "../../lib/evidence/evidence-types";
+import type { EvidenceClass, IdentityCompleteness } from "../../lib/evidence/evidence-types";
 
 const ROW_SURFACE_CLASS =
   "flex min-h-[44px] min-w-0 flex-1 flex-col gap-1 rounded-md border border-edge bg-panel px-3 py-2 text-sm transition-colors duration-150 hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -91,6 +91,12 @@ export interface ModelListRowData {
   taskCount: number;
   /** Top covered family names (≤2), most-observed first. */
   topFamilyNames: string[];
+  /** Full set of covered family IDs for this configuration (for filtering). */
+  coveredFamilyIds?: string[];
+  /** Full set of covered family names for this configuration (for filtering). */
+  coveredFamilyNames?: string[];
+  /** Actual set of evidence classes present for this configuration. */
+  evidenceClasses?: EvidenceClass[];
   /** Count of families with no observations for this configuration
    *  (universe − observed). Negative when the universe is unknown. */
   gapCount: number;

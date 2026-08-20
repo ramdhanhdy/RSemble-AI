@@ -10,7 +10,7 @@
 // Renders emitted backend shapes; computes no aggregates, intervals, or claims.
 // =============================================================================
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode, type Ref } from "react";
 import { Pagination, PAGE_SIZE } from "../../ui/Pagination";
 import { NarrowingChipBar, type NarrowingChip } from "./NarrowingChipBar";
 import { ObservationCard } from "./ObservationCard";
@@ -40,6 +40,8 @@ export interface EvidenceTableRow {
 
 interface EvidenceTableProps {
   rows: readonly EvidenceTableRow[];
+  /** Ref attached to the table heading for focus management. */
+  headingRef?: Ref<HTMLHeadingElement>;
   /** Active narrowings to display as chips. */
   narrowings?: readonly Narrowing[];
   /** Called when a narrowing chip is removed. */
@@ -64,8 +66,44 @@ function narrowChips(narrowings: readonly Narrowing[]): NarrowingChip[] {
   return narrowings.map((n) => ({ key: n.key, label: n.label }));
 }
 
+function matchesNarrowing(row: EvidenceTableRow, narrowing: Narrowing): boolean {
+  const { key } = narrowing;
+  if (key.startsWith("family:")) {
+    const fam = key.slice("family:".length);
+    return row.familyId === fam || row.familyName === fam;
+  }
+  if (key.startsWith("task:")) {
+    const task = key.slice("task:".length);
+    return row.taskId === task || row.taskName === task;
+  }
+  if (key.startsWith("source:")) {
+    const src = key.slice("source:".length);
+    return row.sourceKind === src || row.observationId.includes(src) || row.taskId.includes(src);
+  }
+  if (key.startsWith("claim:")) {
+    const metricKey = key.slice("claim:".length);
+    if (metricKey.includes("failures") || metricKey.includes("unsupported")) {
+      return Boolean(row.contradicting) || row.outcome === "fail";
+    }
+    return Boolean(row.supporting) || row.outcome === "pass";
+  }
+  if (key.startsWith("failures:")) {
+    return row.outcome === "fail" || Boolean(row.contradicting);
+  }
+  if (key.startsWith("limitation:")) {
+    const code = key.slice("limitation:".length);
+    return Boolean(row.eligibilityReason && row.eligibilityReason.includes(code));
+  }
+  if (key.startsWith("evidence_class:")) {
+    const cls = key.slice("evidence_class:".length);
+    return row.evidenceClass === cls;
+  }
+  return true;
+}
+
 export function EvidenceTable({
   rows,
+  headingRef,
   narrowings,
   onRemoveNarrowing,
   onClearAllNarrowings,
@@ -74,14 +112,19 @@ export function EvidenceTable({
   const [tab, setTab] = useState<EvidenceQuickTab>("all");
   const [page, setPage] = useState(1);
 
-  // Filter by tab.
+  // Filter by narrowings + tab.
   const filtered = useMemo(() => {
-    if (tab === "all") return rows;
-    if (tab === "supporting") return rows.filter((r) => r.supporting);
-    if (tab === "contradicting") return rows.filter((r) => r.contradicting);
-    // recent: sort by observedDate desc (most recent first)
-    return [...rows].sort((a, b) => b.observedDate.localeCompare(a.observedDate));
-  }, [rows, tab]);
+    let list = rows;
+    if (narrowings && narrowings.length > 0) {
+      list = list.filter((row) => narrowings.every((n) => matchesNarrowing(row, n)));
+    }
+    if (tab === "supporting") return list.filter((r) => r.supporting);
+    if (tab === "contradicting") return list.filter((r) => r.contradicting);
+    if (tab === "recent") {
+      return [...list].sort((a, b) => b.observedDate.localeCompare(a.observedDate));
+    }
+    return list;
+  }, [rows, narrowings, tab]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -92,6 +135,7 @@ export function EvidenceTable({
   return (
     <section data-section="evidence-table" aria-labelledby="evidence-heading">
       <h2
+        ref={headingRef}
         id="evidence-heading"
         tabIndex={-1}
         className="text-base font-semibold text-text outline-none"
