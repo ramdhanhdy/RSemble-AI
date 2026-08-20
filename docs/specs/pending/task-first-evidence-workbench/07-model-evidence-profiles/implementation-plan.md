@@ -10,6 +10,7 @@
 
 **Specification:** [`model-evidence-profiles-spec.md`](./model-evidence-profiles-spec.md)
 **Execution authorization:** Explicit approval required; local commits only; no push.
+**Current candidate status:** Implemented — pending independent closure review. Models remains a direct-route candidate until Child 08 owns primary navigation; exact profiles and versioned `stratified_only` Rollups are implemented without a pooled respondent or universal score.
 
 ---
 
@@ -179,6 +180,7 @@ npm run check
 
 Measure required corpus sizes and record environment/results. Browser-test exact/rolling/small-n/mixed/verified/paired/large states at all viewports, 200%, keyboard, reduced motion; validate chart alternatives, focus, overflow, secrets, and no universal claim.
 
+**T13 evidence:** The focused suite passed 51 files / 800 tests (1 skipped); `npm run typecheck:web`, `npm run check`, and `npm run test:coverage` passed. Full coverage passed 283 files / 5,645 tests (1 skipped), with `src/lib/persistence/archive.ts` at 2,243 / 2,607 lines (86.03%). The dedicated browser harness passed 31 probes with 8 screenshots over the 6-configuration, 40-family, 400-task, 4,169-observation corpus (4,120 exact subject observations), including responsive, 200% zoom, keyboard, reduced motion, direct-route, rollup/version, narrowing/focus, zero-egress, and authority-language checks; evidence: `docs/qa/model-evidence-profiles/results.json`.
 Update authority docs to describe Models as implemented but do not switch primary nav until child 07.
 
 **STOP:** attempt-weighted interval, known-dependent Tasks resampled independently, undisclosed Task-level fallback, incompatible pooling, pooled Model Rollup respondent, unrelated-task comparison, universal score/rank, model-generated evidence, invented version, or unmeasured blocking computation.

@@ -110,6 +110,7 @@ This document records architectural decisions made for RSemble AI.
 > playbook) are unchanged and now run behind canonical Lab authority. The
 > word "fusion" remains a method term (Fusion Recipe, Fuse mode, Fusion
 > Result); "Fusion Study" as a live product authority is gone.
+> **Reconciliation note (Child 07, 2026-08-21):** **Implemented — pending independent closure review.** Models is a direct-route current candidate, not a primary-navigation claim. Evidence respondents remain exact model configurations with explicit identity/version uncertainty, cohort separation, stratified-only metrics, uncertainty receipts, and drilldown to source Observations. Versioned Model Rollups persist exact pinned members and heterogeneity; they never imply a pooled respondent, universal score, rank, best model, or causal claim. The closure evidence and corpus manifest are recorded in `docs/qa/model-evidence-profiles/results.json`; pending status remains until an independent closure review.
 >
 ---
 

@@ -1,9 +1,10 @@
 # Qualified Model Evidence Profiles Specification
 
-**Status:** Pending
+**Status:** Implemented — pending independent closure review
 **Parent:** [`../task-first-evidence-workbench-spec.md`](../task-first-evidence-workbench-spec.md)
 **Order:** 06
 **Dependencies:** 04 Observations and Evidence; 05 Contextual Compare Results
+**Reconciliation:** The implemented candidate is direct-route Models (`/models`) with exact profile, evidence drilldown, and versioned Model Rollup routes; Child 08 still owns primary navigation. Exact configuration respondents remain identity/version-honest and cohort-separated. Rollups pin exact members under `stratified_only`, disclose heterogeneity, and never create a pooled respondent or universal score. Independent closure review remains pending.
 
 ---
 

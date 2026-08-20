@@ -115,6 +115,7 @@
 > evidence profiles / 08 Shell+Records / 09 Attention / 10 Hardening);
 > parent spec §15, §4.1, P03, and the spec index are reconciled to this
 > order.
+> **Reconciliation note (Child 07, 2026-08-21):** **Implemented — pending independent closure review.** The Models workspace is a direct-route current candidate (`/models` plus exact profile, evidence drilldown, and versioned rollup routes), not a primary-navigation claim. Exact `ModelConfigurationSnapshot` respondents disclose identity completeness, cohort-qualified evidence, uncertainty, and source observations; named Model Rollups pin immutable exact members under `stratified_only` and never create a pooled respondent or universal score. T13 evidence is recorded in `docs/qa/model-evidence-profiles/results.json`; the 6-configuration / 40-family / 400-task corpus contains 4,169 observations (4,120 exact subject observations), and the required closure gates are recorded there and in the Run 27 result.
 
 > **The source of truth for what RSemble AI is and is not.**
 > Authority: PRODUCT.md defines *what the product is*. `PROVIDERS.md` defines *how models are reached*.
