@@ -15,13 +15,21 @@ import { COPY } from "./copy";
 import { HonestValue } from "./HonestValue";
 import { InsufficientState } from "./InsufficientState";
 
-export interface CohortInterval {
-  level: number;
-  lower: number;
-  upper: number;
-  unitCount: number;
-  unitKind: string;
-}
+export type CohortInterval =
+  | {
+      state: "available";
+      level: number;
+      lower: number;
+      upper: number;
+      unitCount: number;
+      unitKind: string;
+    }
+  | {
+      state: "insufficient";
+      unitCount: number;
+      unitKind: string;
+      reason: string;
+    };
 
 interface CohortBlockProps {
   cohortRef: string;
@@ -73,7 +81,7 @@ function IntervalSlot({
   digest?: string;
 }): ReactNode {
   if (!interval) return null;
-  if (interval.unitCount < MIN_CLAIM_RESOLVED_UNITS) {
+  if (interval.state === "insufficient") {
     return (
       <div data-cohort-interval>
         <InsufficientState

@@ -26,6 +26,7 @@ import { ObservationDrilldown } from "./ObservationDrilldown";
 import { PairedComparisonSection } from "./PairedComparisonSection";
 import { makeDrilldownData } from "./ObservationDrilldown.test";
 import { ALL_COPY_STRINGS, FORBIDDEN_COPY_PATTERNS, FORBIDDEN_CLAIM_PHRASES } from "./copy";
+import { loadProfileData } from "./model-profile-loader";
 import type { FamilyAggregate } from "../../lib/model-profiles/family-aggregation";
 import type {
   HonestQuantity,
@@ -41,6 +42,7 @@ import { observationIdFor } from "../../lib/evidence/evidence-validation";
 const MODELS_ROOT = join(process.cwd(), "src", "workspaces", "models");
 const COHORT_CODE = `sha256:${"a".repeat(64)}`;
 const COHORT_SUM = `sha256:${"b".repeat(64)}`;
+const COHORT_SUM_ALTERNATE = `sha256:${"f".repeat(64)}`;
 const COHORT_REPAIR = `sha256:${"c".repeat(64)}`;
 const COHORT_EXCLUDED = `sha256:${"d".repeat(64)}`;
 const COHORT_PARTIAL = `sha256:${"e".repeat(64)}`;
@@ -302,7 +304,12 @@ async function putFixtureObservation(
   return persisted.id;
 }
 
-export async function seedRoutedAcceptanceCorpus() {
+export async function seedRoutedAcceptanceCorpus(
+  options: {
+    summaryScores?: readonly (number | null)[];
+    alternateSummaryScores?: readonly number[];
+  } = {},
+) {
   const taskRepo = new InMemoryTaskRepository();
   await taskRepo.createTaskFamily({
     id: "fam-code",
@@ -352,6 +359,22 @@ export async function seedRoutedAcceptanceCorpus() {
 
   const taskIdsSum = ["t-sum-1", "t-sum-2", "t-sum-3", "t-sum-4", "t-sum-5", "t-sum-6"];
   for (const tid of taskIdsSum) {
+    await createFixtureTask(taskRepo, tid);
+    await taskRepo.assignTaskFamily({
+      id: `asgn-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      familyId: "fam-sum",
+      isPrimary: false,
+      createdAt: Date.now(),
+      archivedAt: null,
+      revision: 1,
+    });
+  }
+
+  const taskIdsAlternateSum =
+    options.alternateSummaryScores?.map((_, i) => `t-sum-alt-${i + 1}`) ?? [];
+  for (const tid of taskIdsAlternateSum) {
     await createFixtureTask(taskRepo, tid);
     await taskRepo.assignTaskFamily({
       id: `asgn-${tid}`,
@@ -495,7 +518,7 @@ export async function seedRoutedAcceptanceCorpus() {
     });
   }
 
-  const scoresA = [80, 85, 90, 75, 88, 92];
+  const scoresA = options.summaryScores ?? [80, 85, 90, 75, 88, 92];
   for (let i = 0; i < taskIdsSum.length; i++) {
     const tid = taskIdsSum[i];
     const obsId = await putFixtureObservation(evidenceRepo, {
@@ -530,7 +553,7 @@ export async function seedRoutedAcceptanceCorpus() {
       outcome: {
         judgeAccepted: true,
         verifierPassed: null,
-        overallScore: scoresA[i],
+        overallScore: scoresA[i] ?? null,
         criterionValues: [],
       },
       observedAt: Date.parse("2026-07-12") + i * 1000,
@@ -543,6 +566,58 @@ export async function seedRoutedAcceptanceCorpus() {
       evidenceClass: "comparable",
       allowedUses: ["within_model_profile", "paired_model_comparison"],
       comparabilityCohortId: COHORT_SUM,
+      reasonCodes: ["canonical_task_resolved", "rubric_resolved"],
+      decidedAt: Date.now(),
+    });
+  }
+
+  for (let i = 0; i < taskIdsAlternateSum.length; i++) {
+    const tid = taskIdsAlternateSum[i];
+    const obsId = await putFixtureObservation(evidenceRepo, {
+      sourceKind: "evaluation",
+      sourceResultId: "eval-exec-1",
+      executionLineageId: `lin-a-${tid}`,
+      runId: "run-1",
+      sourceTaskCellId: `cell-a-${tid}`,
+      taskId: tid,
+      taskVersion: 1,
+      taskInstanceId: `inst-${tid}`,
+      taskFamilyId: "fam-sum",
+      modelConfigurationId: configAId,
+      candidateAttemptId: `cand-a-${tid}`,
+      assessmentRef: makeAssessmentRef({
+        judgeAttemptId: `judg-a-${tid}`,
+        candidateAttemptId: `cand-a-${tid}`,
+        rubricRef: { id: "rub-sum-alternate", version: 1 },
+      }),
+      protocolFingerprint: "proto-1",
+      rubricRef: { id: "rub-sum-alternate", version: 1 },
+      evaluatorSnapshot: {
+        kind: "model_judge",
+        providerId: "openai",
+        model: "gpt-5.6-sol",
+        resolvedVersion: "gpt-5.6-sol",
+        instructionDigest: "inst-1",
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: null,
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: null,
+        overallScore: options.alternateSummaryScores?.[i] ?? null,
+        criterionValues: [],
+      },
+      observedAt: Date.parse("2026-07-13") + i * 1000,
+      observationSchemaVersion: 1,
+    });
+    await evidenceRepo.putDecision({
+      observationId: obsId,
+      ruleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+      status: "eligible",
+      evidenceClass: "comparable",
+      allowedUses: ["within_model_profile", "paired_model_comparison"],
+      comparabilityCohortId: COHORT_SUM_ALTERNATE,
       reasonCodes: ["canonical_task_resolved", "rubric_resolved"],
       decidedAt: Date.now(),
     });
@@ -961,7 +1036,12 @@ describe("Fable §14.3 — insufficient coverage", () => {
       <CohortBlock
         cohortRef="verifier cohort X"
         value={{ state: "available", value: 71.2, unitCount: 4 }}
-        interval={{ level: 95, lower: 64.1, upper: 77.8, unitCount: 4, unitKind: "task-cluster" }}
+        interval={{
+          state: "insufficient",
+          unitCount: 4,
+          unitKind: "task-cluster",
+          reason: "Only four usable metric units are available.",
+        }}
         coverageLine="4 of 10 tasks"
       />,
     );
@@ -1546,7 +1626,7 @@ describe("Fable §14.16 — Routed integration through live ModelsWorkspace & in
 
     // D2 deterministic narrative
     expect(h.$("[data-deterministic-narrative]")).not.toBeNull();
-    expect(h.text()).toContain("Strongest supported");
+    expect(h.text()).toContain("Descriptive only");
 
     // Coverage grid renders the 16 fixed coverage definitions.
     expect(h.$("[data-coverage-grid]")).not.toBeNull();
@@ -1858,5 +1938,99 @@ describe("Fable §14.16 — Routed integration through live ModelsWorkspace & in
     expect(verifiedRows.length).toBe(2);
     expect(verifiedRows.map((row) => row.textContent).join(" ")).not.toContain("gemini-3.7-flash");
     cleanup(verifiedFilter);
+  });
+});
+
+describe("model-profile-loader — evidence honesty regressions", () => {
+  it("computes incompatible judged-score cohorts independently within one family", async () => {
+    const { evidenceRepo, taskRepo, configAId } = await seedRoutedAcceptanceCorpus({
+      alternateSummaryScores: [10, 12, 14, 16, 18, 20],
+    });
+    const profile = await loadProfileData({
+      modelConfigurationId: configAId,
+      evidenceRepo,
+      taskRepo,
+    });
+    expect(profile).not.toBeNull();
+
+    const family = profile!.families.find((candidate) => candidate.familyId === "fam-sum");
+    expect(family?.judgedScores).toHaveLength(2);
+    const metrics = family!.judgedScores;
+    const metricValues = metrics.map((metric) =>
+      metric.value.state === "available" || metric.value.state === "limited"
+        ? metric.value.value
+        : null,
+    );
+    expect(metricValues[0]).not.toBe(metricValues[1]);
+
+    const intervals = metrics.map(
+      (metric) => profile!.cohortIntervals?.[`fam-sum:${metric.cohortId}`],
+    );
+    expect(intervals.every((interval) => interval?.state === "available")).toBe(true);
+    if (intervals[0]?.state !== "available" || intervals[1]?.state !== "available") {
+      throw new Error("expected independently available cohort intervals");
+    }
+    expect([intervals[0].lower, intervals[0].upper]).not.toEqual([
+      intervals[1].lower,
+      intervals[1].upper,
+    ]);
+    expect([intervals[0].unitCount, intervals[1].unitCount]).toEqual([6, 6]);
+  });
+
+  it("uses usable metric units for insufficiency and never displays a synthetic 0–0 interval", async () => {
+    const { evidenceRepo, taskRepo, configAId } = await seedRoutedAcceptanceCorpus({
+      summaryScores: [80, 85, 90, 75, null, null],
+    });
+    const profile = await loadProfileData({
+      modelConfigurationId: configAId,
+      evidenceRepo,
+      taskRepo,
+    });
+    expect(profile).not.toBeNull();
+
+    const family = profile!.families.find((candidate) => candidate.familyId === "fam-sum")!;
+    const metric = family.judgedScores[0];
+    const interval = profile!.cohortIntervals?.[`fam-sum:${metric.cohortId}`];
+    expect(interval).toMatchObject({
+      state: "insufficient",
+      unitCount: 4,
+    });
+    expect(interval).not.toHaveProperty("lower");
+    expect(interval).not.toHaveProperty("upper");
+
+    const h = render(
+      <CohortBlock
+        cohortRef={metric.cohortId}
+        value={metric.value}
+        interval={interval}
+        coverageLine="6 resolved units · 4 usable metric units"
+      />,
+    );
+    const intervalSlot = h.$("[data-cohort-interval]")!;
+    expect(intervalSlot.textContent).toContain("Insufficient independent coverage for an interval");
+    expect(intervalSlot.textContent).not.toContain("0–0");
+    cleanup(h);
+  });
+
+  it("keeps claims descriptive-only when refs have no authored semantic boundary", async () => {
+    const { evidenceRepo, taskRepo, configAId } = await seedRoutedAcceptanceCorpus();
+    const profile = await loadProfileData({
+      modelConfigurationId: configAId,
+      evidenceRepo,
+      taskRepo,
+    });
+    expect(profile).not.toBeNull();
+
+    const sufficientlyCovered = profile!.claims.filter(
+      (claim) => claim.receipt.resolvedUnitCount >= 5,
+    );
+    expect(sufficientlyCovered.length).toBeGreaterThan(0);
+    for (const claim of sufficientlyCovered) {
+      expect(claim.label).toBe("descriptive_only");
+      expect(claim.receipt.boundaryRef).toBeNull();
+      expect(claim.receipt.boundarySource).toBeNull();
+      expect(claim.label).not.toBe("strongest_supported");
+      expect(claim.label).not.toBe("weakest_supported");
+    }
   });
 });

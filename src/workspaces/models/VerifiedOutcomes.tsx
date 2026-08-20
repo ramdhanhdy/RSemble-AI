@@ -11,22 +11,17 @@
 
 import type { ReactNode } from "react";
 import type { AggregatedValue } from "../../lib/model-profiles/family-aggregation";
+import { MIN_CLAIM_RESOLVED_UNITS } from "../../lib/model-profiles/profile-claims";
 import { HonestValue } from "./HonestValue";
 import { InsufficientState } from "./InsufficientState";
-import { MIN_CLAIM_RESOLVED_UNITS } from "../../lib/model-profiles/profile-claims";
 import type { Narrowing } from "./useNarrowing";
+import type { CohortInterval } from "./CohortBlock";
 
 export interface VerifiedOutcome {
   cohortRef: string;
   verifiedTasks: string;
   passRate: AggregatedValue;
-  interval?: {
-    level: number;
-    lower: number;
-    upper: number;
-    unitCount: number;
-    unitKind: string;
-  } | null;
+  interval?: CohortInterval | null;
   failureCount?: number;
   resolverVersion?: string;
   digest?: string;
@@ -53,7 +48,7 @@ function renderPassRate(value: AggregatedValue): ReactNode {
 
 function renderInterval(outcome: VerifiedOutcome): ReactNode {
   if (!outcome.interval) return <span className="text-text-muted">—</span>;
-  if (outcome.interval.unitCount < MIN_CLAIM_RESOLVED_UNITS) {
+  if (outcome.interval.state === "insufficient") {
     return (
       <InsufficientState
         kind="insufficient"

@@ -34,7 +34,11 @@ import {
   type ProfileEvidenceCorpus,
 } from "../../lib/model-profiles/profile-observation-selection";
 import { buildCoverageSummary } from "../../lib/model-profiles/coverage-summary";
-import { aggregateFamilyEvidence } from "../../lib/model-profiles/family-aggregation";
+import {
+  aggregateFamilyEvidence,
+  buildJudgedScoreCohortId,
+  buildPassRateCohortId,
+} from "../../lib/model-profiles/family-aggregation";
 import {
   resolveUncertaintyUnits,
   partitionUncertaintyUnits,
@@ -46,7 +50,6 @@ import {
   formatBoundaryRef,
   type ClaimResult,
   type ClaimSentence,
-  type SemanticBoundary,
 } from "../../lib/model-profiles/profile-claims";
 import { computePairedEvidence } from "../../lib/model-profiles/paired-comparison";
 import type { ProfileData, ProfileIdentity } from "./ModelEvidenceProfile";
@@ -175,7 +178,10 @@ export async function loadProfileData(
     // 1. Judged scores
     for (const scoreMetric of family.judgedScores) {
       const cohortCells = selection.cells.filter(
-        (c) => c.active.observation.taskFamilyId === family.familyId,
+        (c) =>
+          c.active.observation.taskFamilyId === family.familyId &&
+          buildJudgedScoreCohortId(c.active.observation, selection.modelConfiguration) ===
+            scoreMetric.cohortId,
       );
       const cohortRows: PartitionInput[] = cohortCells.map((c) => ({
         protocolFingerprint: c.active.observation.protocolFingerprint,
@@ -215,28 +221,29 @@ export async function loadProfileData(
         unitValues,
       });
 
-      const interval: CohortInterval = {
-        level: 95,
-        lower: boot.interval?.lower ?? 0,
-        upper: boot.interval?.upper ?? 0,
-        unitCount: cohortResolution.unitCount,
-        unitKind: cohortResolution.units[0]?.kind ?? "task_identity",
-      };
+      const interval: CohortInterval = boot.interval
+        ? {
+            state: "available",
+            level: boot.interval.level * 100,
+            lower: boot.interval.lower,
+            upper: boot.interval.upper,
+            unitCount: boot.unitCount,
+            unitKind: cohortResolution.units[0]?.kind ?? "task_identity",
+          }
+        : {
+            state: "insufficient",
+            unitCount: boot.unitCount,
+            unitKind: cohortResolution.units[0]?.kind ?? "task_identity",
+            reason:
+              boot.coverageState.state === "insufficient"
+                ? boot.coverageState.reason
+                : "No bootstrap interval is available.",
+          };
       const intervalKey = `${family.familyId ?? ""}:${scoreMetric.cohortId}`;
       cohortIntervals[intervalKey] = interval;
       cohortIntervals[scoreMetric.cohortId] = interval;
 
-      const rubricRef =
-        cohortCells.find((c) => c.active.observation.rubricRef !== null)?.active.observation
-          .rubricRef ?? null;
-      const boundary: SemanticBoundary | null = rubricRef
-        ? {
-            source: "rubric_version",
-            ref: rubricRef,
-            supportedRegion: { lower: 70, upper: 100 },
-            unsupportedRegion: { lower: 0, upper: 69 },
-          }
-        : null;
+      const boundary = null;
 
       const pointVal =
         scoreMetric.value.state === "available" || scoreMetric.value.state === "limited"
@@ -251,7 +258,7 @@ export async function loadProfileData(
         eligibleInterval: boot.interval
           ? { lower: boot.interval.lower, upper: boot.interval.upper }
           : null,
-        resolvedUnitCount: cohortResolution.unitCount,
+        resolvedUnitCount: boot.unitCount,
         boundary,
         hasUndisclosedMissingness: false,
         cohortDisagreement: false,
@@ -266,7 +273,10 @@ export async function loadProfileData(
     // 2. Pass rates
     for (const passMetric of family.passRates) {
       const cohortCells = selection.cells.filter(
-        (c) => c.active.observation.taskFamilyId === family.familyId,
+        (c) =>
+          c.active.observation.taskFamilyId === family.familyId &&
+          buildPassRateCohortId(c.active.observation, selection.modelConfiguration) ===
+            passMetric.cohortId,
       );
       const cohortRows: PartitionInput[] = cohortCells.map((c) => ({
         protocolFingerprint: c.active.observation.protocolFingerprint,
@@ -306,13 +316,24 @@ export async function loadProfileData(
         unitValues,
       });
 
-      const interval: CohortInterval = {
-        level: 95,
-        lower: boot.interval?.lower ?? 0,
-        upper: boot.interval?.upper ?? 0,
-        unitCount: cohortResolution.unitCount,
-        unitKind: cohortResolution.units[0]?.kind ?? "task_identity",
-      };
+      const interval: CohortInterval = boot.interval
+        ? {
+            state: "available",
+            level: boot.interval.level * 100,
+            lower: boot.interval.lower,
+            upper: boot.interval.upper,
+            unitCount: boot.unitCount,
+            unitKind: cohortResolution.units[0]?.kind ?? "task_identity",
+          }
+        : {
+            state: "insufficient",
+            unitCount: boot.unitCount,
+            unitKind: cohortResolution.units[0]?.kind ?? "task_identity",
+            reason:
+              boot.coverageState.state === "insufficient"
+                ? boot.coverageState.reason
+                : "No bootstrap interval is available.",
+          };
       const intervalKey = `${family.familyId ?? ""}:${passMetric.cohortId}`;
       cohortIntervals[intervalKey] = interval;
       cohortIntervals[passMetric.cohortId] = interval;
@@ -320,14 +341,7 @@ export async function loadProfileData(
       const verifierRef =
         cohortCells.find((c) => c.active.observation.verifierSnapshot?.verifierRef)?.active
           .observation.verifierSnapshot?.verifierRef ?? null;
-      const boundary: SemanticBoundary | null = verifierRef
-        ? {
-            source: "verifier_contract",
-            ref: verifierRef,
-            supportedRegion: { lower: 0.8, upper: 1.0 },
-            unsupportedRegion: { lower: 0, upper: 0.79 },
-          }
-        : null;
+      const boundary = null;
 
       const pointVal =
         passMetric.value.state === "available" || passMetric.value.state === "limited"
@@ -351,7 +365,7 @@ export async function loadProfileData(
         eligibleInterval: boot.interval
           ? { lower: boot.interval.lower, upper: boot.interval.upper }
           : null,
-        resolvedUnitCount: cohortResolution.unitCount,
+        resolvedUnitCount: boot.unitCount,
         boundary,
         hasUndisclosedMissingness: false,
         cohortDisagreement: false,
@@ -368,15 +382,7 @@ export async function loadProfileData(
           cohortRef: verifierRef ? formatBoundaryRef(verifierRef) : passMetric.cohortId.slice(0, 8),
           verifiedTasks: `${passedCount} of ${totalVerified}`,
           passRate: passMetric.value,
-          interval: boot.interval
-            ? {
-                level: 95,
-                lower: boot.interval.lower,
-                upper: boot.interval.upper,
-                unitCount: cohortResolution.unitCount,
-                unitKind: cohortResolution.units[0]?.kind ?? "task_identity",
-              }
-            : null,
+          interval,
           failureCount: failures,
           resolverVersion: `v${cohortResolution.uncertaintyRuleVersion}`,
           digest: cohortResolution.assignmentDigest.slice(0, 8),

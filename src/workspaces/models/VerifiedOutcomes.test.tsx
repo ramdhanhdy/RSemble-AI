@@ -10,6 +10,7 @@ function makeOutcomes(): VerifiedOutcome[] {
       verifiedTasks: "8 of 10",
       passRate: { state: "available", value: 0.8, unitCount: 8 },
       interval: {
+        state: "available",
         level: 95,
         lower: 0.62,
         upper: 0.94,
@@ -66,11 +67,10 @@ describe("VerifiedOutcomes — Fable §7.4", () => {
         verifiedTasks: "3 of 10",
         passRate: { state: "available", value: 0.6, unitCount: 3 },
         interval: {
-          level: 95,
-          lower: 0.3,
-          upper: 0.9,
+          state: "insufficient",
           unitCount: 3,
           unitKind: "task-cluster",
+          reason: "Only three usable metric units are available.",
         },
         failureCount: 1,
       },

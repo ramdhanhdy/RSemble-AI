@@ -12,7 +12,14 @@ describe("CohortBlock — Fable §5.4", () => {
       <CohortBlock
         cohortRef="Rubric v3 · rub-eval@2"
         value={available}
-        interval={{ level: 95, lower: 64.1, upper: 77.8, unitCount: 6, unitKind: "task-cluster" }}
+        interval={{
+          state: "available",
+          level: 95,
+          lower: 64.1,
+          upper: 77.8,
+          unitCount: 6,
+          unitKind: "task-cluster",
+        }}
         coverageLine="8 of 10 tasks · 14 instances · 23 observations"
       />,
     );
@@ -32,7 +39,12 @@ describe("CohortBlock — Fable §5.4", () => {
       <CohortBlock
         cohortRef="verifier cohort X · ver-code@4"
         value={available}
-        interval={{ level: 95, lower: 64.1, upper: 77.8, unitCount: 4, unitKind: "task-cluster" }}
+        interval={{
+          state: "insufficient",
+          unitCount: 4,
+          unitKind: "task-cluster",
+          reason: "Only four usable metric units are available.",
+        }}
         coverageLine="4 of 10 tasks · 5 instances · 7 observations"
       />,
     );

@@ -279,6 +279,7 @@ describe("ModelEvidenceProfile — Fable §7", () => {
         verifiedTasks: "8 of 10",
         passRate: { state: "available", value: 0.8, unitCount: 8 },
         interval: {
+          state: "available",
           level: 95,
           lower: 0.62,
           upper: 0.94,
