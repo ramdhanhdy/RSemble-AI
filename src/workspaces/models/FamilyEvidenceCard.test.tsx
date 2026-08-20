@@ -43,9 +43,7 @@ function makeFamily(): FamilyAggregate {
 
 describe("FamilyEvidenceCard — Fable §7.3", () => {
   it("renders the family name and task count", () => {
-    const h = render(
-      <FamilyEvidenceCard family={makeFamily()} familyName="Code Transformation" />,
-    );
+    const h = render(<FamilyEvidenceCard family={makeFamily()} familyName="Code Transformation" />);
     expect(h.text()).toContain("Code Transformation");
     expect(h.text()).toContain("10 tasks");
     cleanup(h);

@@ -372,10 +372,7 @@ export function ModelsWorkspace({
           <div className="mt-4">
             <Routes>
               <Route index element={listContent} />
-              <Route
-                path=":modelConfigurationId"
-                element={<ModelEvidenceProfile />}
-              />
+              <Route path=":modelConfigurationId" element={<ModelEvidenceProfile />} />
             </Routes>
           </div>
         </div>

@@ -7,7 +7,8 @@ import { ModelEvidenceProfile, type ProfileData } from "./ModelEvidenceProfile";
 function makeProfileData(): ProfileData {
   return {
     identity: {
-      modelConfigurationId: "mc:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      modelConfigurationId:
+        "mc:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       providerId: "openai",
       requestedModel: "gpt-4o",
       resolvedModel: "gpt-4o-2024-05-13",
@@ -98,9 +99,7 @@ function makeProfileData(): ProfileData {
         supporting: true,
       },
     ],
-    protocolCohorts: [
-      { ref: "Rubric v3 · rub-eval@2", taskCount: 10, groupId: "group-1" },
-    ],
+    protocolCohorts: [{ ref: "Rubric v3 · rub-eval@2", taskCount: 10, groupId: "group-1" }],
     evaluatorConfigs: [
       {
         kind: "model_judge",
@@ -132,13 +131,7 @@ function renderProfile(data?: ProfileData | null, notFound?: boolean, computing?
       <Routes>
         <Route
           path="/models/:modelConfigurationId"
-          element={
-            <ModelEvidenceProfile
-              data={data}
-              notFound={notFound}
-              computing={computing}
-            />
-          }
+          element={<ModelEvidenceProfile data={data} notFound={notFound} computing={computing} />}
         />
       </Routes>
     </MemoryRouter>,

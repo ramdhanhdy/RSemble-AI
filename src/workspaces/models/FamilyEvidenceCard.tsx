@@ -13,10 +13,7 @@
 // =============================================================================
 
 import type { ReactNode } from "react";
-import type {
-  FamilyAggregate,
-  CohortMetric,
-} from "../../lib/model-profiles/family-aggregation";
+import type { FamilyAggregate, CohortMetric } from "../../lib/model-profiles/family-aggregation";
 import { CohortBlock } from "./CohortBlock";
 import { COPY } from "./copy";
 import type { Narrowing } from "./useNarrowing";
@@ -72,9 +69,7 @@ export function FamilyEvidenceCard({
         }
       >
         <span className="text-sm font-semibold text-text">{name}</span>
-        <span className="font-mono text-xs text-text-muted">
-          {family.taskCount} tasks
-        </span>
+        <span className="font-mono text-xs text-text-muted">{family.taskCount} tasks</span>
       </button>
 
       {/* Body: cohort blocks */}
@@ -139,9 +134,7 @@ export function FamilyEvidenceCard({
             </button>
           ))}
           {family.tasks.length > 4 && (
-            <span className="text-xs text-text-muted">
-              +{family.tasks.length - 4} more
-            </span>
+            <span className="text-xs text-text-muted">+{family.tasks.length - 4} more</span>
           )}
         </div>
       )}

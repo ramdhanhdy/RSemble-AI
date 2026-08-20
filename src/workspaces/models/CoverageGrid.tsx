@@ -11,7 +11,10 @@
 
 import type { ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
-import type { ProfileCoverageSummary, HonestQuantity } from "../../lib/model-profiles/coverage-summary";
+import type {
+  ProfileCoverageSummary,
+  HonestQuantity,
+} from "../../lib/model-profiles/coverage-summary";
 import { HonestValue } from "./HonestValue";
 import { EvidenceMixChips } from "./EvidenceMixChips";
 import type { Narrowing } from "./useNarrowing";
@@ -71,7 +74,11 @@ function renderCell(
   if (q && typeof q === "object" && "state" in q) {
     const isAttempts = field === "attempts";
     return (
-      <div data-coverage-cell data-coverage-field={field} className={`bg-panel p-3 ${isAttempts ? "opacity-70" : ""}`}>
+      <div
+        data-coverage-cell
+        data-coverage-field={field}
+        className={`bg-panel p-3 ${isAttempts ? "opacity-70" : ""}`}
+      >
         <HonestValue quantity={q as HonestQuantity} label={label} />
         {isAttempts && (
           <div className="honesty-note mt-1 text-[10px] text-text-muted">
@@ -99,7 +106,9 @@ function limitationEntries(
 }
 
 export function CoverageGrid({ coverage, onApplyNarrowing }: CoverageGridProps): ReactNode {
-  const limitations = limitationEntries(coverage.limitationReasons as Readonly<Partial<Record<string, number>>>);
+  const limitations = limitationEntries(
+    coverage.limitationReasons as Readonly<Partial<Record<string, number>>>,
+  );
 
   return (
     <section data-section="coverage" aria-labelledby="coverage-heading">
@@ -108,10 +117,7 @@ export function CoverageGrid({ coverage, onApplyNarrowing }: CoverageGridProps):
       </h2>
 
       {/* Definition grid */}
-      <div
-        data-coverage-grid
-        className="mt-3 grid grid-cols-2 gap-px bg-edge md:grid-cols-4"
-      >
+      <div data-coverage-grid className="mt-3 grid grid-cols-2 gap-px bg-edge md:grid-cols-4">
         {FIELD_ORDER.map((field) => (
           <div key={field}>{renderCell(field, coverage)}</div>
         ))}

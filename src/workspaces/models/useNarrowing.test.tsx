@@ -84,9 +84,7 @@ describe("useNarrowing", () => {
   });
 
   it("hydrates narrowings from URL on mount", () => {
-    const { result, unmount } = renderProbe(
-      "/models/mc-1?narrow=family:code,class:verified",
-    );
+    const { result, unmount } = renderProbe("/models/mc-1?narrow=family:code,class:verified");
     expect(result).not.toBeNull();
     expect(result!.narrowings).toHaveLength(2);
     expect(result!.narrowings[0].key).toBe("family:code");

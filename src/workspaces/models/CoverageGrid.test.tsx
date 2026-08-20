@@ -12,8 +12,16 @@ function makeCoverage(): ProfileCoverageSummary {
     activeObservations: { state: "available", value: 112 },
     acceptedCandidateResponses: { state: "available", value: 98 },
     attempts: { state: "available", value: 156 },
-    plannedReplicates: { state: "limited", value: 20, unresolved: 6, reason: "Some replicates not declared." },
-    resolvedIndependentUncertaintyUnits: { state: "unavailable", reason: "Not assigned in Milestone A." },
+    plannedReplicates: {
+      state: "limited",
+      value: 20,
+      unresolved: 6,
+      reason: "Some replicates not declared.",
+    },
+    resolvedIndependentUncertaintyUnits: {
+      state: "unavailable",
+      reason: "Not assigned in Milestone A.",
+    },
     uncertaintyUnitKind: { state: "unavailable", reason: "Not assigned." },
     uncertaintyAssumption: { state: "unavailable", reason: "Not assigned." },
     comparabilityCohorts: { state: "available", value: 2 },

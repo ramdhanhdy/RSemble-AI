@@ -43,26 +43,15 @@ const SCROLL_CLASS =
 
 function renderPassRate(value: AggregatedValue): ReactNode {
   if (value.state === "available" || value.state === "limited") {
-    return (
-      <span className="font-mono tabular-nums text-text">
-        {String(value.value)}
-      </span>
-    );
+    return <span className="font-mono tabular-nums text-text">{String(value.value)}</span>;
   }
   if (value.state === "non_aggregatable") {
-    return (
-      <InsufficientState
-        kind="non_aggregatable"
-        reason={value.detail ?? value.reason}
-      />
-    );
+    return <InsufficientState kind="non_aggregatable" reason={value.detail ?? value.reason} />;
   }
   return <HonestValue quantity={{ state: "unavailable", reason: value.reason }} />;
 }
 
-function renderInterval(
-  outcome: VerifiedOutcome,
-): ReactNode {
+function renderInterval(outcome: VerifiedOutcome): ReactNode {
   if (!outcome.interval) return <span className="text-text-muted">—</span>;
   if (outcome.interval.unitCount < MIN_CLAIM_RESOLVED_UNITS) {
     return (
@@ -83,10 +72,7 @@ function renderInterval(
   );
 }
 
-export function VerifiedOutcomes({
-  outcomes,
-  onApplyNarrowing,
-}: VerifiedOutcomesProps): ReactNode {
+export function VerifiedOutcomes({ outcomes, onApplyNarrowing }: VerifiedOutcomesProps): ReactNode {
   if (outcomes.length === 0) return null;
 
   return (
@@ -128,13 +114,9 @@ export function VerifiedOutcomes({
                   className="border-b border-edge last:border-b-0"
                 >
                   <td className="sticky left-0 bg-panel px-3 py-2">
-                    <span className="text-xs text-text-secondary">
-                      {outcome.cohortRef}
-                    </span>
+                    <span className="text-xs text-text-secondary">{outcome.cohortRef}</span>
                   </td>
-                  <td className="px-3 py-2 font-mono text-text">
-                    {outcome.verifiedTasks}
-                  </td>
+                  <td className="px-3 py-2 font-mono text-text">{outcome.verifiedTasks}</td>
                   <td className="px-3 py-2">{renderPassRate(outcome.passRate)}</td>
                   <td className="px-3 py-2">{renderInterval(outcome)}</td>
                   <td className="px-3 py-2">

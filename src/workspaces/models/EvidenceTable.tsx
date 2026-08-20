@@ -80,17 +80,12 @@ export function EvidenceTable({
     if (tab === "supporting") return rows.filter((r) => r.supporting);
     if (tab === "contradicting") return rows.filter((r) => r.contradicting);
     // recent: sort by observedDate desc (most recent first)
-    return [...rows].sort(
-      (a, b) => b.observedDate.localeCompare(a.observedDate),
-    );
+    return [...rows].sort((a, b) => b.observedDate.localeCompare(a.observedDate));
   }, [rows, tab]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
-  const pageRows = filtered.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
-  );
+  const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const hasNarrowings = narrowings && narrowings.length > 0;
 
@@ -129,9 +124,7 @@ export function EvidenceTable({
             data-quick-tab={t.key}
             aria-pressed={tab === t.key}
             className={`pressable rounded-sm px-3 py-1 text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
-              tab === t.key
-                ? "bg-accent/15 text-accent"
-                : "text-text-secondary hover:text-text"
+              tab === t.key ? "bg-accent/15 text-accent" : "text-text-secondary hover:text-text"
             }`}
             onClick={() => {
               setTab(t.key);
@@ -221,9 +214,7 @@ export function EvidenceTable({
                   <td className="px-3 py-2 font-mono text-xs text-text-muted">
                     {row.observedDate}
                   </td>
-                  <td className="px-3 py-2 text-xs text-text-secondary">
-                    {row.sourceKind}
-                  </td>
+                  <td className="px-3 py-2 text-xs text-text-secondary">{row.sourceKind}</td>
                 </tr>
               ))}
             </tbody>

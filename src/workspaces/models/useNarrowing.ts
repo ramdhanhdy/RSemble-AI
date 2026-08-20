@@ -45,7 +45,6 @@ export interface UseNarrowingResult {
 
 const DEFAULT_PARAM = "narrow";
 
-
 function decodeNarrowings(raw: string | null): Narrowing[] {
   if (!raw) return [];
   return raw
@@ -54,9 +53,7 @@ function decodeNarrowings(raw: string | null): Narrowing[] {
     .map((key) => ({ key, label: key }));
 }
 
-export function useNarrowing(
-  options: UseNarrowingOptions = {},
-): UseNarrowingResult {
+export function useNarrowing(options: UseNarrowingOptions = {}): UseNarrowingResult {
   const paramName = options.paramName ?? DEFAULT_PARAM;
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -112,9 +109,7 @@ export function useNarrowing(
 
   const remove = useCallback(
     (key: string) => {
-      const nextKeys = narrowings
-        .map((n) => n.key)
-        .filter((k) => k !== key);
+      const nextKeys = narrowings.map((n) => n.key).filter((k) => k !== key);
       syncUrl(nextKeys);
     },
     [narrowings, syncUrl],

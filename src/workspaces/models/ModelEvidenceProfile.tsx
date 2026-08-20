@@ -18,22 +18,12 @@
 // Renders emitted backend shapes; computes no aggregates, intervals, or claims.
 // =============================================================================
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Cpu, Loader } from "lucide-react";
 import type { ProfileCoverageSummary } from "../../lib/model-profiles/coverage-summary";
-import type {
-  FamilyAggregate,
-} from "../../lib/model-profiles/family-aggregation";
-import type {
-  ClaimResult,
-  ClaimSentence,
-} from "../../lib/model-profiles/profile-claims";
+import type { FamilyAggregate } from "../../lib/model-profiles/family-aggregation";
+import type { ClaimResult, ClaimSentence } from "../../lib/model-profiles/profile-claims";
 import { VersionStatusChip, type VersionStatus } from "./VersionStatusChip";
 import { DeterministicNarrative } from "./DeterministicNarrative";
 import { ClaimMark } from "./ClaimMark";
@@ -134,11 +124,7 @@ const SECTIONS = [
 
 function SectionNav({ activeSection }: { activeSection: string }): ReactNode {
   return (
-    <nav
-      data-section-nav
-      aria-label="Profile sections"
-      className="hidden min-[1280px]:block"
-    >
+    <nav data-section-nav aria-label="Profile sections" className="hidden min-[1280px]:block">
       <ul className="space-y-1">
         {SECTIONS.map((s) => (
           <li key={s.id}>
@@ -146,9 +132,7 @@ function SectionNav({ activeSection }: { activeSection: string }): ReactNode {
               href={`#${s.id}`}
               data-nav-item={s.id}
               className={`block rounded-sm px-2 py-1 text-xs transition-colors duration-150 hover:text-text focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
-                activeSection === s.id
-                  ? "text-accent"
-                  : "text-text-muted"
+                activeSection === s.id ? "text-accent" : "text-text-muted"
               }`}
             >
               {s.label}
@@ -185,11 +169,7 @@ function HorizontalAnchorRow(): ReactNode {
 // Section 7: Protocols, rubrics, evaluators, limitations
 // =============================================================================
 
-function Section7({
-  data,
-}: {
-  data: ProfileData;
-}): ReactNode {
+function Section7({ data }: { data: ProfileData }): ReactNode {
   return (
     <section data-section="protocols" aria-labelledby="protocols-heading">
       <h2 id="protocols-heading" className="text-base font-semibold text-text">
@@ -200,9 +180,7 @@ function Section7({
         {/* Protocol/Rubric cohorts */}
         {data.protocolCohorts && data.protocolCohorts.length > 0 && (
           <div>
-            <h3 className="text-sm font-semibold text-text-secondary">
-              Protocol / Rubric cohorts
-            </h3>
+            <h3 className="text-sm font-semibold text-text-secondary">Protocol / Rubric cohorts</h3>
             <div className="mt-1 space-y-1">
               {data.protocolCohorts.map((c, i) => (
                 <div
@@ -221,23 +199,14 @@ function Section7({
         {/* Evaluator configurations */}
         {data.evaluatorConfigs && data.evaluatorConfigs.length > 0 && (
           <div>
-            <h3 className="text-sm font-semibold text-text-secondary">
-              Evaluator configurations
-            </h3>
+            <h3 className="text-sm font-semibold text-text-secondary">Evaluator configurations</h3>
             <div className="mt-1 space-y-1">
               {data.evaluatorConfigs.map((ec, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 text-xs text-text-secondary"
-                >
+                <div key={i} className="flex items-center gap-2 text-xs text-text-secondary">
                   <span>{ec.kind}</span>
-                  {ec.modelRef && (
-                    <span className="font-mono">{ec.modelRef}</span>
-                  )}
+                  {ec.modelRef && <span className="font-mono">{ec.modelRef}</span>}
                   {ec.instructionDigest && (
-                    <span className="font-mono text-text-muted">
-                      {ec.instructionDigest}
-                    </span>
+                    <span className="font-mono text-text-muted">{ec.instructionDigest}</span>
                   )}
                   <span>{ec.observationCount} observations</span>
                 </div>
@@ -249,9 +218,7 @@ function Section7({
         {/* Uncertainty receipt */}
         {data.uncertaintyReceipt && (
           <div>
-            <h3 className="text-sm font-semibold text-text-secondary">
-              Uncertainty receipt
-            </h3>
+            <h3 className="text-sm font-semibold text-text-secondary">Uncertainty receipt</h3>
             <div className="mt-1 space-y-0.5 font-mono text-xs text-text-muted">
               <div>
                 Unit kind: {data.uncertaintyReceipt.unitKind} · resolved:{" "}
@@ -260,8 +227,7 @@ function Section7({
               <div>{data.uncertaintyReceipt.fallbackAssumption}</div>
               <div>
                 resolver {data.uncertaintyReceipt.resolverVersion} · aggregation{" "}
-                {data.uncertaintyReceipt.aggregationVersion} · seed{" "}
-                {data.uncertaintyReceipt.seed}
+                {data.uncertaintyReceipt.aggregationVersion} · seed {data.uncertaintyReceipt.seed}
               </div>
               <div>
                 assignment digest {data.uncertaintyReceipt.assignmentDigest} ·{" "}
@@ -274,15 +240,10 @@ function Section7({
         {/* Limitations */}
         {data.limitations && data.limitations.length > 0 && (
           <div>
-            <h3 className="text-sm font-semibold text-text-secondary">
-              Limitations
-            </h3>
+            <h3 className="text-sm font-semibold text-text-secondary">Limitations</h3>
             <div className="mt-1 space-y-1">
               {data.limitations.map((lim, i) => (
-                <div
-                  key={`${lim.code}-${i}`}
-                  className="text-xs text-text-secondary"
-                >
+                <div key={`${lim.code}-${i}`} className="text-xs text-text-secondary">
                   {lim.code}: {lim.reason}
                 </div>
               ))}
@@ -338,9 +299,8 @@ export function ModelEvidenceProfile({
       <div data-profile-state="not-found" className="flex flex-col gap-4 py-8">
         <div className="text-text">
           <p className="text-sm">
-            No model configuration with id{" "}
-            <span className="font-mono">{modelConfigurationId}</span> exists in
-            this database.
+            No model configuration with id <span className="font-mono">{modelConfigurationId}</span>{" "}
+            exists in this database.
           </p>
         </div>
         <div className="flex gap-2">
@@ -360,8 +320,8 @@ export function ModelEvidenceProfile({
           </a>
         </div>
         <p className="honesty-note text-xs text-text-muted">
-          This lookup is device-local. The configuration may exist in another
-          database or under a different identity.
+          This lookup is device-local. The configuration may exist in another database or under a
+          different identity.
         </p>
       </div>
     );
@@ -463,17 +423,15 @@ export function ModelEvidenceProfile({
             {id.reasoningEffective && (
               <span> · reasoning: {id.reasoningEffective} (effective)</span>
             )}
-            {id.toolScaffoldSignature && (
-              <span> · tools: {id.toolScaffoldSignature}</span>
-            )}
+            {id.toolScaffoldSignature && <span> · tools: {id.toolScaffoldSignature}</span>}
           </div>
 
           {/* Observation window · cohort counts */}
           <div className="mt-1 font-mono text-xs text-text-secondary">
             {id.observedFrom && id.observedTo && (
               <span>
-                observed {new Date(id.observedFrom).toISOString().slice(0, 10)}{" "}
-                – {new Date(id.observedTo).toISOString().slice(0, 10)}
+                observed {new Date(id.observedFrom).toISOString().slice(0, 10)} –{" "}
+                {new Date(id.observedTo).toISOString().slice(0, 10)}
               </span>
             )}
             {id.rubricVersionCount !== undefined && (
@@ -489,27 +447,20 @@ export function ModelEvidenceProfile({
 
           {/* Receipt line */}
           <div className="mt-1 font-mono text-[11px] text-text-muted">
-            {id.queryFingerprint && (
-              <span>query {id.queryFingerprint.slice(0, 12)}… · </span>
-            )}
+            {id.queryFingerprint && <span>query {id.queryFingerprint.slice(0, 12)}… · </span>}
             {id.generatedAt && (
-              <span>
-                generated{" "}
-                {new Date(id.generatedAt).toISOString().slice(11, 19)} ·{" "}
-              </span>
+              <span>generated {new Date(id.generatedAt).toISOString().slice(11, 19)} · </span>
             )}
             aggregation v{id.aggregationRuleVersion ?? "?"} · uncertainty v
-            {id.uncertaintyRuleVersion ?? "?"} · eligibility v
-            {id.eligibilityRuleVersion ?? "?"}
+            {id.uncertaintyRuleVersion ?? "?"} · eligibility v{id.eligibilityRuleVersion ?? "?"}
           </div>
 
           {/* Rolling alias disclosure */}
           {id.versionStatus === "rolling_alias" && (
             <p className="honesty-note mt-2 text-xs text-text-muted">
-              Provider alias without a reported version. This profile covers
-              observations
-              {id.versionWindow ? ` from ${id.versionWindow}` : ""} only; a
-              later alias window is a separate configuration.
+              Provider alias without a reported version. This profile covers observations
+              {id.versionWindow ? ` from ${id.versionWindow}` : ""} only; a later alias window is a
+              separate configuration.
             </p>
           )}
 
@@ -525,16 +476,15 @@ export function ModelEvidenceProfile({
           {/* Exploratory-only honesty note */}
           {data.isExploratoryOnly && (
             <p className="honesty-note mt-2 rounded-md border border-edge bg-panel px-3 py-2 text-xs text-text-muted">
-              All evidence for this configuration is exploratory — coverage is
-              real, claims are not yet supported.
+              All evidence for this configuration is exploratory — coverage is real, claims are not
+              yet supported.
             </p>
           )}
 
           {/* Unknown version limitation */}
           {data.isUnknownVersion && (
             <p className="honesty-note mt-2 text-xs text-text-muted">
-              Provider version was not reported for observations from this
-              window.
+              Provider version was not reported for observations from this window.
             </p>
           )}
 
@@ -599,14 +549,8 @@ export function ModelEvidenceProfile({
              ================================================================ */}
         {data.families.length > 0 && (
           <div className="mt-6" id="families">
-            <section
-              data-section="families"
-              aria-labelledby="families-heading"
-            >
-              <h2
-                id="families-heading"
-                className="text-base font-semibold text-text"
-              >
+            <section data-section="families" aria-labelledby="families-heading">
+              <h2 id="families-heading" className="text-base font-semibold text-text">
                 Task Family evidence
               </h2>
               <div className="mt-3 space-y-3">
@@ -673,15 +617,11 @@ export function ModelEvidenceProfile({
         <div className="mt-6">
           <div className="boundary-rule my-4" />
           <section data-section="saved-rollups">
-            <h2 className="text-base font-semibold text-text">
-              Saved rollups
-            </h2>
-            <p className="mt-1 text-xs text-text-muted">
-              No saved rollups for this configuration.
-            </p>
+            <h2 className="text-base font-semibold text-text">Saved rollups</h2>
+            <p className="mt-1 text-xs text-text-muted">No saved rollups for this configuration.</p>
             <p className="honesty-note mt-1 text-xs text-text-muted">
-              A rollup is a pinned list of exact configurations viewed side by
-              side. It is not a model and never pools evidence.
+              A rollup is a pinned list of exact configurations viewed side by side. It is not a
+              model and never pools evidence.
             </p>
           </section>
         </div>
