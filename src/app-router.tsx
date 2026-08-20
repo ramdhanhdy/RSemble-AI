@@ -87,6 +87,11 @@ const ComparisonResultRoute = lazy(() =>
 const LabWorkspace = lazy(() =>
   import("./workspaces/lab/LabWorkspace").then((m) => ({ default: m.LabWorkspace })),
 );
+const ModelsWorkspace = lazy(() =>
+  import("./workspaces/models/ModelsWorkspace").then((m) => ({
+    default: m.ModelsWorkspace,
+  })),
+);
 
 function RouteFallback() {
   return (
@@ -203,6 +208,7 @@ export function AppRoutes({
         element={withSuspense(<TaskVersionRouteWrapper />)}
       />
       <Route path="/lab/*" element={withSuspense(<LabWorkspace />)} />
+      <Route path="/models/*" element={withSuspense(<ModelsWorkspace />)} />
 
       {/* Legacy Experiment redirect — preserves query parameters and state (spec §5.1, plan Task 9). */}
       <Route path="/experiments/:experimentId" element={<LegacyExperimentRedirect />} />
