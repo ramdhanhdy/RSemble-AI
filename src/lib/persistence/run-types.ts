@@ -881,32 +881,27 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
   if (v.judge.report !== null && !isJudgeReport(v.judge.report)) return null;
   if (v.judge.consensus !== null && !isConsensusBreakdown(v.judge.consensus)) return null;
 
-  const repaired = structuredClone(v) as Record<string, any>;
-  const candidates = repaired.candidates as Array<Record<string, any>>;
+  const repaired = structuredClone(v) as unknown as RunRecordV2;
+  const candidates = repaired.candidates;
   const invalidCandidateIds = new Set<string>();
   for (const candidate of candidates) {
-    if (!isRecord(candidate) || !Array.isArray(candidate.attempts)) return null;
     if (candidate.acceptedAttemptId === null) continue;
     const accepted = candidate.attempts.find(
       (attempt) =>
-        isRecord(attempt) &&
         attempt.attemptId === candidate.acceptedAttemptId &&
         attempt.status === "completed" &&
         attempt.output !== null &&
         attempt.output !== undefined,
     );
     if (!accepted) {
-      invalidCandidateIds.add(String(candidate.candidateId));
+      invalidCandidateIds.add(candidate.candidateId);
       candidate.acceptedAttemptId = null;
     }
   }
 
   const acceptedMap: Record<string, string> = {};
   for (const candidate of candidates) {
-    if (
-      typeof candidate.candidateId === "string" &&
-      typeof candidate.acceptedAttemptId === "string"
-    ) {
+    if (candidate.acceptedAttemptId !== null) {
       acceptedMap[candidate.candidateId] = candidate.acceptedAttemptId;
     }
   }
@@ -919,11 +914,10 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
     );
   };
 
-  const judge = repaired.judge as Record<string, any>;
+  const judge = repaired.judge;
   if (judge.acceptedAttemptId !== null) {
     const accepted = judge.attempts.find(
-      (attempt: unknown) =>
-        isRecord(attempt) &&
+      (attempt) =>
         attempt.attemptId === judge.acceptedAttemptId &&
         attempt.status === "completed" &&
         attempt.report !== null &&
@@ -936,11 +930,10 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
     }
   }
 
-  const fusion = repaired.fusion as Record<string, any>;
+  const fusion = repaired.fusion;
   if (fusion.acceptedAttemptId !== null) {
     const accepted = fusion.attempts.find(
-      (attempt: unknown) =>
-        isRecord(attempt) &&
+      (attempt) =>
         attempt.attemptId === fusion.acceptedAttemptId &&
         attempt.status === "completed" &&
         attempt.result !== null &&
@@ -953,10 +946,10 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
   if (Array.isArray(repaired.winnerKeys)) {
     const invalidModels = new Set(
       candidates
-        .filter((candidate) => invalidCandidateIds.has(String(candidate.candidateId)))
+        .filter((candidate) => invalidCandidateIds.has(candidate.candidateId))
         .map((candidate) => candidate.modelKey),
     );
-    repaired.winnerKeys = repaired.winnerKeys.filter((key: unknown) => !invalidModels.has(key));
+    repaired.winnerKeys = repaired.winnerKeys.filter((key) => !invalidModels.has(key));
   }
 
   return isRunRecordV2(repaired) ? repaired : null;
