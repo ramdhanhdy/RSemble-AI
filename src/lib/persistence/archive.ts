@@ -203,6 +203,12 @@ import {
   getFusionToResearchLabReceipt,
 } from "../migrations/fusion-to-research-lab";
 import { isZeroCorpusBootstrapReceipt } from "../migrations/fusion-to-research-lab-receipt";
+import {
+  isModelRollupRecord,
+  isModelRollupVersion,
+  type ModelRollupRecord,
+  type ModelRollupVersion,
+} from "../model-rollups/model-rollup-types";
 // --- Archive shape -------------------------------------------------------------
 
 export interface WorkbenchArchiveV1 {
@@ -2333,6 +2339,26 @@ export async function exportWorkbenchArchiveV3(
           guardViolations,
         );
     });
+    const modelRollupRecords: ModelRollupRecord[] = [];
+    if (db.modelRollups !== undefined) {
+      await db.modelRollups.orderBy("id").each((row) => {
+        if (isModelRollupRecord(row.record)) modelRollupRecords.push(row.record);
+        else recordGuardFailure("modelRollups.records", row.id, "modelRollups", guardViolations);
+      });
+    }
+    const modelRollupVersions: ModelRollupVersion[] = [];
+    if (db.modelRollupVersions !== undefined) {
+      await db.modelRollupVersions.orderBy("rollupId").each((row) => {
+        if (isModelRollupVersion(row.version_)) modelRollupVersions.push(row.version_);
+        else
+          recordGuardFailure(
+            "modelRollups.versions",
+            `${row.rollupId}@${row.version}`,
+            "modelRollupVersions",
+            guardViolations,
+          );
+      });
+    }
     completeStage("evidence");
 
     // --- comparisons ---
@@ -2499,6 +2525,8 @@ export async function exportWorkbenchArchiveV3(
       studyObservations: observations.length,
       policyPlaybooks: playbooks.length,
       fusionToResearchLabReceipts: 1,
+      modelRollups: modelRollupRecords.length,
+      modelRollupVersions: modelRollupVersions.length,
     };
 
     const archive: WorkbenchArchiveV3 = {
@@ -2562,6 +2590,12 @@ export async function exportWorkbenchArchiveV3(
         observations: v2SortById(observations),
         playbooks: v2SortById(playbooks),
         cutoverReceipt,
+      },
+      modelRollups: {
+        records: v2SortById(modelRollupRecords),
+        versions: [...modelRollupVersions].sort((a, b) =>
+          a.rollupId === b.rollupId ? a.version - b.version : a.rollupId.localeCompare(b.rollupId),
+        ),
       },
     };
 
@@ -3555,6 +3589,8 @@ async function isPristineCanonicalWorkbench(db: RSembleEvaluationDB): Promise<bo
     db.studyAttempts.count(),
     db.studyObservations.count(),
     db.policyPlaybooks.count(),
+    db.modelRollups?.count() ?? Promise.resolve(0),
+    db.modelRollupVersions?.count() ?? Promise.resolve(0),
   ]);
   return counts.every((count) => count === 0);
 }
@@ -4102,6 +4138,48 @@ async function previewV3(
       (k) =>
         db.verifierOutcomes.get(k).then((r) => (r === undefined ? undefined : fromVerifierRow(r))),
       (v) => v,
+      buckets,
+    );
+  }
+
+  // --- Model Rollup definitions (absent on supported earlier v3 archives) ---
+  const rollups = archive.modelRollups ?? { records: [], versions: [] };
+  {
+    const part = partitionGuarded(
+      "modelRollups.records",
+      rollups.records,
+      (record) => record.id,
+      (value) => isModelRollupRecord(value),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "modelRollups.records",
+      part.guarded,
+      (record) => record.id,
+      (key) => db.modelRollups.get(key).then((row) => row?.record),
+      (value) => value,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "modelRollups.versions",
+      rollups.versions,
+      (version) => versionKey(version.rollupId, version.version),
+      (value) => isModelRollupVersion(value),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "modelRollups.versions",
+      part.guarded,
+      (version) => versionKey(version.rollupId, version.version),
+      (key) => {
+        const [id, version] = splitVersionKey(key);
+        return db.modelRollupVersions.get([id, version]).then((row) => row?.version_);
+      },
+      (value) => value,
       buckets,
     );
   }
@@ -5576,6 +5654,8 @@ export async function commitPreviewWorkbenchArchiveV3(
     db.evidenceDecisions,
     db.evidenceIndexJobs,
     db.verifierOutcomes,
+    db.modelRollups,
+    db.modelRollupVersions,
     db.comparisonResults,
     db.labRecipeRecords,
     db.labRecipeVersions,
@@ -5670,6 +5750,14 @@ export async function commitPreviewWorkbenchArchiveV3(
           case "evidence.verifierOutcomes":
             existing = await db.verifierOutcomes.get(entity.key);
             break;
+          case "modelRollups.records":
+            existing = await db.modelRollups.get(entity.key);
+            break;
+          case "modelRollups.versions": {
+            const [id, ver] = splitVersionKey(entity.key);
+            existing = await db.modelRollupVersions.get([id, ver]);
+            break;
+          }
           case "comparisons.indexes":
             existing = await db.comparisonResults.get(entity.key);
             break;
@@ -5965,6 +6053,39 @@ export async function commitPreviewWorkbenchArchiveV3(
         const key = verifierOutcomeKey(vo);
         if (isCreated("evidence.verifierOutcomes", key)) {
           await db.verifierOutcomes.put(toVerifierRow(vo));
+          created.push(key);
+        } else reused.push(key);
+      }
+
+      // --- Model Rollup definitions ---
+      const rollups = archive.modelRollups ?? { records: [], versions: [] };
+      for (const record of rollups.records) {
+        if (!isModelRollupRecord(record)) continue;
+        if (isCreated("modelRollups.records", record.id)) {
+          await db.modelRollups.put({
+            id: record.id,
+            record,
+            name: record.name,
+            latestVersion: record.latestVersion,
+            revision: record.revision,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt,
+            archivedAt: record.archivedAt,
+          });
+          created.push(record.id);
+        } else reused.push(record.id);
+      }
+      for (const version of rollups.versions) {
+        if (!isModelRollupVersion(version)) continue;
+        const key = versionKey(version.rollupId, version.version);
+        if (isCreated("modelRollups.versions", key)) {
+          await db.modelRollupVersions.put({
+            rollupId: version.rollupId,
+            version: version.version,
+            version_: version,
+            memberManifestDigest: version.memberManifestDigest,
+            createdAt: version.createdAt,
+          });
           created.push(key);
         } else reused.push(key);
       }

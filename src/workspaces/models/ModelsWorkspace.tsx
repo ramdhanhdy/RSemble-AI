@@ -21,9 +21,15 @@ import { Route, Routes, useSearchParams } from "react-router-dom";
 import { ModelEvidenceProfile } from "./ModelEvidenceProfile";
 import { ObservationDrilldown } from "./ObservationDrilldown";
 import { Cpu } from "lucide-react";
-import { useEvidenceRepository, useTaskRepository } from "../../lib/persistence/repository-context";
+import {
+  useEvidenceRepository,
+  useModelRollupRepository,
+  useTaskRepository,
+} from "../../lib/persistence/repository-context";
 import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
+import type { ModelRollupRepository } from "../../lib/persistence/model-rollup-repository";
+import { createModelRollupVersion } from "../../lib/model-rollups/model-rollup-types";
 import {
   queryModelConfigurationCatalog,
   type ModelConfigurationCatalogEntry,
@@ -42,6 +48,8 @@ import {
   pageCountFor,
   type ModelListRowData,
 } from "./ModelList";
+import { ModelRollupRoute } from "./ModelRollupRoute";
+import type { SavedRollupListItem } from "./ModelList";
 import {
   DEFAULT_MODEL_LIST_URL_STATE,
   countAppliedModelFilters,
@@ -292,16 +300,21 @@ export interface ModelsWorkspaceProps {
   evidenceRepo?: EvidenceRepository | null;
   /** Test seam: inject a task repository without the React context. */
   taskRepo?: TaskRepository | null;
+  /** Test seam: inject the Model Rollup definition repository. */
+  rollupRepo?: ModelRollupRepository | null;
 }
 
 export function ModelsWorkspace({
   evidenceRepo: evidenceRepoProp,
   taskRepo: taskRepoProp,
+  rollupRepo: rollupRepoProp,
 }: ModelsWorkspaceProps = {}): ReactNode {
   const ctxEvidenceRepo = useEvidenceRepository();
   const ctxTaskRepo = useTaskRepository();
+  const ctxRollupRepo = useModelRollupRepository();
   const evidenceRepo = evidenceRepoProp !== undefined ? evidenceRepoProp : ctxEvidenceRepo;
   const taskRepo = taskRepoProp !== undefined ? taskRepoProp : ctxTaskRepo;
+  const rollupRepo = rollupRepoProp !== undefined ? rollupRepoProp : ctxRollupRepo;
 
   const [searchParams, setSearchParams] = useSearchParams();
   const state = useMemo(() => decodeModelListUrlState(searchParams), [searchParams]);
@@ -312,6 +325,29 @@ export function ModelsWorkspace({
     data: null,
   });
   const [reloadKey, setReloadKey] = useState(0);
+  const [rollupItems, setRollupItems] = useState<SavedRollupListItem[]>([]);
+  const [rollupReloadKey, setRollupReloadKey] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    if (!rollupRepo) {
+      setRollupItems([]);
+      return;
+    }
+    void rollupRepo.listModelRollups({ archiveState: "all", limit: 10_000 }).then(async (records) => {
+      const items = (
+        await Promise.all(
+          records.map(async (record) => {
+            const version = await rollupRepo.getModelRollupVersion(record.id, record.latestVersion);
+            return version ? { record, version } : null;
+          }),
+        )
+      ).filter((item): item is SavedRollupListItem => item !== null);
+      if (!cancelled) setRollupItems(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rollupRepo, rollupReloadKey]);
 
   // Reload only when the catalog-level filters or repo/retry change. The
   // post-filters, sort, and page are pure render-time derivations.
@@ -383,6 +419,33 @@ export function ModelsWorkspace({
     onRetry: handleRetry,
   });
 
+  async function createRollup(name: string, memberConfigurationIds: string[]) {
+    if (!rollupRepo) return;
+    const now = Date.now();
+    const id = `rollup:${crypto.randomUUID()}`;
+    const version = createModelRollupVersion({
+      rollupId: id,
+      version: 1,
+      name,
+      memberConfigurationIds,
+      aggregationPolicy: "stratified_only",
+      createdAt: now,
+    });
+    await rollupRepo.createModelRollup(
+      {
+        id,
+        name,
+        latestVersion: 1,
+        revision: 0,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+      },
+      version,
+    );
+    setRollupReloadKey((value) => value + 1);
+  }
+
   const listElement = (
     <div className="max-w-[960px]">
       <ModelsHeader count={load.data?.rows.length ?? 0} />
@@ -401,7 +464,17 @@ export function ModelsWorkspace({
           }
         />
       </div>
-      <div className="mt-4">{listContent}</div>
+      <div className="mt-4">
+        {listContent}
+        <SavedRollupsSection
+          items={rollupItems}
+          memberOptions={(load.data?.rows ?? []).map((row) => ({
+            id: row.entry.modelConfigurationId,
+            label: `${row.entry.requestedModel} · ${row.entry.resolvedVersion ?? "version unknown"}`,
+          }))}
+          onCreate={rollupRepo ? createRollup : undefined}
+        />
+      </div>
     </div>
   );
 
@@ -410,6 +483,14 @@ export function ModelsWorkspace({
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto scroll-thin px-3 py-4 lg:px-6">
         <Routes>
           <Route index element={listElement} />
+          <Route
+            path="rollups/:rollupId/versions/:version"
+            element={
+              <div className="max-w-[1200px]">
+                <ModelRollupRoute rollupRepo={rollupRepo} evidenceRepo={evidenceRepo} />
+              </div>
+            }
+          />
           <Route
             path=":modelConfigurationId/evidence/:observationId"
             element={
@@ -470,15 +551,7 @@ function renderListContent(args: RenderArgs): ReactNode {
     );
   }
   if (totalItems === 0) {
-    if (appliedFilters > 0) {
-      return (
-        <>
-          <ZeroMatchState onClear={onClearFilters} />
-          <SavedRollupsSection />
-        </>
-      );
-    }
-    return <FirstUseState />;
+    return appliedFilters > 0 ? <ZeroMatchState onClear={onClearFilters} /> : <FirstUseState />;
   }
   return (
     <>
@@ -494,7 +567,7 @@ function renderListContent(args: RenderArgs): ReactNode {
         totalItems={totalItems}
         onPageChange={onPageChange}
       />
-      <SavedRollupsSection />
+
     </>
   );
 }

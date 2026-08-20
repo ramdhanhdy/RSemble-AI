@@ -16,6 +16,7 @@ interface RollupBannerProps {
   memberCount: number;
   pinnedDate: string;
   manifestDigest: string;
+  archived?: boolean;
 }
 
 export function RollupBanner({
@@ -24,6 +25,7 @@ export function RollupBanner({
   memberCount,
   pinnedDate,
   manifestDigest,
+  archived = false,
 }: RollupBannerProps): ReactNode {
   return (
     <section data-rollup-banner className="w-full rounded-sm border border-edge bg-panel p-4">
@@ -45,6 +47,11 @@ export function RollupBanner({
       <p className="mt-1 text-xs text-text-secondary">
         {COPY.rollup.membersLine(memberCount, pinnedDate, manifestDigest)}
       </p>
+      {archived ? (
+        <p data-rollup-archived className="honesty-note mt-2 text-xs text-warning">
+          Archived rollup — this pinned version remains readable and its member links stay intact.
+        </p>
+      ) : null}
       <p className="honesty-note mt-2 text-xs text-text-muted">{COPY.rollup.immutability}</p>
     </section>
   );

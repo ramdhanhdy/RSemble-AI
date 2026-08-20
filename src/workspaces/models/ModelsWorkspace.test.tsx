@@ -196,13 +196,13 @@ describe("ModelsWorkspace — D1 sort (canonical default, latest toggle)", () =>
 });
 
 describe("ModelsWorkspace — four list states (§6.5)", () => {
-  it("first-use: an empty repo renders the first-use block and no Saved rollups", async () => {
+  it("first-use: an empty repo renders the first-use block and Saved rollup disclosure", async () => {
     const repo = new InMemoryEvidenceRepository();
     const taskRepo = await seedFamilies();
     const h = renderModels("/models", { evidenceRepo: repo, taskRepo });
     await settle();
     expect(h.$("[data-list-state='first-use']")).not.toBeNull();
-    expect(h.$("[data-saved-rollups]")).toBeNull();
+    expect(h.$("[data-saved-rollups]")).not.toBeNull();
     act(() => h.root.unmount());
   });
 

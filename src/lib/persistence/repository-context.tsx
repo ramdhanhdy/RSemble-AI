@@ -36,6 +36,10 @@ import { createTaskSetRepository, type TaskSetRepository } from "./task-set-repo
 import { createEvidenceRepository, type EvidenceRepository } from "./evidence-repository";
 import { createStudyRepository, type StudyRepository } from "./study-repository";
 import { createLabAssetRepository, type LabAssetRepository } from "./lab-asset-repository";
+import {
+  createModelRollupRepository,
+  type ModelRollupRepository,
+} from "./model-rollup-repository";
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
@@ -51,6 +55,8 @@ export interface RepositoryContextValue {
   studyRepo?: StudyRepository | null;
   /** Reusable Lab asset repository (schema v12/v13, spec §6). */
   labAssetRepo?: LabAssetRepository | null;
+  /** Versioned Model Rollup definition authority (schema v14). */
+  modelRollupRepo?: ModelRollupRepository | null;
   /** Raw Dexie handle for infrastructure that composes repositories (execution
    *  lease, experiment unit of work). Null while storage is unavailable. */
   db: RSembleEvaluationDB | null;
@@ -70,6 +76,7 @@ export const RepositoryContext = createContext<RepositoryContextValue>({
   taskSetRepo: null,
   db: null,
   evidenceRepo: null,
+  modelRollupRepo: null,
   storageState: "unavailable",
   taskMigrationError: null,
   retry: () => undefined,
@@ -105,6 +112,10 @@ export function useStudyRepository(): StudyRepository | null {
 
 export function useLabAssetRepository(): LabAssetRepository | null {
   return useContext(RepositoryContext).labAssetRepo ?? null;
+}
+
+export function useModelRollupRepository(): ModelRollupRepository | null {
+  return useContext(RepositoryContext).modelRollupRepo ?? null;
 }
 
 /** Read the bounded canonical Task migration failure, if Task catalog storage
@@ -204,6 +215,10 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     () => (repositoriesReady && handle ? createEvidenceRepository(handle.db) : null),
     [repositoriesReady, handle],
   );
+  const modelRollupRepo = useMemo(
+    () => (repositoriesReady && handle ? createModelRollupRepository(handle.db) : null),
+    [repositoriesReady, handle],
+  );
 
   const value = useMemo<RepositoryContextValue>(
     () => ({
@@ -215,6 +230,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       evidenceRepo,
       studyRepo,
       labAssetRepo,
+      modelRollupRepo,
       db: handle?.db ?? null,
       storageState,
       taskMigrationError,
@@ -228,6 +244,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       evidenceRepo,
       studyRepo,
       labAssetRepo,
+      modelRollupRepo,
       handle,
       storageState,
       taskMigrationError,

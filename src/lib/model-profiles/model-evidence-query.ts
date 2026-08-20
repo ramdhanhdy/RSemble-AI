@@ -49,6 +49,12 @@ import {
 } from "../evidence/evidence-validation";
 import { isNonBlankString, isRecord } from "../persistence/run-types";
 import type { VersionRef } from "../tasks/task-types";
+import {
+  isModelRollupVersion,
+  modelRollupVersionToResolvedManifest,
+  type ModelRollupVersion,
+  type ResolvedModelRollupManifest,
+} from "../model-rollups/model-rollup-types";
 
 // --- Rule version pins ---------------------------------------------------------
 
@@ -153,14 +159,7 @@ export interface ModelEvidenceQuery {
  * serializer resolves a rollup respondent to this shape via an injected
  * {@link RollupVersionResolver}; this module does not store or create rollups.
  */
-export interface ResolvedRollupManifest {
-  rollupId: string;
-  version: number;
-  aggregationPolicy: "stratified_only";
-  name: string;
-  memberConfigurationIds: string[];
-  createdAt: number;
-}
+export type ResolvedRollupManifest = ResolvedModelRollupManifest;
 
 /**
  * Resolver the serializer consumes to turn a `(rollupId, version)` pin into an
@@ -173,6 +172,31 @@ export type RollupVersionResolver = (
   rollupId: string,
   version: number,
 ) => ResolvedRollupManifest | null;
+
+/** Build the synchronous query resolver from repository-loaded immutable
+ * versions. Callers load once, then serialize any pinned respondent without
+ * making derived query products persistent authority. */
+export function createModelRollupVersionResolver(
+  versions: readonly ModelRollupVersion[],
+): RollupVersionResolver {
+  const byIdentity = new Map<string, ResolvedRollupManifest>();
+  for (const version of versions) {
+    if (!isModelRollupVersion(version)) {
+      throw new Error("Cannot build a RollupVersionResolver from an invalid version");
+    }
+    const key = `${version.rollupId}\u0000${version.version}`;
+    if (byIdentity.has(key)) {
+      throw new Error(`Duplicate immutable Model Rollup version ${version.rollupId}@${version.version}`);
+    }
+    byIdentity.set(key, modelRollupVersionToResolvedManifest(version));
+  }
+  return (rollupId, version) => {
+    const manifest = byIdentity.get(`${rollupId}\u0000${version}`);
+    return manifest
+      ? { ...manifest, memberConfigurationIds: [...manifest.memberConfigurationIds] }
+      : null;
+  };
+}
 
 /**
  * Resolved respondent carried in the query receipt. For an exact configuration

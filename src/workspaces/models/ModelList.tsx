@@ -18,7 +18,7 @@
 // shows its empty state + purpose honesty note and no create affordance.
 // =============================================================================
 
-import type { ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { AlertCircle, Boxes, Layers } from "lucide-react";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
@@ -29,6 +29,10 @@ import { VersionStatusChip, type VersionStatus } from "./VersionStatusChip";
 import type { HonestQuantity } from "../../lib/model-profiles/coverage-summary";
 import type { ModelConfigurationCatalogEntry } from "../../lib/model-profiles/model-configuration-query";
 import type { EvidenceClass, IdentityCompleteness } from "../../lib/evidence/evidence-types";
+import type {
+  ModelRollupRecord,
+  ModelRollupVersion,
+} from "../../lib/model-rollups/model-rollup-types";
 
 const ROW_SURFACE_CLASS =
   "flex min-h-[44px] min-w-0 flex-1 flex-col gap-1 rounded-md border border-edge bg-panel px-3 py-2 text-sm transition-colors duration-150 hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -245,23 +249,85 @@ export function ModelList({
   );
 }
 
-/** The Saved rollups section (§6.4). Physically separate: a boundary-rule
- *  divider, then an empty state with a purpose honesty note. No create
- *  affordance until the rollup repository lands (Task 11). */
-export function SavedRollupsSection(): ReactNode {
+export interface SavedRollupListItem {
+  record: ModelRollupRecord;
+  version: ModelRollupVersion;
+}
+
+export interface SavedRollupsSectionProps {
+  items?: SavedRollupListItem[];
+  memberOptions?: Array<{ id: string; label: string }>;
+  onCreate?: (name: string, memberConfigurationIds: string[]) => Promise<void>;
+}
+
+/** Canonical Saved rollups list/create entry. Archived definitions remain
+ * disclosed behind an explicit toggle; every row links to its pinned latest
+ * immutable version. */
+export function SavedRollupsSection({
+  items = [],
+  memberOptions = [],
+  onCreate,
+}: SavedRollupsSectionProps = {}): ReactNode {
+  const [showArchived, setShowArchived] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [members, setMembers] = useState<string[]>([]);
+  const archivedCount = items.filter((item) => item.record.archivedAt !== null).length;
+  const visible = items.filter((item) => item.record.archivedAt === null || showArchived);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!onCreate || name.trim().length === 0 || members.length === 0) return;
+    await onCreate(name.trim(), members);
+    setName("");
+    setMembers([]);
+    setCreating(false);
+  }
+
   return (
     <section data-saved-rollups aria-label="Saved rollups" className="mt-6 flex flex-col gap-2">
       <div className="boundary-rule flex items-center gap-2 border-t border-edge pt-3 text-xs font-mono uppercase tracking-[0.14em] text-text-muted">
         <Layers size={12} aria-hidden="true" />
         SAVED ROLLUPS — STRATIFIED ONLY
       </div>
-      <div className="rounded-md border border-edge bg-panel px-3 py-4 text-sm text-text-muted">
-        <p>No saved rollups.</p>
-        <p className="honesty-note mt-1 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="honesty-note text-xs text-text-muted">
           A rollup is a pinned list of exact configurations viewed side by side. It is not a model
           and never pools evidence.
         </p>
+        {onCreate && memberOptions.length > 0 ? (
+          <button type="button" className="pressable min-h-[44px] rounded-md border border-edge px-3 text-sm text-text" onClick={() => setCreating((open) => !open)}>
+            Create rollup
+          </button>
+        ) : null}
       </div>
+      {creating ? (
+        <form data-rollup-create className="rounded-md border border-edge bg-panel p-3" onSubmit={(event) => void submit(event)}>
+          <label className="text-sm text-text">Name<input className="mt-1 min-h-[44px] w-full rounded-md border border-edge bg-card px-3 text-text" value={name} onChange={(event) => setName(event.target.value)} required /></label>
+          <fieldset className="mt-3"><legend className="text-sm text-text">Exact configurations</legend>{memberOptions.map((option) => <label key={option.id} className="flex min-h-[44px] items-center gap-2 text-sm text-text-secondary"><input type="checkbox" checked={members.includes(option.id)} onChange={(event) => setMembers((current) => event.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id))} />{option.label}</label>)}</fieldset>
+          <button type="submit" className="pressable mt-3 min-h-[44px] rounded-md bg-accent px-4 text-sm font-medium text-bg">Save pinned rollup</button>
+        </form>
+      ) : null}
+      {visible.length === 0 ? (
+        <div className="rounded-md border border-edge bg-panel px-3 py-4 text-sm text-text-muted">
+          <p>No saved rollups.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {visible.map(({ record, version }) => (
+            <Link key={record.id} data-rollup-row data-archived={record.archivedAt !== null ? "" : undefined} className={ROW_SURFACE_CLASS} to={`/models/rollups/${encodeURIComponent(record.id)}/versions/${version.version}`}>
+              <span className="flex items-center gap-2"><KindEyebrow kind="rollup" /><strong className="text-text">{version.name}</strong><span className="font-mono text-xs text-text-secondary">v{version.version}</span></span>
+              <span className="text-xs text-text-secondary">{version.memberConfigurationIds.length} members · stratified only · created {formatModelWindow(version.createdAt, version.createdAt)}</span>
+              {record.archivedAt !== null ? <span className="text-xs text-warning">Archived · read-only</span> : null}
+            </Link>
+          ))}
+        </div>
+      )}
+      {archivedCount > 0 ? (
+        <button type="button" className="pressable min-h-[44px] self-start rounded-md px-2 text-sm text-accent" onClick={() => setShowArchived((shown) => !shown)}>
+          {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
+        </button>
+      ) : null}
     </section>
   );
 }

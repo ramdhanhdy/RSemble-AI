@@ -476,6 +476,8 @@ export function buildValidArchiveV3Fixture(): WorkbenchArchiveV3 {
     studyObservations: lab.observations.length,
     policyPlaybooks: lab.playbooks.length,
     fusionToResearchLabReceipts: 1,
+    modelRollups: 0,
+    modelRollupVersions: 0,
   };
 
   const archive: WorkbenchArchiveV3 = {
@@ -526,6 +528,7 @@ export function buildValidArchiveV3Fixture(): WorkbenchArchiveV3 {
       limitations: [compLim],
     },
     lab,
+    modelRollups: { records: [], versions: [] },
   };
 
   archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);

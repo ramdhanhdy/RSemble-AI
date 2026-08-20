@@ -25,17 +25,17 @@ function snapshot(id: string): ModelConfigurationSnapshot {
     id,
     providerId: "openrouter",
     requestedModel: id === MEMBER_A ? "vendor/a" : "vendor/b",
+    resolvedModel: id === MEMBER_A ? "vendor/a" : "vendor/b",
     resolvedVersion: id === MEMBER_A ? "2026-08-a" : "2026-08-b",
-    reasoningSignature: null,
+    reasoningRequested: null,
+    reasoningEffective: null,
     toolScaffoldSignature: null,
-    contextWindow: null,
-    identityCompleteness: "exact",
+    runtimeSettings: {},
     observedFrom: NOW,
     observedTo: NOW,
-    sourceModelKeys: [id],
+    identityCompleteness: "exact",
   };
 }
-
 function record(overrides: Partial<ModelRollupRecord> = {}): ModelRollupRecord {
   return {
     id: "rollup:alpha",

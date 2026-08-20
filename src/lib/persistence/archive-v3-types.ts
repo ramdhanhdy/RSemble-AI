@@ -80,6 +80,12 @@ import {
   isFusionToResearchLabReceipt,
   type FusionToResearchLabReceipt,
 } from "../migrations/fusion-to-research-lab-receipt";
+import {
+  isModelRollupRecord,
+  isModelRollupVersion,
+  type ModelRollupRecord,
+  type ModelRollupVersion,
+} from "../model-rollups/model-rollup-types";
 
 // --- Versions ----------------------------------------------------------------
 
@@ -148,6 +154,9 @@ export interface ArchiveV3EntityCounts {
   policyPlaybooks: number;
   /** Canonical v13 Fusion→Research Lab cutover/discard receipt (exactly one). */
   fusionToResearchLabReceipts: number;
+  // Model Rollup definitions (Child 07)
+  modelRollups?: number;
+  modelRollupVersions?: number;
 }
 
 export interface ArchiveV3Manifest {
@@ -237,6 +246,11 @@ export interface ArchiveV3LabPayload {
   cutoverReceipt: FusionToResearchLabReceipt;
 }
 
+export interface ArchiveV3ModelRollupPayload {
+  records: ModelRollupRecord[];
+  versions: ModelRollupVersion[];
+}
+
 /** The complete, task-first archive v3 envelope. Survives all Child 01–06
  *  canonical states without legacy Fusion collections (REV-1 / REV-2). */
 export interface WorkbenchArchiveV3 {
@@ -250,6 +264,8 @@ export interface WorkbenchArchiveV3 {
   evidence: ArchiveV3EvidencePayload;
   comparisons: ArchiveV3ComparisonPayload;
   lab: ArchiveV3LabPayload;
+  /** Absent only on supported pre-Child-07 v3 archives; canonical exports include it. */
+  modelRollups?: ArchiveV3ModelRollupPayload;
 }
 
 /** Top-level collection keys, in deterministic declaration order. */
@@ -264,6 +280,7 @@ export const ARCHIVE_V3_COLLECTION_KEYS = [
   "evidence",
   "comparisons",
   "lab",
+  "modelRollups",
 ] as const;
 
 // --- Legacy Fusion Receipt (REV-3) -------------------------------------------
@@ -360,7 +377,7 @@ function isFiniteNumber(v: unknown): v is number {
 // --- Payload digest ----------------------------------------------------------
 
 function payloadForDigest(archive: WorkbenchArchiveV3): Record<string, unknown> {
-  return {
+  const payload: Record<string, unknown> = {
     runs: archive.runs,
     rubrics: archive.rubrics,
     suites: archive.suites,
@@ -371,6 +388,8 @@ function payloadForDigest(archive: WorkbenchArchiveV3): Record<string, unknown> 
     comparisons: archive.comparisons,
     lab: archive.lab,
   };
+  if (archive.modelRollups !== undefined) payload.modelRollups = archive.modelRollups;
+  return payload;
 }
 
 export function computeArchiveV3PayloadDigest(archive: WorkbenchArchiveV3): string {
@@ -501,6 +520,13 @@ function scanProhibitedContent(archive: WorkbenchArchiveV3): string | null {
   for (const pb of archive.lab.playbooks)
     if (hasProhibitedContent(pb)) return `lab.playbooks[${pb.id}]`;
   if (hasProhibitedContent(archive.lab.cutoverReceipt)) return "lab.cutoverReceipt";
+  if (archive.modelRollups !== undefined) {
+    for (const record of archive.modelRollups.records)
+      if (hasProhibitedContent(record)) return `modelRollups.records[${record.id}]`;
+    for (const version of archive.modelRollups.versions)
+      if (hasProhibitedContent(version))
+        return `modelRollups.versions[${version.rollupId}@${version.version}]`;
+  }
 
   return null;
 }
@@ -658,6 +684,7 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
   const evidence = value.evidence;
   const comparisons = value.comparisons;
   const lab = value.lab;
+  const modelRollups = value.modelRollups;
 
   if (!isRecord(runs) || !Array.isArray(runs.summaries) || !Array.isArray(runs.details)) {
     errors.push({ field: "runs", message: "runs.summaries and runs.details must be arrays." });
@@ -744,6 +771,18 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
     });
   }
 
+  if (
+    modelRollups !== undefined &&
+    (!isRecord(modelRollups) ||
+      !Array.isArray(modelRollups.records) ||
+      !Array.isArray(modelRollups.versions))
+  ) {
+    errors.push({
+      field: "modelRollups",
+      message: "modelRollups.records and modelRollups.versions must be arrays when present.",
+    });
+  }
+
   if (errors.length > 0) return fail(errors);
 
   const archive = value as unknown as WorkbenchArchiveV3;
@@ -802,6 +841,10 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
   checkCount("studyObservations", archive.lab.observations.length);
   checkCount("policyPlaybooks", archive.lab.playbooks.length);
   checkCount("fusionToResearchLabReceipts", 1);
+  if (archive.modelRollups !== undefined) {
+    checkCount("modelRollups", archive.modelRollups.records.length);
+    checkCount("modelRollupVersions", archive.modelRollups.versions.length);
+  }
 
   // Payload digest integrity check
   const recomputedDigest = computeArchiveV3PayloadDigest(archive);
@@ -993,6 +1036,73 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
 
   checkOrdering("lab.playbooks", archive.lab.playbooks, byId, errors);
   checkDuplicates("lab.playbooks", archive.lab.playbooks, byId, errors);
+
+  const rollups = archive.modelRollups ?? { records: [], versions: [] };
+  checkOrdering("modelRollups.records", rollups.records, byId, errors);
+  checkDuplicates("modelRollups.records", rollups.records, byId, errors);
+  checkOrdering(
+    "modelRollups.versions",
+    rollups.versions,
+    (version) => `${version.rollupId}\u0000${version.version.toString().padStart(10, "0")}`,
+    errors,
+  );
+  checkDuplicates(
+    "modelRollups.versions",
+    rollups.versions,
+    (version) => `${version.rollupId}\u0000${version.version.toString().padStart(10, "0")}`,
+    errors,
+  );
+
+  const modelConfigurationIds = new Set(
+    archive.evidence.modelConfigurations.map((configuration) => configuration.id),
+  );
+  const rollupRecordsById = new Map(rollups.records.map((record) => [record.id, record]));
+  for (let index = 0; index < rollups.records.length; index++) {
+    const record = rollups.records[index];
+    if (!isModelRollupRecord(record)) {
+      errors.push({
+        field: `modelRollups.records[${index}]`,
+        message: "invalid ModelRollupRecord",
+      });
+    }
+  }
+  for (let index = 0; index < rollups.versions.length; index++) {
+    const version = rollups.versions[index];
+    if (!isModelRollupVersion(version)) {
+      errors.push({
+        field: `modelRollups.versions[${index}]`,
+        message: "invalid stratified-only ModelRollupVersion or manifest digest mismatch",
+      });
+      continue;
+    }
+    const record = rollupRecordsById.get(version.rollupId);
+    if (!record) {
+      errors.push({
+        field: `modelRollups.versions[${index}].rollupId`,
+        message: `rollupId ${version.rollupId} not found in modelRollups.records`,
+      });
+    }
+    for (const memberId of version.memberConfigurationIds) {
+      if (!modelConfigurationIds.has(memberId)) {
+        errors.push({
+          field: `modelRollups.versions[${index}].memberConfigurationIds`,
+          message: `exact member ${memberId} not found in evidence.modelConfigurations`,
+        });
+      }
+    }
+  }
+  for (let index = 0; index < rollups.records.length; index++) {
+    const record = rollups.records[index];
+    const latest = rollups.versions.find(
+      (version) => version.rollupId === record.id && version.version === record.latestVersion,
+    );
+    if (!latest || latest.name !== record.name) {
+      errors.push({
+        field: `modelRollups.records[${index}].latestVersion`,
+        message: "latestVersion must identify a same-name immutable version",
+      });
+    }
+  }
 
   // Reference graph validation
   const recipeRecordsById = new Set(archive.lab.recipeRecords.map((r) => r.id));

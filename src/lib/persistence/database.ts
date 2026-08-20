@@ -48,6 +48,9 @@
 //         fusionStudies, fusionTrials, fusionAttempts, fusionObservations,
 //         fusionPlaybooks) in the same committed schema transition after
 //         writing destination Lab stores and the discard/convert receipt.
+//   v14 — additive immutable Model Rollup stores (2 tables):
+//         modelRollups, modelRollupVersions. Definitions only; derived evidence
+//         products and caches never enter persistence authority.
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
@@ -546,6 +549,27 @@ export interface PolicyPlaybookRecordRow {
   createdAt: number;
 }
 
+/** Stable Model Rollup record row (schema v14). Mutable only through revision CAS. */
+export interface ModelRollupRecordRow {
+  id: string;
+  record: unknown;
+  name: string;
+  latestVersion: number;
+  revision: number;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt: number | null;
+}
+
+/** Immutable Model Rollup version row. Compound [rollupId+version] key. */
+export interface ModelRollupVersionRow {
+  rollupId: string;
+  version: number;
+  version_: unknown;
+  memberManifestDigest: string;
+  createdAt: number;
+}
+
 /** Lifecycle state surfaced to React. */
 export type StorageState = "ready" | "blocked" | "versionchange" | "unavailable";
 
@@ -621,6 +645,9 @@ export class RSembleEvaluationDB extends Dexie {
   studyAttempts!: Table<StudyAttemptRow, string>;
   studyObservations!: Table<StudyObservationRow, string>;
   policyPlaybooks!: Table<PolicyPlaybookRecordRow, string>;
+  // Model Rollup tables (schema v14, Child 07)
+  modelRollups!: Table<ModelRollupRecordRow, string>;
+  modelRollupVersions!: Table<ModelRollupVersionRow, [string, number]>;
   // Canonical Task tables (schema v3)
   tasks!: Table<TaskRecordRow, string>;
   taskVersions!: Table<TaskVersionRow, [string, number]>;
@@ -796,6 +823,14 @@ export class RSembleEvaluationDB extends Dexie {
       .upgrade(async (tx) => {
         await performFusionToResearchLabCutoverUpgrade(tx);
       });
+
+    // v14: additive Model Rollup definition and immutable-version stores.
+    // No evidence product, statistical output, or cache is persisted here.
+    this.version(14).stores({
+      modelRollups: "id, name, latestVersion, revision, updatedAt, archivedAt",
+      modelRollupVersions:
+        "[rollupId+version], rollupId, version, memberManifestDigest, createdAt",
+    });
 
     this.on("blocked", () => {
       this.setState("blocked");

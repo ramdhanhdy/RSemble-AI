@@ -25,7 +25,7 @@ describe("archive v3 — constants and structure", () => {
     expect(ARCHIVE_V3_STORAGE_VERSION).toBe(1);
   });
 
-  it("contains all 10 canonical collection keys without any fusion key", () => {
+  it("contains all 11 canonical collection keys without any fusion key", () => {
     expect(ARCHIVE_V3_COLLECTION_KEYS).toEqual([
       "manifest",
       "runs",
@@ -37,6 +37,7 @@ describe("archive v3 — constants and structure", () => {
       "evidence",
       "comparisons",
       "lab",
+      "modelRollups",
     ]);
     expect(ARCHIVE_V3_COLLECTION_KEYS).not.toContain("fusion");
   });
