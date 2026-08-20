@@ -100,14 +100,16 @@ describe("Rollup grammar — Fable §9 forward contract", () => {
   });
 
   it("KindEyebrow exposes the rollup, model-configuration, and observation kinds", () => {
+    // textContent is the raw stored word; the CSS `uppercase` class renders it
+    // visually uppercase. Assert the raw word is present for each new kind.
     const r = render(<KindEyebrow kind="rollup" />);
-    expect(r.text()).toContain("ROLLUP");
+    expect(r.text()).toContain("Rollup");
     cleanup(r);
     const m = render(<KindEyebrow kind="model-configuration" />);
-    expect(m.text()).toContain("MODEL CONFIGURATION");
+    expect(m.text()).toContain("Model Configuration");
     cleanup(m);
     const o = render(<KindEyebrow kind="observation" />);
-    expect(o.text()).toContain("OBSERVATION");
+    expect(o.text()).toContain("Observation");
     cleanup(o);
   });
 });

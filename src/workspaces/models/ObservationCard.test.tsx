@@ -17,6 +17,7 @@ describe("ObservationCard — Fable §5.11 (≤390 stacked-row transform)", () =
       />,
     );
     const list = h.$("[role='list'][data-observation-card]")!;
+    expect(list).not.toBeNull();
     const rows = h.$$("[role='listitem'][data-observation-row]");
     expect(rows.length).toBeGreaterThanOrEqual(5);
     const labels = rows.map((r) => r.querySelector("[data-row-label]")!.textContent);

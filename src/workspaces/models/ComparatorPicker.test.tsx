@@ -9,6 +9,11 @@ const candidates = [
   { id: "mc-c", label: "Model C · gpt-z@2026-05", sharedTaskCount: 8 },
 ];
 
+// DialogSurface portals into document.body; query the body for portal content.
+function bodyText(): string {
+  return document.body.textContent ?? "";
+}
+
 describe("ComparatorPicker — Fable §5.9 / §7.5 (DialogSurface)", () => {
   it("renders a Select comparator trigger button", () => {
     const h = render(
@@ -35,10 +40,10 @@ describe("ComparatorPicker — Fable §5.9 / §7.5 (DialogSurface)", () => {
       />,
     );
     await settle();
-    const rows = h.$$("[data-comparator-candidate]");
+    const rows = [...document.body.querySelectorAll<HTMLElement>("[data-comparator-candidate]")];
     expect(rows.map((r) => r.dataset.candidateId)).toEqual(["mc-b", "mc-c", "mc-a"]);
     // Ranking is labeled as overlap, not quality.
-    expect(h.text()).toContain("Ordered by shared-task overlap, not quality.");
+    expect(bodyText()).toContain("Ordered by shared-task overlap, not quality.");
     cleanup(h);
   });
 
@@ -53,7 +58,7 @@ describe("ComparatorPicker — Fable §5.9 / §7.5 (DialogSurface)", () => {
       />,
     );
     await settle();
-    const first = h.$("[data-comparator-candidate]")!;
+    const first = document.body.querySelector<HTMLElement>("[data-comparator-candidate]")!;
     first.click();
     expect(onSelect).toHaveBeenCalledWith("mc-b");
     cleanup(h);
@@ -69,8 +74,8 @@ describe("ComparatorPicker — Fable §5.9 / §7.5 (DialogSurface)", () => {
       />,
     );
     await settle();
-    expect(h.$("[data-dialog-backdrop]")).not.toBeNull();
-    expect(h.text()).toContain("Select comparator");
+    expect(document.body.querySelector("[data-dialog-backdrop]")).not.toBeNull();
+    expect(bodyText()).toContain("Select comparator");
     cleanup(h);
   });
 });

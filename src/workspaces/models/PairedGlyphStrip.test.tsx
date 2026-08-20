@@ -16,6 +16,7 @@ describe("PairedGlyphStrip — Fable §5.7", () => {
       />,
     );
     const list = h.$("[role='list'][data-paired-glyph-strip]")!;
+    expect(list).not.toBeNull();
     const items = h.$$("[role='listitem'][data-glyph]");
     expect(items).toHaveLength(3);
     // Canonical task id order: 01, 02, 03.
@@ -56,9 +57,9 @@ describe("PairedGlyphStrip — Fable §5.7", () => {
       />,
     );
     const items = h.$$("[role='listitem'][data-glyph]");
-    expect(items[0].getAttribute("aria-label")).toBe("Won on task code-transform-03");
-    expect(items[1].getAttribute("aria-label")).toBe("Lost on task code-transform-01");
-    expect(items[2].getAttribute("aria-label")).toBe("Tied on task code-transform-02");
+    expect(items[0].getAttribute("aria-label")).toBe("Lost on task code-transform-01");
+    expect(items[1].getAttribute("aria-label")).toBe("Tied on task code-transform-02");
+    expect(items[2].getAttribute("aria-label")).toBe("Won on task code-transform-03");
     cleanup(h);
   });
 

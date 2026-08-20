@@ -19,7 +19,7 @@ describe("NarrowingChipBar — Fable §5.10", () => {
     const chips = h.$$("[data-narrowing-chip]");
     expect(chips).toHaveLength(2);
     expect(chips[0].textContent).toContain("Task: code-transform-03");
-    const removeBtn = chips[0].querySelector("button[data-remove-narrowing]")!;
+    const removeBtn = chips[0].querySelector<HTMLButtonElement>("button[data-remove-narrowing]")!;
     removeBtn.click();
     expect(onRemove).toHaveBeenCalledWith("task");
     cleanup(h);

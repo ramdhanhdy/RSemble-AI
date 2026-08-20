@@ -7,7 +7,17 @@
 // definition is exposed as a title tooltip for first-contact learning.
 // =============================================================================
 
-import { Boxes, Combine, FlaskConical, ListChecks, Scale, type LucideIcon } from "lucide-react";
+import {
+  Boxes,
+  Combine,
+  Cpu,
+  FileSearch,
+  FlaskConical,
+  Layers,
+  ListChecks,
+  Scale,
+  type LucideIcon,
+} from "lucide-react";
 
 const KINDS = {
   suite: {
@@ -34,6 +44,21 @@ const KINDS = {
     word: "Model Pool",
     icon: Boxes,
     def: "An experimental selection manifest of exact model configurations.",
+  },
+  "model-configuration": {
+    word: "Model Configuration",
+    icon: Cpu,
+    def: "An exact provider, model, and reasoning configuration under test.",
+  },
+  observation: {
+    word: "Observation",
+    icon: FileSearch,
+    def: "One recorded model response with its evidence class and eligibility.",
+  },
+  rollup: {
+    word: "Rollup",
+    icon: Layers,
+    def: "A pinned list of exact configurations shown side by side, never pooled.",
   },
 } as const;
 
