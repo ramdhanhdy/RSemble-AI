@@ -51,6 +51,7 @@ import {
   fusionToResearchLabReceiptKey,
 } from "../migrations/fusion-to-research-lab";
 import { createDeterministicReceipt } from "../migrations/fusion-to-research-lab-receipt";
+import { createModelRollupVersion } from "../model-rollups/model-rollup-types";
 
 const DETERMINISTIC_NOW = 1_700_000_000_000;
 
@@ -161,6 +162,91 @@ describe("archive v3 integration — complete canonical corpus round trip (REV-1
     expect(await target.taskSetVersions.count()).toBe(reexported.manifest.counts.taskSetVersions);
     expect(await target.runSummaries.count()).toBe(reexported.manifest.counts.runSummaries);
     expect(await target.runDetails.count()).toBe(reexported.manifest.counts.runDetails);
+
+    source.close();
+    target.close();
+  });
+});
+
+describe("archive v3 integration — Child 07 Model Rollup definitions", () => {
+  it("exports canonical rollup records and immutable versions with manifest counts", async () => {
+    const source = await freshDb("model-rollup-export");
+    const seeded = await seedCompleteV3Corpus(source);
+    const configurationId = seeded.evidence.modelConfigurations[0]!.id;
+    const createdAt = DETERMINISTIC_NOW;
+    const version = createModelRollupVersion({
+      rollupId: "rollup:archive-qa",
+      version: 1,
+      name: "Archive QA shelf",
+      memberConfigurationIds: [configurationId],
+      aggregationPolicy: "stratified_only",
+      createdAt,
+    });
+    const version2 = createModelRollupVersion({
+      rollupId: version.rollupId,
+      version: 2,
+      name: "Archive QA shelf v2",
+      memberConfigurationIds: [configurationId],
+      aggregationPolicy: "stratified_only",
+      createdAt: createdAt + 1,
+    });
+    const record = {
+      id: version.rollupId,
+      name: version2.name,
+      latestVersion: version2.version,
+      revision: 0,
+      createdAt,
+      updatedAt: createdAt + 1,
+      archivedAt: null,
+    };
+    await source.modelRollups.put({
+      id: record.id,
+      record,
+      name: record.name,
+      latestVersion: record.latestVersion,
+      revision: record.revision,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      archivedAt: record.archivedAt,
+    });
+    for (const current of [version, version2]) {
+      await source.modelRollupVersions.put({
+        rollupId: current.rollupId,
+        version: current.version,
+        version_: current,
+        memberManifestDigest: current.memberManifestDigest,
+        createdAt: current.createdAt,
+      });
+    }
+
+    const exported = await exportWorkbenchArchiveV3(source, { now: DETERMINISTIC_NOW });
+
+    expect(exported.modelRollups).toEqual({ records: [record], versions: [version, version2] });
+    expect(exported.manifest.counts.modelRollups).toBe(1);
+    expect(exported.manifest.counts.modelRollupVersions).toBe(2);
+    expect(validateArchiveV3(JSON.parse(JSON.stringify(exported))).valid).toBe(true);
+
+    const target = await freshDb("model-rollup-import");
+    const preview = await previewWorkbenchArchive(target, exported);
+    expect(preview.invalid).toEqual([]);
+    expect(
+      preview.create.some(
+        (item) => item.collection === "modelRollups.records" && item.key === record.id,
+      ),
+    ).toBe(true);
+    expect(
+      preview.create.some(
+        (item) =>
+          item.collection === "modelRollups.versions" && item.key === `${version.rollupId}@2`,
+      ),
+    ).toBe(true);
+    const committed = await commitPreviewWorkbenchArchiveV3(target, preview);
+    expect(committed.collisions).toEqual([]);
+    expect(await target.modelRollups.count()).toBe(1);
+    expect(await target.modelRollupVersions.count()).toBe(2);
+    expect((await target.modelRollupVersions.get([version.rollupId, 2]))?.version_).toEqual(
+      version2,
+    );
 
     source.close();
     target.close();
@@ -410,6 +496,9 @@ describe("archive v3 integration — REV-3 deterministic legacy fusion rejection
     expect(preview.format).toBe("unsupported_fusion_archive_shape");
     expect(preview.unsupportedReceipt).toBeDefined();
     expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionRecipes");
+    await expect(commitPreviewWorkbenchArchiveV3(db, preview)).rejects.toThrow(
+      /unsupported archive shape|unsupported_fusion_archive_shape/i,
+    );
     expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionStudies");
 
     // Zero writes occurred

@@ -188,7 +188,7 @@ export function ModelRollupRoute({ rollupRepo, evidenceRepo }: ModelRollupRouteP
       nextVersion,
       loaded.record.revision,
     );
-    navigate(
+    void navigate(
       `/models/rollups/${encodeURIComponent(loaded.record.id)}/versions/${nextVersion.version}`,
     );
   }

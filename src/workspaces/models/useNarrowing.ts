@@ -99,6 +99,9 @@ export function useNarrowing(options: UseNarrowingOptions = {}): UseNarrowingRes
     (narrowing: Narrowing): boolean => {
       const existing = narrowings.find((n) => n.key === narrowing.key);
       if (existing) return false;
+      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        originRef.current = document.activeElement;
+      }
       labelMapRef.current.set(narrowing.key, narrowing.label);
       const nextKeys = [...narrowings.map((n) => n.key), narrowing.key];
       syncUrl(nextKeys);
@@ -116,7 +119,12 @@ export function useNarrowing(options: UseNarrowingOptions = {}): UseNarrowingRes
   );
 
   const clearAll = useCallback(() => {
+    const origin = originRef.current;
     syncUrl([]);
+    requestAnimationFrame(() => {
+      origin?.focus();
+      if (originRef.current === origin) originRef.current = null;
+    });
   }, [syncUrl]);
 
   const focusTableHeading = useCallback(() => {

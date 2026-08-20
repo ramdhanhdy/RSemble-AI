@@ -47,9 +47,9 @@ import {
   ZeroMatchState,
   pageCountFor,
   type ModelListRowData,
+  type SavedRollupListItem,
 } from "./ModelList";
 import { ModelRollupRoute } from "./ModelRollupRoute";
-import type { SavedRollupListItem } from "./ModelList";
 import {
   DEFAULT_MODEL_LIST_URL_STATE,
   countAppliedModelFilters,

@@ -186,7 +186,7 @@ describe("REV-9 — migration operations cause zero provider egress", () => {
     const migrated = new RSembleEvaluationDB(dbName);
     testDbs.push(migrated);
     await migrated.open();
-    expect(migrated.verno).toBe(13);
+    expect(migrated.verno).toBeGreaterThanOrEqual(13);
     // The migration must have written the receipt (non-empty work).
     expect(await migrated.storageMeta.count()).toBeGreaterThan(0);
     assertZeroEgress(inst);

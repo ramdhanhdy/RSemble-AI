@@ -1623,6 +1623,7 @@ describe("Fable §14.16 — Routed integration through live ModelsWorkspace & in
     expect(h.$("[data-model-evidence-profile]")).not.toBeNull();
     expect(h.$("#profile-heading")!.textContent).toContain("openai · gpt-5.6-sol");
     expect(h.$("[data-version-status=exact]")).not.toBeNull();
+    expect(document.activeElement).toBe(h.$("#profile-heading"));
 
     // D2 deterministic narrative
     expect(h.$("[data-deterministic-narrative]")).not.toBeNull();

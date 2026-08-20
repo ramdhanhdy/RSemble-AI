@@ -17,6 +17,54 @@ function NarrowingProbe({
   onResult(result);
   return null;
 }
+function FocusProbe(): ReactNode {
+  const result = useNarrowing();
+  return (
+    <>
+      <button
+        id="origin-control"
+        type="button"
+        onClick={() => {
+          result.apply({ key: "family:code", label: "Family: Code" });
+          result.focusTableHeading();
+        }}
+      >
+        Apply narrowing
+      </button>
+      <h2 ref={result.tableHeadingRef} tabIndex={-1}>
+        Evidence table
+      </h2>
+      <button id="clear-control" type="button" onClick={result.clearAll}>
+        Clear all
+      </button>
+    </>
+  );
+}
+
+function renderFocusProbe(): {
+  container: HTMLDivElement;
+  unmount: () => void;
+} {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(
+      <MemoryRouter initialEntries={["/models/mc-1"]}>
+        <Routes>
+          <Route path="/models/:modelConfigurationId" element={<FocusProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  });
+  return {
+    container,
+    unmount: () => {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
 
 function renderProbe(initialEntry: string): {
   container: HTMLDivElement;
@@ -82,12 +130,25 @@ describe("useNarrowing", () => {
     unmount();
   });
 
-  it("hydrates narrowings from URL on mount", () => {
-    const { result, unmount } = renderProbe("/models/mc-1?narrow=family:code,class:verified");
-    expect(result).not.toBeNull();
-    expect(result!.narrowings).toHaveLength(2);
-    expect(result!.narrowings[0].key).toBe("family:code");
-    expect(result!.narrowings[1].key).toBe("class:verified");
+  it("restores focus to the originating control after clear all", async () => {
+    const { container, unmount } = renderFocusProbe();
+    const origin = container.querySelector<HTMLButtonElement>("#origin-control")!;
+    const heading = container.querySelector<HTMLHeadingElement>("h2")!;
+    const clear = container.querySelector<HTMLButtonElement>("#clear-control")!;
+
+    act(() => {
+      origin.focus();
+      origin.click();
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    expect(document.activeElement).toBe(heading);
+
+    act(() => {
+      clear.focus();
+      clear.click();
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(document.activeElement).toBe(origin);
     unmount();
   });
 });

@@ -50,8 +50,16 @@
 //    stores changes.
 // =============================================================================
 
-import type { EligibilityDecision, ModelConfigurationSnapshot, Observation } from "../evidence/evidence-types";
-import type { TaskFacetAnnotation, TaskFamilyAssignment, TaskFamilyRelation } from "../tasks/task-types";
+import type {
+  EligibilityDecision,
+  ModelConfigurationSnapshot,
+  Observation,
+} from "../evidence/evidence-types";
+import type {
+  TaskFacetAnnotation,
+  TaskFamilyAssignment,
+  TaskFamilyRelation,
+} from "../tasks/task-types";
 import {
   QUERY_AGGREGATION_RULE_VERSION,
   QUERY_ELIGIBILITY_RULE_VERSION,
@@ -89,7 +97,41 @@ import type { EvidenceTableRow } from "../../workspaces/models/EvidenceTable";
 import type { ComparatorCandidate } from "../../workspaces/models/ComparatorPicker";
 import type { PairedComparatorIdentity } from "../../workspaces/models/PairedComparisonSection";
 import type { VersionStatus } from "../../workspaces/models/VersionStatusChip";
-import { formatModelWindow } from "../../workspaces/models/ModelList";
+
+/**
+ * Keep the worker dependency graph free of React-bearing workspace modules.
+ * Importing ModelList.tsx here makes Vite inject the React Refresh runtime into
+ * the module Worker, where `window` does not exist. The profile computation only
+ * needs this small deterministic formatter, so keep its worker copy local.
+ */
+function formatModelWindow(from: number, to: number): string {
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return "window unavailable";
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const start = new Date(from);
+  const end = new Date(to);
+  const startMonth = months[start.getUTCMonth()] ?? "—";
+  const endMonth = months[end.getUTCMonth()] ?? "—";
+  const startYear = start.getUTCFullYear();
+  const endYear = end.getUTCFullYear();
+  if (startYear === endYear && start.getUTCMonth() === end.getUTCMonth()) {
+    return `${startMonth} ${startYear}`;
+  }
+  if (startYear === endYear) return `${startMonth}–${endMonth} ${startYear}`;
+  return `${startMonth} ${startYear}–${endMonth} ${endYear}`;
+}
 
 // --- Input / output contract --------------------------------------------------
 
@@ -174,13 +216,13 @@ export interface ProfileWorkerErrorMessage {
 }
 
 export type ProfileWorkerOutboundMessage =
-  | ProfileWorkerProgress
-  | ProfileWorkerResultMessage
-  | ProfileWorkerErrorMessage;
+  ProfileWorkerProgress | ProfileWorkerResultMessage | ProfileWorkerErrorMessage;
 
 // --- Helpers (mirrors model-profile-loader.ts private helpers) ----------------
 
-function completenessToVersionStatus(completeness: ModelConfigurationSnapshot["identityCompleteness"]): VersionStatus {
+function completenessToVersionStatus(
+  completeness: ModelConfigurationSnapshot["identityCompleteness"],
+): VersionStatus {
   if (completeness === "rolling_alias") return "rolling_alias";
   if (completeness === "partial") return "partial_identity";
   return "exact";
@@ -787,7 +829,10 @@ const PROGRESS_PHASES: readonly ProfileWorkerPhase[] = [
 ];
 
 interface WorkerLike {
-  new (scriptURL: URL, options?: { type?: "classic" | "module" }): {
+  new (
+    scriptURL: URL,
+    options?: { type?: "classic" | "module" },
+  ): {
     postMessage(message: unknown): void;
     terminate(): void;
     addEventListener(type: "message", listener: (ev: MessageEvent) => void): void;

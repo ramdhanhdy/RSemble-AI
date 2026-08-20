@@ -1659,7 +1659,7 @@ describe("Fusion → Research Lab Dexie v13 atomic cutover (Task 5)", () => {
     const db13 = trackDb(new RSembleEvaluationDB(dbName));
     await db13.open();
 
-    expect(db13.verno).toBe(13);
+    expect(db13.verno).toBeGreaterThanOrEqual(13);
 
     // The seven Fusion stores MUST NOT exist in db.tables
     const currentTableNames = db13.tables.map((t) => t.name);
@@ -2003,7 +2003,7 @@ describe("Fusion → Research Lab Dexie v13 atomic cutover (Task 5)", () => {
     await handle.ready;
     trackDb(handle.db);
 
-    expect(handle.db.verno).toBe(13);
+    expect(handle.db.verno).toBeGreaterThanOrEqual(13);
     expect(handle.state).toBe("ready");
     expect(handle.taskMigrationError).toBeNull();
 

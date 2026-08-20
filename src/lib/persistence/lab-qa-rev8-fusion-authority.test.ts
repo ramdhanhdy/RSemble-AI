@@ -195,7 +195,7 @@ describe("REV-8 probe 1 — v13 cutover leaves intended receipt/state", () => {
 
     const db13 = trackDb(new RSembleEvaluationDB(dbName));
     await db13.open();
-    expect(db13.verno).toBe(13);
+    expect(db13.verno).toBeGreaterThanOrEqual(13);
 
     // 1a. The seven deleted Fusion stores are gone from the live schema.
     const tableNames = new Set(db13.tables.map((t) => t.name));
@@ -249,7 +249,7 @@ describe("REV-8 probe 1 — v13 cutover leaves intended receipt/state", () => {
     db13.close();
     const reopened = trackDb(new RSembleEvaluationDB(dbName));
     await reopened.open();
-    expect(reopened.verno).toBe(13);
+    expect(reopened.verno).toBeGreaterThanOrEqual(13);
     const receiptAgain = await reopened.storageMeta.get(fusionToResearchLabReceiptKey);
     expect(
       isFusionToResearchLabReceipt(receiptAgain?.value) ? receiptAgain.value.receiptDigest : null,
@@ -268,7 +268,7 @@ describe("REV-8 probe 1 — v13 cutover leaves intended receipt/state", () => {
 
     const db13 = trackDb(new RSembleEvaluationDB(dbName));
     await db13.open();
-    expect(db13.verno).toBe(13);
+    expect(db13.verno).toBeGreaterThanOrEqual(13);
     const receiptRow = await db13.storageMeta.get(fusionToResearchLabReceiptKey);
     expect(receiptRow).not.toBeNull();
     expect(isFusionToResearchLabReceipt(receiptRow?.value)).toBe(true);

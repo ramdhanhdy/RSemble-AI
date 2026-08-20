@@ -314,6 +314,15 @@ export function ModelEvidenceProfile({
     computingProp ?? (dataProp === undefined && notFoundProp === undefined),
   );
   const [cancelled, setCancelled] = useState(false);
+  // The heading is not mounted until the asynchronous worker returns. Focus
+  // again when data arrives so a direct route is keyboard-complete, not merely
+  // visually loaded.
+  useEffect(() => {
+    if (!loadedData) return;
+    requestAnimationFrame(() => {
+      headingRef.current?.focus();
+    });
+  }, [loadedData]);
 
   // When test seam provides data, exit computing.
   useEffect(() => {

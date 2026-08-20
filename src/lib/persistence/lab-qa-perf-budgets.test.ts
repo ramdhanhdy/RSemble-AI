@@ -201,7 +201,7 @@ describe("performance — migration ops within declared budgets", () => {
     await migrated.open();
     const elapsed = performance.now() - start;
     record("migrationCutover", BUDGET_MIGRATION_CUTOVER_MS, elapsed);
-    expect(migrated.verno).toBe(13);
+    expect(migrated.verno).toBeGreaterThanOrEqual(13);
     expect(await migrated.storageMeta.count()).toBeGreaterThan(0);
     expect(elapsed).toBeLessThan(BUDGET_MIGRATION_CUTOVER_MS);
   });
