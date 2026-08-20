@@ -38,10 +38,11 @@
 //       configuration behavioral-profile vocabulary (Child 04), path- and
 //       token-scoped. Capital or compound Profile tokens inside evidence
 //       files, and every profile token outside lib/evidence, stay flagged.
-//     • all Profile-bearing tokens inside lib/model-profiles/** — Child 07
-//       model-evidence-profiles domain vocabulary (ProfileRespondent,
-//       ProfileCoverageSummary, ProfileExactSelection, etc.), path-scoped.
-//       These are model-evidence terms, not scoring-Rubric terms.
+//     • all Profile-bearing tokens inside lib/model-profiles/** and
+//       workspaces/models/** — Child 07 model-evidence-profiles domain
+//       vocabulary (ProfileRespondent, ProfileCoverageSummary,
+//       ModelEvidenceProfile, etc.), path-scoped. These are model-evidence
+//       terms, not scoring-Rubric terms.
 //   Anything else carrying the Profile word — type names, repository methods,
 //   component names, route segments, user-facing strings, comments, test
 //   helpers — is a scoring-Profile term and must become Rubric.
@@ -232,13 +233,15 @@ function isAllowed(token: string, relFile: string, line: string, idx: number): b
     return true;
   }
 
-  // Child 07 model-evidence-profiles domain vocabulary (spec §§1–6.1):
-  // the entire lib/model-profiles/** directory is spec-defined model-profile
-  // domain code — ProfileRespondent, ProfileCoverageSummary, ProfileExactSelection,
-  // selectProfileObservations, eligibleProfileEvidenceCount, etc. These are
-  // model-evidence terms, not scoring-Rubric terms, so all Profile-bearing
-  // tokens under that path are allowed.
-  if (relFile.startsWith("lib/model-profiles/")) return true;
+  // Child 07 model-evidence-profiles domain vocabulary (spec §§1–6.1 + Fable UI):
+  // lib/model-profiles/** and workspaces/models/** are spec-defined
+  // model-profile domain code — ProfileRespondent, ProfileCoverageSummary,
+  // ModelEvidenceProfile, etc. These are model-evidence terms, not
+  // scoring-Rubric terms, so all Profile-bearing tokens under those paths
+  // are allowed.
+  if (relFile.startsWith("lib/model-profiles/") || relFile.startsWith("workspaces/models/")) {
+    return true;
+  }
 
   if (token === "profiles") {
     // `db.profiles` — physical Dexie store access (frozen, any file).
@@ -481,7 +484,15 @@ describe("rubric terminology boundary (Child 01, Task 1)", () => {
       }
     });
 
-    it("keeps flagging scoring-Profile tokens outside lib/model-profiles", () => {
+    it("allows all Profile-bearing tokens under workspaces/models/", () => {
+      const relFile = "workspaces/models/ModelEvidenceProfile.tsx";
+      for (const token of ["ModelEvidenceProfile", "profile", "profiles", "renderProfile"]) {
+        const line = `  const ${token} = value;`;
+        expect(isAllowed(token, relFile, line, line.indexOf(token)), token).toBe(true);
+      }
+    });
+
+    it("keeps flagging scoring-Profile tokens outside Child 07 paths", () => {
       const relFile = "lib/evaluations/suite-validation.ts";
       const line = "  const ProfileRespondent = value;";
       expect(isAllowed("ProfileRespondent", relFile, line, line.indexOf("ProfileRespondent"))).toBe(
