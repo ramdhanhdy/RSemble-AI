@@ -2,10 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { render, cleanup, settle } from "./models-test-harness";
-import {
-  ObservationDrilldown,
-  type ObservationDrilldownData,
-} from "./ObservationDrilldown";
+import { ObservationDrilldown, type ObservationDrilldownData } from "./ObservationDrilldown";
 import { ModelsWorkspace } from "./ModelsWorkspace";
 
 export function makeDrilldownData(

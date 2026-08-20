@@ -27,7 +27,10 @@ import { PairedComparisonSection } from "./PairedComparisonSection";
 import { makeDrilldownData } from "./ObservationDrilldown.test";
 import { ALL_COPY_STRINGS, FORBIDDEN_COPY_PATTERNS, FORBIDDEN_CLAIM_PHRASES } from "./copy";
 import type { FamilyAggregate } from "../../lib/model-profiles/family-aggregation";
-import type { HonestQuantity, ProfileCoverageSummary } from "../../lib/model-profiles/coverage-summary";
+import type {
+  HonestQuantity,
+  ProfileCoverageSummary,
+} from "../../lib/model-profiles/coverage-summary";
 import type { PairedComparisonResult } from "../../lib/model-profiles/paired-comparison";
 
 const MODELS_ROOT = join(process.cwd(), "src", "workspaces", "models");
@@ -45,10 +48,11 @@ const PRODUCTION_FILES = filesUnder(MODELS_ROOT).filter(
 );
 
 function quotedStrings(source: string): string[] {
+  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const out: string[] = [];
   const re = /(['"`])((?:\\.|(?!\1)[^\\])*)\1/g;
   let match: RegExpExecArray | null;
-  while ((match = re.exec(source))) {
+  while ((match = re.exec(stripped))) {
     out.push(match[2]);
   }
   return out;
@@ -154,7 +158,10 @@ function makeProfile(overrides: Partial<ProfileData> = {}): ProfileData {
   };
 }
 
-function renderProfile(data: ProfileData, extra?: { computing?: boolean; notFound?: boolean }) {
+function renderProfile(
+  data: ProfileData | null,
+  extra?: { computing?: boolean; notFound?: boolean },
+) {
   return render(
     <MemoryRouter initialEntries={["/models/mc-subject"]}>
       <Routes>
@@ -265,7 +272,13 @@ describe("Fable §14.2 — HonestValue three states", () => {
 describe("Fable §14.3 — insufficient coverage", () => {
   it("unitCount < 5 renders InsufficientState with no ± and no interval digits", () => {
     const h = render(
-      <InsufficientState kind="insufficient" unitCount={4} required={5} resolverVersion="v1" digest="9a2f" />,
+      <InsufficientState
+        kind="insufficient"
+        unitCount={4}
+        required={5}
+        resolverVersion="v1"
+        digest="9a2f"
+      />,
     );
     expect(h.text()).toContain("Insufficient independent coverage for an interval");
     expect(h.text()).not.toMatch(/±/);
@@ -618,9 +631,9 @@ describe("Fable §14.11 — breakpoint structure (happy-dom class assertions; CD
     expect(filters.$("[data-desktop-filters]")!.className).toContain("hidden");
     expect(filters.$("[data-desktop-filters]")!.className).toContain("lg:grid");
     expect(filters.$("[data-action=toggle-filters]")!.className).toContain("lg:hidden");
-    const targets = filters.$$("button, input, select").filter((el) =>
-      (el as HTMLElement).className.includes("min-h-[44px]"),
-    );
+    const targets = filters
+      .$$("button, input, select")
+      .filter((el) => (el as HTMLElement).className.includes("min-h-[44px]"));
     expect(targets.length).toBeGreaterThan(0);
     cleanup(filters);
 
@@ -666,7 +679,7 @@ describe("Fable §14.12 — motion contract on the models workspace", () => {
 
 describe("Fable §14.13 — computing live region and Cancel", () => {
   it("exposes one polite live region and a Cancel control", () => {
-    const h = renderProfile(makeProfile(), { computing: true });
+    const h = renderProfile(null, { computing: true });
     const lives = h.$$("[aria-live=polite]");
     expect(lives.length).toBe(1);
     expect(lives[0].getAttribute("role")).toBe("status");
@@ -773,7 +786,10 @@ describe("Fable §14.14 — densification caps 1–10 (cap 11 is the T11 rollup 
     const h = render(
       <ClaimMark
         label="strongest_supported"
-        sentence={{ text: "Verified on 8 of 10 code-transformation Tasks under verifier cohort X.", sourceMetricKey: "k" }}
+        sentence={{
+          text: "Verified on 8 of 10 code-transformation Tasks under verifier cohort X.",
+          sourceMetricKey: "k",
+        }}
         onApply={() => {}}
       />,
     );
@@ -817,7 +833,7 @@ describe("Fable §14.14 — densification caps 1–10 (cap 11 is the T11 rollup 
   });
 
   it("cap 9: computing route has one polite live region and zero assertive", () => {
-    const h = renderProfile(makeProfile(), { computing: true });
+    const h = renderProfile(null, { computing: true });
     expect(h.$$("[aria-live=polite]").length).toBe(1);
     expect(h.$$("[aria-live=assertive]").length).toBe(0);
     cleanup(h);

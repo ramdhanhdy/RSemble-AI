@@ -1,7 +1,7 @@
 // =============================================================================
 // ModelEvidenceProfile — the routed configuration profile dossier (Fable §7).
 //
-// Sections 1–4 and 6–7 of the profile detail. One scrollable document with a
+// Sections 1–7 of the profile detail. One scrollable document with a
 // sticky section nav at ≥1280px, horizontal anchor row below the identity header
 // at <1280px. Focus on route change lands on the page heading (tabindex=-1).
 //
@@ -9,6 +9,7 @@
 // Section 2: CoverageGrid (fifteen HonestQuantity cells, D6).
 // Section 3: FamilyEvidenceCard list.
 // Section 4: VerifiedOutcomes (conditional).
+// Section 5: PairedComparisonSection (C4).
 // Section 6: EvidenceTable (always).
 // Section 7: protocols, rubrics, evaluators, limitations.
 //
@@ -24,6 +25,7 @@ import { Cpu, Loader } from "lucide-react";
 import type { ProfileCoverageSummary } from "../../lib/model-profiles/coverage-summary";
 import type { FamilyAggregate } from "../../lib/model-profiles/family-aggregation";
 import type { ClaimResult, ClaimSentence } from "../../lib/model-profiles/profile-claims";
+import type { PairedComparisonResult } from "../../lib/model-profiles/paired-comparison";
 import { VersionStatusChip, type VersionStatus } from "./VersionStatusChip";
 import { DeterministicNarrative } from "./DeterministicNarrative";
 import { ClaimMark } from "./ClaimMark";
@@ -32,6 +34,8 @@ import { FamilyEvidenceCard } from "./FamilyEvidenceCard";
 import { VerifiedOutcomes, type VerifiedOutcome } from "./VerifiedOutcomes";
 import { EvidenceTable, type EvidenceTableRow } from "./EvidenceTable";
 import { useNarrowing } from "./useNarrowing";
+import { PairedComparisonSection, type PairedComparatorIdentity } from "./PairedComparisonSection";
+import type { ComparatorCandidate } from "./ComparatorPicker";
 
 // =============================================================================
 // Test seams — injected data shapes
@@ -90,10 +94,15 @@ export interface ProfileData {
     resamples: number;
   };
   limitations?: readonly { code: string; reason: string }[];
-  /** Profile-level state flags */
   isExploratoryOnly?: boolean;
   isUnknownVersion?: boolean;
   isInsufficientEverywhere?: boolean;
+  /** Section 5: emitted paired comparison (C4). Absent → no-comparator state. */
+  paired?: {
+    candidates: readonly ComparatorCandidate[];
+    comparator: PairedComparatorIdentity | null;
+    result: PairedComparisonResult | null;
+  };
 }
 
 // =============================================================================
@@ -118,6 +127,7 @@ const SECTIONS = [
   { id: "coverage", label: "Coverage" },
   { id: "families", label: "Families" },
   { id: "verified", label: "Verified" },
+  { id: "paired", label: "Paired" },
   { id: "evidence", label: "Observations" },
   { id: "protocols", label: "Protocols" },
 ] as const;
@@ -269,7 +279,9 @@ export function ModelEvidenceProfile({
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   const narrowing = useNarrowing();
-
+  const [comparator, setComparator] = useState<PairedComparatorIdentity | null>(
+    dataProp?.paired?.comparator ?? null,
+  );
   // Focus heading on mount.
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -287,6 +299,9 @@ export function ModelEvidenceProfile({
       setComputing(false);
     }
   }, [dataProp]);
+  useEffect(() => {
+    setComparator(dataProp?.paired?.comparator ?? null);
+  }, [dataProp?.paired?.comparator]);
 
   const handleCancel = () => {
     setCancelled(true);
@@ -590,6 +605,44 @@ export function ModelEvidenceProfile({
         )}
 
         {/* ================================================================
+             Section 5: selected paired comparison
+             ================================================================ */}
+        <div className="mt-6" id="paired">
+          <PairedComparisonSection
+            subjectConfigurationId={id.modelConfigurationId}
+            candidates={data.paired?.candidates ?? []}
+            comparator={comparator}
+            result={
+              comparator &&
+              data.paired?.result &&
+              data.paired.result.configurationBId === comparator.id
+                ? data.paired.result
+                : null
+            }
+            onSelectComparator={(cid) => {
+              const known = data.paired?.comparator;
+              if (known && known.id === cid) {
+                setComparator(known);
+                return;
+              }
+              const cand = (data.paired?.candidates ?? []).find((c) => c.id === cid);
+              if (cand) {
+                setComparator({
+                  id: cand.id,
+                  providerId: cand.label,
+                  requestedModel: cand.label,
+                });
+              }
+            }}
+            onRemoveComparator={() => setComparator(null)}
+            onTaskNarrowing={(taskId) => {
+              narrowing.apply({ key: `task:${taskId}`, label: `Task: ${taskId}` });
+              narrowing.focusTableHeading();
+            }}
+          />
+        </div>
+
+        {/* ================================================================
              Section 6: Evidence table (always)
              ================================================================ */}
         <div className="mt-6" id="evidence">
@@ -600,8 +653,8 @@ export function ModelEvidenceProfile({
             onClearAllNarrowings={() => {
               narrowing.clearAll();
             }}
-            onRowClick={(_observationId) => {
-              // Drilldown route (C4) — for now, no-op.
+            onRowClick={(observationId) => {
+              navigate(`/models/${id.modelConfigurationId}/evidence/${observationId}`);
             }}
           />
         </div>

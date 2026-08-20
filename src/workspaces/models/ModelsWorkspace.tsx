@@ -3,8 +3,8 @@
 //
 // Mirrors the Lab workspace shell pattern: a content area whose index route is
 // the Models list. Nested profile (`/models/:modelConfigurationId`) and
-// observation drilldown routes arrive in Task 10 — their Route slots are left
-// absent here, never stubbed with fake pages.
+// observation drilldown (`/models/:modelConfigurationId/evidence/:observationId`)
+// are Task 10 routes.
 //
 // Data flow: the C1 catalog query (`queryModelConfigurationCatalog`) is the
 // sort/identity authority — it filters by provider/model/version-status and
@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Route, Routes, useSearchParams } from "react-router-dom";
 import { ModelEvidenceProfile } from "./ModelEvidenceProfile";
+import { ObservationDrilldown } from "./ObservationDrilldown";
 import { Cpu } from "lucide-react";
 import { useEvidenceRepository, useTaskRepository } from "../../lib/persistence/repository-context";
 import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
@@ -372,6 +373,10 @@ export function ModelsWorkspace({
           <div className="mt-4">
             <Routes>
               <Route index element={listContent} />
+              <Route
+                path=":modelConfigurationId/evidence/:observationId"
+                element={<ObservationDrilldown />}
+              />
               <Route path=":modelConfigurationId" element={<ModelEvidenceProfile />} />
             </Routes>
           </div>

@@ -4,11 +4,11 @@ import { act } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { render, cleanup, settle } from "./models-test-harness";
 import { ModelEvidenceProfile, type ProfileData } from "./ModelEvidenceProfile";
-import {
-  PairedComparisonSection,
-  type PairedComparatorIdentity,
-} from "./PairedComparisonSection";
-import type { PairedComparisonResult, PairedTaskDelta } from "../../lib/model-profiles/paired-comparison";
+import { PairedComparisonSection, type PairedComparatorIdentity } from "./PairedComparisonSection";
+import type {
+  PairedComparisonResult,
+  PairedTaskDelta,
+} from "../../lib/model-profiles/paired-comparison";
 import type { ComparatorCandidate } from "./ComparatorPicker";
 
 const CANDIDATES: ComparatorCandidate[] = [
@@ -38,7 +38,9 @@ function coverage(partial: Partial<PairedComparisonResult["coverage"]> = {}) {
   };
 }
 
-function delta(partial: Partial<PairedTaskDelta> & Pick<PairedTaskDelta, "taskId" | "state">): PairedTaskDelta {
+function delta(
+  partial: Partial<PairedTaskDelta> & Pick<PairedTaskDelta, "taskId" | "state">,
+): PairedTaskDelta {
   return {
     metric: "judged_score",
     cohortId: null,
@@ -171,7 +173,8 @@ function resultsPayload(): PairedComparisonResult {
       assignmentDigest: "9a2f4c",
       units: [],
       unitCount: 6,
-      fallbackAssumption: "No higher-order dependency is encoded; Task identity is the resampling unit.",
+      fallbackAssumption:
+        "No higher-order dependency is encoded; Task identity is the resampling unit.",
       disclosures: [],
     },
     cohortResults: [],
@@ -305,7 +308,10 @@ describe("PairedComparisonSection — Fable §7.5 state 1 (no comparator)", () =
       h.$("button[data-comparator-trigger]")!.click();
     });
     await settle();
-    document.body.querySelector<HTMLElement>("[data-candidate-id=mc-high]")!.click();
+    act(() => {
+      document.body.querySelector<HTMLElement>("[data-candidate-id=mc-high]")!.click();
+    });
+    await settle();
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith("mc-high");
     cleanup(h);
@@ -358,7 +364,9 @@ describe("PairedComparisonSection — Fable §7.5 state 3 (results)", () => {
     );
     const rows = h.$$("[data-paired-task-row]");
     expect(rows.length).toBe(7);
-    expect(h.$("[data-task-state=incompatible_cohort]")!.textContent).toContain("incompatible cohort");
+    expect(h.$("[data-task-state=incompatible_cohort]")!.textContent).toContain(
+      "incompatible cohort",
+    );
     expect(h.$("[data-task-state=missing_in_a]")!.textContent).toContain("missing here");
     expect(h.$("[data-task-state=missing_in_b]")!.textContent).toContain("missing there");
     expect(h.text()).toContain("versions differ");
