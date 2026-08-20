@@ -81,7 +81,7 @@ function makeAssessmentRef(options: {
 
 async function putFixtureObservation(
   repo: InMemoryEvidenceRepository,
-  observation: Omit<Observation, "id">,
+  observation: Omit<Observation, "id" | "protocolFingerprint">,
 ): Promise<string> {
   const digest = `sha256:${"1".repeat(64)}`;
   const persisted: Observation = {

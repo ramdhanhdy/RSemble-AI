@@ -34,6 +34,10 @@ import { QUERY_ELIGIBILITY_RULE_VERSION } from "./model-evidence-query";
 import type { EligibilityDecision } from "../evidence/evidence-types";
 import { InMemoryEvidenceRepository } from "../persistence/evidence-repository";
 import { InMemoryTaskRepository } from "../persistence/in-memory-task-repository";
+import {
+  assembleProfileWorkerInput,
+  loadProfileData,
+} from "../../workspaces/models/model-profile-loader";
 
 // ---------------------------------------------------------------------------
 // Input assembly — mirrors the loader's async I/O so the worker compute can be
@@ -117,7 +121,6 @@ async function assembleInput(
     familyNames,
     taskFamilyRelations,
     taskFamilyAssignments,
-    taskIds,
     candidates,
     selectedComparatorId,
     comparatorCorpus,
@@ -309,6 +312,53 @@ describe("runProfileComputation — off-main-thread dispatch", () => {
     const result = await runProfileComputation(input);
     const direct = computeProfileSync(input);
     expect(JSON.stringify(result)).toBe(JSON.stringify(direct));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Loader integration — loadProfileData delegates and produces identical output
+// ---------------------------------------------------------------------------
+
+describe("loadProfileData — worker delegation output identity", () => {
+  it("produces output identical to assembleProfileWorkerInput + computeProfileSync", async () => {
+    const { evidenceRepo, taskRepo, configAId } = await seedProfileTestCorpus();
+
+    // In node (no Worker constructor) the dispatcher falls back to in-process
+    // computeProfileSync, so loadProfileData exercises the same compute the
+    // worker would run. This proves the loader assembles the input faithfully
+    // and the offloaded compute matches the direct compute for the same input.
+    delete (globalThis as unknown as { Worker?: unknown }).Worker;
+
+    const input = await assembleProfileWorkerInput({
+      modelConfigurationId: configAId,
+      evidenceRepo,
+      taskRepo,
+    });
+    expect(input).not.toBeNull();
+    const direct = computeProfileSync(input!);
+
+    const viaLoader = await loadProfileData({
+      modelConfigurationId: configAId,
+      evidenceRepo,
+      taskRepo,
+    });
+    expect(viaLoader).not.toBeNull();
+
+    // Normalize the volatile generatedAt timestamp captured at dispatch time.
+    const loaderJson = JSON.parse(JSON.stringify(viaLoader));
+    loaderJson.identity.generatedAt = input!.generatedAt;
+    expect(loaderJson).toEqual(JSON.parse(JSON.stringify(direct)));
+  });
+
+  it("returns null for a missing model configuration", async () => {
+    const { evidenceRepo, taskRepo } = await seedProfileTestCorpus();
+    delete (globalThis as unknown as { Worker?: unknown }).Worker;
+    const profile = await loadProfileData({
+      modelConfigurationId: "mc:sha256:does-not-exist",
+      evidenceRepo,
+      taskRepo,
+    });
+    expect(profile).toBeNull();
   });
 });
 

@@ -131,8 +131,6 @@ export interface ProfileWorkerInput {
   readonly familyNames: Readonly<Record<string, string>>;
   readonly taskFamilyRelations: readonly TaskFamilyRelation[];
   readonly taskFamilyAssignments: readonly TaskFamilyAssignment[];
-  /** Distinct task ids in the subject corpus (loader-computed). */
-  readonly taskIds: readonly string[];
   /** Pre-computed comparator candidates (loader-computed via async I/O). */
   readonly candidates: readonly ComparatorCandidate[];
   readonly selectedComparatorId: string | null;
@@ -214,7 +212,6 @@ export function computeProfileSync(input: ProfileWorkerInput): ProfileWorkerOutp
     familyNames,
     taskFamilyRelations,
     taskFamilyAssignments,
-    taskIds,
     candidates,
     selectedComparatorId,
     comparatorCorpus,
@@ -921,10 +918,12 @@ const PROFILE_SELECTION_NOT_EXACT_MARKER = "__profile_selection_not_exact__";
 // Guarded so importing this module on a main thread, in Node, or in happy-dom
 // never installs the handler. In a real browser worker, `Window` is undefined
 // and `self.postMessage` is a function, so the bootstrap runs.
-
-declare const self: DedicatedWorkerGlobalScope & {
+interface WorkerGlobalScopeLike {
   postMessage(message: unknown, transfer?: Transferable[]): void;
-};
+  addEventListener(type: "message", listener: (ev: MessageEvent) => void): void;
+}
+
+declare const self: WorkerGlobalScopeLike;
 
 function isDedicatedWorkerScope(): boolean {
   if (typeof self === "undefined") return false;
