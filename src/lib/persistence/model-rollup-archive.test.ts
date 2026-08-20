@@ -1,7 +1,10 @@
 import "fake-indexeddb/auto";
 import Dexie from "dexie";
 import { afterEach, describe, expect, it } from "vitest";
-import { createModelRollupVersion, type ModelRollupRecord } from "../model-rollups/model-rollup-types";
+import {
+  createModelRollupVersion,
+  type ModelRollupRecord,
+} from "../model-rollups/model-rollup-types";
 import { buildValidArchiveV3Fixture } from "./archive-v3-fixtures";
 import { buildValidNonFusionArchiveV2Fixture } from "./archive-v2-fixtures";
 import { computeArchiveV3PayloadDigest, validateArchiveV3 } from "./archive-v3-types";
@@ -14,8 +17,7 @@ import {
 import { RSembleEvaluationDB } from "./database";
 import { fusionToResearchLabReceiptKey } from "../migrations/fusion-to-research-lab";
 
-const MEMBER =
-  "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const MEMBER = "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const RECORD: ModelRollupRecord = {
   id: "rollup:archive",
   name: "Archive shelf",

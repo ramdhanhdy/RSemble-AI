@@ -66,8 +66,8 @@ async function assembleInput(
 
   const supportsRelations =
     "listTaskFamilyRelations" in taskRepo &&
-    typeof (taskRepo as unknown as { listTaskFamilyRelations?: unknown }).listTaskFamilyRelations ===
-      "function";
+    typeof (taskRepo as unknown as { listTaskFamilyRelations?: unknown })
+      .listTaskFamilyRelations === "function";
   const taskFamilyRelations = supportsRelations
     ? await (
         taskRepo as unknown as { listTaskFamilyRelations: () => Promise<never[]> }
@@ -102,8 +102,7 @@ async function assembleInput(
   if (selectedComparatorId) {
     const compConfig = allConfigs.find((c) => c.id === selectedComparatorId);
     if (compConfig) {
-      const compObs =
-        await evidenceRepo.listObservationsByModelConfiguration(selectedComparatorId);
+      const compObs = await evidenceRepo.listObservationsByModelConfiguration(selectedComparatorId);
       const compDecs = (
         await Promise.all(compObs.map((o) => evidenceRepo.getActiveDecision(o.id)))
       ).filter((d): d is EligibilityDecision => d !== null);

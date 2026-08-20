@@ -333,17 +333,22 @@ export function ModelsWorkspace({
       setRollupItems([]);
       return;
     }
-    void rollupRepo.listModelRollups({ archiveState: "all", limit: 10_000 }).then(async (records) => {
-      const items = (
-        await Promise.all(
-          records.map(async (record) => {
-            const version = await rollupRepo.getModelRollupVersion(record.id, record.latestVersion);
-            return version ? { record, version } : null;
-          }),
-        )
-      ).filter((item): item is SavedRollupListItem => item !== null);
-      if (!cancelled) setRollupItems(items);
-    });
+    void rollupRepo
+      .listModelRollups({ archiveState: "all", limit: 10_000 })
+      .then(async (records) => {
+        const items = (
+          await Promise.all(
+            records.map(async (record) => {
+              const version = await rollupRepo.getModelRollupVersion(
+                record.id,
+                record.latestVersion,
+              );
+              return version ? { record, version } : null;
+            }),
+          )
+        ).filter((item): item is SavedRollupListItem => item !== null);
+        if (!cancelled) setRollupItems(items);
+      });
     return () => {
       cancelled = true;
     };
@@ -567,7 +572,6 @@ function renderListContent(args: RenderArgs): ReactNode {
         totalItems={totalItems}
         onPageChange={onPageChange}
       />
-
     </>
   );
 }

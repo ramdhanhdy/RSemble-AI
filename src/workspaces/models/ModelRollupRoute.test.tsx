@@ -31,7 +31,8 @@ function configuration(id: string, requestedModel: string): ModelConfigurationSn
 async function repositories(options: { archived?: boolean; omitSecond?: boolean } = {}) {
   const evidence = new InMemoryEvidenceRepository();
   await evidence.putModelConfiguration(configuration(MEMBER_A, "vendor/a"));
-  if (!options.omitSecond) await evidence.putModelConfiguration(configuration(MEMBER_B, "vendor/b"));
+  if (!options.omitSecond)
+    await evidence.putModelConfiguration(configuration(MEMBER_B, "vendor/b"));
   const rollups = new InMemoryModelRollupRepository([MEMBER_A, MEMBER_B]);
   const v1 = createModelRollupVersion({
     rollupId: "rollup:route",
@@ -61,7 +62,10 @@ function mount(path: string, repos: Awaited<ReturnType<typeof repositories>>): H
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/models/rollups/:rollupId/versions/:version" element={<ModelRollupRoute rollupRepo={repos.rollups} evidenceRepo={repos.evidence} />} />
+        <Route
+          path="/models/rollups/:rollupId/versions/:version"
+          element={<ModelRollupRoute rollupRepo={repos.rollups} evidenceRepo={repos.evidence} />}
+        />
       </Routes>
     </MemoryRouter>,
   );

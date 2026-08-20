@@ -10,10 +10,7 @@ import {
 import { RSembleEvaluationDB, StorageError } from "./database";
 import { createEvidenceRepository } from "./evidence-repository";
 import { InMemoryModelRollupRepository } from "./in-memory-model-rollup-repository";
-import {
-  createModelRollupRepository,
-  type ModelRollupRepository,
-} from "./model-rollup-repository";
+import { createModelRollupRepository, type ModelRollupRepository } from "./model-rollup-repository";
 
 const MEMBER_A = `mc:sha256:${"a".repeat(64)}`;
 const MEMBER_B = `mc:sha256:${"b".repeat(64)}`;
@@ -127,8 +124,14 @@ export function modelRollupRepositoryContract(name: string, factory: Factory): v
 
     it("lists records and versions deterministically", async () => {
       const { repo, close } = await factory();
-      await repo.createModelRollup(record({ id: "rollup:z", name: "Zulu" }), version({ rollupId: "rollup:z", name: "Zulu" }));
-      await repo.createModelRollup(record({ id: "rollup:a", name: "Alpha" }), version({ rollupId: "rollup:a", name: "Alpha" }));
+      await repo.createModelRollup(
+        record({ id: "rollup:z", name: "Zulu" }),
+        version({ rollupId: "rollup:z", name: "Zulu" }),
+      );
+      await repo.createModelRollup(
+        record({ id: "rollup:a", name: "Alpha" }),
+        version({ rollupId: "rollup:a", name: "Alpha" }),
+      );
       expect((await repo.listModelRollups({ archiveState: "all" })).map((r) => r.id)).toEqual([
         "rollup:a",
         "rollup:z",
@@ -163,10 +166,13 @@ modelRollupRepositoryContract("In-memory ModelRollupRepository parity", async ()
 describe("ModelRollupRepository strict policy", () => {
   it("rejects a runtime-forged pooled policy before writing", async () => {
     const repo = new InMemoryModelRollupRepository([MEMBER_A]);
-    const forged = { ...version({ memberConfigurationIds: [MEMBER_A] }), aggregationPolicy: "pooled" };
-    await expect(repo.createModelRollup(record(), forged as ModelRollupVersion)).rejects.toBeInstanceOf(
-      StorageError,
-    );
+    const forged = {
+      ...version({ memberConfigurationIds: [MEMBER_A] }),
+      aggregationPolicy: "pooled",
+    };
+    await expect(
+      repo.createModelRollup(record(), forged as ModelRollupVersion),
+    ).rejects.toBeInstanceOf(StorageError);
     expect(await repo.listModelRollups({ archiveState: "all" })).toEqual([]);
   });
 });

@@ -78,8 +78,12 @@ function HistoryControls() {
   const navigate = useNavigate();
   return (
     <>
-      <button data-history-back type="button" onClick={() => navigate(-1)}>Back</button>
-      <button data-history-forward type="button" onClick={() => navigate(1)}>Forward</button>
+      <button data-history-back type="button" onClick={() => navigate(-1)}>
+        Back
+      </button>
+      <button data-history-forward type="button" onClick={() => navigate(1)}>
+        Forward
+      </button>
     </>
   );
 }
@@ -94,13 +98,18 @@ describe("ModelsWorkspace canonical rollup route", () => {
     const h = render(
       <MemoryRouter initialEntries={["/models/rollups/rollup%3Aworkspace/versions/2"]}>
         <Routes>
-          <Route path="/models/*" element={<ModelsWorkspace evidenceRepo={evidence} taskRepo={null} rollupRepo={rollups} />} />
+          <Route
+            path="/models/*"
+            element={
+              <ModelsWorkspace evidenceRepo={evidence} taskRepo={null} rollupRepo={rollups} />
+            }
+          />
         </Routes>
       </MemoryRouter>,
     );
     await settle();
     expect(h.$("[data-model-rollup-route]")).not.toBeNull();
-    expect(h.$('[data-rollup-version]')?.textContent).toBe("v2");
+    expect(h.$("[data-rollup-version]")?.textContent).toBe("v2");
     expect(h.$("[data-model-profile]")).toBeNull();
     act(() => h.root.unmount());
   });
@@ -117,18 +126,23 @@ describe("ModelsWorkspace canonical rollup route", () => {
       >
         <HistoryControls />
         <Routes>
-          <Route path="/models/*" element={<ModelsWorkspace evidenceRepo={evidence} taskRepo={null} rollupRepo={rollups} />} />
+          <Route
+            path="/models/*"
+            element={
+              <ModelsWorkspace evidenceRepo={evidence} taskRepo={null} rollupRepo={rollups} />
+            }
+          />
         </Routes>
       </MemoryRouter>,
     );
     await settle();
-    expect(h.$('[data-rollup-version]')?.textContent).toBe("v2");
+    expect(h.$("[data-rollup-version]")?.textContent).toBe("v2");
     act(() => h.$("[data-history-back]")!.click());
     await settle();
-    expect(h.$('[data-rollup-version]')?.textContent).toBe("v1");
+    expect(h.$("[data-rollup-version]")?.textContent).toBe("v1");
     act(() => h.$("[data-history-forward]")!.click());
     await settle();
-    expect(h.$('[data-rollup-version]')?.textContent).toBe("v2");
+    expect(h.$("[data-rollup-version]")?.textContent).toBe("v2");
     act(() => h.root.unmount());
   });
 });

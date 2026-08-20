@@ -296,16 +296,58 @@ export function SavedRollupsSection({
           and never pools evidence.
         </p>
         {onCreate && memberOptions.length > 0 ? (
-          <button type="button" className="pressable min-h-[44px] rounded-md border border-edge px-3 text-sm text-text" onClick={() => setCreating((open) => !open)}>
+          <button
+            type="button"
+            className="pressable min-h-[44px] rounded-md border border-edge px-3 text-sm text-text"
+            onClick={() => setCreating((open) => !open)}
+          >
             Create rollup
           </button>
         ) : null}
       </div>
       {creating ? (
-        <form data-rollup-create className="rounded-md border border-edge bg-panel p-3" onSubmit={(event) => void submit(event)}>
-          <label className="text-sm text-text">Name<input className="mt-1 min-h-[44px] w-full rounded-md border border-edge bg-card px-3 text-text" value={name} onChange={(event) => setName(event.target.value)} required /></label>
-          <fieldset className="mt-3"><legend className="text-sm text-text">Exact configurations</legend>{memberOptions.map((option) => <label key={option.id} className="flex min-h-[44px] items-center gap-2 text-sm text-text-secondary"><input type="checkbox" checked={members.includes(option.id)} onChange={(event) => setMembers((current) => event.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id))} />{option.label}</label>)}</fieldset>
-          <button type="submit" className="pressable mt-3 min-h-[44px] rounded-md bg-accent px-4 text-sm font-medium text-bg">Save pinned rollup</button>
+        <form
+          data-rollup-create
+          className="rounded-md border border-edge bg-panel p-3"
+          onSubmit={(event) => void submit(event)}
+        >
+          <label className="text-sm text-text">
+            Name
+            <input
+              className="mt-1 min-h-[44px] w-full rounded-md border border-edge bg-card px-3 text-text"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+            />
+          </label>
+          <fieldset className="mt-3">
+            <legend className="text-sm text-text">Exact configurations</legend>
+            {memberOptions.map((option) => (
+              <label
+                key={option.id}
+                className="flex min-h-[44px] items-center gap-2 text-sm text-text-secondary"
+              >
+                <input
+                  type="checkbox"
+                  checked={members.includes(option.id)}
+                  onChange={(event) =>
+                    setMembers((current) =>
+                      event.target.checked
+                        ? [...current, option.id]
+                        : current.filter((id) => id !== option.id),
+                    )
+                  }
+                />
+                {option.label}
+              </label>
+            ))}
+          </fieldset>
+          <button
+            type="submit"
+            className="pressable mt-3 min-h-[44px] rounded-md bg-accent px-4 text-sm font-medium text-bg"
+          >
+            Save pinned rollup
+          </button>
         </form>
       ) : null}
       {visible.length === 0 ? (
@@ -315,16 +357,35 @@ export function SavedRollupsSection({
       ) : (
         <div className="flex flex-col gap-2">
           {visible.map(({ record, version }) => (
-            <Link key={record.id} data-rollup-row data-archived={record.archivedAt !== null ? "" : undefined} className={ROW_SURFACE_CLASS} to={`/models/rollups/${encodeURIComponent(record.id)}/versions/${version.version}`}>
-              <span className="flex items-center gap-2"><KindEyebrow kind="rollup" /><strong className="text-text">{version.name}</strong><span className="font-mono text-xs text-text-secondary">v{version.version}</span></span>
-              <span className="text-xs text-text-secondary">{version.memberConfigurationIds.length} members · stratified only · created {formatModelWindow(version.createdAt, version.createdAt)}</span>
-              {record.archivedAt !== null ? <span className="text-xs text-warning">Archived · read-only</span> : null}
+            <Link
+              key={record.id}
+              data-rollup-row
+              data-archived={record.archivedAt !== null ? "" : undefined}
+              className={ROW_SURFACE_CLASS}
+              to={`/models/rollups/${encodeURIComponent(record.id)}/versions/${version.version}`}
+            >
+              <span className="flex items-center gap-2">
+                <KindEyebrow kind="rollup" />
+                <strong className="text-text">{version.name}</strong>
+                <span className="font-mono text-xs text-text-secondary">v{version.version}</span>
+              </span>
+              <span className="text-xs text-text-secondary">
+                {version.memberConfigurationIds.length} members · stratified only · created{" "}
+                {formatModelWindow(version.createdAt, version.createdAt)}
+              </span>
+              {record.archivedAt !== null ? (
+                <span className="text-xs text-warning">Archived · read-only</span>
+              ) : null}
             </Link>
           ))}
         </div>
       )}
       {archivedCount > 0 ? (
-        <button type="button" className="pressable min-h-[44px] self-start rounded-md px-2 text-sm text-accent" onClick={() => setShowArchived((shown) => !shown)}>
+        <button
+          type="button"
+          className="pressable min-h-[44px] self-start rounded-md px-2 text-sm text-accent"
+          onClick={() => setShowArchived((shown) => !shown)}
+        >
           {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
         </button>
       ) : null}

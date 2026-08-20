@@ -28,7 +28,10 @@ export class InMemoryModelRollupRepository implements ModelRollupRepository {
   async createModelRollup(record: ModelRollupRecord, version: ModelRollupVersion): Promise<void> {
     assertValidModelRollupPair(record, version);
     if (record.latestVersion !== 1 || version.version !== 1 || record.revision !== 0) {
-      throw new StorageError("validation", "A new Model Rollup must start at version 1, revision 0");
+      throw new StorageError(
+        "validation",
+        "A new Model Rollup must start at version 1, revision 0",
+      );
     }
     await assertExactModelRollupMembers(version, async (id) => this.exactMemberIds.has(id));
     if (this.records.has(record.id)) {
@@ -65,7 +68,8 @@ export class InMemoryModelRollupRepository implements ModelRollupRepository {
     }
     await assertExactModelRollupMembers(version, async (id) => this.exactMemberIds.has(id));
     const key = `${version.rollupId}\u0000${version.version}`;
-    if (this.versions.has(key)) throw new StorageError("conflict", "Model Rollup versions are immutable");
+    if (this.versions.has(key))
+      throw new StorageError("conflict", "Model Rollup versions are immutable");
     const revision = expectedRevision + 1;
     const next = structuredClone({ ...record, revision });
     const versionClone = structuredClone(version);
@@ -99,11 +103,19 @@ export class InMemoryModelRollupRepository implements ModelRollupRepository {
     return revision;
   }
 
-  async archiveModelRollup(id: string, expectedRevision: number, archivedAt?: number): Promise<number> {
+  async archiveModelRollup(
+    id: string,
+    expectedRevision: number,
+    archivedAt?: number,
+  ): Promise<number> {
     return this.setArchiveState(id, expectedRevision, true, archivedAt);
   }
 
-  async restoreModelRollup(id: string, expectedRevision: number, updatedAt?: number): Promise<number> {
+  async restoreModelRollup(
+    id: string,
+    expectedRevision: number,
+    updatedAt?: number,
+  ): Promise<number> {
     return this.setArchiveState(id, expectedRevision, false, updatedAt);
   }
 
@@ -112,7 +124,10 @@ export class InMemoryModelRollupRepository implements ModelRollupRepository {
     return record ? structuredClone(record) : null;
   }
 
-  async getModelRollupVersion(rollupId: string, version: number): Promise<ModelRollupVersion | null> {
+  async getModelRollupVersion(
+    rollupId: string,
+    version: number,
+  ): Promise<ModelRollupVersion | null> {
     const value = this.versions.get(`${rollupId}\u0000${version}`);
     return value ? structuredClone(value) : null;
   }

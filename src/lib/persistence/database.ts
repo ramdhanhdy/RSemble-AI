@@ -828,8 +828,7 @@ export class RSembleEvaluationDB extends Dexie {
     // No evidence product, statistical output, or cache is persisted here.
     this.version(14).stores({
       modelRollups: "id, name, latestVersion, revision, updatedAt, archivedAt",
-      modelRollupVersions:
-        "[rollupId+version], rollupId, version, memberManifestDigest, createdAt",
+      modelRollupVersions: "[rollupId+version], rollupId, version, memberManifestDigest, createdAt",
     });
 
     this.on("blocked", () => {

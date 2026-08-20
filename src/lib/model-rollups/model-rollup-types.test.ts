@@ -76,8 +76,8 @@ describe("Model Rollup runtime authority", () => {
       false,
     );
     expect(isModelRollupVersion({ ...version, memberConfigurationIds: [] })).toBe(false);
-    expect(
-      isModelRollupVersion({ ...version, memberConfigurationIds: [MEMBER_B, MEMBER_A] }),
-    ).toBe(false);
+    expect(isModelRollupVersion({ ...version, memberConfigurationIds: [MEMBER_B, MEMBER_A] })).toBe(
+      false,
+    );
   });
 });

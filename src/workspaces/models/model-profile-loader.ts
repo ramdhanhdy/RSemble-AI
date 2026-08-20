@@ -136,8 +136,7 @@ export async function assembleProfileWorkerInput(
   if (selectedComparatorId) {
     const compConfig = allConfigs.find((c) => c.id === selectedComparatorId);
     if (compConfig) {
-      const compObs =
-        await evidenceRepo.listObservationsByModelConfiguration(selectedComparatorId);
+      const compObs = await evidenceRepo.listObservationsByModelConfiguration(selectedComparatorId);
       const compDecs = (
         await Promise.all(compObs.map((o) => evidenceRepo.getActiveDecision(o.id)))
       ).filter((d): d is EligibilityDecision => d !== null);

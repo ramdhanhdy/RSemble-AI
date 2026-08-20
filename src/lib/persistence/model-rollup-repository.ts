@@ -115,7 +115,10 @@ export function createModelRollupRepository(db: RSembleEvaluationDB): ModelRollu
   ): Promise<void> {
     assertValidModelRollupPair(record, version);
     if (record.latestVersion !== 1 || version.version !== 1 || record.revision !== 0) {
-      throw new StorageError("validation", "A new Model Rollup must start at version 1, revision 0");
+      throw new StorageError(
+        "validation",
+        "A new Model Rollup must start at version 1, revision 0",
+      );
     }
     db.assertWritable();
     try {
@@ -184,7 +187,10 @@ export function createModelRollupRepository(db: RSembleEvaluationDB): ModelRollu
             throw new StorageError("conflict", "Model Rollup versions must append contiguously");
           }
           if (record.createdAt !== existing.createdAt || record.archivedAt !== null) {
-            throw new StorageError("validation", "Model Rollup stable identity/lifecycle is immutable");
+            throw new StorageError(
+              "validation",
+              "Model Rollup stable identity/lifecycle is immutable",
+            );
           }
           await assertExactModelRollupMembers(version, memberExists);
           if (await db.modelRollupVersions.get([version.rollupId, version.version])) {
@@ -282,7 +288,10 @@ export function createModelRollupRepository(db: RSembleEvaluationDB): ModelRollu
       return applyModelRollupListQuery(rows.map(recordFromRow), query);
     },
     async listModelRollupVersions(rollupId) {
-      const rows = await db.modelRollupVersions.where("rollupId").equals(rollupId).sortBy("version");
+      const rows = await db.modelRollupVersions
+        .where("rollupId")
+        .equals(rollupId)
+        .sortBy("version");
       return rows.map(versionFromRow);
     },
   };

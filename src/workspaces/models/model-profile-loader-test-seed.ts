@@ -232,7 +232,12 @@ export async function seedProfileTestCorpus(): Promise<SeededCorpus> {
         configurationDigest: "digest-1",
         verifierRef: { id: "ver-code", version: 1 },
       },
-      outcome: { judgeAccepted: true, verifierPassed: passed, overallScore: null, criterionValues: [] },
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: passed,
+        overallScore: null,
+        criterionValues: [],
+      },
       observedAt: Date.parse("2026-07-10") + i * 1000,
       observationSchemaVersion: 1,
     });
@@ -271,7 +276,12 @@ export async function seedProfileTestCorpus(): Promise<SeededCorpus> {
         toolScaffoldSignature: null,
       },
       verifierSnapshot: null,
-      outcome: { judgeAccepted: true, verifierPassed: null, overallScore: scores[i], criterionValues: [] },
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: null,
+        overallScore: scores[i],
+        criterionValues: [],
+      },
       observedAt: Date.parse("2026-07-12") + i * 1000,
       observationSchemaVersion: 1,
     });
@@ -314,7 +324,12 @@ export async function seedProfileTestCorpus(): Promise<SeededCorpus> {
         configurationDigest: "digest-1",
         verifierRef: { id: "ver-code", version: 1 },
       },
-      outcome: { judgeAccepted: true, verifierPassed: passed, overallScore: null, criterionValues: [] },
+      outcome: {
+        judgeAccepted: true,
+        verifierPassed: passed,
+        overallScore: null,
+        criterionValues: [],
+      },
       observedAt: Date.parse("2026-07-11") + i * 1000,
       observationSchemaVersion: 1,
     });

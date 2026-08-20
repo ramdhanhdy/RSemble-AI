@@ -80,9 +80,7 @@ function nonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
-export function computeModelRollupMemberManifestDigest(
-  value: ModelRollupVersionInput,
-): string {
+export function computeModelRollupMemberManifestDigest(value: ModelRollupVersionInput): string {
   return hashArtifactContent(
     canonicalJsonString({
       rollupId: value.rollupId,
@@ -117,7 +115,8 @@ export function isModelRollupRecord(value: unknown): value is ModelRollupRecord 
     timestamp(value.createdAt) &&
     timestamp(value.updatedAt) &&
     value.updatedAt >= value.createdAt &&
-    (value.archivedAt === null || (timestamp(value.archivedAt) && value.archivedAt >= value.createdAt))
+    (value.archivedAt === null ||
+      (timestamp(value.archivedAt) && value.archivedAt >= value.createdAt))
   );
 }
 
@@ -134,7 +133,8 @@ export function isModelRollupVersion(value: unknown): value is ModelRollupVersio
     !Array.isArray(value.memberConfigurationIds) ||
     value.memberConfigurationIds.length === 0 ||
     !value.memberConfigurationIds.every(
-      (member): member is string => typeof member === "string" && MODEL_CONFIGURATION_ID.test(member),
+      (member): member is string =>
+        typeof member === "string" && MODEL_CONFIGURATION_ID.test(member),
     ) ||
     new Set(value.memberConfigurationIds).size !== value.memberConfigurationIds.length
   ) {

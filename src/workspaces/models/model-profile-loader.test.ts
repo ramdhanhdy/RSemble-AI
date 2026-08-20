@@ -21,7 +21,10 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import * as selectionMod from "../../lib/model-profiles/profile-observation-selection";
 import * as aggregationMod from "../../lib/model-profiles/family-aggregation";
 import * as pairedMod from "../../lib/model-profiles/paired-comparison";
-import { runProfileComputation, type ProfileWorkerInput } from "../../lib/model-profiles/model-profile-worker";
+import {
+  runProfileComputation,
+  type ProfileWorkerInput,
+} from "../../lib/model-profiles/model-profile-worker";
 import { loadProfileData } from "./model-profile-loader";
 import { seedProfileTestCorpus } from "./model-profile-loader-test-seed";
 

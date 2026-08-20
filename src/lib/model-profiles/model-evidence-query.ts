@@ -186,7 +186,9 @@ export function createModelRollupVersionResolver(
     }
     const key = `${version.rollupId}\u0000${version.version}`;
     if (byIdentity.has(key)) {
-      throw new Error(`Duplicate immutable Model Rollup version ${version.rollupId}@${version.version}`);
+      throw new Error(
+        `Duplicate immutable Model Rollup version ${version.rollupId}@${version.version}`,
+      );
     }
     byIdentity.set(key, modelRollupVersionToResolvedManifest(version));
   }

@@ -36,10 +36,7 @@ import { createTaskSetRepository, type TaskSetRepository } from "./task-set-repo
 import { createEvidenceRepository, type EvidenceRepository } from "./evidence-repository";
 import { createStudyRepository, type StudyRepository } from "./study-repository";
 import { createLabAssetRepository, type LabAssetRepository } from "./lab-asset-repository";
-import {
-  createModelRollupRepository,
-  type ModelRollupRepository,
-} from "./model-rollup-repository";
+import { createModelRollupRepository, type ModelRollupRepository } from "./model-rollup-repository";
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
