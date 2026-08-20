@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Route, Routes, useSearchParams } from "react-router-dom";
+import { ModelEvidenceProfile } from "./ModelEvidenceProfile";
 import { Cpu } from "lucide-react";
 import { useEvidenceRepository, useTaskRepository } from "../../lib/persistence/repository-context";
 import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
@@ -371,9 +372,10 @@ export function ModelsWorkspace({
           <div className="mt-4">
             <Routes>
               <Route index element={listContent} />
-              {/* Nested profile (/models/:modelConfigurationId) and observation
-                  drilldown routes arrive in Task 10 — left absent here, never
-                  stubbed with fake pages. */}
+              <Route
+                path=":modelConfigurationId"
+                element={<ModelEvidenceProfile />}
+              />
             </Routes>
           </div>
         </div>
