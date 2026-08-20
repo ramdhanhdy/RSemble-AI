@@ -241,6 +241,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     // Wait on the condition, not a fixed clock: the sweep is a fire-and-forget
     // async effect whose latency varies under load.
     await waitUntil(async () => (await runRepo.get("run-stuck"))?.status === "interrupted");
+    await settle(0);
 
     const recovered = await runRepo.get("run-stuck");
     expect(recovered?.status).toBe("interrupted");
