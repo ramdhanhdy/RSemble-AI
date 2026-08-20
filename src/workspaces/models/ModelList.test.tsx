@@ -17,7 +17,9 @@ import type { ModelConfigurationCatalogEntry } from "../../lib/model-profiles/mo
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
-function makeEntry(over: Partial<ModelConfigurationCatalogEntry> = {}): ModelConfigurationCatalogEntry {
+function makeEntry(
+  over: Partial<ModelConfigurationCatalogEntry> = {},
+): ModelConfigurationCatalogEntry {
   return {
     modelConfigurationId: "mc:sha256:" + "a".repeat(64),
     providerId: "providerA",
@@ -78,7 +80,9 @@ function renderRouter(node: React.ReactNode): Harness {
 describe("ModelList — row anatomy (Fable §6.3)", () => {
   it("renders KindEyebrow, VersionStatusChip, CompactModelLabel, window, coverage, families, activity", () => {
     const row = makeRow();
-    const h = renderRouter(<ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />);
+    const h = renderRouter(
+      <ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />,
+    );
     const surface = h.$("[data-record-row-surface]")!;
     expect(surface).not.toBeNull();
     expect(h.text()).toContain("Model Configuration");
@@ -97,7 +101,9 @@ describe("ModelList — row anatomy (Fable §6.3)", () => {
 
   it("the whole row is a link to /models/:id", () => {
     const row = makeRow();
-    const h = renderRouter(<ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />);
+    const h = renderRouter(
+      <ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />,
+    );
     const link = h.$("[data-record-row-surface]") as HTMLAnchorElement;
     expect(link.tagName).toBe("A");
     expect(link.getAttribute("href")).toContain("/models/");
@@ -109,7 +115,9 @@ describe("ModelList — row anatomy (Fable §6.3)", () => {
     const row = makeRow({
       entry: { identityCompleteness: "rolling_alias", resolvedVersion: null },
     });
-    const h = renderRouter(<ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />);
+    const h = renderRouter(
+      <ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />,
+    );
     expect(h.$("[data-version-status='rolling_alias']")).not.toBeNull();
     expect(h.text()).toContain("Rolling alias");
     cleanup(h);
@@ -121,7 +129,9 @@ describe("ModelList — row anatomy (Fable §6.3)", () => {
       topFamilyNames: [],
       gapCount: 0,
     });
-    const h = renderRouter(<ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />);
+    const h = renderRouter(
+      <ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />,
+    );
     expect(h.text()).toContain("0 eligible observations");
     expect(h.text()).toContain("exploratory only");
     expect(h.$("[data-record-row-surface]")).not.toBeNull();
@@ -134,14 +144,18 @@ describe("ModelList — row anatomy (Fable §6.3)", () => {
       topFamilyNames: [],
       gapCount: 0,
     });
-    const h = renderRouter(<ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />);
+    const h = renderRouter(
+      <ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />,
+    );
     expect(h.text()).toContain("coverage unavailable");
     cleanup(h);
   });
 
   it("emits no aria-sort attribute anywhere (no sortable score columns)", () => {
     const row = makeRow();
-    const h = renderRouter(<ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />);
+    const h = renderRouter(
+      <ModelList rows={[row]} page={1} pageCount={1} totalItems={1} onPageChange={() => {}} />,
+    );
     expect(h.$$("[aria-sort]").length).toBe(0);
     cleanup(h);
   });
@@ -153,16 +167,28 @@ describe("ModelList — pagination", () => {
       makeRow(),
       makeRow({ entry: { modelConfigurationId: "mc:sha256:" + "b".repeat(64) } }),
     ];
-    const h = renderRouter(<ModelList rows={rows} page={1} pageCount={1} totalItems={2} onPageChange={() => {}} />);
+    const h = renderRouter(
+      <ModelList rows={rows} page={1} pageCount={1} totalItems={2} onPageChange={() => {}} />,
+    );
     expect(h.$("nav[aria-label='Pagination']")).toBeNull();
     cleanup(h);
-    const h2 = renderRouter(<ModelList rows={rows} page={1} pageCount={2} totalItems={2} onPageChange={() => {}} />);
+    const h2 = renderRouter(
+      <ModelList rows={rows} page={1} pageCount={2} totalItems={2} onPageChange={() => {}} />,
+    );
     expect(h2.$("nav[aria-label='Pagination']")).not.toBeNull();
     cleanup(h2);
   });
 
   it("reports the visible page range to the pager", () => {
-    const h = renderRouter(<ModelList rows={[makeRow()]} page={1} pageCount={2} totalItems={60} onPageChange={() => {}} />);
+    const h = renderRouter(
+      <ModelList
+        rows={[makeRow()]}
+        page={1}
+        pageCount={2}
+        totalItems={60}
+        onPageChange={() => {}}
+      />,
+    );
     expect(h.text()).toContain("1–50 of 60");
     cleanup(h);
   });
@@ -223,6 +249,8 @@ describe("formatModelWindow", () => {
     expect(formatModelWindow(Date.UTC(2026, 4, 5), Date.UTC(2026, 4, 28))).toBe("May 2026");
   });
   it("formats a cross-year window as Mon YYYY–Mon YYYY", () => {
-    expect(formatModelWindow(Date.UTC(2025, 11, 1), Date.UTC(2026, 1, 1))).toBe("Dec 2025–Feb 2026");
+    expect(formatModelWindow(Date.UTC(2025, 11, 1), Date.UTC(2026, 1, 1))).toBe(
+      "Dec 2025–Feb 2026",
+    );
   });
 });

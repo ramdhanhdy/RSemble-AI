@@ -19,10 +19,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Route, Routes, useSearchParams } from "react-router-dom";
 import { Cpu } from "lucide-react";
-import {
-  useEvidenceRepository,
-  useTaskRepository,
-} from "../../lib/persistence/repository-context";
+import { useEvidenceRepository, useTaskRepository } from "../../lib/persistence/repository-context";
 import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import {
@@ -104,9 +101,7 @@ async function enrichEntry(
   familyNames: Map<string, string>,
   familyUniverse: Set<string>,
 ): Promise<ModelListRowData> {
-  const observations = await repo.listObservationsByModelConfiguration(
-    entry.modelConfigurationId,
-  );
+  const observations = await repo.listObservationsByModelConfiguration(entry.modelConfigurationId);
   const taskIds = new Set<string>();
   const familyCounts = new Map<string, number>();
   for (const obs of observations) {
@@ -119,9 +114,7 @@ async function enrichEntry(
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 2)
     .map(([id]) => id);
-  const topFamilyNames = topFamilyIds
-    .map((id) => familyNames.get(id) ?? id)
-    .slice(0, 2);
+  const topFamilyNames = topFamilyIds.map((id) => familyNames.get(id) ?? id).slice(0, 2);
   const observedFamilies = new Set(familyCounts.keys());
   let gapCount = 0;
   for (const famId of familyUniverse) {
@@ -154,9 +147,7 @@ function buildOptions(
     { id: "verified", label: "Verified" },
     { id: "benchmark_anchor", label: "Benchmark anchor" },
   ];
-  const evidenceClasses = entries.some((e) => e.eligibleProfileEvidenceCount > 0)
-    ? classVocab
-    : [];
+  const evidenceClasses = entries.some((e) => e.eligibleProfileEvidenceCount > 0) ? classVocab : [];
   const families = [...familyNames.entries()]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -231,10 +222,7 @@ function applyPostFilters(
 
 /** Apply the D1 sort. Canonical = catalog order (preserved); latest activity =
  *  by latestActivity desc with the configuration id as a stable tiebreak. */
-function applySort(
-  rows: ModelListRowData[],
-  sort: ModelListUrlState["sort"],
-): ModelListRowData[] {
+function applySort(rows: ModelListRowData[], sort: ModelListUrlState["sort"]): ModelListRowData[] {
   if (sort === "latest") {
     return [...rows].sort(
       (a, b) =>
@@ -280,10 +268,7 @@ export function ModelsWorkspace({
   const taskRepo = taskRepoProp !== undefined ? taskRepoProp : ctxTaskRepo;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const state = useMemo(
-    () => decodeModelListUrlState(searchParams),
-    [searchParams],
-  );
+  const state = useMemo(() => decodeModelListUrlState(searchParams), [searchParams]);
 
   const [load, setLoad] = useState<LoadState>({
     loading: true,
@@ -348,8 +333,7 @@ export function ModelsWorkspace({
   );
 
   const appliedFilters = countAppliedModelFilters(state);
-  const showNoneEligibleBanner =
-    appliedFilters === 0 && (load.data?.totalEligible ?? 0) === 0;
+  const showNoneEligibleBanner = appliedFilters === 0 && (load.data?.totalEligible ?? 0) === 0;
 
   const listContent = renderListContent({
     load,
@@ -373,13 +357,15 @@ export function ModelsWorkspace({
             <ModelFilters
               value={state}
               onChange={handleFiltersChange}
-              options={load.data?.options ?? {
-                providers: [],
-                models: [],
-                signatures: [],
-                evidenceClasses: [],
-                families: [],
-              }}
+              options={
+                load.data?.options ?? {
+                  providers: [],
+                  models: [],
+                  signatures: [],
+                  evidenceClasses: [],
+                  families: [],
+                }
+              }
             />
           </div>
           <div className="mt-4">

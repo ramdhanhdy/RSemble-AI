@@ -205,7 +205,18 @@ export function ModelFilters({ value, onChange, options }: ModelFiltersProps) {
   }
 
   function clearAll() {
-    onChange({ ...value, search: "", provider: "", model: "", versionStatus: "", signature: "", evidenceClass: "", family: "", recency: "", page: 1 });
+    onChange({
+      ...value,
+      search: "",
+      provider: "",
+      model: "",
+      versionStatus: "",
+      signature: "",
+      evidenceClass: "",
+      family: "",
+      recency: "",
+      page: 1,
+    });
   }
 
   const desktopGrid = (
@@ -274,9 +285,7 @@ export function ModelFilters({ value, onChange, options }: ModelFiltersProps) {
         label="Recency"
         dataFilter="recency"
         value={value.recency}
-        onChange={(e) =>
-          update({ recency: e.target.value as ModelListUrlState["recency"] })
-        }
+        onChange={(e) => update({ recency: e.target.value as ModelListUrlState["recency"] })}
         selectClassName="w-full min-w-0"
       >
         {RECENCY_OPTIONS}
@@ -362,9 +371,7 @@ export function ModelFilters({ value, onChange, options }: ModelFiltersProps) {
         label="Recency"
         dataFilter="recency"
         value={value.recency}
-        onChange={(e) =>
-          update({ recency: e.target.value as ModelListUrlState["recency"] })
-        }
+        onChange={(e) => update({ recency: e.target.value as ModelListUrlState["recency"] })}
         wrapperClassName="w-full min-w-0"
         selectClassName="w-full min-w-0 max-w-full"
       >

@@ -21,9 +21,7 @@ describe("models-url-state — default + round-trip", () => {
   });
 
   it("decoding an empty source yields the default state", () => {
-    expect(decodeModelListUrlState(new URLSearchParams())).toEqual(
-      DEFAULT_MODEL_LIST_URL_STATE,
-    );
+    expect(decodeModelListUrlState(new URLSearchParams())).toEqual(DEFAULT_MODEL_LIST_URL_STATE);
   });
 
   it("a fully-set state round-trips through encode → decode", () => {
@@ -79,22 +77,14 @@ describe("models-url-state — default + round-trip", () => {
 
 describe("models-url-state — decode robustness", () => {
   it("malformed page falls back to 1", () => {
-    expect(
-      decodeModelListUrlState(new URLSearchParams("m.page=abc")).page,
-    ).toBe(1);
-    expect(
-      decodeModelListUrlState(new URLSearchParams("m.page=-2")).page,
-    ).toBe(1);
-    expect(
-      decodeModelListUrlState(new URLSearchParams("m.page=2.5")).page,
-    ).toBe(1);
+    expect(decodeModelListUrlState(new URLSearchParams("m.page=abc")).page).toBe(1);
+    expect(decodeModelListUrlState(new URLSearchParams("m.page=-2")).page).toBe(1);
+    expect(decodeModelListUrlState(new URLSearchParams("m.page=2.5")).page).toBe(1);
   });
 
   it("unknown version-status / recency / sort fall back to defaults", () => {
     const decoded = decodeModelListUrlState(
-      new URLSearchParams(
-        "m.versionStatus=bogus&m.recency=99&m.sort=score",
-      ),
+      new URLSearchParams("m.versionStatus=bogus&m.recency=99&m.sort=score"),
     );
     expect(decoded.versionStatus).toBe("");
     expect(decoded.recency).toBe("");
@@ -129,11 +119,7 @@ describe("models-url-state — applied-count", () => {
   });
 
   it("search counts only when non-empty after trim", () => {
-    expect(
-      countAppliedModelFilters({ ...DEFAULT_MODEL_LIST_URL_STATE, search: "   " }),
-    ).toBe(0);
-    expect(
-      countAppliedModelFilters({ ...DEFAULT_MODEL_LIST_URL_STATE, search: "x" }),
-    ).toBe(1);
+    expect(countAppliedModelFilters({ ...DEFAULT_MODEL_LIST_URL_STATE, search: "   " })).toBe(0);
+    expect(countAppliedModelFilters({ ...DEFAULT_MODEL_LIST_URL_STATE, search: "x" })).toBe(1);
   });
 });

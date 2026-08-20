@@ -78,10 +78,7 @@ function renderModels(
           <Route
             path="/models/*"
             element={
-              <ModelsWorkspace
-                evidenceRepo={opts.evidenceRepo}
-                taskRepo={opts.taskRepo ?? null}
-              />
+              <ModelsWorkspace evidenceRepo={opts.evidenceRepo} taskRepo={opts.taskRepo ?? null} />
             }
           />
         </Routes>

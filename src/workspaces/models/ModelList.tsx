@@ -34,8 +34,18 @@ const ROW_SURFACE_CLASS =
   "flex min-h-[44px] min-w-0 flex-1 flex-col gap-1 rounded-md border border-edge bg-panel px-3 py-2 text-sm transition-colors duration-150 hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ] as const;
 
 /** Format an observed window as "Mon–Mon YYYY" (or "Mon YYYY" when the window
@@ -58,9 +68,7 @@ export function formatModelWindow(from: number, to: number): string {
   return `${fMon} ${fYear}–${tMon} ${tYear}`;
 }
 
-function completenessToVersionStatus(
-  completeness: IdentityCompleteness,
-): VersionStatus {
+function completenessToVersionStatus(completeness: IdentityCompleteness): VersionStatus {
   if (completeness === "rolling_alias") return "rolling_alias";
   if (completeness === "partial") return "partial_identity";
   return "exact";
@@ -104,10 +112,7 @@ function taskQuantity(taskCount: number, hasObservations: boolean): HonestQuanti
   return { state: "available", value: taskCount };
 }
 
-function eligibleQuantity(
-  eligible: number,
-  hasObservations: boolean,
-): HonestQuantity {
+function eligibleQuantity(eligible: number, hasObservations: boolean): HonestQuantity {
   if (!hasObservations) {
     return { state: "unavailable", reason: "coverage unavailable" };
   }
@@ -124,12 +129,10 @@ function ModelListRow({ row }: { row: ModelListRowData }) {
   const zeroQualified = entry.eligibleProfileEvidenceCount === 0;
 
   // Line 3 — families + gaps (cap: ≤2 family names, ≤1 gap count).
-  const topPart =
-    topFamilyNames.length > 0 ? `Top: ${topFamilyNames.join(", ")}` : "";
+  const topPart = topFamilyNames.length > 0 ? `Top: ${topFamilyNames.join(", ")}` : "";
   const gapPart = gapCount > 0 ? `No evidence: ${gapCount} families` : "";
   const familiesLine = [topPart, gapPart].filter(Boolean).join(" · ");
-  const familiesText =
-    familiesLine || (hasObservations ? "families unavailable" : "No evidence");
+  const familiesText = familiesLine || (hasObservations ? "families unavailable" : "No evidence");
 
   // Line 2 — window + coverage. Zero-qualified rows read the exploratory-only
   // line; rows with no observations read "coverage unavailable".
@@ -249,8 +252,8 @@ export function SavedRollupsSection(): ReactNode {
       <div className="rounded-md border border-edge bg-panel px-3 py-4 text-sm text-text-muted">
         <p>No saved rollups.</p>
         <p className="honesty-note mt-1 text-xs">
-          A rollup is a pinned list of exact configurations viewed side by side.
-          It is not a model and never pools evidence.
+          A rollup is a pinned list of exact configurations viewed side by side. It is not a model
+          and never pools evidence.
         </p>
       </div>
     </section>
@@ -268,8 +271,8 @@ export function FirstUseState(): ReactNode {
       <Boxes size={28} className="text-text-muted" aria-hidden="true" />
       <p className="text-sm text-text">No qualified model evidence yet.</p>
       <p className="honesty-note text-xs text-text-muted">
-        Models appears once canonical Observations pass eligibility. Run an
-        Evaluation or Compare first.
+        Models appears once canonical Observations pass eligibility. Run an Evaluation or Compare
+        first.
       </p>
       <div className="mt-2 flex gap-2">
         <Link

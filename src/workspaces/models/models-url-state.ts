@@ -103,9 +103,7 @@ export function encodeModelListUrlState(state: ModelListUrlState): URLSearchPara
   if (state.sort === "latest") params.set("m.sort", "latest");
   if (state.page > 1) params.set("m.page", String(state.page));
   const sorted = new URLSearchParams();
-  for (const [k, v] of Array.from(params.entries()).sort((a, b) =>
-    a[0].localeCompare(b[0]),
-  )) {
+  for (const [k, v] of Array.from(params.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
     sorted.set(k, v);
   }
   return sorted;
@@ -118,8 +116,7 @@ export function encodeModelListUrlState(state: ModelListUrlState): URLSearchPara
 export function decodeModelListUrlState(
   source: URLSearchParams | Record<string, string>,
 ): ModelListUrlState {
-  const params =
-    source instanceof URLSearchParams ? source : new URLSearchParams(source);
+  const params = source instanceof URLSearchParams ? source : new URLSearchParams(source);
   const get = (key: string): string => params.get(key) ?? "";
 
   const versionStatus = get("m.versionStatus");

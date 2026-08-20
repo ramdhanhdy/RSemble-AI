@@ -2,14 +2,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { render, cleanup } from "./models-test-harness";
-import {
-  ModelFilters,
-  type ModelFiltersOptions,
-} from "./ModelFilters";
-import {
-  DEFAULT_MODEL_LIST_URL_STATE,
-  type ModelListUrlState,
-} from "./models-url-state";
+import { ModelFilters, type ModelFiltersOptions } from "./ModelFilters";
+import { DEFAULT_MODEL_LIST_URL_STATE, type ModelListUrlState } from "./models-url-state";
 
 const OPTIONS: ModelFiltersOptions = {
   providers: [{ id: "providerA", label: "Provider A" }],
@@ -34,9 +28,7 @@ describe("ModelFilters — eight filters in spec order (Fable §6.2)", () => {
     const h = render(
       <ModelFilters value={DEFAULT_MODEL_LIST_URL_STATE} onChange={onChange} options={OPTIONS} />,
     );
-    const hooks = h
-      .$$("[data-filter]")
-      .map((el) => el.getAttribute("data-filter"));
+    const hooks = h.$$("[data-filter]").map((el) => el.getAttribute("data-filter"));
     expect(hooks).toContain("search");
     expect(hooks).toContain("provider");
     expect(hooks).toContain("model");
@@ -56,9 +48,7 @@ describe("ModelFilters — eight filters in spec order (Fable §6.2)", () => {
     const h = render(
       <ModelFilters value={DEFAULT_MODEL_LIST_URL_STATE} onChange={onChange} options={OPTIONS} />,
     );
-    const order = h
-      .$$("[data-filter]")
-      .map((el) => el.getAttribute("data-filter")!);
+    const order = h.$$("[data-filter]").map((el) => el.getAttribute("data-filter")!);
     const expected = [
       "search",
       "provider",
