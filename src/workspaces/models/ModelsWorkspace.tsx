@@ -321,10 +321,9 @@ export function ModelsWorkspace({
   }
 
   const now = Date.now();
-  const loadedRows = load.data?.rows ?? [];
   const filtered = useMemo(
-    () => applySort(applyPostFilters(loadedRows, state, now), state.sort),
-    [loadedRows, state, now],
+    () => applySort(applyPostFilters(load.data?.rows ?? [], state, now), state.sort),
+    [load.data?.rows, state, now],
   );
   const totalItems = filtered.length;
   const pageCount = pageCountFor(totalItems);

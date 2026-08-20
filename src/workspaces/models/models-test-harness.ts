@@ -6,9 +6,8 @@
 // against DOM structure/class names rather than rendered strings alone.
 // =============================================================================
 
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import type { ReactNode } from "react";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 

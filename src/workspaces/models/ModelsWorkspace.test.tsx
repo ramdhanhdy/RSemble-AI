@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { InMemoryEvidenceRepository } from "../../lib/persistence/evidence-repository";
+import {
+  InMemoryEvidenceRepository,
+  type EvidenceRepository,
+} from "../../lib/persistence/evidence-repository";
 import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-repository";
 import { queryModelConfigurationCatalog } from "../../lib/model-profiles/model-configuration-query";
 import {
@@ -11,7 +14,6 @@ import {
   milestoneAObservations,
   milestoneADecisions,
 } from "../../lib/model-profiles/__fixtures__/milestone-a-golden";
-import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 import { ModelsWorkspace } from "./ModelsWorkspace";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;

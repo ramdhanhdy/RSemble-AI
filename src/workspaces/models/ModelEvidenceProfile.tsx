@@ -305,7 +305,7 @@ export function ModelEvidenceProfile({
 
   const handleCancel = () => {
     setCancelled(true);
-    navigate("/models");
+    void navigate("/models");
   };
 
   // --- Not-found state ---
@@ -654,7 +654,7 @@ export function ModelEvidenceProfile({
               narrowing.clearAll();
             }}
             onRowClick={(observationId) => {
-              navigate(`/models/${id.modelConfigurationId}/evidence/${observationId}`);
+              void navigate(`/models/${id.modelConfigurationId}/evidence/${observationId}`);
             }}
           />
         </div>
