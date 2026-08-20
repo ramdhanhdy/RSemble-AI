@@ -31,10 +31,7 @@ export function VersionStatusChip({
 }: VersionStatusChipProps): ReactNode {
   if (status === "rolling_alias") {
     return (
-      <span
-        data-version-status="rolling_alias"
-        className={`${CHIP_CLASS} text-warning`}
-      >
+      <span data-version-status="rolling_alias" className={`${CHIP_CLASS} text-warning`}>
         <Repeat size={13} aria-hidden="true" />
         {COPY.versionStatus.rollingAliasWindow(window ?? "")}
       </span>
@@ -42,10 +39,7 @@ export function VersionStatusChip({
   }
   if (status === "partial_identity") {
     return (
-      <span
-        data-version-status="partial_identity"
-        className={`${CHIP_CLASS} text-warning`}
-      >
+      <span data-version-status="partial_identity" className={`${CHIP_CLASS} text-warning`}>
         <CircleAlert size={13} aria-hidden="true" />
         {COPY.versionStatus.partialIdentityDimension(missingDimension ?? "")}
       </span>

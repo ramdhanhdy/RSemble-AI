@@ -19,9 +19,7 @@ interface HonestValueProps {
 }
 
 export function HonestValue({ quantity, label }: HonestValueProps): ReactNode {
-  const labelNode = label ? (
-    <div className="text-xs text-text-secondary">{label}</div>
-  ) : null;
+  const labelNode = label ? <div className="text-xs text-text-secondary">{label}</div> : null;
 
   if (quantity.state === "available") {
     return (

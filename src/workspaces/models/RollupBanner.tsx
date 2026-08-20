@@ -26,10 +26,7 @@ export function RollupBanner({
   manifestDigest,
 }: RollupBannerProps): ReactNode {
   return (
-    <section
-      data-rollup-banner
-      className="w-full rounded-sm border border-edge bg-panel p-4"
-    >
+    <section data-rollup-banner className="w-full rounded-sm border border-edge bg-panel p-4">
       <div
         data-rollup-eyebrow
         className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
@@ -48,9 +45,7 @@ export function RollupBanner({
       <p className="mt-1 text-xs text-text-secondary">
         {COPY.rollup.membersLine(memberCount, pinnedDate, manifestDigest)}
       </p>
-      <p className="honesty-note mt-2 text-xs text-text-muted">
-        {COPY.rollup.immutability}
-      </p>
+      <p className="honesty-note mt-2 text-xs text-text-muted">{COPY.rollup.immutability}</p>
     </section>
   );
 }

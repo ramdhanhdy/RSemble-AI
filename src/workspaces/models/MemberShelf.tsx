@@ -30,12 +30,8 @@ export function MemberShelf({ member, children }: MemberShelfProps): ReactNode {
         data-member-id={member.id}
         className="rounded-sm border border-dashed border-edge bg-card p-4"
       >
-        <p className="text-sm text-text-secondary">
-          {COPY.rollup.tombstone(member.id)}
-        </p>
-        <p className="honesty-note mt-1 text-xs text-text-muted">
-          {COPY.rollup.immutability}
-        </p>
+        <p className="text-sm text-text-secondary">{COPY.rollup.tombstone(member.id)}</p>
+        <p className="honesty-note mt-1 text-xs text-text-muted">{COPY.rollup.immutability}</p>
       </section>
     );
   }

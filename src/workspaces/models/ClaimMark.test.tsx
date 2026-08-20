@@ -13,7 +13,12 @@ describe("ClaimMark — Fable §5.6", () => {
   it("renders icon + word + sentence button for strongest_supported (success role)", () => {
     const onApply = vi.fn();
     const h = render(
-      <ClaimMark label="strongest_supported" sentence={sentence} boundaryRef="verifier ver-x@2" onApply={onApply} />,
+      <ClaimMark
+        label="strongest_supported"
+        sentence={sentence}
+        boundaryRef="verifier ver-x@2"
+        onApply={onApply}
+      />,
     );
     const mark = h.$("[data-claim-mark]")!;
     expect(mark.dataset.claimLabel).toBe("strongest_supported");
@@ -29,7 +34,12 @@ describe("ClaimMark — Fable §5.6", () => {
 
   it("weakest_supported uses the error role (D5)", () => {
     const h = render(
-      <ClaimMark label="weakest_supported" sentence={sentence} boundaryRef="verifier ver-x@2" onApply={() => {}} />,
+      <ClaimMark
+        label="weakest_supported"
+        sentence={sentence}
+        boundaryRef="verifier ver-x@2"
+        onApply={() => {}}
+      />,
     );
     const mark = h.$("[data-claim-mark]")!;
     expect(mark.dataset.claimLabel).toBe("weakest_supported");
@@ -49,7 +59,12 @@ describe("ClaimMark — Fable §5.6", () => {
 
   it("carries a boundary title describing its boundary reference", () => {
     const h = render(
-      <ClaimMark label="strongest_supported" sentence={sentence} boundaryRef="rubric rub-eval@2" onApply={() => {}} />,
+      <ClaimMark
+        label="strongest_supported"
+        sentence={sentence}
+        boundaryRef="rubric rub-eval@2"
+        onApply={() => {}}
+      />,
     );
     const mark = h.$("[data-claim-mark]")!;
     expect(mark.getAttribute("title") ?? "").toContain("rubric rub-eval@2");

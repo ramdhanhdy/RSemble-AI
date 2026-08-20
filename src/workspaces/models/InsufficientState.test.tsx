@@ -41,9 +41,7 @@ describe("InsufficientState — Fable §5.5", () => {
   });
 
   it("uses a muted text role and is static (no animation class)", () => {
-    const h = render(
-      <InsufficientState kind="insufficient" unitCount={4} required={5} />,
-    );
+    const h = render(<InsufficientState kind="insufficient" unitCount={4} required={5} />);
     const root = h.$("[data-insufficient-state]")!;
     expect(root.className).toContain("text-text-muted");
     expect(root.className).not.toMatch(/animate-/);

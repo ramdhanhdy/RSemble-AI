@@ -56,9 +56,7 @@ describe("HonestValue — Fable §5.1", () => {
   it("the three states never share a rendering (distinct root class hooks)", () => {
     const a = render(<HonestValue quantity={{ state: "available", value: 1 }} />);
     const l = render(
-      <HonestValue
-        quantity={{ state: "limited", value: 1, unresolved: 2, reason: "r" }}
-      />,
+      <HonestValue quantity={{ state: "limited", value: 1, unresolved: 2, reason: "r" }} />,
     );
     const u = render(<HonestValue quantity={{ state: "unavailable", reason: "r" }} />);
     expect(a.$("[data-honest-state]")!.dataset.honestState).toBe("available");

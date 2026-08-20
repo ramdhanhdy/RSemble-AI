@@ -58,9 +58,7 @@ describe("copy.ts — Fable §10 string table", () => {
     expect(COPY.rollup.immutability).toBe(
       "Member or name changes create a new version; this version is pinned forever.",
     );
-    expect(COPY.rollup.tombstone("mc-4f")).toBe(
-      "Member mc-4f is not present in this database",
-    );
+    expect(COPY.rollup.tombstone("mc-4f")).toBe("Member mc-4f is not present in this database");
   });
 
   it("contains no forbidden claim phrase anywhere in the string table", () => {

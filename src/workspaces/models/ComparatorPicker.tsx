@@ -49,12 +49,8 @@ export function ComparatorPicker({
       <DialogSurface open={open} onOpenChange={onOpenChange} title={COPY.comparatorPicker.title}>
         <div className="flex max-h-[calc(100dvh-2rem)] flex-col">
           <div className="border-b border-edge px-4 py-3">
-            <h2 className="text-sm font-semibold text-text">
-              {COPY.comparatorPicker.title}
-            </h2>
-            <p className="mt-1 text-xs text-text-secondary">
-              {COPY.comparatorPicker.rankingLabel}
-            </p>
+            <h2 className="text-sm font-semibold text-text">{COPY.comparatorPicker.title}</h2>
+            <p className="mt-1 text-xs text-text-secondary">{COPY.comparatorPicker.rankingLabel}</p>
           </div>
           <ul data-comparator-list className="overflow-y-auto scroll-thin py-1">
             {ordered.map((c) => {

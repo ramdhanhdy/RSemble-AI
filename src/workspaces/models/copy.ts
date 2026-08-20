@@ -90,7 +90,8 @@ const CLAIM_WORDS: Record<string, string> = {
 
 const CLAIM = {
   words: CLAIM_WORDS,
-  boundaryTitle: (boundaryRef: string) => `Boundary declared by ${boundaryRef} before these results.`,
+  boundaryTitle: (boundaryRef: string) =>
+    `Boundary declared by ${boundaryRef} before these results.`,
 } as const;
 
 // --- §5.7 PairedGlyphStrip ----------------------------------------------------

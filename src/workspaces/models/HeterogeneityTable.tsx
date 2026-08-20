@@ -20,10 +20,7 @@ interface HeterogeneityTableProps {
   members: readonly RollupMemberIdentity[];
 }
 
-function dimensionDiffers(
-  dimension: string,
-  members: readonly RollupMemberIdentity[],
-): boolean {
+function dimensionDiffers(dimension: string, members: readonly RollupMemberIdentity[]): boolean {
   const seen = new Set<string>();
   for (const m of members) {
     seen.add(m.values[dimension] ?? "");
@@ -32,10 +29,7 @@ function dimensionDiffers(
   return false;
 }
 
-export function HeterogeneityTable({
-  dimensions,
-  members,
-}: HeterogeneityTableProps): ReactNode {
+export function HeterogeneityTable({ dimensions, members }: HeterogeneityTableProps): ReactNode {
   return (
     <table data-heterogeneity-table className="w-full border-separate border-spacing-0 text-sm">
       <caption className="sr-only">Member identity heterogeneity</caption>

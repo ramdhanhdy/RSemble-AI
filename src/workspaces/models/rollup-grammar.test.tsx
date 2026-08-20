@@ -24,9 +24,7 @@ describe("Rollup grammar — Fable §9 forward contract", () => {
     );
     const banner = h.$("[data-rollup-banner]")!;
     const member = h.$("[data-member-shelf]")!;
-    expect(
-      banner.compareDocumentPosition(member) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(banner.compareDocumentPosition(member) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     cleanup(h);
   });
 

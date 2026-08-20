@@ -46,10 +46,7 @@ function ValueSlot({ value }: { value: AggregatedValue }): ReactNode {
         <span data-cohort-value className="font-mono text-lg tabular-nums text-text">
           {String(value.value)}
         </span>
-        <span className="font-mono text-text-secondary">
-          {" "}
-          ({value.omittedCount} omitted)
-        </span>
+        <span className="font-mono text-text-secondary"> ({value.omittedCount} omitted)</span>
         <span
           data-limited-marker
           className="text-[10px] font-mono uppercase text-warning border border-dashed border-warning/40 rounded-sm px-1"
@@ -61,12 +58,7 @@ function ValueSlot({ value }: { value: AggregatedValue }): ReactNode {
     );
   }
   if (value.state === "non_aggregatable") {
-    return (
-      <InsufficientState
-        kind="non_aggregatable"
-        reason={value.detail ?? value.reason}
-      />
-    );
+    return <InsufficientState kind="non_aggregatable" reason={value.detail ?? value.reason} />;
   }
   return <HonestValue quantity={{ state: "unavailable", reason: value.reason }} />;
 }

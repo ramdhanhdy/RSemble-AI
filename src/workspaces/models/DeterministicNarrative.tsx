@@ -25,10 +25,7 @@ export function DeterministicNarrative({
 }: DeterministicNarrativeProps): ReactNode {
   const capped = sentences.slice(0, MAX_NARRATIVE_SENTENCES);
   return (
-    <section
-      data-deterministic-narrative
-      className="border-l-2 border-edge pl-3"
-    >
+    <section data-deterministic-narrative className="border-l-2 border-edge pl-3">
       <h3
         data-narrative-header
         className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
@@ -45,20 +42,14 @@ export function DeterministicNarrative({
               onClick={() => onApplySource?.(sentence.sourceMetricKey)}
             >
               <span>{sentence.text}</span>
-              <span
-                data-source-chip
-                className="ml-1 font-mono text-[10px] text-text-muted"
-              >
+              <span data-source-chip className="ml-1 font-mono text-[10px] text-text-muted">
                 {sentence.sourceMetricKey}
               </span>
             </button>
           </li>
         ))}
       </ul>
-      <p
-        data-narrative-footer
-        className="honesty-note mt-2 text-xs text-text-muted"
-      >
+      <p data-narrative-footer className="honesty-note mt-2 text-xs text-text-muted">
         {COPY.deterministicNarrative.footer}
       </p>
     </section>
