@@ -23,9 +23,12 @@ import * as aggregationMod from "../../lib/model-profiles/family-aggregation";
 import * as pairedMod from "../../lib/model-profiles/paired-comparison";
 import {
   runProfileComputation,
+  runPairedComparisonComputation,
   type ProfileWorkerInput,
+  type ComparatorWorkerInput,
+  type ComparatorWorkerOutput,
 } from "../../lib/model-profiles/model-profile-worker";
-import { loadProfileData } from "./model-profile-loader";
+import { loadProfileData, loadPairedComparison } from "./model-profile-loader";
 import { seedProfileTestCorpus } from "./model-profile-loader-test-seed";
 
 // `loadProfileData` must delegate to the worker dispatcher. We mock the
@@ -46,6 +49,17 @@ vi.mock("../../lib/model-profiles/model-profile-worker", async (importOriginal) 
           modelConfigurationId: input.modelConfigurationId,
         },
       }),
+    ),
+    runPairedComparisonComputation: vi.fn((input: ComparatorWorkerInput) =>
+      Promise.resolve({
+        comparator: {
+          id: input.comparatorId,
+          providerId: input.configB.providerId,
+          requestedModel: input.configB.requestedModel,
+          resolvedVersion: input.configB.resolvedVersion,
+        },
+        result: { metric: "judged_score" },
+      } as unknown as ComparatorWorkerOutput),
     ),
   };
 });
@@ -117,5 +131,91 @@ describe("model-profile-loader — off-main-thread delegation (long-task budget 
     });
     expect(profile).toBeNull();
     expect(runProfileComputation).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadPairedComparison — off-main-thread comparator dispatch", () => {
+  beforeEach(() => {
+    vi.mocked(runProfileComputation).mockClear();
+    vi.mocked(runPairedComparisonComputation).mockClear();
+  });
+
+  it("delegates the paired computation to the worker dispatcher (offload seam)", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedProfileTestCorpus();
+    const pair = await loadPairedComparison({
+      subjectConfigurationId: configAId,
+      comparatorId: configBId,
+      evidenceRepo,
+      taskRepo,
+    });
+
+    expect(pair).not.toBeNull();
+    expect(pair?.comparator.id).toBe(configBId);
+    expect(runPairedComparisonComputation).toHaveBeenCalledTimes(1);
+    const dispatched = vi.mocked(runPairedComparisonComputation).mock.calls[0][0];
+    expect(dispatched.subjectConfigurationId).toBe(configAId);
+    expect(dispatched.comparatorId).toBe(configBId);
+    expect(dispatched.observationsA.length).toBeGreaterThan(0);
+    expect(dispatched.observationsB.length).toBeGreaterThan(0);
+  });
+
+  it("does NOT run selectProfileObservations/computePairedEvidence on the main thread", async () => {
+    const selectSpy = vi.spyOn(selectionMod, "selectProfileObservations");
+    const pairedSpy = vi.spyOn(pairedMod, "computePairedEvidence");
+
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedProfileTestCorpus();
+    await loadPairedComparison({
+      subjectConfigurationId: configAId,
+      comparatorId: configBId,
+      evidenceRepo,
+      taskRepo,
+    });
+
+    expect(selectSpy).not.toHaveBeenCalled();
+    expect(pairedSpy).not.toHaveBeenCalled();
+    selectSpy.mockRestore();
+    pairedSpy.mockRestore();
+  });
+
+  it("passes signal and progress through to the dispatcher", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedProfileTestCorpus();
+    const controller = new AbortController();
+    const phases: string[] = [];
+    await loadPairedComparison({
+      subjectConfigurationId: configAId,
+      comparatorId: configBId,
+      evidenceRepo,
+      taskRepo,
+      signal: controller.signal,
+      onProgress: (phase) => phases.push(phase),
+    });
+
+    const options = vi.mocked(runPairedComparisonComputation).mock.calls[0][1];
+    expect(options?.signal).toBe(controller.signal);
+    expect(options?.onProgress).toBeTypeOf("function");
+  });
+
+  it("returns null when the dispatcher resolves null (non-exact selection)", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedProfileTestCorpus();
+    vi.mocked(runPairedComparisonComputation).mockResolvedValueOnce(null);
+    const pair = await loadPairedComparison({
+      subjectConfigurationId: configAId,
+      comparatorId: configBId,
+      evidenceRepo,
+      taskRepo,
+    });
+    expect(pair).toBeNull();
+  });
+
+  it("returns null when a configuration does not exist (no dispatch)", async () => {
+    const { evidenceRepo, taskRepo, configAId } = await seedProfileTestCorpus();
+    const pair = await loadPairedComparison({
+      subjectConfigurationId: configAId,
+      comparatorId: "mc:sha256:does-not-exist",
+      evidenceRepo,
+      taskRepo,
+    });
+    expect(pair).toBeNull();
+    expect(runPairedComparisonComputation).not.toHaveBeenCalled();
   });
 });

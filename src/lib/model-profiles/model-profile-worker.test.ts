@@ -22,6 +22,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { seedProfileTestCorpus } from "../../workspaces/models/model-profile-loader-test-seed";
 
 import * as workerModule from "./model-profile-worker";
+import * as pairedMod from "./paired-comparison";
 import {
   computeProfileSync,
   runProfileComputation,
@@ -29,6 +30,8 @@ import {
   type ProfileWorkerInput,
   type ProfileWorkerOutput,
   type ProfileWorkerPhase,
+  type ComparatorWorkerInput,
+  type ComparatorWorkerOutput,
 } from "./model-profile-worker";
 import { QUERY_ELIGIBILITY_RULE_VERSION } from "./model-evidence-query";
 import type { EligibilityDecision } from "../evidence/evidence-types";
@@ -439,3 +442,156 @@ const SENTINEL_PROFILE: ProfileWorkerOutput = {
   evidenceRows: [],
   paired: { candidates: [], comparator: null, result: null },
 } as unknown as ProfileWorkerOutput;
+
+// ---------------------------------------------------------------------------
+// Run 28 T8 repair — real worker-emitted phases + comparator dispatch
+// ---------------------------------------------------------------------------
+
+async function assembleComparatorInput(
+  evidenceRepo: InMemoryEvidenceRepository,
+  taskRepo: InMemoryTaskRepository,
+  subjectConfigurationId: string,
+  comparatorId: string,
+): Promise<ComparatorWorkerInput> {
+  const configA = await evidenceRepo.getModelConfiguration(subjectConfigurationId);
+  const configB = await evidenceRepo.getModelConfiguration(comparatorId);
+  if (!configA || !configB) throw new Error("comparator configs not found");
+
+  const observationsA = await evidenceRepo.listObservationsByModelConfiguration(
+    subjectConfigurationId,
+  );
+  const observationsB = await evidenceRepo.listObservationsByModelConfiguration(comparatorId);
+  const decisionsA = (
+    await Promise.all(observationsA.map((o) => evidenceRepo.getActiveDecision(o.id)))
+  ).filter((d): d is EligibilityDecision => d !== null);
+  const decisionsB = (
+    await Promise.all(observationsB.map((o) => evidenceRepo.getActiveDecision(o.id)))
+  ).filter((d): d is EligibilityDecision => d !== null);
+
+  const taskIds = [...new Set([...observationsA, ...observationsB].map((o) => o.taskId))];
+  const taskFamilyAssignments = (
+    await Promise.all(taskIds.map((tid) => taskRepo.listTaskFamilyAssignments(tid)))
+  ).flat();
+  const supportsRelations =
+    "listTaskFamilyRelations" in taskRepo &&
+    typeof (taskRepo as unknown as { listTaskFamilyRelations?: unknown })
+      .listTaskFamilyRelations === "function";
+  const taskFamilyRelations = supportsRelations
+    ? await (
+        taskRepo as unknown as { listTaskFamilyRelations: () => Promise<never[]> }
+      ).listTaskFamilyRelations()
+    : [];
+  const facets = (
+    await Promise.all(taskIds.map((tid) => taskRepo.listTaskFacetAnnotations(tid)))
+  ).flat();
+
+  return {
+    subjectConfigurationId,
+    comparatorId,
+    configA,
+    configB,
+    observationsA,
+    observationsB,
+    decisionsA,
+    decisionsB,
+    facets,
+    taskFamilyAssignments,
+    taskFamilyRelations,
+  };
+}
+
+describe("computeProfileSync — real computation phases", () => {
+  it("emits meaningful phases at the actual computation steps", async () => {
+    const { evidenceRepo, taskRepo, configAId } = await seedProfileTestCorpus();
+    const input = await assembleInput(evidenceRepo, taskRepo, configAId);
+
+    const phases: ProfileWorkerPhase[] = [];
+    computeProfileSync(input, (phase) => phases.push(phase));
+
+    // Phases must originate from the computation itself, not a timer or a
+    // synthetic list replayed by the dispatcher.
+    expect(phases[0]).toBe("select");
+    expect(phases[phases.length - 1]).toBe("done");
+    for (const expected of [
+      "coverage",
+      "aggregate",
+      "uncertainty",
+      "family_loop",
+      "evidence_rows",
+      "identity",
+    ] as ProfileWorkerPhase[]) {
+      expect(phases).toContain(expected);
+    }
+  });
+});
+
+describe("runPairedComparisonComputation — off-main-thread comparator dispatch", () => {
+  let originalWorker: unknown;
+
+  beforeEach(() => {
+    originalWorker = (globalThis as unknown as { Worker?: unknown }).Worker;
+    createdWorkers.length = 0;
+  });
+
+  afterEach(() => {
+    if (originalWorker === undefined) {
+      delete (globalThis as unknown as { Worker?: unknown }).Worker;
+    } else {
+      (globalThis as unknown as { Worker?: unknown }).Worker = originalWorker;
+    }
+  });
+
+  it("dispatches comparator compute to a Worker and never runs it on the main thread", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedProfileTestCorpus();
+    const input = await assembleComparatorInput(evidenceRepo, taskRepo, configAId, configBId);
+    const selectSpy = vi.spyOn(selectionMod, "selectProfileObservations");
+    const pairedSpy = vi.spyOn(pairedMod, "computePairedEvidence");
+
+    const sentinelPair = {
+      comparator: { id: configBId, providerId: "p", requestedModel: "m" },
+      result: { metric: "judged_score" },
+    } as unknown as ComparatorWorkerOutput;
+    installMockWorker(() => ({
+      onPosted: () => ({ kind: "comparator_result", data: sentinelPair }),
+    }));
+
+    const result = await workerModule.runPairedComparisonComputation(input);
+    expect(result).toEqual(sentinelPair);
+    expect(selectSpy).not.toHaveBeenCalled();
+    expect(pairedSpy).not.toHaveBeenCalled();
+    expect(createdWorkers.length).toBe(1);
+    expect(createdWorkers[0].terminated).toBe(true);
+    selectSpy.mockRestore();
+    pairedSpy.mockRestore();
+  });
+
+  it("terminates the worker and rejects with AbortError when the signal aborts", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedProfileTestCorpus();
+    const input = await assembleComparatorInput(evidenceRepo, taskRepo, configAId, configBId);
+    const controller = new AbortController();
+
+    installMockWorker(() => ({ onPosted: () => null }));
+
+    const promise = workerModule.runPairedComparisonComputation(input, {
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+
+    await expect(promise).rejects.toBeInstanceOf(AbortError);
+    expect(createdWorkers.length).toBe(1);
+    expect(createdWorkers[0].terminated).toBe(true);
+  });
+
+  it("in-process fallback output is identical to computeComparatorSync", async () => {
+    const { evidenceRepo, taskRepo, configAId, configBId } = await seedProfileTestCorpus();
+    const input = await assembleComparatorInput(evidenceRepo, taskRepo, configAId, configBId);
+    delete (globalThis as unknown as { Worker?: unknown }).Worker;
+
+    const viaDispatcher = await workerModule.runPairedComparisonComputation(input);
+    const direct = workerModule.computeComparatorSync(input);
+    expect(JSON.stringify(viaDispatcher)).toBe(JSON.stringify(direct));
+    expect(viaDispatcher).not.toBeNull();
+    expect(viaDispatcher?.comparator.id).toBe(configBId);
+  });
+});
