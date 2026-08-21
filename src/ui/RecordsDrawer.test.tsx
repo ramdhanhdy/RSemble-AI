@@ -63,7 +63,6 @@ function taskExecution(
         : runSource === "policy-study"
           ? "in a Policy Study · Lab"
           : "in Compare · ad hoc task",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     runSource:
       runSource === "adhoc"
         ? { kind: "adhoc", comparisonId: null }

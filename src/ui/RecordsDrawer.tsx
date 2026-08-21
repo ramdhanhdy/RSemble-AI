@@ -45,6 +45,12 @@ const DRAWER_GROUPS: readonly { key: DrawerGroupKey; heading: string }[] = [
 /** Workspace groups, not type groups (§H.2): rows inside one group may carry
  *  different type eyebrows; the eyebrow carries type identity. */
 function groupOf(reference: RecordReference): DrawerGroupKey {
+  // Task executions group by their resolved execution source.
+  if (reference.recordType === "task-execution") {
+    if (reference.runSource.kind === "policy-study") return "lab";
+    if (reference.runSource.kind === "experiment") return "evaluations";
+    return "compare";
+  }
   switch (reference.recordType) {
     case "comparison":
       return "compare";
@@ -55,12 +61,8 @@ function groupOf(reference: RecordReference): DrawerGroupKey {
     case "observation":
       return "observations";
     case "legacy":
-      return "legacy";
     default:
-      // Task executions group by their resolved execution source.
-      if (reference.runSource.kind === "policy-study") return "lab";
-      if (reference.runSource.kind === "experiment") return "evaluations";
-      return "compare";
+      return "legacy";
   }
 }
 
