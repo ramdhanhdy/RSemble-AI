@@ -229,7 +229,13 @@ describe("RecordsDrawer surface (Base UI authority)", () => {
     const h = await renderDrawer(repository([comparison("cmp-1")]));
     const dialog = h.$('[role="dialog"]');
     expect(dialog).toBeTruthy();
-    expect(dialog?.getAttribute("aria-label")).toBe("Records");
+    // Base UI resolves the accessible name from Dialog.Title
+    // (aria-labelledby) and may drop a redundant aria-label attribute;
+    // assert the resolved name itself.
+    const name =
+      dialog?.getAttribute("aria-label") ??
+      document.getElementById(dialog?.getAttribute("aria-labelledby") ?? "")?.textContent;
+    expect(name).toBe("Records");
     expect(dialog?.className).toContain("drawer-panel");
     expect(dialog?.className).toContain("w-[400px]");
     cleanup(h);
