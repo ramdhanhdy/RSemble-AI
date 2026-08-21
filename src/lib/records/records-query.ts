@@ -4,7 +4,6 @@ import type { ExperimentRecord } from "../evaluations/evaluation-types";
 import type { RunStatus, RunSummary } from "../persistence/run-types";
 import type { PolicyStudyRecord } from "../studies/policy/policy-study-types";
 import type { StudyStatus } from "../studies/study-types";
-import type { StatusMarkStatus } from "../../ui/StatusMark";
 import type {
   ComparisonRecordReference,
   EvaluationExecutionReference,
@@ -12,6 +11,7 @@ import type {
   ObservationRecordReference,
   PolicyStudyReference,
   RecordReference,
+  RecordStatus,
   RecordType,
   TaskExecutionRecordReference,
 } from "./record-reference";
@@ -32,7 +32,7 @@ export interface RecordsQuery {
   text?: string;
   type?: RecordType;
   modelKey?: string;
-  status?: StatusMarkStatus;
+  status?: RecordStatus;
   mode?: "rank" | "fuse";
   source?: "adhoc" | "experiment" | "legacy";
   limit?: number;
@@ -46,7 +46,7 @@ export interface RecordsPage {
   limit: number;
 }
 
-const STUDY_STATUS: Record<StudyStatus, StatusMarkStatus> = {
+const STUDY_STATUS: Record<StudyStatus, RecordStatus> = {
   draft: "draft",
   in_progress: "running",
   completed: "completed",

@@ -7,7 +7,11 @@ import { createRecordsRepository } from "../../lib/records/records-repository";
 import { RepositoryContext } from "../../lib/persistence/repository-context";
 import { InMemoryComparisonRepository } from "../../lib/persistence/in-memory-comparison-repository";
 import { InMemoryRunRepository } from "../../lib/persistence/run-repository";
-import type { FullRunSummaryV2, RunRecordV2 } from "../../lib/persistence/run-types";
+import type {
+  FullRunSummaryV2,
+  LegacyRunSummary,
+  RunRecordV2,
+} from "../../lib/persistence/run-types";
 import { RecordsWorkspace } from "../RecordsWorkspace";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -69,10 +73,25 @@ function record(id: string, createdAt: number): RunRecordV2 {
   };
 }
 
-async function setup(path: string, desktop = true, withComparison = false) {
+async function setup(path: string, desktop = true, withComparison = false, withLegacy = false) {
   stubMatchMedia(desktop);
   const runRepo = new InMemoryRunRepository();
   await runRepo.create(record("run-1", 1_000), summary("run-1", 1_000));
+  if (withLegacy) {
+    const legacy: LegacyRunSummary = {
+      kind: "legacy",
+      schemaVersion: "1-import",
+      id: "legacy-1",
+      createdAt: 500,
+      taskExcerpt: "Imported historical summary",
+      modelKeys: ["openrouter:legacy-model"],
+      winnerKeys: [],
+      scoresByModelKey: {},
+      detailAvailable: false,
+      searchText: "imported historical summary openrouter:legacy-model",
+    };
+    await runRepo.importLegacySummary(legacy);
+  }
   const comparisonRepo = withComparison ? new InMemoryComparisonRepository(runRepo) : null;
   if (comparisonRepo) {
     const exactRun = await runRepo.get("run-1");
@@ -155,11 +174,39 @@ describe("RecordsWorkspace", () => {
     expect(exact?.textContent).toContain("Task Execution");
     act(() => harness.root.unmount());
   });
+
+  it("applies preserved legacy query filters on direct load", async () => {
+    const harness = await setup("/records?status=failed&mode=fuse&source=experiment");
+    expect(
+      harness.container.querySelector<HTMLSelectElement>("select[data-filter='status']")?.value,
+    ).toBe("failed");
+    expect(
+      harness.container.querySelector<HTMLSelectElement>("select[data-filter='mode']")?.value,
+    ).toBe("fuse");
+    expect(
+      harness.container.querySelector<HTMLSelectElement>("select[data-filter='source']")?.value,
+    ).toBe("experiment");
+    expect(harness.container.textContent).toContain("No records match the current filters.");
+    act(() => harness.root.unmount());
+  });
   it("reuses the exact RunDetail document at the canonical route", async () => {
     const harness = await setup("/records/task-execution/run-1");
     expect(harness.container.querySelector("[data-run-detail]")).not.toBeNull();
     expect(harness.container.querySelector("[data-section='timeline']")).not.toBeNull();
     expect(harness.container.querySelector("[data-section='task-config']")).not.toBeNull();
+    act(() => harness.root.unmount());
+  });
+
+  it("preserves legacy summary honesty and Records archive recovery", async () => {
+    const harness = await setup("/records/legacy/legacy-1", true, false, true);
+    const detailText = harness.container.querySelector("[data-run-detail]")?.textContent ?? "";
+    expect(detailText).toContain("Imported historical summary");
+    expect(detailText).toContain("Full evidence was not captured by the older history format.");
+    expect(detailText).not.toMatch(/\b(status|mode|judge)\b/i);
+    expect(harness.container.querySelector("a[href='/records']")?.textContent).toContain(
+      "Back to Records",
+    );
+    expect(harness.container.querySelector("#import-data [data-action='import']")).not.toBeNull();
     act(() => harness.root.unmount());
   });
 

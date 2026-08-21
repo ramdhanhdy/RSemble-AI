@@ -71,7 +71,9 @@ describe("RecordsList", () => {
     vi.useFakeTimers();
     const repo = repository();
     const harness = await renderList(repo);
-    const search = harness.container.querySelector<HTMLInputElement>("input[data-filter='search']")!;
+    const search = harness.container.querySelector<HTMLInputElement>(
+      "input[data-filter='search']",
+    )!;
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
@@ -80,7 +82,9 @@ describe("RecordsList", () => {
       setter.call(search, "run-exact");
       search.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    act(() => vi.advanceTimersByTime(199));
+    act(() => {
+      vi.advanceTimersByTime(199);
+    });
     expect(repo.list).not.toHaveBeenCalledWith(expect.objectContaining({ text: "run-exact" }));
     await act(async () => {
       vi.advanceTimersByTime(1);

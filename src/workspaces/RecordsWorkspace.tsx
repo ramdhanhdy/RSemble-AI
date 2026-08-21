@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { isRecordType } from "../lib/records/record-reference";
+import { isRecordType, type RecordStatus } from "../lib/records/record-reference";
 import { useRecordsRepository } from "../lib/persistence/repository-context";
 import type { RunConfigPreload } from "../lib/runs/run-config-preload";
 import { DataArchiveActions } from "../ui/DataArchiveActions";
-import type { StatusMarkStatus } from "../ui/StatusMark";
 import { RecordDetail } from "./records/RecordDetail";
 import type { RecordsFiltersValue } from "./records/RecordsFilters";
 import { RecordsList } from "./records/RecordsList";
@@ -28,7 +27,7 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-const STATUS_VALUES: Record<StatusMarkStatus, true> = {
+const STATUS_VALUES: Record<RecordStatus, true> = {
   draft: true,
   queued: true,
   running: true,
@@ -54,9 +53,7 @@ function filtersFromSearchParams(searchParams: URLSearchParams): RecordsFiltersV
     type: isRecordType(type) ? type : "",
     modelKey: searchParams.get("model") ?? searchParams.get("modelKey") ?? "",
     status:
-      status.length > 0 && STATUS_VALUES[status as StatusMarkStatus]
-        ? (status as StatusMarkStatus)
-        : "",
+      status.length > 0 && STATUS_VALUES[status as RecordStatus] ? (status as RecordStatus) : "",
     mode: mode === "rank" || mode === "fuse" ? mode : "",
     source: source === "adhoc" || source === "experiment" || source === "legacy" ? source : "",
   };

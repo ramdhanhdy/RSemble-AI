@@ -1,5 +1,4 @@
 import type { RunStatus } from "../persistence/run-types";
-import type { StatusMarkStatus } from "../../ui/StatusMark";
 
 export const RECORD_TYPES = [
   "comparison",
@@ -13,7 +12,21 @@ export const RECORD_TYPES = [
 export type RecordType = (typeof RECORD_TYPES)[number];
 export type RecordMode = "rank" | "fuse" | null;
 export type RecordSource = "adhoc" | "experiment" | "legacy" | null;
-export type RecordDisplayStatus = StatusMarkStatus | null;
+export type RecordStatus =
+  | "draft"
+  | "queued"
+  | "running"
+  | "paused"
+  | "completed"
+  | "completed_with_failures"
+  | "partial"
+  | "failed"
+  | "aborted"
+  | "interrupted"
+  | "archived"
+  | "ready"
+  | "reusable";
+export type RecordDisplayStatus = RecordStatus | null;
 
 export interface HistoricalOwnerCrosswalk {
   ownerKind: "compare" | "evaluation" | "task" | "model" | "lab";
@@ -136,7 +149,7 @@ function isTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-const DISPLAY_STATUSES: Record<Exclude<StatusMarkStatus, never>, true> = {
+const DISPLAY_STATUSES: Record<RecordStatus, true> = {
   draft: true,
   queued: true,
   running: true,
@@ -173,7 +186,7 @@ function hasValidBase(value: Record<string, unknown>): boolean {
     isNonBlank(value.title) &&
     (value.status === null ||
       (typeof value.status === "string" &&
-        DISPLAY_STATUSES[value.status as StatusMarkStatus] === true)) &&
+        DISPLAY_STATUSES[value.status as RecordStatus] === true)) &&
     (value.mode === null || value.mode === "rank" || value.mode === "fuse") &&
     (value.source === null ||
       value.source === "adhoc" ||

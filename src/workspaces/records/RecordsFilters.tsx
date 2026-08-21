@@ -1,13 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { Filter, X } from "lucide-react";
-import type { RecordType } from "../../lib/records/record-reference";
-import type { StatusMarkStatus } from "../../ui/StatusMark";
+import type { RecordStatus, RecordType } from "../../lib/records/record-reference";
 
 export interface RecordsFiltersValue {
   text: string;
   type: "" | RecordType;
   modelKey: string;
-  status: "" | StatusMarkStatus;
+  status: "" | RecordStatus;
   mode: "" | "rank" | "fuse";
   source: "" | "adhoc" | "experiment" | "legacy";
 }
