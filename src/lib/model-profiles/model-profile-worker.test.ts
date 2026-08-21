@@ -460,9 +460,8 @@ async function assembleComparatorInput(
   const configB = await evidenceRepo.getModelConfiguration(comparatorId);
   if (!configA || !configB) throw new Error("comparator configs not found");
 
-  const observationsA = await evidenceRepo.listObservationsByModelConfiguration(
-    subjectConfigurationId,
-  );
+  const observationsA =
+    await evidenceRepo.listObservationsByModelConfiguration(subjectConfigurationId);
   const observationsB = await evidenceRepo.listObservationsByModelConfiguration(comparatorId);
   const decisionsA = (
     await Promise.all(observationsA.map((o) => evidenceRepo.getActiveDecision(o.id)))

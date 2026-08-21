@@ -388,7 +388,7 @@ async function run() {
     );
     // Attribution: the statistical window is [first worker phase → worker
     // result]; blocks outside it are assembly (spec §11) or result rendering.
-    const workerMessages = ((comparatorWorkersForGate || []).pop()?.messages || []);
+    const workerMessages = (comparatorWorkersForGate || []).pop()?.messages || [];
     const firstPhaseAt = workerMessages.find((m) => m.kind === "progress")?.at ?? 0;
     const resultAt =
       workerMessages.find((m) => m.kind === "comparator_result")?.at ?? Number.POSITIVE_INFINITY;
@@ -461,7 +461,10 @@ async function run() {
 
     await screenshot("qa-production-profile");
 
-    fs.writeFileSync(path.join(outDir, "production-results.json"), JSON.stringify(results, null, 2));
+    fs.writeFileSync(
+      path.join(outDir, "production-results.json"),
+      JSON.stringify(results, null, 2),
+    );
     fs.writeFileSync(
       path.join(scratchDir, "production-results.json"),
       JSON.stringify(results, null, 2),
@@ -480,7 +483,10 @@ async function run() {
     );
   } catch (error) {
     results.blockers.push(error instanceof Error ? error.message : String(error));
-    fs.writeFileSync(path.join(outDir, "production-results.json"), JSON.stringify(results, null, 2));
+    fs.writeFileSync(
+      path.join(outDir, "production-results.json"),
+      JSON.stringify(results, null, 2),
+    );
     fs.writeFileSync(
       path.join(scratchDir, "production-results.json"),
       JSON.stringify(results, null, 2),
@@ -493,4 +499,3 @@ async function run() {
 }
 
 run();
-

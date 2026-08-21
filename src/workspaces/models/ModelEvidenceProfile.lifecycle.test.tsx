@@ -166,15 +166,15 @@ interface CapturedPairedOptions {
 }
 
 function profileCalls(): CapturedProfileOptions[] {
-  return vi.mocked(loadProfileData).mock.calls.map(
-    (call) => call[0] as unknown as CapturedProfileOptions,
-  );
+  return vi
+    .mocked(loadProfileData)
+    .mock.calls.map((call) => call[0] as unknown as CapturedProfileOptions);
 }
 
 function pairedCalls(): CapturedPairedOptions[] {
-  return vi.mocked(loadPairedComparison).mock.calls.map(
-    (call) => call[0] as unknown as CapturedPairedOptions,
-  );
+  return vi
+    .mocked(loadPairedComparison)
+    .mock.calls.map((call) => call[0] as unknown as CapturedPairedOptions);
 }
 
 function NavButton({ to }: { to: string }) {

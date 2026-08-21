@@ -89,10 +89,7 @@ import {
   type ClaimResult,
   type ClaimSentence,
 } from "./profile-claims";
-import {
-  computePairedEvidence,
-  type PairedComparisonResult,
-} from "./paired-comparison";
+import { computePairedEvidence, type PairedComparisonResult } from "./paired-comparison";
 import type { ProfileData, ProfileIdentity } from "../../workspaces/models/ModelEvidenceProfile";
 import type { CohortInterval } from "../../workspaces/models/CohortBlock";
 import type { VerifiedOutcome } from "../../workspaces/models/VerifiedOutcomes";
@@ -998,9 +995,7 @@ interface DispatchOptions<T> {
    * fallback). Phases are emitted through the callback as each real step
    * starts — never from a timer or a synthetic list.
    */
-  readonly runInProcess: (
-    onPhase: (phase: ProfileWorkerPhase) => void,
-  ) => Promise<T>;
+  readonly runInProcess: (onPhase: (phase: ProfileWorkerPhase) => void) => Promise<T>;
 }
 
 function dispatchComputation<T>(options: DispatchOptions<T>): Promise<T> {
@@ -1018,7 +1013,6 @@ function dispatchComputation<T>(options: DispatchOptions<T>): Promise<T> {
     onProgress: options.onProgress,
   });
 }
-
 
 interface WorkerLike {
   new (

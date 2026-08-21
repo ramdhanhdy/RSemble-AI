@@ -511,7 +511,6 @@ export function ModelEvidenceProfile({
     }
   };
 
-
   // --- Not-found state ---
   if (notFoundProp || notFound) {
     return (

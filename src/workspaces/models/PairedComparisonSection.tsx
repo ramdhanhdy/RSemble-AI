@@ -412,8 +412,7 @@ export function PairedComparisonSection({
   const emptyIntersection = Boolean(comparator && result?.empty);
   const showResults = Boolean(comparator && result && !result.empty);
 
-  let state: "no-comparator" | "computing" | "empty-intersection" | "results" =
-    "no-comparator";
+  let state: "no-comparator" | "computing" | "empty-intersection" | "results" = "no-comparator";
   if (comparatorComputing) state = "computing";
   else if (showResults) state = "results";
   else if (emptyIntersection || comparator) state = "empty-intersection";

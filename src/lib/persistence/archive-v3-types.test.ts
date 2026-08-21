@@ -20,8 +20,7 @@ import {
 import { buildValidArchiveV3Fixture, cloneArchiveV3 } from "./archive-v3-fixtures";
 import { createModelRollupVersion } from "../model-rollups/model-rollup-types";
 
-const ROLLUP_MEMBER =
-  "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const ROLLUP_MEMBER = "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const ROLLUP_RECORD = {
   id: "rollup:history",
   name: "History shelf",

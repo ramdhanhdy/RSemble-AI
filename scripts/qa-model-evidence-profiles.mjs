@@ -16,7 +16,12 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { MOCK_PROVIDER_INTERCEPTOR, SEED_SOURCE, pollReady, wait } from "./qa-model-evidence-shared.mjs";
+import {
+  MOCK_PROVIDER_INTERCEPTOR,
+  SEED_SOURCE,
+  pollReady,
+  wait,
+} from "./qa-model-evidence-shared.mjs";
 
 const BROWSER_PORT = process.env.QA_PORT ? Number(process.env.QA_PORT) : 5192;
 const baseUrl = process.env.QA_BASE_URL ?? `http://127.0.0.1:${BROWSER_PORT}/`;
@@ -62,7 +67,6 @@ const results = {
   providerCalls: [],
   blockers: [],
 };
-
 
 let socket = null;
 let chromeProcess = null;
@@ -642,9 +646,7 @@ async function run() {
       await wait(150);
     }
     if (!supersession || supersession.computing || !supersession.state) {
-      throw new Error(
-        `superseded comparator settles on B: ${JSON.stringify(supersession)}`,
-      );
+      throw new Error(`superseded comparator settles on B: ${JSON.stringify(supersession)}`);
     }
     record("comparator-supersession-stale-rejection", {
       pass:
