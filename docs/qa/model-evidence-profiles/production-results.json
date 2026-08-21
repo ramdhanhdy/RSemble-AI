@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-21T07:51:20.143Z",
+  "generatedAt": "2026-08-21T08:44:40.792Z",
   "command": "npm run qa:model-evidence-profiles-production",
   "baseUrl": "http://127.0.0.1:5292/",
   "environment": {
@@ -79,24 +79,30 @@
     {
       "name": "prod-comparator-no-long-task",
       "pass": true,
-      "longTaskCount": 2,
-      "maxDurationMs": 126,
-      "firstWorkerPhaseAt": 2242.599999964237,
-      "resultAt": 2286.099999964237,
+      "longTaskCount": 3,
+      "maxDurationMs": 401,
+      "firstWorkerPhaseAt": 4724.200000047684,
+      "resultAt": 4825.400000035763,
       "computeWindowBlocks": [],
       "assemblyBlocks": [
         {
           "name": "self",
-          "startTime": 1704.199999988079,
-          "duration": 80
+          "startTime": 3252.7000000476837,
+          "duration": 156
         },
         {
           "name": "self",
-          "startTime": 1785.0999999642372,
-          "duration": 126
+          "startTime": 3411.5,
+          "duration": 401
         }
       ],
-      "renderBlocks": [],
+      "renderBlocks": [
+        {
+          "name": "self",
+          "startTime": 4826.300000011921,
+          "duration": 57
+        }
+      ],
       "reason": "The built-app comparator statistics produced no >50ms main-thread block inside the statistical window (first worker phase → worker result); a synchronous fallback would span that window and fail. Pre-dispatch assembly (spec §11) and post-result UI rendering are recorded as evidence."
     },
     {
