@@ -18,6 +18,53 @@ import {
   validateArchiveV3,
 } from "./archive-v3-types";
 import { buildValidArchiveV3Fixture, cloneArchiveV3 } from "./archive-v3-fixtures";
+import { createModelRollupVersion } from "../model-rollups/model-rollup-types";
+
+const ROLLUP_MEMBER =
+  "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const ROLLUP_RECORD = {
+  id: "rollup:history",
+  name: "History shelf",
+  latestVersion: 1,
+  revision: 0,
+  createdAt: 1_000,
+  updatedAt: 1_000,
+  archivedAt: null,
+};
+
+function archiveWithRollupHistory(latestVersion: number, versionNumbers: number[]) {
+  const archive = buildValidArchiveV3Fixture();
+  const versions = versionNumbers.map((version) =>
+    createModelRollupVersion({
+      rollupId: ROLLUP_RECORD.id,
+      version,
+      name: ROLLUP_RECORD.name,
+      memberConfigurationIds: [ROLLUP_MEMBER],
+      aggregationPolicy: "stratified_only",
+      createdAt: 1_000,
+    }),
+  );
+  archive.modelRollups = {
+    records: [{ ...ROLLUP_RECORD, latestVersion }],
+    versions,
+  };
+  archive.manifest.counts.modelRollups = 1;
+  archive.manifest.counts.modelRollupVersions = versions.length;
+  archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+  return archive;
+}
+
+function expectInvalidRollupHistory(latestVersion: number, versionNumbers: number[]) {
+  const result = validateArchiveV3(archiveWithRollupHistory(latestVersion, versionNumbers));
+  expect(result.valid).toBe(false);
+  expect(
+    result.errors.some(
+      (error) =>
+        error.field === "modelRollups.records[0].latestVersion" &&
+        error.message.includes(`exactly versions 1..${latestVersion}`),
+    ),
+  ).toBe(true);
+}
 
 describe("archive v3 — constants and structure", () => {
   it("defines format version 3 and storage version 1", () => {
@@ -57,6 +104,28 @@ describe("validateArchiveV3 — happy path fixture validation", () => {
     const digest = computeArchiveV3PayloadDigest(fixture);
     expect(digest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(fixture.manifest.payloadDigest).toBe(digest);
+  });
+});
+
+describe("validateArchiveV3 — Model Rollup append-only history topology", () => {
+  it("rejects a history that is missing version 1", () => {
+    expectInvalidRollupHistory(2, [2]);
+  });
+
+  it("rejects a historical version gap", () => {
+    expectInvalidRollupHistory(3, [1, 3]);
+  });
+
+  it("rejects a persisted version greater than latestVersion", () => {
+    expectInvalidRollupHistory(2, [1, 2, 3]);
+  });
+
+  it("rejects latestVersion pointing to an incomplete history", () => {
+    expectInvalidRollupHistory(3, [1, 2]);
+  });
+
+  it("rejects duplicate version topology", () => {
+    expectInvalidRollupHistory(1, [1, 1]);
   });
 });
 

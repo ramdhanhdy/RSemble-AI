@@ -90,6 +90,23 @@ describe("archive v3 Model Rollup authority", () => {
     expect(validateArchiveV3(dangling).valid).toBe(false);
   });
 
+  it("rejects malformed append-only history in preview before any writes", async () => {
+    const target = await db("model-rollup-archive-target");
+    const archive = withRollups();
+    archive.modelRollups!.records[0] = { ...RECORD, latestVersion: 2 };
+    archive.modelRollups!.versions[0] = createModelRollupVersion({
+      ...VERSION,
+      version: 2,
+    });
+    archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+
+    await expect(previewWorkbenchArchive(target, archive)).rejects.toMatchObject({
+      kind: "validation",
+    });
+    expect(await target.modelRollups.count()).toBe(0);
+    expect(await target.modelRollupVersions.count()).toBe(0);
+  });
+
   it("round-trips definitions only and omits derived computation products", async () => {
     const source = await db("model-rollup-archive");
     await source.storageMeta.put({
