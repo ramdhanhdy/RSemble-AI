@@ -291,15 +291,30 @@ function LegacyExperimentRedirect() {
 }
 function LegacyRunsRedirect() {
   const location = useLocation();
+  // Canonical Child 08 spec §D: only the supported legacy filters survive the
+  // /runs → /records translation; unknown parameters drop silently.
+  const supported = new URLSearchParams(location.search);
+  const translated = new URLSearchParams();
+  for (const [key, value] of supported) {
+    if (LEGACY_RUNS_FILTER_KEYS[key] === true && value.length > 0) translated.set(key, value);
+  }
+  const search = translated.toString();
   return (
     <Navigate
-      to={{ pathname: "/records", search: location.search }}
+      to={{ pathname: "/records", search: search.length > 0 ? `?${search}` : "" }}
       replace
       state={location.state}
     />
   );
 }
 
+const LEGACY_RUNS_FILTER_KEYS: Record<string, true> = {
+  text: true,
+  model: true,
+  status: true,
+  mode: true,
+  source: true,
+};
 // Retired Fusion Study route — Lab spec §11.1. Old /evaluations/:suiteId/fusion/:studyId
 // links no longer resolve or redirect; they land on this honest retirement notice.
 function RetiredFusionRoute() {

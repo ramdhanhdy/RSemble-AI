@@ -1634,6 +1634,16 @@ describe("AppRouter — Records foundation and Runs compatibility", () => {
     cleanup(h);
   });
 
+  it("drops unsupported legacy query parameters during the /runs redirect", async () => {
+    stubRecordsDesktop();
+    const h = await renderRouterAsync({
+      initialEntries: ["/runs?status=failed&mode=fuse&unknown=x&text=sort"],
+    });
+    expect(h.loc.current?.pathname).toBe("/records");
+    expect(h.loc.current?.search).toBe("?status=failed&mode=fuse&text=sort");
+    cleanup(h);
+  });
+
   it("keeps /runs/:runId at the original URL while rendering exact detail", async () => {
     stubRecordsDesktop();
     const runRepo = new InMemoryRunRepository();

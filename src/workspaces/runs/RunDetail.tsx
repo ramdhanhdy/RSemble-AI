@@ -185,7 +185,11 @@ function HeaderSection({
           {record.mode}
         </span>
       </div>
-      <h2 className="text-lg font-semibold leading-snug text-text">
+      <h2
+        data-detail-heading=""
+        tabIndex={-1}
+        className="text-lg font-semibold leading-snug text-text focus:outline-none"
+      >
         {section.title ?? record.task.title}
       </h2>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-muted">

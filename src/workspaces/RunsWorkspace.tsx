@@ -62,6 +62,14 @@ export function RunsWorkspace({
   const { summaries } = useRunList(repo, { limit: 500 });
   const selectedSummary = runId ? summaries.find((s) => s.id === runId) : null;
   const isLegacy = selectedSummary?.kind === "legacy";
+  // Route-focus contract (Child 08 spec §P): the legacy /runs/:runId route
+  // moves focus to the exact detail heading after load. Candidate/attempt
+  // deep links own the focus instead (RunDetail focuses the linked row).
+  const deepLinkFocus = focusCandidateId != null || focusJudgeAttemptId != null;
+  useEffect(() => {
+    if (!runId || loading || !record || deepLinkFocus) return;
+    document.querySelector<HTMLElement>("[data-run-detail] [data-detail-heading]")?.focus();
+  }, [runId, loading, record, deepLinkFocus]);
 
   // --- Mobile/tablet: route-based detail ---
   if (!isDesktop && runId) {

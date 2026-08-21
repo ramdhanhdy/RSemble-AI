@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Observation } from "../../lib/evidence/evidence-types";
+import type { RunRecordV2 } from "../../lib/persistence/run-types";
 import type { RecordsRepository } from "../../lib/records/records-repository";
 import type {
   ObservationRecordReference,
@@ -66,8 +67,9 @@ function repository(overrides: Partial<RecordsRepository> = {}): RecordsReposito
 
 async function renderDetail(
   repo: RecordsRepository,
-  recordType: "policy-study" | "observation",
+  recordType: "policy-study" | "observation" | "task-execution",
   recordId: string,
+  focus?: { candidateId?: string; judgeAttemptId?: string },
 ) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -75,7 +77,13 @@ async function renderDetail(
   act(() => {
     root.render(
       <MemoryRouter>
-        <RecordDetail repository={repo} recordType={recordType} recordId={recordId} />
+        <RecordDetail
+          repository={repo}
+          recordType={recordType}
+          recordId={recordId}
+          focusCandidateId={focus?.candidateId ?? null}
+          focusJudgeAttemptId={focus?.judgeAttemptId ?? null}
+        />
       </MemoryRouter>,
     );
   });
@@ -90,6 +98,76 @@ async function renderDetail(
 afterEach(() => {
   document.body.innerHTML = "";
 });
+
+const taskExecutionReference: TaskExecutionRecordReference = {
+  recordType: "task-execution",
+  id: "run-1",
+  createdAt: 1_000,
+  updatedAt: 1_100,
+  title: "Write a Python sort function",
+  status: "completed",
+  mode: "rank",
+  source: "adhoc",
+  modelKeys: ["openrouter:gpt-4o"],
+  searchText: "run-1 write a python sort function",
+  ownerHint: "in Compare",
+  runSource: { kind: "adhoc", comparisonId: "run-1" },
+};
+
+function fullRunRecord(): RunRecordV2 {
+  return {
+    schemaVersion: 2,
+    id: "run-1",
+    revision: 1,
+    execution: { ownerId: "tab-1", fence: 1 },
+    createdAt: 1716048000000,
+    updatedAt: 1716048060000,
+    completedAt: 1716048060000,
+    status: "completed",
+    mode: "rank",
+    source: { kind: "adhoc" },
+    task: {
+      title: "Write a Python sort function",
+      prompt: "Sort integers.",
+      systemPrompt: "Helpful.",
+      temperature: 0.7,
+    },
+    evaluation: { profile: null, candidateMessages: [] },
+    candidates: [
+      {
+        candidateId: "c1",
+        slotId: "s1",
+        modelKey: "openrouter:gpt-4o",
+        providerId: "openrouter",
+        model: "GPT-4o",
+        slug: "gpt-4o",
+        acceptedAttemptId: "att-1",
+        attempts: [
+          {
+            attemptId: "att-1",
+            messages: [{ role: "user", content: "Sort the list" }],
+            startedAt: 1716048000000,
+            finishedAt: 1716048030000,
+            output: "def bubble_sort(arr):\n    return sorted(arr)",
+            status: "completed" as const,
+            tokensIn: 15,
+            tokensOut: 30,
+            error: null,
+          },
+        ],
+      },
+    ],
+    judge: {
+      status: "idle" as const,
+      acceptedAttemptId: null,
+      report: null,
+      consensus: null,
+      attempts: [],
+    },
+    fusion: { status: "idle" as const, acceptedAttemptId: null, attempts: [] },
+    winnerKeys: [],
+  };
+}
 
 describe("RecordDetail", () => {
   it("keeps Policy Study meaning in the Lab and caps the Records child list", async () => {
@@ -149,6 +227,35 @@ describe("RecordDetail", () => {
       harness.container.querySelector("a[href='/records/task-execution/run-1']"),
     ).not.toBeNull();
     expect(harness.container.textContent).toContain("Assessment judge-attempt-1");
+    act(() => harness.root.unmount());
+  });
+
+  it("moves route focus to the exact Task Execution detail heading", async () => {
+    const record = fullRunRecord();
+    const repo = repository({
+      getReference: vi.fn(async () => taskExecutionReference),
+      getTaskExecution: vi.fn(async () => record),
+    });
+    const harness = await renderDetail(repo, "task-execution", "run-1");
+    const heading = harness.container.querySelector<HTMLElement>("[data-detail-heading]");
+    expect(heading).not.toBeNull();
+    expect(document.activeElement).toBe(heading);
+    expect(harness.container.querySelector("[data-run-detail]")).not.toBeNull();
+    act(() => harness.root.unmount());
+  });
+
+  it("keeps candidate deep-link focus ahead of the detail heading", async () => {
+    const record = fullRunRecord();
+    const repo = repository({
+      getReference: vi.fn(async () => taskExecutionReference),
+      getTaskExecution: vi.fn(async () => record),
+    });
+    const harness = await renderDetail(repo, "task-execution", "run-1", {
+      candidateId: "c1",
+    });
+    const heading = harness.container.querySelector<HTMLElement>("[data-detail-heading]");
+    expect(document.activeElement).not.toBe(heading);
+    expect(document.activeElement?.getAttribute("data-candidate-id")).toBe("c1");
     act(() => harness.root.unmount());
   });
 });

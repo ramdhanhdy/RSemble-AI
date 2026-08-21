@@ -417,6 +417,14 @@ function TaskExecutionDetail({
       active = false;
     };
   }, [repository, reference.id]);
+  // Route-focus contract (Child 08 spec §P): after the exact detail mounts,
+  // focus its heading — unless a candidate/attempt deep link owns the focus
+  // (RunDetail focuses the linked candidate row itself).
+  const deepLinkFocus = focusCandidateId != null || focusJudgeAttemptId != null;
+  useEffect(() => {
+    if (loading || !record || deepLinkFocus) return;
+    document.querySelector<HTMLElement>("[data-run-detail] [data-detail-heading]")?.focus();
+  }, [loading, record, deepLinkFocus, reference.id]);
   if (loading) {
     return <div className="animate-pulse-ease m-4 h-28 rounded-md bg-raised opacity-60" />;
   }

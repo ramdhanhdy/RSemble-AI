@@ -67,8 +67,11 @@ function taskExecutionSource(
   comparisonIds: ReadonlySet<string>,
   policyStudyIdByRunId: Readonly<Record<string, string>>,
 ): TaskExecutionRecordReference["runSource"] {
-  const studyId = policyStudyIdByRunId[summary.id];
-  if (studyId) return { kind: "policy-study", studyId };
+  // Ownership precedence (Child 08 spec §F): the persisted run source and a
+  // matching Comparison result are exact owners; a Policy Study association is
+  // evidence metadata — studies reference pre-existing candidate runs, so it
+  // only resolves ownership when no stronger owner exists. The repository map
+  // already drops ambiguous multi-study associations.
   if (summary.source.kind === "experiment") {
     return {
       kind: "experiment",
@@ -76,7 +79,12 @@ function taskExecutionSource(
       taskSetId: summary.source.suiteId,
     };
   }
-  return { kind: "adhoc", comparisonId: comparisonIds.has(summary.id) ? summary.id : null };
+  if (comparisonIds.has(summary.id)) {
+    return { kind: "adhoc", comparisonId: summary.id };
+  }
+  const studyId = policyStudyIdByRunId[summary.id];
+  if (studyId) return { kind: "policy-study", studyId };
+  return { kind: "adhoc", comparisonId: null };
 }
 
 function taskExecutionOwnerHint(

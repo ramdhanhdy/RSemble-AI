@@ -44,7 +44,7 @@ function reference(
   };
 }
 
-function fullRun(id: string, createdAt: number): RunSummary {
+function fullRun(id: string, createdAt: number): Extract<RunSummary, { kind: "full" }> {
   return {
     kind: "full",
     schemaVersion: 2,
@@ -65,6 +65,40 @@ function fullRun(id: string, createdAt: number): RunSummary {
     evaluationProfileVersion: null,
     detailAvailable: true,
     searchText: `task ${id} exact prompt excerpt openrouter:qwen3.8-max`,
+  };
+}
+
+function experimentRun(id: string, createdAt: number): RunSummary {
+  return {
+    ...fullRun(id, createdAt),
+    source: {
+      kind: "experiment",
+      experimentId: "evaluation-1",
+      suiteId: "task-set-1",
+      suiteVersion: 2,
+      protocolFingerprint: "sha256:test",
+      taskId: "task-1",
+      experimentTaskAttemptId: "attempt-1",
+      trial: 1,
+    },
+  };
+}
+
+function comparisonIndex(id: string, createdAt: number): ComparisonResultIndex {
+  return {
+    id,
+    runId: id,
+    createdAt,
+    updatedAt: createdAt + 10,
+    status: "completed",
+    mode: "rank",
+    title: `Task ${id}`,
+    taskBinding: { kind: "ad_hoc", inputSnapshotRef: `input-${id}` },
+    taskInstanceId: null,
+    activeObservationIds: [],
+    evidenceReceiptRevision: 0,
+    lineage: { repeatedFrom: null },
+    revision: 0,
   };
 }
 
@@ -193,6 +227,73 @@ describe("composeRecordReferences", () => {
       childRunIds: ["run-2"],
       modelKeys: ["openrouter:qwen3.8-max"],
     });
+  });
+});
+
+describe("composeRecordReferences — task-execution owner precedence", () => {
+  const empty = {
+    comparisons: [],
+    evaluations: [],
+    policyStudies: [],
+    observations: [],
+    modelConfigurations: [],
+  };
+
+  it("keeps a study-linked Evaluation run Evaluation-owned", () => {
+    const refs = composeRecordReferences({
+      ...empty,
+      runSummaries: [experimentRun("run-eval", 5_000)],
+      policyStudyIdByRunId: { "run-eval": "study-1" },
+    });
+    const exact = refs.find((item) => item.recordType === "task-execution");
+    expect(exact).toMatchObject({
+      runSource: { kind: "experiment", evaluationExecutionId: "evaluation-1" },
+      ownerHint: "in Evaluation · Task Set",
+    });
+    expect(refs.some((item) => item.recordType === "policy-study")).toBe(false);
+  });
+
+  it("keeps a study-linked Compare run Compare-owned", () => {
+    const refs = composeRecordReferences({
+      ...empty,
+      runSummaries: [fullRun("run-1", 1_000)],
+      comparisons: [comparisonIndex("run-1", 1_000)],
+      policyStudyIdByRunId: { "run-1": "study-1" },
+    });
+    const exact = refs.find(
+      (item): item is Extract<RecordReference, { recordType: "task-execution" }> =>
+        item.recordType === "task-execution",
+    );
+    expect(exact?.runSource).toEqual({ kind: "adhoc", comparisonId: "run-1" });
+    expect(exact?.ownerHint).toBe("in Compare");
+  });
+
+  it("resolves an otherwise-unowned ad-hoc artifact uniquely tied to one Policy Study to the Lab", () => {
+    const refs = composeRecordReferences({
+      ...empty,
+      runSummaries: [fullRun("run-orphan", 2_000)],
+      policyStudyIdByRunId: { "run-orphan": "study-1" },
+    });
+    const exact = refs.find(
+      (item): item is Extract<RecordReference, { recordType: "task-execution" }> =>
+        item.recordType === "task-execution",
+    );
+    expect(exact?.runSource).toEqual({ kind: "policy-study", studyId: "study-1" });
+    expect(exact?.ownerHint).toBe("in a Policy Study · Lab");
+  });
+
+  it("never guesses an owner when no stronger owner and no unambiguous study association exist", () => {
+    const refs = composeRecordReferences({
+      ...empty,
+      runSummaries: [fullRun("run-ambiguous", 3_000)],
+      policyStudyIdByRunId: {},
+    });
+    const exact = refs.find(
+      (item): item is Extract<RecordReference, { recordType: "task-execution" }> =>
+        item.recordType === "task-execution",
+    );
+    expect(exact?.runSource).toEqual({ kind: "adhoc", comparisonId: null });
+    expect(exact?.ownerHint).toBe("Origin unresolved — exact execution preserved");
   });
 });
 

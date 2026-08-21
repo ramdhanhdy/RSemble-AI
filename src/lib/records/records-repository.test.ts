@@ -62,7 +62,7 @@ function dependencies() {
     },
     studyRepo: {
       listStudies: vi.fn(async () => []),
-      listTrials: vi.fn(async () => []),
+      listTrials: vi.fn(async (_studyId?: string) => []),
       listObservations: vi.fn(async () => []),
       getStudy: vi.fn(async () => null),
     },
@@ -146,5 +146,35 @@ describe("RecordsRepository", () => {
     expect(children.items).toHaveLength(20);
     expect(children.items[0]?.id).toBe("run-24");
     expect(children.items[19]?.id).toBe("run-5");
+  });
+
+  it("never resolves Lab ownership for a run referenced by two Policy Studies", async () => {
+    const deps = dependencies();
+    const orphan = {
+      ...runSummary,
+      id: "run-shared",
+      createdAt: 900,
+      completedAt: 950,
+      taskTitle: "Shared study artifact",
+      searchText: "shared study artifact",
+    };
+    deps.runRepo.list.mockImplementation(async ({ offset = 0 }: { offset?: number }) =>
+      offset === 0 ? [orphan] : [],
+    );
+    deps.studyRepo.listStudies.mockResolvedValue([{ id: "study-1" }, { id: "study-2" }] as never);
+    deps.studyRepo.listTrials.mockImplementation(async (studyId?: string) =>
+      studyId === "study-1" || studyId === "study-2"
+        ? ([
+            { id: `trial-${studyId}`, artifactRefs: [{ runId: "run-shared", attemptId: "a-1" }] },
+          ] as never)
+        : ([] as never),
+    );
+    const repository = createRecordsRepository(deps as never);
+    const page = await repository.list({ type: "task-execution" });
+    const exact = page.items.find((item) => item.id === "run-shared");
+    expect(exact).toMatchObject({
+      recordType: "task-execution",
+      runSource: { kind: "adhoc", comparisonId: null },
+    });
   });
 });
