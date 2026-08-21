@@ -623,6 +623,26 @@ function checkOrdering<T>(
   }
 }
 
+function checkModelRollupHistory(
+  field: string,
+  record: ModelRollupRecord,
+  versions: ModelRollupVersion[],
+  errors: ArchiveV3ValidationError[],
+): void {
+  const versionNumbers = versions.map((version) => version.version);
+  const uniqueVersionNumbers = [...new Set(versionNumbers)].sort((a, b) => a - b);
+  const hasExactTopology =
+    versionNumbers.length === record.latestVersion &&
+    uniqueVersionNumbers.length === record.latestVersion &&
+    uniqueVersionNumbers.every((version, index) => version === index + 1);
+  if (!hasExactTopology) {
+    errors.push({
+      field,
+      message: `version history must contain exactly versions 1..${record.latestVersion}; found [${versionNumbers.join(", ")}].`,
+    });
+  }
+}
+
 // --- Validator ---------------------------------------------------------------
 
 export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
@@ -1057,6 +1077,15 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
     archive.evidence.modelConfigurations.map((configuration) => configuration.id),
   );
   const rollupRecordsById = new Map(rollups.records.map((record) => [record.id, record]));
+  const rollupVersionsById = new Map<string, ModelRollupVersion[]>();
+  for (const version of rollups.versions) {
+    const history = rollupVersionsById.get(version.rollupId);
+    if (history === undefined) {
+      rollupVersionsById.set(version.rollupId, [version]);
+    } else {
+      history.push(version);
+    }
+  }
   for (let index = 0; index < rollups.records.length; index++) {
     const record = rollups.records[index];
     if (!isModelRollupRecord(record)) {
@@ -1093,9 +1122,16 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
   }
   for (let index = 0; index < rollups.records.length; index++) {
     const record = rollups.records[index];
-    const latest = rollups.versions.find(
-      (version) => version.rollupId === record.id && version.version === record.latestVersion,
-    );
+    const history = rollupVersionsById.get(record.id) ?? [];
+    if (isModelRollupRecord(record)) {
+      checkModelRollupHistory(
+        `modelRollups.records[${index}].latestVersion`,
+        record,
+        history,
+        errors,
+      );
+    }
+    const latest = history.find((version) => version.version === record.latestVersion);
     if (!latest || latest.name !== record.name) {
       errors.push({
         field: `modelRollups.records[${index}].latestVersion`,
