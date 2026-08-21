@@ -12,7 +12,17 @@ import type { LegacyRunSummary } from "../../lib/persistence/run-types";
 import { formatRelativeTime } from "./run-view-model";
 import { CopyLinkButton } from "./CopyLinkButton";
 
-export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
+export function LegacyRunDetail({
+  summary,
+  copyHref,
+  backHref = "/runs",
+  backLabel = "Back to Runs",
+}: {
+  summary: LegacyRunSummary;
+  copyHref?: string;
+  backHref?: string;
+  backLabel?: string;
+}) {
   return (
     <div data-run-detail="" className="flex flex-1 flex-col gap-4 p-4 text-sm">
       <header data-section="header" className="flex flex-col gap-1">
@@ -31,7 +41,7 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
           config to preload. Copy link still works (the deep link resolves via
           the legacy summary). */}
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <CopyLinkButton />
+          <CopyLinkButton href={copyHref} subject={copyHref ? "record" : "run"} />
         </div>
       </header>
 
@@ -89,10 +99,10 @@ export function LegacyRunDetail({ summary }: { summary: LegacyRunSummary }) {
 
       <div className="mt-4">
         <Link
-          to="/runs"
+          to={backHref}
           className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
         >
-          Back to Runs
+          {backLabel}
         </Link>
       </div>
     </div>

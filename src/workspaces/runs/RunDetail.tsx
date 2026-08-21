@@ -37,6 +37,7 @@ export function RunDetail({
   focusCandidateId,
   focusJudgeAttemptId,
   onOpenInCompare,
+  copyHref,
 }: {
   record: RunRecordV2 | null;
   /** Deep-linked immutable candidate id (`?candidate=`). When present and
@@ -48,6 +49,8 @@ export function RunDetail({
   /** Run Detail → Open in Compare (Slice 5). Optional; wired by the root
    *  shell, omitted in route-only test renders. */
   onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+  /** Canonical deep-link route copied even when this detail loaded via /runs. */
+  copyHref?: string;
 }) {
   const vm = formatRunDetail(record);
 
@@ -98,6 +101,7 @@ export function RunDetail({
                   section={section}
                   record={record}
                   onOpenInCompare={onOpenInCompare}
+                  copyHref={copyHref}
                 />
               );
             case "timeline":
@@ -146,6 +150,7 @@ function HeaderSection({
   section,
   record,
   onOpenInCompare,
+  copyHref,
 }: {
   section: {
     title?: string;
@@ -164,6 +169,7 @@ function HeaderSection({
   };
   record: RunRecordV2;
   onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+  copyHref?: string;
 }) {
   const startedAt = section.startedAt ?? record.createdAt;
   const hasCompletion = section.completedAt !== null && section.completedAt !== undefined;
@@ -243,7 +249,7 @@ function HeaderSection({
             Open in Compare
           </button>
         )}
-        <CopyLinkButton />
+        <CopyLinkButton href={copyHref} subject={copyHref ? "record" : "run"} />
       </div>
     </header>
   );

@@ -37,6 +37,8 @@ import { createEvidenceRepository, type EvidenceRepository } from "./evidence-re
 import { createStudyRepository, type StudyRepository } from "./study-repository";
 import { createLabAssetRepository, type LabAssetRepository } from "./lab-asset-repository";
 import { createModelRollupRepository, type ModelRollupRepository } from "./model-rollup-repository";
+import { createComparisonRepository } from "./comparison-repository";
+import { createRecordsRepository, type RecordsRepository } from "../records/records-repository";
 export interface RepositoryContextValue {
   runRepo: RunRepository | null;
   evalRepo: EvaluationRepository | null;
@@ -54,6 +56,8 @@ export interface RepositoryContextValue {
   labAssetRepo?: LabAssetRepository | null;
   /** Versioned Model Rollup definition authority (schema v14). */
   modelRollupRepo?: ModelRollupRepository | null;
+  /** Read-only typed composition over Runs and child-owned semantic indexes. */
+  recordsRepo?: RecordsRepository | null;
   /** Raw Dexie handle for infrastructure that composes repositories (execution
    *  lease, experiment unit of work). Null while storage is unavailable. */
   db: RSembleEvaluationDB | null;
@@ -74,6 +78,7 @@ export const RepositoryContext = createContext<RepositoryContextValue>({
   db: null,
   evidenceRepo: null,
   modelRollupRepo: null,
+  recordsRepo: null,
   storageState: "unavailable",
   taskMigrationError: null,
   retry: () => undefined,
@@ -113,6 +118,9 @@ export function useLabAssetRepository(): LabAssetRepository | null {
 
 export function useModelRollupRepository(): ModelRollupRepository | null {
   return useContext(RepositoryContext).modelRollupRepo ?? null;
+}
+export function useRecordsRepository(): RecordsRepository | null {
+  return useContext(RepositoryContext).recordsRepo ?? null;
 }
 
 /** Read the bounded canonical Task migration failure, if Task catalog storage
@@ -216,6 +224,16 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     () => (repositoriesReady && handle ? createModelRollupRepository(handle.db) : null),
     [repositoriesReady, handle],
   );
+  const recordsRepo = useMemo(() => {
+    if (!repositoriesReady || !handle || !runRepo) return null;
+    return createRecordsRepository({
+      runRepo,
+      comparisonRepo: createComparisonRepository(handle.db, runRepo),
+      evaluationRepo: evalRepo,
+      studyRepo,
+      evidenceRepo,
+    });
+  }, [repositoriesReady, handle, runRepo, evalRepo, studyRepo, evidenceRepo]);
 
   const value = useMemo<RepositoryContextValue>(
     () => ({
@@ -228,6 +246,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       studyRepo,
       labAssetRepo,
       modelRollupRepo,
+      recordsRepo,
       db: handle?.db ?? null,
       storageState,
       taskMigrationError,
@@ -242,6 +261,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       studyRepo,
       labAssetRepo,
       modelRollupRepo,
+      recordsRepo,
       handle,
       storageState,
       taskMigrationError,

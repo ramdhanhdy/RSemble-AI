@@ -163,6 +163,10 @@ body {
 .boundary-rule {
   border-top: 1px dashed #3a3a3a;
 }
+/* Semantic marker shared with Child 07. Size and color remain utility-owned. */
+.honesty-note {
+  line-height: 1.4;
+}
 
 /* Reduced motion: remove movement/loops; keep short opacity/color feedback. */
 @media (prefers-reduced-motion: reduce) {

@@ -37,6 +37,8 @@ import "./workspaces/tasks/TaskCatalog";
 import "./workspaces/tasks/TaskRoute";
 import "./workspaces/compare/ComparisonResultRoute";
 import "./workspaces/lab/LabWorkspace";
+import "./workspaces/RecordsWorkspace";
+import "./workspaces/RunsWorkspace";
 import { InMemoryRunRepository } from "./lib/persistence/run-repository";
 import { InMemoryComparisonRepository } from "./lib/persistence/in-memory-comparison-repository";
 import type { RunRecordV2, FullRunSummaryV2 } from "./lib/persistence/run-types";
@@ -44,6 +46,7 @@ import { AppRoutes } from "./app-router";
 import { RepositoryContext } from "./lib/persistence/repository-context";
 import { InMemoryEvaluationRepository } from "./lib/persistence/evaluation-repository";
 
+import { createRecordsRepository, type RecordsRepository } from "./lib/records/records-repository";
 import { InMemoryTaskRepository } from "./lib/persistence/in-memory-task-repository";
 import {
   InMemoryFusionStudyRepository,
@@ -170,6 +173,7 @@ interface RenderOptions {
   taskRepo?: TaskRepository | null;
   runRepo?: InMemoryRunRepository | null;
   fusionRepo?: FusionStudyRepository | null;
+  recordsRepo?: RecordsRepository | null;
   studyRepo?: StudyRepository | null;
   labAssetRepo?: LabAssetRepository | null;
   db?: { taskSetOwnershipCrosswalk: { get: (key: string) => Promise<unknown> } } | null;
@@ -237,6 +241,7 @@ function renderRouter(opts: RenderOptions): Harness {
             taskRepo,
             runRepo: opts.runRepo ?? null,
             evalRepo: repo,
+            recordsRepo: opts.recordsRepo ?? null,
             fusionRepo,
             studyRepo: opts.studyRepo ?? null,
             labAssetRepo: opts.labAssetRepo ?? null,
@@ -1518,6 +1523,160 @@ describe("AppRouter — Research Lab routes (spec §7)", () => {
     void act(() => h.nav.current!(-1));
     await settle();
     expect(h.loc.current?.pathname).toBe("/lab");
+    cleanup(h);
+  });
+});
+
+function makeRecordsRun(id: string): { record: RunRecordV2; summary: FullRunSummaryV2 } {
+  const createdAt = 1_000;
+  return {
+    record: {
+      schemaVersion: 2,
+      id,
+      revision: 0,
+      execution: { ownerId: "route-test", fence: 1 },
+      createdAt,
+      updatedAt: createdAt + 1_000,
+      completedAt: createdAt + 1_000,
+      status: "completed",
+      mode: "rank",
+      source: { kind: "adhoc" },
+      task: { title: "Route test", prompt: "Exact input", systemPrompt: "", temperature: 0.2 },
+      evaluation: { profile: null, candidateMessages: [] },
+      candidates: [],
+      judge: {
+        status: "idle",
+        acceptedAttemptId: null,
+        report: null,
+        consensus: null,
+        attempts: [],
+      },
+      fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+      winnerKeys: [],
+    },
+    summary: {
+      kind: "full",
+      schemaVersion: 2,
+      id,
+      revision: 0,
+      createdAt,
+      completedAt: createdAt + 1_000,
+      status: "completed",
+      mode: "rank",
+      source: { kind: "adhoc" },
+      taskTitle: "Route test",
+      taskExcerpt: "Exact input",
+      modelKeys: ["openrouter:qwen3.8-max"],
+      winnerKeys: [],
+      scoresByModelKey: {},
+      judgeModelKey: null,
+      evaluationProfileId: null,
+      evaluationProfileVersion: null,
+      detailAvailable: true,
+      searchText: "route test exact input openrouter:qwen3.8-max",
+    },
+  };
+}
+
+function stubRecordsDesktop() {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query.includes("1024"),
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
+}
+
+describe("AppRouter — Records foundation and Runs compatibility", () => {
+  it("direct-loads the canonical Records list and typed Task Execution detail", async () => {
+    stubRecordsDesktop();
+    const runRepo = new InMemoryRunRepository();
+    const seeded = makeRecordsRun("run-route-1");
+    await runRepo.create(seeded.record, seeded.summary);
+    const recordsRepo = createRecordsRepository({
+      runRepo,
+      comparisonRepo: null,
+      evaluationRepo: null,
+      studyRepo: null,
+      evidenceRepo: null,
+    });
+    const list = await renderRouterAsync({
+      initialEntries: ["/records"],
+      runRepo,
+      recordsRepo,
+    });
+    expect(list.loc.current?.pathname).toBe("/records");
+    expect(list.container.querySelector("h1")?.textContent).toBe("Records");
+    cleanup(list);
+
+    const detail = await renderRouterAsync({
+      initialEntries: ["/records/task-execution/run-route-1"],
+      runRepo,
+      recordsRepo,
+    });
+    expect(detail.loc.current?.pathname).toBe("/records/task-execution/run-route-1");
+    expect(detail.container.querySelector("[data-run-detail]")).not.toBeNull();
+    cleanup(detail);
+  });
+
+  it("redirects /runs to /records with supported query text unchanged", async () => {
+    stubRecordsDesktop();
+    const h = await renderRouterAsync({
+      initialEntries: ["/runs?status=failed&mode=fuse&source=experiment&model=openrouter%3Aqwen"],
+    });
+    expect(h.loc.current?.pathname).toBe("/records");
+    expect(h.loc.current?.search).toBe(
+      "?status=failed&mode=fuse&source=experiment&model=openrouter%3Aqwen",
+    );
+    cleanup(h);
+  });
+
+  it("keeps /runs/:runId at the original URL while rendering exact detail", async () => {
+    stubRecordsDesktop();
+    const runRepo = new InMemoryRunRepository();
+    const seeded = makeRecordsRun("run-route-legacy");
+    await runRepo.create(seeded.record, seeded.summary);
+    const h = await renderRouterAsync({
+      initialEntries: ["/runs/run-route-legacy"],
+      runRepo,
+    });
+    expect(h.loc.current?.pathname).toBe("/runs/run-route-legacy");
+    expect(h.container.querySelector("[data-run-detail]")).not.toBeNull();
+    cleanup(h);
+  });
+
+  it("renders the same typed recovery at an unknown legacy run URL", async () => {
+    stubRecordsDesktop();
+    const h = await renderRouterAsync({
+      initialEntries: ["/runs/missing"],
+      runRepo: new InMemoryRunRepository(),
+    });
+    expect(h.loc.current?.pathname).toBe("/runs/missing");
+    expect(h.container.querySelector("[data-record-not-found]")).not.toBeNull();
+    expect(h.container.textContent).toContain("Search Records for similar IDs");
+    cleanup(h);
+  });
+
+  it("renders typed recovery for an unknown canonical id", async () => {
+    stubRecordsDesktop();
+    const runRepo = new InMemoryRunRepository();
+    const recordsRepo = createRecordsRepository({
+      runRepo,
+      comparisonRepo: null,
+      evaluationRepo: null,
+      studyRepo: null,
+      evidenceRepo: null,
+    });
+    const h = await renderRouterAsync({
+      initialEntries: ["/records/task-execution/missing"],
+      runRepo,
+      recordsRepo,
+    });
+    expect(h.container.querySelector("[data-record-not-found]")).not.toBeNull();
+    expect(h.container.textContent).toContain("Records are device-local");
     cleanup(h);
   });
 });

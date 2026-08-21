@@ -110,4 +110,41 @@ describe("RecordsRepository", () => {
     const repository = createRecordsRepository(dependencies() as never);
     await expect(repository.getReference("observation", "missing")).resolves.toBeNull();
   });
+
+  it("caps Policy Study detail at 20 newest exact children while preserving aggregate counts", async () => {
+    const deps = dependencies();
+    const summaries = Array.from({ length: 25 }, (_, index) => ({
+      ...runSummary,
+      id: `run-${index}`,
+      createdAt: index,
+      completedAt: index + 1,
+      taskTitle: `Task ${index}`,
+      searchText: `task ${index}`,
+    }));
+    deps.runRepo.list.mockImplementation(async ({ offset = 0 }: { offset?: number }) =>
+      offset === 0 ? summaries : [],
+    );
+    deps.studyRepo.listTrials.mockResolvedValue(
+      Array.from({ length: 21 }, (_, index) => ({
+        id: `trial-${index}`,
+        artifactRefs: [{ runId: `run-${index}`, attemptId: `attempt-${index}` }],
+      })) as never,
+    );
+    deps.studyRepo.listObservations.mockResolvedValue(
+      Array.from({ length: 25 }, (_, index) => ({
+        id: `study-observation-${index}`,
+        sourceRunId: `run-${index}`,
+      })) as never,
+    );
+    const repository = createRecordsRepository(deps as never);
+    const children = await repository.getPolicyStudyChildren("study-1");
+    expect(children).toMatchObject({
+      trialCount: 21,
+      observationCount: 25,
+      exactRunCount: 25,
+    });
+    expect(children.items).toHaveLength(20);
+    expect(children.items[0]?.id).toBe("run-24");
+    expect(children.items[19]?.id).toBe("run-5");
+  });
 });

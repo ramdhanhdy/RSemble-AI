@@ -39,6 +39,9 @@ import { ModelProbeProvider } from "./ui/ModelProbeContext";
 const RunsWorkspace = lazy(() =>
   import("./workspaces/RunsWorkspace").then((m) => ({ default: m.RunsWorkspace })),
 );
+const RecordsWorkspace = lazy(() =>
+  import("./workspaces/RecordsWorkspace").then((m) => ({ default: m.RecordsWorkspace })),
+);
 const EvaluationsWorkspace = lazy(() =>
   import("./workspaces/EvaluationsWorkspace").then((m) => ({ default: m.EvaluationsWorkspace })),
 );
@@ -132,9 +135,14 @@ export function AppRoutes({
         )}
       />
       <Route
-        path="/runs"
-        element={withSuspense(<RunsWorkspace onOpenInCompare={onOpenInCompare} />)}
+        path="/records"
+        element={withSuspense(<RecordsWorkspace onOpenInCompare={onOpenInCompare} />)}
       />
+      <Route
+        path="/records/:recordType/:recordId"
+        element={withSuspense(<RecordsWorkspace onOpenInCompare={onOpenInCompare} />)}
+      />
+      <Route path="/runs" element={<LegacyRunsRedirect />} />
       <Route
         path="/runs/:runId"
         element={withSuspense(<RunsWorkspace onOpenInCompare={onOpenInCompare} />)}
@@ -281,6 +289,17 @@ function LegacyExperimentRedirect() {
     />
   );
 }
+function LegacyRunsRedirect() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{ pathname: "/records", search: location.search }}
+      replace
+      state={location.state}
+    />
+  );
+}
+
 // Retired Fusion Study route — Lab spec §11.1. Old /evaluations/:suiteId/fusion/:studyId
 // links no longer resolve or redirect; they land on this honest retirement notice.
 function RetiredFusionRoute() {
