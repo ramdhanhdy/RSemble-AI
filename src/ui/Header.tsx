@@ -16,7 +16,7 @@
 // Palette/help stay hidden below md; readiness stays available at all widths.
 // =============================================================================
 
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement, type Ref } from "react";
 import { Link } from "react-router-dom";
 import { Dialog } from "@base-ui/react/dialog";
 import { Command, HelpCircle, History, Menu } from "lucide-react";
@@ -85,6 +85,7 @@ export function Header({
   connectionState = "ready",
   recordsOpen = false,
   onOpenRecords,
+  recordsTriggerRef,
 }: {
   running: boolean;
   onOpenCommand?: () => void;
@@ -100,6 +101,9 @@ export function Header({
   /** >=1024px: open the quick Records drawer. Below 1024 the utility is a
    *  plain /records link instead (spec §H.6). */
   onOpenRecords?: () => void;
+  /** Ref attached to the >=1024 drawer trigger so the Base UI primitive can
+   *  hand focus back to it on close (spec §P focus management). */
+  recordsTriggerRef?: Ref<HTMLButtonElement>;
 }) {
   const pill = livePill(running, connectionState);
   const elapsed = useRunElapsed(running);
@@ -165,6 +169,7 @@ export function Header({
         {drawerCapable && onOpenRecords ? (
           <button
             type="button"
+            ref={recordsTriggerRef}
             onClick={onOpenRecords}
             aria-label="Records"
             title="Records"

@@ -121,6 +121,9 @@ export default function RSemble() {
   // Quick Records drawer (Child 08 §H): >=1024 only. Below 1024 the header
   // Records utility is a plain /records link and the drawer never mounts.
   const [recordsDrawerOpen, setRecordsDrawerOpen] = useState(false);
+  // Focus-return authority: the header trigger is the Base UI finalFocus
+  // target when the drawer closes (spec §P).
+  const recordsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const commandDialogHandle = useMemo(() => Dialog.createHandle(), []);
   const connectionsDialogHandle = useMemo(() => Dialog.createHandle(), []);
   const cheatsheetDialogHandle = useMemo(() => Dialog.createHandle(), []);
@@ -555,6 +558,7 @@ export default function RSemble() {
               connectionState={connectionState}
               recordsOpen={recordsDrawerOpen}
               onOpenRecords={isLg ? () => setRecordsDrawerOpen(true) : undefined}
+              recordsTriggerRef={recordsTriggerRef}
             />
 
             {/* Global execution awareness strip (spec §5.5) — visible on every
@@ -708,7 +712,13 @@ export default function RSemble() {
 
         {/* Quick Records drawer (Child 08 §H) — mounted only at >=1024.
           Below 1024 the header utility navigates to /records instead. */}
-        {isLg && <RecordsDrawer open={recordsDrawerOpen} onOpenChange={setRecordsDrawerOpen} />}
+        {isLg && (
+          <RecordsDrawer
+            open={recordsDrawerOpen}
+            onOpenChange={setRecordsDrawerOpen}
+            finalFocus={recordsTriggerRef}
+          />
+        )}
 
         {isCompareRoute && (
           <Dialog.Root
