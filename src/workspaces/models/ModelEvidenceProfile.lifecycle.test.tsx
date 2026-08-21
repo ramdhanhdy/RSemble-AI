@@ -145,7 +145,11 @@ interface Deferred<T> {
 }
 
 function defer<T>(): Deferred<T> {
-  const { promise, resolve } = Promise.withResolvers<T>();
+  // Project TS lib is ES2020: no Promise.withResolvers available.
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
   return { promise, resolve };
 }
 
@@ -155,7 +159,6 @@ interface CapturedProfileOptions {
   signal?: AbortSignal;
   onProgress?: (phase: string) => void;
 }
-
 interface CapturedPairedOptions {
   comparatorId?: string;
   signal?: AbortSignal;
@@ -189,6 +192,7 @@ function renderRoute(): Harness {
   return render(
     <MemoryRouter initialEntries={["/models/mc-route"]}>
       <Routes>
+        <Route path="/models" element={<div data-testid="models-index" />} />
         <Route
           path="/models/:modelConfigurationId"
           element={
@@ -213,7 +217,6 @@ async function selectComparator(h: Harness, id: string): Promise<void> {
   });
   await settle();
 }
-
 describe("ModelEvidenceProfile lifecycle — real cancellation, supersession, progress", () => {
   beforeEach(() => {
     vi.mocked(loadProfileData).mockReset();
@@ -275,9 +278,7 @@ describe("ModelEvidenceProfile lifecycle — real cancellation, supersession, pr
 
     const progress = h.$("[data-profile-progress]");
     expect(progress).not.toBeNull();
-    expect(
-      progress!.getAttribute("aria-live") !== null || progress!.closest("[aria-live]"),
-    ).toBe(true);
+    expect(progress!.closest("[role=status]")?.getAttribute("aria-live")).toBe("polite");
     expect(progress!.textContent).toMatch(/aggregat/i);
     cleanup(h);
   });

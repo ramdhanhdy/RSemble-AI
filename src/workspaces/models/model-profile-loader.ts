@@ -27,21 +27,12 @@ import type {
   TaskRepository,
 } from "../../lib/persistence/task-repository";
 import type { EligibilityDecision } from "../../lib/evidence/evidence-types";
-import {
-  QUERY_AGGREGATION_RULE_VERSION,
-  QUERY_ELIGIBILITY_RULE_VERSION,
-  QUERY_UNCERTAINTY_RULE_VERSION,
-  fingerprintModelEvidenceQuery,
-  type ModelEvidenceQuery,
-} from "../../lib/model-profiles/model-evidence-query";
-import {
-  selectProfileObservations,
-  type ProfileEvidenceCorpus,
-} from "../../lib/model-profiles/profile-observation-selection";
 import { formatBoundaryRef } from "../../lib/model-profiles/profile-claims";
-import { computePairedEvidence } from "../../lib/model-profiles/paired-comparison";
+import type { PairedComparisonResult } from "../../lib/model-profiles/paired-comparison";
 import {
   runProfileComputation,
+  runPairedComparisonComputation,
+  type ComparatorWorkerInput,
   type ProfileWorkerInput,
   type ProfileWorkerPhase,
 } from "../../lib/model-profiles/model-profile-worker";
@@ -189,12 +180,25 @@ export interface LoadPairedComparisonOptions {
   comparatorId: string;
   evidenceRepo: EvidenceRepository;
   taskRepo?: TaskRepository | null;
+  /**
+   * Aborts the offloaded comparator computation. When aborted, the worker is
+   * terminated and the returned promise rejects with an `AbortError`.
+   */
+  signal?: AbortSignal;
+  /** Optional progress observer for the offloaded computation phases. */
+  onProgress?: (phase: ProfileWorkerPhase) => void;
 }
 
-export async function loadPairedComparison(options: LoadPairedComparisonOptions): Promise<{
-  comparator: PairedComparatorIdentity;
-  result: ReturnType<typeof computePairedEvidence>;
-} | null> {
+/**
+ * Assembles the deterministic, serializable input for the offloaded paired
+ * comparison. Performs only repository I/O on the main thread (out of the
+ * computation budget per spec §11); the selection and paired-evidence
+ * statistics run inside the Worker via `computeComparatorSync`. Returns
+ * `null` when either configuration does not exist.
+ */
+export async function assembleComparatorWorkerInput(
+  options: LoadPairedComparisonOptions,
+): Promise<ComparatorWorkerInput | null> {
   const { subjectConfigurationId, comparatorId, evidenceRepo, taskRepo } = options;
 
   const configA = await evidenceRepo.getModelConfiguration(subjectConfigurationId);
@@ -223,68 +227,40 @@ export async function loadPairedComparison(options: LoadPairedComparisonOptions)
     ? (await Promise.all(taskIds.map((tid) => taskRepo.listTaskFacetAnnotations(tid)))).flat()
     : [];
 
-  const corpusA: ProfileEvidenceCorpus = {
-    configurations: [configA],
-    observations: obsA,
-    decisions: decsA,
+  return {
+    subjectConfigurationId,
+    comparatorId,
+    configA,
+    configB,
+    observationsA: obsA,
+    observationsB: obsB,
+    decisionsA: decsA,
+    decisionsB: decsB,
     facets,
+    taskFamilyAssignments,
+    taskFamilyRelations,
   };
-  const corpusB: ProfileEvidenceCorpus = {
-    configurations: [configB],
-    observations: obsB,
-    decisions: decsB,
-    facets,
-  };
+}
 
-  const queryA: ModelEvidenceQuery = {
-    respondent: { kind: "model_configuration", modelConfigurationId: subjectConfigurationId },
-    observedFrom: null,
-    observedTo: null,
-    taskFamilyIds: [],
-    facetFilters: [],
-    evidenceClasses: [],
-    allowedUses: [],
-    comparabilityCohortIds: [],
-    sourceKinds: [],
-    rubricRefs: [],
-    evaluatorFilters: [],
-    includeUnknownVersion: true,
-    eligibilityRuleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
-    aggregationRuleVersion: QUERY_AGGREGATION_RULE_VERSION,
-    uncertaintyRuleVersion: QUERY_UNCERTAINTY_RULE_VERSION,
-  };
-
-  const queryB: ModelEvidenceQuery = {
-    ...queryA,
-    respondent: { kind: "model_configuration", modelConfigurationId: comparatorId },
-  };
-
-  const selectionA = selectProfileObservations(queryA, corpusA);
-  const selectionB = selectProfileObservations(queryB, corpusB);
-
-  if (selectionA.kind !== "exact" || selectionB.kind !== "exact") {
+/**
+ * Loads the paired comparison for one comparator selection. Repository I/O
+ * stays on the main thread; the heavy synchronous selection +
+ * `computePairedEvidence` statistics are offloaded to the Worker via
+ * `runPairedComparisonComputation` (Run 28 T8 long-task repair). Resolves to
+ * `null` when a configuration is missing or either selection is not exact,
+ * and rejects on abort/worker error.
+ */
+export async function loadPairedComparison(
+  options: LoadPairedComparisonOptions,
+): Promise<{ comparator: PairedComparatorIdentity; result: PairedComparisonResult } | null> {
+  const input = await assembleComparatorWorkerInput(options);
+  if (!input) {
     return null;
   }
-
-  const result = computePairedEvidence({
-    selectionA,
-    selectionB,
-    options: { metric: "judged_score" },
-    uncertainty: {
-      taskFamilyAssignments,
-      taskFamilyRelations,
-      queryFingerprint: fingerprintModelEvidenceQuery(queryA),
-    },
+  return runPairedComparisonComputation(input, {
+    signal: options.signal,
+    onProgress: options.onProgress,
   });
-
-  const comparator: PairedComparatorIdentity = {
-    id: configB.id,
-    providerId: configB.providerId,
-    requestedModel: configB.requestedModel,
-    resolvedVersion: configB.resolvedVersion,
-  };
-
-  return { comparator, result };
 }
 
 export interface LoadObservationDrilldownOptions {

@@ -22,6 +22,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { seedProfileTestCorpus } from "../../workspaces/models/model-profile-loader-test-seed";
 
 import * as workerModule from "./model-profile-worker";
+import * as selectionMod from "./profile-observation-selection";
 import * as pairedMod from "./paired-comparison";
 import {
   computeProfileSync,
@@ -241,7 +242,9 @@ describe("runProfileComputation — off-main-thread dispatch", () => {
     expect(createdWorkers.length).toBe(1);
     expect(createdWorkers[0].terminated).toBe(true);
     expect(createdWorkers[0].postedMessages.length).toBe(1);
-    expect(createdWorkers[0].postedMessages[0]).toBe(input);
+    const posted = createdWorkers[0].postedMessages[0] as { kind: string; input: unknown };
+    expect(posted.kind).toBe("profile");
+    expect(posted.input).toBe(input);
     computeSpy.mockRestore();
   });
 

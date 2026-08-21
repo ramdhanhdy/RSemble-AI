@@ -89,7 +89,10 @@ import {
   type ClaimResult,
   type ClaimSentence,
 } from "./profile-claims";
-import { computePairedEvidence } from "./paired-comparison";
+import {
+  computePairedEvidence,
+  type PairedComparisonResult,
+} from "./paired-comparison";
 import type { ProfileData, ProfileIdentity } from "../../workspaces/models/ModelEvidenceProfile";
 import type { CohortInterval } from "../../workspaces/models/CohortBlock";
 import type { VerifiedOutcome } from "../../workspaces/models/VerifiedOutcomes";
@@ -210,13 +213,26 @@ export interface ProfileWorkerResultMessage {
   readonly data: ProfileWorkerOutput;
 }
 
+export interface ProfileWorkerComparatorResultMessage {
+  readonly kind: "comparator_result";
+  readonly data: ComparatorWorkerOutput;
+}
+
 export interface ProfileWorkerErrorMessage {
   readonly kind: "error";
   readonly message: string;
 }
 
+/** Request envelope posted to the worker; one computation per worker. */
+export type ProfileWorkerRequest =
+  | { kind: "profile"; input: ProfileWorkerInput }
+  | { kind: "comparator"; input: ComparatorWorkerInput };
+
 export type ProfileWorkerOutboundMessage =
-  ProfileWorkerProgress | ProfileWorkerResultMessage | ProfileWorkerErrorMessage;
+  | ProfileWorkerProgress
+  | ProfileWorkerResultMessage
+  | ProfileWorkerComparatorResultMessage
+  | ProfileWorkerErrorMessage;
 
 // --- Helpers (mirrors model-profile-loader.ts private helpers) ----------------
 
@@ -246,8 +262,15 @@ function missingDimensionFor(config: ModelConfigurationSnapshot): string | undef
  * 532-619 (the synchronous block measured by the T8 benchmark). Performs no
  * I/O. Exported so the worker entry and tests share one truth function; the
  * loader delegates here via `runProfileComputation`.
+ *
+ * `onPhase` is invoked at each real computation step boundary so the worker
+ * entry can forward meaningful progress to the UI; it is never synthesized
+ * from timers.
  */
-export function computeProfileSync(input: ProfileWorkerInput): ProfileWorkerOutput {
+export function computeProfileSync(
+  input: ProfileWorkerInput,
+  onPhase?: (phase: ProfileWorkerPhase) => void,
+): ProfileWorkerOutput {
   const {
     modelConfigurationId,
     subjectCorpus,
@@ -290,6 +313,7 @@ export function computeProfileSync(input: ProfileWorkerInput): ProfileWorkerOutp
     uncertaintyRuleVersion: QUERY_UNCERTAINTY_RULE_VERSION,
   };
 
+  onPhase?.("select");
   const queryFingerprint = fingerprintModelEvidenceQuery(query);
   const selection = selectProfileObservations(query, corpus);
   if (selection.kind !== "exact") {
@@ -299,20 +323,23 @@ export function computeProfileSync(input: ProfileWorkerInput): ProfileWorkerOutp
     throw new ProfileSelectionNotExactError();
   }
 
+  onPhase?.("coverage");
   const coverage = buildCoverageSummary(selection, corpus);
+  onPhase?.("aggregate");
   const familyResult = aggregateFamilyEvidence(selection);
+  onPhase?.("uncertainty");
   const overallUncertainty = resolveUncertaintyUnits({
     selection,
     query,
     taskFamilyRelations,
     taskFamilyAssignments,
   });
-
   const claims: ClaimResult[] = [];
   const narrativeSentences: ClaimSentence[] = [];
   const cohortIntervals: Record<string, CohortInterval> = {};
   const verifiedOutcomes: VerifiedOutcome[] = [];
 
+  onPhase?.("family_loop");
   for (const family of familyResult.families) {
     const familyAreaLabel = family.familyId
       ? (familyNames[family.familyId] ?? family.familyId)
@@ -534,6 +561,7 @@ export function computeProfileSync(input: ProfileWorkerInput): ProfileWorkerOutp
     }
   }
 
+  onPhase?.("evidence_rows");
   const evidenceRows: EvidenceTableRow[] = selection.cells.map((cell) => {
     const obs = cell.active.observation;
     const dec = cell.active.decision;
@@ -574,8 +602,9 @@ export function computeProfileSync(input: ProfileWorkerInput): ProfileWorkerOutp
     };
   });
 
+  onPhase?.("paired");
   let pairedComparator: PairedComparatorIdentity | null = null;
-  let pairedResult: ReturnType<typeof computePairedEvidence> | null = null;
+  let pairedResult: PairedComparisonResult | null = null;
   if (selectedComparatorId && comparatorCorpus) {
     const compConfig = comparatorCorpus.config;
     const compCorpus: ProfileEvidenceCorpus = {
@@ -612,6 +641,7 @@ export function computeProfileSync(input: ProfileWorkerInput): ProfileWorkerOutp
     }
   }
 
+  onPhase?.("identity");
   const rubricMap = new Map<string, number>();
   for (const obs of observations) {
     if (obs.rubricRef) {
@@ -737,7 +767,7 @@ export function computeProfileSync(input: ProfileWorkerInput): ProfileWorkerOutp
       result: pairedResult,
     },
   };
-
+  onPhase?.("done");
   return profileData;
 }
 
@@ -751,6 +781,129 @@ export class ProfileSelectionNotExactError extends Error {
     super("Profile selection was not exact; no profile can be computed.");
     this.name = "ProfileSelectionNotExactError";
   }
+}
+
+// --- Synchronous paired-comparison computation --------------------------------
+
+/**
+ * Deterministic, serializable input for the offloaded paired comparison. The
+ * loader assembles it from canonical repository I/O on the main thread; the
+ * selection and paired-evidence statistics run inside the Worker.
+ */
+export interface ComparatorWorkerInput {
+  readonly subjectConfigurationId: string;
+  readonly comparatorId: string;
+  readonly configA: ModelConfigurationSnapshot;
+  readonly configB: ModelConfigurationSnapshot;
+  readonly observationsA: Observation[];
+  readonly observationsB: Observation[];
+  readonly decisionsA: EligibilityDecision[];
+  readonly decisionsB: EligibilityDecision[];
+  /** Facet annotations over the union of both configurations' tasks. */
+  readonly facets: TaskFacetAnnotation[];
+  readonly taskFamilyAssignments: TaskFamilyAssignment[];
+  readonly taskFamilyRelations: TaskFamilyRelation[];
+}
+
+/** One resolved paired comparison: the comparator identity plus its result. */
+export interface PairedComparisonPair {
+  comparator: PairedComparatorIdentity;
+  result: PairedComparisonResult;
+}
+
+/** `null` when either selection is not exact — mirrors the loader contract. */
+export type ComparatorWorkerOutput = PairedComparisonPair | null;
+
+/**
+ * Pure paired-comparison computation over the supplied corpora. Verbatim
+ * relocation of the selection + `computePairedEvidence` block that previously
+ * ran synchronously in `loadPairedComparison` (the ~153ms main-thread block
+ * measured by the T8 benchmark). Reuses the accepted T4–T7 pure modules; no
+ * statistical logic is duplicated.
+ */
+export function computeComparatorSync(
+  input: ComparatorWorkerInput,
+  onPhase?: (phase: ProfileWorkerPhase) => void,
+): ComparatorWorkerOutput {
+  const {
+    subjectConfigurationId,
+    comparatorId,
+    configA,
+    configB,
+    observationsA,
+    observationsB,
+    decisionsA,
+    decisionsB,
+    facets,
+    taskFamilyAssignments,
+    taskFamilyRelations,
+  } = input;
+
+  onPhase?.("select");
+
+  const corpusA: ProfileEvidenceCorpus = {
+    configurations: [configA],
+    observations: observationsA,
+    decisions: decisionsA,
+    facets,
+  };
+  const corpusB: ProfileEvidenceCorpus = {
+    configurations: [configB],
+    observations: observationsB,
+    decisions: decisionsB,
+    facets,
+  };
+
+  const queryA: ModelEvidenceQuery = {
+    respondent: { kind: "model_configuration", modelConfigurationId: subjectConfigurationId },
+    observedFrom: null,
+    observedTo: null,
+    taskFamilyIds: [],
+    facetFilters: [],
+    evidenceClasses: [],
+    allowedUses: [],
+    comparabilityCohortIds: [],
+    sourceKinds: [],
+    rubricRefs: [],
+    evaluatorFilters: [],
+    includeUnknownVersion: true,
+    eligibilityRuleVersion: QUERY_ELIGIBILITY_RULE_VERSION,
+    aggregationRuleVersion: QUERY_AGGREGATION_RULE_VERSION,
+    uncertaintyRuleVersion: QUERY_UNCERTAINTY_RULE_VERSION,
+  };
+  const queryB: ModelEvidenceQuery = {
+    ...queryA,
+    respondent: { kind: "model_configuration", modelConfigurationId: comparatorId },
+  };
+
+  const selectionA = selectProfileObservations(queryA, corpusA);
+  const selectionB = selectProfileObservations(queryB, corpusB);
+  if (selectionA.kind !== "exact" || selectionB.kind !== "exact") {
+    return null;
+  }
+
+  onPhase?.("paired");
+  const result = computePairedEvidence({
+    selectionA,
+    selectionB,
+    options: { metric: "judged_score" },
+    uncertainty: {
+      taskFamilyAssignments,
+      taskFamilyRelations,
+      queryFingerprint: fingerprintModelEvidenceQuery(queryA),
+    },
+  });
+  onPhase?.("done");
+
+  return {
+    comparator: {
+      id: configB.id,
+      providerId: configB.providerId,
+      requestedModel: configB.requestedModel,
+      resolvedVersion: configB.resolvedVersion,
+    },
+    result,
+  };
 }
 
 // --- Dispatcher ---------------------------------------------------------------
@@ -789,44 +942,83 @@ export function runProfileComputation(
   input: ProfileWorkerInput,
   options: RunProfileComputationOptions = {},
 ): Promise<ProfileData | null> {
-  const { signal, onProgress, forceInProcess } = options;
-
-  if (signal?.aborted) {
-    return Promise.reject(new AbortError("Profile computation aborted before start."));
-  }
-
-  const workerConstructor = pickWorkerConstructor();
-
-  if (forceInProcess || workerConstructor === null) {
-    // No Worker constructible (Node / happy-dom / SSR) or forced in-process.
-    // The compute runs on the calling thread; progress is emitted synchronously
-    // so progress/cancel observers still fire in a deterministic order.
-    try {
-      if (onProgress) {
-        for (const phase of PROGRESS_PHASES) onProgress(phase);
+  return dispatchComputation<ProfileData | null>({
+    request: { kind: "profile", input },
+    resultKind: "result",
+    signal: options.signal,
+    onProgress: options.onProgress,
+    forceInProcess: options.forceInProcess,
+    runInProcess: (onPhase) => {
+      try {
+        return Promise.resolve(computeProfileSync(input, onPhase));
+      } catch (err) {
+        if (err instanceof ProfileSelectionNotExactError) return Promise.resolve(null);
+        return Promise.reject(err);
       }
-      const data = computeProfileSync(input);
-      return Promise.resolve(data);
-    } catch (err) {
-      if (err instanceof ProfileSelectionNotExactError) return Promise.resolve(null);
-      return Promise.reject(err);
-    }
-  }
-
-  return runInWorker(workerConstructor, input, { signal, onProgress });
+    },
+  });
 }
 
-const PROGRESS_PHASES: readonly ProfileWorkerPhase[] = [
-  "select",
-  "coverage",
-  "aggregate",
-  "uncertainty",
-  "family_loop",
-  "evidence_rows",
-  "paired",
-  "identity",
-  "done",
-];
+/**
+ * Options for dispatching the paired-comparison computation.
+ */
+export interface RunPairedComparisonComputationOptions {
+  /** Aborts the computation; the worker is terminated and the promise rejects with an `AbortError`. */
+  readonly signal?: AbortSignal;
+  /** Receives progress phase events from the worker. */
+  readonly onProgress?: (phase: ProfileWorkerPhase) => void;
+}
+
+/**
+ * Dispatches the paired comparison to a Web Worker when constructible, with
+ * the same fallback/abort semantics as `runProfileComputation`. Resolves to
+ * `null` when either selection is not exact.
+ */
+export function runPairedComparisonComputation(
+  input: ComparatorWorkerInput,
+  options: RunPairedComparisonComputationOptions = {},
+): Promise<ComparatorWorkerOutput> {
+  return dispatchComputation<ComparatorWorkerOutput>({
+    request: { kind: "comparator", input },
+    resultKind: "comparator_result",
+    signal: options.signal,
+    onProgress: options.onProgress,
+    runInProcess: (onPhase) => Promise.resolve(computeComparatorSync(input, onPhase)),
+  });
+}
+
+interface DispatchOptions<T> {
+  readonly request: ProfileWorkerRequest;
+  readonly resultKind: "result" | "comparator_result";
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (phase: ProfileWorkerPhase) => void;
+  readonly forceInProcess?: boolean;
+  /**
+   * Runs the computation synchronously on the calling thread (no-Worker
+   * fallback). Phases are emitted through the callback as each real step
+   * starts — never from a timer or a synthetic list.
+   */
+  readonly runInProcess: (
+    onPhase: (phase: ProfileWorkerPhase) => void,
+  ) => Promise<T>;
+}
+
+function dispatchComputation<T>(options: DispatchOptions<T>): Promise<T> {
+  if (options.signal?.aborted) {
+    return Promise.reject(new AbortError("Computation aborted before start."));
+  }
+
+  const worker = createWorkerInstance();
+  if (options.forceInProcess || worker === null) {
+    return options.runInProcess((phase) => options.onProgress?.(phase));
+  }
+
+  return runInWorker<T>(worker, options.request, options.resultKind, {
+    signal: options.signal,
+    onProgress: options.onProgress,
+  });
+}
+
 
 interface WorkerLike {
   new (
@@ -842,41 +1034,38 @@ interface WorkerLike {
   };
 }
 
-function pickWorkerConstructor(): WorkerLike | null {
-  // Only construct a Worker from a Vite-resolvable module URL when the global
-  // Worker constructor exists AND import.meta.url is a real http/blob URL the
-  // browser can fetch. In Node/happy-dom vitest there is no Worker constructor
-  // (or it cannot resolve import.meta.url), so we fall back to in-process.
-  const globalScope = globalThis as unknown as { Worker?: unknown };
-  const ctor = globalScope.Worker;
-  if (typeof ctor !== "function") return null;
-  return ctor as WorkerLike;
+/**
+ * Constructs a module Worker via the canonical Vite pattern. The literal
+ * `new Worker(new URL(..., import.meta.url))` expression must appear inline
+ * for Vite's static analysis to bundle the worker script; building the URL in
+ * a helper defeats the transform and emits the raw `.ts` file as a build
+ * asset. In Node/happy-dom vitest there is no Worker constructor, so callers
+ * fall back to in-process compute.
+ */
+function createWorkerInstance(): InstanceType<WorkerLike> | null {
+  if (typeof Worker !== "function") return null;
+  return new Worker(new URL("./model-profile-worker.ts", import.meta.url), {
+    type: "module",
+  }) as unknown as InstanceType<WorkerLike>;
 }
 
-function workerScriptUrl(): URL {
-  return new URL("./model-profile-worker.ts", import.meta.url);
-}
-
-function runInWorker(
-  WorkerCtor: WorkerLike,
-  input: ProfileWorkerInput,
+function runInWorker<T>(
+  worker: InstanceType<WorkerLike>,
+  request: ProfileWorkerRequest,
+  resultKind: "result" | "comparator_result",
   options: {
     signal?: AbortSignal;
     onProgress?: (phase: ProfileWorkerPhase) => void;
   },
-): Promise<ProfileData | null> {
-  return new Promise<ProfileData | null>((resolve, reject) => {
-    let worker: InstanceType<WorkerLike> | null = null;
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
     let settled = false;
 
     const cleanup = () => {
-      if (worker) {
-        try {
-          worker.terminate();
-        } catch {
-          /* ignore */
-        }
-        worker = null;
+      try {
+        worker.terminate();
+      } catch {
+        /* ignore */
       }
       if (options.signal) {
         options.signal.removeEventListener("abort", onAbort);
@@ -887,7 +1076,7 @@ function runInWorker(
       if (settled) return;
       settled = true;
       cleanup();
-      reject(new AbortError("Profile computation aborted."));
+      reject(new AbortError("Computation aborted."));
     };
 
     if (options.signal) {
@@ -905,11 +1094,13 @@ function runInWorker(
         options.onProgress?.(msg.phase);
         return;
       }
-      if (msg.kind === "result") {
+      if (msg.kind === resultKind) {
         if (settled) return;
         settled = true;
         cleanup();
-        resolve(msg.data);
+        // One computation per worker: the first terminal message of the
+        // expected kind settles the promise; anything later is stale.
+        resolve(msg.data as T);
         return;
       }
       if (msg.kind === "error") {
@@ -917,7 +1108,7 @@ function runInWorker(
         settled = true;
         cleanup();
         if (msg.message === PROFILE_SELECTION_NOT_EXACT_MARKER) {
-          resolve(null);
+          resolve(null as T);
           return;
         }
         reject(new Error(msg.message));
@@ -932,19 +1123,9 @@ function runInWorker(
       reject(new Error(ev.message || "Profile worker error."));
     };
 
-    try {
-      worker = new WorkerCtor(workerScriptUrl(), { type: "module" });
-    } catch (err) {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(err);
-      return;
-    }
-
     worker.addEventListener("message", onMessage);
     worker.addEventListener("error", onError);
-    worker.postMessage(input);
+    worker.postMessage(request);
   });
 }
 
@@ -979,14 +1160,30 @@ function isDedicatedWorkerScope(): boolean {
 
 if (isDedicatedWorkerScope()) {
   self.addEventListener("message", (ev: MessageEvent) => {
-    const input = ev.data as ProfileWorkerInput | undefined;
-    if (!input || typeof input !== "object" || typeof input.modelConfigurationId !== "string") {
+    const request = ev.data as ProfileWorkerRequest | undefined;
+    if (!request || typeof request !== "object" || typeof request.kind !== "string") {
       return;
     }
+
+    // Forward real computation phases to the dispatcher as they happen.
+    const postProgress = (phase: ProfileWorkerPhase) => {
+      const progress: ProfileWorkerProgress = { kind: "progress", phase };
+      self.postMessage(progress);
+    };
+
     try {
-      const data = computeProfileSync(input);
-      const out: ProfileWorkerResultMessage = { kind: "result", data };
-      self.postMessage(out);
+      if (request.kind === "profile" && typeof request.input.modelConfigurationId === "string") {
+        const data = computeProfileSync(request.input, postProgress);
+        const out: ProfileWorkerResultMessage = { kind: "result", data };
+        self.postMessage(out);
+        return;
+      }
+      if (request.kind === "comparator") {
+        const data = computeComparatorSync(request.input, postProgress);
+        const out: ProfileWorkerComparatorResultMessage = { kind: "comparator_result", data };
+        self.postMessage(out);
+        return;
+      }
     } catch (err) {
       if (err instanceof ProfileSelectionNotExactError) {
         const out: ProfileWorkerErrorMessage = {

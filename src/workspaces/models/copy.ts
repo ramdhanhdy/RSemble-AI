@@ -154,6 +154,25 @@ const ROLLUP = {
   differsMarker: "differs",
 } as const;
 
+// --- Task 8 worker computation phases -----------------------------------------
+
+// Accessible labels for the off-main-thread computation phases emitted by the
+// model-profile Worker. Keys mirror ProfileWorkerPhase; kept as a plain string
+// table so the copy module stays free of lib imports.
+const COMPUTATION_PHASE = {
+  select: "Selecting exact observations",
+  coverage: "Summarizing coverage",
+  aggregate: "Aggregating task-family evidence",
+  uncertainty: "Resolving uncertainty units",
+  family_loop: "Computing family intervals",
+  evidence_rows: "Building evidence rows",
+  paired: "Computing paired comparison",
+  identity: "Finalizing identity receipt",
+  done: "Finalizing",
+} as const;
+
+export type ProfilePhaseKey = keyof typeof COMPUTATION_PHASE;
+
 // --- Public surface -----------------------------------------------------------
 
 export const COPY = {
@@ -169,6 +188,7 @@ export const COPY = {
   narrowingChipBar: NARROWING_CHIP_BAR,
   observationCard: OBSERVATION_CARD,
   rollup: ROLLUP,
+  computationPhase: COMPUTATION_PHASE,
 } as const;
 
 // --- Forbidden-copy guard -----------------------------------------------------
@@ -228,7 +248,7 @@ export const ALL_COPY_STRINGS: readonly string[] = [
   ...Object.values(OBSERVATION_CARD.rowLabels),
   ROLLUP.eyebrow,
   ROLLUP.policy,
-  ROLLUP.membersLine(4, "Aug 12 2026", "4c9d"),
+  ...Object.values(COMPUTATION_PHASE),
   ROLLUP.immutability,
   ROLLUP.tombstone("mc-4f"),
   ROLLUP.differsMarker,

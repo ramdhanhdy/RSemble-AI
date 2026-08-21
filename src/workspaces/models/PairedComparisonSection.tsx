@@ -9,7 +9,8 @@
 // =============================================================================
 
 import { useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { Loader, X } from "lucide-react";
+import { COPY } from "./copy";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
 import type {
   PairedCohortResult,
@@ -38,10 +39,23 @@ export interface PairedComparisonSectionProps {
   onSelectComparator: (id: string) => void;
   onRemoveComparator: () => void;
   onTaskNarrowing?: (taskId: string) => void;
+  /** True while the paired computation runs in the Worker. */
+  comparatorComputing?: boolean;
+  /** Latest worker-emitted computation phase for the in-flight comparison. */
+  comparatorPhase?: string | null;
+  /** Aborts the in-flight paired computation (explicit cancel). */
+  onCancelComparator?: () => void;
 }
 
 const NO_COMPARATOR_COPY =
   "Pair this configuration against one you select. Pairing uses shared eligible tasks only.";
+
+function phaseLabel(phase: string | null | undefined): string {
+  if (phase && phase in COPY.computationPhase) {
+    return COPY.computationPhase[phase as keyof typeof COPY.computationPhase];
+  }
+  return "Preparing paired comparison";
+}
 
 function emptyIntersectionCopy(name: string): string {
   return `No shared eligible tasks with ${name}. Pairing never compares unrelated task mixes.`;
@@ -367,6 +381,9 @@ export function PairedComparisonSection({
   onSelectComparator,
   onRemoveComparator,
   onTaskNarrowing,
+  comparatorComputing = false,
+  comparatorPhase = null,
+  onCancelComparator,
 }: PairedComparisonSectionProps): ReactNode {
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -382,8 +399,10 @@ export function PairedComparisonSection({
   const emptyIntersection = Boolean(comparator && result?.empty);
   const showResults = Boolean(comparator && result && !result.empty);
 
-  let state: "no-comparator" | "empty-intersection" | "results" = "no-comparator";
-  if (showResults) state = "results";
+  let state: "no-comparator" | "computing" | "empty-intersection" | "results" =
+    "no-comparator";
+  if (comparatorComputing) state = "computing";
+  else if (showResults) state = "results";
   else if (emptyIntersection || comparator) state = "empty-intersection";
 
   return (
@@ -391,6 +410,40 @@ export function PairedComparisonSection({
       <h2 id="paired-heading" className="text-base font-semibold text-text">
         Selected paired comparison
       </h2>
+
+      {state === "computing" && (
+        <div
+          data-paired-state="computing"
+          className="mt-3 space-y-3 rounded-md border border-edge bg-panel px-3 py-4"
+        >
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-2 text-sm text-text-secondary"
+          >
+            <Loader size={16} className="animate-spin" aria-hidden="true" />
+            <span data-paired-progress>{phaseLabel(comparatorPhase)}</span>
+          </div>
+          <button
+            type="button"
+            data-action="cancel-comparator"
+            className="pressable inline-flex min-h-[44px] min-w-[44px] items-center rounded-md border border-edge bg-panel px-4 text-sm text-text hover:border-edge-bright focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            onClick={onCancelComparator}
+          >
+            Cancel
+          </button>
+          {/* The picker stays reachable so a newer selection supersedes the
+              in-flight computation instead of having to wait it out. */}
+          <div>
+            <ComparatorPicker
+              open={pickerOpen}
+              onOpenChange={handleOpenChange}
+              candidates={candidates}
+              onSelect={onSelectComparator}
+            />
+          </div>
+        </div>
+      )}
 
       {state === "no-comparator" && (
         <div

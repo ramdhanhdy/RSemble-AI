@@ -36,6 +36,8 @@ import { EvidenceTable, type EvidenceTableRow } from "./EvidenceTable";
 import { useNarrowing } from "./useNarrowing";
 import { PairedComparisonSection, type PairedComparatorIdentity } from "./PairedComparisonSection";
 import type { ComparatorCandidate } from "./ComparatorPicker";
+import { COPY } from "./copy";
+import type { ProfileWorkerPhase } from "../../lib/model-profiles/model-profile-worker";
 import type { CohortInterval } from "./CohortBlock";
 import { useEvidenceRepository, useTaskRepository } from "../../lib/persistence/repository-context";
 import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
@@ -300,13 +302,6 @@ export function ModelEvidenceProfile({
   const [comparator, setComparator] = useState<PairedComparatorIdentity | null>(
     dataProp?.paired?.comparator ?? null,
   );
-  // Focus heading on mount.
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      headingRef.current?.focus();
-    });
-  }, [modelConfigurationId]);
-
   // --- State machine ---
   const [loadedData, setLoadedData] = useState<ProfileData | null>(null);
   const [notFound, setNotFound] = useState(notFoundProp ?? false);
@@ -314,6 +309,14 @@ export function ModelEvidenceProfile({
     computingProp ?? (dataProp === undefined && notFoundProp === undefined),
   );
   const [cancelled, setCancelled] = useState(false);
+  // Worker-emitted computation phases, forwarded to the accessible UI.
+  const [profilePhase, setProfilePhase] = useState<ProfileWorkerPhase | null>(null);
+  const [comparatorComputing, setComparatorComputing] = useState(false);
+  const [comparatorPhase, setComparatorPhase] = useState<ProfileWorkerPhase | null>(null);
+  // One live computation per controller; aborting is the real cancellation
+  // path (it terminates the Worker), not merely navigating away.
+  const routeAbortRef = useRef<AbortController | null>(null);
+  const comparatorAbortRef = useRef<AbortController | null>(null);
   // The heading is not mounted until the asynchronous worker returns. Focus
   // again when data arrives so a direct route is keyboard-complete, not merely
   // visually loaded.
@@ -344,39 +347,55 @@ export function ModelEvidenceProfile({
       setComputing(false);
       return;
     }
-    let isCancelled = false;
+    const controller = new AbortController();
+    routeAbortRef.current = controller;
     setComputing(true);
     setNotFound(false);
+    setProfilePhase(null);
 
     loadProfileData({
       modelConfigurationId,
       evidenceRepo,
       taskRepo,
+      signal: controller.signal,
+      onProgress: (phase) => {
+        if (!controller.signal.aborted) setProfilePhase(phase);
+      },
     })
       .then((result) => {
-        if (!isCancelled) {
-          if (!result) {
-            setNotFound(true);
-          } else {
-            setLoadedData(result);
-            setComparator(result.paired?.comparator ?? null);
-          }
-          setComputing(false);
+        // Stale guard: a superseded computation never overwrites newer state.
+        if (controller.signal.aborted) return;
+        if (!result) {
+          setNotFound(true);
+        } else {
+          setLoadedData(result);
+          setComparator(result.paired?.comparator ?? null);
         }
+        setComputing(false);
       })
       .catch(() => {
-        if (!isCancelled) {
-          setNotFound(true);
-          setComputing(false);
-        }
+        if (controller.signal.aborted) return;
+        setNotFound(true);
+        setComputing(false);
       });
 
     return () => {
-      isCancelled = true;
+      // Route/model change or unmount really aborts the Worker computation.
+      controller.abort();
+      if (routeAbortRef.current === controller) routeAbortRef.current = null;
     };
   }, [evidenceRepo, taskRepo, modelConfigurationId, dataProp, notFoundProp, computingProp]);
 
+  // Comparator computations never survive a route/model change or unmount.
+  useEffect(() => {
+    return () => {
+      comparatorAbortRef.current?.abort();
+    };
+  }, [modelConfigurationId]);
+
   const handleCancel = () => {
+    // Cancel is a real abort: the in-flight Worker is terminated.
+    routeAbortRef.current?.abort();
     setCancelled(true);
     void navigate("/models");
   };
@@ -400,36 +419,70 @@ export function ModelEvidenceProfile({
       return;
     }
 
-    const pair = await loadPairedComparison({
-      subjectConfigurationId: modelConfigurationId,
-      comparatorId: cid,
-      evidenceRepo,
-      taskRepo,
-    });
+    // Supersession: a newer selection aborts the in-flight computation; its
+    // stale result is rejected below and never overwrites newer state.
+    comparatorAbortRef.current?.abort();
+    const controller = new AbortController();
+    comparatorAbortRef.current = controller;
+    setComparatorComputing(true);
+    setComparatorPhase(null);
 
-    if (pair) {
-      setComparator(pair.comparator);
-      if (loadedData) {
-        setLoadedData({
-          ...loadedData,
-          paired: {
-            candidates: loadedData.paired?.candidates ?? [],
-            comparator: pair.comparator,
-            result: pair.result,
-          },
+    try {
+      const pair = await loadPairedComparison({
+        subjectConfigurationId: modelConfigurationId,
+        comparatorId: cid,
+        evidenceRepo,
+        taskRepo,
+        signal: controller.signal,
+        onProgress: (phase) => {
+          if (!controller.signal.aborted) setComparatorPhase(phase);
+        },
+      });
+      if (controller.signal.aborted) return;
+      if (pair) {
+        setComparator(pair.comparator);
+        if (loadedData) {
+          setLoadedData({
+            ...loadedData,
+            paired: {
+              candidates: loadedData.paired?.candidates ?? [],
+              comparator: pair.comparator,
+              result: pair.result,
+            },
+          });
+        }
+      } else {
+        setComparator({
+          id: cand.id,
+          providerId: cand.label,
+          requestedModel: cand.label,
         });
       }
-    } else {
+    } catch {
+      if (controller.signal.aborted) return;
       setComparator({
         id: cand.id,
         providerId: cand.label,
         requestedModel: cand.label,
       });
+    } finally {
+      if (comparatorAbortRef.current === controller) {
+        comparatorAbortRef.current = null;
+        setComparatorComputing(false);
+        setComparatorPhase(null);
+      }
     }
   };
 
+  const handleCancelComparator = () => {
+    comparatorAbortRef.current?.abort();
+  };
+
   const handleRemoveComparator = () => {
+    comparatorAbortRef.current?.abort();
     setComparator(null);
+    setComparatorComputing(false);
+    setComparatorPhase(null);
     if (loadedData) {
       setLoadedData({
         ...loadedData,
@@ -439,6 +492,7 @@ export function ModelEvidenceProfile({
       });
     }
   };
+
 
   // --- Not-found state ---
   if (notFoundProp || notFound) {
@@ -484,7 +538,11 @@ export function ModelEvidenceProfile({
           className="flex items-center gap-2 text-sm text-text-secondary"
         >
           <Loader size={16} className="animate-spin" aria-hidden="true" />
-          <span>Aggregating observations · building profile</span>
+          <span data-profile-progress>
+            {profilePhase
+              ? COPY.computationPhase[profilePhase]
+              : "Aggregating observations · building profile"}
+          </span>
         </div>
         <button
           type="button"
@@ -759,6 +817,9 @@ export function ModelEvidenceProfile({
               narrowing.apply({ key: `task:${taskId}`, label: `Task: ${taskId}` });
               narrowing.focusTableHeading();
             }}
+            comparatorComputing={comparatorComputing}
+            comparatorPhase={comparatorPhase}
+            onCancelComparator={handleCancelComparator}
           />
         </div>
 
