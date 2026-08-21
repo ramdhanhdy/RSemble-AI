@@ -8,7 +8,7 @@
 // disclosures, and a per-task table that keeps incompatible and missing rows.
 // =============================================================================
 
-import { useState, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { Loader, X } from "lucide-react";
 import { COPY } from "./copy";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
@@ -41,16 +41,25 @@ export interface PairedComparisonSectionProps {
   onTaskNarrowing?: (taskId: string) => void;
   /** True while the paired computation runs in the Worker. */
   comparatorComputing?: boolean;
-  /** Latest worker-emitted computation phase for the in-flight comparison. */
-  comparatorPhase?: string | null;
+  /**
+   * External store for the latest worker-emitted computation phase. Read via
+   * useSyncExternalStore so phase ticks re-render only this section.
+   */
+  comparatorPhaseStore?: {
+    get: () => string | null;
+    subscribe: (listener: () => void) => () => void;
+  };
   /** Aborts the in-flight paired computation (explicit cancel). */
   onCancelComparator?: () => void;
 }
 
+const noopSubscribe = () => () => {};
+const getNoPhase = () => null;
+
 const NO_COMPARATOR_COPY =
   "Pair this configuration against one you select. Pairing uses shared eligible tasks only.";
 
-function phaseLabel(phase: string | null | undefined): string {
+function phaseLabel(phase: string | null): string {
   if (phase && phase in COPY.computationPhase) {
     return COPY.computationPhase[phase as keyof typeof COPY.computationPhase];
   }
@@ -382,9 +391,13 @@ export function PairedComparisonSection({
   onRemoveComparator,
   onTaskNarrowing,
   comparatorComputing = false,
-  comparatorPhase = null,
+  comparatorPhaseStore,
   onCancelComparator,
 }: PairedComparisonSectionProps): ReactNode {
+  const comparatorPhase = useSyncExternalStore(
+    comparatorPhaseStore?.subscribe ?? noopSubscribe,
+    comparatorPhaseStore?.get ?? getNoPhase,
+  );
   const [pickerOpen, setPickerOpen] = useState(false);
 
   function handleOpenChange(open: boolean) {

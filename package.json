@@ -26,7 +26,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "qa:model-evidence-profiles-production": "node scripts/qa-model-evidence-profiles-production.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -70,10 +70,20 @@ export const MOCK_PROVIDER_INTERCEPTOR = `(() => {
             options: options ? { type: options.type || null } : null,
             terminated: false,
             errors: [],
+            messages: [],
             createdAt: Date.now(),
           };
           window.__qaWorkers.push(entry);
           super(url, options);
+          this.addEventListener('message', (event) => {
+            const data = event && event.data;
+            if (!data || typeof data !== 'object') return;
+            entry.messages.push(
+              data.kind === 'progress'
+                ? { kind: 'progress', phase: data.phase, at: performance.now() }
+                : { kind: data.kind, at: performance.now() },
+            );
+          });
           this.addEventListener('error', (event) => {
             entry.errors.push((event && event.message) || 'worker error');
           });

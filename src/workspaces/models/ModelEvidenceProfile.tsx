@@ -312,7 +312,25 @@ export function ModelEvidenceProfile({
   // Worker-emitted computation phases, forwarded to the accessible UI.
   const [profilePhase, setProfilePhase] = useState<ProfileWorkerPhase | null>(null);
   const [comparatorComputing, setComparatorComputing] = useState(false);
-  const [comparatorPhase, setComparatorPhase] = useState<ProfileWorkerPhase | null>(null);
+  // Comparator phases update many times per computation. They go through a
+  // tiny external store read by PairedComparisonSection via
+  // useSyncExternalStore, so a phase tick re-renders only the paired section
+  // — never the 4,120-row evidence table.
+  const comparatorPhaseRef = useRef<ProfileWorkerPhase | null>(null);
+  const comparatorPhaseListeners = useRef<Set<() => void>>(new Set());
+  const setComparatorPhase = (phase: ProfileWorkerPhase | null) => {
+    comparatorPhaseRef.current = phase;
+    for (const listener of comparatorPhaseListeners.current) listener();
+  };
+  const comparatorPhaseStore = {
+    get: () => comparatorPhaseRef.current,
+    subscribe: (listener: () => void) => {
+      comparatorPhaseListeners.current.add(listener);
+      return () => {
+        comparatorPhaseListeners.current.delete(listener);
+      };
+    },
+  };
   // One live computation per controller; aborting is the real cancellation
   // path (it terminates the Worker), not merely navigating away.
   const routeAbortRef = useRef<AbortController | null>(null);
@@ -818,7 +836,7 @@ export function ModelEvidenceProfile({
               narrowing.focusTableHeading();
             }}
             comparatorComputing={comparatorComputing}
-            comparatorPhase={comparatorPhase}
+            comparatorPhaseStore={comparatorPhaseStore}
             onCancelComparator={handleCancelComparator}
           />
         </div>

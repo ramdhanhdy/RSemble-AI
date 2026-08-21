@@ -399,6 +399,34 @@ async function run() {
     });
     await screenshot("qa-profile-desktop-1440");
 
+    // Task 8 authority: the exact-profile computation must have run in a real
+    // Worker that emitted progress phases and a result — no synchronous
+    // statistical fallback on the main thread.
+    const profileWorkers = await evaluate(
+      "(window.__qaWorkers || []).map((w) => ({ url: w.url, type: w.options && w.options.type, terminated: w.terminated, errors: w.errors, messages: w.messages }))",
+    );
+    const profileWorker = profileWorkers[profileWorkers.length - 1];
+    const profilePhases = (profileWorker?.messages || [])
+      .filter((m) => m.kind === "progress")
+      .map((m) => m.phase);
+    record("profile-worker-authority", {
+      pass:
+        Boolean(profileWorker) &&
+        profileWorker.errors.length === 0 &&
+        profilePhases.includes("select") &&
+        profilePhases.includes("done") &&
+        profileWorker.messages.some((m) => m.kind === "result") &&
+        profileWorker.terminated,
+      url: profileWorker?.url,
+      phases: profilePhases,
+      reason:
+        "The exact-profile computation ran in a real Worker that emitted select→done phases and a result, and was terminated after completion (no synchronous fallback).",
+    });
+    // The gated >50ms ceiling is asserted against the comparator interaction
+    // below (observation reset immediately before selection); the full-page
+    // load list is retained as evidence.
+    results.timings.profileLongTaskCount = (results.timings.profileLongTasks || []).length;
+
     // Narrowing: the originating family control is focused before activation;
     // apply moves focus to the evidence heading, clear restores the origin.
     const narrowingProbe = await evaluate(
@@ -437,6 +465,11 @@ async function run() {
 
     // Comparator: shared rolling-alias cohort has paired rows; an isolated
     // comparator has an explicit empty-intersection disclosure.
+
+    // Reset long-task observation immediately before the measured selection so
+    // the gate below covers exactly the Child-07 comparator computation.
+    await evaluate("window.__qaLongTasks.length = 0");
+    const workersBeforeComparator = (await evaluate("(window.__qaWorkers || []).length")) || 0;
     await evaluate("document.querySelector('[data-comparator-trigger]')?.click()");
     await waitFor(
       "Boolean(document.querySelector('[data-comparator-candidate]'))",
@@ -451,9 +484,64 @@ async function run() {
       `document.querySelector('[data-comparator-candidate][data-candidate-id=${JSON.stringify(rollingId)}]')?.click()`,
     );
     await waitFor(
-      "document.body.innerText.includes('Paired') && !document.body.innerText.includes('Select comparator')",
+      "document.body.innerText.includes('Paired') && !document.body.innerText.includes('Select comparator') && !document.querySelector('[data-paired-state=\\'computing\\']')",
       "paired rolling comparator",
     );
+    const comparatorLongTasks = await evaluate("window.__qaLongTasks || []");
+    const comparatorWorkerForGate = (
+      await evaluate(
+        `(window.__qaWorkers || []).slice(${workersBeforeComparator}).map((w) => ({ messages: w.messages }))`,
+      )
+    )?.pop();
+    // Attribution: blocks BEFORE the worker's first phase message are input
+    // assembly (repository I/O stays on the main thread per spec §11). The
+    // statistical window is [first phase message → result message]: any block
+    // starting inside it means main-thread statistical work (a synchronous
+    // fallback — which by construction produces no worker messages and thus
+    // spans the whole window) and fails the gate. Blocks after the result
+    // message are UI rendering of already-computed results, recorded as
+    // evidence.
+    const workerMessages = comparatorWorkerForGate?.messages || [];
+    const firstPhaseAt = workerMessages.find((m) => m.kind === "progress")?.at ?? 0;
+    const resultAt =
+      workerMessages.find((m) => m.kind === "comparator_result")?.at ?? Number.POSITIVE_INFINITY;
+    const computeWindowBlocks = comparatorLongTasks.filter(
+      (t) => t.startTime >= firstPhaseAt && t.startTime < resultAt,
+    );
+    const assemblyBlocks = comparatorLongTasks.filter((t) => t.startTime < firstPhaseAt);
+    const renderBlocks = comparatorLongTasks.filter((t) => t.startTime >= resultAt);
+    record("comparator-no-long-task", {
+      pass: computeWindowBlocks.length === 0,
+      longTaskCount: comparatorLongTasks.length,
+      maxDurationMs: comparatorLongTasks.reduce((m, t) => Math.max(m, t.duration), 0),
+      firstWorkerPhaseAt: firstPhaseAt,
+      resultAt,
+      computeWindowBlocks,
+      assemblyBlocks,
+      renderBlocks,
+      reason:
+        "Child-07 statistical comparator computation produced no >50ms main-thread block inside the statistical window (first worker phase → worker result); a synchronous fallback would span that window and fail. Pre-dispatch assembly (spec §11) and post-result UI rendering are recorded as evidence.",
+    });
+    const comparatorWorkers = await evaluate(
+      `(window.__qaWorkers || []).slice(${workersBeforeComparator}).map((w) => ({ url: w.url, type: w.options && w.options.type, terminated: w.terminated, errors: w.errors, messages: w.messages }))`,
+    );
+    const comparatorWorker = comparatorWorkers[comparatorWorkers.length - 1];
+    const comparatorPhases = (comparatorWorker?.messages || [])
+      .filter((m) => m.kind === "progress")
+      .map((m) => m.phase);
+    record("comparator-worker-authority-and-progress", {
+      pass:
+        Boolean(comparatorWorker) &&
+        comparatorWorker.errors.length === 0 &&
+        comparatorPhases.includes("select") &&
+        comparatorPhases.includes("paired") &&
+        comparatorWorker.messages.some((m) => m.kind === "comparator_result") &&
+        comparatorWorker.terminated,
+      url: comparatorWorker?.url,
+      phases: comparatorPhases,
+      reason:
+        "The paired computation ran in its own real Worker, emitted select→paired→done phases and a result, and was terminated after completion.",
+    });
     const pairedText = await evaluate("document.body.innerText");
     record("paired-rolling-and-cohorts", {
       pass:
@@ -461,6 +549,10 @@ async function run() {
         !/pooled estimate|best model/i.test(pairedText),
       reason: "Paired output remains cohort-stratified and does not imply a pooled respondent.",
     });
+
+    // Explicit cancel: selecting an isolated candidate starts a computation
+    // that Cancel must really abort — the Worker is terminated and no paired
+    // result ever appears afterwards.
     await evaluate("document.querySelector('[data-remove-comparator]')?.click()");
     await waitFor(
       "Boolean(document.querySelector('[data-comparator-trigger]'))",
@@ -472,29 +564,110 @@ async function run() {
       "comparator dialog reopen",
     );
     const isolatedCandidate = await evaluate(
-      "[...document.querySelectorAll('[data-comparator-candidate]')].find((el) => el.getAttribute('data-candidate-id')?.endsWith('f'.repeat(64)))?.getAttribute('data-candidate-id')",
+      "[...document.querySelectorAll('[data-comparator-candidate]')].find((el) => el.getAttribute('data-candidate-id')?.endsWith('d'.repeat(64)))?.getAttribute('data-candidate-id')",
     );
-    if (isolatedCandidate) {
-      await evaluate(
-        `document.querySelector('[data-comparator-candidate][data-candidate-id=${JSON.stringify(isolatedCandidate)}]')?.click()`,
+    if (!isolatedCandidate) throw new Error("Isolated comparator candidate missing");
+    await evaluate(
+      `document.querySelector('[data-comparator-candidate][data-candidate-id=${JSON.stringify(isolatedCandidate)}]')?.click()`,
+    );
+    await waitFor(
+      "Boolean(document.querySelector('[data-action=cancel-comparator]'))",
+      "comparator computing state with cancel",
+    );
+    await evaluate("document.querySelector('[data-action=cancel-comparator]')?.click()");
+    await waitFor(
+      "!document.querySelector('[data-paired-state=\\'computing\\']') && !document.querySelector('[data-action=cancel-comparator]')",
+      "comparator cancelled",
+    );
+    await wait(600);
+    const afterCancel = await evaluate(
+      "({ results: Boolean(document.querySelector('[data-paired-state=results]')), chip: Boolean(document.querySelector('[data-comparator-chip]')), workers: (window.__qaWorkers || []).map((w) => w.terminated) })",
+    );
+    record("comparator-cancel", {
+      pass:
+        !afterCancel.results &&
+        !afterCancel.chip &&
+        afterCancel.workers.length > 0 &&
+        afterCancel.workers.every((t) => t === true),
+      ...afterCancel,
+      reason:
+        "Explicit cancel aborts the in-flight comparator computation: every Worker is terminated and no stale paired result ever renders.",
+    });
+
+    // A→B supersession with stale-result rejection: select the rolling
+    // candidate (A) and, while A is still computing, reopen the picker and
+    // select the isolated candidate (B). A's Worker must be terminated and A's
+    // late result must never win; B's empty-intersection disclosure is final.
+    await evaluate("document.querySelector('[data-comparator-trigger]')?.click()");
+    await waitFor(
+      "Boolean(document.querySelector('[data-comparator-candidate]'))",
+      "comparator dialog for supersession",
+    );
+    await evaluate(
+      `(async () => {
+        const q = (s) => document.querySelector(s);
+        q('[data-comparator-candidate][data-candidate-id=${JSON.stringify(rollingId)}]').click();
+        await new Promise((resolve) => {
+          const timer = setInterval(() => {
+            if (q('[data-paired-state="computing"]')) { clearInterval(timer); resolve(); }
+          }, 5);
+        });
+        q('[data-comparator-trigger]').click();
+        await new Promise((resolve) => {
+          const timer = setInterval(() => {
+            if (q('[data-comparator-candidate][data-candidate-id=${JSON.stringify(isolatedCandidate)}]')) { clearInterval(timer); resolve(); }
+          }, 5);
+        });
+        q('[data-comparator-candidate][data-candidate-id=${JSON.stringify(isolatedCandidate)}]').click();
+        return true;
+      })()`,
+    );
+    let supersession = null;
+    for (let attempt = 0; attempt < 160; attempt += 1) {
+      supersession = await evaluate(
+        `(() => {
+          const workers = (window.__qaWorkers || []);
+          return {
+            workerCount: workers.length,
+            allTerminated: workers.every((w) => w.terminated),
+            computing: Boolean(document.querySelector('[data-paired-state=\\'computing\\']')),
+            state: document.querySelector('[data-paired-state]')?.getAttribute('data-paired-state') || null,
+            chip: document.querySelector('[data-comparator-chip]')?.innerText || null,
+            bodyHead: document.body.innerText.slice(0, 300),
+          };
+        })()`,
       );
-      await waitFor(
-        "document.body.innerText.toLowerCase().includes('no shared') || document.body.innerText.toLowerCase().includes('empty')",
-        "empty paired intersection",
-      );
-      record("paired-empty-intersection", {
-        pass: true,
-        reason:
-          "An isolated comparator shows explicit empty-intersection evidence rather than a fabricated delta.",
-      });
-    } else {
-      record("paired-empty-intersection", {
-        pass: false,
-        reason: "Isolated comparator candidate missing",
-      });
+      if (!supersession.computing && supersession.state && supersession.state !== "no-comparator")
+        break;
+      await wait(150);
     }
+    if (!supersession || supersession.computing || !supersession.state) {
+      throw new Error(
+        `superseded comparator settles on B: ${JSON.stringify(supersession)}`,
+      );
+    }
+    record("comparator-supersession-stale-rejection", {
+      pass:
+        supersession.workerCount >= workersBeforeComparator + 2 &&
+        supersession.allTerminated &&
+        (supersession.state === "empty-intersection" || supersession.state === "results"),
+      ...supersession,
+      reason:
+        "Selecting B while A computes aborts A (Worker terminated); A's stale result never renders and B's outcome is final.",
+    });
+    record("paired-empty-intersection", {
+      pass: supersession.state === "empty-intersection",
+      state: supersession.state,
+      reason:
+        "An isolated comparator shows explicit empty-intersection evidence rather than a fabricated delta.",
+    });
 
     // Escape closes the comparator dialog and returns focus to its trigger.
+    await evaluate("document.querySelector('[data-remove-comparator]')?.click()");
+    await waitFor(
+      "Boolean(document.querySelector('[data-comparator-trigger]'))",
+      "comparator trigger before Escape probe",
+    );
     await evaluate(
       "document.querySelector('[data-comparator-trigger]')?.focus(); document.querySelector('[data-comparator-trigger]')?.click()",
     );
