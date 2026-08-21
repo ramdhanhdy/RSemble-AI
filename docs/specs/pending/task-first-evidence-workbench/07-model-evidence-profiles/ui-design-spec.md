@@ -7,9 +7,9 @@
 conflict, the behavioral spec wins on *what exists and what it means*; this document wins on *how
 it looks, reads, moves, and responds*.
 **Sits beside:** the Research Lab spec
-(`../06-research-lab-policy-studies/ui-design-spec.md`) and the shell spec
-(`../08-workbench-shell-and-records/ui-design-spec.md`), whose grammar (claim frames, honesty
-tokens, Records backlinks) this document reuses rather than forks.
+(`../06-research-lab-policy-studies/ui-design-spec.md`) and the canonical shell spec
+(`../08-workbench-shell-and-records/workbench-shell-and-records-spec.md`), whose grammar (claim
+frames, honesty tokens, Records backlinks) this document reuses rather than forks.
 **Reconciliation note:** the behavioral spec is numbered "Order: 06" in its header but lives in
 `07-model-evidence-profiles/`; this document follows the folder and program ordering (Child 07).
 No other product decision is open.
