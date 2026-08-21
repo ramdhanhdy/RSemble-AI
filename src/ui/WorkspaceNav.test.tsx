@@ -66,12 +66,7 @@ afterEach(() => {
 
 const DESKTOP_ITEMS = ["Compare", "Evaluations", "Lab", "Models"];
 const DESKTOP_HREFS = ["/compare", "/evaluations", "/lab", "/models"];
-const NAV_ICONS = [
-  "lucide-git-compare",
-  "lucide-flask-conical",
-  "lucide-test-tubes",
-  "lucide-cpu",
-];
+const NAV_ICONS = ["lucide-git-compare", "lucide-flask-conical", "lucide-test-tubes", "lucide-cpu"];
 
 describe("WorkspaceNav (desktop) — task-first topology", () => {
   it("renders nav with aria-label='Primary'", () => {
@@ -252,8 +247,7 @@ describe("Header Records utility (secondary chrome)", () => {
   it("shows the History glyph at every width and the label only at lg+", () => {
     for (const desktop of [false, true]) {
       const h = renderHeader(desktop);
-      const control =
-        h.$('button[aria-label="Records"]') ?? h.$('a[aria-label="Records"]');
+      const control = h.$('button[aria-label="Records"]') ?? h.$('a[aria-label="Records"]');
       expect(control?.querySelector("svg.lucide-history")).toBeTruthy();
       const label = control?.querySelector("span");
       expect(label?.className.includes("hidden lg:inline")).toBe(true);
@@ -264,7 +258,7 @@ describe("Header Records utility (secondary chrome)", () => {
 
   it("orders the right utility cluster palette · Records · Connections · Help", () => {
     const h = renderHeader(true);
-    const cluster = h.$$('header div.flex.items-center.justify-self-end > *');
+    const cluster = h.$$("header div.flex.items-center.justify-self-end > *");
     const names = cluster.map((el) => el.getAttribute("aria-label") ?? "");
     const paletteIndex = names.indexOf("Command palette");
     const recordsIndex = names.indexOf("Records");
@@ -370,9 +364,7 @@ describe("Header responsive sacrifice order (768–1023px tablet)", () => {
     expect(h.$$('button[aria-label="Command palette"]')[0]?.className.includes("hidden")).toBe(
       true,
     );
-    expect(h.$('button[aria-label="Keyboard shortcuts"]')?.className.includes("hidden")).toBe(
-      true,
-    );
+    expect(h.$('button[aria-label="Keyboard shortcuts"]')?.className.includes("hidden")).toBe(true);
     cleanup(h);
   });
 });
