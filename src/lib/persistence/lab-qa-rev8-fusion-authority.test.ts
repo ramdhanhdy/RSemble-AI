@@ -417,6 +417,7 @@ describe("REV-8 probe 3 — no code path can re-open the deleted Fusion stores",
         violations.push(relative(SRC, file));
       }
     }
+    expect(violations).toEqual([]);
   });
 
   it("any product mention of a deleted store name sits in an allowlisted module", () => {
@@ -430,5 +431,6 @@ describe("REV-8 probe 3 — no code path can re-open the deleted Fusion stores",
         violations.push(relative(SRC, file));
       }
     }
+    expect(violations).toEqual([]);
   });
 });
