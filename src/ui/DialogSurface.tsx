@@ -62,9 +62,8 @@ export function DrawerSurface({
     <Dialog.Root open={open} onOpenChange={(next) => onOpenChange(next)}>
       <Dialog.Portal>
         <Dialog.Backdrop data-dialog-backdrop className="fixed inset-0 z-50 bg-black/70" />
-        <Dialog.Viewport className="fixed inset-0 z-50 justify-end">
+        <Dialog.Viewport className="fixed inset-0 z-50 flex justify-end">
           <Dialog.Popup
-            aria-label={title}
             finalFocus={finalFocus}
             className="drawer-panel flex h-full w-[400px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden border-l border-edge-bright bg-raised shadow-popover"
           >
