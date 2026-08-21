@@ -35,15 +35,16 @@ export function RecordTypeRow({
     <div
       data-record-row=""
       data-record-type={reference.recordType}
+      data-record-id={reference.id}
       data-selected={selected || undefined}
       className={`flex min-w-0 items-stretch rounded-md border border-edge bg-panel hover:border-edge-bright ${
-        selected ? "bg-raised shadow-[inset_2px_0_0_0_#00e5ff]" : ""
+        selected ? "bg-raised shadow-[inset_2px_0_0_#00e5ff]" : ""
       }`}
     >
       <Link
         to={recordOpenHref(reference)}
+        data-record-row-link=""
         aria-label={accessibleName}
-        aria-current={selected ? "true" : undefined}
         className="motion-state flex min-h-[44px] min-w-0 flex-1 flex-col gap-0.5 px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <span className="flex min-w-0 items-center gap-2">

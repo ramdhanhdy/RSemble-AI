@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, GitCompare, History } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { RecordsRepository } from "../../lib/records/records-repository";
 import type { RecordsPage, RecordsQuery } from "../../lib/records/records-query";
 import type { RecordType } from "../../lib/records/record-reference";
@@ -32,6 +32,19 @@ export function RecordsList({
   const [reloadToken, setReloadToken] = useState(0);
   const requestId = useRef(0);
   const committedText = useRef(initialFilters.text);
+  const filterRootRef = useRef<HTMLDivElement | null>(null);
+  // "Find record by ID…" below 1024 lands here with ?focus=search (§G.7):
+  // focus the search field once, then strip the param so refresh/back stay
+  // clean.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("focus") !== "search") return;
+    filterRootRef.current?.querySelector<HTMLInputElement>('input[data-filter="search"]')?.focus();
+    const next = new URLSearchParams(searchParams);
+    next.delete("focus");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only handoff
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -134,7 +147,9 @@ export function RecordsList({
         </p>
       </header>
 
-      <RecordsFilters value={filters} onChange={updateFilters} modelKeys={modelKeys} />
+      <div ref={filterRootRef}>
+        <RecordsFilters value={filters} onChange={updateFilters} modelKeys={modelKeys} />
+      </div>
 
       {loading && page.items.length === 0 ? (
         <div data-records-loading="" className="flex flex-col gap-2" aria-label="Loading records">

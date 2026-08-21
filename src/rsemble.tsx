@@ -17,6 +17,7 @@ import { type Mode } from "./studio-data";
 import { isProviderReadySync, listProviders } from "./lib/providers/registry";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import { Header, type ConnectionState } from "./ui/Header";
+import { RecordsDrawer } from "./ui/RecordsDrawer";
 
 import { type Action, type StudioState, initialState, reducer } from "./studio-engine";
 
@@ -117,6 +118,9 @@ export default function RSemble() {
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
+  // Quick Records drawer (Child 08 §H): >=1024 only. Below 1024 the header
+  // Records utility is a plain /records link and the drawer never mounts.
+  const [recordsDrawerOpen, setRecordsDrawerOpen] = useState(false);
   const commandDialogHandle = useMemo(() => Dialog.createHandle(), []);
   const connectionsDialogHandle = useMemo(() => Dialog.createHandle(), []);
   const cheatsheetDialogHandle = useMemo(() => Dialog.createHandle(), []);
@@ -549,6 +553,8 @@ export default function RSemble() {
               connectionsDialogHandle={connectionsDialogHandle}
               cheatsheetDialogHandle={cheatsheetDialogHandle}
               connectionState={connectionState}
+              recordsOpen={recordsDrawerOpen}
+              onOpenRecords={isLg ? () => setRecordsDrawerOpen(true) : undefined}
             />
 
             {/* Global execution awareness strip (spec §5.5) — visible on every
@@ -697,8 +703,12 @@ export default function RSemble() {
           </div>
         </div>
 
-        {/* Mobile bottom navigation — fixed, three workspaces. */}
+        {/* Mobile bottom navigation — fixed, four workspaces. */}
         <MobileWorkspaceNav />
+
+        {/* Quick Records drawer (Child 08 §H) — mounted only at >=1024.
+          Below 1024 the header utility navigates to /records instead. */}
+        {isLg && <RecordsDrawer open={recordsDrawerOpen} onOpenChange={setRecordsDrawerOpen} />}
 
         {isCompareRoute && (
           <Dialog.Root
@@ -766,6 +776,18 @@ export default function RSemble() {
           }
           onAbortExperiment={() => {
             void experimentController?.abort();
+          }}
+          onFindRecord={() => {
+            // §G.7: >=1024 opens the drawer with its search focused;
+            // below 1024 navigates to /records with the filter focused.
+            if (isLg) {
+              setRecordsDrawerOpen(true);
+              requestAnimationFrame(() => {
+                document.getElementById("records-drawer-search")?.focus();
+              });
+            } else {
+              void navigate("/records?focus=search");
+            }
           }}
         />
         <ShortcutCheatsheet

@@ -168,6 +168,19 @@ body {
   line-height: 1.4;
 }
 
+/* Records drawer (Child 08 §G.3): slides from the right edge.
+   Transform/opacity only. The enter offset renders through Base UI's
+   starting-style hook on the dialog popup. */
+.drawer-panel {
+  transition:
+    transform var(--motion-medium) var(--ease-out-ui),
+    opacity var(--motion-short) var(--ease-out-ui);
+}
+.drawer-panel[data-starting-style] {
+  transform: translateX(16px);
+  opacity: 0;
+}
+
 /* Reduced motion: remove movement/loops; keep short opacity/color feedback. */
 @media (prefers-reduced-motion: reduce) {
   .animate-dash-march,
@@ -183,7 +196,8 @@ body {
   .pressable,
   .motion-state,
   .disclosure-chevron,
-  .rsemble-divider::before {
+  .rsemble-divider::before,
+  .drawer-panel {
     transition-duration: 0ms !important;
   }
 }
