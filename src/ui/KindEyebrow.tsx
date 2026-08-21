@@ -12,10 +12,10 @@ import {
   Combine,
   Cpu,
   FileSearch,
-  FlaskConical,
   Layers,
   ListChecks,
   Scale,
+  TestTubes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,7 +32,9 @@ const KINDS = {
   },
   study: {
     word: "Policy Study",
-    icon: FlaskConical,
+    // Child 08 §G.5 binding identity: Lab/Policy Study = TestTubes, never
+    // Evaluation's FlaskConical where the six record types interleave.
+    icon: TestTubes,
     def: "A pinned policy comparison that ends in a Policy Playbook.",
   },
   recipe: {

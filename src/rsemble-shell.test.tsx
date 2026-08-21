@@ -105,9 +105,9 @@ describe("RSemble workspace shell", () => {
     cleanup(compare);
 
     const runs = await renderAtRoute(["/runs"]);
-    // Runs workspace is an honest placeholder saying the feature is not yet
-    // implemented, with no fake controls.
-    expect(runs.container.textContent).toContain("Runs");
+    // The legacy /runs URL redirects to /records — the ledger is the same
+    // history under its canonical address (Child 08 §D).
+    expect(runs.container.textContent).toContain("Records");
     cleanup(runs);
 
     const evaluations = await renderAtRoute(["/evaluations"]);
@@ -145,9 +145,11 @@ describe("RSemble workspace shell", () => {
 
   it("exactly one desktop nav link has aria-current='page'", async () => {
     const h = await renderAtRoute(["/compare"]);
-    const nav = h.$('nav[aria-label="Primary"]');
-    expect(nav).toBeTruthy();
-    const currentLinks = h.$$('nav[aria-label="Primary"] [aria-current="page"]');
+    // NavLink renders aria-current on every item (React Router contract);
+    // exactly one carries the value "page" for the active destination.
+    const currentLinks = h
+      .$$('nav[aria-label="Primary"] [aria-current="page"]')
+      .filter((el) => el.getAttribute("aria-current") === "page");
     expect(currentLinks).toHaveLength(1);
     cleanup(h);
   });
@@ -170,21 +172,17 @@ describe("RSemble workspace shell", () => {
     cleanup(evaluations);
   });
 
-  it("mobile navigation exposes three visible labels and 44px targets", async () => {
-    // happy-dom doesn't apply CSS, so we check the rendered structure: the
-    // mobile nav exists, has three links with visible text, and each has a
-    // min-height style or class indicating 44px. We verify the three labels.
+  it("mobile navigation exposes four visible labels and 44px targets", async () => {
     const h = await renderAtRoute(["/compare"]);
-    // Look for the mobile nav — it should be a nav with an aria-label
-    // containing "Workspace" and visible only on small screens.
-    const mobileNavs = h.$$('nav[aria-label*="Workspace" i], nav[data-mobile="true"]');
-    // The mobile nav should exist in the DOM (even if hidden by CSS on desktop).
-    expect(mobileNavs.length).toBeGreaterThanOrEqual(1);
+    // Look for the mobile nav — it is the fixed bottom nav with data-mobile.
+    const mobileNavs = h.$$('nav[data-mobile="true"]');
+    expect(mobileNavs.length).toBe(1);
     const mobileNav = mobileNavs[0];
     const links = [...mobileNav.querySelectorAll<HTMLAnchorElement>("a")];
-    expect(links).toHaveLength(3);
+    expect(links).toHaveLength(4);
     const labels = links.map((l) => l.textContent?.trim()).filter(Boolean);
-    expect(labels).toEqual(expect.arrayContaining(["Compare", "Runs", "Evaluations"]));
+    expect(labels).toEqual(["Compare", "Evaluations", "Lab", "Models"]);
+    expect(labels).not.toContain("Runs");
     cleanup(h);
   });
 
@@ -203,19 +201,19 @@ describe("RSemble workspace shell", () => {
     // Verify the prompt was set before navigating.
     expect(h.container.textContent).toContain("Test prompt for persistence");
 
-    // Navigate to /runs via the desktop nav link.
-    const runsLink = [...h.container.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (a) => a.getAttribute("href") === "/runs",
+    // Navigate to /evaluations via the desktop nav link.
+    const evalsLink = [...h.container.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (a) => a.getAttribute("href") === "/evaluations",
     );
-    expect(runsLink).toBeTruthy();
+    expect(evalsLink).toBeTruthy();
     act(() => {
-      runsLink!.click();
+      evalsLink!.click();
     });
     await settleLazy();
 
-    // On /runs the command pane (with textarea) is gone — the Runs workspace shows.
+    // On /evaluations the command pane (with textarea) is gone — the
+    // Evaluations workspace shows.
     expect(h.$('[aria-label="Command"]')).toBeFalsy();
-    // Runs workspace renders (no longer a placeholder)
     expect(h.container.textContent).not.toContain("not yet implemented");
 
     // Navigate back to /compare via the desktop nav link.

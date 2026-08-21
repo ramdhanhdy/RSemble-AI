@@ -63,6 +63,7 @@ interface Spies {
   onToggleFocusMode: Mock;
   onExport: Mock;
   onNavigate: Mock;
+  onFindRecord: Mock;
   onViewExperiment: Mock;
   onAbortExperiment: Mock;
 }
@@ -78,6 +79,7 @@ function renderPalette(overrides: PaletteProps = {}): { h: Harness; spies: Spies
     onToggleFocusMode: vi.fn(),
     onExport: vi.fn(),
     onNavigate: vi.fn(),
+    onFindRecord: vi.fn(),
     onViewExperiment: vi.fn(),
     onAbortExperiment: vi.fn(),
   };
@@ -96,6 +98,7 @@ function renderPalette(overrides: PaletteProps = {}): { h: Harness; spies: Spies
       canRun={overrides.canRun ?? true}
       workspace={overrides.workspace}
       onNavigate={spies.onNavigate}
+      onFindRecord={spies.onFindRecord}
       activeExperimentId={overrides.activeExperimentId}
       onViewExperiment={spies.onViewExperiment}
       onAbortExperiment={spies.onAbortExperiment}
@@ -132,18 +135,23 @@ function typeQuery(h: Harness, value: string) {
 // --- Tests --------------------------------------------------------------------
 
 describe("CommandPalette workspace awareness (plan 8.2)", () => {
-  it("opens with a Navigate group first containing exactly Go to Compare/Runs/Evaluations", async () => {
+  it("opens with a Navigate group first containing exactly the six task-first destinations", async () => {
     const { h } = renderPalette();
     await settle();
 
     const headers = h.$$("[cmdk-group-heading]").map((el) => el.textContent?.trim() ?? "");
     expect(headers[0]).toBe("Navigate");
-    // The first three commands (in DOM order) are the navigation commands.
-    expect(optionLabels(h).slice(0, 3)).toEqual([
+    // Child 08 §G.7: the Navigate group is exactly these six commands in
+    // this order. There is no "Go to Runs" command anywhere.
+    expect(optionLabels(h).slice(0, 6)).toEqual([
       "Go to Compare",
-      "Go to Runs",
       "Go to Evaluations",
+      "Go to Lab",
+      "Go to Models",
+      "Go to Records",
+      "Go to Tasks",
     ]);
+    expect(findOption(h, "Go to Runs")).toBeNull();
     cleanup(h);
   });
 
@@ -151,13 +159,13 @@ describe("CommandPalette workspace awareness (plan 8.2)", () => {
     const { h, spies } = renderPalette();
     await settle();
 
-    const goRuns = findOption(h, "Go to Runs");
-    expect(goRuns).toBeTruthy();
+    const goRecords = findOption(h, "Go to Records");
+    expect(goRecords).toBeTruthy();
     act(() => {
-      goRuns!.click();
+      goRecords!.click();
     });
     expect(spies.onClose).toHaveBeenCalledTimes(1);
-    expect(spies.onNavigate).toHaveBeenCalledWith("/runs");
+    expect(spies.onNavigate).toHaveBeenCalledWith("/records");
     cleanup(h);
   });
 
@@ -190,8 +198,10 @@ describe("CommandPalette workspace awareness (plan 8.2)", () => {
     // Global commands survive on every workspace.
     expect(labels).toContain("Open connections");
     expect(labels).toContain("Go to Compare");
-    expect(labels).toContain("Go to Runs");
+    expect(labels).toContain("Go to Records");
     expect(labels).toContain("Go to Evaluations");
+    expect(labels).toContain("Go to Lab");
+    expect(labels).toContain("Go to Models");
     cleanup(h);
   });
 
@@ -267,11 +277,38 @@ describe("CommandPalette workspace awareness (plan 8.2)", () => {
     const { h } = renderPalette();
     await settle();
 
-    typeQuery(h, "runs");
+    typeQuery(h, "records");
     const labels = optionLabels(h);
-    expect(labels).toContain("Go to Runs");
+    expect(labels).toContain("Go to Records");
     expect(labels).not.toContain("Go to Compare");
     expect(labels).not.toContain("Go to Evaluations");
+    cleanup(h);
+  });
+
+  it.each(["runs", "history", "ledger", "audit"])(
+    "typing the legacy keyword '%s' resolves Go to Records",
+    async (keyword) => {
+      const { h } = renderPalette();
+      await settle();
+
+      typeQuery(h, keyword);
+      expect(optionLabels(h)).toContain("Go to Records");
+      expect(optionLabels(h)).not.toContain("Go to Runs");
+      cleanup(h);
+    },
+  );
+
+  it("offers Find record by ID… and hands off to the Records search surface", async () => {
+    const { h, spies } = renderPalette();
+    await settle();
+
+    const find = findOption(h, "Find record by ID…");
+    expect(find).toBeTruthy();
+    act(() => {
+      find!.click();
+    });
+    expect(spies.onClose).toHaveBeenCalledTimes(1);
+    expect(spies.onFindRecord).toHaveBeenCalledTimes(1);
     cleanup(h);
   });
 });
@@ -293,14 +330,14 @@ describe("CommandPalette cmdk interaction contract", () => {
     const { h, spies } = renderPalette();
     await settle();
 
-    typeQuery(h, "runs");
+    typeQuery(h, "records");
     const input = h.$('input[aria-label="Search commands"]');
     act(() => {
       input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
 
     expect(spies.onClose).toHaveBeenCalledTimes(1);
-    expect(spies.onNavigate).toHaveBeenCalledWith("/runs");
+    expect(spies.onNavigate).toHaveBeenCalledWith("/records");
     cleanup(h);
   });
 

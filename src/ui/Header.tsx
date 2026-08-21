@@ -1,20 +1,27 @@
 // =============================================================================
-// Header — identity · workspace nav · run status · (children: the ModeToggle) ·
-// mobile drawer toggle. See UI.md §2. The Rank/Fuse toggle is passed as
-// children so it sits inline here, always visible — it is the sole switch in
-// the product and appears only on Compare.
+// Header — identity · workspace nav · utility cluster · mobile drawer toggle.
+// Child 08 spec §G.4 final composition: LEFT identity/menu, CENTER desktop
+// WorkspaceNav, RIGHT palette · Records · Connections · Help. The Rank/Fuse
+// toggle stays a Compare-interior control (spec §C.3) — never global chrome.
+//
+// Records utility (§G.4): History glyph + "Records" label at lg+, icon-only
+// 44×44 at other widths, aria-label="Records" always. At >=1024px it opens
+// the quick Records drawer (aria-haspopup="dialog" + aria-expanded); below
+// 1024px it navigates directly to /records (§H.6 substitution). It renders at
+// ALL widths — below md it is the only chrome route to the ledger — and is
+// visually identical in weight to the palette trigger (secondary chrome).
 //
 // Responsive (DESIGN.md): on <768px the command pane collapses into a header
 // drawer; `onOpenCommand` renders a hamburger button shown only on mobile.
-// At 768–1023px palette/help labels collapse to icon-only, then connection
-// text compacts to a status dot, preserving identity, workspace labels,
-// execution status, and Compare-only Rank/Fuse.
+// Palette/help stay hidden below md; readiness stays available at all widths.
 // =============================================================================
 
 import { useEffect, useState, type ReactElement } from "react";
+import { Link } from "react-router-dom";
 import { Dialog } from "@base-ui/react/dialog";
-import { Command, HelpCircle, Menu } from "lucide-react";
+import { Command, HelpCircle, History, Menu } from "lucide-react";
 import { HexCubeLogo } from "./brand-icons";
+import { useMediaQuery } from "./useMediaQuery";
 import { WorkspaceNav } from "./WorkspaceNav";
 
 export type ConnectionState = "ready" | "running" | "degraded" | "offline" | "checking";
@@ -76,6 +83,8 @@ export function Header({
   connectionsDialogHandle,
   cheatsheetDialogHandle,
   connectionState = "ready",
+  recordsOpen = false,
+  onOpenRecords,
 }: {
   running: boolean;
   onOpenCommand?: () => void;
@@ -86,10 +95,16 @@ export function Header({
   connectionsDialogHandle?: Dialog.Handle<unknown>;
   cheatsheetDialogHandle?: Dialog.Handle<unknown>;
   connectionState?: ConnectionState;
+  /** Drawer open state at >=1024px; drives aria-expanded on the trigger. */
+  recordsOpen?: boolean;
+  /** >=1024px: open the quick Records drawer. Below 1024 the utility is a
+   *  plain /records link instead (spec §H.6). */
+  onOpenRecords?: () => void;
 }) {
   const pill = livePill(running, connectionState);
   const elapsed = useRunElapsed(running);
   const pillLabel = running ? `Running · ${elapsed}s` : pill.label;
+  const drawerCapable = useMediaQuery("(min-width: 1024px)");
 
   return (
     <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-edge bg-shell px-2 sm:px-4">
@@ -115,22 +130,6 @@ export function Header({
       </div>
 
       <div className="flex min-w-0 items-center justify-self-end gap-2">
-        {onOpenConnections && (
-          <DetachedDialogTrigger handle={connectionsDialogHandle}>
-            <button
-              type="button"
-              onClick={onOpenConnections}
-              aria-label={`Connection status: ${pillLabel}. Manage connections.`}
-              title="Provider connections"
-              className="flex min-h-[44px] min-w-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <span className={`size-2 rounded-full ${pill.dot}`} aria-hidden="true" />
-              <span className={`hidden lg:inline ${pill.text}`} aria-live="polite">
-                {pillLabel}
-              </span>
-            </button>
-          </DetachedDialogTrigger>
-        )}
         <button
           type="button"
           aria-disabled={onOpenPalette ? undefined : true}
@@ -160,6 +159,49 @@ export function Header({
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">⌘</kbd>
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">K</kbd>
         </button>
+        {/* Records — secondary chrome at every width (spec §G.4). >=1024:
+            drawer trigger; below: plain /records link. Same bordered grammar
+            as the palette trigger, never accent-filled. */}
+        {drawerCapable && onOpenRecords ? (
+          <button
+            type="button"
+            onClick={onOpenRecords}
+            aria-label="Records"
+            title="Records"
+            aria-haspopup="dialog"
+            aria-expanded={recordsOpen}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <History size={15} aria-hidden="true" />
+            <span className="hidden lg:inline">Records</span>
+          </button>
+        ) : (
+          <Link
+            to="/records"
+            aria-label="Records"
+            title="Records"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <History size={15} aria-hidden="true" />
+            <span className="hidden lg:inline">Records</span>
+          </Link>
+        )}
+        {onOpenConnections && (
+          <DetachedDialogTrigger handle={connectionsDialogHandle}>
+            <button
+              type="button"
+              onClick={onOpenConnections}
+              aria-label={`Connection status: ${pillLabel}. Manage connections.`}
+              title="Provider connections"
+              className="flex min-h-[44px] min-w-[44px] items-center gap-2 rounded-full border border-edge bg-panel px-3.5 font-mono text-xs hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <span className={`size-2 rounded-full ${pill.dot}`} aria-hidden="true" />
+              <span className={`hidden lg:inline ${pill.text}`} aria-live="polite">
+                {pillLabel}
+              </span>
+            </button>
+          </DetachedDialogTrigger>
+        )}
         <DetachedDialogTrigger handle={cheatsheetDialogHandle}>
           <button
             type="button"
