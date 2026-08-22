@@ -23,6 +23,7 @@
     "qa:evidence-matrix": "node scripts/cdp-evidence-matrix-qa.mjs",
     "qa:research-lab": "node scripts/qa-research-lab.mjs",
     "qa:model-evidence-profiles": "node scripts/qa-model-evidence-profiles.mjs",
+    "qa:records": "node scripts/cdp-records-qa.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

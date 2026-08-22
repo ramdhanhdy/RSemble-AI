@@ -37,6 +37,7 @@ dist-fixed/
 # Local browser QA profiles and superseded root captures
 .chrome-review*/
 ui-review-*.png
+.qa-runtime/
 
 # Generated TypeScript build metadata/config output.
 # `tsc -b` rewrites these on every typecheck/build, so tracking them would
