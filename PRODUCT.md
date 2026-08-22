@@ -1,7 +1,7 @@
 # PRODUCT.md — RSemble AI Product Specification
 
-> Status: Implemented (three workspaces, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped, canonical Task Sets + ownership crosswalks shipped, Observations and Evidence provenance shipped, Contextual Compare Results and task promotion shipped)
-> Last reconciled: 2026-08-18 at commit `439b8b6` (Child 05 — Contextual Compare Results)
+> Status: Implemented (four primary workspaces Compare · Evaluations · Lab · Models live, secondary typed Records shipped, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped, canonical Task Sets + ownership crosswalks shipped, Observations and Evidence provenance shipped, Contextual Compare Results and task promotion shipped, Research Lab and Policy Studies shipped, qualified Model evidence profiles shipped, shell and Records navigation shipped)
+> Last reconciled: 2026-08-23 at commit `56cf088` (Child 08 — Workbench Shell and Records)
 >
 > **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
 > "Profiles" are now "Rubrics" in all user-facing surfaces, domain code, routes,
@@ -68,6 +68,20 @@
 > scanning, and collision-abort-before-write import; earlier-v2 envelopes without
 > the key remain readable, and Fusion Study observations stay strictly isolated
 > as separate study-owned collections without conversion or ID collision.
+>
+> **Reconciliation note (Child 08, 2026-08-23):** Task-first primary navigation
+> (**Compare · Evaluations · Lab · Models**) and secondary typed Records are shipped
+> (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 08-workbench-shell-and-records/workbench-shell-and-records-spec.md`). Primary
+> navigation comprises exactly four top-level destinations on desktop and mobile.
+> Records is a typed read-model utility accessible via a bounded secondary drawer
+> at ≥1024px and direct `/records` link below 1024px. The six typed record
+> representations (`comparison`, `evaluation`, `policy-study`, `task-execution`,
+> `observation`, `legacy`) preserve full audit history, ownership resolution to
+> originating workspaces, and navigation-only actions (zero execution verbs in
+> Records). URL-preserving `/runs/:runId` compatibility and `/runs` query redirects
+> preserve all historical deep links. A non-modal, one-time migration pointer
+> introduces the new ledger address on first launch when prior run records exist.
 
 > **Reconciliation note (Child 05, 2026-08-18):** Contextual Compare Results
 > and task promotion are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/

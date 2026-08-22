@@ -52,10 +52,10 @@ For this program, the future target explicitly supersedes these current assumpti
 
 The supersession becomes current product authority only as the corresponding children complete.
 
-**Current vs. target topology (reconciled Child 06, 2026-08-19):**
+**Current vs. target topology (reconciled Child 08, 2026-08-23):**
 
-- **Current state (after Child 06):** primary navigation is Compare · Evaluations · Runs. The Research Lab is reachable at direct routes (`/lab`, `/lab/studies/:studyId`, `/lab/recipes`, `/lab/model-pools`) plus Task Set backlinks; it is not an inert primary destination.
-- **Authorized target (after Child 08):** primary navigation becomes Compare · Evaluations · Lab · Models, with Records as a secondary typed audit ledger and `/runs/:runId` compatibility. This target is not implemented in Child 06.
+- **Current state (after Child 08):** primary navigation is Compare · Evaluations · Lab · Models on desktop and mobile. Records is a secondary typed audit ledger accessible via quick drawer (≥1024px) and direct `/records` route (<1024px), preserving `/runs/:runId` compatibility.
+- **Authorized target (after Child 09):** Bounded Attention indicator introduces actionable recovery handoffs into the utility cluster without altering primary navigation.
 
 ---
 
