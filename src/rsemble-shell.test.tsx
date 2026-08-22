@@ -9,6 +9,9 @@ import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
 import { RepositoryContext } from "./lib/persistence/repository-context";
 import { InMemoryStudyRepository } from "./lib/persistence/study-repository";
 import { InMemoryLabAssetRepository } from "./lib/persistence/lab-asset-repository";
+import { InMemoryRunRepository } from "./lib/persistence/run-repository";
+import { DISMISSED_STORAGE_KEY } from "./ui/RecordsMovePointer";
+import type { FullRunSummaryV2, RunRecordV2 } from "./lib/persistence/run-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -47,7 +50,9 @@ function cleanup(h: Harness) {
 /** Flush so lazily-imported route chunks resolve and render inside act(). */
 async function settleLazy(): Promise<void> {
   await act(async () => {
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, 0);
+    await promise;
   });
 }
 
@@ -389,6 +394,123 @@ describe("Compare → Run with Playbook integration", () => {
     await settleLazy();
 
     expect(document.body.textContent).toContain("Run with Policy Playbook");
+    cleanup(h);
+  });
+});
+
+describe("Records migration pointer (spec §O.1)", () => {
+  function seedRunRecord(id: string): { record: RunRecordV2; summary: FullRunSummaryV2 } {
+    const now = Date.now();
+    return {
+      summary: {
+        kind: "full",
+        schemaVersion: 2,
+        id,
+        revision: 1,
+        createdAt: now,
+        completedAt: now + 500,
+        status: "completed",
+        mode: "rank",
+        source: { kind: "adhoc" },
+        taskTitle: `Task ${id}`,
+        taskExcerpt: `Excerpt ${id}`,
+        modelKeys: ["openrouter:gpt-4o"],
+        winnerKeys: ["openrouter:gpt-4o"],
+        scoresByModelKey: { "openrouter:gpt-4o": 4.5 },
+        judgeModelKey: "openrouter:judge",
+        evaluationProfileId: null,
+        evaluationProfileVersion: null,
+        detailAvailable: true,
+        searchText: `task ${id}`,
+      },
+      record: {
+        schemaVersion: 2,
+        id,
+        revision: 1,
+        createdAt: now,
+        completedAt: now + 500,
+        status: "completed",
+        mode: "rank",
+        source: { kind: "adhoc" },
+        task: { title: `Task ${id}`, rawPrompt: "Test prompt" },
+        candidates: [],
+        judge: { attempts: [] },
+      },
+    };
+  }
+
+  it("renders one-time pointer in shell when run records exist and not dismissed", async () => {
+    const runRepo = new InMemoryRunRepository();
+    const { record, summary } = seedRunRecord("run-1");
+    await runRepo.create(record, summary);
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+
+    const pointer = h.$("[role='status']");
+    expect(pointer).not.toBeNull();
+    expect(pointer?.textContent).toContain("Runs moved.");
+    expect(pointer?.textContent).toContain("Exact execution records now live here");
+
+    // Dismiss via Got it button
+    const gotItBtn = pointer?.querySelector("button");
+    expect(gotItBtn).not.toBeNull();
+    expect(gotItBtn?.textContent?.trim()).toBe("Got it");
+    act(() => {
+      gotItBtn?.click();
+    });
+
+    expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBe("true");
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("does not render pointer when database has 0 run records", async () => {
+    const runRepo = new InMemoryRunRepository();
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+
+    expect(h.$("[role='status']")).toBeNull();
     cleanup(h);
   });
 });
