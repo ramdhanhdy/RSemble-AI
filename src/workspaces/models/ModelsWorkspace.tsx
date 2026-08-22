@@ -452,7 +452,7 @@ export function ModelsWorkspace({
   }
 
   const listElement = (
-    <div className="max-w-[960px]">
+    <div className="mx-auto w-full max-w-[960px]">
       <ModelsHeader count={load.data?.rows.length ?? 0} />
       <div className="mt-4">
         <ModelFilters
@@ -491,7 +491,7 @@ export function ModelsWorkspace({
           <Route
             path="rollups/:rollupId/versions/:version"
             element={
-              <div className="max-w-[1200px]">
+              <div className="mx-auto w-full max-w-[1200px]">
                 <ModelRollupRoute rollupRepo={rollupRepo} evidenceRepo={evidenceRepo} />
               </div>
             }
@@ -499,7 +499,7 @@ export function ModelsWorkspace({
           <Route
             path=":modelConfigurationId/evidence/:observationId"
             element={
-              <div className="max-w-[960px]">
+              <div className="mx-auto w-full max-w-[960px]">
                 <ObservationDrilldown evidenceRepo={evidenceRepo} taskRepo={taskRepo} />
               </div>
             }
@@ -507,7 +507,7 @@ export function ModelsWorkspace({
           <Route
             path=":modelConfigurationId"
             element={
-              <div className="max-w-[960px]">
+              <div className="mx-auto w-full max-w-[960px]">
                 <ModelEvidenceProfile evidenceRepo={evidenceRepo} taskRepo={taskRepo} />
               </div>
             }

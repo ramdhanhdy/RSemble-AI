@@ -598,7 +598,7 @@ export function ModelEvidenceProfile({
         </div>
       </div>
 
-      <div className="max-w-[960px]">
+      <div className="mx-auto w-full max-w-[960px]">
         {/* ================================================================
              Section 1: Identity header + receipt line + D2 narrative
              ================================================================ */}
