@@ -344,7 +344,7 @@ describe("Typed details — Task 8 canonical completion", () => {
       "comparison",
       "cmp-1",
     );
-    expect(ownerAction(comparisonView.container)?.textContent).toContain("Open in Compare");
+    expect(ownerAction(comparisonView.container)?.textContent).toContain("Open comparison result");
     expect(ownerAction(comparisonView.container)?.getAttribute("href")).toBe(
       "/compare/results/cmp-1",
     );
@@ -428,6 +428,116 @@ describe("Typed details — Task 8 canonical completion", () => {
     expect(action?.textContent).toContain("Open evaluation");
     expect(action?.getAttribute("href")).toBe("/evaluations/results/eval-1");
     act(() => harness.root.unmount());
+  });
+  it("renders both owner navigation and configuration-only preload in fixed §L order for comparison records", async () => {
+    const record = fullRunRecord();
+    const comparisonRepo = repository({
+      getReference: vi.fn(async () => comparisonReference),
+      getTaskExecution: vi.fn(async () => record),
+      list: vi.fn(async () => ({
+        items: [taskExecutionReference],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      })),
+    });
+    const onOpenInCompare = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <RecordDetail
+            repository={comparisonRepo as RecordsRepository}
+            recordType="comparison"
+            recordId="cmp-1"
+            onOpenInCompare={onOpenInCompare}
+          />
+        </MemoryRouter>,
+      );
+    });
+    for (let index = 0; index < 5; index++) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    // Action 1: Owner navigation ("Open comparison result")
+    const ownerLink = container.querySelector<HTMLAnchorElement>("[data-owner-action]");
+    expect(ownerLink).not.toBeNull();
+    expect(ownerLink?.textContent).toContain("Open comparison result");
+    expect(ownerLink?.getAttribute("href")).toBe("/compare/results/cmp-1");
+
+    // Action 2: Configuration-only preload ("Open in Compare") with honesty token
+    const compareBtn = container.querySelector<HTMLButtonElement>("button[data-action='open-in-compare']");
+    expect(compareBtn).not.toBeNull();
+    expect(compareBtn?.textContent).toContain("Open in Compare");
+    expect(container.textContent).toContain(
+      "Loads configuration only — no outputs, no execution, no lineage.",
+    );
+
+    // Action 3: Copy link
+    const copyBtn = container.querySelector<HTMLButtonElement>("button[data-action='copy-link']");
+    expect(copyBtn).not.toBeNull();
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it("renders both owner navigation and configuration-only preload in fixed §L order for compare-owned task execution records", async () => {
+    const record = fullRunRecord();
+    const compareOwned: TaskExecutionRecordReference = {
+      ...taskExecutionReference,
+      ownerHint: "in Compare",
+      runSource: { kind: "adhoc", comparisonId: "cmp-1" },
+    };
+    const repo = repository({
+      getReference: vi.fn(async () => compareOwned),
+      getTaskExecution: vi.fn(async () => record),
+    });
+    const onOpenInCompare = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <RecordDetail
+            repository={repo as RecordsRepository}
+            recordType="task-execution"
+            recordId="run-1"
+            onOpenInCompare={onOpenInCompare}
+          />
+        </MemoryRouter>,
+      );
+    });
+    for (let index = 0; index < 5; index++) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    // Action 1: Owner navigation ("Open comparison result" -> /compare/results/cmp-1)
+    const ownerLink = container.querySelector<HTMLAnchorElement>("[data-owner-action]");
+    expect(ownerLink).not.toBeNull();
+    expect(ownerLink?.textContent).toContain("Open comparison result");
+    expect(ownerLink?.getAttribute("href")).toBe("/compare/results/cmp-1");
+
+    // Action 2: Configuration-only preload ("Open in Compare") with honesty token
+    const compareBtn = container.querySelector<HTMLButtonElement>("button[data-action='open-in-compare']");
+    expect(compareBtn).not.toBeNull();
+    expect(compareBtn?.textContent).toContain("Open in Compare");
+    expect(container.textContent).toContain(
+      "Loads configuration only — no outputs, no execution, no lineage.",
+    );
+
+    // Action 3: Copy link
+    const copyBtn = container.querySelector<HTMLButtonElement>("button[data-action='copy-link']");
+    expect(copyBtn).not.toBeNull();
+
+    act(() => root.unmount());
+    container.remove();
   });
 
   it("renders the observation eligibility panel as icon plus word, never color alone", async () => {

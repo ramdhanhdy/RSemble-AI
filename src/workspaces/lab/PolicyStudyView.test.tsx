@@ -1267,3 +1267,18 @@ describe("PolicyStudyView — densification caps and accessibility semantics (Fa
     cleanup(h);
   });
 });
+
+describe("PolicyStudyView — route heading focus contract (§P)", () => {
+  it("claims heading focus on route resolution with tabIndex=-1", async () => {
+    const seeded = await seedCompleted();
+    const h = renderView(seeded);
+    await settle();
+
+    const heading = h.$("h1");
+    expect(heading).not.toBeNull();
+    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(heading);
+
+    cleanup(h);
+  });
+});

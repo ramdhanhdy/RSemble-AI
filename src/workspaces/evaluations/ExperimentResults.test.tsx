@@ -1978,3 +1978,41 @@ describe("ExperimentResults — Evidence receipt integration (F1-blocker)", () =
     cleanup(h);
   });
 });
+
+describe("ExperimentResults — route heading focus contract (§P)", () => {
+  it("claims heading focus on route resolution with tabIndex=-1", async () => {
+    const exp: ExperimentRecord = {
+      id: "exp-focus-1",
+      suiteId: "suite-focus-1",
+      status: "completed",
+      createdAt: 1000,
+      updatedAt: 2000,
+      tasks: [],
+      snapshot: {
+        suiteId: "suite-focus-1",
+        suiteVersion: 1,
+        name: "Focus Suite",
+        description: "",
+        tasks: [],
+        rubrics: [],
+        modelSlots: [],
+        profiles: [],
+        defaultJudge: { providerId: "openrouter", model: "anthropic/claude-3.5-sonnet" },
+      },
+    };
+    const h = renderWithRouter(
+      <ExperimentResults
+        experiment={exp}
+        resolveRunRecord={async () => null}
+      />,
+    );
+    await settle();
+
+    const heading = h.$("h1");
+    expect(heading).not.toBeNull();
+    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(heading);
+
+    cleanup(h);
+  });
+});

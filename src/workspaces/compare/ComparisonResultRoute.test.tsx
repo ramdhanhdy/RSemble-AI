@@ -1482,3 +1482,29 @@ describe("ComparisonResultRoute — 44x44 target rule (Plan Task 13)", () => {
     cleanup(h2);
   });
 });
+
+describe("ComparisonResultRoute — route heading focus contract (§P)", () => {
+  it("claims heading focus on route resolution with tabIndex=-1", async () => {
+    const runsRepo = new InMemoryRunRepository();
+    const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
+    const record = makeRankRecord("cmp-focus-1");
+    await seedTestRecord(runsRepo, comparisonRepo, record);
+
+    const h = renderRouted(
+      <ComparisonResultRoute
+        comparisonId="cmp-focus-1"
+        comparisonRepo={comparisonRepo}
+        runRepo={runsRepo}
+      />,
+      ["/compare/results/cmp-focus-1"],
+    );
+    await settle();
+
+    const heading = h.$("h1");
+    expect(heading).not.toBeNull();
+    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(heading);
+
+    cleanup(h);
+  });
+});

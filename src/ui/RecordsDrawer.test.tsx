@@ -926,20 +926,63 @@ describe("RecordsDrawer reviewer repairs", () => {
     cleanup(h);
   });
 
-  it("renders all 120 flood matches without an escape hatch", async () => {
+  it("materializes truthful match count across large ledger without truncation and keeps rendered DOM bounded via windowing", async () => {
     const now = Date.now();
-    const flood = Array.from({ length: 120 }, (_, i) => comparison(`cmp-flood-${i}`)).map(
+    const flood = Array.from({ length: 500 }, (_, i) => comparison(`cmp-scale-${i}`)).map(
       (reference, index) => ({ ...reference, createdAt: now - index * 1_000 }),
     );
     const h = await renderDrawer(repository(flood));
-    await type(h, "cmp-flood");
+    await type(h, "cmp-scale");
     const status = document.body.querySelector('[role="status"]');
-    expect(status?.textContent).toContain("120");
-    const compareGroup = [...document.body.querySelectorAll("[data-drawer-group]")].find(
-      (el) => el.querySelector("[data-drawer-group-head]")?.textContent === "From Compare",
-    )!;
-    expect(compareGroup.querySelectorAll("[data-record-row]").length).toBe(120);
+    expect(status?.textContent).toContain("500 matching records");
+    const renderedRows = document.body.querySelectorAll("[data-record-row]");
+    // DOM must be strictly bounded (e.g. <= 40 rows), never rendering all 500 nodes into the DOM.
+    expect(renderedRows.length).toBeLessThanOrEqual(40);
+    expect(renderedRows.length).toBeGreaterThan(0);
     expect(document.body.querySelector("a[data-drawer-more]")).toBeNull();
+    cleanup(h);
+  });
+
+  it("roving keyboard navigation seamlessly traverses logical stops across active search results", async () => {
+    const items = [
+      comparison("cmp-nav-0"),
+      comparison("cmp-nav-1"),
+      comparison("cmp-nav-2"),
+    ];
+    const h = await renderDrawer(repository(items));
+    await type(h, "cmp-nav");
+
+    const searchInput = document.body.querySelector<HTMLInputElement>("input[data-drawer-search]")!;
+    searchInput.focus();
+    expect(document.activeElement).toBe(searchInput);
+
+    // ArrowDown from search -> first stop (main link of first comparison)
+    searchInput.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
+    const firstMain = document.body.querySelector<HTMLAnchorElement>('a[data-record-row-link][href="/compare/results/cmp-nav-0"]');
+    expect(document.activeElement).toBe(firstMain);
+
+    // ArrowDown from first main -> second stop (exact link of first comparison)
+    firstMain?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
+    const firstExact = document.body.querySelector<HTMLAnchorElement>('a[data-exact-link][href="/records/comparison/cmp-nav-0"]');
+    expect(document.activeElement).toBe(firstExact);
+
+    // ArrowDown from first exact -> third stop (main link of second comparison)
+    firstExact?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
+    const secondMain = document.body.querySelector<HTMLAnchorElement>('a[data-record-row-link][href="/compare/results/cmp-nav-1"]');
+    expect(document.activeElement).toBe(secondMain);
+
+    // ArrowUp back to first exact
+    secondMain?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+    expect(document.activeElement).toBe(firstExact);
+
+    // ArrowUp back to first main
+    firstExact?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+    expect(document.activeElement).toBe(firstMain);
+
+    // ArrowUp back to search input
+    firstMain?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+    expect(document.activeElement).toBe(searchInput);
+
     cleanup(h);
   });
 

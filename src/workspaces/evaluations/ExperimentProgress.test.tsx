@@ -600,4 +600,16 @@ describe("ExperimentProgress", () => {
     expect(back.className).toContain("min-h-[44px]");
     cleanup(h);
   });
+  it("claims heading focus on mount with tabIndex=-1", async () => {
+    const { controller } = makeController();
+    const h = renderWithRouter(
+      <ExperimentProgress experiment={makeExperiment()} controller={controller} />,
+    );
+    await settle();
+    const heading = h.$("h1");
+    expect(heading).not.toBeNull();
+    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(heading);
+    cleanup(h);
+  });
 });
