@@ -280,6 +280,38 @@ describe("RecordsMovePointer (spec §O.1)", () => {
     expect(h.$("[role='status']")).toBeNull();
     cleanup(h);
   });
+  it("retains pointer through initial root redirect from / to /compare", () => {
+    let navigateFn: NavigateFunction | null = null;
+    function RootRedirectTest() {
+      navigateFn = useNavigate();
+      return <RecordsMovePointer hasExistingRuns={true} />;
+    }
+
+    const h = render(
+      <MemoryRouter initialEntries={["/"]}>
+        <RootRedirectTest />
+      </MemoryRouter>,
+    );
+
+    expect(h.$("[role='status']")).not.toBeNull();
+
+    // Simulate the app router's initial redirect from / to /compare
+    act(() => {
+      void navigateFn?.("/compare", { replace: true });
+    });
+
+    expect(h.$("[role='status']")).not.toBeNull();
+    expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBeNull();
+
+    // Subsequent navigation away from /compare DOES dismiss
+    act(() => {
+      void navigateFn?.("/records");
+    });
+
+    expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBe("true");
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
 
   it("never traps focus and is non-modal", () => {
     const h = render(

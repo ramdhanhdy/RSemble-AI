@@ -111,7 +111,15 @@ export function RecordsMovePointer({
   const location = useLocation();
   const initialLocationRef = useRef<string>(location.pathname + location.search);
   useEffect(() => {
-    if (!dismissed && location.pathname + location.search !== initialLocationRef.current) {
+    const currentLoc = location.pathname + location.search;
+    if (
+      initialLocationRef.current === "/" &&
+      (location.pathname === "/compare" || location.pathname === "/")
+    ) {
+      initialLocationRef.current = currentLoc;
+      return;
+    }
+    if (!dismissed && currentLoc !== initialLocationRef.current) {
       handleDismiss();
     }
   }, [location.pathname, location.search, dismissed, handleDismiss]);
