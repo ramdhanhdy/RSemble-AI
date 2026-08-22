@@ -123,6 +123,12 @@ export function useRecordsRepository(): RecordsRepository | null {
   return useContext(RepositoryContext).recordsRepo ?? null;
 }
 
+/** Storage-level retry for surfaces whose Retry must re-run database
+ *  initialization (e.g. the Records drawer when no repository exists). */
+export function useStorageRetry(): () => void {
+  return useContext(RepositoryContext).retry;
+}
+
 /** Read the bounded canonical Task migration failure, if Task catalog storage
  * could not be prepared while the established Compare stores remain ready. */
 export function useTaskMigrationError(): StorageError | null {

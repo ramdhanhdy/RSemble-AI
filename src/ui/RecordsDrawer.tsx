@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AlertCircle, History, Search, X } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import { useRecordsRepository } from "../lib/persistence/repository-context";
+import { useRecordsRepository, useStorageRetry } from "../lib/persistence/repository-context";
 import type { RecordsRepository } from "../lib/records/records-repository";
 import { queryRecords, type RecordsPage } from "../lib/records/records-query";
 import type { RecordReference } from "../lib/records/record-reference";
@@ -31,6 +31,11 @@ const GROUP_CAP = 5;
  *  below. The repository composes sources per call — this stays a single
  *  typed read, not a second index. */
 const FULL_STREAM_LIMIT = 1_000_000;
+/** Rendering bound for an active search: the complete stream is searched
+ *  and the match count stays truthful, but each group renders at most this
+ *  many rows with a "+N more — open full Records" escape hatch (§M.11 — the
+ *  full page is the depth surface; the drawer must never freeze). */
+const SEARCH_GROUP_RENDER_CAP = 50;
 
 type DrawerGroupKey = "compare" | "evaluations" | "lab" | "observations" | "legacy";
 
@@ -99,6 +104,7 @@ export function RecordsDrawer({
 }) {
   const contextRepository = useRecordsRepository();
   const repo = repository ?? contextRepository;
+  const storageRetry = useStorageRetry();
   const location = useLocation();
 
   const [references, setReferences] = useState<RecordReference[] | null>(null);
@@ -108,15 +114,42 @@ export function RecordsDrawer({
   const [debouncedText, setDebouncedText] = useState("");
   const requestId = useRef(0);
 
-  // The drawer closes on navigation (§H.2): any route change while open
-  // dismisses it — rows, View all, and palette-driven navigation included.
+  // Dismissal differentiation (§P focus management): ordinary dismissal
+  // restores the header trigger via finalFocus; a navigational dismissal
+  // hands focus to the destination page instead, so the restoration target
+  // is dropped before the dialog closes.
+  const activeFinalFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (open && !suppressFinalFocus.current) {
+      activeFinalFocus.current = finalFocus?.current ?? null;
+    }
+    if (!open) suppressFinalFocus.current = false;
+  }, [open, finalFocus]);
+  const suppressFinalFocus = useRef(false);
+  function dismissByNavigation() {
+    suppressFinalFocus.current = true;
+    activeFinalFocus.current = null;
+    if (open) onOpenChange(false);
+  }
+
+  // The drawer closes on navigation (§H.2). Route changes close it even
+  // when the click came from outside the drawer (palette-driven nav);
+  // same-path activations are closed by the link click-capture below.
   const lastPathname = useRef(location.pathname);
   useEffect(() => {
     if (lastPathname.current !== location.pathname) {
       lastPathname.current = location.pathname;
-      if (open) onOpenChange(false);
+      dismissByNavigation();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dismissal identity is stable per open cycle
   }, [location.pathname, open, onOpenChange]);
+
+  // Any drawer link activation navigates — including to the current path —
+  // so the drawer closes directly on the click itself.
+  function onDrawerLinkClickCapture(event: React.MouseEvent) {
+    if (!(event.target instanceof Element)) return;
+    if (event.target.closest("a")) dismissByNavigation();
+  }
 
   // Fresh read per open; the ledger is device-local and cheap to re-derive.
   useEffect(() => {
@@ -220,7 +253,12 @@ export function RecordsDrawer({
     }
   }
   return (
-    <DrawerSurface open={open} onOpenChange={onOpenChange} title="Records" finalFocus={finalFocus}>
+    <DrawerSurface
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Records"
+      finalFocus={activeFinalFocus}
+    >
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-edge px-3">
         <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
           Records
@@ -264,6 +302,7 @@ export function RecordsDrawer({
         role="region"
         aria-label="Recent records"
         ref={bodyRef}
+        onClickCapture={onDrawerLinkClickCapture}
         className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 scroll-thin"
       >
         {references === null && error === null ? (
@@ -276,7 +315,10 @@ export function RecordsDrawer({
             ))}
           </div>
         ) : error !== null ? (
-          <div className="flex flex-col items-start gap-2 rounded-md border border-error/30 bg-error/[0.06] p-3">
+          <div
+            role="alert"
+            className="flex flex-col items-start gap-2 rounded-md border border-error/30 bg-error/[0.06] p-3"
+          >
             <span className="flex items-center gap-2 text-sm font-medium text-error">
               <AlertCircle size={16} aria-hidden="true" />
               Records index unavailable.
@@ -286,7 +328,10 @@ export function RecordsDrawer({
               <button
                 type="button"
                 data-action="retry-records-index"
-                onClick={() => setReloadToken((token) => token + 1)}
+                onClick={() => {
+                  if (!repo) storageRetry();
+                  else setReloadToken((token) => token + 1);
+                }}
                 className="motion-state min-h-[44px] rounded-md border border-edge px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Retry
@@ -348,32 +393,53 @@ export function RecordsDrawer({
                 </ul>
               </section>
             )}
-            {grouped.map((group) => (
-              <section key={group.key} data-drawer-group="">
-                <h3
-                  data-drawer-group-head=""
-                  className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
-                >
-                  {group.heading}
-                </h3>
-                <ul className="flex flex-col gap-1.5" role="list">
-                  {group.items.map((reference) => (
-                    <li key={`${reference.recordType}:${reference.id}`}>
-                      <RecordTypeRow
-                        reference={reference}
-                        compact
-                        onRecordKeyDown={onStopKeyDown}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
+            {grouped.map((group) => {
+              // Search renders a bounded slice per group; the count stays
+              // truthful and the overflow escapes to the full utility.
+              const visible =
+                searching && group.items.length > SEARCH_GROUP_RENDER_CAP
+                  ? group.items.slice(0, SEARCH_GROUP_RENDER_CAP)
+                  : group.items;
+              const hidden = group.items.length - visible.length;
+              return (
+                <section key={group.key} data-drawer-group="">
+                  <h3
+                    data-drawer-group-head=""
+                    className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+                  >
+                    {group.heading}
+                  </h3>
+                  <ul className="flex flex-col gap-1.5" role="list">
+                    {visible.map((reference) => (
+                      <li key={`${reference.recordType}:${reference.id}`}>
+                        <RecordTypeRow
+                          reference={reference}
+                          compact
+                          onRecordKeyDown={onStopKeyDown}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                  {hidden > 0 && (
+                    <Link
+                      to={`/records?text=${encodeURIComponent(debouncedText)}`}
+                      data-drawer-more=""
+                      className="motion-state mt-1.5 flex min-h-[44px] items-center rounded-md px-1 font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      +{hidden} more — open full Records
+                    </Link>
+                  )}
+                </section>
+              );
+            })}
           </>
         )}
       </div>
 
-      <div className="flex shrink-0 flex-col gap-2 border-t border-edge p-3">
+      <div
+        className="flex shrink-0 flex-col gap-2 border-t border-edge p-3"
+        onClickCapture={onDrawerLinkClickCapture}
+      >
         <Link
           to="/records"
           data-action="view-all-records"

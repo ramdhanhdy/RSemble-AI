@@ -7,13 +7,14 @@
 // at five recent rows each, safe search with an EXACT MATCH section, and a
 // View-all footer with the ledger-scope honesty note. Read-only: no execution,
 // export, or archive actions ever render here.
-import { act, useState } from "react";
+import { act, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RecordsRepository } from "../lib/records/records-repository";
 import type { RecordReference } from "../lib/records/record-reference";
 import { RecordsDrawer } from "./RecordsDrawer";
+import { RepositoryContext } from "../lib/persistence/repository-context";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -344,6 +345,44 @@ describe("RecordsDrawer surface (Base UI authority)", () => {
     expect(mounted.latest.open).toBe(false);
     cleanupRoot(mounted.container, mounted.root);
   });
+
+  it("keeps every tabbable stop inside the drawer in §H.4 order", async () => {
+    const h = await renderDrawer(
+      repository([
+        comparison("cmp-tab-1"),
+        taskExecution("run-tab-2", "adhoc"),
+        legacyRecord("leg-tab-3"),
+      ]),
+    );
+    const dialog = h.$('[role="dialog"]')!;
+    const tabbableInDocument = [
+      ...document.body.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([type="hidden"]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter(
+      (el) =>
+        // Base UI's hidden focus guards ARE the trap mechanism; they sit
+        // outside the popup by design and are not reachable leaks.
+        !el.hasAttribute("data-base-ui-focus-guard") &&
+        (el.offsetParent !== null || el.closest('[role="dialog"]')),
+    );
+    const outside = tabbableInDocument.filter((el) => !dialog.contains(el));
+    expect(outside).toEqual([]);
+    // Focus order close → search → rows (main anchors, then trailing Exact
+    // siblings as second stops) → View all.
+    const inDialog = tabbableInDocument.filter((el) => dialog.contains(el));
+    const order = inDialog.map((el) => el.getAttribute("aria-label") ?? el.tagName);
+    expect(order[0]).toBe("Close records");
+    // The search input's accessible name comes from its wrapping label; its
+    // position (second stop) is what §H.4 fixes.
+    expect(inDialog[1].hasAttribute("data-drawer-search")).toBe(true);
+    expect(inDialog[inDialog.length - 1].getAttribute("data-action")).toBe("view-all-records");
+    // The first and last stops both live inside the trapped surface, so
+    // Shift+Tab from the first cycles within the drawer instead of escaping
+    // to the inert background.
+    expect(dialog.contains(inDialog[0])).toBe(true);
+    cleanup(h);
+  });
 });
 
 describe("RecordsDrawer workspace groups", () => {
@@ -429,24 +468,24 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("RecordsDrawer search", () => {
-  async function type(harness: Harness, value: string) {
-    const input = harness.$<HTMLInputElement>("input[data-drawer-search]")!;
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-    vi.useFakeTimers();
-    act(() => {
-      setter?.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await act(async () => {
-      vi.advanceTimersByTime(200);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    vi.useRealTimers();
-    await flush();
-  }
+async function type(harness: Harness, value: string) {
+  const input = harness.$<HTMLInputElement>("input[data-drawer-search]")!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  vi.useFakeTimers();
+  act(() => {
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    vi.advanceTimersByTime(200);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  vi.useRealTimers();
+  await flush();
+}
 
+describe("RecordsDrawer search", () => {
   it("preserves grouping while showing all matches", async () => {
     const h = await renderDrawer(
       repository([
@@ -485,9 +524,7 @@ describe("RecordsDrawer search", () => {
     cleanup(h);
   });
 
-  it("search reaches a matching record beyond the global top 50", async () => {
-    // 61 comparisons all match the query; the target is the OLDEST match,
-    // so a default limit-50 evaluation would silently drop it.
+  it("search evaluates matches beyond the global top 50", async () => {
     const now = Date.now();
     const matches = Array.from({ length: 60 }, (_, i) => comparison(`cmp-flood-${i}`)).map(
       (reference, index) => ({ ...reference, createdAt: now - index * 1_000 }),
@@ -498,10 +535,18 @@ describe("RecordsDrawer search", () => {
     };
     const h = await renderDrawer(repository([...matches, target]));
     await type(h, "cmp-flood");
-    const ids = [...document.body.querySelectorAll("[data-record-row]")].map((r) =>
-      r.getAttribute("data-record-id"),
-    );
-    expect(ids).toContain("cmp-flood-target");
+    // The complete stream is searched: the truthful count covers the oldest
+    // match too, and the bounded group renders its escape hatch to it.
+    const status = document.body.querySelector('[role="status"]');
+    expect(status?.textContent).toContain("61");
+    expect(groupHeadings()).toEqual(["From Compare"]);
+    const compareGroup = [...document.body.querySelectorAll("[data-drawer-group]")].find(
+      (el) => el.querySelector("[data-drawer-group-head]")?.textContent === "From Compare",
+    )!;
+    expect(compareGroup.querySelectorAll("[data-record-row]").length).toBe(50);
+    const more = compareGroup.querySelector<HTMLAnchorElement>("a[data-drawer-more]")!;
+    expect(more.getAttribute("href")).toBe("/records?text=cmp-flood");
+    expect(more.textContent).toContain("11 more");
     cleanup(h);
   });
 
@@ -597,22 +642,33 @@ describe("RecordsDrawer search", () => {
     cleanup(h);
   });
 
-  it("activates the focused record action with Enter (drawer closes on navigation)", async () => {
+  it("keeps Enter on record anchors native (no preventDefault, no synthetic click)", async () => {
     const mounted = mountControlledDrawer(repository([comparison("cmp-enter")]), true, "/compare");
     await flush();
     const search = document.body.querySelector<HTMLInputElement>("input[data-drawer-search]")!;
     act(() => {
       search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     });
-    expect(document.activeElement?.getAttribute("href")).toBe("/compare/results/cmp-enter");
-    await act(async () => {
-      document.activeElement!.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-      );
-      await Promise.resolve();
-    });
-    await flush();
-    expect(mounted.latest.open).toBe(false);
+    const anchor = document.activeElement as HTMLAnchorElement;
+    expect(anchor.getAttribute("href")).toBe("/compare/results/cmp-enter");
+    const syntheticClicks: string[] = [];
+    const clickSpy = (e: Event) => {
+      syntheticClicks.push(e.type);
+    };
+    anchor.addEventListener("click", clickSpy);
+    for (const init of [
+      { key: "Enter" },
+      { key: "Enter", ctrlKey: true },
+      { key: "Enter", metaKey: true },
+    ]) {
+      const event = new KeyboardEvent("keydown", { bubbles: true, ...init });
+      anchor.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    // Arrow roving stays custom; activation stays native — the drawer must
+    // not have synthesized a click or closed itself.
+    expect(syntheticClicks).toEqual([]);
+    expect(mounted.latest.open).toBe(true);
     cleanupRoot(mounted.container, mounted.root);
   });
 });
@@ -737,6 +793,170 @@ describe("RecordsDrawer states", () => {
     for (const verb of forbidden) {
       expect(text).not.toContain(verb);
     }
+    cleanup(h);
+  });
+});
+
+describe("RecordsDrawer reviewer repairs", () => {
+  it("invokes storage-level retry when the repository is unavailable", async () => {
+    const storageRetry = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Host() {
+      return (
+        <MemoryRouter>
+          <RepositoryContext.Provider
+            value={
+              {
+                recordsRepo: null,
+                retry: storageRetry,
+              } as unknown as React.ContextType<typeof RepositoryContext>
+            }
+          >
+            <RecordsDrawer open={true} onOpenChange={() => undefined} repository={null} />
+          </RepositoryContext.Provider>
+        </MemoryRouter>
+      );
+    }
+    act(() => {
+      root.render(<Host />);
+    });
+    await flush();
+    expect(document.body.textContent).toContain("Records index unavailable.");
+    const retry = document.body.querySelector<HTMLButtonElement>(
+      'button[data-action="retry-records-index"]',
+    )!;
+    await act(async () => {
+      retry.click();
+      await Promise.resolve();
+    });
+    expect(storageRetry).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+    container.remove();
+    document.body.innerHTML = "";
+  });
+
+  it("hands focus to the destination heading on navigation, not the trigger", async () => {
+    // The destination owns route focus; navigation dismissal must suppress
+    // the Base UI finalFocus restoration to the header trigger.
+    const trigger = document.createElement("button");
+    trigger.textContent = "Records";
+    const finalFocus: { current: HTMLElement | null } = { current: trigger };
+    const repo = repository([comparison("cmp-dest")]);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    let open = true;
+    function DestinationHeading() {
+      const ref = useRef<HTMLDivElement | null>(null);
+      useEffect(() => {
+        ref.current?.focus();
+      }, []);
+      return <div ref={ref} data-detail-heading="" tabIndex={-1} />;
+    }
+    function Host() {
+      const [o, setO] = useState(true);
+      open = o;
+      return (
+        <MemoryRouter initialEntries={["/compare"]}>
+          <Routes>
+            <Route path="/compare/results/:id" element={<DestinationHeading />} />
+            <Route path="*" element={null} />
+          </Routes>
+          <RecordsDrawer open={o} onOpenChange={setO} repository={repo} finalFocus={finalFocus} />
+        </MemoryRouter>
+      );
+    }
+    act(() => {
+      root.render(<Host />);
+    });
+    await flush();
+    const row = document.body.querySelector<HTMLAnchorElement>(
+      'a[data-record-row-link][href="/compare/results/cmp-dest"]',
+    )!;
+    expect(row).toBeTruthy();
+    await act(async () => {
+      row.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flush();
+    expect(open).toBe(false);
+    const heading = container.querySelector("[data-detail-heading]")!;
+    expect(document.activeElement).toBe(heading);
+    act(() => root.unmount());
+    container.remove();
+    document.body.innerHTML = "";
+  });
+
+  it("closes on same-path View all activation", async () => {
+    const mounted = mountControlledDrawer(repository([comparison("cmp-same")]), true, "/records");
+    await flush();
+    const viewAll = document.body.querySelector<HTMLAnchorElement>(
+      'a[data-action="view-all-records"]',
+    )!;
+    expect(viewAll.getAttribute("href")).toBe("/records");
+    await act(async () => {
+      viewAll.click();
+      await Promise.resolve();
+    });
+    await flush();
+    expect(mounted.latest.open).toBe(false);
+    cleanupRoot(mounted.container, mounted.root);
+  });
+
+  it("leaves native Enter semantics untouched on record anchors", async () => {
+    const h = await renderDrawer(repository([comparison("cmp-enter-native")]));
+    const anchor = document.body.querySelector<HTMLAnchorElement>("a[data-record-row-link]")!;
+    anchor.focus();
+    const clicks: string[] = [];
+    const clickSpy = () => clicks.push("click");
+    anchor.addEventListener("click", clickSpy);
+    for (const init of [
+      { key: "Enter" },
+      { key: "Enter", ctrlKey: true },
+      { key: "Enter", metaKey: true },
+      { key: "Enter", shiftKey: true },
+    ]) {
+      anchor.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init }));
+    }
+    // The drawer must neither preventDefault nor synthesize clicks — plain
+    // and modified Enter remain native anchor behavior.
+    expect(clicks).toEqual([]);
+    cleanup(h);
+  });
+
+  it("bounds rendered search matches while keeping the truthful count", async () => {
+    const now = Date.now();
+    const flood = Array.from({ length: 120 }, (_, i) => comparison(`cmp-flood-${i}`)).map(
+      (reference, index) => ({ ...reference, createdAt: now - index * 1_000 }),
+    );
+    const h = await renderDrawer(repository(flood));
+    await type(h, "cmp-flood");
+    const status = document.body.querySelector('[role="status"]');
+    expect(status?.textContent).toContain("120");
+    const rows = document.body.querySelectorAll("[data-drawer-group] [data-record-row]");
+    expect(rows.length).toBeLessThanOrEqual(150);
+    const compareGroup = [...document.body.querySelectorAll("[data-drawer-group]")].find(
+      (el) => el.querySelector("[data-drawer-group-head]")?.textContent === "From Compare",
+    )!;
+    expect(compareGroup.querySelectorAll("[data-record-row]").length).toBe(50);
+    const more = compareGroup.querySelector<HTMLAnchorElement>("a[data-drawer-more]");
+    expect(more?.getAttribute("href")).toBe("/records?text=cmp-flood");
+    expect(more?.textContent).toContain("70 more");
+    cleanup(h);
+  });
+
+  it("announces the index error block with role=alert", async () => {
+    const failing = repository([]);
+    (failing.list as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      throw new Error("storage closed");
+    });
+    const h = await renderDrawer(failing);
+    const alert = document.body.querySelector('[role="alert"]');
+    expect(alert).toBeTruthy();
+    expect(alert?.textContent).toContain("Records index unavailable.");
     cleanup(h);
   });
 });

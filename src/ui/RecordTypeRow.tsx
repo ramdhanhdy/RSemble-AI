@@ -50,11 +50,9 @@ export function RecordTypeRow({
         data-record-row-link=""
         aria-label={accessibleName}
         onKeyDown={(event) => {
+          // Arrow-key roving only; Enter activation stays native so plain
+          // and modified (Ctrl/Meta/Shift) Enter keep anchor semantics.
           onRecordKeyDown?.(event);
-          if (event.key === "Enter" && !event.defaultPrevented) {
-            event.preventDefault();
-            event.currentTarget.click();
-          }
         }}
         className="motion-state flex min-h-[44px] min-w-0 flex-1 flex-col gap-0.5 px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
@@ -88,10 +86,6 @@ export function RecordTypeRow({
           title="Open exact record"
           onKeyDown={(event) => {
             onRecordKeyDown?.(event);
-            if (event.key === "Enter" && !event.defaultPrevented) {
-              event.preventDefault();
-              event.currentTarget.click();
-            }
           }}
           className="motion-state flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center border-l border-edge text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
